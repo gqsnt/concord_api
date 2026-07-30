@@ -12,7 +12,6 @@ env:
   CARGO_TERM_COLOR: always
   RUST_STABLE: 1.97.1
   RUST_MSRV: 1.86.0
-  MDBOOK_VERSION: 0.5.4
 
 jobs:
   quality:
@@ -74,13 +73,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
           toolchain: ${{ env.RUST_STABLE }}
-      - name: Install mdBook
-        run: cargo install mdbook --version "${MDBOOK_VERSION}" --locked
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-docs
-      - run: cargo run --locked -p concord-xtask -- docs --locked
-      - run: mdbook build
       - run: cargo test --workspace --doc --all-features --locked
       - run: cargo rustdoc -p concord-core --no-default-features --locked -- -D warnings
       - run: cargo rustdoc -p concord-extras --no-default-features --locked -- -D warnings

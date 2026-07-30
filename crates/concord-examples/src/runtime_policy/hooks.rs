@@ -1,8 +1,7 @@
 //! Safe lifecycle hooks installed on one immutable client snapshot.
 //!
 //! Required features: none. Mode: construction-only. Documentation owners:
-//! `docs/features/hooks-and-observability.md` and
-//! `docs/extending/hooks-and-trusted-work.md`. Proving test:
+//! `docs/customization.md`. Proving test:
 //! `tests/construction.rs`.
 
 // ANCHOR: hooks_extension

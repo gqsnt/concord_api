@@ -18,7 +18,11 @@ This inventory records the documentation graph before the Phase 2 consolidation.
 
 ## References
 
-The repository documentation checker parses every Markdown link in `README.md` and `docs/`, resolves every local file and anchor, rejects links that escape `docs/` from a documentation page, validates every mdBook include target and line selector, and requires the `docs/SUMMARY.md` inventory to match the filesystem.
+The pre-finalization documentation checker parsed every Markdown link in
+`README.md` and `docs/`, resolved every local file and anchor, rejected links
+that escaped `docs/` from a documentation page, validated every mdBook include
+target and line selector, and required the `docs/SUMMARY.md` inventory to
+match the filesystem.
 
 The Phase 0 run reported:
 
@@ -29,4 +33,6 @@ The Phase 0 run reported:
 - 2 external URLs syntax-counted without network access;
 - no missing files, anchors, or include selectors.
 
-Run `cargo run -p concord-xtask -- docs` to reproduce the reference inventory and resolution check for this revision.
+Phase 0 produced these counts with
+`cargo run -p concord-xtask -- docs` before the raw Markdown consolidation
+removed the mdBook checker.

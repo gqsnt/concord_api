@@ -50,15 +50,7 @@ msrv:
 fixtures:
     cargo run  -p concord-xtask -- fixtures
 
-site:
-    cargo run  -p concord-xtask -- docs
-    mdbook build
-
-site-serve:
-    cargo run  -p concord-xtask -- docs
-    mdbook serve
-
-docs: site
+docs:
     cargo test --workspace --doc --all-features
     cargo rustdoc -p concord-core --no-default-features  -- -D warnings
     cargo rustdoc -p concord-extras --no-default-features  -- -D warnings

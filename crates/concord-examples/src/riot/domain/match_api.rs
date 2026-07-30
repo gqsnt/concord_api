@@ -1,7 +1,7 @@
 //! Match routing values and match/timeline response models.
 //!
 //! Required features: the Riot bundle. Mode: deterministic planning and
-//! manual live use. Documentation owner: `docs/recipes/riot.md`.
+//! manual live use. Documentation owner: `docs/spec.md`.
 //! Proving test: `tests/riot_contract.rs`.
 
 use std::collections::HashMap;

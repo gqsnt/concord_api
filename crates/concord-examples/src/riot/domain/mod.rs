@@ -2,7 +2,7 @@
 //!
 //! Required features: `json` and `rate-limit` through the Riot bundle.
 //! Mode: compile/serde support for deterministic planning and manual live use.
-//! Documentation owner: `docs/recipes/riot.md`.
+//! Documentation owner: `docs/spec.md`.
 //! Proving test: `tests/riot_contract.rs`.
 
 pub mod account;

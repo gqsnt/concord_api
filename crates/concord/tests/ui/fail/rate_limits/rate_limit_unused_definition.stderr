@@ -1,4 +1,4 @@
-error: reusable rate-limit rule `unused_rule` is never attached
+error: rate-limit profile `unused_rule` is never attached
  --> tests/ui/fail/rate_limits/rate_limit_unused_definition.rs:7:18
   |
 7 |             rule unused_rule {

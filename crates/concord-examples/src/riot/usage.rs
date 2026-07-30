@@ -2,7 +2,7 @@
 //!
 //! Required features: `json` and `rate-limit`; `riot-live` for the
 //! binary. Mode: deterministic construction plus explicit manual live access.
-//! Documentation owner: `docs/recipes/riot.md`.
+//! Documentation owner: `docs/spec.md`.
 //! Proving tests: `tests/construction.rs` and `tests/riot_contract.rs`.
 
 use std::error::Error;

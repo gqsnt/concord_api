@@ -1,7 +1,7 @@
 //! Offset pagination binds its next offset and fixed page size.
 //!
 //! Required feature: `json`. Mode: deterministic local execution.
-//! Documentation owner: `docs/features/pagination.md`.
+//! Documentation owner: `docs/pagination.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use concord::PageLimit;

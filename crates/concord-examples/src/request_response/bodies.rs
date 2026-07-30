@@ -2,9 +2,8 @@
 //!
 //! Required features: `json` and `multipart`. Mode: construction and
 //! deterministic local execution. Documentation owners:
-//! `docs/features/bodies-and-buffered-responses.md`,
-//! `docs/features/streaming.md`, `docs/features/multipart.md`, and
-//! `docs/extending/codecs.md`.
+//! `docs/bodies_and_responses.md`, `docs/advanced_endpoints.md`, and
+//! `docs/customization.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use std::pin::Pin;

@@ -1,7 +1,7 @@
 //! Importable Riot and Data Dragon contract declarations.
 //!
 //! Required features: `json` and `rate-limit`. Mode: deterministic
-//! construction/planning. Documentation owner: `docs/recipes/riot.md`.
+//! construction/planning. Documentation owner: `docs/spec.md`.
 //! Proving test: `tests/riot_contract.rs`.
 
 pub mod data_dragon;

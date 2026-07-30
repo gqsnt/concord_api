@@ -18,9 +18,9 @@ pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> Tok
         |duration| format!("Default operation timeout: {}.", human_duration(duration)),
     );
     let rate_summary = if client.requires_limiter {
-        "Rate-limit rules are declared; building requires a selected functional or explicit no-op limiter."
+        "Rate-limit policies are declared; building requires a selected functional or explicit no-op limiter."
     } else {
-        "Rate-limit rules: none."
+        "Rate-limit policies: none."
     };
     let client_doc = format!(
         "Immutable generated client for base URL `{}`. Build it with [`{builder_name}`]. Transport, runtime policy, vars, and credential sources are fixed in the built snapshot.",

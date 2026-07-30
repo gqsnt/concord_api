@@ -1,7 +1,7 @@
 //! Explicit production HTTP and finite runtime configuration.
 //!
 //! Required feature: `default-tls`. Mode: construction-only. Documentation
-//! owner: `docs/features/production-http.md`.
+//! owner: `docs/customization.md`.
 
 use std::num::NonZeroUsize;
 use std::time::Duration;

@@ -1,4 +1,4 @@
-error: reusable rate-limit rule `account_reads` requires a binding for dimension `account`
+error: rate-limit profile `account_reads` requires a binding for dimension `account`
   --> tests/ui/fail/rate_limits/rate_limit_missing_named_binding.rs:12:24
    |
 12 |         rate_limit use account_reads;

@@ -411,7 +411,7 @@ fn retired_clause_diagnostic(input: ParseStream<'_>) -> Option<syn::Error> {
             "`defaults { ... }` is not DSL syntax; declare defaults with `name: Type = VALUE` in `vars { ... }` or a scope or endpoint parameter list"
         }
         "policies" => {
-            "`policies { ... }` is not DSL syntax; define reusable rate-limit rules in the client `rate_limits { ... }` block and install retry policy through the generated builder"
+            "`policies { ... }` is not DSL syntax; define rate-limit profiles in the client `rate_limits { ... }` block and install retry policy through the generated builder"
         }
         "behaviors" | "behavior" => {
             "behavior profiles are not DSL syntax; configure hooks and runtime policy through the generated builder"
@@ -423,7 +423,7 @@ fn retired_clause_diagnostic(input: ParseStream<'_>) -> Option<syn::Error> {
             "`params { ... }` is not DSL syntax; declare values in a scope or endpoint parameter list and shape query parameters with `query { ... }`"
         }
         "profile" => {
-            "`profile` is not DSL syntax; define a named reusable rate-limit rule with `rate_limits { rule NAME { ... } }`"
+            "`profile` is not a DSL keyword; define a rate-limit profile with `rate_limits { rule NAME { ... } }`"
         }
         "access_token" => {
             "`access_token` is not DSL syntax; declare a secret and a bearer credential inside `credentials { ... }`"
@@ -494,7 +494,7 @@ fn parse_layer_clause(
                 matches!(clause.value, super::ast::RateLimitAttachmentDecl::Inline(_))
             }) {
                 let mut error = key_span.error(format!(
-                    "a {owner} permits at most one anonymous direct `rate_limit {{ ... }}` rule; use a named reusable rule for additional local policies"
+                    "a {owner} permits at most one anonymous direct `rate_limit {{ ... }}` rule; use a rate-limit profile for additional local policies"
                 ));
                 error.combine(
                     first

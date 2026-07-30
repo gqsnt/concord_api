@@ -1,7 +1,7 @@
 //! API-key authentication in one private custom header.
 //!
 //! Required features: none. Mode: construction-only. Documentation owner:
-//! `docs/recipes/api-key-authentication.md`. Proving test:
+//! `docs/auth.md`. Proving test:
 //! `tests/construction.rs`.
 
 use concord::{SecretString, api};

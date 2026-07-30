@@ -2,7 +2,7 @@
 //!
 //! Required features: `json` and `rate-limit` through the Riot bundle.
 //! Mode: deterministic planning plus optional manual live execution.
-//! Documentation owner: `docs/recipes/riot.md`.
+//! Documentation owner: `docs/spec.md`.
 //! Proving test: `tests/riot_contract.rs`.
 
 use concord::api;

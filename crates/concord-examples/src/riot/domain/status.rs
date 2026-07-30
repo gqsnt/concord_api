@@ -1,7 +1,7 @@
 //! Platform status, spectator, and replay response models.
 //!
 //! Required features: the Riot bundle. Mode: compile/serde support.
-//! Documentation owner: `docs/recipes/riot.md`.
+//! Documentation owner: `docs/spec.md`.
 //! Proving test: `tests/riot_contract.rs`.
 
 use serde::{Deserialize, Serialize};

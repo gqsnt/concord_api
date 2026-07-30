@@ -10,7 +10,6 @@ publish = false
 cargo_metadata.workspace = true
 concord_core = { package = "concord-core", version = "=0.1.0", path = "../../crates/concord-core", default-features = false, features = ["multipart"] }
 concord_extras = { package = "concord-extras", version = "=0.1.0", path = "../../crates/concord-extras", default-features = false, features = ["oauth2-client"] }
-pulldown-cmark.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true

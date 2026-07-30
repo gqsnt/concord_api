@@ -861,7 +861,7 @@ mod tests {
         let endpoint = semantic::test_support::endpoint(&api.client.children, "read");
         let docs = endpoint_type_doc(endpoint);
 
-        assert!(docs.contains("named rule `account_reads` attached at scope accounts"));
+        assert!(docs.contains("rate-limit profile `account_reads` attached at scope accounts"));
         assert!(
             docs.contains("derived deterministic rule ID `rate_docs_api.rate_limit.account_reads`")
         );

@@ -188,7 +188,7 @@ where
     }
 }
 
-/// A consuming error latch whose updates run only while state remains valid.
+/// A consuming error latch whose updates run only while its state is valid.
 pub(crate) struct ErrorLatch<T, E> {
     state: Result<T, E>,
 }

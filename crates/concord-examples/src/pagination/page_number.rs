@@ -1,7 +1,7 @@
 //! Page-number pagination advances a non-zero page value safely.
 //!
 //! Required feature: `json`. Mode: construction-only.
-//! Documentation owner: `docs/features/pagination.md`.
+//! Documentation owner: `docs/pagination.md`.
 //! Proving test: `tests/construction.rs`.
 
 use concord::PageLimit;

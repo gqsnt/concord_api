@@ -2,8 +2,8 @@
 //!
 //! Required features: `records`, `csv`, and `ndjson`. Mode: locally runnable
 //! through scripted loopback responses only. Documentation owners:
-//! `docs/features/records.md` and
-//! `docs/extending/record-decoders.md`. Proving test:
+//! `docs/bodies_and_responses.md` and
+//! `docs/customization.md`. Proving test:
 //! `tests/local_runtime.rs`.
 
 use std::num::NonZeroUsize;

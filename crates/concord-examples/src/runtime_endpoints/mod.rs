@@ -2,7 +2,7 @@
 //!
 //! Required features: none. Mode: construction, safe planning, and deterministic
 //! local execution. Documentation owner:
-//! `docs/features/runtime-endpoints.md`.
+//! `docs/advanced_endpoints.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 pub mod generated_and_runtime;

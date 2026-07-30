@@ -2,8 +2,8 @@
 //!
 //! Required features: none. Mode: construction and deterministic local
 //! execution. Documentation owners:
-//! `docs/features/bodies-and-buffered-responses.md` and
-//! `docs/guide/requests-planning-errors.md`.
+//! `docs/bodies_and_responses.md` and
+//! `docs/runtime.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use concord::http::StatusCode;

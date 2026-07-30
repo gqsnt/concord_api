@@ -2,7 +2,7 @@
 //!
 //! Required features: `json` and, for execution, a rate limiter.
 //! Mode: deterministic construction and safe planning.
-//! Documentation owner: `docs/recipes/regional-apis.md`.
+//! Documentation owner: `docs/spec.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use concord::api;

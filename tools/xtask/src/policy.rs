@@ -13,7 +13,7 @@ const PRODUCT_PACKAGES: &[&str] = &[
 
 const FORBIDDEN_PROCESS_ARTIFACTS: &[&str] = &[
     ".codex",
-    "docs/contributor/evidence",
+    "dev_doc/evidence",
     "crates/concord/wip",
     "crates/concord-core/wip",
     "crates/concord-macros/wip",

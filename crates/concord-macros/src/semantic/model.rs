@@ -17,7 +17,10 @@ pub(crate) struct Client {
     pub(crate) secrets: Vec<Secret>,
     pub(crate) credentials: Vec<Credential>,
     pub(crate) requires_limiter: bool,
-    #[allow(dead_code, reason = "retained as the normalized client-layer IR root")]
+    #[allow(
+        dead_code,
+        reason = "retained as the normalized client attachment-site IR root"
+    )]
     pub(crate) config: NormalizedConfig,
     pub(crate) children: Vec<Child>,
 }

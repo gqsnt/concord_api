@@ -22,7 +22,7 @@ error: `defaults { ... }` is not DSL syntax; declare defaults with `name: Type =
 27 |         defaults { timeout 1s; }
    |         ^^^^^^^^
 
-error: `policies { ... }` is not DSL syntax; define reusable rate-limit rules in the client `rate_limits { ... }` block and install retry policy through the generated builder
+error: `policies { ... }` is not DSL syntax; define rate-limit profiles in the client `rate_limits { ... }` block and install retry policy through the generated builder
   --> tests/ui/fail/syntax/ghost_syntax.rs:34:9
    |
 34 |         policies { }
@@ -52,7 +52,7 @@ error: `params { ... }` is not DSL syntax; declare values in a scope or endpoint
 62 |         params { "id" = vars.id; }
    |         ^^^^^^
 
-error: `profile` is not DSL syntax; define a named reusable rate-limit rule with `rate_limits { rule NAME { ... } }`
+error: `profile` is not a DSL keyword; define a rate-limit profile with `rate_limits { rule NAME { ... } }`
   --> tests/ui/fail/syntax/ghost_syntax.rs:69:9
    |
 69 |         profile standard { }

@@ -2,8 +2,8 @@
 //! managed request execution.
 //!
 //! Required features: none. Mode: inert construction plus deterministic
-//! loopback execution. Documentation owners: `docs/start/first-api.md` and
-//! `docs/start/first-request.md`. Proving tests: `tests/construction.rs` and
+//! loopback execution. Documentation owner: `docs/quick_start.md`.
+//! Proving tests: `tests/construction.rs` and
 //! `tests/local_runtime.rs`.
 
 pub mod minimal;

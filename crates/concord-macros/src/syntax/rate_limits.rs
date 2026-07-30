@@ -34,12 +34,12 @@ pub(super) fn parse_rate_limits(
         })?;
         let name: Ident = body
             .parse()
-            .map_err(|_| body.error("a reusable rate-limit rule requires a name"))?;
-        validate_snake_source_identifier(&name, "rate-limit rule")?;
+            .map_err(|_| body.error("a rate-limit profile requires a name"))?;
+        validate_snake_source_identifier(&name, "rate-limit profile")?;
         let canonical_name = canonical_ident(&name);
         if let Some(first) = names.insert(canonical_name.clone(), name.span()) {
             let mut error = name.span().error(format!(
-                "rate-limit rule `{canonical_name}` is defined more than once"
+                "rate-limit profile `{canonical_name}` is defined more than once"
             ));
             error.combine(first.error("the first definition using this rule name is here"));
             return Err(error);
@@ -65,8 +65,8 @@ fn parse_rate_limit_use(input: ParseStream<'_>) -> syn::Result<RateLimitUseDecl>
     input.parse::<Token![use]>()?;
     let name: Ident = input
         .parse()
-        .map_err(|_| input.error("`rate_limit use` requires a reusable rule name"))?;
-    validate_snake_source_identifier(&name, "rate-limit rule")?;
+        .map_err(|_| input.error("`rate_limit use` requires a rate-limit profile name"))?;
+    validate_snake_source_identifier(&name, "rate-limit profile")?;
     if input.peek(Token![;]) {
         input.parse::<Token![;]>()?;
         return Ok(RateLimitUseDecl {
@@ -335,7 +335,7 @@ fn parse_rate_limit_definition(
             if let Some(first) = &id {
                 let mut error = marker
                     .span()
-                    .error("a reusable rate-limit rule permits at most one `id` clause");
+                    .error("a rate-limit profile permits at most one `id` clause");
                 error.combine(first.key_span.error("the first `id` clause is here"));
                 return Err(error);
             }
@@ -360,7 +360,7 @@ fn parse_rate_limit_definition(
             if dimensions.is_some() {
                 return Err(marker
                     .span()
-                    .error("a reusable rate-limit rule permits at most one `by` clause"));
+                    .error("a rate-limit profile permits at most one `by` clause"));
             }
             let dimension_body;
             bracketed!(dimension_body in body);
@@ -408,7 +408,7 @@ fn parse_rate_limit_definition(
             if let Some(first) = &cost {
                 let mut error = marker
                     .span()
-                    .error("a reusable rate-limit rule permits at most one `cost` clause");
+                    .error("a rate-limit profile permits at most one `cost` clause");
                 error.combine(first.key_span.error("the first `cost` clause is here"));
                 return Err(error);
             }
@@ -423,7 +423,7 @@ fn parse_rate_limit_definition(
             continue;
         }
         let capacity_literal: LitInt = body.parse().map_err(|_| {
-            body.error("a reusable rate-limit rule requires `CAPACITY / DURATION;` windows")
+            body.error("a rate-limit profile requires `CAPACITY / DURATION;` windows")
         })?;
         if windows.len() >= MAX_RATE_LIMIT_WINDOWS_PER_RULE {
             return Err(capacity_literal.span().error(format!(
@@ -449,7 +449,7 @@ fn parse_rate_limit_definition(
     if windows.is_empty() {
         return Err(name
             .span()
-            .error("a reusable rate-limit rule requires at least one positive window"));
+            .error("a rate-limit profile requires at least one positive window"));
     }
     let cost_value = cost.as_ref().map_or(1, |cost| cost.value);
     if let Some(window) = windows.iter().find(|window| cost_value > window.capacity) {
@@ -510,7 +510,7 @@ fn parse_definition_dimension(
     }
     if input.peek(Token![.]) {
         return Err(name.span().error(
-            "reusable rate-limit definitions cannot capture lexical values; use a bare formal name and bind it at each attachment",
+            "rate-limit profiles cannot capture lexical values; use a bare formal name and bind it at each attachment site",
         ));
     }
     validate_snake_source_identifier(&name, "rate-limit dimension")?;
@@ -773,7 +773,7 @@ mod tests {
                 }
             }
         });
-        assert!(invalid_rule_name.contains("rate-limit rule source identifier"));
+        assert!(invalid_rule_name.contains("rate-limit profile source identifier"));
 
         let duplicate_definition = parse_error(quote! {
             client Api {

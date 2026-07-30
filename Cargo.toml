@@ -36,7 +36,6 @@ http-body = "1.1.0"
 httpdate = "1.0.3"
 mime = "0.3.17"
 proc-macro2 = "1.0.107"
-pulldown-cmark = "0.13.4"
 quote = "1.0.47"
 reqwest = { version = "0.13.4", default-features = false }
 rustls = { version = "0.23.42", default-features = false, features = [ "ring", "std", "tls12" ] }

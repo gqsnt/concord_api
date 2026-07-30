@@ -21,3 +21,12 @@ Each entry records a judgment not fixed by the finalization plan.
 - Keep retry and behavior configuration out of the DSL because retry is already installed through the generated builder and behavior profiles do not exist.
 - Treat `auth certificate` as ghost syntax and direct users to `configure_http` because application client-certificate material is supported end to end by `HttpConfig::identity_pem`, but it is runtime configuration rather than an authentication attachment.
 - Use trybuild `.stderr` files under `crates/concord/tests/ui/` as the Phase 1 output snapshots because this revision has no `concord_macros/tests/snapshots/` directory and trybuild is the maintained diagnostic snapshot mechanism.
+
+## Phase 2
+
+- Consolidate the 75-page mdBook hierarchy into the eleven user and maintainer files selected in Phase 0 because the hierarchy repeated grammar, runtime, and feature rules across guide, feature, recipe, extension, reference, and contributor pages.
+- Keep body/response delivery, authentication runtime behavior, pagination execution, retry/rate limiting, generated Rust, runtime-defined endpoints, and extension traits as topic files because each owns material not expressible as DSL grammar.
+- Move compiler pipeline, workspace ownership, testing, security review, and performance review into `dev_doc/internals.md` because these rules apply to maintainers rather than API users.
+- Remove mdBook configuration, theme, commands, dependency, and workflow steps because the final documentation is raw Markdown and the project has no website deliverable.
+- Remove the pre-finalization changelog and peripheral fixture/performance READMEs after folding their current operational facts into `dev_doc/internals.md` because the frozen private project does not publish release history or peripheral manuals.
+- Keep the existing CI workflow while removing only website steps because the prompt forbids adding CI setup but does not direct deletion of the repository's existing validation workflow.

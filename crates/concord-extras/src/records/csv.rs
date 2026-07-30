@@ -111,9 +111,9 @@ impl CsvDelimiter for TabDelimiter {
 /// still validates `text/csv`, not `text/tab-separated-values`.
 ///
 /// Record-width acceptance is determined by `T` through Serde deserialization,
-/// not by global cross-record tracking. Structs, tuples, and tuple structs
-/// usually reject incompatible widths; sequence-like targets such as
-/// `Vec<String>` may accept varying widths.
+/// not by global cross-record tracking. A target type determines whether an
+/// incompatible width is rejected; sequence-like targets such as `Vec<String>`
+/// may accept varying widths.
 ///
 /// Configuration aliases keep endpoint declarations compact:
 ///

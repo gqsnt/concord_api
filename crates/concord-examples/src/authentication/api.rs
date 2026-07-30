@@ -2,8 +2,7 @@
 //!
 //! Required feature: `oauth2-client`; fixed-HTTPS execution also requires
 //! `default-tls`. Mode: construction and deterministic local execution.
-//! Documentation owners: `docs/features/authentication.md` and
-//! `docs/features/credential-providers.md`.
+//! Documentation owner: `docs/auth.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use concord::api;

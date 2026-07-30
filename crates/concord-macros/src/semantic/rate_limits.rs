@@ -146,7 +146,7 @@ pub(super) fn validate_rate_limit_definitions_used(
 ) -> syn::Result<()> {
     if let Some(definition) = definitions.iter().find(|definition| definition.uses == 0) {
         return Err(definition.name_span.error(format!(
-            "reusable rate-limit rule `{}` is never attached",
+            "rate-limit profile `{}` is never attached",
             definition.name
         )));
     }
@@ -258,9 +258,10 @@ impl Resolver<'_> {
             .iter()
             .position(|definition| definition.name == attachment_name)
         else {
-            return Err(attachment.name.span().error(format!(
-                "unknown reusable rate-limit rule `{attachment_name}`"
-            )));
+            return Err(attachment
+                .name
+                .span()
+                .error(format!("unknown rate-limit profile `{attachment_name}`")));
         };
         self.rate_limit_definitions[definition_index].uses += 1;
         let definition = self.rate_limit_definitions[definition_index].clone();
@@ -280,7 +281,7 @@ impl Resolver<'_> {
                 )
             }) {
                 return Err(binding.name.span().error(format!(
-                    "unknown binding `{binding_name}` for reusable rate-limit rule `{attachment_name}`"
+                    "unknown binding `{binding_name}` for rate-limit profile `{attachment_name}`"
                 )));
             }
         }
@@ -302,7 +303,7 @@ impl Resolver<'_> {
                         .find(|binding| canonical_ident(&binding.name) == *public_name)
                     else {
                         return Err(attachment.name.span().error(format!(
-                            "reusable rate-limit rule `{attachment_name}` requires a binding for dimension `{public_name}`"
+                            "rate-limit profile `{attachment_name}` requires a binding for dimension `{public_name}`"
                         )));
                     };
                     let source_name = format!(
@@ -341,7 +342,7 @@ impl Resolver<'_> {
                 .as_ref()
                 .map_or(attachment.name.span(), |cost| cost.key_span);
             return Err(span.error(format!(
-                "cost override for reusable rate-limit rule `{attachment_name}` must not exceed any window capacity"
+                "cost override for rate-limit profile `{attachment_name}` must not exceed any window capacity"
             )));
         }
         Ok(NormalizedRateLimitRule {
@@ -349,7 +350,7 @@ impl Resolver<'_> {
             explicit_id: definition.explicit_id,
             id_span: definition.id_span,
             origin: format!(
-                "named rule `{attachment_name}` attached at {}",
+                "rate-limit profile `{attachment_name}` attached at {}",
                 context.lexical_origin
             ),
             dimensions,
@@ -632,11 +633,11 @@ mod tests {
         assert_eq!(root_rule.cost, 2);
         assert_eq!(
             scoped_rule.origin,
-            "named rule `account_reads` attached at scope accounts"
+            "rate-limit profile `account_reads` attached at scope accounts"
         );
         assert_eq!(
             root_rule.origin,
-            "named rule `account_reads` attached at endpoint lookup"
+            "rate-limit profile `account_reads` attached at endpoint lookup"
         );
         assert!(matches!(
             scoped_rule.dimensions[0],
@@ -712,7 +713,7 @@ mod tests {
                 rate_limit use missing;
             }
         });
-        assert!(unknown.contains("unknown reusable rate-limit rule `missing`"));
+        assert!(unknown.contains("unknown rate-limit profile `missing`"));
 
         let unused = resolve_error(quote! {
             client Api {
@@ -723,7 +724,7 @@ mod tests {
             }
             GET read() -> Bytes;
         });
-        assert!(unused.contains("reusable rate-limit rule `unused` is never attached"));
+        assert!(unused.contains("rate-limit profile `unused` is never attached"));
 
         let missing = resolve_error(quote! {
             client Api {

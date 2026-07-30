@@ -1,7 +1,7 @@
 //! The complete DSL topology in one compile-checked, importable declaration.
 //!
 //! Required features: none. Mode: construction-only and safe planning.
-//! Documentation owners: `docs/reference/dsl.md` and the Core Guide.
+//! Documentation owner: `docs/spec.md`.
 //! Proving test: `tests/construction.rs`.
 
 use concord::api;

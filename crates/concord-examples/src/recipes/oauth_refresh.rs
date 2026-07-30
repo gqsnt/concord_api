@@ -2,7 +2,7 @@
 //!
 //! Required features: `oauth2-client` and `default-tls`. Mode: construction
 //! and managed execution. Documentation owner:
-//! `docs/recipes/oauth-refresh.md`. Proving test: `tests/construction.rs`.
+//! `docs/auth.md`. Proving test: `tests/construction.rs`.
 
 use concord::api;
 use concord::auth::OAuth2ClientCredentials;

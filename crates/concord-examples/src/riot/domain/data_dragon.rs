@@ -1,7 +1,7 @@
 //! Data Dragon locale path values.
 //!
 //! Required features: the Riot bundle. Mode: deterministic planning.
-//! Documentation owner: `docs/recipes/riot.md`.
+//! Documentation owner: `docs/spec.md`.
 //! Proving test: `tests/riot_contract.rs`.
 
 use std::fmt;

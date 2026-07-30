@@ -1,4 +1,4 @@
-error: unknown binding `tenant` for reusable rate-limit rule `account_reads`
+error: unknown binding `tenant` for rate-limit profile `account_reads`
   --> tests/ui/fail/rate_limits/rate_limit_unknown_named_binding.rs:16:13
    |
 16 |             tenant = vars.tenant;

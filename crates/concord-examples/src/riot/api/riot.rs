@@ -2,7 +2,7 @@
 //!
 //! Required features: `json` and `rate-limit`. Mode: deterministic
 //! planning plus optional manual live execution. Documentation owner:
-//! `docs/recipes/riot.md`. Proving test: `tests/riot_contract.rs`.
+//! `docs/spec.md`. Proving test: `tests/riot_contract.rs`.
 //! Rate windows and partitioning are illustrative Concord policy, not a
 //! verified statement of Riot's current service quotas.
 

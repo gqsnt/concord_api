@@ -2,7 +2,7 @@
 //!
 //! Required feature: `rate-limit`. Mode: construction and deterministic local
 //! execution. Documentation owner:
-//! `docs/features/rate-limiting.md`. Proving tests:
+//! `docs/retry_and_rate_limit.md`. Proving tests:
 //! `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use std::error::Error;

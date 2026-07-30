@@ -2,7 +2,7 @@
 //!
 //! Required feature: `json`. Mode: construction and deterministic local
 //! multi-page execution. Documentation owner:
-//! `docs/features/pagination.md`.
+//! `docs/pagination.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use concord::api;

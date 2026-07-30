@@ -2,7 +2,7 @@
 //!
 //! Required feature: `rate-limit`. Mode: deterministic local
 //! execution. Documentation owner:
-//! `docs/extending/rate-limiting.md`.
+//! `docs/customization.md`.
 //! Proving test: `tests/local_runtime.rs`.
 
 // ANCHOR: custom_limiter_extension

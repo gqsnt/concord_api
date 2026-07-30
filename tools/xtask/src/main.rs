@@ -1,7 +1,6 @@
 #![forbid(unsafe_code)]
 
 mod command;
-mod docs;
 mod fixtures;
 mod msrv;
 mod package;
@@ -26,10 +25,6 @@ fn run() -> Result<(), String> {
     let root = workspace_root()?;
     let arguments = env::args().skip(1).collect::<Vec<_>>();
     match arguments.first().map(String::as_str) {
-        Some("docs") => {
-            let write = parse_options(&arguments[1..], true)?;
-            docs::run(&root, write)
-        }
         Some("fixtures") => {
             parse_options(&arguments[1..], false)?;
             fixtures::run_all(&root)
@@ -78,7 +73,7 @@ fn workspace_root() -> Result<PathBuf, String> {
 }
 
 fn usage() -> String {
-    "usage: cargo run -p concord-xtask -- <docs [--write] [--locked] | fixtures [--locked] | msrv-ui [--locked] | package [--locked] | policy [--locked] | source-archive [--locked]>".to_owned()
+    "usage: cargo run -p concord-xtask -- <fixtures [--locked] | msrv-ui [--locked] | package [--locked] | policy [--locked] | source-archive [--locked]>".to_owned()
 }
 
 #[cfg(test)]
@@ -88,8 +83,6 @@ mod tests {
     #[test]
     fn fixed_command_options_are_bounded() {
         assert!(!parse_options(&["--locked".into()], false).expect("locked"));
-        assert!(parse_options(&["--write".into(), "--locked".into()], true).expect("docs"));
         assert!(parse_options(&["--write".into()], false).is_err());
-        assert!(parse_options(&["--write".into(), "--write".into()], true).is_err());
     }
 }

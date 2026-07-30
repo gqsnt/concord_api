@@ -232,7 +232,7 @@ fn retired_declarations_have_focused_replacement_diagnostics() {
         ),
         (
             quote! { client Api { base "https://example.test"; profile standard { } } },
-            "`profile` is not DSL syntax",
+            "`profile` is not a DSL keyword",
         ),
         (
             quote! { client Api { base "https://example.test"; access_token token: String; } },

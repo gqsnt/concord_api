@@ -1,7 +1,7 @@
 //! Custom credential material, response codec, and isolated provider HTTP.
 //!
 //! Required feature: `oauth2-client`. Mode: deterministic extension example.
-//! Documentation owner: `docs/extending/credentials-and-providers.md`.
+//! Documentation owner: `docs/customization.md`.
 //! Proving tests: `tests/construction.rs` and façade provider tests.
 
 // ANCHOR: credential_provider_extension
