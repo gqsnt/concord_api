@@ -107,8 +107,10 @@ contracts requires compatible rule namespaces.
 
 ## Documentation
 
-Start with the complete mdBook path:
+The complete documentation index is [docs/SUMMARY.md](docs/SUMMARY.md).
+Start with:
 
+- [Complete documentation index](docs/SUMMARY.md)
 - [Documentation site landing](docs/README.md)
 - [What Concord is](docs/start/what-is-concord.md)
 - [Install Concord](docs/start/install.md)

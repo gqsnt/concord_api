@@ -1,0 +1,14 @@
+# Finalization decisions
+
+Each entry records a judgment not fixed by the finalization plan.
+
+## Phase 0
+
+- Keep `docs/SUMMARY.md` as the Phase 0 canonical documentation inventory because the repository already enforces it as a complete list of every Markdown page under `docs/`.
+- Treat the missing `docs/runtime_config.md` defect as inapplicable to this revision because no Markdown file references that path and the current production-configuration material is split between `docs/features/production-http.md` and `docs/recipes/production-configuration.md`.
+- Replace the mdBook hierarchy in Phase 2 with `docs/quick_start.md`, `docs/spec.md`, `docs/runtime.md`, `docs/auth.md`, `docs/bodies_and_responses.md`, `docs/pagination.md`, `docs/retry_and_rate_limit.md`, `docs/generated_client.md`, `docs/advanced_endpoints.md`, `docs/customization.md`, and `docs/design_invariants.md`; these topic files preserve the current unique user-facing subjects without retaining the guide/reference duplication.
+- Consolidate compiler, workspace, testing, and extension-maintenance material into `dev_doc/internals.md` in Phase 2 because it is maintainer material rather than part of the user specification.
+- Retain `dev_doc/doc_inventory.md` as the audit record for the pre-finalization documentation graph.
+- Delete `CHANGELOG.md`, `fixtures/README.md`, and `tools/perf/README.md` after their current-state facts are folded into maintainer documentation because history and peripheral instructions are outside the frozen user documentation set.
+- Remove the mdBook-specific configuration and generation path after Phase 2 because the final documentation set is raw Markdown and the project has no website deliverable.
+
