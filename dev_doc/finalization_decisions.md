@@ -53,3 +53,8 @@ Each entry records a judgment not fixed by the finalization plan.
 - Keep Rust 1.86 as the MSRV because the workspace already selected it and direct toolchain verification is part of the phase gate.
 - Replace the generated whole-crate `$crate` import with a module glob re-export because Rust 1.86 rejects importing `$crate` as a crate alias while accepting `$crate::*` with the same generated paths.
 - Delete unused proof-model methods and obsolete dead-code allowances because direct all-target compilation establishes which retained paths are live.
+
+## Phase 5
+
+- Validate the quick start in a temporary sibling crate because its documented `../concord_api/crates/concord` dependency path is relative to that checkout arrangement.
+- Sample four accepted and six rejected specification claims across base URLs, defaults, interpolation, path atoms, authentication collisions, rate-limit profiles, rate-limit attachments, dimensions, and opaque Rust types because the set spans parser, semantic, generated-surface, and Rust trait validation.

@@ -1,8 +1,8 @@
 # Concord DSL specification
 
-`concord::api!` compiles one HTTP contract into Rust client, scope, endpoint,
-and request types. Rust types are opaque to the macro and participate through
-trait implementations.
+`concord::api!` compiles one HTTP contract into a typed Rust client with
+scope, endpoint, and request types. Rust types are opaque to the macro and
+participate through trait implementations.
 
 Unknown keywords are rejected at parse time.
 
@@ -411,9 +411,9 @@ The macro rejects structural contract violations. Rust rejects missing trait
 implementations, incompatible associated types, inaccessible controller
 fields, and feature-disabled helper types.
 
-Diagnostics name declarations, rules, and safe structural categories. They do
-not contain runtime values, secret material, credential material, protected
-URLs, request or response bodies, or native error chains.
+Diagnostics name declarations, violated constraints, and safe structural
+categories. They do not contain runtime values, secret material, credential
+material, protected URLs, request or response bodies, or native error chains.
 
 ## Conventions
 

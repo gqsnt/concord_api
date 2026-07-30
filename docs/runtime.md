@@ -75,7 +75,7 @@ It does not create another hook, limiter, or retry-policy attempt.
 ## Deadlines
 
 The operation timeout covers preparation, hooks, credential acquisition,
-limiter waiting, transport, response-head policy, and complete buffered
+limiter waiting, transport, response-head observation, and complete buffered
 acquisition and decoding.
 
 Completion observes an already fixed result and runs outside the operation
@@ -108,7 +108,7 @@ response modes.
 
 Pagination constructs sequential page requests through the same executor.
 Each page has a child operation identity and repeats hooks, credentials,
-limiter admission, HTTP, response policy, and body acquisition.
+limiter admission, HTTP, response-head observation, and body acquisition.
 
 The controller advances only declared live bindings. Cycle detection uses a
 canonical public request identity. Page count, item count, retained identity

@@ -57,7 +57,7 @@ Without a selected limiter, an empty plan executes and a nonempty plan fails
 closed.
 
 Default-built clients do not share limiter state. Supplying the same limiter
-object to multiple clients shares compatible rule, key, and window state.
+object to multiple clients shares compatible policy, key, and window state.
 
 ## Local limiter
 
