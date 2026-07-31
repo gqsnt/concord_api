@@ -71,6 +71,7 @@ pub fn construct() -> Result<(), concord::ClientBuildError> {
         .platform(crate::riot::domain::PlatformRoute::Euw1)
         .summoner_v4()
         .summoner_by_puuid("example-puuid".to_owned());
+    // ANCHOR: riot_paginated_request
     let _: concord::pagination::PaginatedRequest<_> = riot
         .regional(super::domain::RegionalRoute::Europe)
         .match_v5()
@@ -78,6 +79,7 @@ pub fn construct() -> Result<(), concord::ClientBuildError> {
         .set_match_type(MatchType::Ranked)
         .set_count(NonZeroU32::new(10).expect("positive page size"))
         .paginate(PageLimit::Take(2));
+    // ANCHOR_END: riot_paginated_request
 
     let data_dragon = DDragonApi::builder().build()?;
     let _: d_dragon_api::VersionsRequest = data_dragon.versions();

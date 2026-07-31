@@ -287,6 +287,7 @@ api! {
         scope match_v5() {
             path ["lol", "match", "v5", "matches"];
 
+            // ANCHOR: riot_match_ids_endpoint
             GET match_ids_by_puuid(
                 puuid: String,
                 start_time: Option<i64>,
@@ -311,6 +312,7 @@ api! {
                     page_size: bind ep.count,
                 }
             }
+            // ANCHOR_END: riot_match_ids_endpoint
 
             GET replays_by_puuid(puuid: String) -> Json<ReplayDto> {
                 path ["by-puuid", ep.puuid, "replays"];

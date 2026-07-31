@@ -1,8 +1,7 @@
 //! Compile-checked bucket-partitioning and local-state composition examples.
 //!
 //! Required feature: `rate-limit`. Mode: construction and deterministic local
-//! execution. Documentation owner:
-//! `docs/retry_and_rate_limit.md`. Proving tests:
+//! execution. Documentation owner: `docs/rate_limits.md`. Proving tests:
 //! `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use std::error::Error;

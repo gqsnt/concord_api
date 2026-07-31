@@ -1,7 +1,7 @@
 //! A downstream pagination controller implemented through façade contracts.
 //!
 //! Required feature: `json`. Mode: construction and deterministic local execution.
-//! Documentation owner: `docs/customization.md`.
+//! Documentation owner: `docs/extensions.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 // ANCHOR: pagination_controller_extension

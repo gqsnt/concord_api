@@ -1,5 +1,10 @@
 # Runtime model
 
+- **Audience:** callers, runtime configurators, extension authors, and maintainers
+- **Purpose:** normative runtime reference
+
+For an explanatory reading of this sequence, begin with [Execution policy](execution_policy.md).
+
 Every generated direct request, explicit generated endpoint, runtime-defined
 endpoint, pagination page, and response terminal uses one managed executor.
 
@@ -54,6 +59,17 @@ Polling a request terminal starts one operation:
 Limiter admission precedes private authentication placement. Limiter response
 observation precedes the user response hook. Both response observers precede
 status acceptance and body acquisition.
+
+
+## Why the ordering matters
+
+| Ordering | Guarantee |
+|---|---|
+| before-send before body preparation | a veto avoids body materialization |
+| limiter admission before private placement | limiting and waiting never require credentials |
+| limiter observation before user response hook | quota state updates before application observation |
+| recovery/retry before status acceptance | an accepted status cannot bypass credential policy |
+| completion after a fixed result | observation cannot change the delivered outcome |
 
 ## Attempts and recovery
 
@@ -165,8 +181,10 @@ default limiter.
 
 ## Related
 
-- [DSL specification](spec.md)
-- [Bodies and responses](bodies_and_responses.md)
+- [Execution policy](execution_policy.md)
+- [Request bodies](request_bodies.md)
+- [Responses](responses.md)
 - [Authentication](auth.md)
-- [Retry and rate limiting](retry_and_rate_limit.md)
-- [Customization](customization.md)
+- [Retry](retry.md)
+- [Rate limits](rate_limits.md)
+- [Extensions](extensions.md)

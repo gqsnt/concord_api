@@ -1,5 +1,10 @@
 # Design invariants
 
+- **Audience:** maintainers and extension authors
+- **Purpose:** normative cross-cutting reference
+
+These invariants are the internal cost of preserving the declaration and generated-usage surfaces described in the [mental model](mental_model.md).
+
 This file defines invariants for maintainers and extension authors.
 
 ## One executor

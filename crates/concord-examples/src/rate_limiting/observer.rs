@@ -1,8 +1,7 @@
 //! A response observer that delegates bounded `Retry-After` interpretation.
 //!
 //! Required feature: `rate-limit`. Mode: construction-only.
-//! Documentation owners: `docs/retry_and_rate_limit.md` and
-//! `docs/customization.md`.
+//! Documentation owners: `docs/rate_limits.md` and `docs/extensions.md`.
 //! Proving test: `tests/construction.rs`.
 
 // ANCHOR: custom_observer_extension

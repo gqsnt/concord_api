@@ -58,3 +58,11 @@ Each entry records a judgment not fixed by the finalization plan.
 
 - Validate the quick start in a temporary sibling crate because its documented `../concord_api/crates/concord` dependency path is relative to that checkout arrangement.
 - Sample four accepted and six rejected specification claims across base URLs, defaults, interpolation, path atoms, authentication collisions, rate-limit profiles, rate-limit attachments, dimensions, and opaque Rust types because the set spans parser, semantic, generated-surface, and Rust trait validation.
+
+## Documentation refactor
+
+- Preserve `docs/spec.md`, `docs/runtime.md`, and `docs/design_invariants.md` as normative owners; the refactor adds an explanatory and task-oriented layer rather than replacing the frozen contracts.
+- Make `docs/README.md` the canonical current inventory because the Phase 0 `docs/SUMMARY.md` decision was not reflected in the final tree.
+- Replace the residual aggregate pages `bodies_and_responses.md`, `retry_and_rate_limit.md`, `advanced_endpoints.md`, and `customization.md` with concept-specific guides for bodies, responses, retry, rate limits, runtime endpoints, and extensions.
+- Add overview, mental-model, API-modeling, and Riot walkthrough pages so readers can understand the product intent before assembling it from normative references.
+- Extend documentation validation to source-anchored generated-usage examples, relative links, and canonical inventory coverage.

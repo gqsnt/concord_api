@@ -1,8 +1,7 @@
 //! Lexical applicability composes independently from bucket partitioning.
 //!
 //! Required feature: `rate-limit`. Mode: deterministic local
-//! execution. Documentation owner:
-//! `docs/retry_and_rate_limit.md`.
+//! execution. Documentation owner: `docs/rate_limits.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use std::sync::Arc;

@@ -1,9 +1,7 @@
 //! Direct decoded, metadata, explicit-byte, and accepted-status response paths.
 //!
 //! Required features: none. Mode: construction and deterministic local
-//! execution. Documentation owners:
-//! `docs/bodies_and_responses.md` and
-//! `docs/runtime.md`.
+//! execution. Documentation owners: `docs/responses.md` and `docs/runtime.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use concord::http::StatusCode;

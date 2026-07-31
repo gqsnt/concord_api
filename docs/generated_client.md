@@ -1,79 +1,90 @@
 # Generated client
 
-The generated surface is public relative to the Rust module containing the
-`api!` invocation.
+- **Audience:** API callers and authors reviewing generated usage
+- **Purpose:** guide and generated-surface reference
+- **Normative references:** [DSL specification](spec.md), [runtime model](runtime.md)
 
-## Names
+The generated Rust API is a product surface, not an implementation detail. It
+must mirror the domain tree and expose only actions supported by the resolved
+contract and Rust trait obligations.
+
+## Declaration-to-usage map
 
 | Declaration | Generated Rust |
 |---|---|
 | `client CatalogApi` | `CatalogApi`, `CatalogApiBuilder`, module `catalog_api` |
-| root `GET health` | `catalog_api::Health`, `catalog_api::HealthRequest` |
-| `scope product_groups` | method/module `product_groups`, type `ProductGroups` |
-| scoped `GET by_id` | method `by_id`, types `ById` and `ByIdRequest` |
+| root `GET health` | method `health`, `catalog_api::Health`, `HealthRequest` |
+| `scope regional` | method/module `regional`, immutable `Regional` snapshot |
+| scoped `GET by_id` | method `by_id`, `ById` endpoint, `ByIdRequest` wrapper |
 
 Scope modules follow declaration nesting. There is one generated endpoint tree
-and no generated prelude.
+and no generated prelude requirement for ordinary inherent methods.
 
 ## Construction
 
-`CatalogApi::new()` exists when no required client values, secrets, or custom
-providers are missing. It runs the same validation as
-`CatalogApi::builder().build()`.
+`Client::new()` exists only when no required client value, secret, or custom
+provider is missing. It performs the same validation as
+`Client::builder().build()`.
 
-Required public values use `set_NAME`. Required secrets and providers use
-their declared generated names.
+The generated builder owns:
 
-The builder owns:
-
-- value `set_*`, `clear_*`, and `reset_*` controls;
-- secret and provider inputs;
+- required and non-required client value controls;
+- named secret and provider inputs;
 - `retry(policy)`;
 - `configure_http(|http| ...)`;
 - `configure_runtime(|runtime| ...)`;
 - `build()`.
 
-Repeated transformations apply immediately in call order.
+Repeated transformations apply immediately in call order. A successful build
+freezes one immutable runtime snapshot.
 
-## Scopes
+## Scope snapshots
 
 `client.scope_name(required_arguments)` returns an immutable scope snapshot.
-The snapshot retains the shared client runtime and its public values.
+It owns selected public values and retains the shared client runtime. Generated
+controls consume one snapshot and return another; sibling snapshots remain
+isolated.
 
-Absence-capable or defaulted scope values use consuming `set_*`, `clear_*`,
-and `reset_*` controls according to their capabilities.
+Scopes provide generated navigation, but are also explicit values that may be
+stored, cloned, configured through consuming controls, and used to construct
+several related endpoint requests.
 
-## Endpoint leaves
-
-Each endpoint leaf generates a direct method, an explicit endpoint value, and
-a named request wrapper:
+## Endpoint leaves have three useful forms
 
 ```text
+direct:
 client_or_scope.endpoint(required arguments) -> EndpointNameRequest
+
+explicit:
 module::EndpointName::new(required arguments) -> EndpointName
 client.request(endpoint_value) -> EndpointNameRequest
+
+runtime-defined:
+RuntimeEndpoint::builder(...) -> RuntimeEndpoint
+client.request(runtime_endpoint) -> Request<_>
 ```
 
-Direct and explicit paths resolve the same endpoint semantics. Explicit
-endpoint values retain inherited scope controls. Named request wrappers retain
-only their owned non-required endpoint controls.
+Direct and explicit generated forms resolve the same endpoint semantics.
+Explicit endpoint values retain inherited scope controls and expose
+`description()`. Binding them to a client produces the same named request
+wrapper as the direct method.
 
 The generated module contains a sealed `Endpoint` trait. Applications cannot
-implement it.
+forge generated endpoint ownership.
 
-## Descriptions and planning
+## Value controls
 
-`endpoint.description()` returns `EndpointDescription` with stable identity,
-method, route/body/response categories, timeout selection, and capability
-flags.
+| Declaration property | Controls |
+|---|---|
+| required, no absence, no default | constructor argument or required client builder `set_*` |
+| absence-capable | `set_*`, `clear_*` |
+| defaulted | `set_*`, `reset_*` |
+| absence-capable and defaulted | `set_*`, `clear_*`, `reset_*` |
 
-`client.plan(&endpoint)` returns `SafeRequestPlan` after real public
-head-shaping validation.
+For `Option<T>`, `set_*` accepts `T`. `clear_*` selects absence. `reset_*`
+restores the declaration default retained by the current snapshot.
 
-Descriptions and plans exclude bound bodies, credentials, resolved rate-limit
-values, native requests, and runtime objects.
-
-## Request controls
+## Request controls and terminals
 
 Every named request wrapper supports:
 
@@ -85,24 +96,22 @@ Every named request wrapper supports:
 - `.inherit_timeout()`;
 - `.debug(level)`.
 
-A paginated endpoint also supports `.paginate(limit)`. An endpoint used as a
-credential source also supports its generated `.store_as_NAME().await`
-terminal.
+A paginated endpoint additionally supports `.paginate(limit)`. An endpoint used
+as a credential source additionally supports its generated
+`.store_as_NAME().await` terminal.
 
 Unavailable capabilities are absent or fail a sealed trait bound. They do not
 fall back to another executor.
 
-## Value controls
+## Descriptions and planning
 
-| Declaration property | Controls |
-|---|---|
-| required, no absence, no default | constructor argument or builder `set_*` |
-| absence-capable | `set_*`, `clear_*` |
-| defaulted | `set_*`, `reset_*` |
-| absence-capable and defaulted | `set_*`, `clear_*`, `reset_*` |
+`endpoint.description()` returns stable structural facts: identity, method,
+source/route shape, body and response categories, timeout selection, and
+capability flags.
 
-All controls consume and return the builder or immutable snapshot. Sibling
-snapshots remain isolated.
+`client.plan(&endpoint)` performs real public head shaping and returns a
+`SafeRequestPlan`. Descriptions and plans exclude bound bodies, credentials,
+resolved rate-key values, native requests, and runtime objects.
 
 ## Public namespaces
 
@@ -113,8 +122,20 @@ The façade exposes semantic modules for `auth`, `body`, `codec`, `endpoint`,
 `concord::prelude` is a convenience import for handwritten code. Generated
 inherent methods require no trait import.
 
+## Design review checklist
+
+Before freezing a declaration, inspect the generated surface:
+
+- Does navigation follow the domain?
+- Are values owned at the correct level?
+- Are optional/default controls clear?
+- Are names concise because the parent tree already supplies context?
+- Are unsupported operations absent?
+- Can explicit endpoints be planned and inspected without hidden effects?
+
 ## Related
 
-- [DSL specification](spec.md)
-- [Runtime model](runtime.md)
-- [Advanced endpoints](advanced_endpoints.md)
+- [Mental model](mental_model.md)
+- [Modeling APIs](modeling_apis.md)
+- [Runtime endpoints](runtime_endpoints.md)
+- [Planning and observation](planning_and_observation.md)

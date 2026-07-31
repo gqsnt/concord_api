@@ -48,6 +48,9 @@ fn imports_and_constructs_every_enabled_canonical_declaration() {
 
     #[cfg(feature = "json")]
     {
+        concord_examples::getting_started::domain_tree::construct()
+            .expect("domain tree tutorial construction");
+
         let pagination = concord_examples::pagination::PaginationApi::builder()
             .build()
             .expect("pagination client");

@@ -2,7 +2,7 @@
 //!
 //! Required features: none. Mode: construction, safe planning, and local
 //! execution. Documentation owner:
-//! `docs/advanced_endpoints.md`.
+//! `docs/runtime_endpoints.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use std::time::Duration;

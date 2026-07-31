@@ -1,7 +1,7 @@
 //! Explicit Concord-managed retry policy.
 //!
-//! Required features: none. Mode: construction-only. Documentation owners:
-//! `docs/retry_and_rate_limit.md`.
+//! Required features: none. Mode: construction-only. Documentation owner:
+//! `docs/retry.md`.
 
 use concord::api;
 use concord::retry::{RetryDecision, RetryFailure, RetryPolicy};

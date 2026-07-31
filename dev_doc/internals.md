@@ -88,19 +88,48 @@ Examples own documentation declarations. Cargo fixtures own dependency-graph
 and feature-isolation behavior.
 
 `pwsh -NoLogo -NoProfile -File scripts/check_docs_examples.ps1` requires every
-`concord` fence under `docs/` to match whitespace-normalized source in the compiled
-`crates/concord-examples/src/docs_spec.rs` fixture.
+`concord` fence under the root README, `FINAL.md`, `docs/`, and `dev_doc/` to
+either match whitespace-normalized source in the compiled
+`crates/concord-examples/src/docs_spec.rs` fixture or carry a `concord-source`
+marker resolving to a compiled anchor. Marked Rust fences are compared against
+the same anchors.
 
-The commit gate is:
+Source anchors are restricted to compiled roots:
 
-```text
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-cargo doc --workspace --no-deps
-```
+| Anchor root | Compiled by |
+|---|---|
+| `crates/concord-examples/src` | the `concord-examples` lib target |
+| `crates/concord-examples/tests` | the `concord-examples` integration test targets |
 
-Snapshot changes are reviewed before `.stderr` files are updated.
+The checker rejects absolute paths, `..` traversal, paths outside those roots,
+and non-`.rs` sources. It validates anchor integrity per file: duplicate anchor
+names, unopened `ANCHOR_END`, unclosed anchors, overlapping regions, and regions
+selecting no source lines all fail. Proper nesting is supported so one fixture
+can serve both a whole-contract and a single-endpoint quotation; nested markers
+are excluded from the compared source. Local Markdown links are resolved, and
+`#fragment` targets are checked against the target document's headings.
+
+Adding an anchor root requires a documented reason and a compiled Cargo target.
+
+### Validation levels
+
+`cargo test --workspace` is not the gate. The `ui` targets set `test = false`,
+and MSRV, feature-isolation, documentation, and fixture checks are separate.
+
+| Level | Command | Owns |
+|---|---|---|
+| fast loop | `just fmt`, `just docs-check` | formatting and documentation contract |
+| pre-commit | `just check`, `just test`, `just ui`, `just docs`, `just msrv` | features, runtime tests, compiler contracts, rustdoc, MSRV |
+| release equivalent | `just verify` | the pre-commit set plus `fixtures`, `deny`, `workflow`, `analyzer`, `bench` |
+
+`.github/workflows/ci.yml` mirrors these as the `quality`, `test`,
+`documentation`, `ui`, `msrv`, `fixtures_policy`, `platform`, and `analyzer`
+jobs. CI does not currently invoke `scripts/check_docs_examples.ps1`; that
+check is owned by `just docs` and `just docs-check` locally.
+
+Snapshot changes are reviewed before `.stderr` files are updated. A snapshot is
+re-blessed only after confirming the new diagnostic proves the property the
+fixture exists to prove, not merely that the fixture still fails.
 
 ### Specification rejection coverage
 
@@ -134,11 +163,13 @@ No benchmark threshold defines a semantic contract.
 
 `docs/spec.md` owns DSL grammar and rejection rules.
 `docs/runtime.md` owns execution order and observation.
-Topic files own material explicitly linked from those two documents.
 `docs/design_invariants.md` owns cross-cutting invariants.
-`dev_doc/finalization_decisions.md` owns finalization judgments.
+`docs/README.md` owns the canonical user-facing inventory.
+Topic guides explain concepts end to end without becoming parallel specifications.
+`dev_doc/documentation_contract.md` owns documentation classes, examples, links, and validation.
+`dev_doc/finalization_decisions.md` owns historical finalization judgments.
 
-Phase 3 enforces DSL examples and rejection diagnostics.
+The documentation checker validates DSL fences, source-anchored usage examples, local links, and inventory coverage.
 
 ## Frozen state
 

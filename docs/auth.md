@@ -1,106 +1,142 @@
 # Authentication
 
-The [DSL specification](spec.md#authentication) owns credential declarations,
-placements, merge rules, and the secret boundary. This file defines generated
-construction and runtime credential behavior.
+- **Audience:** API authors, callers, and credential-provider authors
+- **Purpose:** end-to-end concept guide
+- **Normative reference:** [DSL authentication rules](spec.md#authentication)
 
-## Generated inputs
+Authentication is a pipeline with distinct owners:
 
-Each `secret NAME: String;` produces a required named builder method that
-accepts `SecretString`.
+```text
+secret input
+→ credential source
+→ versioned material
+→ ordered private placement
+→ challenge attribution
+→ bounded recovery
+```
 
-Each custom provider credential produces a required named builder method that
-accepts the declared provider type.
+Collapsing these stages into one generic `auth token` setting would hide
+lifetime, reuse, placement, collision, refresh, and observation semantics.
 
-Each credential produces a generated handle on the built client. Static
-credential handles expose fallible replacement. Provider handles expose
-source-specific operations. A failed replacement preserves the previous
-material and version.
+## Declare sources
 
-Missing generated secret or provider inputs produce `ClientBuildError` with a
-safe input name and category.
+<!-- concord-source: crates/concord-examples/src/authentication/api.rs#credential_declarations -->
+```concord
+        credentials {
+            secret api_key: String;
+            secret bearer_token: String;
+            secret username: String;
+            secret password: String;
+            credential application_key = api_key(secret.api_key);
+            credential static_bearer = bearer(secret.bearer_token);
+            credential login = basic(secret.username, secret.password);
+            credential oauth = custom OAuth2ClientCredentials;
+            credential acquired = endpoint login;
+            credential custom = custom crate::authentication::extensions::ExampleProvider;
+        }
+```
 
-## Material
+Each `secret NAME: String` creates a required named builder input accepting
+`SecretString`. Custom provider declarations create required named provider
+inputs. Endpoint-backed sources name one endpoint leaf and are checked for
+dependency cycles.
+
+## Build the client
+
+<!-- concord-source: crates/concord-examples/src/authentication/usage.rs#authentication_client -->
+```rust
+    let client = AuthenticationApi::builder()
+        .api_key(SecretString::try_new("example-api-key")?)
+        .bearer_token(SecretString::try_new("example-bearer")?)
+        .username(SecretString::try_new("example-user")?)
+        .password(SecretString::try_new("example-password")?)
+        .oauth_provider(oauth)
+        .custom_provider(ExampleProvider)
+        .build()?;
+```
+
+Secrets are not positional endpoint arguments. They are supplied once when the
+client runtime snapshot is built.
+
+## Attach private placement
+
+<!-- concord-source: crates/concord-examples/src/authentication/api.rs#provider_authentication_endpoints -->
+```concord
+    GET o_auth() -> NoContent { auth bearer oauth challenge unauthorized; }
+    GET endpoint_backed() -> NoContent { auth query "session" = acquired challenge never; }
+    GET provider_backed() -> NoContent { auth bearer custom challenge never; }
+```
+
+Placements may use bearer, Basic, exact or static-scheme Authorization, a
+private header, or a private query entry. Placement is an ordered attachment at
+a client, scope, or endpoint. `auth replace` replaces inherited placements;
+`auth off` removes them.
+
+The `Authorization` header has exclusive ownership. Compiler and runtime
+validation reject duplicate targets and public/private collisions.
+
+## Material and slots
 
 `SecretString`, `AccessToken`, `ApiKey`, and `BasicCredential` have bounded
-construction and redacted `Debug` and `Display`. `SecretString` clones share
-one immutable allocation.
+construction and redacted formatting. `SecretString` is not a zeroizing secret
+store; the application owns input loading, memory lifetime, and process-level
+protection.
 
-`SecretString` is not a zeroizing secret store. Application code owns input
-loading, memory lifetime, and process-level protection.
-
-Custom credential material implements `CredentialMaterial`. Material used in
-a private placement implements `SecretCredential`.
+Credential slots are shared by client clones, version successful material, and
+prevent stale in-flight acquisition or recovery from overwriting newer manual
+replacement.
 
 ## Providers
 
 `CredentialProvider` receives bounded acquisition context and isolated
-`ProviderHttp`. It does not receive the application client, native request,
-final authenticated URL, body, or limiter authority.
+`ProviderHttp`. It does not receive the application client, final authenticated
+URL, request body, native request, or limiter authority.
 
-Provider HTTP is HTTPS-only when the runtime HTTPS policy requires it. It has
-independent request and response limits. The application client identity PEM
-is not installed on provider HTTP.
-
-Concurrent acquisition for one credential slot is single-flight. Successful
-material is versioned. Manual replacement, clearing, or provider replacement
-supersedes stale in-flight completion.
-
-Provider failure cooldown is finite. Expired material fails closed unless an
-allowed acquisition produces valid replacement material.
+Provider acquisition is single-flight per slot, has finite cooldown and
+request/response limits, and runs under the operation deadline. Application
+client identity PEM is not installed on provider HTTP.
 
 ## Endpoint-backed acquisition
 
-`credential NAME = endpoint PATH;` uses one endpoint leaf as a credential
-source. The source endpoint executes through the same runtime and stores its
-declared output into the named slot through `.store_as_NAME().await`.
+A source endpoint executes through the same managed executor. Its generated
+`.store_as_NAME().await` terminal stores the declared output into the named
+credential slot. This preserves normal hooks, limiting, deadlines, response
+handling, errors, and completion.
 
-Dependency cycles among endpoint-backed credentials are rejected at compile
-time.
+## Challenge and recovery
 
-## Challenge recovery
+- `challenge never` disables status-triggered recovery.
+- `challenge unauthorized` attributes 401 to the placement.
+- `challenge unauthorized_or_forbidden` attributes 401 or 403.
 
-`challenge unauthorized` admits status 401.
-`challenge unauthorized_or_forbidden` admits status 401 or 403.
-`challenge never` disables status-triggered recovery.
+One operation admits at most one recovery. Recovery replaces only material
+that is still current, does not bypass hooks or limiter admission, and remains
+inside the original deadline. It is distinct from application retry policy.
 
-One operation admits at most one authentication recovery. Recovery invalidates
-only challenged material that is still current. A newer version is preserved.
+## Private placement boundary
 
-Recovery does not bypass hooks, limiter admission, retry accounting,
-deadlines, or completion.
+The runtime resolves current credential material before limiter acquisition
+but places it only after admission. Private query authentication exists only in
+the native URL; private header authentication exists only in the native header
+map.
 
-## Private placement
+Secrets and credentials do not enter public expressions, logical URLs, public
+headers, safe plans, hooks, rate keys, completion, generated Rustdoc, or
+diagnostics. No public API exposes the final authenticated native request.
 
-The runtime prepares credential material before limiter acquisition and places
-it only after admission. Query authentication exists only in the native URL.
-Header authentication exists only in the native header map.
-
-Collision validation rejects two owners for `Authorization`, duplicate private
-header names, duplicate private query names, and collisions between public and
-private headers.
-
-No public API exposes the final authenticated native request.
+Public application values may still be sensitive. Hooks, plans, and custom
+limiters require an application logging policy even though credentials are
+absent.
 
 ## Client certificates
 
-Mutual TLS uses application client-identity PEM:
-
-```rust
-let client = PrivateApi::builder()
-    .configure_http(|http| http.identity_pem(identity_pem))
-    .build()?;
-```
-
-Identity PEM is bounded and parsed during client build. It is installed only
-on the application HTTP client. Custom root certificates are installed on
-both application and provider clients.
-
-Build errors identify invalid root-certificate or client-identity categories
-without retaining PEM bytes or parser errors.
+Mutual TLS is HTTP transport configuration through
+`configure_http(|http| http.identity_pem(...))`, not an authentication
+attachment. It configures the application HTTP client rather than a request
+placement.
 
 ## Related
 
-- [DSL authentication rules](spec.md#authentication)
-- [Runtime model](runtime.md)
-- [Customization](customization.md)
+- [Planning and observation](planning_and_observation.md)
+- [Execution policy](execution_policy.md)
+- [Extensions](extensions.md)

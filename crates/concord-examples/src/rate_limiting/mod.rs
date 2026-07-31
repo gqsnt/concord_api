@@ -1,13 +1,8 @@
 //! Lexical rate plans plus downstream limiter and observer implementations.
 //!
 //! Required feature: `rate-limit`. Mode: construction and
-//! deterministic local execution. Documentation owner:
-//! `docs/retry_and_rate_limit.md`. Proving tests:
-//! `tests/construction.rs` and `tests/local_runtime.rs`.
-//!
-//! Derived declaration policy IDs are deterministic within each example client
-//! contract. Explicit IDs remain exact; examples share limiter objects only
-//! when sharing state is intentional and schemas are compatible.
+//! deterministic local execution. Documentation owner: `docs/rate_limits.md`.
+//! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 pub mod custom_limiter;
 pub mod lexical;

@@ -2,7 +2,7 @@
 //!
 //! Required features: none. Mode: construction and deterministic local
 //! execution. Documentation owners:
-//! `docs/bodies_and_responses.md` and `docs/customization.md`.
+//! `docs/request_bodies.md`, `docs/responses.md`, and `docs/extensions.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use concord::api;

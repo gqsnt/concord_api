@@ -7,3 +7,6 @@
 //! `tests/local_runtime.rs`.
 
 pub mod minimal;
+
+#[cfg(feature = "json")]
+pub mod domain_tree;
