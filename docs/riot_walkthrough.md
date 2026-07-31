@@ -33,7 +33,7 @@ policies, and pagination bindings.
 ## Read the endpoint as an API consumer
 
 <!-- concord-source: crates/concord-examples/src/riot/api/riot.rs#riot_match_ids_endpoint -->
-```concord
+```rust
             GET match_ids_by_puuid(
                 puuid: String,
                 start_time: Option<i64>,

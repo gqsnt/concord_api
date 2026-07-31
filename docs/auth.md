@@ -21,7 +21,7 @@ lifetime, reuse, placement, collision, refresh, and observation semantics.
 ## Declare sources
 
 <!-- concord-source: crates/concord-examples/src/authentication/api.rs#credential_declarations -->
-```concord
+```rust
         credentials {
             secret api_key: String;
             secret bearer_token: String;
@@ -61,7 +61,7 @@ client runtime snapshot is built.
 ## Attach private placement
 
 <!-- concord-source: crates/concord-examples/src/authentication/api.rs#provider_authentication_endpoints -->
-```concord
+```rust
     GET o_auth() -> NoContent { auth bearer oauth challenge unauthorized; }
     GET endpoint_backed() -> NoContent { auth query "session" = acquired challenge never; }
     GET provider_backed() -> NoContent { auth bearer custom challenge never; }

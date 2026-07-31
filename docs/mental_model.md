@@ -133,7 +133,7 @@ and executor. The escape hatch leaves the macro, not the guarantees.
 ## Example
 
 <!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_contract -->
-```concord
+```rust
 api! {
     client CatalogApi {
         base "http://catalog.example.test/";

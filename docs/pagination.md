@@ -11,7 +11,7 @@ a controller exclusive authority to advance selected fields.
 ## Declaration
 
 <!-- concord-source: crates/concord-examples/src/pagination/mod.rs#offset_endpoint -->
-```concord
+```rust
     GET offset(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
         query { "offset" = ep.offset; "limit" = ep.limit; }
         paginate concord::pagination::OffsetPagination {

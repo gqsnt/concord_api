@@ -11,7 +11,7 @@ managed material, replay capability, page stability, and finite transport.
 ## Body role is explicit
 
 <!-- concord-source: crates/concord-examples/src/request_response/bodies.rs#body_contract -->
-```concord
+```rust
 api! {
     client BodyApi {
         base "http://body.example.test/";

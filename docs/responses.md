@@ -11,7 +11,7 @@ body, stream, or paginated page output.
 ## Declaration
 
 <!-- concord-source: crates/concord-examples/src/request_response/acquisition.rs#response_acquisition_contract -->
-```concord
+```rust
 api! {
     client ResponseApi {
         base "http://responses.example.test/";

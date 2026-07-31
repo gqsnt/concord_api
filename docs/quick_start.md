@@ -51,7 +51,7 @@ response, and explicit pagination bindings. Type and default paths resolve in
 the module that contains the declaration.
 
 <!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_contract -->
-```concord
+```rust
 api! {
     client CatalogApi {
         base "http://catalog.example.test/";

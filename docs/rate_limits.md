@@ -10,7 +10,7 @@ binding, resolved semantic policy, and runtime enforcement.
 ## Contract example
 
 <!-- concord-source: crates/concord-examples/src/rate_limiting/lexical.rs#rate_limit_contract -->
-```concord
+```rust
 api! {
     client RateLimitApi {
         base "http://rate-limit.example.test/";
