@@ -213,6 +213,112 @@ async fn zero_page_and_configured_ceilings_cut_off_the_first_forbidden_work() {
 }
 
 #[tokio::test]
+async fn aggregate_response_body_budget_accepts_exact_total_and_drops_first_excess_page() {
+    const FIRST_PAGE: &[u8] = b"first-retained-item|second-state";
+    const SECOND_PAGE: &[u8] = b"second-boundary-item|-";
+    let exact_total = FIRST_PAGE
+        .len()
+        .checked_add(SECOND_PAGE.len())
+        .expect("small test response lengths");
+
+    let exact_executor = DeterministicExecutor::new();
+    for page in [FIRST_PAGE, SECOND_PAGE] {
+        exact_executor
+            .application()
+            .queue_response(ScriptedResponse::success(Bytes::from_static(page)))
+            .expect("exact aggregate response page");
+    }
+    let exact_hooks = Arc::new(PaginationProbe::default());
+    let exact_core = core(
+        &exact_executor,
+        Arc::clone(&exact_hooks),
+        Arc::new(LimiterProbe::default()),
+        |runtime| {
+            runtime.pagination_total_response_body_limit(
+                NonZeroUsize::new(exact_total).expect("positive exact aggregate limit"),
+            )
+        },
+    );
+    let exact = collect(
+        exact_core,
+        PageLimit::HardCap(NonZeroU32::new(2).expect("two-page hard cap")),
+        CursorController::new("first-state"),
+        Some(Duration::from_secs(30)),
+    )
+    .await
+    .expect("exact aggregate response-byte boundary");
+    assert_eq!(exact, ["first-retained-item", "second-boundary-item"]);
+    assert_eq!(
+        exact_executor.application().request_count().expect("count"),
+        2
+    );
+    {
+        let exact_aggregate = exact_hooks.aggregate.lock().expect("aggregate lock");
+        assert_eq!(exact_aggregate[0].pages_completed, 2);
+        assert_eq!(exact_aggregate[0].items_collected, 2);
+        assert_eq!(exact_aggregate[0].outcome, CompletionOutcome::Success);
+    }
+
+    let excess_executor = DeterministicExecutor::new();
+    for page in [FIRST_PAGE, SECOND_PAGE] {
+        excess_executor
+            .application()
+            .queue_response(ScriptedResponse::success(Bytes::from_static(page)))
+            .expect("first-excess aggregate response page");
+    }
+    let excess_hooks = Arc::new(PaginationProbe::default());
+    let excess_core = core(
+        &excess_executor,
+        Arc::clone(&excess_hooks),
+        Arc::new(LimiterProbe::default()),
+        |runtime| {
+            runtime.pagination_total_response_body_limit(
+                NonZeroUsize::new(exact_total - 1).expect("positive first-excess limit"),
+            )
+        },
+    );
+    let controller = CursorController::new("first-state");
+    let next_calls = Arc::clone(&controller.next_calls);
+    let error = pagination_error(
+        collect(
+            excess_core,
+            PageLimit::HardCap(NonZeroU32::new(2).expect("two-page hard cap")),
+            controller,
+            Some(Duration::from_secs(30)),
+        )
+        .await,
+    );
+    assert_eq!(
+        error.pagination_kind(),
+        Some(PaginationErrorKind::CollectedResponseByteCeilingExceeded)
+    );
+    let rendered = format!("{error}\n{error:?}");
+    assert!(!rendered.contains("first-retained-item"));
+    assert!(!rendered.contains("second-boundary-item"));
+    assert_eq!(
+        excess_executor
+            .application()
+            .request_count()
+            .expect("count"),
+        2
+    );
+    assert_eq!(next_calls.load(Ordering::SeqCst), 1);
+    let page_completions = excess_hooks.completion.lock().expect("completion lock");
+    assert_eq!(page_completions.len(), 2);
+    assert!(
+        page_completions
+            .iter()
+            .all(|completion| completion.outcome == CompletionOutcome::Success)
+    );
+    drop(page_completions);
+    let excess_aggregate = excess_hooks.aggregate.lock().expect("aggregate lock");
+    assert_eq!(excess_aggregate[0].pages_completed, 1);
+    assert_eq!(excess_aggregate[0].items_collected, 1);
+    assert_eq!(excess_aggregate[0].final_status, Some(StatusCode::OK));
+    assert_eq!(excess_aggregate[0].outcome, CompletionOutcome::Pagination);
+}
+
+#[tokio::test]
 async fn controller_construction_and_validation_failures_are_page_side_effect_free() {
     let factory_executor = DeterministicExecutor::new();
     let factory_hooks = Arc::new(PaginationProbe::default());

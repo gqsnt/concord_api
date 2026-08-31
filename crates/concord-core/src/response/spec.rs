@@ -22,6 +22,10 @@ pub(crate) mod private {
 
         fn preflight(input: &ResponseInput) -> Result<(), ApiError>;
 
+        fn acquired_body_bytes(body: &<Self as ResponseMode>::Body) -> usize
+        where
+            Self: ResponseMode;
+
         fn acquire(
             input: ResponseInput,
         ) -> BoxFuture<'static, Result<<Self as ResponseMode>::Body, ApiError>>
@@ -83,6 +87,10 @@ impl private::Sealed for Buffered {
         super::handler::preflight_buffered(input)
     }
 
+    fn acquired_body_bytes(body: &<Self as ResponseMode>::Body) -> usize {
+        body.len()
+    }
+
     fn acquire(
         input: ResponseInput,
     ) -> BoxFuture<'static, Result<<Self as ResponseMode>::Body, crate::error::ApiError>> {
@@ -97,6 +105,10 @@ impl private::Sealed for Streaming {
         super::handler::preflight_streaming(input)
     }
 
+    fn acquired_body_bytes(_body: &<Self as ResponseMode>::Body) -> usize {
+        0
+    }
+
     fn acquire(
         input: ResponseInput,
     ) -> BoxFuture<'static, Result<<Self as ResponseMode>::Body, crate::error::ApiError>> {
@@ -109,6 +121,10 @@ impl private::Sealed for Discard {
 
     fn preflight(input: &ResponseInput) -> Result<(), crate::error::ApiError> {
         super::handler::preflight_discard(input)
+    }
+
+    fn acquired_body_bytes(_body: &<Self as ResponseMode>::Body) -> usize {
+        0
     }
 
     fn acquire(
@@ -176,6 +192,12 @@ pub struct ResponseHead<'a> {
 /// callbacks cannot replace challenge ordering, limits, completion, native-body
 /// ownership, or the three sealed modes. No native response or transport handle
 /// is supplied to a callback.
+///
+/// For pagination, core additionally charges the exact acquired buffered body
+/// length to the operation's aggregate response-byte budget before retaining
+/// decoded page items. The item-count limit independently bounds collection
+/// structure. A custom decoder that expands a small body into disproportionately
+/// large application-owned state remains trusted extension code.
 ///
 /// Calls for independent responses may overlap. The accepted head and mode
 /// body can contain sensitive application data; implementations own their

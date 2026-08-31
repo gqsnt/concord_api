@@ -117,6 +117,7 @@ impl ExecutionContext {
 
 pub(crate) struct ExecutedPage<T> {
     pub(crate) result: Result<ApiResponse<T>, ApiError>,
+    pub(crate) response_body_bytes: usize,
     pub(crate) final_status: Option<StatusCode>,
     pub(crate) attempts_started: u32,
     pub(crate) policy_retries: u32,
@@ -167,6 +168,7 @@ where
             .await;
             return Ok(ExecutedPage {
                 result,
+                response_body_bytes: 0,
                 final_status: None,
                 attempts_started: 0,
                 policy_retries: 0,
@@ -501,7 +503,7 @@ where
             content_length,
             metadata: &metadata,
         };
-        let output = execute_response::<E::Response, S>(
+        let (output, response_body_bytes) = execute_response::<E::Response, S>(
             ResponseInput {
                 response,
                 limit: core.response_body_limit(),
@@ -513,13 +515,16 @@ where
             &response_head,
         )
         .await?;
-        Ok(ApiResponse::new(
-            head.logical_url().clone(),
-            status,
-            version,
-            headers,
-            metadata,
-            output,
+        Ok((
+            ApiResponse::new(
+                head.logical_url().clone(),
+                status,
+                version,
+                headers,
+                metadata,
+                output,
+            ),
+            response_body_bytes,
         ))
     }
     .await;
@@ -543,8 +548,13 @@ where
         result,
     )
     .await;
+    let (result, response_body_bytes) = match result {
+        Ok((response, response_body_bytes)) => (Ok(response), response_body_bytes),
+        Err(error) => (Err(error), 0),
+    };
     ExecutedPage {
         result,
+        response_body_bytes,
         final_status,
         attempts_started,
         policy_retries,

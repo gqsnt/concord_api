@@ -3,7 +3,9 @@
 //! The retained pagination-identity byte limit bounds the complete canonical
 //! encoded identity vectors used for cycle detection. The runtime page ceiling
 //! separately bounds the number of retained identities; allocator and
-//! container overhead is not included in the retained-byte total.
+//! container overhead is not included in the retained-byte total. A separate
+//! aggregate pagination response-body budget charges the exact buffered bytes
+//! acquired for successful pages before their decoded items are retained.
 
 mod controller;
 mod error;

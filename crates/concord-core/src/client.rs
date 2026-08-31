@@ -169,6 +169,10 @@ impl ClientCore {
         self.inner.runtime.pagination_max_items
     }
 
+    pub(crate) fn pagination_total_response_body_limit(&self) -> std::num::NonZeroUsize {
+        self.inner.runtime.pagination_total_response_body_limit
+    }
+
     pub(crate) fn pagination_identity_limit(&self) -> std::num::NonZeroUsize {
         self.inner.runtime.pagination_identity_limit
     }
@@ -348,6 +352,7 @@ mod tests {
         let five = NonZeroUsize::new(23).expect("positive test limit");
         let six = NonZeroUsize::new(29).expect("positive test limit");
         let seven = NonZeroUsize::new(31).expect("positive test limit");
+        let eight = NonZeroUsize::new(37).expect("positive test limit");
         let first_https_only = cfg!(feature = "default-tls");
         let first_scheme = if first_https_only { "https" } else { "http" };
         let first_base = format!("{first_scheme}://first.example");
@@ -368,6 +373,7 @@ mod tests {
                 .provider_response_limit(six)
                 .pagination_max_pages(NonZeroU32::new(37).expect("positive page limit"))
                 .pagination_max_items(seven)
+                .pagination_total_response_body_limit(eight)
                 .pagination_identity_limit(NonZeroUsize::new(41).expect("positive identity limit"))
                 .auth_failure_cooldown_cap(Duration::from_secs(43))
                 .rate_limit_cooldown_cap(Duration::from_secs(47))
@@ -401,6 +407,10 @@ mod tests {
         assert_eq!(first.inner.runtime.provider_response_limit, six);
         assert_eq!(first.inner.runtime.pagination_max_pages.get(), 37);
         assert_eq!(first.inner.runtime.pagination_max_items, seven);
+        assert_eq!(
+            first.inner.runtime.pagination_total_response_body_limit,
+            eight
+        );
         assert_eq!(first.inner.runtime.pagination_identity_limit.get(), 41);
         assert_eq!(
             first.inner.runtime.auth_failure_cooldown_cap,
@@ -439,6 +449,10 @@ mod tests {
             clone.inner.runtime.runtime_endpoint_timeout,
             Some(Duration::from_secs(7))
         );
+        assert_eq!(
+            clone.inner.runtime.pagination_total_response_body_limit,
+            eight
+        );
 
         let second = ClientCore::build_with_development(
             "http://second.example",
@@ -474,6 +488,10 @@ mod tests {
             Some(Duration::from_secs(7))
         );
         assert_eq!(first.inner.runtime.pagination_max_pages.get(), 37);
+        assert_eq!(
+            first.inner.runtime.pagination_total_response_body_limit,
+            eight
+        );
         assert_eq!(
             first.inner.runtime.rate_limit_cooldown_cap,
             Duration::from_secs(47)

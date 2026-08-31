@@ -45,6 +45,9 @@ pub fn build_client(
                 .runtime_endpoint_timeout(Duration::from_secs(30))
                 .request_body_limit(NonZeroUsize::new(8 * 1024 * 1024).expect("positive limit"))
                 .response_body_limit(NonZeroUsize::new(8 * 1024 * 1024).expect("positive limit"))
+                .pagination_total_response_body_limit(
+                    NonZeroUsize::new(64 * 1024 * 1024).expect("positive limit"),
+                )
                 .stream_response_limit(NonZeroUsize::new(64 * 1024 * 1024).expect("positive limit"))
         })
         .build()?;

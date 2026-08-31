@@ -100,6 +100,8 @@ pub enum PaginationErrorKind {
     PageCeilingExceeded,
     /// The configured maximum collected-item count was exceeded.
     CollectedItemCeilingExceeded,
+    /// The configured aggregate accepted pagination-response byte limit was exceeded.
+    CollectedResponseByteCeilingExceeded,
     /// The configured complete encoded pagination-identity byte limit was exceeded.
     IdentityStorageCeilingExceeded,
 }

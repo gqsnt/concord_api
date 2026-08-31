@@ -36,10 +36,12 @@ where
             core.allocate_operation_id(meta.endpoint_id(), meta.method())?;
         let max_pages = core.pagination_max_pages().get();
         let max_items = core.pagination_max_items().get();
+        let max_response_body_bytes = core.pagination_total_response_body_limit().get();
         let identity_limit = core.pagination_identity_limit().get();
 
         let mut pages_completed = 0_u32;
         let mut items_collected = 0_usize;
+        let mut response_body_bytes_collected = 0_usize;
         let mut attempts_started = 0_u32;
         let mut policy_retries = 0_u32;
         let mut recovered_authentication = false;
@@ -69,9 +71,11 @@ where
                         aggregate_operation_id,
                         max_pages,
                         max_items,
+                        max_response_body_bytes,
                         identity_limit,
                         &mut pages_completed,
                         &mut items_collected,
+                        &mut response_body_bytes_collected,
                         &mut attempts_started,
                         &mut policy_retries,
                         &mut recovered_authentication,
@@ -121,9 +125,11 @@ async fn run_pages<E>(
     aggregate_operation_id: crate::operation::OperationId,
     max_pages: u32,
     max_items: usize,
+    max_response_body_bytes: usize,
     identity_limit: usize,
     pages_completed: &mut u32,
     items_collected: &mut usize,
+    response_body_bytes_collected: &mut usize,
     attempts_started: &mut u32,
     policy_retries: &mut u32,
     recovered_authentication: &mut bool,
@@ -177,6 +183,7 @@ where
         let executed =
             crate::execute::execute_pagination_page(page, aggregate_operation_id, page_index)
                 .await?;
+        let page_response_body_bytes = executed.response_body_bytes;
         let next_attempts_started = (*attempts_started)
             .checked_add(executed.attempts_started)
             .ok_or_else(|| pagination_kind_error(&meta, PaginationErrorKind::Overflow))?;
@@ -190,6 +197,15 @@ where
             *final_status = executed.final_status;
         }
         let response = executed.result?;
+        let next_response_body_bytes = (*response_body_bytes_collected)
+            .checked_add(page_response_body_bytes)
+            .ok_or_else(|| pagination_kind_error(&meta, PaginationErrorKind::Overflow))?;
+        if next_response_body_bytes > max_response_body_bytes {
+            return Err(pagination_kind_error(
+                &meta,
+                PaginationErrorKind::CollectedResponseByteCeilingExceeded,
+            ));
+        }
         let page = response.into_value();
 
         let accepted_page_count = (*pages_completed)
@@ -230,6 +246,7 @@ where
             *items_collected = next_item_count;
         }
         *pages_completed = accepted_page_count;
+        *response_body_bytes_collected = next_response_body_bytes;
 
         if final_soft_page {
             return Ok(items);

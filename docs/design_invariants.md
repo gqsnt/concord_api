@@ -35,6 +35,8 @@ The native authenticated request is not publicly inspectable.
 
 Every retained collection, body, stream, provider response, pagination state,
 rate-limit state, retry sequence, and diagnostic capture has a finite bound.
+Paginated collect-all results are jointly bounded by item count and the exact
+cumulative buffered response bytes that produced accepted pages.
 
 Known excess fails before retention. Unknown excess withholds the first excess
 unit.

@@ -170,7 +170,7 @@ pub enum CompletionOutcome {
     ResponseDecoding,
     /// Accepted response metadata violated the declared contract.
     ResponseContract,
-    /// Pagination preparation or controller work failed.
+    /// Pagination preparation, finite-limit enforcement, or controller work failed.
     Pagination,
     /// Concord reduced an otherwise unclassified internal failure.
     Internal,

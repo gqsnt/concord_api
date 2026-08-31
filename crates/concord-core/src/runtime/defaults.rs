@@ -19,6 +19,8 @@ pub const DEFAULT_PROVIDER_RESPONSE_BYTES: usize = 1_048_576;
 pub const DEFAULT_PAGINATION_MAX_PAGES: u32 = 1_000;
 /// Default maximum accumulated item count for pagination.
 pub const DEFAULT_PAGINATION_MAX_ITEMS: usize = 100_000;
+/// Default aggregate accepted buffered-response bytes charged across pagination pages.
+pub const DEFAULT_PAGINATION_TOTAL_RESPONSE_BYTES: usize = 67_108_864;
 /// Default byte ceiling for retained canonical pagination-identity vectors.
 pub const DEFAULT_PAGINATION_IDENTITY_BYTES: usize = 4_194_304;
 /// Default authentication-failure cooldown cap in seconds.

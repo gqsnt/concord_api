@@ -7,7 +7,8 @@ use crate::rate_limit::{MAX_RATE_LIMIT_KEY_BYTES, RateLimiter};
 use crate::retry::RetryPolicy;
 use crate::runtime::defaults::{
     DEFAULT_AUTH_FAILURE_COOLDOWN_SECONDS, DEFAULT_PAGINATION_IDENTITY_BYTES,
-    DEFAULT_PAGINATION_MAX_ITEMS, DEFAULT_PAGINATION_MAX_PAGES, DEFAULT_PROVIDER_REQUEST_BYTES,
+    DEFAULT_PAGINATION_MAX_ITEMS, DEFAULT_PAGINATION_MAX_PAGES,
+    DEFAULT_PAGINATION_TOTAL_RESPONSE_BYTES, DEFAULT_PROVIDER_REQUEST_BYTES,
     DEFAULT_PROVIDER_RESPONSE_BYTES, DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS,
     DEFAULT_REQUEST_BODY_BYTES, DEFAULT_RESPONSE_BODY_BYTES, DEFAULT_STATUS_BODY_BYTES,
     DEFAULT_STREAM_RESPONSE_BYTES,
@@ -24,6 +25,7 @@ pub(crate) struct RuntimeConfig {
     pub(crate) provider_response_limit: NonZeroUsize,
     pub(crate) pagination_max_pages: NonZeroU32,
     pub(crate) pagination_max_items: NonZeroUsize,
+    pub(crate) pagination_total_response_body_limit: NonZeroUsize,
     pub(crate) pagination_identity_limit: NonZeroUsize,
     pub(crate) auth_failure_cooldown_cap: Duration,
     pub(crate) rate_limit_cooldown_cap: Duration,
@@ -63,6 +65,9 @@ impl RuntimeConfigBuilder {
                 pagination_max_pages: NonZeroU32::new(DEFAULT_PAGINATION_MAX_PAGES)
                     .expect("the pagination page default is nonzero"),
                 pagination_max_items: nonzero_usize(DEFAULT_PAGINATION_MAX_ITEMS),
+                pagination_total_response_body_limit: nonzero_usize(
+                    DEFAULT_PAGINATION_TOTAL_RESPONSE_BYTES,
+                ),
                 pagination_identity_limit: nonzero_usize(DEFAULT_PAGINATION_IDENTITY_BYTES),
                 auth_failure_cooldown_cap: Duration::from_secs(
                     DEFAULT_AUTH_FAILURE_COOLDOWN_SECONDS,
@@ -144,6 +149,19 @@ impl RuntimeConfigBuilder {
     #[must_use]
     pub fn pagination_max_items(mut self, items: NonZeroUsize) -> Self {
         self.config.pagination_max_items = items;
+        self
+    }
+
+    /// Sets the positive finite aggregate accepted buffered-response byte
+    /// ceiling for one pagination operation.
+    ///
+    /// Concord charges the exact post-decompression body length of each
+    /// successfully decoded page before retaining that page's items. This
+    /// aggregate limit is independent of the per-page [`Self::response_body_limit`]
+    /// and item-count limits.
+    #[must_use]
+    pub fn pagination_total_response_body_limit(mut self, bytes: NonZeroUsize) -> Self {
+        self.config.pagination_total_response_body_limit = bytes;
         self
     }
 
@@ -314,6 +332,10 @@ mod tests {
             DEFAULT_PAGINATION_MAX_ITEMS
         );
         assert_eq!(
+            config.pagination_total_response_body_limit.get(),
+            DEFAULT_PAGINATION_TOTAL_RESPONSE_BYTES
+        );
+        assert_eq!(
             config.pagination_identity_limit.get(),
             DEFAULT_PAGINATION_IDENTITY_BYTES
         );
@@ -431,6 +453,7 @@ mod tests {
             .status_body_limit(one)
             .pagination_max_pages(one_page)
             .pagination_max_items(one)
+            .pagination_total_response_body_limit(one)
             .pagination_identity_limit(one)
             .hooks(Arc::new(crate::hooks::NoopHooks))
             .debug(DebugLevel::Headers)
@@ -449,6 +472,7 @@ mod tests {
         assert_eq!(config.status_body_limit, Some(one));
         assert_eq!(config.pagination_max_pages, one_page);
         assert_eq!(config.pagination_max_items, one);
+        assert_eq!(config.pagination_total_response_body_limit, one);
         assert_eq!(config.pagination_identity_limit, one);
         assert_eq!(config.debug, DebugLevel::Headers);
         assert_eq!(config.auth_failure_cooldown_cap, Duration::ZERO);

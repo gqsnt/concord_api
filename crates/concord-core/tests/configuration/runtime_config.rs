@@ -16,6 +16,7 @@ fn finite_methods(
         .disable_status_body_capture()
         .pagination_max_pages(pages)
         .pagination_max_items(bytes)
+        .pagination_total_response_body_limit(bytes)
         .pagination_identity_limit(bytes)
         .auth_failure_cooldown_cap(Duration::ZERO)
         .rate_limit_cooldown_cap(Duration::ZERO)

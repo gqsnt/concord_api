@@ -483,6 +483,7 @@ mod tests {
         for kind in [
             PaginationErrorKind::PageCeilingExceeded,
             PaginationErrorKind::CollectedItemCeilingExceeded,
+            PaginationErrorKind::CollectedResponseByteCeilingExceeded,
             PaginationErrorKind::IdentityStorageCeilingExceeded,
         ] {
             let error = ApiError::with_pagination_kind(

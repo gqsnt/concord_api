@@ -22,7 +22,7 @@ pub struct ResponseInput {
 pub(crate) async fn execute_response<R, S>(
     input: ResponseInput,
     head: &ResponseHead<'_>,
-) -> Result<S::Output, ApiError>
+) -> Result<(S::Output, usize), ApiError>
 where
     R: ResponseBodySpec,
     S: ResponseSelection<R>,
@@ -41,9 +41,11 @@ where
     let endpoint = input.endpoint.clone();
     let method = input.method.clone();
     let body = <S::Mode as super::spec::private::Sealed>::acquire(input).await?;
+    let acquired_body_bytes = <S::Mode as super::spec::private::Sealed>::acquired_body_bytes(&body);
     let output = S::from_body(body, head);
     deadline.check().map_err(|_| timeout(&endpoint, &method))?;
-    output.map_err(|error| response_spec_error(&endpoint, &method, error.kind()))
+    let output = output.map_err(|error| response_spec_error(&endpoint, &method, error.kind()))?;
+    Ok((output, acquired_body_bytes))
 }
 
 pub(crate) fn preflight_buffered(input: &ResponseInput) -> Result<(), ApiError> {

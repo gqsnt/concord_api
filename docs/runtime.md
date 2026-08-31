@@ -131,8 +131,10 @@ Each page has a child operation identity and repeats hooks, credentials,
 limiter admission, HTTP, response-head observation, and body acquisition.
 
 The controller advances only declared live bindings. Cycle detection uses a
-canonical public request identity. Page count, item count, retained identity
-bytes, and call-site limits are independent.
+canonical public request identity. Page count, item count, aggregate accepted
+buffered page-response bytes, retained identity bytes, per-page response bytes,
+and call-site limits are independent. A page is charged to the aggregate byte
+budget before its decoded items are retained.
 
 Pagination is all-or-error unless the caller selects a finite `PageLimit::Take`
 prefix.

@@ -92,9 +92,23 @@ Canonical identity uses endpoint ID, method, logical URL, and public headers.
 Credential material and body bytes are excluded. Page-stable bodies therefore
 cannot hide a repeated public page request.
 
-Page count, item count, retained identity count, retained identity bytes,
-response/body limits, and call-site limit are independent. First excess fails
-without retaining the excess value.
+Page count, item count, aggregate accepted page-response bytes, retained
+identity count, retained identity bytes, per-response body limits, and the
+call-site limit are independent. The default aggregate page-response budget is
+64 MiB. `pagination_total_response_body_limit` changes it for one built client.
+
+The aggregate budget charges the exact post-decompression buffered body length
+of every successfully decoded page before that page's items are appended to the
+result. A first-excess page is dropped and returns
+`CollectedResponseByteCeilingExceeded`; previously accepted items are also
+dropped by the all-or-error result. At most the already accepted aggregate plus
+one independently bounded page can exist transiently during the check.
+
+This byte budget bounds the remote response input represented by retained page
+items; the item ceiling separately bounds collection overhead. Custom codecs
+and controllers remain trusted extension code and must not amplify a small body
+into disproportionate process-owned state. First excess fails without retaining
+the excess value in the aggregate result.
 
 ## Body and response requirements
 
