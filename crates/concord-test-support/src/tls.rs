@@ -14,7 +14,7 @@ use rustls::{RootCertStore, ServerConfig, ServerConnection, StreamOwned};
 
 // Fixed, non-secret test fixture material. These keys authenticate only the
 // loopback probe server/client pair and are never used as real credentials.
-const CERTIFICATE_DER_BASE64: &str = concat!(
+const ROOT_CERTIFICATE_DER_BASE64: &str = concat!(
     "MIIDJTCCAg2gAwIBAgIUVVfNMrqxxHjkQC1jfCVryF3pplkwDQYJKoZIhvcNAQEL",
     "BQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI2MDcxNjE5MzYzOVoXDTM2MDcx",
     "MzE5MzYzOVowFDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkqhkiG9w0BAQEF",
@@ -33,33 +33,53 @@ const CERTIFICATE_DER_BASE64: &str = concat!(
     "UaoNlOn1D6xIGrt8wgVLrYkYr76DmGBXj3pd1pefBPoattQAuRxkLsZ80pzSrp5B",
     "1xsVlF/c0Fa5VC2W6VRwB8hEzI+yfPZIu4jwnXwNgpXu/wZJXHj4MuM=",
 );
-const PRIVATE_KEY_DER_BASE64: &str = concat!(
-    "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCncj2TyFtoymc1",
-    "5ZQB0Y1VMaO/Z9t/p7BSRtBBM7JBl24Mfks3UxtUugbVDQE9V4J0TK8/PpjF2AUm",
-    "Hw2O3inLFMVg5GiyGRuIusYED/bpwX9h+Rl9a9R8lSzjBQ7hf344hUn7b2xmM1dU",
-    "JsJy7G00cOzPEYGo7vn3LUjWxvQ/i0/eN/VQ0oJsStScfeW5sHXyjiA/Uz2VtnAk",
-    "Tz+VdMgfPtwgG8B23tslQsYHVvr+VPMRKQIghoKVSVWr+3qe1AjvsJEAyeldYLrf",
-    "C+v2M+D7a3h4rC5mhAUqJqrfZiw/pNs95lesw5C0+gIjg6N4jhOf587Ed6o86Jc3",
-    "sf99AfrXAgMBAAECggEACNEcSptKq45jd97iTQ7hKm1mNLkTFuTYBRpjHdkggjv8",
-    "g0jlIgEiF8iB0pcQNnrUoitlhjwquYQsj+YjsHRPRA5lxDp9WXS2p/DvEJ4HP3tn",
-    "qdt+yvAHbMCYGqNqC1f2EqN7Z/NlLvkgwza/7Lg5RIEhCa2KI8CNm0UgUuV/9+vX",
-    "/nsV8dCxrjF+2KKtZBGk5A44F9JtQoLoIplEdiA0qC+RDd7LWJCiEzmI5S+QHM1R",
-    "1ERiuK8VyhoTPW1et7eR0HBGsQ4hLPgPVxrEavKa9QTq4zWRK7KoSOTfuVq0UMUY",
-    "xtYShRqU7IpBFvUxMKzYU3/J36SkoAdx1OkTijTx2QKBgQDWswPMfOJXM+utsxYT",
-    "ZwSqx6HhpYxkkfVAFA/kx6zDYO39U2swUXSBetpTt48nR/1JLO/h+oZCPEnKU/iI",
-    "z5U68rL2L5Dyca+8pRzdWgiE+8sJEXmsJO7aOzb619ymoXAlgxVrFcqzPExoIy+7",
-    "XksaR6UrHGzkMkzlWRZqwduUjwKBgQDHqDloTOxvZ5Ckjxu7Bd/pW8cg756iJag9",
-    "BUzQl7/5JDq+0XLjDu0zwVwvSzvRXFlGC2B7R48u3Pu8SxhcZQDlG87L9wh0hVkc",
-    "Qk8J1Xm+LFHxJ9WWsv/iU8EXN1elCYiJE0r7Q+oc1CW43wjuh4iSYA23vapv1ozE",
-    "686fuf0pOQKBgF2L1Ezl4QzTz414aVb83Pi4UN1rb1dmjTBlTWOGaM0cT7XAAgUk",
-    "iJnd+IDfit03rbGThdW1fYggkpo4qiKaJ9BubPF9Wi94v3R3kLMVhn7C4v1JgvUx",
-    "hmzJvjPfmAF2d9GwYsWs0gv0auo44pRGCn0h2GKHWR64l+6aOX08iDsbAoGAbLg/",
-    "InuY2AU2L1W6TPoi9qjCYz34TOVimm/TZ1bq85j14EifXeMX6XHmZ9544UV/W3QA",
-    "gsDxyBwPfHYL+uwJM7kTv99yHDks0AWPkpRLafIqYL5HQXuReUYQRDsfn7/0OGho",
-    "ETDnP/GJ5QSWkYT+Km7hqWc/cw0KtISPjEyz/YkCgYEAt5/rGKWOhat6WTGH/kyJ",
-    "3ofVpbru10LfMw9y6MfEA51dJ/aB1OqPQB580D5KWz4tLmXaeOe9jg/dE4ht3RbQ",
-    "Fo9S3xXOFr8fFdolVPtLOWjh9xT8E2mmdnf7hqRjiTl0Qb/DrBhYIwlgGIlq0lj8",
-    "MvwsZD+/zLGkhj7G71aUBrI=",
+const SERVER_CERTIFICATE_DER_BASE64: &str = concat!(
+    "MIIDQjCCAiqgAwIBAgINQ09OQ09SRFNFUlZFUjANBgkqhkiG9w0BAQsFADAUMRIw",
+    "EAYDVQQDDAlsb2NhbGhvc3QwHhcNMjYwODMxMTkyMDA0WhcNMzYwMzMxMTkyMDA0",
+    "WjAUMRIwEAYDVQQDDAlsb2NhbGhvc3QwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAw",
+    "ggEKAoIBAQCrrHl4Jp/Vg6OylGhuHxxiWjEew12hc7AZez361OYT/F2PulnP9mso",
+    "5Cf6FJ87rkRaMiVPgsRI4AusUv2XErblLlVh1ZZx/uAOk71BKVwVdXxwem8L6Duh",
+    "bNMwswNuHzPU3evJft6jmt71LFyV7uZeilbb+UuxY8Pvkn6P/Ony3+V9rzIi1HAK",
+    "R35UX3M9N0s46TvVHEUu64Ud0NnlNw/Y+/CD30zWqmLJXBktbJ42SpwAYWbMbSdL",
+    "fJFPjfbB6Ty3NRcvdsa1OXsu7pVKxoTcbzTsQfN8Lsz7Cux2SMd4Qtmq5OFqefzL",
+    "jFAzvBB45mw0TAdk/aJz+CccBEnNpOEfAgMBAAGjgZIwgY8wDAYDVR0TAQH/BAIw",
+    "ADAOBgNVHQ8BAf8EBAMCBaAwEwYDVR0lBAwwCgYIKwYBBQUHAwEwGgYDVR0RBBMw",
+    "EYIJbG9jYWxob3N0hwR/AAABMB0GA1UdDgQWBBQI8Dt6EDBzpm2fQM8vddFneIjo",
+    "ojAfBgNVHSMEGDAWgBSAkEAV0bI0pbjKhqRoKnpVyRy99DANBgkqhkiG9w0BAQsF",
+    "AAOCAQEAm4sCHfVJxAaXKj7E3NwwCeDkkbpAhbR3DpWbVA6wppCqxEEMrqrcQRG7",
+    "cX7x0DvbNgSx3/K1xDIl+nsDtvnaJWE2PrAru0aQIjQMKMvURd104vf0KVoj2nS7",
+    "pFHYKB3+/oJjdQdiWmHUWQbBAwVr3Oc6w/FN394kcgOgDmel4RaKgfahKlEb/9ij",
+    "hS7NrgDY69l42JvXf2KFV7B50lyFal+/TDmOteU95Yc7KMhHIgjYWrm8KwXf7Abl",
+    "21WO8n3yM2xKeZqZUFZ1QORTyMEZYXVYhHLfWDn+zP31h+ChoMRdAm5brTRDQhpg",
+    "ThekCm4Ba/hR35bLU9yTweCVuV3acw==",
+);
+const SERVER_PRIVATE_KEY_DER_BASE64: &str = concat!(
+    "MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCrrHl4Jp/Vg6Oy",
+    "lGhuHxxiWjEew12hc7AZez361OYT/F2PulnP9mso5Cf6FJ87rkRaMiVPgsRI4Aus",
+    "Uv2XErblLlVh1ZZx/uAOk71BKVwVdXxwem8L6DuhbNMwswNuHzPU3evJft6jmt71",
+    "LFyV7uZeilbb+UuxY8Pvkn6P/Ony3+V9rzIi1HAKR35UX3M9N0s46TvVHEUu64Ud",
+    "0NnlNw/Y+/CD30zWqmLJXBktbJ42SpwAYWbMbSdLfJFPjfbB6Ty3NRcvdsa1OXsu",
+    "7pVKxoTcbzTsQfN8Lsz7Cux2SMd4Qtmq5OFqefzLjFAzvBB45mw0TAdk/aJz+Ccc",
+    "BEnNpOEfAgMBAAECggEAEGGJR6870iZZAOnLWzKpxTLA/CP9M7IzzAKoA967w41x",
+    "qgzIlCD50bGPpPvBw/KZgBfH2qHqM9/5DSzwGLHG9PBqYkb8r4z3+Twcs3KMYFnR",
+    "EXSFUxgKVJlrP3rdaW0dx4KThKsP+IGHI9LjVMUygzPlHOFZWShhYmNSo0+pTSzr",
+    "FVfFJPNj4+pN8tBX1TX3tFf8WUgJRj7esv1IwbK4zYozOEKTgQ1k6SApwLJTTrkI",
+    "F6RG20Iud5zcjglXYv3qkEzVpo9UY+FmKaYunsLtTRxb0wNkWPQyrNtynBYs8ueY",
+    "afjnraoanW0mQm2YFRuS5ryaEM1LJqYWNjoxTxai1QKBgQDXtg32yyxKo7s77ehd",
+    "TaoX1DhpAuFtdEXzKUOwempPGqbb1ManbZ3DIuLXuLTVZTHHaau/2bNp79QZE+lR",
+    "ZpHClNEWzciTnn0Qa48rWEhIL/egeW8U7Pgo95Zk8rPNuPXDZirYvlOa83fkK8KQ",
+    "0fS5KAu3MAAVQnXuyyBcMMCfuwKBgQDLvNQTgGiEE1XW0BImOfu7/NNYl7cLIm/S",
+    "b9rEtnPRK0QKVBn8em5nQjc6qobIWBK3yEosAz36R+R5/1japKsHAqsm8tgZx/YT",
+    "PNweHRYR7xCv7Cw9nyLXogUZmLbZfE5IFgudhE59NZG5B9ZajgxJpIQ8avjDiiss",
+    "ScAwSbBz7QKBgQCqYn0JMVac5lNgdP0TpeLyy4h7OfFB+ZO/DBsRbMBIF28xORJo",
+    "8Wap2gaACr+bx0DYmJk3Awh6ZxuLa3Th/TipD89QSd9i6s8yhyMhQ6xkiK76LLEX",
+    "QE6MXXSH7EUl/DDz1OGHLl7vh9xteDtJFO5Oyljmq52FLWfl5MB80W11PQKBgDVb",
+    "wv9IhhbxKW4VGGvCi9d0I7X0JhBYeIjYmqciUbraZft+gz/IoNmSUfyfZKVby6su",
+    "XZ6hSr4dzgzVf2Pj9JblcAXHXCmEYUIwkkWgwIL55Zjtdbi90NZArK1Dfb//+lCO",
+    "1YPvfs70FLItB0q4ISe4WpmoOnab3SrANgFvizMRAoGBALDG/5U73qFA7U9CQ4kj",
+    "V7wx/REatRP7BX6A2iT5xP8moIwD04Dd8kOD2sNpbXPBHd4zN5ERrVFwVUnUqgAF",
+    "QQKbistXdDfqDDJuqQaMg8/jP0cMZ8U+5Ext91+q2Cuf1nOcjCnxKn0yly4OFuHy",
+    "6WvVAAKvi+6kqNAHrctlaiee",
 );
 const CLIENT_CERTIFICATE_DER_BASE64: &str = concat!(
     "MIIDOTCCAiGgAwIBAgIUJwMjsznGpAUETibtJVfn+DMmepQwDQYJKoZIhvcNAQEL",
@@ -183,9 +203,10 @@ impl TlsServer {
     fn start_with_client_auth(
         require_client_auth: bool,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let certificate = STANDARD.decode(CERTIFICATE_DER_BASE64)?;
-        let private_key = STANDARD.decode(PRIVATE_KEY_DER_BASE64)?;
-        let certificate_chain = vec![CertificateDer::from(certificate.clone())];
+        let certificate = STANDARD.decode(ROOT_CERTIFICATE_DER_BASE64)?;
+        let server_certificate = STANDARD.decode(SERVER_CERTIFICATE_DER_BASE64)?;
+        let private_key = STANDARD.decode(SERVER_PRIVATE_KEY_DER_BASE64)?;
+        let certificate_chain = vec![CertificateDer::from(server_certificate)];
         let key = PrivateKeyDer::from(PrivatePkcs8KeyDer::from(private_key));
         let builder = ServerConfig::builder();
         let config = if require_client_auth {

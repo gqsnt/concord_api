@@ -23,6 +23,7 @@ pub struct ClientCore {
 }
 
 struct ClientInner {
+    credential_context: crate::auth::CredentialContext,
     base_url: Url,
     safe_base_url: Arc<str>,
     http: ManagedHttp,
@@ -49,6 +50,7 @@ impl ClientCore {
         let safe_base_url = Arc::from(base_url.as_str());
         Ok(Self {
             inner: Arc::new(ClientInner {
+                credential_context: crate::auth::CredentialContext::new(),
                 base_url,
                 safe_base_url,
                 http,
@@ -78,6 +80,7 @@ impl ClientCore {
         let safe_base_url = Arc::from(base_url.as_str());
         Ok(Self {
             inner: Arc::new(ClientInner {
+                credential_context: crate::auth::CredentialContext::new(),
                 base_url,
                 safe_base_url,
                 http,
@@ -90,6 +93,10 @@ impl ClientCore {
 
     pub(crate) fn base_url(&self) -> &Url {
         &self.inner.base_url
+    }
+
+    pub(crate) fn credential_context(&self) -> &crate::auth::CredentialContext {
+        &self.inner.credential_context
     }
 
     pub(crate) fn safe_base_url(&self) -> Arc<str> {

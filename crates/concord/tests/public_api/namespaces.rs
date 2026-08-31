@@ -127,6 +127,7 @@ fn hard_structural_limits_are_reachable_from_their_facade_domains() {
         endpoint::MAX_REQUEST_HEADER_COUNT,
         endpoint::MAX_REQUEST_HEADER_BYTES,
         endpoint::MAX_RUNTIME_ENDPOINT_COMPONENTS,
+        endpoint::MAX_RUNTIME_ENDPOINT_METHOD_BYTES,
         endpoint::MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
     ];
     let http_limits = [

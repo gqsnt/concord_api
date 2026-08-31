@@ -94,9 +94,10 @@ where
     #[doc(hidden)]
     pub fn static_value(core: &ClientCore, value: M) -> Self {
         Self {
-            selector: crate::auth::SlotSelector::static_value(
+            selector: crate::auth::SlotSelector::static_value_in_context(
                 value,
                 core.auth_failure_cooldown_cap(),
+                core.credential_context().clone(),
             ),
         }
     }
@@ -104,7 +105,10 @@ where
     #[doc(hidden)]
     pub fn endpoint(core: &ClientCore) -> Self {
         Self {
-            selector: crate::auth::SlotSelector::endpoint(core.auth_failure_cooldown_cap()),
+            selector: crate::auth::SlotSelector::endpoint_in_context(
+                core.auth_failure_cooldown_cap(),
+                core.credential_context().clone(),
+            ),
         }
     }
 
@@ -114,9 +118,10 @@ where
         P: crate::auth::CredentialProvider<Material = M>,
     {
         Self {
-            selector: crate::auth::SlotSelector::provider(
+            selector: crate::auth::SlotSelector::provider_in_context(
                 provider,
                 core.auth_failure_cooldown_cap(),
+                core.credential_context().clone(),
             ),
         }
     }
@@ -127,9 +132,10 @@ where
         provider: std::sync::Arc<dyn crate::auth::CredentialProvider<Material = M>>,
     ) -> Self {
         Self {
-            selector: crate::auth::SlotSelector::provider_arc(
+            selector: crate::auth::SlotSelector::provider_arc_in_context(
                 provider,
                 core.auth_failure_cooldown_cap(),
+                core.credential_context().clone(),
             ),
         }
     }
@@ -267,7 +273,8 @@ pub fn basic_credential_input_error(
         crate::auth::CredentialMaterialErrorKind::BasicPasswordTooLarge => password_field,
         crate::auth::CredentialMaterialErrorKind::SecretStringTooLarge
         | crate::auth::CredentialMaterialErrorKind::CredentialSecretTooLarge
-        | crate::auth::CredentialMaterialErrorKind::BasicUsernameTooLarge => username_field,
+        | crate::auth::CredentialMaterialErrorKind::BasicUsernameTooLarge
+        | crate::auth::CredentialMaterialErrorKind::BasicUsernameContainsColon => username_field,
     };
     ClientBuildError::invalid_credential(field)
 }
@@ -296,6 +303,7 @@ pub fn safe_request_plan(
         core.default_runtime_endpoint_timeout(),
     );
     let mut head = prepare_head(builder)?;
+    head.validate_auth_context(core.credential_context())?;
     if head.endpoint_id() != description.endpoint_id() || head.method() != description.method() {
         return Err(ApiError::classified(
             description.endpoint_id().clone(),

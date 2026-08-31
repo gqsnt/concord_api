@@ -850,6 +850,16 @@ impl PreparedHead {
         self.auth.as_ref()
     }
 
+    pub(crate) fn validate_auth_context(
+        &self,
+        expected: &crate::auth::CredentialContext,
+    ) -> Result<(), ApiError> {
+        self.auth.validate_context(expected).map_err(|error| {
+            drop(error);
+            invalid_auth(self.meta.endpoint_id(), self.meta.method())
+        })
+    }
+
     pub(crate) fn rate_limit_plan(&self) -> &RateLimitPlan {
         self.rate_limit_plan.as_ref()
     }
@@ -1403,13 +1413,15 @@ mod tests {
         use crate::request::{EndpointSpec, RuntimeEndpoint};
         use crate::response::NoContent;
 
+        let public_components = MAX_REQUEST_HEAD_COMPONENTS - 1;
         let mut runtime =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.head"), Method::GET);
-        for _ in 0..MAX_REQUEST_HEAD_COMPONENTS {
+        for _ in 0..public_components {
             runtime = runtime.path_segment("x");
         }
-        let runtime: RuntimeEndpoint<NoContent> =
-            runtime.build().expect("runtime exact component boundary");
+        let runtime: RuntimeEndpoint<NoContent> = runtime
+            .build()
+            .expect("runtime boundary after method charge");
         let base = Url::parse("https://example.test/").expect("base URL");
         let runtime_head = runtime
             .prepare_head(HeadBuilder::new(
@@ -1422,10 +1434,10 @@ mod tests {
             .expect("runtime final head boundary");
 
         let mut generated = builder("https://example.test/");
-        for _ in 0..MAX_REQUEST_HEAD_COMPONENTS {
+        for _ in 0..public_components {
             generated.push_static("x").expect("generated component");
         }
-        let generated_head = generated.finish().expect("generated final head boundary");
+        let generated_head = generated.finish().expect("matching generated head");
         assert_eq!(runtime_head.logical_url(), generated_head.logical_url());
     }
 

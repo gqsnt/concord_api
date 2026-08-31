@@ -25,7 +25,7 @@ pub(crate) use generated::response_bytes::{AcceptedMissing, ObservedCodec};
 #[cfg(feature = "multipart")]
 pub(crate) use generated::shaping::{
     CLIENT_DEFAULT, ClientTraitDefaultProbe, DropProbe, ENDPOINT_DEFAULT,
-    EndpointTraitDefaultProbe, OPTIONAL_CLIENT_DEFAULT, OPTIONAL_ENDPOINT_DEFAULT,
-    OPTIONAL_SCOPE_DEFAULT, OPTIONAL_VALUES_DEFAULT, SCOPE_DEFAULT, ScopeTraitDefaultProbe,
-    ShapeProbe,
+    EndpointTraitDefaultProbe, FailingFormatProbe, FormatProbe, OPTIONAL_CLIENT_DEFAULT,
+    OPTIONAL_ENDPOINT_DEFAULT, OPTIONAL_SCOPE_DEFAULT, OPTIONAL_VALUES_DEFAULT, SCOPE_DEFAULT,
+    ScopeTraitDefaultProbe, ShapeProbe,
 };

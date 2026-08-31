@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use concord_test_support::executor::DeterministicExecutor;
 use concord_test_support::gate::Gate;
 
-use crate::auth::{ApiKey, MAX_CREDENTIAL_SECRET_BYTES, SecretCredential};
+use crate::auth::{ApiKey, BasicCredential, MAX_CREDENTIAL_SECRET_BYTES, SecretCredential};
 use crate::hooks::BoxFuture;
 
 use super::*;
@@ -213,6 +213,35 @@ async fn built_in_replacement_exact_limit_succeeds_and_failure_preserves_materia
     assert_eq!(after.version, replaced.version);
     assert_eq!(after.value.expose_secret(), exact);
     assert!(Arc::ptr_eq(&after.value, &replaced.value));
+}
+
+#[tokio::test]
+async fn invalid_basic_username_replacement_preserves_material_and_version() {
+    let executor = DeterministicExecutor::new();
+    let core = core(&executor);
+    let selector = SlotSelector::static_value(
+        BasicCredential::try_new("initial-user", "initial-password")
+            .expect("initial Basic credential"),
+        Duration::ZERO,
+    );
+    let before = selector
+        .preflight(core.provider_http(None))
+        .await
+        .expect("initial Basic material");
+
+    let error = selector
+        .replace_static_result(BasicCredential::try_new("foreign:user", "replacement"))
+        .expect_err("invalid Basic replacement");
+    assert_eq!(error.kind(), AuthErrorKind::InvalidConfiguration);
+
+    let after = selector
+        .preflight(core.provider_http(None))
+        .await
+        .expect("preserved Basic material");
+    assert_eq!(after.version, before.version);
+    assert_eq!(after.value.username(), "initial-user");
+    assert_eq!(after.value.password(), "initial-password");
+    assert!(Arc::ptr_eq(&after.value, &before.value));
 }
 
 #[tokio::test]

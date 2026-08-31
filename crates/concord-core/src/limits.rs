@@ -18,6 +18,9 @@ pub const MAX_REQUEST_HEADER_BYTES: usize = 65_536;
 /// Maximum top-level components retained by one runtime endpoint.
 pub const MAX_RUNTIME_ENDPOINT_COMPONENTS: usize = 256;
 
+/// Maximum byte length of one runtime endpoint HTTP method token.
+pub const MAX_RUNTIME_ENDPOINT_METHOD_BYTES: usize = 128;
+
 /// Maximum aggregate public UTF-8 bytes retained by one runtime endpoint.
 pub const MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES: usize = 65_536;
 

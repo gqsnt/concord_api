@@ -82,9 +82,19 @@ construction and redacted formatting. `SecretString` is not a zeroizing secret
 store; the application owns input loading, memory lifetime, and process-level
 protection.
 
+A Basic username cannot contain `:` because that byte is the protocol boundary
+between username and password. Basic passwords may contain colons.
+
 Credential slots are shared by client clones, version successful material, and
 prevent stale in-flight acquisition or recovery from overwriting newer manual
 replacement.
+
+Every generated credential reference is also bound to the private security
+context of the built client that created it. Client clones share that context.
+An independent client build cannot plan or execute authentication with the
+reference, even when it has the same generated type or fixed origin. This check
+occurs before provider acquisition, request-body inspection, limiting, or
+native request construction.
 
 ## Providers
 

@@ -8,6 +8,8 @@ use concord_test_support::executor::DeterministicExecutor;
 use http::Method;
 
 use super::*;
+use crate::__private::GeneratedCredential;
+use crate::auth::{AccessToken, Auth};
 use crate::body::{EmptyBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec};
 use crate::client::ClientCore;
 use crate::endpoint::EndpointId;
@@ -254,6 +256,76 @@ async fn request_options_are_local_and_core_clones_share_one_inner_owner() {
     assert_eq!(second.head.timeout(), None);
     assert_eq!(second.head.debug(), DebugLevel::None);
     assert_ne!(first.operation_id, second.operation_id);
+}
+
+#[tokio::test]
+async fn runtime_auth_rejects_a_foreign_client_context_before_planning_or_execution() {
+    let executor = DeterministicExecutor::new();
+    let owner_hooks = Arc::new(CountingHooks::new());
+    let foreign_hooks = Arc::new(CountingHooks::new());
+    let owner = core(&executor, owner_hooks.clone());
+    let foreign = core(&executor, foreign_hooks.clone());
+    let credential = GeneratedCredential::static_value(
+        &owner,
+        AccessToken::try_new("client-context-secret").expect("bounded access token"),
+    );
+
+    let planned =
+        RuntimeEndpoint::builder(EndpointId::from_static("runtime.context.plan"), Method::GET)
+            .auth(Auth::bearer(credential.credential()))
+            .build()
+            .expect("runtime endpoint");
+    let planning_error =
+        crate::__private::safe_request_plan(&foreign, planned.description(), None, |builder| {
+            planned.prepare_head(builder)
+        })
+        .expect_err("foreign planning context must fail");
+    assert_eq!(
+        planning_error.configuration_kind(),
+        Some(crate::error::ConfigurationErrorKind::InvalidAuthentication)
+    );
+
+    let executed = RuntimeEndpoint::builder(
+        EndpointId::from_static("runtime.context.execute"),
+        Method::GET,
+    )
+    .auth(Auth::bearer(credential.credential()))
+    .build()
+    .expect("runtime endpoint");
+    let execution_error = match prepare_operation(Request::new(foreign.clone(), executed)).await {
+        Ok(OperationPreparation::Ready(_)) => panic!("foreign execution context must fail"),
+        Ok(OperationPreparation::Failed(failure)) => failure.error,
+        Err(error) => error,
+    };
+    assert_eq!(
+        execution_error.configuration_kind(),
+        Some(crate::error::ConfigurationErrorKind::InvalidAuthentication)
+    );
+    assert_eq!(owner_hooks.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(foreign_hooks.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(executor.application().request_count().expect("count"), 0);
+
+    let accepted = RuntimeEndpoint::builder(
+        EndpointId::from_static("runtime.context.clone"),
+        Method::GET,
+    )
+    .auth(Auth::bearer(credential.credential()))
+    .build()
+    .expect("runtime endpoint");
+    let owner_clone = owner.clone();
+    let accepted_head = accepted
+        .prepare_head(HeadBuilder::new(
+            owner_clone.base_url(),
+            accepted.request_meta(),
+            &RequestOptions::new(),
+            owner_clone.default_debug(),
+            owner_clone.default_runtime_endpoint_timeout(),
+        ))
+        .expect("prepared owner head");
+    accepted_head
+        .validate_auth_context(owner_clone.credential_context())
+        .expect("owner clone context");
+    assert_eq!(executor.application().request_count().expect("count"), 0);
 }
 
 #[tokio::test]

@@ -22,13 +22,17 @@ Client clones share the selected transport, hooks, retry policy, credential
 slots, limiter, and runtime limits. Independent builds own independent
 components unless the application supplies a shared extension object.
 
+Credential references are bound to this build snapshot. Clones may reuse them;
+independent builds cannot attach them to generated or runtime-defined requests.
+
 ## Planning
 
 `client.plan(&endpoint)` executes the real public head-shaping path and returns
 a `SafeRequestPlan`.
 
 Planning validates the endpoint identity, method, logical URL, public headers,
-body shape, timeout, and finite structural budgets. It does not execute hooks,
+credential-context ownership, body shape, timeout, and finite structural
+budgets. It does not execute hooks,
 encode or poll a body, acquire credentials or limiter authority, construct a
 native request, perform HTTP, or dispatch completion.
 
@@ -40,7 +44,7 @@ request preview.
 Polling a request terminal starts one operation:
 
 1. Resolve and validate the public method, logical URL, public headers,
-   endpoint identity, timeout, and finite budgets.
+   endpoint identity, credential context, timeout, and finite budgets.
 2. Inspect bounded request-body metadata without materializing body bytes.
 3. Run the before-send hook with safe public operation data.
 4. Prepare or reconstruct the managed request body.

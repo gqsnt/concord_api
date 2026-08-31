@@ -28,6 +28,8 @@ pub enum CredentialMaterialErrorKind {
     CredentialSecretTooLarge,
     /// A Basic authentication username exceeded its hard material limit.
     BasicUsernameTooLarge,
+    /// A Basic authentication username contained the protocol field delimiter.
+    BasicUsernameContainsColon,
     /// A Basic authentication password exceeded its hard material limit.
     BasicPasswordTooLarge,
 }
@@ -71,8 +73,17 @@ impl fmt::Debug for CredentialMaterialError {
 impl std::error::Error for CredentialMaterialError {}
 
 impl From<CredentialMaterialError> for AuthError {
-    fn from(_error: CredentialMaterialError) -> Self {
-        Self::new(AuthErrorKind::MaterialTooLarge)
+    fn from(error: CredentialMaterialError) -> Self {
+        let kind = match error.kind() {
+            CredentialMaterialErrorKind::BasicUsernameContainsColon => {
+                AuthErrorKind::InvalidConfiguration
+            }
+            CredentialMaterialErrorKind::SecretStringTooLarge
+            | CredentialMaterialErrorKind::CredentialSecretTooLarge
+            | CredentialMaterialErrorKind::BasicUsernameTooLarge
+            | CredentialMaterialErrorKind::BasicPasswordTooLarge => AuthErrorKind::MaterialTooLarge,
+        };
+        Self::new(kind)
     }
 }
 
@@ -276,13 +287,15 @@ pub struct BasicCredential {
 
 impl BasicCredential {
     /// Creates one bounded atomic Basic credential pair.
+    ///
+    /// The username cannot contain `:`, which is the Basic protocol delimiter.
     pub fn try_new(
         username: impl AsRef<str>,
         password: impl AsRef<str>,
     ) -> Result<Self, CredentialMaterialError> {
         let username = username.as_ref();
         let password = password.as_ref();
-        validate_basic_lengths(username.len(), password.len())?;
+        validate_basic(username, password)?;
         Ok(Self {
             username: SecretString::try_new(username)?,
             password: SecretString::try_new(password)?,
@@ -290,14 +303,13 @@ impl BasicCredential {
     }
 
     /// Reuses two protected strings as one bounded atomic Basic credential pair.
+    ///
+    /// The username cannot contain `:`, which is the Basic protocol delimiter.
     pub fn try_from_secrets(
         username: SecretString,
         password: SecretString,
     ) -> Result<Self, CredentialMaterialError> {
-        validate_basic_lengths(
-            username.expose_secret().len(),
-            password.expose_secret().len(),
-        )?;
+        validate_basic(username.expose_secret(), password.expose_secret())?;
         Ok(Self { username, password })
     }
 
@@ -320,20 +332,27 @@ fn validate_credential_secret(value: &str) -> Result<(), CredentialMaterialError
     )
 }
 
-fn validate_basic_lengths(username: usize, password: usize) -> Result<(), CredentialMaterialError> {
+fn validate_basic(username: &str, password: &str) -> Result<(), CredentialMaterialError> {
+    let username_length = username.len();
+    let password_length = password.len();
     validate_length(
-        username,
+        username_length,
         MAX_BASIC_USERNAME_BYTES,
         CredentialMaterialErrorKind::BasicUsernameTooLarge,
     )?;
     validate_length(
-        password,
+        password_length,
         MAX_BASIC_PASSWORD_BYTES,
         CredentialMaterialErrorKind::BasicPasswordTooLarge,
     )?;
-    username
+    if username.as_bytes().contains(&b':') {
+        return Err(CredentialMaterialError::new(
+            CredentialMaterialErrorKind::BasicUsernameContainsColon,
+        ));
+    }
+    username_length
         .checked_add(1)
-        .and_then(|length| length.checked_add(password))
+        .and_then(|length| length.checked_add(password_length))
         .ok_or_else(|| {
             CredentialMaterialError::new(CredentialMaterialErrorKind::CredentialSecretTooLarge)
         })?;
@@ -456,5 +475,33 @@ mod tests {
             CredentialMaterialErrorKind::BasicPasswordTooLarge
         );
         assert!(!format!("{error:?}").contains(FIRST_EXCESS_SENTINEL));
+    }
+
+    #[test]
+    fn basic_username_rejects_every_colon_position_and_password_colons_remain_valid() {
+        for username in [":alice", "ali:ce", "alice:"] {
+            let error = BasicCredential::try_new(username, "password")
+                .expect_err("Basic username delimiter must fail");
+            assert_eq!(
+                error.kind(),
+                CredentialMaterialErrorKind::BasicUsernameContainsColon
+            );
+            assert_eq!(
+                AuthError::from(error).kind(),
+                AuthErrorKind::InvalidConfiguration
+            );
+
+            let username = SecretString::try_new(username).expect("bounded protected username");
+            let password = SecretString::try_new("password").expect("bounded password");
+            let error = BasicCredential::try_from_secrets(username, password)
+                .expect_err("protected Basic username delimiter must fail");
+            assert_eq!(
+                error.kind(),
+                CredentialMaterialErrorKind::BasicUsernameContainsColon
+            );
+        }
+
+        BasicCredential::try_new("alice", "prefix:password:tail")
+            .expect("Basic passwords may contain colons");
     }
 }

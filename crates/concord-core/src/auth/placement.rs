@@ -16,7 +16,7 @@ use crate::limits::MAX_AUTH_PLACEMENTS;
 use crate::request::reserved_public_header;
 
 use super::material::{BasicCredential, SecretCredential};
-use super::slot::{CredentialSource, PreparedCredential, SlotSelector};
+use super::slot::{CredentialContext, CredentialSource, PreparedCredential, SlotSelector};
 use super::{
     AuthError, CredentialMaterial, CredentialRef, MAX_BASIC_PASSWORD_BYTES,
     MAX_BASIC_USERNAME_BYTES, MAX_CREDENTIAL_SECRET_BYTES, RecoveryMode,
@@ -198,6 +198,7 @@ struct ErasedPrepared {
 }
 
 trait ErasedCredential: Send + Sync {
+    fn context(&self) -> &CredentialContext;
     fn key(&self) -> usize;
     fn source(&self) -> Result<CredentialSource, AuthError>;
     fn recovery_mode(&self) -> Result<RecoveryMode, AuthError>;
@@ -250,6 +251,10 @@ impl<M> ErasedCredential for TypedCredential<M>
 where
     M: CredentialMaterial,
 {
+    fn context(&self) -> &CredentialContext {
+        self.selector.context()
+    }
+
     fn key(&self) -> usize {
         Arc::as_ptr(&self.selector).cast::<()>() as usize
     }
@@ -328,6 +333,9 @@ where
 fn basic_material(value: &BasicCredential) -> Result<NativeMaterial<'_>, AuthError> {
     validate_material_len(value.username().len(), MAX_BASIC_USERNAME_BYTES)?;
     validate_material_len(value.password().len(), MAX_BASIC_PASSWORD_BYTES)?;
+    if value.username().as_bytes().contains(&b':') {
+        return Err(AuthError::new(AuthErrorKind::InvalidConfiguration));
+    }
     Ok(NativeMaterial::Basic {
         username: value.username(),
         password: value.password(),
@@ -347,6 +355,14 @@ impl AuthPlan {
         public_headers: &HeaderMap,
     ) -> Result<(), AuthError> {
         validate_placement_kind(&auth.kind)?;
+        if self.placements.first().is_some_and(|existing| {
+            !existing
+                .credential
+                .context()
+                .same_as(auth.credential.context())
+        }) {
+            return Err(AuthError::new(AuthErrorKind::InvalidConfiguration));
+        }
         if self.placements.len() >= MAX_AUTH_PLACEMENTS {
             return Err(AuthError::new(AuthErrorKind::InvalidConfiguration));
         }
@@ -388,6 +404,14 @@ impl AuthPlan {
         }
         for (index, placement) in self.placements.iter().enumerate() {
             validate_placement_kind(&placement.kind)?;
+            if self.placements[..index].iter().any(|existing| {
+                !existing
+                    .credential
+                    .context()
+                    .same_as(placement.credential.context())
+            }) {
+                return Err(AuthError::new(AuthErrorKind::InvalidConfiguration));
+            }
             validate_public_collision(&placement.kind, logical_url, public_headers)?;
             if self.placements[..index]
                 .iter()
@@ -406,6 +430,18 @@ impl AuthPlan {
             return Err(AuthError::new(AuthErrorKind::InvalidConfiguration));
         }
         Ok(())
+    }
+
+    pub(crate) fn validate_context(&self, expected: &CredentialContext) -> Result<(), AuthError> {
+        if self
+            .placements
+            .iter()
+            .all(|placement| placement.credential.context().same_as(expected))
+        {
+            Ok(())
+        } else {
+            Err(AuthError::new(AuthErrorKind::InvalidConfiguration))
+        }
     }
 
     pub(crate) async fn preflight(
@@ -849,6 +885,11 @@ fn plain_header_value(secret: &str) -> Result<HeaderValue, AuthError> {
 }
 
 fn basic_header_value(username: &str, password: &str) -> Result<HeaderValue, AuthError> {
+    validate_material_len(username.len(), MAX_BASIC_USERNAME_BYTES)?;
+    validate_material_len(password.len(), MAX_BASIC_PASSWORD_BYTES)?;
+    if username.as_bytes().contains(&b':') {
+        return Err(AuthError::new(AuthErrorKind::InvalidConfiguration));
+    }
     let input_len = username
         .len()
         .checked_add(1)
@@ -946,6 +987,80 @@ mod tests {
         ))
     }
 
+    fn credential_in(context: &CredentialContext) -> CredentialRef<ApiKey> {
+        CredentialRef::new(SlotSelector::static_value_in_context(
+            ApiKey::try_new("context-bound-test-key").expect("bounded test API key"),
+            Duration::from_secs(1),
+            context.clone(),
+        ))
+    }
+
+    fn basic_credential_in(context: &CredentialContext) -> CredentialRef<BasicCredential> {
+        CredentialRef::new(SlotSelector::static_value_in_context(
+            BasicCredential::try_new("context-user", "context-password")
+                .expect("bounded Basic credential"),
+            Duration::from_secs(1),
+            context.clone(),
+        ))
+    }
+
+    #[test]
+    fn every_auth_placement_retains_and_validates_its_client_context() {
+        let expected = CredentialContext::new();
+        let foreign = CredentialContext::new();
+        let logical_url = Url::parse("https://example.test/").expect("validation URL");
+        let public_headers = HeaderMap::new();
+        let placements = [
+            Auth::bearer(credential_in(&expected)),
+            Auth::basic(basic_credential_in(&expected)),
+            Auth::authorization(credential_in(&expected)),
+            Auth::authorization_with_scheme("Token", credential_in(&expected))
+                .expect("valid scheme placement"),
+            Auth::header(
+                HeaderName::from_static("x-context-key"),
+                credential_in(&expected),
+            )
+            .expect("valid header placement"),
+            Auth::query("context_key", credential_in(&expected)).expect("valid query placement"),
+        ];
+
+        for placement in placements {
+            let mut plan = AuthPlan::default();
+            plan.push(placement, &logical_url, &public_headers)
+                .expect("context-bound placement");
+            plan.validate_context(&expected)
+                .expect("originating context");
+            let error = plan
+                .validate_context(&foreign)
+                .expect_err("foreign context must fail");
+            assert_eq!(error.kind(), AuthErrorKind::InvalidConfiguration);
+        }
+    }
+
+    #[test]
+    fn one_auth_plan_cannot_mix_client_contexts() {
+        let first = CredentialContext::new();
+        let second = CredentialContext::new();
+        let logical_url = Url::parse("https://example.test/").expect("validation URL");
+        let public_headers = HeaderMap::new();
+        let mut plan = AuthPlan::default();
+        plan.push(
+            Auth::bearer(credential_in(&first)),
+            &logical_url,
+            &public_headers,
+        )
+        .expect("first context");
+        let error = plan
+            .push(
+                Auth::query("key", credential_in(&second)).expect("valid query placement"),
+                &logical_url,
+                &public_headers,
+            )
+            .expect_err("mixed contexts must fail");
+        assert_eq!(error.kind(), AuthErrorKind::InvalidConfiguration);
+        assert_eq!(plan.placement_count(), 1);
+    }
+
     #[test]
     fn basic_encoding_matches_rfc4648_vectors() {
         let value = basic_header_value("Aladdin", "open sesame").expect("valid Basic value");
@@ -961,6 +1076,16 @@ mod tests {
                 .expect("ASCII Basic value"),
             "Basic YTpi"
         );
+        assert_eq!(
+            basic_header_value("a", "prefix:password")
+                .expect("Basic password colon")
+                .to_str()
+                .expect("ASCII Basic value"),
+            "Basic YTpwcmVmaXg6cGFzc3dvcmQ="
+        );
+        let error = basic_header_value("a:b", "password")
+            .expect_err("Basic username colon must fail defensively");
+        assert_eq!(error.kind(), AuthErrorKind::InvalidConfiguration);
     }
 
     #[test]

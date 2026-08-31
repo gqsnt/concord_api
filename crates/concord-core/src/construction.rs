@@ -198,6 +198,10 @@ impl<T, E> ErrorLatch<T, E> {
         Self { state: Ok(value) }
     }
 
+    pub(crate) const fn from_error(error: E) -> Self {
+        Self { state: Err(error) }
+    }
+
     pub(crate) fn then<F>(self, update: F) -> Self
     where
         F: FnOnce(T) -> Result<T, E>,

@@ -113,6 +113,17 @@ where
             )));
         }
     };
+    if let Err(error) = head.validate_auth_context(core.credential_context()) {
+        return Ok(OperationPreparation::Failed(failure(
+            core,
+            operation_id,
+            meta,
+            Arc::from(head.safe_url()),
+            debug,
+            started,
+            error,
+        )));
+    }
     let body_metadata = match endpoint.body_metadata(RequestBodyContext {
         endpoint: meta.endpoint(),
         method: meta.method(),
@@ -189,6 +200,7 @@ where
         core.default_runtime_endpoint_timeout(),
     );
     let mut head = endpoint.prepare_head(builder)?;
+    head.validate_auth_context(core.credential_context())?;
     let body_metadata = endpoint
         .body_metadata(RequestBodyContext {
             endpoint: meta.endpoint(),

@@ -306,7 +306,10 @@ foreach ($file in $markdownFiles | Sort-Object FullName -Unique) {
         $looksLikeDsl = $firstCodeLine -match $dslStart
         $location = "${relative}:$($block.Start)"
 
-        if ($looksLikeDsl -and $block.Language -ne $dslLanguage) {
+        # Source-anchored blocks quote compiled Rust and intentionally retain
+        # the `rust` fence language. Only standalone DSL snippets use the
+        # dedicated `concord` language marker.
+        if ($looksLikeDsl -and $null -eq $block.Source -and $block.Language -ne $dslLanguage) {
             $errors.Add("${location}: DSL fence must use ``````${dslLanguage}")
         }
 

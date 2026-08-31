@@ -118,15 +118,59 @@ enum PrepareAction<M> {
 /// selected slot while every previously started operation retains its opaque
 /// old slot identity.
 pub(crate) struct SlotSelector<M> {
+    context: CredentialContext,
     selected: Mutex<Arc<CredentialSlot<M>>>,
+}
+
+/// Unforgeable identity for the client runtime authorized to use a credential
+/// selector.
+///
+/// The marker is deliberately opaque and has no diagnostic representation.
+/// Generated credentials receive the marker owned by their `ClientCore`;
+/// direct selector constructors used by the retained state-machine tests are
+/// explicitly unbound.
+#[derive(Clone)]
+pub(crate) enum CredentialContext {
+    Bound(Arc<()>),
+    #[cfg(test)]
+    Unbound,
+}
+
+impl CredentialContext {
+    pub(crate) fn new() -> Self {
+        Self::Bound(Arc::new(()))
+    }
+
+    #[cfg(test)]
+    const fn unbound() -> Self {
+        Self::Unbound
+    }
+
+    pub(crate) fn same_as(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Bound(left), Self::Bound(right)) => Arc::ptr_eq(left, right),
+            #[cfg(test)]
+            (Self::Unbound, _) | (_, Self::Unbound) => true,
+        }
+    }
 }
 
 impl<M> SlotSelector<M>
 where
     M: CredentialMaterial,
 {
+    #[cfg(test)]
     pub(crate) fn static_value(value: M, cooldown_cap: Duration) -> Arc<Self> {
+        Self::static_value_in_context(value, cooldown_cap, CredentialContext::unbound())
+    }
+
+    pub(crate) fn static_value_in_context(
+        value: M,
+        cooldown_cap: Duration,
+        context: CredentialContext,
+    ) -> Arc<Self> {
         Arc::new(Self {
+            context,
             selected: Mutex::new(CredentialSlot::new(
                 CredentialSource::Static,
                 None,
@@ -137,8 +181,17 @@ where
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn endpoint(cooldown_cap: Duration) -> Arc<Self> {
+        Self::endpoint_in_context(cooldown_cap, CredentialContext::unbound())
+    }
+
+    pub(crate) fn endpoint_in_context(
+        cooldown_cap: Duration,
+        context: CredentialContext,
+    ) -> Arc<Self> {
         Arc::new(Self {
+            context,
             selected: Mutex::new(CredentialSlot::new(
                 CredentialSource::Endpoint,
                 None,
@@ -149,11 +202,24 @@ where
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn provider<P>(provider: P, cooldown_cap: Duration) -> Arc<Self>
     where
         P: CredentialProvider<Material = M>,
     {
+        Self::provider_in_context(provider, cooldown_cap, CredentialContext::unbound())
+    }
+
+    pub(crate) fn provider_in_context<P>(
+        provider: P,
+        cooldown_cap: Duration,
+        context: CredentialContext,
+    ) -> Arc<Self>
+    where
+        P: CredentialProvider<Material = M>,
+    {
         Arc::new(Self {
+            context,
             selected: Mutex::new(CredentialSlot::new(
                 CredentialSource::Provider,
                 Some(Arc::new(provider)),
@@ -164,11 +230,13 @@ where
         })
     }
 
-    pub(crate) fn provider_arc(
+    pub(crate) fn provider_arc_in_context(
         provider: Arc<dyn CredentialProvider<Material = M>>,
         cooldown_cap: Duration,
+        context: CredentialContext,
     ) -> Arc<Self> {
         Arc::new(Self {
+            context,
             selected: Mutex::new(CredentialSlot::new(
                 CredentialSource::Provider,
                 Some(provider),
@@ -177,6 +245,10 @@ where
                 0,
             )),
         })
+    }
+
+    pub(crate) const fn context(&self) -> &CredentialContext {
+        &self.context
     }
 
     fn selected(&self) -> Result<Arc<CredentialSlot<M>>, AuthError> {
@@ -986,6 +1058,10 @@ fn lock<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>, AuthError> {
 }
 
 /// A typed read-only credential capability.
+///
+/// References produced by a generated client are bound to that built client's
+/// private security context. They may be used through clones of that client,
+/// but authentication preparation rejects use through an independent build.
 pub struct CredentialRef<M> {
     pub(crate) selector: Arc<SlotSelector<M>>,
 }
@@ -1008,6 +1084,9 @@ where
 }
 
 /// A typed mutable endpoint-backed credential capability.
+///
+/// The handle and every read-only reference obtained from it remain bound to
+/// the originating built client's private security context.
 pub struct CredentialHandle<M> {
     selector: Arc<SlotSelector<M>>,
 }

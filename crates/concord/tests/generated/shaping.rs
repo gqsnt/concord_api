@@ -10,8 +10,10 @@ use concord::Bytes;
 use concord::api;
 use concord::body::{Multipart, MultipartBody, MultipartPart, Stream, StreamBody};
 use concord::codec::OctetStream;
-use concord::endpoint::{EndpointId, RuntimeEndpoint};
-use concord::error::{ClientBuildErrorKind, ClientInputKind, ErrorCategory};
+use concord::endpoint::{EndpointId, MAX_FORMATTED_PUBLIC_VALUE_BYTES, RuntimeEndpoint};
+use concord::error::{
+    ClientBuildErrorKind, ClientInputKind, ConfigurationErrorKind, ErrorCategory,
+};
 use concord::http::{Method, SafeProxy};
 use concord::response::{ApiResponse, ByteStream};
 use concord_test_support::server::{BodyGate, ResponseScript, ScriptedServer};
@@ -61,6 +63,46 @@ impl Display for ShapeProbe {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         SHAPING_FORMATS.fetch_add(1, Ordering::SeqCst);
         formatter.write_str(self.0)
+    }
+}
+
+pub struct FormatProbe {
+    output: String,
+    calls: Arc<AtomicUsize>,
+    panic_if_formatted: bool,
+}
+
+impl FormatProbe {
+    fn output(output: String, calls: Arc<AtomicUsize>) -> Self {
+        Self {
+            output,
+            calls,
+            panic_if_formatted: false,
+        }
+    }
+
+    fn panic(calls: Arc<AtomicUsize>) -> Self {
+        Self {
+            output: String::new(),
+            calls,
+            panic_if_formatted: true,
+        }
+    }
+}
+
+impl Display for FormatProbe {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        assert!(!self.panic_if_formatted, "later format value was inspected");
+        formatter.write_str(&self.output)
+    }
+}
+
+pub struct FailingFormatProbe;
+
+impl Display for FailingFormatProbe {
+    fn fmt(&self, _formatter: &mut Formatter<'_>) -> fmt::Result {
+        Err(fmt::Error)
     }
 }
 
@@ -190,6 +232,26 @@ api! {
     GET unsafe_header(value: crate::ShapeProbe) -> Bytes {
         path ["unsafe-header"];
         headers { "X-Dynamic" = ep.value; }
+    }
+
+    GET bounded_format_path(first: crate::FormatProbe, tail: crate::FormatProbe) -> Bytes {
+        path [fmt[fmt[ep.first], fmt[ep.tail]]];
+    }
+
+    GET bounded_format_host(first: crate::FormatProbe, tail: crate::FormatProbe) -> Bytes {
+        host [fmt[fmt[ep.first], fmt[ep.tail]]];
+    }
+
+    GET bounded_format_query(first: crate::FormatProbe, tail: crate::FormatProbe) -> Bytes {
+        query { "formatted" = fmt[fmt[ep.first], fmt[ep.tail]]; }
+    }
+
+    GET bounded_format_header(first: crate::FormatProbe, tail: crate::FormatProbe) -> Bytes {
+        headers { "X-Formatted" = fmt[fmt[ep.first], fmt[ep.tail]]; }
+    }
+
+    GET failing_format(value: crate::FailingFormatProbe) -> Bytes {
+        path [fmt["prefix-", ep.value]];
     }
 
     scope regions(
@@ -1054,6 +1116,88 @@ async fn dynamic_request_shaping_is_deferred_and_fails_before_native_execution()
     let error = header.await.expect_err("dynamic header must fail closed");
     assert_eq!(error.category(), ErrorCategory::Configuration);
     assert_eq!(SHAPING_FORMATS.load(Ordering::SeqCst), 3);
+    assert_eq!(server.request_count(), 0);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn generated_nested_formats_stop_at_the_core_bound_and_return_structured_errors() {
+    let _guard = request_shaping_test_guard().await;
+    let server = ScriptedServer::start([]).expect("bounded format trap");
+    let client = shaped_client(&server);
+    let oversized = "x".repeat(MAX_FORMATTED_PUBLIC_VALUE_BYTES + 1);
+
+    let first_calls = Arc::new(AtomicUsize::new(0));
+    let tail_calls = Arc::new(AtomicUsize::new(0));
+    let error = client
+        .bounded_format_path(
+            FormatProbe::output(oversized.clone(), Arc::clone(&first_calls)),
+            FormatProbe::panic(Arc::clone(&tail_calls)),
+        )
+        .await
+        .expect_err("formatted path first excess");
+    assert_eq!(
+        error.configuration_kind(),
+        Some(ConfigurationErrorKind::InvalidRoute)
+    );
+    assert_eq!(first_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(tail_calls.load(Ordering::SeqCst), 0);
+
+    let first_calls = Arc::new(AtomicUsize::new(0));
+    let tail_calls = Arc::new(AtomicUsize::new(0));
+    let error = client
+        .bounded_format_host(
+            FormatProbe::output(oversized.clone(), Arc::clone(&first_calls)),
+            FormatProbe::panic(Arc::clone(&tail_calls)),
+        )
+        .await
+        .expect_err("formatted host first excess");
+    assert_eq!(
+        error.configuration_kind(),
+        Some(ConfigurationErrorKind::InvalidRoute)
+    );
+    assert_eq!(first_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(tail_calls.load(Ordering::SeqCst), 0);
+
+    let first_calls = Arc::new(AtomicUsize::new(0));
+    let tail_calls = Arc::new(AtomicUsize::new(0));
+    let error = client
+        .bounded_format_query(
+            FormatProbe::output(oversized.clone(), Arc::clone(&first_calls)),
+            FormatProbe::panic(Arc::clone(&tail_calls)),
+        )
+        .await
+        .expect_err("formatted query first excess");
+    assert_eq!(
+        error.configuration_kind(),
+        Some(ConfigurationErrorKind::InvalidRoute)
+    );
+    assert_eq!(first_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(tail_calls.load(Ordering::SeqCst), 0);
+
+    let first_calls = Arc::new(AtomicUsize::new(0));
+    let tail_calls = Arc::new(AtomicUsize::new(0));
+    let error = client
+        .bounded_format_header(
+            FormatProbe::output(oversized, Arc::clone(&first_calls)),
+            FormatProbe::panic(Arc::clone(&tail_calls)),
+        )
+        .await
+        .expect_err("formatted header first excess");
+    assert_eq!(
+        error.configuration_kind(),
+        Some(ConfigurationErrorKind::InvalidHeader)
+    );
+    assert_eq!(first_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(tail_calls.load(Ordering::SeqCst), 0);
+
+    let error = client
+        .failing_format(FailingFormatProbe)
+        .await
+        .expect_err("Display failure must not panic");
+    assert_eq!(
+        error.configuration_kind(),
+        Some(ConfigurationErrorKind::InvalidRoute)
+    );
     assert_eq!(server.request_count(), 0);
 }
 

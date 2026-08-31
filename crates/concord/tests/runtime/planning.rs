@@ -7,7 +7,9 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use concord::auth::{AccessToken, AuthError, BoxFuture, CredentialProvider, CredentialRequest};
+use concord::auth::{
+    AccessToken, Auth, AuthError, BoxFuture, CredentialProvider, CredentialRequest,
+};
 use concord::body::{
     BodyError, BodyFactory, BodyKind, LengthHint, RequestBody, RequestBodyContext,
     RequestBodyMetadata, RequestBodySpec, RequestContentType, StreamBody,
@@ -16,7 +18,7 @@ use concord::codec::Text;
 #[cfg(feature = "default-tls")]
 use concord::endpoint::RequestBodyCategory;
 use concord::endpoint::{EndpointId, ResponseAcquisition, RuntimeEndpoint, TimeoutSelection};
-use concord::error::HookError;
+use concord::error::{ConfigurationErrorKind, HookError};
 #[cfg(feature = "default-tls")]
 use concord::hooks::SanitizedHeaderValue;
 use concord::hooks::{BeforeSend, CompletionEvent, ResponseHeadEvent, RuntimeHooks};
@@ -404,6 +406,49 @@ fn safe_planning_uses_real_head_shaping_without_any_lifecycle_effect() {
     }
 }
 
+#[cfg(feature = "default-tls")]
+#[test]
+fn credential_references_cannot_cross_independent_client_builds() {
+    let owner_effects = Arc::new(EffectCounts::default());
+    let foreign_effects = Arc::new(EffectCounts::default());
+    let owner = SecurePlanningApi::builder()
+        .bearer_provider(CountingProvider {
+            effects: Arc::clone(&owner_effects),
+        })
+        .build()
+        .expect("credential owner client");
+    let foreign = SecurePlanningApi::builder()
+        .bearer_provider(CountingProvider {
+            effects: Arc::clone(&foreign_effects),
+        })
+        .build()
+        .expect("foreign client");
+    let endpoint = RuntimeEndpoint::builder(
+        EndpointId::new("planning.runtime.foreign_auth").expect("valid endpoint ID"),
+        Method::GET,
+    )
+    .auth(Auth::bearer(owner.credentials().bearer().credential()))
+    .build()
+    .expect("context-bound runtime endpoint");
+
+    let error = foreign
+        .plan(&endpoint)
+        .expect_err("foreign client context must be rejected");
+    assert_eq!(
+        error.configuration_kind(),
+        Some(ConfigurationErrorKind::InvalidAuthentication)
+    );
+    owner_effects.assert_no_effects();
+    foreign_effects.assert_no_effects();
+
+    owner
+        .clone()
+        .plan(&endpoint)
+        .expect("a clone shares the credential context");
+    owner_effects.assert_no_effects();
+    foreign_effects.assert_no_effects();
+}
+
 #[tokio::test]
 async fn runtime_endpoint_timeout_does_not_change_generated_timeout_or_lazy_execution() {
     let server =
@@ -526,6 +571,41 @@ fn runtime_endpoint_plan_remains_zero_effect() {
 }
 
 #[test]
+fn runtime_method_limit_is_public_bounded_and_preserved_by_planning() {
+    let server = ScriptedServer::start([]).expect("unused method-limit planning server");
+    let effects = Arc::new(EffectCounts::default());
+    let client = configured_public_client(&server, &effects, Duration::from_secs(23));
+    let exact_text = "M".repeat(concord::endpoint::MAX_RUNTIME_ENDPOINT_METHOD_BYTES);
+    let exact_method = Method::from_bytes(exact_text.as_bytes()).expect("exact method token");
+    let endpoint = RuntimeEndpoint::builder(
+        EndpointId::new("runtime.method.exact").expect("valid endpoint ID"),
+        exact_method.clone(),
+    )
+    .response_bytes()
+    .build()
+    .expect("exact runtime method limit");
+    let plan = client.plan(&endpoint).expect("exact method plan");
+    assert_eq!(plan.method(), &exact_method);
+    assert!(format!("{plan:?}").len() < 2_048);
+    effects.assert_no_effects();
+
+    let excessive_text = "N".repeat(concord::endpoint::MAX_RUNTIME_ENDPOINT_METHOD_BYTES + 1);
+    let excessive_method =
+        Method::from_bytes(excessive_text.as_bytes()).expect("excess method token");
+    let error = RuntimeEndpoint::builder(
+        EndpointId::new("runtime.method.excess").expect("valid endpoint ID"),
+        excessive_method,
+    )
+    .build()
+    .err()
+    .expect("first excess runtime method");
+    assert_eq!(error.kind(), ConfigurationErrorKind::InvalidValue);
+    assert!(!error.to_string().contains(&excessive_text));
+    assert!(!format!("{error:?}").contains(&excessive_text));
+    effects.assert_no_effects();
+}
+
+#[test]
 fn generated_and_runtime_planning_share_final_head_limits() {
     let server = ScriptedServer::start([]).expect("unused head-limit planning server");
     let effects = Arc::new(EffectCounts::default());
@@ -567,17 +647,12 @@ fn generated_and_runtime_planning_share_final_head_limits() {
     for _ in 0..(dynamic_components + 1) {
         runtime_excess = runtime_excess.path_segment("x");
     }
-    let runtime_excess = runtime_excess
+    let error = runtime_excess
         .response::<Text>()
         .build()
-        .expect("runtime early boundary remains valid");
-    let error = client
-        .plan(&runtime_excess)
-        .expect_err("runtime first excess including Accept");
-    assert_eq!(
-        error.category(),
-        concord::error::ErrorCategory::Configuration
-    );
+        .err()
+        .expect("runtime first excess includes the retained method component");
+    assert_eq!(error.kind(), ConfigurationErrorKind::InvalidValue);
     effects.assert_no_effects();
 }
 

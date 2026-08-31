@@ -53,7 +53,7 @@ dimensions, and windows.
 
 ## Fixed base
 
-```rust
+```concord
 client ExampleApi {
     base "https://api.example.test/v1/";
 }
@@ -67,7 +67,7 @@ Its host may be a DNS domain, IPv4 literal, or IPv6 literal.
 
 Client values are declared in one `vars` block:
 
-```rust
+```concord
 vars {
     tenant: String;
     locale: Option<String>;
@@ -106,7 +106,7 @@ are arguments in declaration order.
 
 An endpoint request body uses exactly one `#[body]` parameter:
 
-```rust
+```concord
 POST update(
     id: String,
     #[body] payload: Json<UpdateInput>,
@@ -127,7 +127,7 @@ each clone prepares an independent page-stable body.
 
 ## Endpoint identity
 
-```rust
+```concord
 GET by_id(id: String) -> Json<Item> {
     id "catalog.item.by-id";
 }
@@ -147,12 +147,17 @@ changes a derived ID.
 Public request-shaping atoms are string literals, unsuffixed base-10 integer
 literals, `vars.name`, visible `scope.name`, and `ep.name`.
 
-```rust
+```concord
 fmt["item-", ep.id, "-", scope.region]
 ```
 
 `fmt[...]` concatenates one or more public atoms. Calls, indexing, methods,
 macros, chained fields, secrets, and credentials are rejected.
+
+Generated format trees are flattened into one lazy formatting operation owned
+by the runtime's bounded public-value formatter. No intermediate formatted
+`String` is retained before the bound is applied; excess output and `Display`
+failure become structured configuration errors.
 
 `vars.*` is visible at every attachment site. `scope.*` resolves one visible
 scope value and rejects ambiguous or unavailable names. `ep.*` is visible only
@@ -160,7 +165,7 @@ at its endpoint leaf.
 
 ## Host, path, query, and headers
 
-```rust
+```concord
 host [scope.region, "api"];
 path ["v1", "items", ep.id];
 query {
@@ -217,7 +222,7 @@ entries retain source order.
 
 Client authentication configuration defines secrets and credentials:
 
-```rust
+```concord
 credentials {
     secret token: String;
     secret user: String;
@@ -244,7 +249,7 @@ source type implements `CredentialProvider`.
 
 Credential placements are ordered:
 
-```rust
+```concord
 GET bearer_auth() -> NoContent {
     auth bearer bearer_token challenge unauthorized;
 }
@@ -293,7 +298,7 @@ Application client-certificate material is runtime HTTP configuration through
 
 ## Timeout
 
-```rust
+```concord
 GET milliseconds() -> NoContent { timeout 250ms; }
 GET seconds() -> NoContent { timeout 5s; }
 GET minutes() -> NoContent { timeout 10m; }
@@ -308,7 +313,7 @@ Retry is runtime policy configured through the generated builder.
 
 ## Pagination
 
-```rust
+```concord
 paginate concord::pagination::OffsetPagination {
     offset: bind ep.offset,
     page_size: bind ep.page_size,
@@ -334,7 +339,7 @@ while bound values advance.
 
 A rate-limit profile is a named reusable declaration in the client:
 
-```rust
+```concord
 rate_limits {
     rule account_reads {
         id "service.account.read";
@@ -348,7 +353,7 @@ rate_limits {
 
 Attach it and bind each formal logical dimension:
 
-```rust
+```concord
 rate_limit use account_reads {
     account = scope.account;
     cost 2;
@@ -359,7 +364,7 @@ A profile without formals uses `rate_limit use account_reads;`.
 
 An anonymous attachment declares the same semantic policy inline:
 
-```rust
+```concord
 rate_limit {
     id "service.item.read";
     by [host, endpoint, vars.tenant, scope.region, ep.item_id];

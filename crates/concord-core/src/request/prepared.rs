@@ -19,8 +19,8 @@ use crate::codec::{EncodeBody, MediaType};
 use crate::construction::{ErrorLatch, StructuralBudget, StructuralLimitError, format_bounded};
 use crate::endpoint::{
     EndpointCapabilities, EndpointDescription, EndpointId, MAX_FORMATTED_PUBLIC_VALUE_BYTES,
-    MAX_RUNTIME_ENDPOINT_COMPONENTS, MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, RequestBodyCategory,
-    TimeoutSelection,
+    MAX_RUNTIME_ENDPOINT_COMPONENTS, MAX_RUNTIME_ENDPOINT_METHOD_BYTES,
+    MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, RequestBodyCategory, TimeoutSelection,
 };
 use crate::error::{ApiError, ConfigurationError, ConfigurationErrorKind};
 use crate::limits::MAX_AUTH_PLACEMENTS;
@@ -57,11 +57,12 @@ pub struct RuntimeEndpointBuilder<R = NoContent> {
     response: PhantomData<R>,
 }
 
-/// One immutable hand-written endpoint accepted by every generated client's sealed request path.
+/// One immutable hand-written endpoint accepted by generated clients' sealed request paths.
 ///
 /// The selected generated client supplies its base URL and complete managed runtime. Only
 /// authentication explicitly attached through [`RuntimeEndpointBuilder::auth`] belongs to this
-/// endpoint.
+/// endpoint. A credential reference binds the endpoint's authentication to the client build that
+/// created the reference; clones share that context, while independent client builds are rejected.
 /// Fields are intentionally private.
 pub struct RuntimeEndpoint<R = NoContent> {
     description: EndpointDescription,
@@ -76,8 +77,25 @@ pub struct RuntimeEndpoint<R = NoContent> {
 
 impl RuntimeEndpoint<NoContent> {
     /// Starts a no-content runtime endpoint with the supplied stable identity and HTTP method.
+    ///
+    /// The method token is retained only when it is at most
+    /// [`MAX_RUNTIME_ENDPOINT_METHOD_BYTES`] bytes. Its bytes and one component
+    /// are charged to the runtime endpoint structural budget.
     #[must_use]
     pub fn builder(endpoint_id: EndpointId, method: Method) -> RuntimeEndpointBuilder<NoContent> {
+        let method_bytes = method.as_str().len();
+        if method_bytes > MAX_RUNTIME_ENDPOINT_METHOD_BYTES {
+            return RuntimeEndpointBuilder {
+                state: ErrorLatch::from_error(ConfigurationErrorKind::InvalidValue),
+                response: PhantomData,
+            };
+        }
+        let Ok(budget) = reserve_runtime_structure(StructuralBudget::new(), 1, method_bytes) else {
+            return RuntimeEndpointBuilder {
+                state: ErrorLatch::from_error(ConfigurationErrorKind::InvalidValue),
+                response: PhantomData,
+            };
+        };
         RuntimeEndpointBuilder {
             state: ErrorLatch::from_value(RuntimeEndpointParts {
                 endpoint_id,
@@ -91,7 +109,7 @@ impl RuntimeEndpoint<NoContent> {
                 auth: Vec::new(),
                 timeout: TimeoutSelection::InheritClient,
                 rate_limits: Vec::new(),
-                budget: StructuralBudget::new(),
+                budget,
             }),
             response: PhantomData,
         }
@@ -926,10 +944,48 @@ mod tests {
     }
 
     #[test]
+    fn runtime_endpoint_method_limit_is_checked_before_later_shape_and_charged_to_budget() {
+        let exact_text = "M".repeat(MAX_RUNTIME_ENDPOINT_METHOD_BYTES);
+        let exact = Method::from_bytes(exact_text.as_bytes()).expect("exact method token");
+        let remaining = MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES - exact_text.len();
+        let endpoint = RuntimeEndpoint::builder(
+            EndpointId::from_static("runtime.method.exact"),
+            exact.clone(),
+        )
+        .path_segment("x".repeat(remaining))
+        .build()
+        .expect("exact method and aggregate byte limits");
+        assert_eq!(endpoint.description().method(), &exact);
+        let rendered = format!("{:?}", endpoint.description());
+        assert!(rendered.contains(&exact_text));
+        assert!(rendered.len() < exact_text.len() + 512);
+
+        let aggregate_error =
+            RuntimeEndpoint::builder(EndpointId::from_static("runtime.method.aggregate"), exact)
+                .path_segment("x".repeat(remaining + 1))
+                .build()
+                .err()
+                .expect("method bytes consume the aggregate budget");
+        assert_eq!(aggregate_error.kind(), ConfigurationErrorKind::InvalidValue);
+
+        let excessive_text = "N".repeat(MAX_RUNTIME_ENDPOINT_METHOD_BYTES + 1);
+        let excessive = Method::from_bytes(excessive_text.as_bytes()).expect("excess method token");
+        let error =
+            RuntimeEndpoint::builder(EndpointId::from_static("runtime.method.excess"), excessive)
+                .path_segment(PanicDisplay)
+                .build()
+                .err()
+                .expect("first excess method must remain latched");
+        assert_eq!(error.kind(), ConfigurationErrorKind::InvalidValue);
+        assert!(!error.to_string().contains(&excessive_text));
+        assert!(!format!("{error:?}").contains(&excessive_text));
+    }
+
+    #[test]
     fn runtime_endpoint_query_values_stops_at_first_excess() {
         let mut builder =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.query"), Method::GET);
-        for _ in 0..(MAX_RUNTIME_ENDPOINT_COMPONENTS - 2) {
+        for _ in 0..(MAX_RUNTIME_ENDPOINT_COMPONENTS - 3) {
             builder = builder.query("", EmptyDisplay);
         }
 
@@ -968,7 +1024,7 @@ mod tests {
         let mut boundary =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.components"), Method::GET)
                 .query_optional(PanicName, Option::<PanicDisplay>::None);
-        for _ in 0..MAX_RUNTIME_ENDPOINT_COMPONENTS {
+        for _ in 0..(MAX_RUNTIME_ENDPOINT_COMPONENTS - 1) {
             boundary = boundary.query("", EmptyDisplay);
         }
         boundary.build().expect("component boundary");
@@ -977,7 +1033,7 @@ mod tests {
         let formatted = Arc::new(AtomicUsize::new(0));
         let mut excessive =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.components"), Method::GET);
-        for _ in 0..MAX_RUNTIME_ENDPOINT_COMPONENTS {
+        for _ in 0..(MAX_RUNTIME_ENDPOINT_COMPONENTS - 1) {
             excessive = excessive.query("", EmptyDisplay);
         }
         let excessive = excessive.path_segment(RetentionProbe {
@@ -996,8 +1052,9 @@ mod tests {
 
     #[test]
     fn runtime_endpoint_first_excess_public_byte_is_not_retained() {
+        let remaining = MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES - Method::GET.as_str().len();
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.bytes"), Method::GET)
-            .path_segment("x".repeat(MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES))
+            .path_segment("x".repeat(remaining))
             .build()
             .expect("public-byte boundary");
 
@@ -1005,7 +1062,7 @@ mod tests {
         let formatted = Arc::new(AtomicUsize::new(0));
         let excessive =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.bytes"), Method::GET)
-                .path_segment("x".repeat(MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES))
+                .path_segment("x".repeat(remaining))
                 .path_segment(RetentionProbe {
                     _retained: Arc::clone(&retained),
                     formatted: Arc::clone(&formatted),
@@ -1045,10 +1102,10 @@ mod tests {
     #[test]
     fn runtime_endpoint_header_replacement_updates_budget_exactly() {
         let name = HeaderName::from_static("x-budget");
-        let initial = "a".repeat(MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES - name.as_str().len());
+        let remaining = MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES - Method::GET.as_str().len();
+        let initial = "a".repeat(remaining - name.as_str().len());
         let replacement = "b";
-        let tail =
-            "c".repeat(MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES - name.as_str().len() - replacement.len());
+        let tail = "c".repeat(remaining - name.as_str().len() - replacement.len());
 
         let endpoint =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.header"), Method::GET)
@@ -1071,9 +1128,7 @@ mod tests {
         let excessive =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.header"), Method::GET)
                 .header(name.clone(), "a")
-                .path_segment(
-                    "x".repeat(MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES - name.as_str().len() - 1),
-                )
+                .path_segment("x".repeat(remaining - name.as_str().len() - 1))
                 .header(
                     name,
                     RetentionProbe {
@@ -1130,8 +1185,9 @@ mod tests {
             access_token(SECRET_SENTINEL),
             Duration::from_secs(1),
         ));
+        let remaining = MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES - Method::GET.as_str().len();
         let error = RuntimeEndpoint::builder(EndpointId::from_static("runtime.auth"), Method::GET)
-            .path_segment("x".repeat(MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES - 1))
+            .path_segment("x".repeat(remaining - 1))
             .auth(Auth::query(FORMAT_SENTINEL, credential).expect("valid authentication placement"))
             .build()
             .err()
@@ -1187,8 +1243,9 @@ mod tests {
 
     #[test]
     fn runtime_endpoint_rate_key_bytes_are_bounded_and_redacted() {
+        let remaining = MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES - Method::GET.as_str().len();
         let error = RuntimeEndpoint::builder(EndpointId::from_static("runtime.rate"), Method::GET)
-            .path_segment("x".repeat(MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES - 1))
+            .path_segment("x".repeat(remaining - 1))
             .rate_limit(rule("r", FORMAT_SENTINEL))
             .build()
             .err()

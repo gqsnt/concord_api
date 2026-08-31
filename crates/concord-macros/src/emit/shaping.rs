@@ -432,23 +432,27 @@ pub(super) fn display_argument(
             resolved_value_access(value.reference, client, scopes, endpoint)
         }
         ResolvedExpr::Format(values) => {
-            let writes = values
-                .iter()
-                .map(|value| {
-                    let value = display_argument(value, client, scopes, endpoint);
-                    quote! {
-                        ::std::fmt::Write::write_fmt(
-                            &mut __concord_formatted,
-                            format_args!("{}", #value),
-                        ).expect("formatting into a String is infallible");
-                    }
-                })
-                .collect::<Vec<_>>();
-            quote!(&{
-                let mut __concord_formatted = ::std::string::String::new();
-                #(#writes)*
-                __concord_formatted
-            })
+            let mut arguments = Vec::new();
+            collect_format_arguments(values, client, scopes, endpoint, &mut arguments);
+            let template = "{}".repeat(arguments.len());
+            quote!(&::std::format_args!(#template, #(#arguments),*))
+        }
+    }
+}
+
+fn collect_format_arguments(
+    expressions: &[ResolvedExpr],
+    client: &Client,
+    scopes: &[&Scope],
+    endpoint: &Endpoint,
+    output: &mut Vec<TokenStream>,
+) {
+    for expression in expressions {
+        match expression {
+            ResolvedExpr::Format(nested) => {
+                collect_format_arguments(nested, client, scopes, endpoint, output);
+            }
+            _ => output.push(display_argument(expression, client, scopes, endpoint)),
         }
     }
 }
@@ -616,6 +620,25 @@ mod tests {
 
         assert!(output.contains("push_value"));
         assert!(output.contains("__concord_client_values"));
+    }
+
+    #[test]
+    fn nested_formats_emit_one_lazy_argument_tree_without_a_string_intermediate() {
+        let api = crate::semantic::test_support::resolve_tokens(quote! {
+            client FormatApi {
+                base "https://example.test";
+            }
+            GET read(first: String, second: String) -> Bytes {
+                path [fmt["prefix-", fmt[ep.first, "-", ep.second]]];
+            }
+        });
+        let endpoint = crate::semantic::test_support::endpoint(&api.client.children, "read");
+        let output = path_statements(&api.client, &[], endpoint).to_string();
+
+        assert_eq!(output.matches("format_args").count(), 1);
+        assert!(!output.contains("String :: new"));
+        assert!(!output.contains("write_fmt"));
+        assert!(!output.contains("formatting into a String is infallible"));
     }
 
     #[test]

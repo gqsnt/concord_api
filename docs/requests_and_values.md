@@ -34,6 +34,11 @@ reevaluating defaults.
 - `ep.*` refers to endpoint-local values.
 - `fmt[...]` constructs one formatted public atom from restricted direct atoms.
 
+Generated `fmt[...]` trees are flattened and written lazily into the same
+core-owned capped formatter used by direct values. Concord does not first build
+an unbounded intermediate `String`; the first excess byte or `Display` failure
+returns a structured request-configuration error.
+
 The restricted language keeps value dependencies visible for planning,
 validation, rate-policy analysis, and security review.
 

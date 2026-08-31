@@ -1173,11 +1173,22 @@ async fn named_rule_attachments_share_actual_local_limiter_bucket_state() {
     assert!(!waiting.is_finished());
     assert_eq!(server.request_count(), 1);
 
+    // A ready task prevents Tokio's paused clock from auto-advancing while the
+    // independent request waits on the loopback server's real socket.
+    let clock_guard = tokio::spawn(async {
+        loop {
+            tokio::task::yield_now().await;
+        }
+    });
     client
         .lookup("different-account".to_owned())
         .await
         .expect("different logical key retains its own capacity");
     assert_eq!(server.request_count(), 2);
+    assert!(!waiting.is_finished());
+
+    clock_guard.abort();
+    let _ = clock_guard.await;
 
     waiting.abort();
     let _ = waiting.await;

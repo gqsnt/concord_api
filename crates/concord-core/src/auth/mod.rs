@@ -7,7 +7,7 @@ mod provider;
 mod slot;
 
 pub(crate) use placement::{AuthPlan, PreparedAuthPlan};
-pub(crate) use slot::SlotSelector;
+pub(crate) use slot::{CredentialContext, SlotSelector};
 
 pub use crate::limits::MAX_AUTH_PLACEMENTS;
 pub use error::AuthError;

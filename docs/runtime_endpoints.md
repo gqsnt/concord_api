@@ -34,12 +34,21 @@ pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
 
 The builder selects a bounded endpoint ID, method, public host/path/query/header
 shape, body specification, response specification, authentication, rate-policy
-plan, and timeout state. A latched error prevents later formatting or iterator
-consumption after the first structural failure.
+plan, and timeout state. Runtime method tokens are limited to 128 bytes and
+consume one structural component plus their byte length. A latched error
+prevents later formatting or iterator consumption after the first structural
+failure.
+
+An endpoint without authentication remains portable between compatible
+generated clients. Attaching a generated credential reference binds that
+authentication plan to the originating built client and its clones. Planning
+or executing it through an independent client build returns
+`InvalidAuthentication` before credential-provider or body work.
 
 ## Same executor and contracts
 
-Binding a runtime endpoint through `client.request(endpoint)` uses the same:
+Binding a compatible runtime endpoint through `client.request(endpoint)` uses
+the same:
 
 - fixed client base;
 - public planning;

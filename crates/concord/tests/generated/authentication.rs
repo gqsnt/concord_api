@@ -5,12 +5,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use concord::api;
-#[cfg(feature = "default-tls")]
-use concord::auth::AuthErrorKind;
 use concord::auth::{
-    AccessToken, AuthError, BoxFuture, CredentialMaterial, CredentialProvider, CredentialRequest,
-    MAX_BASIC_PASSWORD_BYTES, MAX_BASIC_USERNAME_BYTES, MAX_CREDENTIAL_SECRET_BYTES,
-    SecretCredential,
+    AccessToken, AuthError, AuthErrorKind, BoxFuture, CredentialMaterial, CredentialProvider,
+    CredentialRequest, MAX_BASIC_PASSWORD_BYTES, MAX_BASIC_USERNAME_BYTES,
+    MAX_CREDENTIAL_SECRET_BYTES, SecretCredential,
 };
 use concord::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};
 use concord::error::{ClientBuildErrorKind, ClientInputKind, ErrorCategory};
@@ -372,6 +370,20 @@ fn static_built_in_credential_first_excess_fails_build_with_safe_field_metadata(
 }
 
 #[test]
+fn static_basic_username_colons_are_rejected_and_password_colons_remain_valid() {
+    const USERNAME_SENTINEL: &str = "basic-user:delimiter-sentinel";
+    assert_invalid_credential(
+        auth_builder().username(secret(USERNAME_SENTINEL)).build(),
+        "username",
+        USERNAME_SENTINEL,
+    );
+    auth_builder()
+        .password(secret("prefix:password:tail"))
+        .build()
+        .expect("Basic password colons remain valid");
+}
+
+#[test]
 fn one_declared_secret_can_feed_multiple_credentials_through_shared_clones() {
     SharedSecretApi::builder()
         .shared(secret("one-shared-protected-value"))
@@ -572,6 +584,13 @@ async fn generated_handles_share_clone_state_keep_independent_builds_and_replace
         .replace("replacement-user", "replacement-password")
         .await
         .expect("atomic Basic replacement");
+    let error = client
+        .credentials()
+        .login()
+        .replace("invalid:user", "replacement-password")
+        .await
+        .expect_err("invalid Basic username replacement");
+    assert_eq!(error.kind(), AuthErrorKind::InvalidConfiguration);
     client
         .credentials()
         .rotating_bearer()
