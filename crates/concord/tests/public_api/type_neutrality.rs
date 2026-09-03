@@ -16,11 +16,12 @@ impl DecodeBody for Json {
 
 api! {
     client LocalNameApi {
+        timeout off;
         base "http://local-name.example.test/";
-    }
 
-    GET local_name() -> crate::Json;
-}
+
+    GET local_name() -> Bytes using crate::Json;
+}}
 
 #[test]
 fn local_type_named_json_needs_no_json_feature_or_macro_branch() {
@@ -34,12 +35,13 @@ pub type RenamedJson<T> = concord::codec::Json<T>;
 #[cfg(feature = "json")]
 api! {
     client ExtrasJsonApi {
+        timeout off;
         base "http://extras-json.example.test/";
-    }
 
-    GET aliased() -> crate::RenamedJson<Vec<u32>>;
-    GET qualified() -> concord::codec::Json<Vec<u32>>;
-}
+
+    GET aliased() -> Vec<u32> using crate::RenamedJson<Vec<u32>>;
+    GET qualified() -> Vec<u32> using concord::codec::Json<Vec<u32>>;
+}}
 
 #[cfg(feature = "json")]
 #[test]

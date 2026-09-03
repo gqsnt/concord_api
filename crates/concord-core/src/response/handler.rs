@@ -3,12 +3,12 @@ use std::num::NonZeroUsize;
 use bytes::{Bytes, BytesMut};
 
 use crate::endpoint::EndpointId;
-use crate::error::{ApiError, ErrorCategory};
+use crate::error::{ApiError, DispatchKnowledge, ErrorCategory, FailureStage};
 use crate::http::application::ApplicationResponse;
 use crate::operation::OperationDeadline;
 
 use super::spec::ResponseSelection;
-use super::{ByteStream, ResponseBodyErrorKind, ResponseBodySpec, ResponseHead};
+use super::{ByteStream, ResponseBodyErrorKind, ResponseHead, ResponseSpec};
 
 pub struct ResponseInput {
     pub(crate) response: ApplicationResponse,
@@ -24,7 +24,7 @@ pub(crate) async fn execute_response<R, S>(
     head: &ResponseHead<'_>,
 ) -> Result<(S::Output, usize), ApiError>
 where
-    R: ResponseBodySpec,
+    R: ResponseSpec,
     S: ResponseSelection<R>,
 {
     <S::Mode as super::spec::private::Sealed>::preflight(&input)?;
@@ -33,7 +33,7 @@ where
     input
         .deadline
         .check()
-        .map_err(|_| timeout(&input.endpoint, &input.method))?;
+        .map_err(|_| conversion_timeout(&input.endpoint, &input.method))?;
     validation
         .map_err(|error| response_spec_error(&input.endpoint, &input.method, error.kind()))?;
 
@@ -43,7 +43,9 @@ where
     let body = <S::Mode as super::spec::private::Sealed>::acquire(input).await?;
     let acquired_body_bytes = <S::Mode as super::spec::private::Sealed>::acquired_body_bytes(&body);
     let output = S::from_body(body, head);
-    deadline.check().map_err(|_| timeout(&endpoint, &method))?;
+    deadline
+        .check()
+        .map_err(|_| conversion_timeout(&endpoint, &method))?;
     let output = output.map_err(|error| response_spec_error(&endpoint, &method, error.kind()))?;
     Ok((output, acquired_body_bytes))
 }
@@ -106,11 +108,24 @@ fn response_spec_error(
         ResponseBodyErrorKind::Decode => ErrorCategory::ResponseDecoding,
         ResponseBodyErrorKind::Internal => ErrorCategory::Internal,
     };
-    ApiError::classified(endpoint.clone(), method.clone(), category)
+    ApiError::classified(endpoint.clone(), method.clone(), category).with_stage(
+        FailureStage::ResponseConversion,
+        DispatchKnowledge::ResponseReceived,
+    )
 }
 
 fn timeout(endpoint: &EndpointId, method: &http::Method) -> ApiError {
-    ApiError::classified(endpoint.clone(), method.clone(), ErrorCategory::Timeout)
+    ApiError::classified(endpoint.clone(), method.clone(), ErrorCategory::Timeout).with_stage(
+        FailureStage::ResponseAcquisition,
+        DispatchKnowledge::ResponseReceived,
+    )
+}
+
+fn conversion_timeout(endpoint: &EndpointId, method: &http::Method) -> ApiError {
+    ApiError::classified(endpoint.clone(), method.clone(), ErrorCategory::Timeout).with_stage(
+        FailureStage::ResponseConversion,
+        DispatchKnowledge::ResponseReceived,
+    )
 }
 
 fn preflight_length(input: &ResponseInput, limit: NonZeroUsize) -> Result<(), ApiError> {
@@ -127,6 +142,10 @@ fn preflight_length(input: &ResponseInput, limit: NonZeroUsize) -> Result<(), Ap
             input.endpoint.clone(),
             input.method.clone(),
             ErrorCategory::ResponseBody,
+        )
+        .with_stage(
+            FailureStage::ResponseAcquisition,
+            DispatchKnowledge::ResponseReceived,
         ));
     }
     Ok(())
@@ -149,6 +168,10 @@ async fn collect_bounded(input: ResponseInput) -> Result<Bytes, ApiError> {
                         endpoint.clone(),
                         body_method.clone(),
                         ErrorCategory::ResponseBody,
+                    )
+                    .with_stage(
+                        FailureStage::ResponseAcquisition,
+                        DispatchKnowledge::ResponseReceived,
                     ));
                 };
                 if next_length > limit {
@@ -156,6 +179,10 @@ async fn collect_bounded(input: ResponseInput) -> Result<Bytes, ApiError> {
                         endpoint.clone(),
                         body_method.clone(),
                         ErrorCategory::ResponseBody,
+                    )
+                    .with_stage(
+                        FailureStage::ResponseAcquisition,
+                        DispatchKnowledge::ResponseReceived,
                     ));
                 }
                 body.extend_from_slice(&chunk);

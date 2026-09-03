@@ -1,24 +1,15 @@
-# Runtime endpoints
+# Runtime-defined endpoints
 
-- **Audience:** callers with dynamically known operations and extension authors
-- **Purpose:** guide
-- **Normative references:** [runtime model](runtime.md), [advanced endpoint types in the public API](generated_client.md)
-
-Runtime-defined endpoints support operations whose exact shape is not available
-at macro expansion: configuration-driven paths, service discovery, API
-exploration, or plugin-defined operations.
-
-They escape generated syntax, not Concord’s semantic runtime.
-
-## Construct one endpoint
+Runtime endpoints are the dynamic-contract escape route. They are not a native
+HTTP escape route and cannot mutate generated client/scope values.
 
 <!-- concord-source: crates/concord-examples/src/runtime_endpoints/generated_and_runtime.rs#runtime_endpoint -->
 ```rust
 pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
     let client = PreparedApi::builder().build()?;
     let endpoint = RuntimeEndpoint::builder(EndpointId::new("prepared_api.lookup")?, Method::POST)
-        .path_segment("records")
-        .path_segment("42")
+        .path("records")
+        .path("42")
         .query("view", "summary")
         .header(HeaderName::from_static("x-example"), "canonical")
         .timeout(Duration::from_secs(5))
@@ -32,78 +23,28 @@ pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-The builder selects a bounded endpoint ID, method, public host/path/query/header
-shape, body specification, response specification, authentication, rate-policy
-plan, and timeout state. Runtime method tokens are limited to 128 bytes and
-consume one structural component plus their byte length. A latched error
-prevents later formatting or iterator consumption after the first structural
-failure.
+Construction is inert and first-error latched. Once one operation fails, later
+values/iterators are not formatted or consumed. Component and public-byte limits
+apply while building, and route/head limits are shared with generated requests.
 
-An endpoint without authentication remains portable between compatible
-generated clients. Attaching a generated credential reference binds that
-authentication plan to the originating built client and its clones. Planning
-or executing it through an independent client build returns
-`InvalidAuthentication` before credential-provider or body work.
+The builder uses v2 vocabulary: validated `subdomain`, `replace_subdomains`, and
+`subdomain_off`; validated/once-encoded `path`, `replace_path`, and `path_off`;
+ordered query assignment/append/removal/off; header replacement/removal/off;
+auth add/replace/off; timeout selection; explicit `Repeatability`;
+response-owned `accept`/off; body/response specs; canonical rate policies; and
+explicit accepted-byte response selection.
 
-## Same executor and contracts
+`client.plan(&endpoint)` uses the same public shaping and returns the same
+credential-free plan model. `client.request(endpoint)` binds it to that client's
+transport, security identity, credential context, limiter, retry policy, gates,
+observer, limits, and executor. Credential references from another independent
+build are rejected before private/native work.
 
-Binding a compatible runtime endpoint through `client.request(endpoint)` uses
-the same:
+Runtime endpoints have a value-owned `EndpointDescription`. Their runtime-bound
+shape is represented honestly rather than pretending arbitrary extension code
+is statically known. They obey the same deadline, retry/replay, auth recovery,
+rate admission, response acquisition, redaction, cancellation, and error laws.
 
-- fixed client base;
-- public planning;
-- hooks and debug;
-- credential slots and private placement;
-- limiter and retry policy;
-- body and response modes;
-- deadline and cancellation;
-- safe errors and completion.
-
-There is no public second native HTTP path.
-
-## Differences from generated endpoints
-
-Runtime endpoints do not have:
-
-- generated domain navigation;
-- compile-time scope inheritance;
-- generated value-control methods;
-- compiler-derived source names and trait obligations;
-- generated pagination bindings.
-
-Dynamic structure is validated at construction/runtime instead of by the DSL
-compiler. The API is intentionally more verbose because less information is
-available statically.
-
-## Why not expose a native request builder
-
-A native builder would be simpler for unusual protocols, but could bypass
-planning, reserved-target validation, bounded body/response contracts, private
-credential placement, limiter admission, retry/recovery, hooks, errors,
-cancellation, and completion.
-
-The runtime endpoint builder exposes semantic request components while core
-retains transport ownership.
-
-## Suitable and unsuitable uses
-
-Suitable:
-
-- discovered links under one known service;
-- operator/admin operations supplied by configuration;
-- plugin-defined endpoints using existing body/response/auth semantics;
-- exploratory tools requiring safe planning.
-
-Potentially unsuitable:
-
-- custom sockets or protocol upgrades;
-- exact raw URL/query serialization outside Concord’s model;
-- middleware requiring native request/response ownership;
-- cryptographic signing over final transport serialization;
-- dynamic pagination requiring arbitrary request mutation.
-
-## Related
-
-- [Generated client](generated_client.md)
-- [Extensions](extensions.md)
-- [Planning and observation](planning_and_observation.md)
+Runtime pagination is intentionally absent unless it can preserve the same
+generated slot-authority and aggregate-bound model; callers should prefer a
+generated paginated contract rather than arbitrary mutation.

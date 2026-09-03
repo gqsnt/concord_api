@@ -21,7 +21,7 @@ tokio = ["dep:tokio"]
 riot-live = ["json", "rate-limit", "default-tls", "http2", "tokio"]
 
 [dependencies]
-concord = { version = "=1.0.0", path = "../concord", default-features = false }
+concord = { version = "=2.0.0", path = "../concord", default-features = false }
 futures-core.workspace = true
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }

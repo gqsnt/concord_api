@@ -107,6 +107,36 @@ impl StructuralBudget {
         self.public_bytes = next_public_bytes;
         Ok(())
     }
+
+    pub(crate) fn try_replace(
+        &mut self,
+        previous_components: usize,
+        previous_public_bytes: usize,
+        replacement_components: usize,
+        replacement_public_bytes: usize,
+        maximum_components: usize,
+        maximum_public_bytes: usize,
+    ) -> Result<(), StructuralLimitError> {
+        let next_components = self
+            .components
+            .checked_sub(previous_components)
+            .and_then(|count| count.checked_add(replacement_components))
+            .ok_or(StructuralLimitError::ArithmeticOverflow)?;
+        let next_public_bytes = self
+            .public_bytes
+            .checked_sub(previous_public_bytes)
+            .and_then(|bytes| bytes.checked_add(replacement_public_bytes))
+            .ok_or(StructuralLimitError::ArithmeticOverflow)?;
+        if next_components > maximum_components {
+            return Err(StructuralLimitError::ComponentLimitExceeded);
+        }
+        if next_public_bytes > maximum_public_bytes {
+            return Err(StructuralLimitError::PublicByteLimitExceeded);
+        }
+        self.components = next_components;
+        self.public_bytes = next_public_bytes;
+        Ok(())
+    }
 }
 
 /// A structural formatting failure that never retains the formatted value.

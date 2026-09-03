@@ -1,5 +1,5 @@
-error: `id`, `by`, and `cost` clauses must appear before rate-limit windows
- --> tests/ui/fail/rate_limits/rate_limit_late_by.rs:8:13
+error: `id`, `key`, and `cost` clauses must appear before rate-limit windows
+ --> tests/ui/fail/rate_limits/rate_limit_late_by.rs:9:13
   |
-8 |             by [host];
-  |             ^^
+9 |             key [host];
+  |             ^^^

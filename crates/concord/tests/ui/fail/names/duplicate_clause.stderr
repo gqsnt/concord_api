@@ -1,11 +1,11 @@
 error: duplicate `timeout` clause for endpoint `read`
-  --> tests/ui/fail/names/duplicate_clause.rs:13:9
+  --> tests/ui/fail/names/duplicate_clause.rs:14:9
    |
-13 |         timeout 2s;
+14 |         timeout 2s;
    |         ^^^^^^^
 
 error: the first `timeout` clause is here
-  --> tests/ui/fail/names/duplicate_clause.rs:11:9
+  --> tests/ui/fail/names/duplicate_clause.rs:12:9
    |
-11 |         timeout 1s;
+12 |         timeout 1s;
    |         ^^^^^^^

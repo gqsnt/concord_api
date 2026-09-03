@@ -16,14 +16,15 @@ impl<Page> concord::pagination::PaginationController<Page> for Controller {
 
 api! {
     client NonRepeatableCodecApi {
+        timeout off;
         base "https://example.test";
-    }
+
 
     POST read(
-        #[body] body: crate::support::Json<String>,
-    ) -> crate::support::Json<Vec<u8>> {
-        paginate crate::Controller {}
+        body body: String using crate::support::Json<String>,
+    ) -> Vec<u8> using crate::support::Json<Vec<u8>> {
+        paginate with crate::Controller {}
     }
-}
+}}
 
 fn main() {}

@@ -1,5 +1,5 @@
 error: the `retry` DSL clause was removed; install a managed `RetryPolicy` with the generated builder `.retry(policy)`
- --> tests/ui/fail/syntax/retry_dsl_removed.rs:6:9
+ --> tests/ui/fail/syntax/retry_dsl_removed.rs:7:9
   |
-6 |         retry reqwest_default;
+7 |         retry reqwest_default;
   |         ^^^^^

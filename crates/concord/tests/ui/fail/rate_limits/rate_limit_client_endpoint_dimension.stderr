@@ -1,5 +1,5 @@
-error: `ep.account` is unavailable in a client rate-limit declaration
- --> tests/ui/fail/rate_limits/rate_limit_client_endpoint_dimension.rs:6:29
+error: `endpoint.NAME` is available only while shaping an endpoint
+ --> tests/ui/fail/rate_limits/rate_limit_client_endpoint_dimension.rs:7:36
   |
-6 |         rate_limit { by [ep.account]; 1 / 1s; }
-  |                             ^^^^^^^
+7 |         rate_limit { key [endpoint.account]; allow 1 per 1s; }
+  |                                    ^^^^^^^

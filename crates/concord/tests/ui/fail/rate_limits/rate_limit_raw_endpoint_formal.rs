@@ -2,18 +2,19 @@ use concord::prelude::*;
 
 api! {
     client RawEndpointFormalApi {
+        timeout off;
         base "https://example.test";
         rate_limits {
-            rule shared {
-                by [r#endpoint];
-                1 / 1s;
+            shared(r#endpoint) {
+                key [r#endpoint];
+                allow 1 per 1s;
             }
         }
-    }
 
-    GET read() -> Bytes {
-        rate_limit use shared;
+
+    GET read() -> Bytes using Bytes {
+        rate_limit shared();
     }
-}
+}}
 
 fn main() {}

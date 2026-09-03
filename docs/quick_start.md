@@ -1,23 +1,9 @@
 # Quick start
 
-- **Audience:** first-time API authors and callers
-- **Purpose:** tutorial
-- **Normative references:** [DSL specification](spec.md), [generated client](generated_client.md)
+This walkthrough uses the compiled catalog example in
+`crates/concord-examples`.
 
-Concord requires Rust 1.86 or newer. This tutorial uses the `json` feature.
-
-## Add the dependency
-
-```toml
-[dependencies]
-concord = { path = "../concord_api/crates/concord", features = ["json"] }
-serde = { version = "1", features = ["derive"] }
-```
-
-## Declare the supporting Rust items
-
-Concord treats Rust types as opaque. The declaration below names one response
-type and one default constant, so declare them in the same module first.
+## 1. Define domain types and a stable default
 
 <!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_types -->
 ```rust
@@ -43,73 +29,51 @@ pub struct ItemSummary {
 }
 ```
 
-## Declare one domain-shaped client
-
-The contract below has one required client value, one meaningful regional
-scope, and one endpoint with an optional filter, declaration defaults, a typed
-response, and explicit pagination bindings. Type and default paths resolve in
-the module that contains the declaration.
+## 2. Declare one contained client tree
 
 <!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_contract -->
 ```rust
 api! {
     client CatalogApi {
+        timeout off;
         base "http://catalog.example.test/";
-        vars {
+        values {
             tenant: String;
         }
         path ["api"];
-        query { "tenant" = vars.tenant; }
-    }
+        query { "tenant" = client.tenant; }
+
 
     scope regional(region: String) {
-        host [scope.region, "api"];
+        subdomain replace [regional.region, "api"];
         path ["v1", "catalog"];
 
         GET item_summaries(
-            category: Option<String>,
+            category?: String,
             offset: u64 = 0,
             count: std::num::NonZeroU32 = DEFAULT_PAGE_SIZE,
-        ) -> Json<Vec<ItemSummary>> {
+        ) -> Vec<ItemSummary> using Json<Vec<ItemSummary>> {
             path ["items"];
             query {
-                "category" = ep.category;
-                "offset" = ep.offset;
-                "count" = ep.count;
+                "category" = endpoint.category;
+                "offset" = endpoint.offset;
+                "count" = endpoint.count;
             }
-            paginate concord::pagination::OffsetPagination {
-                offset: bind ep.offset,
-                page_size: bind ep.count,
+            paginate with concord::pagination::OffsetPagination {
+                offset -> endpoint.offset;
+                page_size -> endpoint.count;
             }
         }
     }
-}
+}}
 ```
 
-Read it in two passes:
+The output type is exactly `Vec<ItemSummary>`; `Json<Vec<ItemSummary>>` owns
+status/media/acquisition/conversion. `category?` creates one outer omission
+slot. `offset` and `count` are defaulted once per request snapshot and remain
+available to the pagination adapter.
 
-1. `GET item_summaries(...) -> Json<Vec<ItemSummary>>` states the domain operation.
-2. `path`, `query`, and `paginate` state the local HTTP and execution mapping.
-
-The parent nodes already state the tenant query, regional host, and shared path.
-The endpoint does not repeat them.
-
-## Understand the generated tree
-
-The declaration generates:
-
-```text
-CatalogApi / CatalogApiBuilder
-└── regional(region) -> Regional snapshot
-    └── item_summaries() -> ItemSummariesRequest
-```
-
-`tenant` is required at client build time. `region` is required when selecting
-the scope. `category` is absence-capable and therefore gets `set_category` and
-`clear_category`. `offset` and `count` are defaulted and therefore get
-`set_*` and `reset_*` controls.
-
-## Build and construct a request
+## 3. Build and configure immutable snapshots
 
 <!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_usage -->
 ```rust
@@ -121,27 +85,17 @@ pub fn construct() -> Result<(), concord::ClientBuildError> {
     let _: PaginatedRequest<_> = client
         .regional("eu".to_owned())
         .item_summaries()
-        .set_category("hardware".to_owned())
+        .with_category("hardware".to_owned())
         .set_count(NonZeroU32::new(50).expect("positive page size"))
-        .paginate(PageLimit::Take(2));
+        .paginate(PageLimit::Prefix(2));
     Ok(())
 }
 ```
 
-Construction is inert. No controller, limiter, credential provider, body
-factory, hook, native request, or HTTP operation starts until the returned
-future is polled.
+All controls consume a snapshot and return another. Nothing above performs HTTP
+or allocates an operation lifecycle.
 
-## One page versus pagination
-
-Directly awaiting `item_summaries()` performs one page using the selected
-initial values. Calling `.paginate(PageLimit::Take(2))` returns a successful
-finite prefix after at most two pages. A hard cap is available when natural
-completion is required within a finite number of pages; see
-[Pagination](pagination.md).
-
-Both terminals produce the declared output type, so the page loop is invisible
-at the call site:
+## 4. Execute one page or a bounded prefix
 
 <!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_execution -->
 ```rust
@@ -149,47 +103,29 @@ pub async fn execute(client: &CatalogApi) -> Result<(usize, usize), concord::Api
     let one_page: Vec<ItemSummary> = client
         .regional("eu".to_owned())
         .item_summaries()
-        .set_category("hardware".to_owned())
+        .with_category("hardware".to_owned())
         .await?;
 
     let first_two_pages: Vec<ItemSummary> = client
         .regional("eu".to_owned())
         .item_summaries()
-        .paginate(PageLimit::Take(2))
+        .paginate(PageLimit::Prefix(2))
         .await?;
 
     Ok((one_page.len(), first_two_pages.len()))
 }
 ```
 
-The example host is not a live service, so this function is compile-checked
-rather than executed.
+Polling the terminal begins the managed executor. Pagination shares one
+deadline and independent page/item/byte/cycle/attempt bounds.
 
-## What Concord handled
+## 5. Plan or transport intent
 
-The author did not implement:
+Use `let intent = CatalogApi::unbound().regional(region).item_summaries();` to
+construct the same endpoint tree without a runtime. `intent.description()` is
+static. `client.plan(&intent)` performs credential-free/redaction-aware public
+shaping. `client.request(intent)` binds it for execution. None of these operations
+executes until the returned request terminal is polled.
 
-- host and path propagation;
-- query-key omission for `None`;
-- percent encoding;
-- client, scope, endpoint, or request structs;
-- default retention and reset controls;
-- the page loop, cycle detection, or item limits;
-- response buffering and JSON conversion;
-- cancellation or completion behavior.
-
-Those semantics are implemented once and tested centrally.
-
-## Add authentication next
-
-Authentication is deliberately separate from ordinary public values. Secrets
-produce named builder inputs, credential sources own material acquisition, and
-`auth` attachments own private placement. Continue with
-[Authentication](auth.md).
-
-## Continue
-
-- [Mental model](mental_model.md)
-- [Modeling APIs](modeling_apis.md)
-- [Generated client](generated_client.md)
-- [Requests and values](requests_and_values.md)
+Continue with [generated client details](generated_client.md),
+[authentication](auth.md), and [planning](planning_and_observation.md).

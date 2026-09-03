@@ -498,7 +498,7 @@ impl ApplicationHttp {
         endpoint: &EndpointId,
         method: &Method,
         request: ApplicationRequest,
-        safe_url: &str,
+        observed_url: &str,
         public_headers: &HeaderMap,
         pagination_sensitive_headers: &std::collections::HashSet<http::HeaderName>,
         body_kind: BodyKind,
@@ -526,7 +526,7 @@ impl ApplicationHttp {
                 let boundary = super::development::boundary_request_with_sensitive(
                     endpoint.as_str(),
                     method.clone(),
-                    Some(safe_url.to_owned()),
+                    Some(observed_url.to_owned()),
                     native.headers(),
                     pagination_sensitive_headers,
                     boundary_body_category(body_kind),
@@ -564,7 +564,7 @@ impl ApplicationHttp {
         #[cfg(not(test))]
         let native = {
             let _ = (
-                safe_url,
+                observed_url,
                 public_headers,
                 pagination_sensitive_headers,
                 body_kind,

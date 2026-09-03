@@ -2,8 +2,9 @@ use concord::api;
 
 api! {
     client Api {
+        timeout off;
         base "https://example.test";
-        rate_limit { by []; 1 / 1s; }
+        rate_limit { key []; allow 1 per 1s; }
     }
 }
 

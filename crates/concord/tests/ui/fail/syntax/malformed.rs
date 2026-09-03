@@ -2,15 +2,16 @@ use concord::api;
 
 api! {
     client MalformedApi {
+        timeout off;
         base "https://malformed.example.test";
-    }
+
 
     scope resources(scope_value: String) {
-        path ["scopes", scope.scope_value, "resources"];
+        path ["scopes", resources.scope_value, "resources"];
         FETCH ById(endpoint_value: String) -> NoContent {
-            path [ep.endpoint_value];
+            path [endpoint.endpoint_value];
         }
     }
-}
+}}
 
 fn main() {}

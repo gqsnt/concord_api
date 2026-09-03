@@ -29,8 +29,8 @@ use crate::codec::{CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeCont
 use crate::endpoint::EndpointId;
 use crate::error::{ApiError, AuthErrorKind, ErrorCategory};
 use crate::hooks::{
-    AttemptInfo, BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,
-    PaginationCompletionEvent, ResponseHeadEvent, RuntimeHooks,
+    AttemptInfo, BeforeSend, BoxFuture, CompletionEvent, CompletionObserver, CompletionOutcome,
+    DebugLevel, PaginationCompletionEvent, RequestGate, ResponseGate, ResponseHeadEvent,
 };
 use crate::http::HttpConfigBuilder;
 use crate::http::provider::{ProviderBody, ProviderRequest};
@@ -45,7 +45,7 @@ use crate::rate_limit::{
 use crate::request::{
     EndpointSpec, HeadBuilder, PreparedHead, Request, RequestMeta, RuntimeEndpoint,
 };
-use crate::response::{Buffered, ResponseBodyError, ResponseBodySpec, ResponseHead};
+use crate::response::{Buffered, ResponseBodyError, ResponseHead, ResponseSpec};
 use crate::runtime::RuntimeConfigBuilder;
 
 const ENDPOINT: &str = "authentication_api.protected";
@@ -613,7 +613,12 @@ impl EndpointSpec for ProtectedEndpoint {
     type Response = Bytes;
 
     fn request_meta(&self) -> RequestMeta {
-        RequestMeta::new(ENDPOINT, Method::POST, Some(Duration::from_secs(30)))
+        RequestMeta::new_with_repeatability(
+            ENDPOINT,
+            Method::POST,
+            Some(Duration::from_secs(30)),
+            crate::endpoint::Repeatability::Idempotent,
+        )
     }
 
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
@@ -627,7 +632,7 @@ impl EndpointSpec for ProtectedEndpoint {
         if let Some(rate_key) = &self.rate_key {
             builder.push_rate_limit_policy(
                 "AuthenticationApi::rate_limit::tenant",
-                [("vars.tenant", rate_key.as_str())],
+                [("client.tenant", rate_key.as_str())],
                 1,
                 [(1, Duration::from_secs(1))],
             )?;
@@ -653,7 +658,7 @@ struct HookRecord {
     parent_operation_id: Option<OperationId>,
     page_index: u32,
     attempt: AttemptInfo,
-    safe_url: String,
+    observed_url: String,
     known_body_length: Option<u64>,
 }
 
@@ -712,11 +717,11 @@ impl AuthHooks {
     }
 }
 
-impl RuntimeHooks for AuthHooks {
+impl RequestGate for AuthHooks {
     fn before_send<'a>(
         &'a self,
         context: BeforeSend<'a>,
-    ) -> BoxFuture<'a, Result<(), crate::error::HookError>> {
+    ) -> BoxFuture<'a, Result<(), crate::error::GateError>> {
         self.before
             .lock()
             .expect("before records")
@@ -725,24 +730,26 @@ impl RuntimeHooks for AuthHooks {
                 parent_operation_id: context.parent_operation_id,
                 page_index: context.page_index,
                 attempt: context.attempt,
-                safe_url: context.safe_url.to_owned(),
+                observed_url: context.observed_url.to_owned(),
                 known_body_length: context.known_body_length,
             });
         let veto =
             context.attempt.authentication_recovery && self.veto_recovery.load(Ordering::SeqCst);
         Box::pin(async move {
             if veto {
-                Err(crate::error::HookError::new("recovery veto"))
+                Err(crate::error::GateError::new("recovery veto"))
             } else {
                 Ok(())
             }
         })
     }
+}
 
-    fn on_response_head<'a>(
+impl ResponseGate for AuthHooks {
+    fn before_response_handling<'a>(
         &'a self,
         context: ResponseHeadEvent<'a>,
-    ) -> BoxFuture<'a, Result<(), crate::error::HookError>> {
+    ) -> BoxFuture<'a, Result<(), crate::error::GateError>> {
         self.response.lock().expect("response records").push((
             context.operation_id,
             context.attempt,
@@ -775,8 +782,10 @@ impl RuntimeHooks for AuthHooks {
         }
         Box::pin(async { Ok(()) })
     }
+}
 
-    fn on_complete<'a>(&'a self, context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
+impl CompletionObserver for AuthHooks {
+    fn on_complete(&self, context: CompletionEvent<'_>) {
         self.completion.lock().expect("completion records").push((
             context.operation_id,
             context.recovered_authentication,
@@ -787,13 +796,9 @@ impl RuntimeHooks for AuthHooks {
             context.attempts_started,
             context.policy_retries,
         ));
-        Box::pin(async {})
     }
 
-    fn on_pagination_complete<'a>(
-        &'a self,
-        context: PaginationCompletionEvent<'a>,
-    ) -> BoxFuture<'a, ()> {
+    fn on_pagination_complete(&self, context: PaginationCompletionEvent<'_>) {
         self.pagination.lock().expect("pagination records").push((
             context.operation_id,
             context.pages_completed,
@@ -804,7 +809,6 @@ impl RuntimeHooks for AuthHooks {
             context.attempts_started,
             context.policy_retries,
         ));
-        Box::pin(async {})
     }
 }
 
@@ -931,7 +935,7 @@ struct AuthRateLimiter {
     key_limit: usize,
 }
 
-type CapturedAuthRule = (String, Vec<(String, String)>, u32, Vec<(u32, Duration)>);
+type CapturedAuthRule = (String, Vec<(String, Vec<u8>)>, u32, Vec<(u32, Duration)>);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct CapturedAuthPlan {
@@ -1213,7 +1217,11 @@ fn core_with_runtime(
     let core = ClientCore::build_with_development(
         "https://protected.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
-        runtime.hooks(hooks).debug(DebugLevel::Headers),
+        runtime
+            .request_gate(hooks.clone())
+            .response_gate(hooks.clone())
+            .completion_observer(hooks)
+            .debug(DebugLevel::Headers),
         executor,
     )
     .expect("protected development core")

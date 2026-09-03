@@ -2,16 +2,17 @@ use runtime::api;
 
 api! {
     client MismatchApi {
+        timeout off;
         base "https://mismatch.example.test";
-    }
+
 
     scope resources(scope_value: String) {
-        path ["scopes", scope.scope_value, "resources"];
-        GET by_id(endpoint_value: String) -> NoContent {
-            path [ep.endpoint_value];
+        path ["scopes", resources.scope_value, "resources"];
+        GET by_id(endpoint_value: String) -> () using ::runtime::NoContent {
+            path [endpoint.endpoint_value];
         }
     }
-}
+}}
 
 pub fn otherwise_complete_surface() {
     if let Ok(client) = MismatchApi::new() {

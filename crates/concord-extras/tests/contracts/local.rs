@@ -48,7 +48,7 @@ async fn downstream_local_limiter_uses_public_contracts_and_core_cooldown_cap() 
     let request = || RateLimitRequest {
         endpoint: "RateApi::limited",
         method: &Method::GET,
-        safe_url: "https://example.test/limited",
+        observed_url: "https://example.test/limited",
         host: Some("example.test"),
         page_index: 0,
         attempt: AttemptInfo {

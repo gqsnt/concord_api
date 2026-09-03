@@ -6,7 +6,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use concord::Bytes;
 use concord::api;
 use concord::body::{Multipart, MultipartBody, MultipartPart, Stream, StreamBody};
 use concord::codec::OctetStream;
@@ -16,6 +15,7 @@ use concord::error::{
 };
 use concord::http::{Method, SafeProxy};
 use concord::response::{ApiResponse, ByteStream};
+use concord::{Bytes, NoContent, Text};
 use concord_test_support::server::{BodyGate, ResponseScript, ScriptedServer};
 use futures_core::Stream as FuturesStream;
 use tokio::sync::{Mutex, MutexGuard};
@@ -152,232 +152,230 @@ fn explicit_drops() -> &'static AtomicUsize {
 pub const CLIENT_DEFAULT: DropProbe = DropProbe::new("client-default", client_default_drops);
 pub const SCOPE_DEFAULT: DropProbe = DropProbe::new("scope-default", scope_default_drops);
 pub const ENDPOINT_DEFAULT: DropProbe = DropProbe::new("endpoint-default", endpoint_default_drops);
-pub const OPTIONAL_CLIENT_DEFAULT: Option<&'static str> = Some("client-default");
-pub const OPTIONAL_SCOPE_DEFAULT: Option<&'static str> = Some("scope-default");
-pub const OPTIONAL_ENDPOINT_DEFAULT: Option<&'static str> = Some("endpoint-default");
-pub const OPTIONAL_VALUES_DEFAULT: Option<Vec<&'static str>> = Some(Vec::new());
+pub const OPTIONAL_CLIENT_DEFAULT: &str = "client-default";
+pub const OPTIONAL_SCOPE_DEFAULT: &str = "scope-default";
+pub const OPTIONAL_ENDPOINT_DEFAULT: &str = "endpoint-default";
+pub const OPTIONAL_VALUES_DEFAULT: Vec<&str> = Vec::new();
 
 api! {
     client ShapeApi {
         base "http://request-shaping.example.test:4317/fixed/";
-        vars {
+        values {
             tenant: String;
-            locale: Option<String>;
+            locale?: String;
             client_marker: crate::DropProbe = crate::CLIENT_DEFAULT;
         }
-        host ["api"];
+        subdomain replace ["api"];
         path ["v1"];
         query {
-            "tenant" = vars.tenant;
-            "locale" = vars.locale;
+            "tenant" = client.tenant;
+            "locale" = client.locale;
         }
         headers {
-            "X-Client-Marker" = vars.client_marker;
+            "X-Client-Marker" = client.client_marker;
         }
         timeout 5s;
-    }
 
-    GET root(verbose: Option<bool>) -> Bytes {
+
+    GET root(verbose?: bool) -> Bytes using Bytes {
         path ["root"];
-        query { "verbose" = ep.verbose; }
+        query { "verbose" = endpoint.verbose; }
     }
 
-    GET search(tags: Vec<String>, filters: Option<Vec<String>>) -> Bytes {
+    GET search(tags: Vec<String>, filters?: Vec<String>) -> Bytes using Bytes {
         path ["search"];
         query {
-            "tag" = ep.tags;
-            "filter" = ep.filters;
+            "tag" = each endpoint.tags;
+            "filter" = each endpoint.filters;
         }
     }
 
-    GET accept(accept: String) -> Text {
+    GET accept(accept: String) -> String using Text {
         path ["accept"];
-        headers { "Accept" = ep.accept; }
+        accept endpoint.accept;
     }
 
-    GET public_content_type() -> Bytes {
-        path ["public-content-type"];
-        headers { "Content-Type" = "application/example"; }
+    POST text_body(body body: String using Text) -> Bytes using Bytes {
+        path ["text-body"];
     }
 
-    POST text_conflict(#[body] body: Text) -> Bytes {
-        path ["text-conflict"];
-        headers { "Content-Type" = "application/example"; }
+    POST stream_body(body body: ::concord::body::StreamBody using Stream<OctetStream>) -> Bytes using Bytes {
+        path ["stream-body"];
     }
 
-    POST stream_conflict(#[body] body: Stream<OctetStream>) -> Bytes {
-        path ["stream-conflict"];
-        headers { "Content-Type" = "application/example"; }
+    POST multipart_body(body body: ::concord::body::MultipartBody using Multipart) -> () using NoContent {
+        path ["multipart-body"];
     }
 
-    POST multipart_conflict(#[body] body: Multipart) -> NoContent {
-        path ["multipart-conflict"];
-        headers { "Content-Type" = "application/example"; }
-    }
-
-    GET streamed(verbose: Option<bool>) -> Stream<OctetStream> {
+    GET streamed(verbose?: bool) -> ::concord::response::ByteStream using Stream<OctetStream> {
         path ["streamed"];
-        query { "verbose" = ep.verbose; }
+        query { "verbose" = endpoint.verbose; }
     }
 
-    GET unsafe_path(segment: crate::ShapeProbe) -> Bytes {
-        path ["unsafe-path", ep.segment];
+    GET unsafe_path(segment: crate::ShapeProbe) -> Bytes using Bytes {
+        path ["unsafe-path", endpoint.segment];
     }
 
-    GET unsafe_host(label: crate::ShapeProbe) -> Bytes {
-        host [ep.label];
+    GET unsafe_host(label: crate::ShapeProbe) -> Bytes using Bytes {
+        subdomain replace [endpoint.label];
         path ["unsafe-host"];
     }
 
-    GET unsafe_header(value: crate::ShapeProbe) -> Bytes {
+    GET unsafe_header(value: crate::ShapeProbe) -> Bytes using Bytes {
         path ["unsafe-header"];
-        headers { "X-Dynamic" = ep.value; }
+        headers { "X-Dynamic" = endpoint.value; }
     }
 
-    GET bounded_format_path(first: crate::FormatProbe, tail: crate::FormatProbe) -> Bytes {
-        path [fmt[fmt[ep.first], fmt[ep.tail]]];
+    GET bounded_format_path(first: crate::FormatProbe, tail: crate::FormatProbe) -> Bytes using Bytes {
+        path [concat [concat [endpoint.first], concat [endpoint.tail]]];
     }
 
-    GET bounded_format_host(first: crate::FormatProbe, tail: crate::FormatProbe) -> Bytes {
-        host [fmt[fmt[ep.first], fmt[ep.tail]]];
+    GET bounded_format_host(first: crate::FormatProbe, tail: crate::FormatProbe) -> Bytes using Bytes {
+        subdomain replace [concat [concat [endpoint.first], concat [endpoint.tail]]];
     }
 
-    GET bounded_format_query(first: crate::FormatProbe, tail: crate::FormatProbe) -> Bytes {
-        query { "formatted" = fmt[fmt[ep.first], fmt[ep.tail]]; }
+    GET bounded_format_query(first: crate::FormatProbe, tail: crate::FormatProbe) -> Bytes using Bytes {
+        query { "formatted" = concat [concat [endpoint.first], concat [endpoint.tail]]; }
     }
 
-    GET bounded_format_header(first: crate::FormatProbe, tail: crate::FormatProbe) -> Bytes {
-        headers { "X-Formatted" = fmt[fmt[ep.first], fmt[ep.tail]]; }
+    GET bounded_format_header(first: crate::FormatProbe, tail: crate::FormatProbe) -> Bytes using Bytes {
+        headers { "X-Formatted" = concat [concat [endpoint.first], concat [endpoint.tail]]; }
     }
 
-    GET failing_format(value: crate::FailingFormatProbe) -> Bytes {
-        path [fmt["prefix-", ep.value]];
+    GET failing_format(value: crate::FailingFormatProbe) -> Bytes using Bytes {
+        path [concat ["prefix-", endpoint.value]];
     }
 
     scope regions(
         region: String,
-        language: Option<String>,
+        language?: String,
         scope_marker: crate::DropProbe = crate::SCOPE_DEFAULT,
     ) {
-        host [scope.region, "api"];
-        path ["regions", scope.region];
+        subdomain replace [regions.region, "api"];
+        path ["regions", regions.region];
         query {
-            "language" = scope.language;
-            "scope_marker" = scope.scope_marker;
+            "language" = regions.language;
+            "scope_marker" = regions.scope_marker;
         }
-        headers { "X-Region" = scope.region; }
+        headers { "X-Region" = regions.region; }
 
         scope users(account: String) {
-            path ["users", scope.account];
-            headers { "X-Account" = scope.account; }
+            path ["users", users.account];
+            headers { "X-Account" = users.account; }
 
             METHOD("PROPFIND") fetch(
                 id: String,
-                verbose: Option<bool>,
+                verbose?: bool,
                 endpoint_marker: crate::DropProbe = crate::ENDPOINT_DEFAULT,
-            ) -> Bytes {
-                path [fmt["id-", ep.id]];
+            ) -> Bytes using Bytes {
+                path [concat ["id-", endpoint.id]];
                 query {
-                    "verbose" = ep.verbose;
-                    "endpoint_marker" = ep.endpoint_marker;
+                    "verbose" = endpoint.verbose;
+                    "endpoint_marker" = endpoint.endpoint_marker;
                 }
-                headers { "X-Endpoint-Marker" = ep.endpoint_marker; }
+                headers { "X-Endpoint-Marker" = endpoint.endpoint_marker; }
                 timeout 2s;
             }
         }
     }
-}
+}}
 
 api! {
     client OtherApi {
+        timeout off;
         base "http://other.request-shaping.example.test/";
-        vars {
-            label: Option<String> = None;
+        values {
+            label?: String;
         }
-    }
 
-    GET echo(verbose: Option<bool>) -> Bytes {
+
+    GET echo(verbose?: bool) -> Bytes using Bytes {
         path ["echo"];
         query {
-            "label" = vars.label;
-            "verbose" = ep.verbose;
+            "label" = client.label;
+            "verbose" = endpoint.verbose;
         }
     }
-    PUT put() -> NoContent { path ["put"]; }
-    PATCH patch() -> NoContent { path ["patch"]; }
-    DELETE delete() -> NoContent { path ["delete"]; }
-    HEAD head() -> NoContent { path ["head"]; }
-    OPTIONS options() -> NoContent { path ["options"]; }
-    TRACE trace() -> NoContent { path ["trace"]; }
-    CONNECT connect() -> NoContent { path ["connect"]; }
-    GET r#type() -> NoContent { path ["keyword"]; }
-}
+    PUT put() -> () using NoContent { path ["put"]; }
+    PATCH patch() -> () using NoContent { path ["patch"]; }
+    DELETE delete() -> () using NoContent { path ["delete"]; }
+    HEAD head() -> () using NoContent { path ["head"]; }
+    OPTIONS options() -> () using NoContent { path ["options"]; }
+    METHOD("TRACE") trace() -> () using NoContent { path ["trace"]; }
+    GET r#type() -> () using NoContent { path ["keyword"]; }
+}}
 
 api! {
     client TimeoutApi {
         base "http://timeout.request-shaping.example.test/";
         timeout 20ms;
-    }
+
 
     scope timed() {
         timeout 10ms;
-        GET scope_inherited() -> Bytes { path ["scope-inherited"]; }
-        GET endpoint_override() -> Bytes {
+        GET scope_inherited() -> Bytes using Bytes { path ["scope-inherited"]; }
+        GET endpoint_override() -> Bytes using Bytes {
             path ["endpoint-override"];
             timeout 200ms;
         }
-        GET endpoint_off() -> Bytes {
+        GET endpoint_off() -> Bytes using Bytes {
             path ["endpoint-off"];
             timeout off;
         }
     }
-}
+}}
 
 api! {
     client OptionalControlApi {
+        timeout off;
         base "http://optional-controls.example.test/";
-        vars {
-            client_label: Option<&'static str> = crate::OPTIONAL_CLIENT_DEFAULT;
+        values {
+            client_label?: &'static str = crate::OPTIONAL_CLIENT_DEFAULT;
         }
         query {
-            "client_label" = vars.client_label;
+            "client_label" = client.client_label;
         }
-    }
+
 
     scope groups(
-        scope_label: Option<&'static str> = crate::OPTIONAL_SCOPE_DEFAULT,
+        scope_label?: &'static str = crate::OPTIONAL_SCOPE_DEFAULT,
     ) {
         query {
-            "scope_label" = scope.scope_label;
+            "scope_label" = groups.scope_label;
         }
 
         GET inspect(
-            endpoint_label: Option<&'static str> = crate::OPTIONAL_ENDPOINT_DEFAULT,
-            values: Option<Vec<&'static str>> = crate::OPTIONAL_VALUES_DEFAULT,
-        ) -> Bytes {
+            endpoint_label?: &'static str = crate::OPTIONAL_ENDPOINT_DEFAULT,
+            values?: Vec<&'static str> = crate::OPTIONAL_VALUES_DEFAULT,
+        ) -> Bytes using Bytes {
             query {
-                "endpoint_label" = ep.endpoint_label;
-                "value" = ep.values;
+                "endpoint_label" = endpoint.endpoint_label;
+                "value" = each endpoint.values;
             }
         }
     }
-}
+}}
 
 api! {
     client TraitDefaultTimingApi {
+        timeout off;
         base "http://trait-default-timing.example.test/";
-        vars {
-            scalar: u32 = default;
-            optional: Option<String> = default;
-            vector: Vec<String> = default;
-            client_probe: crate::ClientTraitDefaultProbe = default;
+        values {
+            #[default]
+            scalar: u32;
+            #[default]
+            optional?: String;
+            #[default]
+            vector: Vec<String>;
+            #[default]
+            client_probe: crate::ClientTraitDefaultProbe;
         }
-    }
 
-    scope group(scope_probe: crate::ScopeTraitDefaultProbe = default) {
-        GET read(endpoint_probe: crate::EndpointTraitDefaultProbe = default) -> Bytes;
+
+    scope group(#[default] scope_probe: crate::ScopeTraitDefaultProbe) {
+        GET read(#[default] endpoint_probe: crate::EndpointTraitDefaultProbe) -> Bytes using Bytes;
     }
-}
+}}
 
 fn proxy(server: &ScriptedServer) -> SafeProxy {
     SafeProxy::parse(server.url("")).expect("local proxy")
@@ -394,7 +392,7 @@ fn shaped_client(server: &ScriptedServer) -> ShapeApi {
     let proxy = proxy(server);
     ShapeApi::builder()
         .set_tenant("tenant-a".to_owned())
-        .set_locale("fr".to_owned())
+        .with_locale("fr".to_owned())
         .set_client_marker(DropProbe::new("client-explicit", explicit_drops))
         .configure_http(move |http| http.proxy(proxy))
         .build()
@@ -408,7 +406,7 @@ fn optional_control_url(
     client
         .plan(endpoint)
         .expect("optional-control safe plan")
-        .safe_url()
+        .observed_url()
         .to_owned()
 }
 
@@ -462,23 +460,24 @@ fn defaulted_option_client_clear_and_reset_are_distinct_override_states() {
     let default_client = OptionalControlApi::new().expect("default optional-control client");
     let default_url = optional_control_url(
         &default_client,
-        &optional_control_api::groups::Inspect::new(),
+        &OptionalControlApi::unbound().groups().inspect(),
     );
     assert!(default_url.contains("client_label=client-default"));
 
     let selected = OptionalControlApi::builder()
-        .set_client_label("client-chosen")
+        .with_client_label("client-chosen")
         .build()
         .expect("selected client label");
     let selected_url =
-        optional_control_url(&selected, &optional_control_api::groups::Inspect::new());
+        optional_control_url(&selected, &OptionalControlApi::unbound().groups().inspect());
     assert!(selected_url.contains("client_label=client-chosen"));
 
     let cleared = OptionalControlApi::builder()
         .clear_client_label()
         .build()
         .expect("explicitly absent client label");
-    let cleared_url = optional_control_url(&cleared, &optional_control_api::groups::Inspect::new());
+    let cleared_url =
+        optional_control_url(&cleared, &OptionalControlApi::unbound().groups().inspect());
     assert!(!cleared_url.contains("client_label="));
 
     let reset = OptionalControlApi::builder()
@@ -486,7 +485,7 @@ fn defaulted_option_client_clear_and_reset_are_distinct_override_states() {
         .reset_client_label()
         .build()
         .expect("reset client label");
-    let reset_url = optional_control_url(&reset, &optional_control_api::groups::Inspect::new());
+    let reset_url = optional_control_url(&reset, &OptionalControlApi::unbound().groups().inspect());
     assert!(reset_url.contains("client_label=client-default"));
 }
 
@@ -498,7 +497,7 @@ fn trait_default_evaluation_preserves_owner_and_reset_timing() {
 
     let overridden = TraitDefaultTimingApi::builder()
         .set_scalar(7)
-        .set_optional("chosen".to_owned())
+        .with_optional("chosen".to_owned())
         .set_vector(vec!["chosen".to_owned()])
         .set_client_probe(ClientTraitDefaultProbe)
         .build()
@@ -509,7 +508,7 @@ fn trait_default_evaluation_preserves_owner_and_reset_timing() {
     let reset = TraitDefaultTimingApi::builder()
         .set_scalar(7)
         .reset_scalar()
-        .set_optional("chosen".to_owned())
+        .with_optional("chosen".to_owned())
         .clear_optional()
         .reset_optional()
         .set_vector(vec!["chosen".to_owned()])
@@ -563,18 +562,28 @@ fn trait_default_evaluation_preserves_owner_and_reset_timing() {
     );
     drop(request);
 
-    let explicit = trait_default_timing_api::group::Read::new();
+    let explicit_scope = TraitDefaultTimingApi::unbound().group();
     assert_eq!(
         SCOPE_TRAIT_DEFAULTS.load(Ordering::SeqCst),
         scope_before + 2
     );
     assert_eq!(
         ENDPOINT_TRAIT_DEFAULTS.load(Ordering::SeqCst),
+        endpoint_before + 1
+    );
+    let explicit_scope = explicit_scope
+        .set_scope_probe(ScopeTraitDefaultProbe)
+        .reset_scope_probe();
+    assert_eq!(
+        SCOPE_TRAIT_DEFAULTS.load(Ordering::SeqCst),
+        scope_before + 2
+    );
+    let explicit = explicit_scope.read();
+    assert_eq!(
+        ENDPOINT_TRAIT_DEFAULTS.load(Ordering::SeqCst),
         endpoint_before + 2
     );
     let explicit = explicit
-        .set_scope_probe(ScopeTraitDefaultProbe)
-        .reset_scope_probe()
         .set_endpoint_probe(EndpointTraitDefaultProbe)
         .reset_endpoint_probe();
     assert_eq!(
@@ -592,22 +601,27 @@ fn trait_default_evaluation_preserves_owner_and_reset_timing() {
 fn explicit_snapshots_restore_defaulted_option_and_option_vec_values() {
     let client = OptionalControlApi::new().expect("optional-control client");
 
-    let default_url = optional_control_url(&client, &optional_control_api::groups::Inspect::new());
+    let default_url =
+        optional_control_url(&client, &OptionalControlApi::unbound().groups().inspect());
     assert!(default_url.contains("scope_label=scope-default"));
     assert!(default_url.contains("endpoint_label=endpoint-default"));
     assert!(!default_url.contains("value="));
 
-    let selected = optional_control_api::groups::Inspect::new()
-        .set_scope_label("scope-chosen")
-        .set_endpoint_label("endpoint-chosen")
-        .set_values(vec!["first", "second"]);
+    let selected = OptionalControlApi::unbound()
+        .groups()
+        .with_scope_label("scope-chosen")
+        .inspect()
+        .with_endpoint_label("endpoint-chosen")
+        .with_values(vec!["first", "second"]);
     let selected_url = optional_control_url(&client, &selected);
     assert!(selected_url.contains("scope_label=scope-chosen"));
     assert!(selected_url.contains("endpoint_label=endpoint-chosen"));
     assert!(selected_url.contains("value=first&value=second"));
 
-    let cleared = optional_control_api::groups::Inspect::new()
+    let cleared = OptionalControlApi::unbound()
+        .groups()
         .clear_scope_label()
+        .inspect()
         .clear_endpoint_label()
         .clear_values();
     let cleared_url = optional_control_url(&client, &cleared);
@@ -615,12 +629,14 @@ fn explicit_snapshots_restore_defaulted_option_and_option_vec_values() {
     assert!(!cleared_url.contains("endpoint_label="));
     assert!(!cleared_url.contains("value="));
 
-    let reset = optional_control_api::groups::Inspect::new()
+    let reset = OptionalControlApi::unbound()
+        .groups()
         .clear_scope_label()
         .reset_scope_label()
+        .inspect()
         .clear_endpoint_label()
         .reset_endpoint_label()
-        .set_values(vec!["discarded"])
+        .with_values(vec!["discarded"])
         .reset_values();
     let reset_url = optional_control_url(&client, &reset);
     assert!(reset_url.contains("scope_label=scope-default"));
@@ -646,7 +662,7 @@ async fn scope_and_request_controls_share_defaulted_option_snapshot_semantics() 
         .expect("default scope selection");
     client
         .groups()
-        .set_scope_label("scope-chosen")
+        .with_scope_label("scope-chosen")
         .inspect()
         .await
         .expect("selected scope value");
@@ -666,7 +682,7 @@ async fn scope_and_request_controls_share_defaulted_option_snapshot_semantics() 
     client
         .groups()
         .inspect()
-        .set_endpoint_label("endpoint-chosen")
+        .with_endpoint_label("endpoint-chosen")
         .await
         .expect("selected request value");
     client
@@ -685,7 +701,7 @@ async fn scope_and_request_controls_share_defaulted_option_snapshot_semantics() 
     client
         .groups()
         .inspect()
-        .set_values(vec!["first", "second"])
+        .with_values(vec!["first", "second"])
         .await
         .expect("selected request vector");
     client
@@ -697,7 +713,7 @@ async fn scope_and_request_controls_share_defaulted_option_snapshot_semantics() 
     client
         .groups()
         .inspect()
-        .set_values(vec!["discarded"])
+        .with_values(vec!["discarded"])
         .reset_values()
         .await
         .expect("reset request vector");
@@ -737,44 +753,43 @@ async fn nested_facade_extension_setters_and_explicit_endpoint_have_head_parity(
     let client = shaped_client(&server);
     let other_proxy = proxy(&server);
     let other = OtherApi::builder()
-        .set_label("chosen".to_owned())
+        .with_label("chosen".to_owned())
         .configure_http(move |http| http.proxy(other_proxy))
         .build()
         .expect("other client");
     let reset_other = OtherApi::builder()
-        .set_label("unused".to_owned())
-        .reset_label()
+        .with_label("unused".to_owned())
+        .clear_label()
         .build()
-        .expect("defaulted Option client value");
+        .expect("cleared optional client value");
     drop(reset_other);
 
     let regions = client
         .regions("eu".to_owned())
-        .set_language("de".to_owned());
+        .with_language("de".to_owned());
     let users = regions.users("account-a".to_owned());
     let facade = users
         .fetch("42".to_owned())
-        .set_verbose(true)
+        .with_verbose(true)
         .set_endpoint_marker(DropProbe::new("temporary", explicit_drops))
         .reset_endpoint_marker()
         .await
         .expect("facade endpoint");
     assert_eq!(facade, b"facade"[..]);
 
-    let explicit = shape_api::regions::users::Fetch::new(
-        "eu".to_owned(),
-        "account-a".to_owned(),
-        "42".to_owned(),
-    )
-    .set_language("de".to_owned())
-    .set_verbose(true);
+    let explicit = ShapeApi::unbound()
+        .regions("eu".to_owned())
+        .with_language("de".to_owned())
+        .users("account-a".to_owned())
+        .fetch("42".to_owned())
+        .with_verbose(true);
     let explicit = client.request(explicit).await.expect("explicit endpoint");
     assert_eq!(explicit, b"explicit"[..]);
 
     let metadata: ApiResponse<Bytes> = client
         .root()
         .timeout(Duration::from_secs(1))
-        .set_verbose(true)
+        .with_verbose(true)
         .inherit_timeout()
         .response()
         .await
@@ -783,7 +798,7 @@ async fn nested_facade_extension_setters_and_explicit_endpoint_have_head_parity(
 
     let other_value = other
         .echo()
-        .set_verbose(true)
+        .with_verbose(true)
         .await
         .expect("second-client prelude setter");
     assert_eq!(other_value, b"other"[..]);
@@ -861,8 +876,8 @@ async fn consuming_request_setters_keep_sibling_snapshots_isolated() {
     .expect("sibling server");
     let client = shaped_client(&server);
 
-    let selected = client.root().set_verbose(true);
-    let cleared = client.root().set_verbose(false).clear_verbose();
+    let selected = client.root().with_verbose(true);
+    let cleared = client.root().with_verbose(false).clear_verbose();
     assert_eq!(selected.await.expect("selected sibling"), b"selected"[..]);
     assert_eq!(cleared.await.expect("cleared sibling"), b"cleared"[..]);
 
@@ -882,7 +897,7 @@ async fn facade_setters_leave_the_source_scope_snapshot_unchanged() {
     let client = shaped_client(&server);
     let source = client
         .regions("eu".to_owned())
-        .set_language("fr".to_owned());
+        .with_language("fr".to_owned());
     let cleared = source.clone().clear_language();
 
     assert_eq!(
@@ -918,7 +933,7 @@ async fn independently_built_clients_retain_independent_value_snapshots() {
     let first = ShapeApi::builder()
         .set_tenant("discarded".to_owned())
         .set_tenant("tenant-one".to_owned())
-        .set_locale("discarded".to_owned())
+        .with_locale("discarded".to_owned())
         .clear_locale()
         .set_client_marker(DropProbe::new("discarded", explicit_drops))
         .reset_client_marker()
@@ -928,8 +943,8 @@ async fn independently_built_clients_retain_independent_value_snapshots() {
     let second_proxy = proxy(&server);
     let second = ShapeApi::builder()
         .set_tenant("tenant-two".to_owned())
-        .set_locale("discarded".to_owned())
-        .set_locale("es".to_owned())
+        .with_locale("discarded".to_owned())
+        .with_locale("es".to_owned())
         .configure_http(move |http| http.proxy(second_proxy))
         .build()
         .expect("second client");
@@ -952,7 +967,7 @@ async fn collection_queries_and_every_standard_method_preserve_runtime_order() {
             ResponseScript::ok(b"search-empty".to_vec()),
         ]
         .into_iter()
-        .chain((0..8).map(|_| ResponseScript::status(204, Vec::new()))),
+        .chain((0..7).map(|_| ResponseScript::status(204, Vec::new()))),
     )
     .expect("query and method server");
     let client = shaped_client(&server);
@@ -965,7 +980,7 @@ async fn collection_queries_and_every_standard_method_preserve_runtime_order() {
     assert_eq!(
         client
             .search(vec!["one two".to_owned(), "three".to_owned()])
-            .set_filters(vec!["x".to_owned(), "y".to_owned()])
+            .with_filters(vec!["x".to_owned(), "y".to_owned()])
             .await
             .expect("vector query"),
         b"search-values"[..]
@@ -981,11 +996,10 @@ async fn collection_queries_and_every_standard_method_preserve_runtime_order() {
     other.head().await.expect("HEAD");
     other.options().await.expect("OPTIONS");
     other.trace().await.expect("TRACE");
-    other.connect().await.expect("CONNECT");
     other.r#type().await.expect("raw-keyword alias");
 
     let requests = server.requests();
-    assert_eq!(requests.len(), 10);
+    assert_eq!(requests.len(), 9);
     assert!(requests[0].target().contains(
         "/fixed/v1/search?tenant=tenant-a&locale=fr&tag=one+two&tag=three&filter=x&filter=y"
     ));
@@ -999,18 +1013,15 @@ async fn collection_queries_and_every_standard_method_preserve_runtime_order() {
             .iter()
             .map(|request| request.method())
             .collect::<Vec<_>>(),
-        [
-            "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE", "CONNECT", "GET"
-        ]
+        ["PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE", "GET"]
     );
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn generated_public_media_headers_obey_single_map_ownership() {
+async fn response_accept_and_body_specs_own_media_headers() {
     let _guard = request_shaping_test_guard().await;
     let server = ScriptedServer::start([
         ResponseScript::ok(b"accepted".to_vec()),
-        ResponseScript::ok(b"bodyless".to_vec()),
         ResponseScript::Chunked {
             status: 200,
             headers: vec![(
@@ -1019,6 +1030,9 @@ async fn generated_public_media_headers_obey_single_map_ownership() {
             )],
             chunks: vec![b"streamed".to_vec()],
         },
+        ResponseScript::ok(b"text-body".to_vec()),
+        ResponseScript::ok(b"stream-body".to_vec()),
+        ResponseScript::status(204, Vec::new()),
     ])
     .expect("media server");
     let client = shaped_client(&server);
@@ -1030,17 +1044,9 @@ async fn generated_public_media_headers_obey_single_map_ownership() {
             .expect("public Accept"),
         "accepted"
     );
-    assert_eq!(
-        client
-            .public_content_type()
-            .await
-            .expect("bodyless Content-Type"),
-        b"bodyless"[..]
-    );
-
     let mut streamed: ByteStream = client
         .streamed()
-        .set_verbose(true)
+        .with_verbose(true)
         .await
         .expect("direct stream await after generated setter");
     assert_eq!(
@@ -1052,17 +1058,17 @@ async fn generated_public_media_headers_obey_single_map_ownership() {
     );
     assert!(next_stream_chunk(&mut streamed).await.is_none());
 
-    let text_error = client
-        .text_conflict("body".to_owned())
+    let text = client
+        .text_body("body".to_owned())
         .await
-        .expect_err("Text owns Content-Type");
-    assert_eq!(text_error.category(), ErrorCategory::Configuration);
+        .expect("Text body specification");
+    assert_eq!(text, b"text-body"[..]);
 
-    let stream_error = client
-        .stream_conflict(StreamBody::from_bytes(Bytes::from_static(b"stream")))
+    let stream = client
+        .stream_body(StreamBody::from_bytes(Bytes::from_static(b"stream")))
         .await
-        .expect_err("stream media owns Content-Type");
-    assert_eq!(stream_error.category(), ErrorCategory::Configuration);
+        .expect("stream body specification");
+    assert_eq!(stream, b"stream-body"[..]);
 
     let multipart = MultipartBody::new()
         .part(
@@ -1070,24 +1076,32 @@ async fn generated_public_media_headers_obey_single_map_ownership() {
             MultipartPart::text("value").expect("bounded multipart text"),
         )
         .expect("multipart recipe");
-    let multipart_error = client
-        .multipart_conflict(multipart)
+    client
+        .multipart_body(multipart)
         .await
-        .expect_err("multipart owns its top-level boundary header");
-    assert_eq!(multipart_error.category(), ErrorCategory::Configuration);
+        .expect("multipart body specification");
 
     let requests = server.requests();
-    assert_eq!(requests.len(), 3);
+    assert_eq!(requests.len(), 5);
     assert_eq!(
         requests[0].header("accept"),
         Some("application/vnd.concord.request-shaping")
     );
     assert_eq!(
-        requests[1].header("content-type"),
-        Some("application/example")
+        requests[2].header("content-type"),
+        Some("text/plain; charset=utf-8")
+    );
+    assert_eq!(
+        requests[3].header("content-type"),
+        Some("application/octet-stream")
     );
     assert!(
-        requests[2]
+        requests[4]
+            .header("content-type")
+            .is_some_and(|value| value.starts_with("multipart/form-data; boundary="))
+    );
+    assert!(
+        requests[1]
             .target()
             .contains("/streamed?tenant=tenant-a&locale=fr&verbose=true")
     );
@@ -1270,7 +1284,7 @@ async fn generated_timeout_inheritance_off_and_request_overrides_remain_distinct
                 EndpointId::try_from("timeout_api.runtime").expect("valid runtime endpoint ID"),
                 Method::GET,
             )
-            .response_bytes()
+            .accepted_bytes()
             .build()
             .expect("runtime endpoint");
             client.request(endpoint).await

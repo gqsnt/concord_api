@@ -8,8 +8,8 @@ use crate::endpoint::EndpointId;
 use crate::redaction::SanitizedHeaderMap;
 
 use super::{
-    AuthErrorKind, ConfigurationErrorKind, ErrorCategory, HttpResponseFailure, PaginationErrorKind,
-    RateLimitErrorKind,
+    AuthErrorKind, ConfigurationErrorKind, DispatchKnowledge, ErrorCategory, FailureStage,
+    HttpResponseFailure, PaginationErrorKind, RateLimitErrorKind,
 };
 
 /// A structured safe failure from an endpoint operation.
@@ -21,10 +21,19 @@ pub struct ApiError {
     auth_kind: Option<AuthErrorKind>,
     rate_limit_kind: Option<RateLimitErrorKind>,
     pagination_kind: Option<PaginationErrorKind>,
-    response: Option<Box<HttpResponseFailure>>,
-    authentication_error: Option<Box<crate::auth::AuthError>>,
-    rate_limit_error: Option<Box<crate::rate_limit::RateLimitError>>,
-    pagination_error: Option<Box<crate::pagination::PaginationError>>,
+    detail: Option<Box<ApiErrorDetail>>,
+    stage: FailureStage,
+    dispatch_knowledge: DispatchKnowledge,
+    operation_id: Option<crate::operation::OperationId>,
+    attempt: Option<crate::hooks::AttemptInfo>,
+    page_index: Option<u32>,
+}
+
+enum ApiErrorDetail {
+    Response(HttpResponseFailure),
+    Authentication(crate::auth::AuthError),
+    RateLimit(crate::rate_limit::RateLimitError),
+    Pagination(crate::pagination::PaginationError),
 }
 
 impl ApiError {
@@ -55,10 +64,12 @@ impl ApiError {
             auth_kind,
             rate_limit_kind: None,
             pagination_kind: None,
-            response: Some(Box::new(response)),
-            authentication_error: None,
-            rate_limit_error: None,
-            pagination_error: None,
+            detail: Some(Box::new(ApiErrorDetail::Response(response))),
+            stage: FailureStage::RejectedResponse,
+            dispatch_knowledge: DispatchKnowledge::ResponseReceived,
+            operation_id: None,
+            attempt: None,
+            page_index: None,
         }
     }
 
@@ -69,7 +80,18 @@ impl ApiError {
         managed_body_failed: bool,
     ) -> Self {
         let category = reqwest_category(error, managed_body_failed);
-        Self::classified(endpoint, method, category)
+        let (stage, dispatch_knowledge) = if category == ErrorCategory::Connect {
+            (
+                FailureStage::BeforeDispatch,
+                DispatchKnowledge::NotDispatched,
+            )
+        } else {
+            (
+                FailureStage::DuringDispatchOrUnknown,
+                DispatchKnowledge::PossiblyDispatched,
+            )
+        };
+        Self::classified(endpoint, method, category).with_stage(stage, dispatch_knowledge)
     }
 
     pub(crate) fn classified(
@@ -85,10 +107,12 @@ impl ApiError {
             auth_kind: None,
             rate_limit_kind: None,
             pagination_kind: None,
-            response: None,
-            authentication_error: None,
-            rate_limit_error: None,
-            pagination_error: None,
+            detail: None,
+            stage: FailureStage::Preparation,
+            dispatch_knowledge: DispatchKnowledge::NotDispatched,
+            operation_id: None,
+            attempt: None,
+            page_index: None,
         }
     }
 
@@ -115,7 +139,7 @@ impl ApiError {
         };
         let mut result = Self::classified(endpoint, method, category);
         result.auth_kind = Some(kind);
-        result.authentication_error = Some(Box::new(error));
+        result.detail = Some(Box::new(ApiErrorDetail::Authentication(error)));
         result
     }
 
@@ -127,7 +151,7 @@ impl ApiError {
         let kind = error.kind();
         let mut result = Self::classified(endpoint, method, ErrorCategory::RateLimit);
         result.rate_limit_kind = Some(kind);
-        result.rate_limit_error = Some(Box::new(error));
+        result.detail = Some(Box::new(ApiErrorDetail::RateLimit(error)));
         result
     }
 
@@ -139,7 +163,7 @@ impl ApiError {
         let kind = error.kind();
         let mut result = Self::classified(endpoint, method, ErrorCategory::Pagination);
         result.pagination_kind = Some(kind);
-        result.pagination_error = Some(Box::new(error));
+        result.detail = Some(Box::new(ApiErrorDetail::Pagination(error)));
         result
     }
 
@@ -210,25 +234,32 @@ impl ApiError {
     /// Returns a final application HTTP status when a response head existed.
     #[must_use]
     pub fn http_status(&self) -> Option<StatusCode> {
-        self.response.as_deref().map(HttpResponseFailure::status)
+        self.http_response().map(HttpResponseFailure::status)
     }
 
     /// Returns sanitized final response headers when a response head existed.
     #[must_use]
     pub fn http_headers(&self) -> Option<&SanitizedHeaderMap> {
-        self.response.as_deref().map(HttpResponseFailure::headers)
+        self.http_response().map(HttpResponseFailure::headers)
     }
 
     /// Returns the complete terminal response wrapper when one exists.
     #[must_use]
     pub fn http_response(&self) -> Option<&HttpResponseFailure> {
-        self.response.as_deref()
+        match self.detail.as_deref() {
+            Some(ApiErrorDetail::Response(response)) => Some(response),
+            _ => None,
+        }
     }
 
     /// Consumes this error and extracts its terminal response wrapper.
     pub fn into_http_response(mut self) -> Result<HttpResponseFailure, Self> {
-        match self.response.take() {
-            Some(response) => Ok(*response),
+        match self.detail.take().map(|detail| *detail) {
+            Some(ApiErrorDetail::Response(response)) => Ok(response),
+            Some(detail) => {
+                self.detail = Some(Box::new(detail));
+                Err(self)
+            }
             None => Err(self),
         }
     }
@@ -251,11 +282,62 @@ impl ApiError {
         self.pagination_kind
     }
 
+    /// Returns the stable managed stage at which this outcome failed.
+    #[must_use]
+    pub const fn stage(&self) -> FailureStage {
+        self.stage
+    }
+
+    /// Returns the strongest dispatch fact Concord can establish.
+    #[must_use]
+    pub const fn dispatch_knowledge(&self) -> DispatchKnowledge {
+        self.dispatch_knowledge
+    }
+
+    /// Returns the aggregate operation identity when execution allocated one.
+    #[must_use]
+    pub const fn operation_id(&self) -> Option<crate::operation::OperationId> {
+        self.operation_id
+    }
+
+    /// Returns the visible managed attempt identity when applicable.
+    #[must_use]
+    pub const fn attempt(&self) -> Option<crate::hooks::AttemptInfo> {
+        self.attempt
+    }
+
+    /// Returns the zero-based page index when this was a pagination page.
+    #[must_use]
+    pub const fn page_index(&self) -> Option<u32> {
+        self.page_index
+    }
+
+    pub(crate) const fn with_stage(
+        mut self,
+        stage: FailureStage,
+        dispatch_knowledge: DispatchKnowledge,
+    ) -> Self {
+        self.stage = stage;
+        self.dispatch_knowledge = dispatch_knowledge;
+        self
+    }
+
+    pub(crate) const fn with_execution_context(
+        mut self,
+        operation_id: crate::operation::OperationId,
+        attempt: Option<crate::hooks::AttemptInfo>,
+        page_index: u32,
+    ) -> Self {
+        self.operation_id = Some(operation_id);
+        self.attempt = attempt;
+        self.page_index = Some(page_index);
+        self
+    }
+
     /// Returns safe parsed terminal `Retry-After` metadata when present.
     #[must_use]
     pub fn retry_after(&self) -> Option<Duration> {
-        self.response
-            .as_deref()
+        self.http_response()
             .and_then(HttpResponseFailure::retry_after)
     }
 }
@@ -286,25 +368,13 @@ impl fmt::Display for ApiError {
         if let Some(status) = self.http_status() {
             write!(formatter, " with HTTP status {status}")?;
         }
-        if let Some(message) = self
-            .authentication_error
-            .as_deref()
-            .and_then(crate::auth::AuthError::safe_message)
-        {
-            write!(formatter, ": {message}")?;
-        }
-        if let Some(message) = self
-            .rate_limit_error
-            .as_deref()
-            .and_then(crate::rate_limit::RateLimitError::safe_message)
-        {
-            write!(formatter, ": {message}")?;
-        }
-        if let Some(message) = self
-            .pagination_error
-            .as_deref()
-            .and_then(crate::pagination::PaginationError::safe_message)
-        {
+        let safe_message = match self.detail.as_deref() {
+            Some(ApiErrorDetail::Authentication(error)) => error.safe_message(),
+            Some(ApiErrorDetail::RateLimit(error)) => error.safe_message(),
+            Some(ApiErrorDetail::Pagination(error)) => error.safe_message(),
+            Some(ApiErrorDetail::Response(_)) | None => None,
+        };
+        if let Some(message) = safe_message {
             write!(formatter, ": {message}")?;
         }
         Ok(())
@@ -323,28 +393,39 @@ impl fmt::Debug for ApiError {
             .field("rate_limit_kind", &self.rate_limit_kind)
             .field("pagination_kind", &self.pagination_kind)
             .field("http_status", &self.http_status())
-            .field("authentication_error", &self.authentication_error)
-            .field("rate_limit_error", &self.rate_limit_error)
-            .field("pagination_error", &self.pagination_error)
+            .field(
+                "authentication_error",
+                &match self.detail.as_deref() {
+                    Some(ApiErrorDetail::Authentication(error)) => Some(error),
+                    _ => None,
+                },
+            )
+            .field(
+                "rate_limit_error",
+                &match self.detail.as_deref() {
+                    Some(ApiErrorDetail::RateLimit(error)) => Some(error),
+                    _ => None,
+                },
+            )
+            .field(
+                "pagination_error",
+                &match self.detail.as_deref() {
+                    Some(ApiErrorDetail::Pagination(error)) => Some(error),
+                    _ => None,
+                },
+            )
             .finish()
     }
 }
 
 impl Error for ApiError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
-        self.authentication_error
-            .as_deref()
-            .map(|error| error as &(dyn Error + 'static))
-            .or_else(|| {
-                self.rate_limit_error
-                    .as_deref()
-                    .map(|error| error as &(dyn Error + 'static))
-            })
-            .or_else(|| {
-                self.pagination_error
-                    .as_deref()
-                    .map(|error| error as &(dyn Error + 'static))
-            })
+        match self.detail.as_deref() {
+            Some(ApiErrorDetail::Authentication(error)) => Some(error),
+            Some(ApiErrorDetail::RateLimit(error)) => Some(error),
+            Some(ApiErrorDetail::Pagination(error)) => Some(error),
+            Some(ApiErrorDetail::Response(_)) | None => None,
+        }
     }
 }
 

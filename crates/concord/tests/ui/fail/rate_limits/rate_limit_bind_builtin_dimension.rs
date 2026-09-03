@@ -2,20 +2,18 @@ use concord::api;
 
 api! {
     client Api {
+        timeout off;
         base "https://example.test";
-        vars {
+        values {
             tenant: String;
         }
         rate_limits {
-            rule account_reads {
-                by [host, account];
-                1 / 1s;
+            account_reads(account) {
+                key [host, account];
+                allow 1 per 1s;
             }
         }
-        rate_limit use account_reads {
-            host = vars.tenant;
-            account = vars.tenant;
-        }
+        rate_limit account_reads(host = client.tenant, account = client.tenant);
     }
 }
 

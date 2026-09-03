@@ -6,7 +6,7 @@ use url::Url;
 use crate::endpoint::EndpointId;
 use crate::error::{ApiError, ClientBuildError, ClientBuildErrorKind};
 use crate::hooks::DebugDispatcher;
-use crate::hooks::{DebugLevel, RuntimeHooks};
+use crate::hooks::{CompletionObserver, DebugLevel, RequestGate, ResponseGate};
 use crate::http::HttpConfigBuilder;
 use crate::http::application::ApplicationHttp;
 use crate::http::build::ManagedHttp;
@@ -131,8 +131,16 @@ impl ClientCore {
         self.inner.runtime.retry_policy.as_ref()
     }
 
-    pub(crate) fn hooks(&self) -> &Arc<dyn RuntimeHooks> {
-        &self.inner.runtime.hooks
+    pub(crate) fn request_gate(&self) -> &Arc<dyn RequestGate> {
+        &self.inner.runtime.request_gate
+    }
+
+    pub(crate) fn response_gate(&self) -> &Arc<dyn ResponseGate> {
+        &self.inner.runtime.response_gate
+    }
+
+    pub(crate) fn completion_observer(&self) -> &Arc<dyn CompletionObserver> {
+        &self.inner.runtime.completion_observer
     }
 
     pub(crate) fn default_debug(&self) -> DebugLevel {
@@ -273,11 +281,11 @@ mod tests {
     use crate::contracts::NoopRateLimiter;
     use crate::http::SafeProxy;
 
-    struct FirstHooks;
-    impl RuntimeHooks for FirstHooks {}
+    struct FirstObserver;
+    impl CompletionObserver for FirstObserver {}
 
-    struct SecondHooks;
-    impl RuntimeHooks for SecondHooks {}
+    struct SecondObserver;
+    impl CompletionObserver for SecondObserver {}
 
     #[test]
     fn fixed_base_validation_is_structural_and_safe() {
@@ -339,8 +347,8 @@ mod tests {
         let _ = rustls::crypto::ring::default_provider().install_default();
         let first_executor = concord_test_support::executor::DeterministicExecutor::new();
         let second_executor = concord_test_support::executor::DeterministicExecutor::new();
-        let first_hooks: Arc<dyn RuntimeHooks> = Arc::new(FirstHooks);
-        let second_hooks: Arc<dyn RuntimeHooks> = Arc::new(SecondHooks);
+        let first_observer: Arc<dyn CompletionObserver> = Arc::new(FirstObserver);
+        let second_observer: Arc<dyn CompletionObserver> = Arc::new(SecondObserver);
         let first_limiter: Arc<dyn crate::rate_limit::RateLimiter> =
             Arc::new(NoopRateLimiter::new());
         let second_limiter: Arc<dyn crate::rate_limit::RateLimiter> =
@@ -357,10 +365,14 @@ mod tests {
         let first_scheme = if first_https_only { "https" } else { "http" };
         let first_base = format!("{first_scheme}://first.example");
         let first_proxy = format!("{first_scheme}://first-proxy.example");
+        let first_http = if first_https_only {
+            HttpConfigBuilder::new().require_https()
+        } else {
+            HttpConfigBuilder::new().allow_http()
+        };
         let first = ClientCore::build_with_development(
             &first_base,
-            HttpConfigBuilder::new()
-                .https_only(first_https_only)
+            first_http
                 .http1_only()
                 .proxy(SafeProxy::parse(first_proxy).expect("safe proxy")),
             RuntimeConfigBuilder::new()
@@ -377,7 +389,7 @@ mod tests {
                 .pagination_identity_limit(NonZeroUsize::new(41).expect("positive identity limit"))
                 .auth_failure_cooldown_cap(Duration::from_secs(43))
                 .rate_limit_cooldown_cap(Duration::from_secs(47))
-                .hooks(Arc::clone(&first_hooks))
+                .completion_observer(Arc::clone(&first_observer))
                 .rate_limiter(Arc::clone(&first_limiter))
                 .debug(DebugLevel::Headers),
             &first_executor,
@@ -420,7 +432,10 @@ mod tests {
             first.inner.runtime.rate_limit_cooldown_cap,
             Duration::from_secs(47)
         );
-        assert!(Arc::ptr_eq(&first.inner.runtime.hooks, &first_hooks));
+        assert!(Arc::ptr_eq(
+            &first.inner.runtime.completion_observer,
+            &first_observer
+        ));
         assert!(Arc::ptr_eq(
             &first.inner.runtime.rate_limiter,
             &first_limiter
@@ -439,7 +454,10 @@ mod tests {
 
         let clone = first.clone();
         assert!(first.shares_inner_with(&clone));
-        assert!(Arc::ptr_eq(&clone.inner.runtime.hooks, &first_hooks));
+        assert!(Arc::ptr_eq(
+            &clone.inner.runtime.completion_observer,
+            &first_observer
+        ));
         assert!(Arc::ptr_eq(
             &clone.inner.runtime.rate_limiter,
             &first_limiter
@@ -459,14 +477,17 @@ mod tests {
             HttpConfigBuilder::new(),
             RuntimeConfigBuilder::new()
                 .request_body_limit(NonZeroUsize::new(53).expect("positive test limit"))
-                .hooks(Arc::clone(&second_hooks))
+                .completion_observer(Arc::clone(&second_observer))
                 .rate_limiter(Arc::clone(&second_limiter))
                 .debug(DebugLevel::Basic),
             &second_executor,
         )
         .expect("second client builds");
         assert!(!second.shares_inner_with(&first));
-        assert!(!Arc::ptr_eq(&second.inner.runtime.hooks, &first_hooks));
+        assert!(!Arc::ptr_eq(
+            &second.inner.runtime.completion_observer,
+            &first_observer
+        ));
         assert!(!Arc::ptr_eq(
             &second.inner.runtime.rate_limiter,
             &first_limiter
@@ -496,7 +517,10 @@ mod tests {
             first.inner.runtime.rate_limit_cooldown_cap,
             Duration::from_secs(47)
         );
-        assert!(Arc::ptr_eq(&first.inner.runtime.hooks, &first_hooks));
+        assert!(Arc::ptr_eq(
+            &first.inner.runtime.completion_observer,
+            &first_observer
+        ));
         assert!(Arc::ptr_eq(
             &first.inner.runtime.rate_limiter,
             &first_limiter

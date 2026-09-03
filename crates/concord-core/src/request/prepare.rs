@@ -28,7 +28,7 @@ pub(crate) struct PreparationFailure {
     pub(crate) core: ClientCore,
     pub(crate) operation_id: OperationId,
     pub(crate) meta: RequestMeta,
-    pub(crate) safe_url: Arc<str>,
+    pub(crate) observed_url: Arc<str>,
     pub(crate) debug: DebugLevel,
     pub(crate) elapsed: Duration,
     pub(crate) error: ApiError,
@@ -118,7 +118,7 @@ where
             core,
             operation_id,
             meta,
-            Arc::from(head.safe_url()),
+            Arc::from(head.observed_url()),
             debug,
             started,
             error,
@@ -140,7 +140,7 @@ where
                 core,
                 operation_id,
                 meta.clone(),
-                Arc::from(head.safe_url()),
+                Arc::from(head.observed_url()),
                 debug,
                 started,
                 ApiError::classified(meta.endpoint_id().clone(), meta.method().clone(), category),
@@ -152,7 +152,7 @@ where
             core,
             operation_id,
             meta,
-            Arc::from(head.safe_url()),
+            Arc::from(head.observed_url()),
             debug,
             started,
             error,
@@ -164,7 +164,7 @@ where
             core,
             operation_id,
             meta,
-            Arc::from(head.safe_url()),
+            Arc::from(head.observed_url()),
             debug,
             started,
             error,
@@ -247,17 +247,7 @@ where
         RequestContentType::Exact(value) => (Some(value), true),
         RequestContentType::Generated => (None, true),
     };
-    let accept = <E::Response as crate::response::ResponseBodySpec>::accept();
-    if let Some(value) = accept {
-        crate::response::validate_accept(value).map_err(|error| {
-            drop(error);
-            ApiError::classified(
-                meta.endpoint_id().clone(),
-                meta.method().clone(),
-                ErrorCategory::ResponseContract,
-            )
-        })?;
-    }
+    let accept = <E::Response as crate::response::ResponseSpec>::accept();
     head.apply_media_headers(accept, content_type, owns_content_type)?;
     head.validate_auth()?;
     ensure_matching_meta(meta, head)?;
@@ -273,7 +263,7 @@ fn failure(
     core: ClientCore,
     operation_id: OperationId,
     meta: RequestMeta,
-    safe_url: Arc<str>,
+    observed_url: Arc<str>,
     debug: DebugLevel,
     started: tokio::time::Instant,
     error: ApiError,
@@ -282,7 +272,7 @@ fn failure(
         core,
         operation_id,
         meta,
-        safe_url,
+        observed_url,
         debug,
         elapsed: tokio::time::Instant::now().saturating_duration_since(started),
         error,

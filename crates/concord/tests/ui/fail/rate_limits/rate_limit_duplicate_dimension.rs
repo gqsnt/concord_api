@@ -2,9 +2,10 @@ use concord::api;
 
 api! {
     client Api {
+        timeout off;
         base "https://example.test";
-        vars { tenant: String; }
-        rate_limit { by [vars.tenant, vars.tenant]; 1 / 1s; }
+        values { tenant: String; }
+        rate_limit { key [client.tenant, client.tenant]; allow 1 per 1s; }
     }
 }
 

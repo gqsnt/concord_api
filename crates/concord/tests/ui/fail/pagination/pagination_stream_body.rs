@@ -16,14 +16,15 @@ impl<Page> concord::pagination::PaginationController<Page> for Controller {
 
 api! {
     client StreamPageBodyApi {
+        timeout off;
         base "https://example.test";
-    }
+
 
     POST read(
-        #[body] body: Stream<OctetStream>,
-    ) -> crate::support::Json<Vec<u8>> {
-        paginate crate::Controller {}
+        body body: ::concord::body::StreamBody using Stream<OctetStream>,
+    ) -> Vec<u8> using crate::support::Json<Vec<u8>> {
+        paginate with crate::Controller {}
     }
-}
+}}
 
 fn main() {}

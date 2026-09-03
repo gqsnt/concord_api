@@ -1,9 +1,3 @@
-error[E0599]: no method named `path` found for struct `RuntimeEndpointBuilder<R>` in the current scope
- --> tests/ui/fail/capabilities/runtime_endpoint_builder_capabilities_absent.rs:6:21
-  |
-6 |     let _ = builder.path("/raw/fragment");
-  |                     ^^^^ method not found in `RuntimeEndpointBuilder`
-
 error[E0599]: no method named `paginate` found for struct `RuntimeEndpointBuilder<R>` in the current scope
  --> tests/ui/fail/capabilities/runtime_endpoint_builder_capabilities_absent.rs:9:21
   |

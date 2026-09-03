@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use http::HeaderName;
 use proc_macro2::Span;
-use syn::{Ident, LitInt, LitStr, Type, TypePath};
+use syn::{Ident, LitInt, LitStr};
 use url::Url;
 
 use super::ast::{AuthOperation, Clause, ValueDecl};
@@ -38,58 +38,19 @@ pub(super) fn merge_auth(
         *slot = Some(operation);
         return Ok(());
     };
-    match (existing, operation) {
-        (
-            AuthOperation::Modify {
-                replace,
-                placements,
-                clause_spans,
-            },
-            AuthOperation::Modify {
-                replace: incoming_replace,
-                placements: mut incoming,
-                clause_spans: incoming_spans,
-            },
-        ) => {
-            if incoming_replace {
-                let duplicate_span = incoming_spans[0];
-                let mut error = duplicate_span.error(format!(
-                    "`auth replace` must be the first authentication entry for {owner}"
-                ));
-                error.combine(clause_spans[0].error("the first authentication entry is here"));
-                return Err(error);
-            }
-            *replace |= incoming_replace;
-            placements.append(&mut incoming);
-            clause_spans.extend(incoming_spans);
-            Ok(())
-        }
-        (AuthOperation::Off { key_span }, incoming) => {
-            let incoming_span = match incoming {
-                AuthOperation::Modify { clause_spans, .. } => clause_spans[0],
-                AuthOperation::Off { key_span } => key_span,
-            };
-            let mut error = incoming_span.error(format!("`auth off` is exclusive within {owner}"));
-            error.combine((*key_span).error("the exclusive `auth off` clause is here"));
-            Err(error)
-        }
-        (AuthOperation::Modify { clause_spans, .. }, AuthOperation::Off { key_span }) => {
-            let mut error = key_span.error(format!("`auth off` is exclusive within {owner}"));
-            error.combine(clause_spans[0].error("the first authentication entry is here"));
-            Err(error)
-        }
-    }
-}
-
-pub(super) fn is_named_marker(ty: &Type, expected: &str) -> bool {
-    matches!(ty, Type::Path(path) if is_unqualified(path, expected))
-}
-
-fn is_unqualified(path: &TypePath, expected: &str) -> bool {
-    path.qself.is_none()
-        && path.path.leading_colon.is_none()
-        && path.path.segments.len() == 1
-        && path.path.segments[0].ident == expected
+    let first_span = match existing {
+        AuthOperation::Modify { clause_spans, .. } => clause_spans[0],
+        AuthOperation::Off { key_span } => *key_span,
+    };
+    let incoming_span = match operation {
+        AuthOperation::Modify { clause_spans, .. } => clause_spans[0],
+        AuthOperation::Off { key_span } => key_span,
+    };
+    let mut error = incoming_span.error(format!(
+        "a {owner} accepts one grouped `auth` attachment; `auth off` is exclusive"
+    ));
+    error.combine(first_span.error("the first authentication attachment is here"));
+    Err(error)
 }
 
 pub(super) fn validate_duration_integer(literal: &LitInt, owner: &str) -> syn::Result<()> {
@@ -349,12 +310,13 @@ mod tests {
     #[test]
     fn duplicate_clauses_retain_both_diagnostic_spans() {
         let error = super::super::parse(quote! {
-            client DuplicateApi { base "https://example.test"; }
-            GET read() -> Bytes {
+            client DuplicateApi {
+                timeout off; base "https://example.test";
+            GET read() -> Bytes using Bytes {
                 path ["first"];
                 path ["second"];
             }
-        })
+        }})
         .err()
         .expect("duplicate clause");
         let diagnostic = error.into_compile_error().to_string();

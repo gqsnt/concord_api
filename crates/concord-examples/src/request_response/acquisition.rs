@@ -6,7 +6,7 @@
 
 use concord::http::StatusCode;
 use concord::response::{
-    Buffered, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec, ResponseHead,
+    Buffered, ResponseBodyError, ResponseBodyErrorKind, ResponseHead, ResponseSpec,
 };
 use concord::{ApiError, ApiResponse, Bytes, ClientBuildError, Text, api};
 
@@ -14,7 +14,7 @@ use concord::{ApiError, ApiResponse, Bytes, ClientBuildError, Text, api};
 /// A buffered response that maps an accepted `404` to `None`.
 pub struct OptionalText;
 
-impl ResponseBodySpec for OptionalText {
+impl ResponseSpec for OptionalText {
     type Output = Option<String>;
     type Mode = Buffered;
 
@@ -40,12 +40,15 @@ impl ResponseBodySpec for OptionalText {
 // ANCHOR: response_acquisition_contract
 api! {
     client ResponseApi {
+        timeout off;
         base "http://responses.example.test/";
-    }
 
-    GET message() -> Text;
-    GET optional_message() -> crate::request_response::acquisition::OptionalText;
-}
+
+    GET message() -> String using Text {
+        expose accepted_bytes;
+    }
+    GET optional_message() -> Option<String> using crate::request_response::acquisition::OptionalText;
+}}
 // ANCHOR_END: response_acquisition_contract
 
 /// Builds the no-input client directly.
@@ -67,12 +70,12 @@ pub async fn with_metadata(client: &ResponseApi) -> Result<ApiResponse<String>, 
 }
 // ANCHOR_END: metadata_response
 
-// ANCHOR: response_bytes
+// ANCHOR: accepted_bytes
 /// Preserves declared acceptance and `Accept` while returning bounded bytes.
 pub async fn as_bytes(client: &ResponseApi) -> Result<ApiResponse<Bytes>, ApiError> {
-    client.message().response_bytes().await
+    client.message().accepted_bytes().await
 }
-// ANCHOR_END: response_bytes
+// ANCHOR_END: accepted_bytes
 
 // ANCHOR: accepted_not_found
 /// Treats a declared `404` as an accepted optional result.

@@ -5,10 +5,10 @@ use std::time::Duration;
 use concord::api;
 use concord::body::Stream;
 use concord::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext, OctetStream};
-use concord::endpoint::ResponseBytesRequest;
+use concord::endpoint::AcceptedBytesRequest;
 use concord::error::ErrorCategory;
 use concord::http::{SafeProxy, StatusCode};
-use concord::response::{Buffered, ResponseBodyError, ResponseBodySpec, ResponseHead};
+use concord::response::{Buffered, ResponseBodyError, ResponseHead, ResponseSpec};
 use concord::{ApiResponse, Bytes};
 use concord_test_support::server::{BodyGate, ResponseScript, ScriptedServer};
 
@@ -40,7 +40,7 @@ impl DecodeBody for ObservedCodec {
 
 pub struct AcceptedMissing;
 
-impl ResponseBodySpec for AcceptedMissing {
+impl ResponseSpec for AcceptedMissing {
     type Output = String;
     type Mode = Buffered;
 
@@ -64,32 +64,34 @@ impl ResponseBodySpec for AcceptedMissing {
 }
 
 api! {
-    client ResponseBytesApi {
+    client AcceptedBytesApi {
+        timeout off;
         base "http://response-bytes.example.test/root/";
-    }
 
-    GET text_value() -> Text { path ["text"]; }
-    GET custom_value() -> crate::ObservedCodec { path ["custom"]; }
-    GET bytes_value() -> Bytes { path ["bytes"]; }
-    GET empty_value() -> NoContent { path ["empty"]; }
-    GET accepted_missing() -> crate::AcceptedMissing { path ["accepted"]; }
-    GET stream_value() -> Stream<OctetStream> { path ["stream"]; }
-}
+
+    GET text_value() -> String using Text { path ["text"]; expose accepted_bytes; }
+    GET custom_value() -> String using crate::ObservedCodec { path ["custom"]; expose accepted_bytes; }
+    GET bytes_value() -> Bytes using Bytes { path ["bytes"]; expose accepted_bytes; }
+    GET empty_value() -> () using NoContent { path ["empty"]; expose accepted_bytes; }
+    GET accepted_missing() -> String using crate::AcceptedMissing { path ["accepted"]; expose accepted_bytes; }
+    GET stream_value() -> ::concord::response::ByteStream using Stream<OctetStream> { path ["stream"]; }
+}}
 
 api! {
-    client ResponseBytesJsonApi {
+    client AcceptedBytesJsonApi {
+        timeout off;
         base "http://response-bytes-json.example.test/";
-    }
 
-    GET json_value() -> crate::support::Json<Vec<u32>>;
-}
+
+    GET json_value() -> Vec<u32> using crate::support::Json<Vec<u32>> { expose accepted_bytes; }
+}}
 
 fn proxy(server: &ScriptedServer) -> SafeProxy {
     SafeProxy::parse(server.url("")).expect("loopback proxy")
 }
 
-fn client(server: &ScriptedServer, response_limit: usize) -> ResponseBytesApi {
-    ResponseBytesApi::builder()
+fn client(server: &ScriptedServer, response_limit: usize) -> AcceptedBytesApi {
+    AcceptedBytesApi::builder()
         .configure_http({
             let proxy = proxy(server);
             move |http| http.proxy(proxy)
@@ -104,27 +106,27 @@ fn client(server: &ScriptedServer, response_limit: usize) -> ResponseBytesApi {
 }
 
 #[test]
-fn eligible_generated_modes_expose_the_exact_response_bytes_terminal_type() {
-    let client = ResponseBytesApi::new().expect("side-effect-free client construction");
+fn eligible_generated_modes_expose_the_exact_accepted_bytes_terminal_type() {
+    let client = AcceptedBytesApi::new().expect("side-effect-free client construction");
 
-    let _: ResponseBytesRequest<_> = client.text_value().response_bytes();
-    let _: ResponseBytesRequest<_> = client.custom_value().response_bytes();
-    let _: ResponseBytesRequest<_> = client.bytes_value().response_bytes();
-    let _: ResponseBytesRequest<_> = client.empty_value().response_bytes();
-    let _: ResponseBytesRequest<_> = client.accepted_missing().response_bytes();
+    let _: AcceptedBytesRequest<_> = client.text_value().accepted_bytes();
+    let _: AcceptedBytesRequest<_> = client.custom_value().accepted_bytes();
+    let _: AcceptedBytesRequest<_> = client.bytes_value().accepted_bytes();
+    let _: AcceptedBytesRequest<_> = client.empty_value().accepted_bytes();
+    let _: AcceptedBytesRequest<_> = client.accepted_missing().accepted_bytes();
 
     let _direct_await_remains_selected = client.bytes_value();
     let _metadata_terminal_remains_selected = client.bytes_value().response();
 }
 
 #[test]
-fn generated_json_mode_exposes_the_response_bytes_terminal() {
-    let client = ResponseBytesJsonApi::new().expect("side-effect-free JSON client construction");
-    let _: ResponseBytesRequest<_> = client.json_value().response_bytes();
+fn generated_json_mode_exposes_the_accepted_bytes_terminal() {
+    let client = AcceptedBytesJsonApi::new().expect("side-effect-free JSON client construction");
+    let _: AcceptedBytesRequest<_> = client.json_value().accepted_bytes();
 }
 
 #[tokio::test]
-async fn response_bytes_skips_declared_conversion_and_preserves_accept_status_and_metadata() {
+async fn accepted_bytes_skips_declared_conversion_and_preserves_accept_status_and_metadata() {
     CONTENT_TYPE_VALIDATIONS.store(0, Ordering::SeqCst);
     DECODER_CALLS.store(0, Ordering::SeqCst);
     ACCEPTED_SPEC_CALLBACKS.store(0, Ordering::SeqCst);
@@ -145,7 +147,7 @@ async fn response_bytes_skips_declared_conversion_and_preserves_accept_status_an
 
     let response: ApiResponse<Bytes> = client
         .custom_value()
-        .response_bytes()
+        .accepted_bytes()
         .await
         .expect("bounded bytes must not use the declared decoder");
     assert_eq!(CONTENT_TYPE_VALIDATIONS.load(Ordering::SeqCst), 0);
@@ -162,7 +164,7 @@ async fn response_bytes_skips_declared_conversion_and_preserves_accept_status_an
     );
     assert_eq!(
         response.metadata().endpoint(),
-        "response_bytes_api.custom_value"
+        "accepted_bytes_api.custom_value"
     );
     assert_eq!(response.metadata().method(), concord::http::Method::GET);
     assert_eq!(response.metadata().page_index(), 0);
@@ -210,14 +212,14 @@ async fn response_bytes_skips_declared_conversion_and_preserves_accept_status_an
 
     let no_content = client
         .empty_value()
-        .response_bytes()
+        .accepted_bytes()
         .await
         .expect("discard declaration still collects explicit bytes");
     assert_eq!(no_content.value(), b"no-content-still-collected".as_slice());
 
     let accepted = client
         .accepted_missing()
-        .response_bytes()
+        .accepted_bytes()
         .await
         .expect("declared accepted status");
     assert_eq!(accepted.status(), StatusCode::NOT_FOUND);
@@ -236,7 +238,7 @@ async fn response_bytes_skips_declared_conversion_and_preserves_accept_status_an
 }
 
 #[tokio::test]
-async fn generated_direct_and_explicit_endpoints_share_response_bytes_semantics() {
+async fn generated_direct_and_explicit_endpoints_share_accepted_bytes_semantics() {
     let server = ScriptedServer::start([
         ResponseScript::ok(b"generated-direct".to_vec()),
         ResponseScript::ok(b"explicit-endpoint".to_vec()),
@@ -246,12 +248,12 @@ async fn generated_direct_and_explicit_endpoints_share_response_bytes_semantics(
 
     let generated = client
         .bytes_value()
-        .response_bytes()
+        .accepted_bytes()
         .await
         .expect("generated response bytes");
     let explicit = client
-        .request(response_bytes_api::BytesValue::new())
-        .response_bytes()
+        .request(AcceptedBytesApi::unbound().bytes_value())
+        .accepted_bytes()
         .await
         .expect("explicit endpoint response bytes");
 
@@ -264,7 +266,7 @@ async fn generated_direct_and_explicit_endpoints_share_response_bytes_semantics(
 }
 
 #[tokio::test]
-async fn response_bytes_uses_known_length_preflight_and_never_returns_partial_excess() {
+async fn accepted_bytes_uses_known_length_preflight_and_never_returns_partial_excess() {
     let known_gate = BodyGate::closed();
     let known_server = ScriptedServer::start([ResponseScript::GatedBody {
         status: 200,
@@ -274,7 +276,7 @@ async fn response_bytes_uses_known_length_preflight_and_never_returns_partial_ex
     .expect("known-length server");
     let known_result = tokio::time::timeout(
         Duration::from_secs(1),
-        client(&known_server, 4).bytes_value().response_bytes(),
+        client(&known_server, 4).bytes_value().accepted_bytes(),
     )
     .await
     .expect("known excess is rejected from the response head");
@@ -291,7 +293,7 @@ async fn response_bytes_uses_known_length_preflight_and_never_returns_partial_ex
     .expect("unknown-length server");
     let unknown_error = client(&unknown_server, 4)
         .bytes_value()
-        .response_bytes()
+        .accepted_bytes()
         .await
         .expect_err("first cumulative excess returns no partial response");
     assert_eq!(unknown_error.category(), ErrorCategory::ResponseBody);
@@ -300,7 +302,7 @@ async fn response_bytes_uses_known_length_preflight_and_never_returns_partial_ex
 
 #[cfg(feature = "gzip")]
 #[tokio::test]
-async fn response_bytes_limit_counts_post_decompression_bytes() {
+async fn accepted_bytes_limit_counts_post_decompression_bytes() {
     const GZIP_128_X: &[u8] = &[
         31, 139, 8, 0, 0, 0, 0, 0, 0, 10, 171, 168, 24, 88, 0, 0, 55, 138, 224, 172, 128, 0, 0, 0,
     ];
@@ -313,7 +315,7 @@ async fn response_bytes_limit_counts_post_decompression_bytes() {
 
     let error = client(&server, 64)
         .bytes_value()
-        .response_bytes()
+        .accepted_bytes()
         .await
         .expect_err("128 decoded bytes exceed the 64-byte response limit");
     assert_eq!(error.category(), ErrorCategory::ResponseBody);
@@ -328,7 +330,7 @@ async fn non_accepted_status_remains_the_ordinary_typed_status_error() {
     .expect("status server");
     let error = client(&server, 1024)
         .bytes_value()
-        .response_bytes()
+        .accepted_bytes()
         .await
         .expect_err("non-accepted status cannot produce response bytes");
     assert_eq!(error.category(), ErrorCategory::HttpStatus);

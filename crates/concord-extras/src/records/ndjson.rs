@@ -2,8 +2,8 @@ use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 
 use concord_core::contracts::{
-    Buffered, BufferedRecords, Bytes, BytesMut, PageResponseSpec, ResponseBodyError,
-    ResponseBodySpec, ResponseHead,
+    Buffered, BufferedRecords, Bytes, BytesMut, PageResponseSpec, ResponseBodyError, ResponseHead,
+    ResponseSpec,
 };
 use concord_core::records::{RecordDecoder, RecordError, RecordErrorKind};
 use serde::de::DeserializeOwned;
@@ -126,7 +126,7 @@ where
     }
 }
 
-impl<T> ResponseBodySpec for NdJson<T>
+impl<T> ResponseSpec for NdJson<T>
 where
     T: DeserializeOwned + Send + 'static,
 {
@@ -134,15 +134,15 @@ where
     type Mode = Buffered;
 
     fn accept() -> Option<&'static str> {
-        <BufferedRecords<Self> as ResponseBodySpec>::accept()
+        <BufferedRecords<Self> as ResponseSpec>::accept()
     }
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
-        <BufferedRecords<Self> as ResponseBodySpec>::validate(head)
+        <BufferedRecords<Self> as ResponseSpec>::validate(head)
     }
 
     fn from_body(body: Bytes, head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
-        <BufferedRecords<Self> as ResponseBodySpec>::from_body(body, head)
+        <BufferedRecords<Self> as ResponseSpec>::from_body(body, head)
     }
 }
 
@@ -249,12 +249,12 @@ mod tests {
 
         fn complete_page_spec<S>()
         where
-            S: ResponseBodySpec<Output = Vec<Value>, Mode = Buffered> + PageResponseSpec,
+            S: ResponseSpec<Output = Vec<Value>, Mode = Buffered> + PageResponseSpec,
         {
         }
         complete_page_spec::<NdJson<Value>>();
         assert_eq!(
-            <NdJson<Value> as ResponseBodySpec>::accept(),
+            <NdJson<Value> as ResponseSpec>::accept(),
             Some("application/x-ndjson")
         );
     }

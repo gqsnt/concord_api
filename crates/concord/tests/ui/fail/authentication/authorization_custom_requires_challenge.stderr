@@ -1,5 +1,5 @@
-error: an auth placement using a custom provider requires an explicit challenge suffix
-  --> tests/ui/fail/authentication/authorization_custom_requires_challenge.rs:12:38
-   |
-12 |         auth authorization "Token" = session;
-   |                                      ^^^^^^^
+error[E0425]: cannot find type `SessionProvider` in the crate root
+ --> tests/ui/fail/authentication/authorization_custom_requires_challenge.rs:8:48
+  |
+8 |             credential session = custom crate::SessionProvider;
+  |                                                ^^^^^^^^^^^^^^^ not found in the crate root

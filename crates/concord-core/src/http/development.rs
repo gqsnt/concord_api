@@ -16,7 +16,7 @@ use crate::redaction::{SanitizedHeaderValue, SanitizedHeaders};
 pub(super) fn boundary_request(
     endpoint: &str,
     method: Method,
-    safe_url: Option<String>,
+    observed_url: Option<String>,
     headers: &HeaderMap,
     body_category: BodyCategory,
     known_body_length: Option<usize>,
@@ -25,7 +25,7 @@ pub(super) fn boundary_request(
     boundary_request_with_sensitive(
         endpoint,
         method,
-        safe_url,
+        observed_url,
         headers,
         &std::collections::HashSet::new(),
         body_category,
@@ -41,7 +41,7 @@ pub(super) fn boundary_request(
 pub(super) fn boundary_request_with_sensitive(
     endpoint: &str,
     method: Method,
-    safe_url: Option<String>,
+    observed_url: Option<String>,
     headers: &HeaderMap,
     pagination_sensitive_headers: &std::collections::HashSet<http::HeaderName>,
     body_category: BodyCategory,
@@ -62,7 +62,7 @@ pub(super) fn boundary_request_with_sensitive(
     BoundaryRequest::__new(
         endpoint,
         method,
-        safe_url,
+        observed_url,
         headers,
         body_category,
         known_body_length,
@@ -330,7 +330,7 @@ mod tests {
             .queue_expected_response(
                 ExpectedRequest::new()
                     .method(Method::POST)
-                    .safe_url("https://logical.test/widgets")
+                    .observed_url("https://logical.test/widgets")
                     .body(BODY_SECRET),
                 ScriptedResponse::success("response-secret-not-captured"),
             )
@@ -377,7 +377,7 @@ mod tests {
         );
         assert_eq!(capture.body_category(), BodyCategory::Bytes);
         assert_eq!(capture.known_body_length(), Some(BODY_SECRET.len()));
-        assert_eq!(capture.safe_url(), Some("https://logical.test/widgets"));
+        assert_eq!(capture.observed_url(), Some("https://logical.test/widgets"));
         assert!(capture.headers().iter().any(|header| {
             header.name() == http::header::AUTHORIZATION
                 && header.value() == &CapturedHeaderValue::Redacted

@@ -12,53 +12,49 @@ use concord::rate_limit::LocalRateLimiter;
 // ANCHOR: rate_limit_contract
 api! {
     client RateLimitApi {
+        timeout off;
         base "http://rate-limit.example.test/";
-        vars {
+        values {
             tenant: String;
         }
         rate_limit {
             id "example.application";
-            500 / 10s;
+            allow 500 per 10s;
         }
         rate_limits {
-            rule account_reads {
+            account_reads(account) {
                 id "example.account.read";
-                by [account];
+                key [account];
                 cost 1;
-                100 / 1m;
-                1_000 / 1h;
+                allow 100 per 1m;
+                allow 1_000 per 1h;
             }
         }
-    }
+
 
     scope region(region: String) {
-        host [scope.region, "api"];
-        rate_limit use account_reads {
-            account = scope.region;
-        }
+        subdomain replace [region.region, "api"];
+        rate_limit account_reads(account = region.region);
         rate_limit {
-            by [host];
-            200 / 1m;
+            key [host];
+            allow 200 per 1m;
         }
 
-        GET item(item: String) -> Bytes {
+        GET item(item: String) -> Bytes using Bytes {
             rate_limit {
-                by [ep.item];
+                key [endpoint.item];
                 cost 2;
-                100 / 1m;
+                allow 100 per 1m;
             }
         }
     }
 
-    GET lookup(account: String) -> Bytes {
-        rate_limit use account_reads {
-            account = ep.account;
-            cost 2;
-        }
+    GET lookup(account: String) -> Bytes using Bytes {
+        rate_limit account_reads(account = endpoint.account) { cost 2; }
     }
 
-    GET public() -> Bytes;
-}
+    GET public() -> Bytes using Bytes;
+}}
 // ANCHOR_END: rate_limit_contract
 
 /// Installs the first-party limiter explicitly and constructs both plan shapes.

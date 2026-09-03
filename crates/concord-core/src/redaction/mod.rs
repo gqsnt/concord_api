@@ -5,7 +5,7 @@ mod names;
 mod url;
 
 pub use headers::{SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders};
-pub(crate) use url::render_safe_url;
+pub(crate) use url::render_observed_url;
 
 #[cfg(test)]
 mod tests {

@@ -2,7 +2,10 @@ use std::num::{NonZeroU32, NonZeroUsize};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::hooks::{DebugLevel, RuntimeHooks, default_hooks};
+use crate::hooks::{
+    CompletionObserver, DebugLevel, RequestGate, ResponseGate, default_completion_observer,
+    default_request_gate, default_response_gate,
+};
 use crate::rate_limit::{MAX_RATE_LIMIT_KEY_BYTES, RateLimiter};
 use crate::retry::RetryPolicy;
 use crate::runtime::defaults::{
@@ -32,7 +35,9 @@ pub(crate) struct RuntimeConfig {
     pub(crate) rate_limit_key_limit: usize,
     pub(crate) rate_limiter: Arc<dyn RateLimiter>,
     pub(crate) retry_policy: Option<RetryPolicy>,
-    pub(crate) hooks: Arc<dyn RuntimeHooks>,
+    pub(crate) request_gate: Arc<dyn RequestGate>,
+    pub(crate) response_gate: Arc<dyn ResponseGate>,
+    pub(crate) completion_observer: Arc<dyn CompletionObserver>,
     pub(crate) debug: DebugLevel,
 }
 
@@ -45,7 +50,6 @@ pub struct RuntimeConfigBuilder {
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum LimiterSelection {
     Fallback,
-    GeneratedDefault,
     Explicit,
 }
 
@@ -76,7 +80,9 @@ impl RuntimeConfigBuilder {
                 rate_limit_key_limit,
                 rate_limiter,
                 retry_policy: None,
-                hooks: default_hooks(),
+                request_gate: default_request_gate(),
+                response_gate: default_response_gate(),
+                completion_observer: default_completion_observer(),
                 debug: DebugLevel::None,
             },
             limiter_selection: LimiterSelection::Fallback,
@@ -176,10 +182,24 @@ impl RuntimeConfigBuilder {
         self
     }
 
-    /// Replaces the immutable lifecycle hook object used by the built client.
+    /// Replaces the immutable pre-dispatch decision gate used by the built client.
     #[must_use]
-    pub fn hooks(mut self, hooks: Arc<dyn RuntimeHooks>) -> Self {
-        self.config.hooks = hooks;
+    pub fn request_gate(mut self, gate: Arc<dyn RequestGate>) -> Self {
+        self.config.request_gate = gate;
+        self
+    }
+
+    /// Replaces the immutable response-head decision gate used by the built client.
+    #[must_use]
+    pub fn response_gate(mut self, gate: Arc<dyn ResponseGate>) -> Self {
+        self.config.response_gate = gate;
+        self
+    }
+
+    /// Replaces the synchronous fixed-outcome observer used by the built client.
+    #[must_use]
+    pub fn completion_observer(mut self, observer: Arc<dyn CompletionObserver>) -> Self {
+        self.config.completion_observer = observer;
         self
     }
 
@@ -257,19 +277,6 @@ impl RuntimeConfigBuilder {
         }
     }
 
-    pub(crate) fn install_generated_default_limiter(
-        mut self,
-        limiter: Arc<dyn RateLimiter>,
-    ) -> Self {
-        if self.limiter_selection == LimiterSelection::Explicit {
-            return self;
-        }
-        self.config.rate_limit_key_limit = limiter.preparation_key_limit();
-        self.config.rate_limiter = limiter;
-        self.limiter_selection = LimiterSelection::GeneratedDefault;
-        self
-    }
-
     pub(crate) fn prepare_generated_rate_limits(
         self,
         requires_limiter: bool,
@@ -292,11 +299,11 @@ fn nonzero_usize(value: usize) -> NonZeroUsize {
 mod tests {
     use super::*;
 
-    struct FirstHooks;
-    impl RuntimeHooks for FirstHooks {}
+    struct FirstObserver;
+    impl CompletionObserver for FirstObserver {}
 
-    struct SecondHooks;
-    impl RuntimeHooks for SecondHooks {}
+    struct SecondObserver;
+    impl CompletionObserver for SecondObserver {}
 
     #[test]
     fn defaults_are_exact_positive_finite_values() {
@@ -389,12 +396,9 @@ mod tests {
             assert!(Arc::ptr_eq(&config.rate_limiter, &limiter));
         }
 
-        let generated: Arc<dyn RateLimiter> = Arc::new(KeyBoundLimiter(17));
         let explicit: Arc<dyn RateLimiter> = Arc::new(KeyBoundLimiter(23));
         let config = RuntimeConfigBuilder::new()
-            .install_generated_default_limiter(Arc::clone(&generated))
             .rate_limiter(Arc::clone(&explicit))
-            .install_generated_default_limiter(Arc::clone(&generated))
             .resolve();
         assert_eq!(config.rate_limit_key_limit, 23);
         assert!(Arc::ptr_eq(&config.rate_limiter, &explicit));
@@ -455,7 +459,7 @@ mod tests {
             .pagination_max_items(one)
             .pagination_total_response_body_limit(one)
             .pagination_identity_limit(one)
-            .hooks(Arc::new(crate::hooks::NoopHooks))
+            .completion_observer(Arc::new(crate::hooks::NoopCompletionObserver))
             .debug(DebugLevel::Headers)
             .auth_failure_cooldown_cap(Duration::ZERO)
             .rate_limit_cooldown_cap(Duration::ZERO)
@@ -514,18 +518,18 @@ mod tests {
     }
 
     #[test]
-    fn hook_and_debug_setters_replace_immutable_builder_selection() {
-        let first: Arc<dyn RuntimeHooks> = Arc::new(FirstHooks);
-        let second: Arc<dyn RuntimeHooks> = Arc::new(SecondHooks);
+    fn observer_and_debug_setters_replace_immutable_builder_selection() {
+        let first: Arc<dyn CompletionObserver> = Arc::new(FirstObserver);
+        let second: Arc<dyn CompletionObserver> = Arc::new(SecondObserver);
         let config = RuntimeConfigBuilder::new()
-            .hooks(Arc::clone(&first))
+            .completion_observer(Arc::clone(&first))
             .debug(DebugLevel::Basic)
-            .hooks(Arc::clone(&second))
+            .completion_observer(Arc::clone(&second))
             .debug(DebugLevel::Headers)
             .resolve();
 
-        assert!(!Arc::ptr_eq(&config.hooks, &first));
-        assert!(Arc::ptr_eq(&config.hooks, &second));
+        assert!(!Arc::ptr_eq(&config.completion_observer, &first));
+        assert!(Arc::ptr_eq(&config.completion_observer, &second));
         assert_eq!(config.debug, DebugLevel::Headers);
     }
 

@@ -1,5 +1,5 @@
-error: endpoint parameters accept only the bare `#[body]` role attribute
-  --> tests/ui/fail/syntax/invalid_body_attribute.rs:10:17
+error: v1 `#[body] name: Spec` syntax was removed; write `body name: Input using Spec`
+  --> tests/ui/fail/syntax/invalid_body_attribute.rs:11:17
    |
-10 |     POST submit(#[body(replay)] payload: Text) -> Bytes;
+11 |     POST submit(#[body(replay)] payload: Text) -> Bytes using Bytes;
    |                 ^

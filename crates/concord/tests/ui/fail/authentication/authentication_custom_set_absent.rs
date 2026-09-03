@@ -23,6 +23,7 @@ impl CredentialProvider for SessionProvider {
 
 api! {
     client Api {
+        timeout off;
         base "http://example.test";
         credentials {
             credential session = custom crate::SessionProvider;

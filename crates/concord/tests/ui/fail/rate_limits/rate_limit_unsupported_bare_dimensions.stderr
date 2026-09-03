@@ -1,23 +1,23 @@
-error: unsupported rate-limit dimension `method`; use `endpoint` or a named `scope.*`/`ep.*` value
- --> tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.rs:6:26
+error: unsupported rate-limit dimension `method`; use `host`, `endpoint`, or an owner-qualified value
+ --> tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.rs:7:27
   |
-6 |         rate_limit { by [method]; 1 / 1s; }
-  |                          ^^^^^^
+7 |         rate_limit { key [method]; allow 1 per 1s; }
+  |                           ^^^^^^
 
-error: unsupported rate-limit dimension `path`; use `endpoint` or a named `scope.*`/`ep.*` value
-  --> tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.rs:13:26
+error: unsupported rate-limit dimension `path`; use `host`, `endpoint`, or an owner-qualified value
+  --> tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.rs:15:27
    |
-13 |         rate_limit { by [path]; 1 / 1s; }
-   |                          ^^^^
+15 |         rate_limit { key [path]; allow 1 per 1s; }
+   |                           ^^^^
 
-error: unsupported rate-limit dimension `query`; use `endpoint` or a named `scope.*`/`ep.*` value
-  --> tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.rs:20:26
+error: unsupported rate-limit dimension `query`; use `host`, `endpoint`, or an owner-qualified value
+  --> tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.rs:23:27
    |
-20 |         rate_limit { by [query]; 1 / 1s; }
-   |                          ^^^^^
+23 |         rate_limit { key [query]; allow 1 per 1s; }
+   |                           ^^^^^
 
-error: unsupported rate-limit dimension `safe_url`; use `endpoint` or a named `scope.*`/`ep.*` value
-  --> tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.rs:27:26
+error: unsupported rate-limit dimension `observed_url`; use `host`, `endpoint`, or an owner-qualified value
+  --> tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.rs:31:27
    |
-27 |         rate_limit { by [safe_url]; 1 / 1s; }
-   |                          ^^^^^^^^
+31 |         rate_limit { key [observed_url]; allow 1 per 1s; }
+   |                           ^^^^^^^^^^^^

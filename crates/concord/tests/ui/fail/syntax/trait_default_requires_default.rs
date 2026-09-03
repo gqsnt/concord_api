@@ -4,9 +4,11 @@ pub struct NoDefault;
 
 api! {
     client MissingDefaultApi {
+        timeout off;
         base "https://example.test";
-        vars {
-            value: NoDefault = default;
+        values {
+            #[default]
+            value: NoDefault;
         }
     }
 }

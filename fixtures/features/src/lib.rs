@@ -4,28 +4,30 @@ use runtime::{Bytes, api};
 
 api! {
     client EmptyGeneratedApi {
+        timeout off;
         base "http://no-local-limiter-empty.example.test/";
-    }
 
-    GET read() -> Bytes {
+
+    GET read() -> Bytes using Bytes {
         path ["read"];
     }
-}
+}}
 
 api! {
     client LimitedGeneratedApi {
+        timeout off;
         base "http://no-local-limiter-limited.example.test/";
         rate_limits {
-            rule fixture_limit {
+            fixture_limit() {
                 cost 2;
-                3 / 1m;
-                30 / 10m;
+                allow 3 per 1m;
+                allow 30 per 10m;
             }
         }
-    }
 
-    GET read() -> Bytes {
+
+    GET read() -> Bytes using Bytes {
         path ["read"];
-        rate_limit use fixture_limit;
+        rate_limit fixture_limit();
     }
-}
+}}

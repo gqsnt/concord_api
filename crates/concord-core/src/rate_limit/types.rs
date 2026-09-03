@@ -1,15 +1,13 @@
-use std::fmt::Display;
 use std::num::NonZeroU32;
 use std::time::Duration;
 
-use crate::construction::format_bounded;
 use crate::error::RateLimitErrorKind;
 use crate::limits::{
     MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES,
     MAX_RATE_LIMIT_KEY_PARTS, MAX_RATE_LIMIT_POLICIES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_POLICY,
 };
 
-use super::RateLimitError;
+use super::{RateLimitError, RateLimitKeyValue, canonical::encode_canonical};
 
 /// A stable logical identifier for one resolved rate-limit policy.
 pub struct RateLimitId {
@@ -39,7 +37,7 @@ impl RateLimitId {
 /// One ordered name/value component of a resolved rate-limit key.
 pub struct RateLimitKeyPart {
     name: Box<str>,
-    value: Box<str>,
+    value: Box<[u8]>,
 }
 
 impl RateLimitKeyPart {
@@ -48,7 +46,10 @@ impl RateLimitKeyPart {
     /// The name is nonempty and no larger than
     /// [`MAX_RATE_LIMIT_KEY_PART_NAME_BYTES`]. The combined name and value are
     /// no larger than [`MAX_RATE_LIMIT_KEY_BYTES`].
-    pub fn new(name: impl AsRef<str>, value: impl AsRef<str>) -> Result<Self, RateLimitError> {
+    pub(crate) fn new(
+        name: impl AsRef<str>,
+        value: impl AsRef<[u8]>,
+    ) -> Result<Self, RateLimitError> {
         let name = name.as_ref();
         let value = value.as_ref();
         let total_bytes = name
@@ -78,7 +79,7 @@ impl RateLimitKeyPart {
     ///
     /// Custom limiters must protect this value in their storage and logging.
     #[must_use]
-    pub fn value(&self) -> &str {
+    pub fn value(&self) -> &[u8] {
         &self.value
     }
 }
@@ -107,7 +108,8 @@ impl RateLimitKey {
     /// At most [`MAX_RATE_LIMIT_KEY_PARTS`] parts and
     /// [`MAX_RATE_LIMIT_KEY_BYTES`] aggregate name/value bytes are retained.
     /// Duplicate names and the first excess item stop iteration immediately.
-    pub fn from_parts<I>(parts: I) -> Result<Self, RateLimitError>
+    #[cfg(test)]
+    pub(crate) fn from_parts<I>(parts: I) -> Result<Self, RateLimitError>
     where
         I: IntoIterator<Item = RateLimitKeyPart>,
     {
@@ -118,18 +120,23 @@ impl RateLimitKey {
     where
         I: IntoIterator<Item = (N, V)>,
         N: AsRef<str>,
-        V: AsRef<str>,
+        V: AsRef<[u8]>,
     {
         Self::from_mapped_parts(parts, |(name, value)| RateLimitKeyPart::new(name, value))
     }
 
-    pub(crate) fn from_display_values<I, N, V>(parts: I) -> Result<Self, RateLimitError>
+    /// Builds an ordered key by canonically encoding each semantic value.
+    ///
+    /// This is the constructor for generated and runtime-defined endpoint
+    /// policies. Values are encoded through [`RateLimitKeyValue`] with type and
+    /// length framing; human `Display` text is never used as quota identity.
+    pub fn from_canonical_values<I, N, V>(parts: I) -> Result<Self, RateLimitError>
     where
         I: IntoIterator<Item = (N, V)>,
         N: AsRef<str>,
-        V: Display,
+        V: RateLimitKeyValue,
     {
-        let mut retained: Vec<(Box<str>, String)> = Vec::new();
+        let mut retained: Vec<(Box<str>, Box<[u8]>)> = Vec::new();
         let mut total_bytes = 0_usize;
         for (name, value) in parts {
             if retained.len() >= MAX_RATE_LIMIT_KEY_PARTS {
@@ -143,12 +150,14 @@ impl RateLimitKey {
                 return Err(invalid_key());
             }
             let bytes_before_value = total_bytes
-                .checked_add(name.len())
+                .checked_add(4)
+                .and_then(|bytes| bytes.checked_add(name.len()))
+                .and_then(|bytes| bytes.checked_add(8))
                 .ok_or_else(invalid_key)?;
             let remaining = MAX_RATE_LIMIT_KEY_BYTES
                 .checked_sub(bytes_before_value)
                 .ok_or_else(invalid_key)?;
-            let value = format_bounded(&value, remaining).map_err(|_| invalid_key())?;
+            let value = encode_canonical(&value, remaining)?;
             total_bytes = bytes_before_value
                 .checked_add(value.len())
                 .ok_or_else(invalid_key)?;
@@ -178,7 +187,9 @@ impl RateLimitKey {
                 return Err(invalid_key());
             }
             total_bytes = total_bytes
-                .checked_add(part.name.len())
+                .checked_add(4)
+                .and_then(|bytes| bytes.checked_add(part.name.len()))
+                .and_then(|bytes| bytes.checked_add(8))
                 .and_then(|bytes| bytes.checked_add(part.value.len()))
                 .ok_or_else(invalid_key)?;
             if total_bytes > MAX_RATE_LIMIT_KEY_BYTES {
@@ -489,7 +500,7 @@ mod tests {
         }
     }
 
-    fn part(name: impl AsRef<str>, value: impl AsRef<str>) -> RateLimitKeyPart {
+    fn part(name: impl AsRef<str>, value: impl AsRef<[u8]>) -> RateLimitKeyPart {
         RateLimitKeyPart::new(name, value).expect("valid key part")
     }
 
@@ -595,14 +606,14 @@ mod tests {
     fn constructors_and_accessors_preserve_order_and_checked_bytes() {
         let key = RateLimitKey::from_parts([
             part("host", "api.example.test"),
-            part("vars.tenant", "north"),
+            part("client.tenant", "north"),
         ])
         .expect("valid key");
         assert_eq!(key.parts()[0].name(), "host");
-        assert_eq!(key.parts()[0].value(), "api.example.test");
-        assert_eq!(key.parts()[1].name(), "vars.tenant");
-        assert_eq!(key.parts()[1].value(), "north");
-        assert_eq!(key.total_bytes(), 4 + 16 + 11 + 5);
+        assert_eq!(key.parts()[0].value(), b"api.example.test");
+        assert_eq!(key.parts()[1].name(), "client.tenant");
+        assert_eq!(key.parts()[1].value(), b"north");
+        assert_eq!(key.total_bytes(), 2 * (4 + 8) + 4 + 16 + 13 + 5);
         assert!(!key.is_global());
 
         let rule = RateLimitPolicy::new(

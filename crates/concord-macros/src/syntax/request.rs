@@ -6,8 +6,8 @@ use syn::spanned::Spanned;
 use syn::{Ident, LitInt, LitStr, Token, braced, bracketed};
 
 use super::ast::{
-    DurationLiteral, HeaderEntry, HeaderOperation, HostOperation, PathOperation, PublicExpr,
-    QueryEntry, QueryOperation, TimeoutOperation,
+    DurationLiteral, HeaderEntry, HeaderOperation, PathOperation, PublicExpr, QueryEmission,
+    QueryEntry, QueryOperation, SubdomainOperation, TimeoutOperation,
 };
 use super::diagnostics::{
     SpanError, validate_duration_integer, validate_integer, validate_public_header_name,
@@ -15,21 +15,29 @@ use super::diagnostics::{
 };
 use super::{MAX_FORMAT_DEPTH, keyword};
 
-pub(super) fn parse_host(input: ParseStream<'_>) -> syn::Result<HostOperation> {
-    input.parse::<keyword::host>()?;
+pub(super) fn parse_subdomain(input: ParseStream<'_>) -> syn::Result<SubdomainOperation> {
+    input.parse::<keyword::subdomain>()?;
     if input.peek(keyword::off) {
         input.parse::<keyword::off>()?;
         input.parse::<Token![;]>()?;
-        return Ok(HostOperation::Off);
+        return Ok(SubdomainOperation::Off);
     }
-    let values = parse_expression_list(input, "host")?;
+    let replace = input.peek(keyword::replace);
+    if replace {
+        input.parse::<keyword::replace>()?;
+    }
+    let values = parse_expression_list(input, "subdomain")?;
     for value in &values {
         if let PublicExpr::String(value) = value {
             validate_static_host_label(value)?;
         }
     }
     input.parse::<Token![;]>()?;
-    Ok(HostOperation::Replace(values))
+    Ok(if replace {
+        SubdomainOperation::Replace(values)
+    } else {
+        SubdomainOperation::Prepend(values)
+    })
 }
 
 pub(super) fn parse_path(input: ParseStream<'_>) -> syn::Result<PathOperation> {
@@ -93,28 +101,27 @@ pub(super) fn parse_query(input: ParseStream<'_>) -> syn::Result<QueryOperation>
     let body;
     braced!(body in input);
     let mut entries = Vec::new();
-    let mut keys = HashSet::new();
     while !body.is_empty() {
         let entry = if body.peek(keyword::remove) {
             body.parse::<keyword::remove>()?;
             QueryEntry::Remove(body.parse()?)
         } else {
             let key: LitStr = body.parse()?;
-            body.parse::<Token![=]>()?;
-            QueryEntry::Assign {
-                key,
-                value: parse_public_expr(&body, 0)?,
+            let append = if body.peek(Token![+=]) {
+                body.parse::<Token![+=]>()?;
+                true
+            } else {
+                body.parse::<Token![=]>()?;
+                false
+            };
+            let emission = parse_query_emission(&body)?;
+            if append {
+                QueryEntry::Append { key, emission }
+            } else {
+                QueryEntry::Assign { key, emission }
             }
         };
         body.parse::<Token![;]>()?;
-        let key = match &entry {
-            QueryEntry::Assign { key, .. } | QueryEntry::Remove(key) => key,
-        };
-        if !keys.insert(key.value()) {
-            return Err(key
-                .span()
-                .error(format!("duplicate local query key `{}`", key.value())));
-        }
         entries.push(entry);
     }
     Ok(if replace {
@@ -122,6 +129,32 @@ pub(super) fn parse_query(input: ParseStream<'_>) -> syn::Result<QueryOperation>
     } else {
         QueryOperation::Modify(entries)
     })
+}
+
+fn parse_query_emission(input: ParseStream<'_>) -> syn::Result<QueryEmission> {
+    if input.peek(keyword::each) {
+        let marker: keyword::each = input.parse()?;
+        let namespace: Ident = input.parse().map_err(|_| {
+            input.error("`each` requires one direct owner reference such as `endpoint.tags`")
+        })?;
+        input.parse::<Token![.]>().map_err(|_| {
+            input.error("`each` requires one direct owner reference such as `endpoint.tags`")
+        })?;
+        let name: Ident = input.parse()?;
+        if input.peek(Token![.])
+            || input.peek(syn::token::Paren)
+            || input.peek(syn::token::Bracket)
+            || input.peek(Token![!])
+        {
+            return Err(input.error("`each` accepts only a direct owner/value reference"));
+        }
+        return Ok(QueryEmission::Each {
+            namespace,
+            name,
+            span: marker.span(),
+        });
+    }
+    Ok(QueryEmission::One(parse_public_expr(input, 0)?))
 }
 
 pub(super) fn parse_headers(input: ParseStream<'_>) -> syn::Result<HeaderOperation> {
@@ -190,10 +223,14 @@ pub(super) fn parse_timeout(input: ParseStream<'_>) -> syn::Result<TimeoutOperat
     }))
 }
 
+pub(super) fn parse_total_public_expr(input: ParseStream<'_>) -> syn::Result<PublicExpr> {
+    parse_public_expr(input, 0)
+}
+
 fn parse_public_expr(input: ParseStream<'_>, depth: usize) -> syn::Result<PublicExpr> {
     if input.peek(syn::token::Bracket) {
         return Err(input.error(
-            "bracketed interpolation is not DSL syntax; concatenate public expressions with `fmt[...]`",
+            "bracketed interpolation is not DSL syntax; concatenate public atoms with `concat [...]`",
         ));
     }
     if input.peek(LitStr) {
@@ -205,31 +242,31 @@ fn parse_public_expr(input: ParseStream<'_>, depth: usize) -> syn::Result<Public
         return Ok(PublicExpr::Integer(literal));
     }
     if input.peek(keyword::fmt) {
-        let marker: keyword::fmt = input.parse()?;
+        return Err(input.error("v1 `fmt[...]` was removed; write `concat [...]`"));
+    }
+    if input.peek(keyword::concat) {
+        let marker: keyword::concat = input.parse()?;
         if depth >= MAX_FORMAT_DEPTH {
             return Err(marker
                 .span()
-                .error("nested `fmt[...]` expressions exceed the maximum depth of 64"));
+                .error("nested `concat [...]` expressions exceed the maximum depth of 64"));
         }
         let content;
         bracketed!(content in input);
         if content.is_empty() {
-            return Err(content.error("`fmt[...]` requires at least one expression"));
+            return Err(content.error("`concat [...]` requires at least one expression"));
         }
         let mut values = Vec::new();
-        loop {
+        while !content.is_empty() {
             values.push(parse_public_expr(&content, depth + 1)?);
             if content.is_empty() {
                 break;
             }
             content
                 .parse::<Token![,]>()
-                .map_err(|_| content.error("`fmt[...]` expressions must be separated by commas"))?;
-            if content.is_empty() {
-                return Err(content.error("a trailing comma is not accepted in `fmt[...]`"));
-            }
+                .map_err(|_| content.error("`concat [...]` atoms must be separated by commas"))?;
         }
-        return Ok(PublicExpr::Format {
+        return Ok(PublicExpr::Concat {
             span: marker.span(),
             values,
         });
@@ -237,12 +274,12 @@ fn parse_public_expr(input: ParseStream<'_>, depth: usize) -> syn::Result<Public
 
     let namespace: Ident = input.parse().map_err(|_| {
         input.error(
-            "public expressions accept only literals, `vars.NAME`, `scope.NAME`, `ep.NAME`, or `fmt[...]`",
+            "public expressions accept only literals, owner-qualified references, or `concat [...]`",
         )
     })?;
     input.parse::<Token![.]>().map_err(|_| {
         namespace.span().error(
-            "arbitrary Rust expressions are not supported; use `vars.NAME`, `scope.NAME`, or `ep.NAME`",
+            "arbitrary Rust expressions are not supported; use `client.NAME`, `endpoint.NAME`, or a visible named scope owner",
         )
     })?;
     let name: Ident = input.parse()?;
@@ -254,10 +291,19 @@ fn parse_public_expr(input: ParseStream<'_>, depth: usize) -> syn::Result<Public
         return Err(input
             .error("arbitrary Rust expressions are not supported after a public value reference"));
     }
-    if !matches!(namespace.to_string().as_str(), "vars" | "scope" | "ep") {
-        return Err(namespace.span().error(
-            "unsupported public-expression namespace; secrets and credentials are not expressible",
-        ));
+    match namespace.to_string().as_str() {
+        "vars" => return Err(namespace.span().error("v1 `vars.NAME` was removed; use `client.NAME`")),
+        "scope" => return Err(namespace.span().error(
+            "v1 `scope.NAME` was removed; use the actual visible scope identifier, for example `regional.NAME`",
+        )),
+        "ep" => return Err(namespace.span().error("v1 `ep.NAME` was removed; use `endpoint.NAME`")),
+        "secret" => return Err(namespace.span().error(
+            "secrets are private credential sources and cannot appear in public expressions",
+        )),
+        "credential" | "credentials" => return Err(namespace.span().error(
+            "credentials are private and cannot appear in public expressions",
+        )),
+        _ => {}
     }
     Ok(PublicExpr::Reference { namespace, name })
 }
@@ -306,21 +352,22 @@ mod tests {
     #[test]
     fn parses_request_shaping_clauses_independently_of_source_order() {
         let source = super::super::parse(quote! {
-            client RequestApi { base "https://example.test"; }
-            GET read(id: String) -> Bytes {
+            client RequestApi {
+                timeout off; base "https://example.test";
+            GET read(id: String) -> Bytes using Bytes {
                 timeout 2s;
                 headers { "X-Static" = "one"; }
-                query { "id" = ep.id; }
-                path ["items", ep.id];
-                host ["api"];
+                query { "id" = endpoint.id; }
+                path ["items", endpoint.id];
+                subdomain ["api"];
             }
-        })
+        }})
         .expect("request syntax");
-        let SourceChild::Endpoint(endpoint) = &source.children[0] else {
+        let SourceChild::Endpoint(endpoint) = &source.client.children[0] else {
             panic!("endpoint");
         };
 
-        assert!(endpoint.attachment_site.host.is_some());
+        assert!(endpoint.attachment_site.subdomain.is_some());
         assert!(endpoint.attachment_site.path.is_some());
         assert!(endpoint.attachment_site.query.is_some());
         assert!(endpoint.attachment_site.headers.is_some());
@@ -330,18 +377,19 @@ mod tests {
     #[test]
     fn rejects_bracketed_interpolation_with_fmt_replacement() {
         let error = super::super::parse(quote! {
-            client RequestApi { base "https://example.test"; }
-            GET read(id: String) -> Bytes {
-                path [["items-", ep.id]];
+            client RequestApi {
+                timeout off; base "https://example.test";
+            GET read(id: String) -> Bytes using Bytes {
+                path [["items-", endpoint.id]];
             }
-        })
+        }})
         .err()
         .expect("bracketed interpolation must fail");
 
         assert!(
             error
                 .to_string()
-                .contains("concatenate public expressions with `fmt[...]`")
+                .contains("concatenate public atoms with `concat [...]`")
         );
     }
 }

@@ -7,8 +7,8 @@
 //!
 //! Generated construction and navigation use declaration-domain method names.
 //! Public value mutation uses `set_*`; absence-capable values additionally use
-//! `clear_*`, and values with declaration defaults use `reset_*`. These
-//! capabilities are independent, so a defaulted `Option<T>` exposes all three.
+//! `with_*` and `clear_*`, and values with declaration defaults use `reset_*`.
+//! These capabilities follow Concord's explicit `?` marker, never Rust type spelling.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -17,8 +17,8 @@
 ///
 /// Generated constructors and navigation retain declaration-domain names.
 /// Public value mutations use `set_*`, with `clear_*` for absence-capable
-/// values and `reset_*` for values with declaration defaults. A value may have
-/// both capabilities.
+/// values and `reset_*` for values with declaration defaults. `set_*` always
+/// accepts the exact effective type, including nested optionality.
 #[macro_export]
 macro_rules! api {
     ($($declaration:tt)*) => {
@@ -90,33 +90,41 @@ pub mod codec {
 /// Explicit endpoint values and typed pending request contracts.
 pub mod endpoint {
     pub use concord_core::contracts::{
-        EndpointCapabilities, EndpointDescription, EndpointId, MAX_ENDPOINT_ID_BYTES,
-        MAX_FORMATTED_PUBLIC_VALUE_BYTES, MAX_REQUEST_HEAD_COMPONENTS, MAX_REQUEST_HEADER_BYTES,
-        MAX_REQUEST_HEADER_COUNT, MAX_REQUEST_URL_BYTES, MAX_RUNTIME_ENDPOINT_COMPONENTS,
-        MAX_RUNTIME_ENDPOINT_METHOD_BYTES, MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, RequestBodyCategory,
-        ResponseAcquisition, RuntimeEndpoint, RuntimeEndpointBuilder, SafeRequestPlan,
-        TimeoutSelection,
+        AttachmentDescription, AttachmentFamily, AttachmentOperation, AttachmentView,
+        AuthenticationDescription, BodyDescription, ContractDescription, ContractFactClass,
+        CredentialDescription, CredentialFreeRequestPlan, CredentialSourceKind,
+        DeclarationDescription, DeclarationKind, EndpointCapabilities, EndpointContractDescription,
+        EndpointDescription, EndpointId, MAX_ENDPOINT_ID_BYTES, MAX_FORMATTED_PUBLIC_VALUE_BYTES,
+        MAX_REQUEST_HEAD_COMPONENTS, MAX_REQUEST_HEADER_BYTES, MAX_REQUEST_HEADER_COUNT,
+        MAX_REQUEST_URL_BYTES, MAX_RUNTIME_ENDPOINT_COMPONENTS, MAX_RUNTIME_ENDPOINT_METHOD_BYTES,
+        MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, ObservationClass, PaginationDescription,
+        PaginationFieldDescription, RateLimitWindowDescription, RatePolicyDescription,
+        RateProfileDescription, Repeatability, RepeatabilitySource, RequestBodyCategory,
+        ResponseAcquisition, ResponseDescription, RuntimeEndpoint, RuntimeEndpointBuilder,
+        ScopeDescription, SecretDescription, TimeoutSelection, ValueDescription, ValueInitializer,
+        ValueOwnerKind, ValuePresence,
     };
-    pub use concord_core::{Request, ResponseBytesRequest, ResponseRequest};
+    pub use concord_core::{AcceptedBytesRequest, Request, ResponseRequest};
 }
 
-/// Safe runtime, configuration, lifecycle, and decoding errors.
+/// Sanitized runtime, configuration, lifecycle, and decoding errors.
 pub mod error {
     pub use concord_core::contracts::{
         ApiError, AuthError, AuthErrorKind, BodyError, BodyErrorKind, ClientBuildError,
         ClientBuildErrorKind, ClientInputKind, CodecError, CodecErrorKind, ConfigurationError,
-        ConfigurationErrorKind, ErrorCategory, HookError, HttpResponseFailure, PaginationError,
-        PaginationErrorKind, RateLimitError, RateLimitErrorKind, ResponseBodyError,
-        ResponseBodyErrorKind, StatusBody, StatusBodyDecodeError, StatusBodyState,
+        ConfigurationErrorKind, DispatchKnowledge, ErrorCategory, FailureStage, GateError,
+        HttpResponseFailure, PaginationError, PaginationErrorKind, RateLimitError,
+        RateLimitErrorKind, ResponseBodyError, ResponseBodyErrorKind, StatusBody,
+        StatusBodyDecodeError, StatusBodyState,
     };
 }
 
-/// Sanitized lifecycle observation contracts and completion events.
-pub mod hooks {
+/// Credential-free decision gates and fixed-outcome completion observation.
+pub mod observation {
     pub use concord_core::contracts::{
-        AttemptInfo, BeforeSend, BodyKind, BoxFuture, CompletionEvent, CompletionOutcome,
-        DebugLevel, PaginationCompletionEvent, ResponseHeadEvent, RuntimeHooks, SanitizedHeaderMap,
-        SanitizedHeaderValue, SanitizedHeaders,
+        AttemptInfo, BeforeSend, BodyKind, BoxFuture, CompletionEvent, CompletionObserver,
+        CompletionOutcome, DebugLevel, PaginationCompletionEvent, RequestGate, ResponseGate,
+        ResponseHeadEvent, SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders,
     };
 }
 
@@ -141,10 +149,10 @@ pub mod pagination {
 
 /// Core rate-limit contracts and the enabled first-party implementation.
 ///
-/// A declaration's lexical location selects applicability; optional ordered
-/// `by [...]` dimensions select bucket partitioning. With the `rate-limit`
-/// feature, `LocalRateLimiter` and `RetryAfterObserver` are available here and
-/// the local limiter is installed by default for generated clients.
+/// A declaration's lexical location selects applicability; ordered `key [...]`
+/// dimensions select bucket partitioning. With the `rate-limit` feature,
+/// `LocalRateLimiter` and `RetryAfterObserver` are available here. Any generated
+/// client with an effective policy still requires explicit limiter selection.
 ///
 /// Source-derived policy IDs are deterministic within one generated client
 /// contract, not globally unique across unrelated [`api!`](crate::api)
@@ -153,12 +161,13 @@ pub mod pagination {
 pub mod rate_limit {
     pub use concord_core::contracts::{BoxFuture, RateLimitErrorKind};
     pub use concord_core::rate_limit::{
-        Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_ID_BYTES,
-        MAX_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS,
-        MAX_RATE_LIMIT_POLICIES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_POLICY, NoopRateLimiter,
-        RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitObserver,
-        RateLimitPermit, RateLimitPlan, RateLimitPolicy, RateLimitRequest, RateLimitResponse,
-        RateLimitResponseHead, RateLimitWindow, RateLimiter,
+        CanonicalKeyWriter, Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES,
+        MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES,
+        MAX_RATE_LIMIT_KEY_PARTS, MAX_RATE_LIMIT_POLICIES_PER_PLAN,
+        MAX_RATE_LIMIT_WINDOWS_PER_POLICY, NoopRateLimiter, RateLimitError, RateLimitId,
+        RateLimitKey, RateLimitKeyPart, RateLimitKeyValue, RateLimitObserver, RateLimitPermit,
+        RateLimitPlan, RateLimitPolicy, RateLimitRequest, RateLimitResponse, RateLimitResponseHead,
+        RateLimitWindow, RateLimiter,
     };
     #[cfg(feature = "rate-limit")]
     pub use concord_extras::rate_limit::{LocalRateLimiter, RetryAfterObserver};
@@ -203,9 +212,9 @@ pub mod records {
 /// Bounded response specifications, acquisition modes, and response metadata.
 pub mod response {
     pub use concord_core::contracts::{
-        ApiResponse, Buffered, ByteStream, Discard, ExecutionMeta, MAX_EMPTY_RESPONSE_CHUNKS,
-        NoContent, PageResponseSpec, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec,
-        ResponseBytesMode, ResponseHead, ResponseMode, Streaming,
+        AcceptedBytesMode, ApiResponse, Buffered, ByteStream, Discard, ExecutionMeta,
+        MAX_EMPTY_RESPONSE_CHUNKS, NoContent, PageResponseSpec, ResponseBodyError,
+        ResponseBodyErrorKind, ResponseHead, ResponseMode, ResponseSpec, Streaming,
     };
 }
 
@@ -227,38 +236,29 @@ pub mod runtime {
 #[doc(hidden)]
 pub mod __private {
     #[doc(hidden)]
-    pub use concord_core::__private::response_bytes_request;
+    pub use concord_core::__private::accepted_bytes_request;
     #[doc(hidden)]
     pub use concord_core::__private::{
-        ApiError, ApiResponse, Auth, ClientBuildError, ClientCore, ClientInputKind, DebugLevel,
-        EmptyBody, EndpointCapabilities, EndpointDescription, EndpointId, EndpointSpec,
-        GENERATED_CONTRACT_VERSION, GeneratedCredential, HeadBuilder, HeaderName,
-        MAX_REQUEST_HEAD_COMPONENTS, MAX_REQUEST_HEADER_BYTES, MAX_REQUEST_HEADER_COUNT,
-        MAX_REQUEST_URL_BYTES, Method, PageRequestBodySpec, PageResponseSpec, PaginatedEndpoint,
-        PreparedHead, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPolicy,
-        RateLimitWindow, RequestBodyCategory, RequestBodyContext, RequestBodyMetadata,
-        RequestBodySpec, RequestMeta, RequestOptions, ResponseAcquisition, ResponseBodySpec,
-        SafeRequestPlan, TimeoutOverride, TimeoutSelection, Url, assert_generated_contract,
-        basic_credential_input_error, build_client_core, credential_input_error,
-        credential_store_error, default_http_config, endpoint_id_from_static, inspect_endpoint,
-        map_endpoint, missing_input_error, paginate_request, request, response_request,
-        safe_request_plan,
+        ApiError, ApiResponse, Auth, ClientBuildError, ClientCore, ClientInputKind,
+        CredentialFreeRequestPlan, DebugLevel, EmptyBody, EndpointCapabilities,
+        EndpointDescription, EndpointId, EndpointSpec, GENERATED_CONTRACT_VERSION,
+        GeneratedCredential, HeadBuilder, HeaderName, MAX_REQUEST_HEAD_COMPONENTS,
+        MAX_REQUEST_HEADER_BYTES, MAX_REQUEST_HEADER_COUNT, MAX_REQUEST_URL_BYTES, Method,
+        Override, PageRequestBodySpec, PageResponseSpec, PaginatedEndpoint, PreparedHead,
+        RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitKeyValue, RateLimitPolicy,
+        RateLimitWindow, Repeatability, RepeatabilitySource, RequestBodyCategory,
+        RequestBodyContext, RequestBodyMetadata, RequestBodySpec, RequestMeta, RequestOptions,
+        ResponseAcquisition, ResponseSpec, TimeoutOverride, TimeoutSelection, Url,
+        assert_generated_contract, basic_credential_input_error, build_client_core,
+        credential_free_request_plan, credential_input_error, credential_store_error,
+        default_http_config, endpoint_id_from_static, inspect_endpoint, map_endpoint,
+        missing_input_error, paginate_request, request, request_plan, response_request,
     };
     /// Creates the façade-owned generated-client runtime baseline.
     #[doc(hidden)]
     #[must_use]
     pub fn default_runtime_config() -> concord_core::contracts::RuntimeConfigBuilder {
-        let runtime = concord_core::__private::default_runtime_config();
-        #[cfg(feature = "rate-limit")]
-        {
-            let limiter: std::sync::Arc<dyn concord_core::rate_limit::RateLimiter> =
-                std::sync::Arc::new(concord_extras::rate_limit::LocalRateLimiter::new());
-            concord_core::__private::install_generated_default_limiter(runtime, limiter)
-        }
-        #[cfg(not(feature = "rate-limit"))]
-        {
-            runtime
-        }
+        concord_core::__private::default_runtime_config()
     }
 
     /// Applies generated rate-limit requirements to the selected runtime.

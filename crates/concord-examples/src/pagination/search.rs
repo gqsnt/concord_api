@@ -30,6 +30,6 @@ pub fn construct(client: &PaginationApi) {
             std::num::NonZeroU32::new(50).expect("positive page size"),
             filter,
         )
-        .paginate(PageLimit::Take(2));
+        .paginate(PageLimit::Prefix(2));
 }
 // ANCHOR_END: post_search_request

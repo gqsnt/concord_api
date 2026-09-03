@@ -15,7 +15,7 @@ pub(super) fn host_statements(
                 quote!(__concord_builder.push_host_static(#literal)?;)
             }
             _ => {
-                let sensitive = resolved_expr_uses_any_value(value, &pagination_values);
+                let sensitive = resolved_expr_requires_redaction(value, &pagination_values);
                 let value = display_argument(value, client, scopes, endpoint);
                 if sensitive {
                     quote!(__concord_builder.push_pagination_host_value(#value)?;)
@@ -42,15 +42,18 @@ pub(super) fn pagination_continuation_values(endpoint: &Endpoint) -> Vec<ValueRe
     values
 }
 
-pub(super) fn resolved_expr_uses_any_value(
+pub(super) fn resolved_expr_requires_redaction(
     expression: &ResolvedExpr,
-    values: &[ValueReference],
+    pagination_values: &[ValueReference],
 ) -> bool {
     match expression {
-        ResolvedExpr::Value(value) => values.contains(&value.reference),
-        ResolvedExpr::Format(parts) => parts
+        ResolvedExpr::Value(value) => {
+            value.observation == ObservationClass::RedactedPublic
+                || pagination_values.contains(&value.reference)
+        }
+        ResolvedExpr::Concat(parts) => parts
             .iter()
-            .any(|part| resolved_expr_uses_any_value(part, values)),
+            .any(|part| resolved_expr_requires_redaction(part, pagination_values)),
         ResolvedExpr::String(_) | ResolvedExpr::Integer(_) => false,
     }
 }
@@ -68,7 +71,7 @@ pub(super) fn path_statements(
         .map(|value| match value {
             ResolvedExpr::String(literal) => quote!(__concord_builder.push_static(#literal)?;),
             _ => {
-                let sensitive = resolved_expr_uses_any_value(value, &pagination_values);
+                let sensitive = resolved_expr_requires_redaction(value, &pagination_values);
                 let value = display_argument(value, client, scopes, endpoint);
                 if sensitive {
                     quote!(__concord_builder.push_pagination_value(#value)?;)
@@ -93,7 +96,7 @@ pub(super) fn query_statements(
         .iter()
         .map(|entry| {
             let key = &entry.key;
-            let sensitive = resolved_expr_uses_any_value(&entry.value, &pagination_values);
+            let sensitive = resolved_expr_requires_redaction(&entry.value, &pagination_values);
             let push = if sensitive {
                 quote!(__concord_builder.push_pagination_query_value)
             } else {
@@ -101,23 +104,23 @@ pub(super) fn query_statements(
             };
             if let ResolvedExpr::Value(value) = &entry.value {
                 let access = resolved_value_access(value.reference, client, scopes, endpoint);
-                match &value.shape {
-                    ValueShape::Scalar => {
+                match (entry.cardinality, value.presence) {
+                    (QueryCardinality::One, ValuePresence::Required) => {
                         quote!(#push(#key, #access)?;)
                     }
-                    ValueShape::Option { .. } => quote! {
+                    (QueryCardinality::One, ValuePresence::Optional) => quote! {
                         if let ::std::option::Option::Some(value) = #access.as_ref() {
                             #push(#key, value)?;
                         }
                     },
-                    ValueShape::Vec { .. } => quote! {
-                        for value in #access.iter() {
+                    (QueryCardinality::Each, ValuePresence::Required) => quote! {
+                        for value in #access {
                             #push(#key, value)?;
                         }
                     },
-                    ValueShape::OptionVec { .. } => quote! {
+                    (QueryCardinality::Each, ValuePresence::Optional) => quote! {
                         if let ::std::option::Option::Some(values) = #access.as_ref() {
-                            for value in values.iter() {
+                            for value in values {
                                 #push(#key, value)?;
                             }
                         }
@@ -144,7 +147,7 @@ pub(super) fn header_statements(
         .iter()
         .map(|entry| {
             let name = &entry.name;
-            let sensitive = resolved_expr_uses_any_value(&entry.value, &pagination_values);
+            let sensitive = resolved_expr_requires_redaction(&entry.value, &pagination_values);
             let insert = if sensitive {
                 quote!(__concord_builder.insert_pagination_header_value)
             } else {
@@ -152,17 +155,14 @@ pub(super) fn header_statements(
             };
             if let ResolvedExpr::Value(value) = &entry.value {
                 let access = resolved_value_access(value.reference, client, scopes, endpoint);
-                match &value.shape {
-                    ValueShape::Option { .. } => quote! {
+                match value.presence {
+                    ValuePresence::Optional => quote! {
                         if let ::std::option::Option::Some(value) = #access.as_ref() {
                             #insert(#name, value)?;
                         }
                     },
-                    ValueShape::Scalar => {
+                    ValuePresence::Required => {
                         quote!(#insert(#name, #access)?;)
-                    }
-                    ValueShape::Vec { .. } | ValueShape::OptionVec { .. } => {
-                        unreachable!("resolver rejects vector public headers")
                     }
                 }
             } else {
@@ -172,6 +172,29 @@ pub(super) fn header_statements(
         })
         .collect::<Vec<_>>();
     quote!(#(#statements)*)
+}
+
+pub(super) fn accept_statements(
+    client: &Client,
+    scopes: &[&Scope],
+    endpoint: &Endpoint,
+) -> TokenStream {
+    let Some(accept) = &endpoint.accept else {
+        return quote!();
+    };
+    match accept {
+        ResolvedAccept::Off => quote!(__concord_builder.suppress_accept();),
+        ResolvedAccept::Value(expression) => {
+            let pagination_values = pagination_continuation_values(endpoint);
+            let redacted = resolved_expr_requires_redaction(expression, &pagination_values);
+            let value = display_argument(expression, client, scopes, endpoint);
+            if redacted {
+                quote!(__concord_builder.set_redacted_accept_value(#value)?;)
+            } else {
+                quote!(__concord_builder.set_accept_value(#value)?;)
+            }
+        }
+    }
 }
 
 pub(super) fn auth_statements(
@@ -274,7 +297,7 @@ pub(super) fn rate_limit_statements(
     client: &Client,
     scopes: &[&Scope],
     endpoint: &Endpoint,
-    _facade_path: &TokenStream,
+    facade_path: &TokenStream,
     identity_path: &TokenStream,
 ) -> TokenStream {
     let rate_limit_ids = rate_limit_identity_ids(client);
@@ -330,11 +353,11 @@ pub(super) fn rate_limit_statements(
                 .iter()
                 .map(|dimension| match dimension {
                     NormalizedRateLimitDimension::Host { .. } => {
-                        quote!(("host", &#host_binding as &dyn ::std::fmt::Display))
+                        quote!(("host", &#host_binding as &dyn #facade_path::rate_limit::RateLimitKeyValue))
                     }
                     NormalizedRateLimitDimension::Endpoint { span } => {
                         quote_spanned!(*span=>
-                            ("endpoint", &#contract_id as &dyn ::std::fmt::Display)
+                            ("endpoint", &#contract_id as &dyn #facade_path::rate_limit::RateLimitKeyValue)
                         )
                     }
                     NormalizedRateLimitDimension::Value {
@@ -345,7 +368,7 @@ pub(super) fn rate_limit_statements(
                         let name = syn::LitStr::new(public_name, *span);
                         let access = resolved_value_access(*reference, client, scopes, endpoint);
                         quote_spanned!(*span=>
-                            (#name, #access as &dyn ::std::fmt::Display)
+                            (#name, #access as &dyn #facade_path::rate_limit::RateLimitKeyValue)
                         )
                     }
                 })
@@ -431,7 +454,7 @@ pub(super) fn display_argument(
         ResolvedExpr::Value(value) => {
             resolved_value_access(value.reference, client, scopes, endpoint)
         }
-        ResolvedExpr::Format(values) => {
+        ResolvedExpr::Concat(values) => {
             let mut arguments = Vec::new();
             collect_format_arguments(values, client, scopes, endpoint, &mut arguments);
             let template = "{}".repeat(arguments.len());
@@ -449,7 +472,7 @@ fn collect_format_arguments(
 ) {
     for expression in expressions {
         match expression {
-            ResolvedExpr::Format(nested) => {
+            ResolvedExpr::Concat(nested) => {
                 collect_format_arguments(nested, client, scopes, endpoint, output);
             }
             _ => output.push(display_argument(expression, client, scopes, endpoint)),
@@ -527,67 +550,6 @@ pub(super) fn resolved_value_access(
     }
 }
 
-pub(super) fn explicit_parameter_bindings(
-    scopes: &[&Scope],
-    endpoint: &Endpoint,
-) -> (Vec<Ident>, Vec<Ident>, Option<Ident>) {
-    let scope_values = scopes
-        .iter()
-        .flat_map(|scope| scope.parameters.iter())
-        .filter(|value| value.is_required())
-        .collect::<Vec<_>>();
-    let endpoint_values = endpoint
-        .parameters
-        .iter()
-        .filter(|value| value.is_required())
-        .collect::<Vec<_>>();
-    let body_name = endpoint
-        .body
-        .as_ref()
-        .map(|body| canonical_ident(&body.name));
-    let original = scope_values
-        .iter()
-        .chain(endpoint_values.iter())
-        .map(|value| canonical_ident(&value.name))
-        .chain(body_name.iter().cloned())
-        .collect::<Vec<_>>();
-    let reserved = original.iter().cloned().collect::<HashSet<_>>();
-    let mut used = HashSet::new();
-    let mut allocate = |namespace: &str, name: &Ident| {
-        let original_name = canonical_ident(name);
-        if original
-            .iter()
-            .filter(|candidate| **candidate == original_name)
-            .count()
-            == 1
-            && used.insert(original_name.clone())
-        {
-            return name.clone();
-        }
-        let base = format!("{namespace}_{}", to_snake_case(&original_name));
-        let mut candidate = base.clone();
-        let mut suffix = 2;
-        while reserved.contains(&candidate) || !used.insert(candidate.clone()) {
-            candidate = format!("{base}_{suffix}");
-            suffix += 1;
-        }
-        public_ident(&candidate, name.span())
-    };
-    let scope = scope_values
-        .iter()
-        .map(|value| allocate("scope", &value.name))
-        .collect();
-    let endpoint_bindings = endpoint_values
-        .iter()
-        .map(|value| allocate("endpoint", &value.name))
-        .collect();
-    let body = endpoint
-        .body
-        .as_ref()
-        .map(|body| allocate("request", &body.name));
-    (scope, endpoint_bindings, body)
-}
-
 pub(super) fn endpoint_constructor_binding(index: usize, value: &Value) -> Ident {
     private_ident("endpoint_input", index, &value.name)
 }
@@ -626,12 +588,13 @@ mod tests {
     fn nested_formats_emit_one_lazy_argument_tree_without_a_string_intermediate() {
         let api = crate::semantic::test_support::resolve_tokens(quote! {
             client FormatApi {
+                timeout off;
                 base "https://example.test";
+
+            GET read(first: String, second: String) -> Bytes using Bytes {
+                path [concat["prefix-", concat[endpoint.first, "-", endpoint.second]]];
             }
-            GET read(first: String, second: String) -> Bytes {
-                path [fmt["prefix-", fmt[ep.first, "-", ep.second]]];
-            }
-        });
+        }});
         let endpoint = crate::semantic::test_support::endpoint(&api.client.children, "read");
         let output = path_statements(&api.client, &[], endpoint).to_string();
 
@@ -645,11 +608,12 @@ mod tests {
     fn global_rule_uses_generated_global_fast_path() {
         let api = crate::semantic::test_support::resolve_tokens(quote! {
             client RateApi {
+                timeout off;
                 base "https://example.test";
-                rate_limit { 1 / 1s; }
-            }
-            GET read() -> Bytes;
-        });
+                rate_limit { allow 1 per 1s; }
+
+            GET read() -> Bytes using Bytes;
+        }});
         let endpoint = crate::semantic::test_support::endpoint(&api.client.children, "read");
         let output = rate_limit_statements(
             &api.client,
@@ -668,20 +632,21 @@ mod tests {
     fn keyed_rule_output() -> String {
         let api = crate::semantic::test_support::resolve_tokens(quote! {
             client RateApi {
+                timeout off;
                 base "https://example.test";
-                vars { tenant: String; }
-            }
+                values { tenant: String; }
+
             scope regional(region: String) {
-                host [scope.region, "api"];
-                GET read(account: String) -> Bytes {
+                subdomain [regional.region, "api"];
+                GET read(account: String) -> Bytes using Bytes {
                     id "stable.rate.read";
                     rate_limit {
-                        by [host, endpoint, vars.tenant, scope.region, ep.account];
-                        1 / 1s;
+                        key [host, endpoint, client.tenant, regional.region, endpoint.account];
+                        allow 1 per 1s;
                     }
                 }
             }
-        });
+        }});
         let scope = api
             .client
             .children
@@ -718,41 +683,40 @@ mod tests {
     #[test]
     fn client_value_dimension_is_generated() {
         let output = keyed_rule_output();
-        assert!(output.contains("\"vars.tenant\""));
+        assert!(output.contains("\"client.tenant\""));
         assert!(output.contains("__concord_client_values"));
     }
 
     #[test]
     fn scope_value_dimension_is_generated() {
         let output = keyed_rule_output();
-        assert!(output.contains("\"scope.region\""));
+        assert!(output.contains("\"regional.region\""));
     }
 
     #[test]
     fn endpoint_value_dimension_is_generated() {
         let output = keyed_rule_output();
-        assert!(output.contains("\"ep.account\""));
+        assert!(output.contains("\"endpoint.account\""));
     }
 
     #[test]
     fn named_rule_emits_logical_formal_name_with_bound_lexical_access() {
         let api = crate::semantic::test_support::resolve_tokens(quote! {
             client RateApi {
+                timeout off;
                 base "https://example.test";
                 rate_limits {
-                    rule account_reads {
-                        by [account];
-                        10 / 1m;
+                    account_reads(account) {
+                        key [account];
+                        allow 10 per 1m;
                     }
                 }
-            }
+
             scope accounts(account: String) {
-                rate_limit use account_reads {
-                    account = scope.account;
-                }
-                GET read() -> Bytes;
+                rate_limit account_reads(account = accounts.account);
+                GET read() -> Bytes using Bytes;
             }
-        });
+        }});
         let scope = api
             .client
             .children
@@ -784,15 +748,15 @@ mod tests {
         let ordered = [
             "\"host\"",
             "\"endpoint\"",
-            "\"vars.tenant\"",
-            "\"scope.region\"",
-            "\"ep.account\"",
+            "\"client.tenant\"",
+            "\"regional.region\"",
+            "\"endpoint.account\"",
         ]
         .map(|name| output.find(name).expect("generated key-part name"));
         assert!(
             ordered.windows(2).all(|pair| pair[0] < pair[1]),
             "generated dimensions lost declaration order: {output}"
         );
-        assert!(output.contains("as & dyn :: std :: fmt :: Display"));
+        assert!(output.contains("as & dyn :: concord :: rate_limit :: RateLimitKeyValue"));
     }
 }

@@ -6,7 +6,7 @@ use super::*;
 use concord_core::contracts::{AttemptInfo, SanitizedHeaders};
 use concord_core::rate_limit::{
     MAX_RATE_LIMIT_POLICIES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_POLICY, RateLimitId, RateLimitKey,
-    RateLimitKeyPart, RateLimitPolicy, RateLimitWindow,
+    RateLimitPolicy, RateLimitWindow,
 };
 
 fn policy(id: &str, key: &str, cost: u32, windows: &[(u32, Duration)]) -> RateLimitPolicy {
@@ -15,10 +15,7 @@ fn policy(id: &str, key: &str, cost: u32, windows: &[(u32, Duration)]) -> RateLi
         if key.is_empty() {
             RateLimitKey::global()
         } else {
-            RateLimitKey::from_parts([
-                RateLimitKeyPart::new("tenant", key).expect("tenant key part")
-            ])
-            .expect("key")
+            RateLimitKey::from_canonical_values([("tenant", key)]).expect("key")
         },
         NonZeroU32::new(cost).expect("cost"),
         windows.iter().map(|(capacity, duration)| {
@@ -61,7 +58,7 @@ async fn try_acquire(
         .acquire(RateLimitRequest {
             endpoint: "RateApi::get",
             method: &Method::GET,
-            safe_url: "https://example.test/get",
+            observed_url: "https://example.test/get",
             host,
             page_index: 0,
             attempt: initial_attempt(),
@@ -80,7 +77,7 @@ fn spawn_acquire(
             .acquire(RateLimitRequest {
                 endpoint: "RateApi::get",
                 method: &Method::GET,
-                safe_url: "https://example.test/get",
+                observed_url: "https://example.test/get",
                 host,
                 page_index: 0,
                 attempt: initial_attempt(),
@@ -138,7 +135,7 @@ async fn observe(
             request: RateLimitRequest {
                 endpoint: "RateApi::get",
                 method: &Method::GET,
-                safe_url: "https://example.test/get",
+                observed_url: "https://example.test/get",
                 host,
                 page_index: 0,
                 attempt: initial_attempt(),
@@ -166,7 +163,7 @@ async fn observe_headers(
             request: RateLimitRequest {
                 endpoint: "RateApi::get",
                 method: &Method::GET,
-                safe_url: "https://example.test/get",
+                observed_url: "https://example.test/get",
                 host,
                 page_index: 0,
                 attempt: initial_attempt(),
@@ -535,7 +532,7 @@ async fn duplicate_equivalent_contributions_cannot_undercount() {
     let request = limiter.acquire(RateLimitRequest {
         endpoint: "RateApi::get",
         method: &Method::GET,
-        safe_url: "https://example.test/get",
+        observed_url: "https://example.test/get",
         host: Some("example.test"),
         page_index: 0,
         attempt: initial_attempt(),
@@ -568,7 +565,7 @@ async fn equivalent_contributions_above_capacity_fail_before_state_insertion() {
             .acquire(RateLimitRequest {
                 endpoint: "RateApi::get",
                 method: &Method::GET,
-                safe_url: "https://example.test/get",
+                observed_url: "https://example.test/get",
                 host: Some("example.test"),
                 page_index: 0,
                 attempt: initial_attempt(),
@@ -1391,7 +1388,7 @@ async fn zero_key_limit_accepts_global_and_rejects_nonempty_without_text() {
             .acquire(RateLimitRequest {
                 endpoint: "RateApi::get",
                 method: &Method::GET,
-                safe_url: "https://example.test/get",
+                observed_url: "https://example.test/get",
                 host: Some("example.test"),
                 page_index: 0,
                 attempt: initial_attempt(),
@@ -1433,7 +1430,7 @@ async fn local_limiter_rejects_first_excess_without_sensitive_output() {
             .acquire(RateLimitRequest {
                 endpoint: "RateApi::get",
                 method: &Method::GET,
-                safe_url: "https://example.test/get",
+                observed_url: "https://example.test/get",
                 host: Some("example.test"),
                 page_index: 0,
                 attempt: initial_attempt(),
@@ -1474,7 +1471,7 @@ fn poisoned_state_fails_future_acquisition_closed() {
             request: RateLimitRequest {
                 endpoint: "RateApi::get",
                 method: &Method::GET,
-                safe_url: "https://example.test/get",
+                observed_url: "https://example.test/get",
                 host: Some("example.test"),
                 page_index: 0,
                 attempt: initial_attempt(),
@@ -1492,7 +1489,7 @@ fn poisoned_state_fails_future_acquisition_closed() {
         runtime.block_on(limiter.acquire(RateLimitRequest {
             endpoint: "RateApi::get",
             method: &Method::GET,
-            safe_url: "https://example.test/get",
+            observed_url: "https://example.test/get",
             host: Some("example.test"),
             page_index: 0,
             attempt: initial_attempt(),

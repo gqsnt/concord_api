@@ -2,9 +2,10 @@ use concord::api;
 
 api! {
     client VarsOrderApi {
+        timeout off;
         base "https://example.test";
         credentials {}
-        vars {
+        values {
             tenant: String;
         }
     }

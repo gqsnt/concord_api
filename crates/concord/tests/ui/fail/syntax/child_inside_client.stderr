@@ -1,5 +1,5 @@
-error: scopes and endpoints are declared after the `client` block
- --> tests/ui/fail/syntax/child_inside_client.rs:7:9
+error: v1 children after the `client` block were removed; move every scope and endpoint inside its owning `client { ... }` block
+ --> tests/ui/fail/syntax/child_inside_client.rs:9:5
   |
-7 |         scope users() {
-  |         ^^^^^
+9 |     scope users() {
+  |     ^^^^^

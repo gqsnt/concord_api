@@ -8,7 +8,7 @@ struct AcceptedStatusBody {
 
 struct AcceptedNotFound;
 
-impl ResponseBodySpec for AcceptedNotFound {
+impl ResponseSpec for AcceptedNotFound {
     type Output = AcceptedStatusBody;
     type Mode = Buffered;
 
@@ -26,7 +26,7 @@ impl ResponseBodySpec for AcceptedNotFound {
 
 struct AcceptedDecodeFailure;
 
-impl ResponseBodySpec for AcceptedDecodeFailure {
+impl ResponseSpec for AcceptedDecodeFailure {
     type Output = ();
     type Mode = Buffered;
 
@@ -46,7 +46,7 @@ static ACCEPTED_MEDIA_CONVERSIONS: AtomicUsize = AtomicUsize::new(0);
 
 struct AcceptedMediaFailure;
 
-impl ResponseBodySpec for AcceptedMediaFailure {
+impl ResponseSpec for AcceptedMediaFailure {
     type Output = ();
     type Mode = Buffered;
 
@@ -71,7 +71,7 @@ impl ResponseBodySpec for AcceptedMediaFailure {
 
 struct SlowAcceptedStatus;
 
-impl ResponseBodySpec for SlowAcceptedStatus {
+impl ResponseSpec for SlowAcceptedStatus {
     type Output = Bytes;
     type Mode = Buffered;
 
@@ -91,7 +91,7 @@ static ORDER_ACCEPTANCE_CALLED: AtomicBool = AtomicBool::new(false);
 
 struct OrderedAcceptedStatus;
 
-impl ResponseBodySpec for OrderedAcceptedStatus {
+impl ResponseSpec for OrderedAcceptedStatus {
     type Output = Bytes;
     type Mode = Buffered;
 
@@ -109,11 +109,11 @@ impl ResponseBodySpec for OrderedAcceptedStatus {
 
 struct AcceptanceOrderingHooks;
 
-impl RuntimeHooks for AcceptanceOrderingHooks {
-    fn on_response_head<'a>(
+impl ResponseGate for AcceptanceOrderingHooks {
+    fn before_response_handling<'a>(
         &'a self,
         _context: ResponseHeadEvent<'a>,
-    ) -> BoxFuture<'a, Result<(), HookError>> {
+    ) -> BoxFuture<'a, Result<(), GateError>> {
         assert!(ORDER_LIMITER_OBSERVED.load(Ordering::SeqCst));
         ORDER_HOOK_OBSERVED.store(true, Ordering::SeqCst);
         Box::pin(async { Ok(()) })
@@ -154,7 +154,7 @@ async fn buffered_codec_direct_and_metadata_results_share_one_execution_path() {
         .queue_expected_response(
             ExpectedRequest::new()
                 .method(Method::POST)
-                .safe_url("http://execution.example.test/v1/codec/round-trip")
+                .observed_url("http://execution.example.test/v1/codec/round-trip")
                 .body("exact"),
             probe_response("first"),
         )
@@ -242,7 +242,7 @@ async fn declared_status_acceptance_defaults_to_2xx_and_can_return_a_typed_404()
     assert_eq!(response.metadata().endpoint(), RESPONSE_ENDPOINT);
 
     let bytes = response_request::<AcceptedNotFound>(core, Some(Duration::from_secs(30)))
-        .response_bytes()
+        .accepted_bytes()
         .await
         .expect("declared accepted 404 response bytes");
     assert_eq!(bytes.status(), StatusCode::NOT_FOUND);
@@ -372,7 +372,7 @@ async fn limiter_and_response_hook_observation_precede_status_acceptance() {
         "http://execution.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
         RuntimeConfigBuilder::new()
-            .hooks(Arc::new(AcceptanceOrderingHooks))
+            .response_gate(Arc::new(AcceptanceOrderingHooks))
             .rate_limiter(Arc::new(AcceptanceOrderingLimiter)),
         &executor,
     )
@@ -605,7 +605,7 @@ async fn real_reqwest_transmits_and_decodes_text_and_custom_buffered_codecs() {
 }
 
 #[tokio::test]
-async fn buffered_decoder_never_observes_known_or_first_excess_response_bytes() {
+async fn buffered_decoder_never_observes_known_or_first_excess_accepted_bytes() {
     OVERFLOW_DECODER_CALLS.store(0, Ordering::SeqCst);
     let server = ScriptedServer::start([
         ResponseScript::ok(b"four".to_vec()),
@@ -841,7 +841,10 @@ async fn managed_producer_failure_precedes_reqwest_transport_failure() {
     let core = ClientCore::build(
         &format!("http://{address}/v1/"),
         HttpConfigBuilder::new().http1_only(),
-        RuntimeConfigBuilder::new().hooks(hooks.clone()),
+        RuntimeConfigBuilder::new()
+            .request_gate(hooks.clone())
+            .response_gate(hooks.clone())
+            .completion_observer(hooks.clone()),
     )
     .expect("managed producer core");
     let polls = Arc::new(AtomicUsize::new(0));
@@ -932,7 +935,7 @@ async fn cancellation_drops_direct_and_factory_created_request_streams_without_c
         EndpointId::from_static("runtime.cancellation"),
         Method::POST,
     )
-    .path_segment("prepared-cancellation")
+    .path("prepared-cancellation")
     .body(RequestBody::stream(StreamBody::from_stream(
         PendingBodyStream {
             polls: Arc::clone(&prepared_polls),
@@ -940,7 +943,7 @@ async fn cancellation_drops_direct_and_factory_created_request_streams_without_c
             reached: Arc::clone(&prepared_reached),
         },
     )))
-    .response_bytes()
+    .accepted_bytes()
     .build()
     .expect("prepared cancellation endpoint");
     let prepared_task =

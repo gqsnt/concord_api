@@ -294,7 +294,7 @@ async fn aggregate_body_failures_precede_buffered_record_conversion() {
 }
 
 #[tokio::test]
-async fn response_bytes_skips_buffered_record_validation_start_and_decode() {
+async fn accepted_bytes_skips_buffered_record_validation_start_and_decode() {
     let _guard = SIMPLE_TEST_LOCK.lock().await;
     reset_simple_decoder();
     let executor = DeterministicExecutor::new();
@@ -312,7 +312,7 @@ async fn response_bytes_skips_buffered_record_validation_start_and_decode() {
     );
 
     let response = response_request::<BufferedRecords<SimpleRecordDecoder>>(core, None)
-        .response_bytes()
+        .accepted_bytes()
         .await
         .expect("raw response bytes");
     assert_eq!(
@@ -328,12 +328,12 @@ async fn response_bytes_skips_buffered_record_validation_start_and_decode() {
 
 struct AcceptedNotFoundBufferedRecords;
 
-impl ResponseBodySpec for AcceptedNotFoundBufferedRecords {
+impl ResponseSpec for AcceptedNotFoundBufferedRecords {
     type Output = Vec<Bytes>;
     type Mode = Buffered;
 
     fn accept() -> Option<&'static str> {
-        <BufferedRecords<SimpleRecordDecoder> as ResponseBodySpec>::accept()
+        <BufferedRecords<SimpleRecordDecoder> as ResponseSpec>::accept()
     }
 
     fn accepts_status(status: StatusCode) -> bool {
@@ -341,11 +341,11 @@ impl ResponseBodySpec for AcceptedNotFoundBufferedRecords {
     }
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
-        <BufferedRecords<SimpleRecordDecoder> as ResponseBodySpec>::validate(head)
+        <BufferedRecords<SimpleRecordDecoder> as ResponseSpec>::validate(head)
     }
 
     fn from_body(body: Bytes, head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
-        <BufferedRecords<SimpleRecordDecoder> as ResponseBodySpec>::from_body(body, head)
+        <BufferedRecords<SimpleRecordDecoder> as ResponseSpec>::from_body(body, head)
     }
 }
 

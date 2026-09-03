@@ -14,13 +14,14 @@ pub struct User {
 
 api! {
     client UsersApi {
+        timeout off;
         base "https://users.example.test/";
-    }
 
-    GET user(id: u64) -> Json<User> {
-        path ["v1", "users", ep.id];
+
+    GET user(id: u64) -> User using Json<User> {
+        path ["v1", "users", endpoint.id];
     }
-}
+}}
 
 use serde::Serialize;
 
@@ -29,6 +30,7 @@ pub mod fixed_base {
 
     api! {
         client ExampleApi {
+            timeout off;
             base "https://api.example.test/v1/";
         }
     }
@@ -41,12 +43,14 @@ pub mod values {
 
     api! {
         client ValuesApi {
+            timeout off;
             base "https://values.example.test/";
-            vars {
+            values {
                 tenant: String;
-                locale: Option<String>;
+                locale?: String;
                 page_size: u32 = 25;
-                tags: Vec<String> = default;
+                #[default]
+                tags: Vec<String>;
                 label: Option<&'static str> = crate::DEFAULT_LABEL;
             }
         }
@@ -70,14 +74,15 @@ pub mod request_response {
 
     api! {
         client RequestResponseApi {
+            timeout off;
             base "https://request-response.example.test/";
-        }
+
 
         POST update(
             id: String,
-            #[body] payload: Json<UpdateInput>,
-        ) -> Json<Item>;
-    }
+            body payload: UpdateInput using concord::Json<UpdateInput>,
+        ) -> Item using Json<Item>;
+    }}
 }
 
 pub mod identity {
@@ -87,13 +92,14 @@ pub mod identity {
 
     api! {
         client IdentityApi {
+            timeout off;
             base "https://identity.example.test/";
-        }
 
-        GET by_id(id: String) -> Json<Item> {
+
+        GET by_id(id: String) -> Item using Json<Item> {
             id "catalog.item.by-id";
         }
-    }
+    }}
 }
 
 pub mod expressions {
@@ -101,15 +107,16 @@ pub mod expressions {
 
     api! {
         client ExpressionApi {
+            timeout off;
             base "https://expression.example.test/";
-        }
+
 
         scope regions(region: String) {
-            GET item(id: String) -> NoContent {
-                path [fmt["item-", ep.id, "-", scope.region]];
+            GET item(id: String) -> () using NoContent {
+                path [concat ["item-", endpoint.id, "-", regions.region]];
             }
         }
-    }
+    }}
 }
 
 pub mod shaping {
@@ -117,26 +124,27 @@ pub mod shaping {
 
     api! {
         client ShapingApi {
+            timeout off;
             base "https://shaping.example.test/";
-            vars {
-                locale: Option<String>;
+            values {
+                locale?: String;
             }
-        }
+
 
         scope regions(region: String) {
-            GET item(id: String, tags: Vec<String>) -> NoContent {
-                host [scope.region, "api"];
-                path ["v1", "items", ep.id];
+            GET item(id: String, tags: Vec<String>) -> () using NoContent {
+                subdomain replace [regions.region, "api"];
+                path ["v1", "items", endpoint.id];
                 query {
-                    "locale" = vars.locale;
-                    "tag" = ep.tags;
+                    "locale" = client.locale;
+                    "tag" = each endpoint.tags;
                 }
                 headers {
-                    "X-Region" = scope.region;
+                    "X-Region" = regions.region;
                 }
             }
         }
-    }
+    }}
 }
 
 pub mod authentication {
@@ -144,37 +152,38 @@ pub mod authentication {
 
     api! {
         client AuthenticationApi {
+            timeout off;
             base "https://authentication.example.test/";
             credentials {
-                secret token: String;
-                secret user: String;
-                secret password: String;
+                secret token;
+                secret user;
+                secret password;
 
                 credential api_token = api_key(secret.token);
                 credential bearer_token = bearer(secret.token);
                 credential login = basic(secret.user, secret.password);
             }
-        }
 
-        GET bearer_auth() -> NoContent {
-            auth bearer bearer_token challenge unauthorized;
+
+        GET bearer_auth() -> () using NoContent {
+            auth { bearer bearer_token recover on unauthorized; }
         }
-        GET basic_auth() -> NoContent {
-            auth basic login challenge unauthorized_or_forbidden;
+        GET basic_auth() -> () using NoContent {
+            auth { basic login recover on unauthorized_or_forbidden; }
         }
-        GET exact_auth() -> NoContent {
-            auth authorization = bearer_token challenge never;
+        GET exact_auth() -> () using NoContent {
+            auth { authorization = bearer_token; }
         }
-        GET scheme_auth() -> NoContent {
-            auth authorization "Token" = bearer_token challenge unauthorized;
+        GET scheme_auth() -> () using NoContent {
+            auth { authorization "Token" = bearer_token recover on unauthorized; }
         }
-        GET header_auth() -> NoContent {
-            auth header "X-API-Key" = api_token challenge never;
+        GET header_auth() -> () using NoContent {
+            auth { header "X-API-Key" = api_token; }
         }
-        GET query_auth() -> NoContent {
-            auth query "token" = api_token;
+        GET query_auth() -> () using NoContent {
+            auth { query "token" = api_token; }
         }
-    }
+    }}
 }
 
 pub mod timeouts {
@@ -182,15 +191,16 @@ pub mod timeouts {
 
     api! {
         client TimeoutApi {
+            timeout off;
             base "https://timeout.example.test/";
-        }
 
-        GET milliseconds() -> NoContent { timeout 250ms; }
-        GET seconds() -> NoContent { timeout 5s; }
-        GET minutes() -> NoContent { timeout 10m; }
-        GET hours() -> NoContent { timeout 1h; }
-        GET no_timeout() -> NoContent { timeout off; }
-    }
+
+        GET milliseconds() -> () using NoContent { timeout 250ms; }
+        GET seconds() -> () using NoContent { timeout 5s; }
+        GET minutes() -> () using NoContent { timeout 10m; }
+        GET hours() -> () using NoContent { timeout 1h; }
+        GET no_timeout() -> () using NoContent { timeout off; }
+    }}
 }
 
 pub mod pagination {
@@ -198,23 +208,24 @@ pub mod pagination {
 
     api! {
         client PaginationApi {
+            timeout off;
             base "https://pagination.example.test/";
-        }
+
 
         GET page(
             offset: u64,
             page_size: std::num::NonZeroU32,
-        ) -> Json<Vec<u32>> {
+        ) -> Vec<u32> using Json<Vec<u32>> {
             query {
-                "offset" = ep.offset;
-                "page_size" = ep.page_size;
+                "offset" = endpoint.offset;
+                "page_size" = endpoint.page_size;
             }
-            paginate concord::pagination::OffsetPagination {
-                offset: bind ep.offset,
-                page_size: bind ep.page_size,
+            paginate with concord::pagination::OffsetPagination {
+                offset -> endpoint.offset;
+                page_size -> endpoint.page_size;
             }
         }
-    }
+    }}
 }
 
 pub mod rate_limits {
@@ -222,37 +233,35 @@ pub mod rate_limits {
 
     api! {
         client RateLimitApi {
+            timeout off;
             base "https://rate-limit.example.test/";
-            vars {
+            values {
                 tenant: String;
             }
             rate_limits {
-                rule account_reads {
+                account_reads(account) {
                     id "service.account.read";
-                    by [host, account];
+                    key [host, account];
                     cost 1;
-                    100 / 1m;
-                    1_000 / 1h;
+                    allow 100 per 1m;
+                    allow 1_000 per 1h;
                 }
             }
-        }
+
 
         scope accounts(account: String, region: String) {
-            rate_limit use account_reads {
-                account = scope.account;
-                cost 2;
-            }
+            rate_limit account_reads(account = accounts.account) { cost 2; }
 
-            GET item(item_id: String) -> NoContent {
+            GET item(item_id: String) -> () using NoContent {
                 rate_limit {
                     id "service.item.read";
-                    by [host, endpoint, vars.tenant, scope.region, ep.item_id];
+                    key [host, endpoint, client.tenant, accounts.region, endpoint.item_id];
                     cost 2;
-                    100 / 1m;
+                    allow 100 per 1m;
                 }
             }
         }
-    }
+    }}
 }
 
 pub mod quick_start_values {
@@ -260,17 +269,18 @@ pub mod quick_start_values {
 
     api! {
         client RegionalApi {
+            timeout off;
             base "https://example.test/";
-            vars {
+            values {
                 region: String;
             }
-            host [vars.region, "api"];
-        }
+            subdomain replace [client.region, "api"];
 
-        GET health() -> Json<serde_json::Value> {
+
+        GET health() -> serde_json::Value using Json<serde_json::Value> {
             path ["health"];
         }
-    }
+    }}
 }
 
 pub mod quick_start_auth {
@@ -278,16 +288,17 @@ pub mod quick_start_auth {
 
     api! {
         client PrivateApi {
+            timeout off;
             base "https://private.example.test/";
             credentials {
-                secret token: String;
+                secret token;
                 credential bearer_token = bearer(secret.token);
             }
-            auth bearer bearer_token challenge never;
-        }
+            auth { bearer bearer_token; }
 
-        GET account() -> Json<serde_json::Value>;
-    }
+
+        GET account() -> serde_json::Value using Json<serde_json::Value>;
+    }}
 }
 
 /// One client that exercises the complete surviving DSL families together.
@@ -299,15 +310,15 @@ pub mod kitchen_sink {
     api! {
         client KitchenSinkApi {
             base "https://kitchen-sink.example.test/root/";
-            vars {
+            values {
                 tenant: String;
-                locale: Option<String>;
+                locale?: String;
             }
             credentials {
-                secret api_key: String;
-                secret bearer_token: String;
-                secret username: String;
-                secret password: String;
+                secret api_key;
+                secret bearer_token;
+                secret username;
+                secret password;
                 credential application_key = api_key(secret.api_key);
                 credential bearer = bearer(secret.bearer_token);
                 credential login = basic(secret.username, secret.password);
@@ -316,78 +327,76 @@ pub mod kitchen_sink {
                 credential acquired = endpoint token_endpoint;
             }
             rate_limits {
-                rule tenant_reads {
+                tenant_reads(tenant) {
                     id "kitchen.tenant.read";
-                    by [host, tenant];
-                    100 / 1m;
+                    key [host, tenant];
+                    allow 100 per 1m;
                 }
             }
-            host ["api"];
+            subdomain replace ["api"];
             path ["v1"];
-            query { "locale" = vars.locale; }
+            query { "locale" = client.locale; }
             headers { "X-Client" = "kitchen-sink"; }
-            auth header "X-Api-Key" = application_key challenge never;
+            auth { header "X-Api-Key" = application_key; }
             timeout 10s;
             rate_limit {
                 id "kitchen.global";
-                1_000 / 1m;
+                allow 1_000 per 1m;
             }
+
+
+        GET token_endpoint() -> crate::authentication::extensions::ExampleToken using crate::authentication::extensions::ExampleTokenCodec;
+
+        GET basic_account() -> Item using Json<Item> {
+            auth replace { basic login recover on unauthorized; }
         }
 
-        GET token_endpoint() -> crate::authentication::extensions::ExampleTokenCodec;
-
-        GET basic_account() -> Json<Item> {
-            auth replace basic login challenge unauthorized;
+        GET provider_account() -> Item using Json<Item> {
+            auth replace { bearer provider recover on unauthorized; }
         }
 
-        GET provider_account() -> Json<Item> {
-            auth replace bearer provider challenge unauthorized;
-        }
-
-        GET acquired_account() -> Json<Item> {
-            auth replace bearer acquired challenge never;
+        GET acquired_account() -> Item using Json<Item> {
+            auth replace { bearer acquired; }
         }
 
         scope regions(region: String) {
-            host [scope.region, "api"];
-            path ["regions", scope.region];
-            headers { "X-Region" = scope.region; }
-            rate_limit use tenant_reads {
-                tenant = vars.tenant;
-            }
+            subdomain replace [regions.region, "api"];
+            path ["regions", regions.region];
+            headers { "X-Region" = regions.region; }
+            rate_limit tenant_reads(tenant = client.tenant);
 
             POST search(
                 category: String,
                 offset: u64,
                 page_size: std::num::NonZeroU32,
-                #[body] filter: Json<UpdateInput>,
-            ) -> Json<Vec<Item>> {
+                body filter: UpdateInput using concord::Json<UpdateInput>,
+            ) -> Vec<Item> using concord::Json<Vec<Item>> {
                 id "kitchen.regions.search";
                 path ["items"];
                 query {
-                    "category" = ep.category;
-                    "offset" = ep.offset;
-                    "page_size" = ep.page_size;
+                    "category" = endpoint.category;
+                    "offset" = endpoint.offset;
+                    "page_size" = endpoint.page_size;
                 }
-                auth replace bearer bearer challenge unauthorized;
+                auth replace { bearer bearer recover on unauthorized; }
                 timeout 5s;
                 rate_limit {
                     id "kitchen.search";
-                    by [endpoint, ep.category];
+                    key [endpoint, endpoint.category];
                     cost 2;
-                    100 / 1m;
+                    allow 100 per 1m;
                 }
-                paginate concord::pagination::OffsetPagination {
-                    offset: bind ep.offset,
-                    page_size: bind ep.page_size,
+                paginate with concord::pagination::OffsetPagination {
+                    offset -> endpoint.offset;
+                    page_size -> endpoint.page_size;
                 }
             }
 
-            METHOD("PROPFIND") inspect(id: String) -> Text {
-                path [fmt["item-", ep.id]];
+            METHOD("PROPFIND") inspect(id: String) -> String using Text {
+                path [concat ["item-", endpoint.id]];
                 auth off;
                 timeout off;
             }
         }
-    }
+    }}
 }

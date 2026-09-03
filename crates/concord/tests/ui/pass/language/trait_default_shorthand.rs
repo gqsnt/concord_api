@@ -10,25 +10,30 @@ impl Default for CustomDefault {
 
 api! {
     client DefaultShorthandApi {
+        timeout off;
         base "http://example.test";
-        vars {
-            scalar: u32 = default;
-            optional: Option<String> = default;
-            vector: Vec<String> = default;
-            custom: crate::CustomDefault = default;
+        values {
+            #[default]
+            scalar: u32;
+            #[default]
+            optional?: String;
+            #[default]
+            vector: Vec<String>;
+            #[default]
+            custom: crate::CustomDefault;
         }
-    }
 
-    scope group(scope_value: crate::CustomDefault = default) {
-        GET read(endpoint_value: crate::CustomDefault = default) -> Bytes;
+
+    scope group(#[default] scope_value: crate::CustomDefault) {
+        GET read(#[default] endpoint_value: crate::CustomDefault) -> Bytes using Bytes;
     }
-}
+}}
 
 fn main() {
     let client = DefaultShorthandApi::builder()
         .set_scalar(1)
         .reset_scalar()
-        .set_optional("selected".to_owned())
+        .set_optional(Some("selected".to_owned()))
         .clear_optional()
         .reset_optional()
         .set_vector(vec!["selected".to_owned()])
@@ -46,9 +51,11 @@ fn main() {
         .set_endpoint_value(CustomDefault)
         .reset_endpoint_value();
 
-    let endpoint = default_shorthand_api::group::Read::new()
+    let endpoint = DefaultShorthandApi::unbound()
+        .group()
         .set_scope_value(CustomDefault)
         .reset_scope_value()
+        .read()
         .set_endpoint_value(CustomDefault)
         .reset_endpoint_value();
     let _: default_shorthand_api::group::ReadRequest = client.request(endpoint);

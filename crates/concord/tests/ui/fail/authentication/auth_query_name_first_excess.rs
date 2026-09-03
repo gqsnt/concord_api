@@ -2,15 +2,16 @@ use concord::api;
 
 api! {
     client QueryNameApi {
+        timeout off;
         base "https://example.test/";
         credentials {
-            secret key: String;
+            secret key;
             credential key = api_key(secret.key);
         }
-        auth query "abcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopq" = key;
-    }
+        auth { query "abcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopq" = key; }
 
-    GET read() -> NoContent;
-}
+
+    GET read() -> () using NoContent;
+}}
 
 fn main() {}

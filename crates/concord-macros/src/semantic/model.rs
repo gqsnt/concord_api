@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use proc_macro2::Span;
-use syn::{Ident, LitBool, LitInt, LitStr, Path, Type};
+use syn::{Ident, LitBool, LitChar, LitFloat, LitInt, LitStr, Path, Type};
 
 #[derive(Clone)]
 pub(crate) struct Api {
@@ -10,18 +10,21 @@ pub(crate) struct Api {
 
 #[derive(Clone)]
 pub(crate) struct Client {
+    pub(crate) attributes: DeclarationMetadata,
     pub(crate) name: Ident,
     pub(crate) surface: ClientSurface,
     pub(crate) base: LitStr,
     pub(crate) values: Vec<Value>,
     pub(crate) secrets: Vec<Secret>,
     pub(crate) credentials: Vec<Credential>,
+    pub(crate) rate_limit_profiles: Vec<RateLimitProfile>,
     pub(crate) requires_limiter: bool,
     #[allow(
         dead_code,
         reason = "retained as the normalized client attachment-site IR root"
     )]
     pub(crate) config: NormalizedConfig,
+    pub(crate) local_attachments: Vec<AttachmentIr>,
     pub(crate) children: Vec<Child>,
 }
 
@@ -36,6 +39,7 @@ impl Client {
     pub(crate) fn has_required_construction_inputs(&self) -> bool {
         self.values.iter().any(Value::is_required)
             || !self.secrets.is_empty()
+            || self.requires_limiter
             || self
                 .credentials
                 .iter()
@@ -56,6 +60,7 @@ pub(crate) enum Child {
 pub(crate) struct Scope {
     pub(crate) id: usize,
     pub(crate) name: Ident,
+    pub(crate) attributes: DeclarationMetadata,
     pub(crate) surface: ScopeSurface,
     pub(crate) parameters: Vec<Value>,
     #[allow(
@@ -63,6 +68,7 @@ pub(crate) struct Scope {
         reason = "retained for direct normalized-IR conformance tests"
     )]
     pub(crate) config: NormalizedConfig,
+    pub(crate) local_attachments: Vec<AttachmentIr>,
     pub(crate) children: Vec<Child>,
 }
 
@@ -82,145 +88,41 @@ pub(crate) struct Endpoint {
     pub(crate) id: usize,
     pub(crate) method: ResolvedMethod,
     pub(crate) name: Ident,
+    pub(crate) attributes: DeclarationMetadata,
     pub(crate) surface: EndpointSurface,
-    pub(crate) docs: EndpointDocModel,
     pub(crate) parameters: Vec<Value>,
     pub(crate) body: Option<RequestBody>,
     pub(crate) contract_id: ContractId,
     pub(crate) config: NormalizedConfig,
-    pub(crate) response: Type,
+    pub(crate) local_attachments: Vec<AttachmentIr>,
+    pub(crate) output: Type,
+    pub(crate) response_spec: Type,
     pub(crate) pagination: Option<Pagination>,
     pub(crate) dsl_path: Vec<Ident>,
+    pub(crate) repeatability: Repeatability,
+    pub(crate) repeatability_explicit: bool,
+    pub(crate) accept: Option<ResolvedAccept>,
+    pub(crate) expose_accepted_bytes: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct EndpointDocModel {
-    pub(crate) client_name: String,
-    pub(crate) scope_chain: Vec<String>,
-    pub(crate) direct_method_name: String,
-    pub(crate) endpoint_type_path: String,
-    pub(crate) request_type_path: String,
-    pub(crate) http_method: String,
-    pub(crate) base_url: String,
-    pub(crate) host: Option<EndpointDocHost>,
-    pub(crate) route_atoms: Vec<EndpointDocRouteAtom>,
-    pub(crate) scope_inputs: Vec<EndpointDocInput>,
-    pub(crate) required_endpoint_inputs: Vec<EndpointDocInput>,
-    pub(crate) endpoint_setters: Vec<EndpointDocSetter>,
-    pub(crate) safe_query_names: Vec<String>,
-    pub(crate) safe_header_names: Vec<String>,
-    pub(crate) body: Option<EndpointDocBody>,
-    pub(crate) response: EndpointDocResponse,
-    pub(crate) authentication: Vec<EndpointDocAuthPlacement>,
-    pub(crate) rate_limits: Vec<EndpointDocRateLimit>,
-    pub(crate) timeout: EndpointDocTimeout,
-    pub(crate) terminals: EndpointDocTerminals,
-    pub(crate) contract_id: String,
-    pub(crate) explicit_contract_id: bool,
+#[derive(Clone)]
+pub(crate) enum ResolvedAccept {
+    Value(ResolvedExpr),
+    Off,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct EndpointDocHost {
-    pub(crate) label_atoms: Vec<EndpointDocRouteAtom>,
-    pub(crate) base_host: String,
-    pub(crate) port: Option<u16>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum EndpointDocRouteAtom {
-    Literal(String),
-    Value {
-        namespace: EndpointDocNamespace,
-        name: String,
-    },
-    Format(Vec<EndpointDocRouteAtom>),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum EndpointDocNamespace {
-    Vars,
-    Scope,
-    Endpoint,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct EndpointDocInput {
-    pub(crate) owner: Option<String>,
-    pub(crate) name: String,
-    pub(crate) type_name: String,
-    pub(crate) kind: EndpointDocInputKind,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum EndpointDocInputKind {
-    Required,
-    Optional,
-    Defaulted,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct EndpointDocSetter {
-    pub(crate) name: String,
-    pub(crate) setter: String,
-    pub(crate) clear: Option<String>,
-    pub(crate) reset: Option<String>,
-    pub(crate) type_name: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct EndpointDocBody {
-    pub(crate) argument: String,
-    pub(crate) specification: String,
-    pub(crate) input_type: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct EndpointDocResponse {
-    pub(crate) specification: String,
-    pub(crate) output_type: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct EndpointDocAuthPlacement {
-    pub(crate) placement: String,
-    pub(crate) challenge: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct EndpointDocRateLimit {
-    pub(crate) id: String,
-    pub(crate) explicit_id: bool,
-    pub(crate) origin: String,
-    pub(crate) dimensions: Vec<String>,
-    pub(crate) cost: u32,
-    pub(crate) windows: Vec<EndpointDocRateLimitWindow>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct EndpointDocRateLimitWindow {
-    pub(crate) capacity: u32,
-    pub(crate) duration: Duration,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum EndpointDocTimeout {
-    Inherited(Duration),
-    Disabled,
-    Overridden(Duration),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct EndpointDocTerminals {
-    pub(crate) direct_await: bool,
-    pub(crate) response: bool,
-    pub(crate) pagination: bool,
-    pub(crate) credential_storage: Vec<String>,
+#[derive(Clone, Default)]
+pub(crate) struct DeclarationMetadata {
+    pub(crate) docs: Vec<String>,
+    pub(crate) deprecated: Option<String>,
 }
 
 #[derive(Clone)]
 pub(crate) struct RequestBody {
     pub(crate) name: Ident,
-    pub(crate) ty: Type,
+    pub(crate) input_type: Type,
+    pub(crate) spec_type: Type,
+    pub(crate) docs: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -253,6 +155,7 @@ pub(crate) enum RequiredArgument {
 pub(crate) struct EndpointSetter {
     pub(crate) parameter: usize,
     pub(crate) setter: Ident,
+    pub(crate) with: Option<Ident>,
     pub(crate) clear: Option<Ident>,
     pub(crate) reset: Option<Ident>,
 }
@@ -260,6 +163,7 @@ pub(crate) struct EndpointSetter {
 #[derive(Clone)]
 pub(crate) struct RequestTerminals {
     pub(crate) response: bool,
+    pub(crate) accepted_bytes: bool,
     pub(crate) pagination: bool,
     pub(crate) credential_storage: Vec<CredentialStorageTerminal>,
 }
@@ -315,6 +219,17 @@ pub(crate) struct Credential {
 }
 
 #[derive(Clone)]
+pub(crate) struct RateLimitProfile {
+    pub(crate) name: String,
+    pub(crate) id: String,
+    pub(crate) explicit_id: bool,
+    pub(crate) formals: Vec<String>,
+    pub(crate) dimensions: Vec<String>,
+    pub(crate) cost: u32,
+    pub(crate) windows: Vec<NormalizedRateLimitWindow>,
+}
+
+#[derive(Clone)]
 pub(crate) enum CredentialSource {
     ApiKey {
         secret: usize,
@@ -338,66 +253,67 @@ pub(crate) enum CredentialSource {
 #[derive(Clone)]
 pub(crate) struct Value {
     pub(crate) name: Ident,
-    pub(crate) ty: Type,
-    pub(crate) kind: ResolvedValueKind,
-    pub(crate) shape: ValueShape,
+    pub(crate) payload_type: Type,
+    pub(crate) effective_type: Type,
+    pub(crate) presence: ValuePresence,
+    pub(crate) initializer: Option<ResolvedDefault>,
+    pub(crate) observation: ObservationClass,
+    pub(crate) docs: Vec<String>,
     pub(crate) source_position: usize,
 }
 
 impl Value {
     pub(crate) fn accepts_absence(&self) -> bool {
-        matches!(
-            self.shape,
-            ValueShape::Option { .. } | ValueShape::OptionVec { .. }
-        )
+        matches!(self.presence, ValuePresence::Optional)
     }
 
     pub(crate) fn has_default(&self) -> bool {
-        matches!(self.kind, ResolvedValueKind::Defaulted(_))
+        self.initializer.is_some()
     }
 
     pub(crate) fn setter_argument_type(&self) -> &Type {
-        match &self.shape {
-            ValueShape::Option { inner } | ValueShape::OptionVec { inner, .. } => inner,
-            ValueShape::Scalar | ValueShape::Vec { .. } => &self.ty,
-        }
+        &self.effective_type
+    }
+
+    pub(crate) fn with_argument_type(&self) -> &Type {
+        &self.payload_type
     }
 
     pub(crate) fn client_builder_storage_type(&self) -> &Type {
-        if self.is_optional() {
-            self.setter_argument_type()
-        } else {
-            &self.ty
-        }
+        &self.effective_type
     }
 
     pub(crate) fn is_required(&self) -> bool {
-        matches!(self.kind, ResolvedValueKind::Required)
+        matches!(self.presence, ValuePresence::Required) && self.initializer.is_none()
     }
 
     pub(crate) fn is_optional(&self) -> bool {
-        matches!(self.kind, ResolvedValueKind::Optional)
+        matches!(self.presence, ValuePresence::Optional)
     }
 
     pub(crate) fn default(&self) -> Option<&ResolvedDefault> {
-        match &self.kind {
-            ResolvedValueKind::Defaulted(value) => Some(value),
-            ResolvedValueKind::Required | ResolvedValueKind::Optional => None,
-        }
+        self.initializer.as_ref()
     }
 }
 
-#[derive(Clone)]
-pub(crate) enum ResolvedValueKind {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ValuePresence {
     Required,
     Optional,
-    Defaulted(ResolvedDefault),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ObservationClass {
+    OrdinaryPublic,
+    RedactedPublic,
 }
 
 #[derive(Clone)]
 pub(crate) enum ResolvedDefault {
     String(LitStr),
+    Character(LitChar),
     Integer { negative: bool, literal: LitInt },
+    Float { negative: bool, literal: LitFloat },
     Boolean(LitBool),
     Path(Path),
     TraitDefault(Span),
@@ -412,32 +328,59 @@ pub(crate) enum ResolvedMethod {
     Delete,
     Head,
     Options,
-    Trace,
-    Connect,
     Custom(LitStr),
 }
 
-#[derive(Clone)]
-// These values are short-lived, and keeping Syn nodes inline avoids incidental
-// allocation throughout code generation.
-#[allow(clippy::large_enum_variant)]
-pub(crate) enum ValueShape {
-    Scalar,
-    Option { inner: Type },
-    Vec { element: Type },
-    OptionVec { inner: Type, element: Type },
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Repeatability {
+    Idempotent,
+    Never,
 }
 
 #[derive(Clone, Default)]
 pub(crate) struct NormalizedConfig {
     pub(crate) host: Vec<ResolvedExpr>,
+    pub(crate) host_origins: Vec<String>,
     pub(crate) host_span: Option<Span>,
     pub(crate) path: Vec<ResolvedExpr>,
+    pub(crate) path_origins: Vec<String>,
     pub(crate) query: Vec<NormalizedQuery>,
     pub(crate) headers: Vec<NormalizedHeader>,
     pub(crate) auth: Vec<NormalizedAuth>,
     pub(crate) timeout: Option<Duration>,
+    pub(crate) timeout_origin: Option<String>,
     pub(crate) rate_limits: Vec<NormalizedRateLimitPolicy>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum AttachmentFamily {
+    Subdomain,
+    Path,
+    Query,
+    Headers,
+    Authentication,
+    Timeout,
+    RateLimit,
+    Accept,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum AttachmentOperation {
+    Prepend,
+    Append,
+    Replace,
+    Remove,
+    Off,
+    Set,
+}
+
+#[derive(Clone)]
+pub(crate) struct AttachmentIr {
+    pub(crate) family: AttachmentFamily,
+    pub(crate) operation: AttachmentOperation,
+    pub(crate) origin: String,
+    pub(crate) target: Option<String>,
+    pub(crate) item_count: usize,
 }
 
 #[derive(Clone)]
@@ -478,6 +421,7 @@ pub(crate) struct NormalizedAuth {
     pub(crate) credential: usize,
     pub(crate) challenge: ResolvedChallengePolicy,
     pub(crate) span: Span,
+    pub(crate) origin: String,
 }
 
 #[derive(Clone)]
@@ -500,6 +444,15 @@ pub(crate) enum ResolvedChallengePolicy {
 pub(crate) struct NormalizedQuery {
     pub(crate) key: LitStr,
     pub(crate) value: ResolvedExpr,
+    pub(crate) cardinality: QueryCardinality,
+    pub(crate) operation: AttachmentOperation,
+    pub(crate) origin: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum QueryCardinality {
+    One,
+    Each,
 }
 
 #[derive(Clone)]
@@ -507,6 +460,7 @@ pub(crate) struct NormalizedHeader {
     pub(crate) name: LitStr,
     pub(crate) canonical_name: String,
     pub(crate) value: ResolvedExpr,
+    pub(crate) origin: String,
 }
 
 #[derive(Clone)]
@@ -517,13 +471,14 @@ pub(crate) enum ResolvedExpr {
     String(LitStr),
     Integer(LitInt),
     Value(ResolvedValue),
-    Format(Vec<ResolvedExpr>),
+    Concat(Vec<ResolvedExpr>),
 }
 
 #[derive(Clone)]
 pub(crate) struct ResolvedValue {
     pub(crate) reference: ValueReference,
-    pub(crate) shape: ValueShape,
+    pub(crate) presence: ValuePresence,
+    pub(crate) observation: ObservationClass,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

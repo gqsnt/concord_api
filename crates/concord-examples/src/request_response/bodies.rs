@@ -16,30 +16,31 @@ use futures_core::Stream as _;
 // ANCHOR: body_contract
 api! {
     client BodyApi {
+        timeout off;
         base "http://body.example.test/";
-    }
+
 
     // ANCHOR: buffered_endpoints
-    POST json_round_trip(#[body] body: Json<Vec<u32>>) -> Json<Vec<u32>>;
-    POST text_round_trip(#[body] body: Text) -> Text;
+    POST json_round_trip(body body: Vec<u32> using Json<Vec<u32>>) -> Vec<u32> using Json<Vec<u32>>;
+    POST text_round_trip(body body: String using Text) -> String using Text;
     // ANCHOR: custom_codec_endpoint
     POST custom_round_trip(
-        #[body] body: crate::request_response::specifications::ExampleCodec
-    ) -> crate::request_response::specifications::ExampleCodec;
+        body body: String using crate::request_response::specifications::ExampleCodec
+    ) -> String using crate::request_response::specifications::ExampleCodec;
     // ANCHOR_END: custom_codec_endpoint
     // ANCHOR_END: buffered_endpoints
 
     // ANCHOR: streaming_endpoints
-    POST upload(#[body] body: Stream) -> Bytes;
-    GET download() -> Stream;
-    POST exact_upload(#[body] body: Stream<OctetStream>) -> Bytes;
-    GET exact_download() -> Stream<OctetStream>;
+    POST upload(body body: concord::body::StreamBody using Stream) -> Bytes using Bytes;
+    GET download() -> concord::response::ByteStream using Stream;
+    POST exact_upload(body body: concord::body::StreamBody using Stream<OctetStream>) -> Bytes using Bytes;
+    GET exact_download() -> concord::response::ByteStream using Stream<OctetStream>;
     // ANCHOR_END: streaming_endpoints
 
     // ANCHOR: multipart_endpoint
-    POST multipart_upload(#[body] body: Multipart) -> NoContent;
+    POST multipart_upload(body body: concord::body::MultipartBody using Multipart) -> () using NoContent;
     // ANCHOR_END: multipart_endpoint
-}
+}}
 // ANCHOR_END: body_contract
 
 /// Constructs every request-body shape without executing transport work.

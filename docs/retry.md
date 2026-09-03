@@ -1,15 +1,11 @@
-# Retry
+# Retry and repeatability
 
-- **Audience:** application runtime authors
-- **Purpose:** runtime-policy guide
-- **Normative reference:** [runtime model](runtime.md)
+Retry policy answers whether a failure looks worth retrying. Endpoint
+repeatability and body replayability answer whether another send is permitted
+and mechanically possible. Core combines all three with stage, budgets, attempts,
+and deadline.
 
-Retry is application policy, not DSL contract syntax. The same remote operation
-may be retried differently by an interactive client, a batch process, or an
-administrative tool. Concord therefore installs retry through the generated
-client builder.
-
-## Build a finite policy
+## Configure policy outside the DSL
 
 <!-- concord-source: crates/concord-examples/src/runtime_policy/retries.rs#managed_retry_policy -->
 ```rust
@@ -32,68 +28,42 @@ pub fn managed_retry_policy() -> RetryPolicy {
 }
 ```
 
-The per-operation retry count is a hard bound. The rolling extra-load budget is
-a second bound intended to prevent aggregate retry amplification.
+The classifier receives bounded, credential-free failure context. It recommends
+retry or stop; it cannot bypass core gates. Attempt maximum, extra-load/shared
+budget, backoff, jitter, and classification remain runtime policy rather than
+endpoint syntax.
 
-The classifier receives safe attempt identity, attempt number, elapsed time,
-and a reduced finite failure kind. It does not receive body bytes, credentials,
-native errors, or the authenticated request.
+Generated builders use one spelling: `.retry(policy)`.
 
-## Install it
+## Declare semantic permission
 
-<!-- concord-source: crates/concord-examples/src/runtime_policy/retries.rs#managed_retry_client -->
-```rust
-pub fn construct() -> Result<RetryApi, concord::prelude::ClientBuildError> {
-    RetryApi::builder().retry(managed_retry_policy()).build()
-}
-```
+Methods derive a default: GET, HEAD, PUT, DELETE, OPTIONS, and exact TRACE are
+idempotent; POST, PATCH, and unknown custom methods are never-repeat by default.
+An endpoint can explicitly select either result. “Idempotent” grants only
+permission to resend after an eligible failure; it does not promise safety,
+server correctness, deduplication, cacheability, or that retry is desirable.
 
-Policy clones share rolling-budget state. Independently built policies own
-independent state unless the application explicitly shares an object.
+Body replayability is independent. A one-shot stream blocks resend even for an
+idempotent endpoint. A replayable encoding does not permit resend for a
+nonrepeatable endpoint after dispatch may have occurred.
 
-## Attempt semantics
+## Failure stages
 
-An admitted retry repeats:
+Preparation and conclusive pre-dispatch failures report `NotDispatched`.
+Transport loss after dispatch begins without a response is
+`PossiblyDispatched`. Any response head gives `ResponseReceived`, even when
+status, acquisition, or conversion fails later. This is transport knowledge,
+not remote commit knowledge.
 
-- before-send hook;
-- body reconstruction;
-- credential preflight;
-- limiter admission;
-- private authentication placement;
-- transport;
-- response-head observation.
+Conversion failures do not policy-retry. Acquisition failures and transient
+statuses may retry only with repeatable/replayable state. Nonrepeatable endpoints
+may retry only when core conclusively knows no dispatch occurred and any consumed
+body can be reconstructed.
 
-It uses the original operation deadline rather than resetting timeout. A retry
-is possible only when the classifier, hard bound, extra-load budget, remaining
-deadline, body replay capability, and limiter all permit it.
+Every retry receives a new attempt ID, reacquires rate admission, consumes
+attempt/shared budget, and remains under the original operation deadline.
+Authentication recovery is separate and does not count as an application retry,
+but shares total bounds.
 
-## Retry versus authentication recovery
-
-Retry says that the same attempt may succeed under application failure policy.
-Authentication recovery says that one attributed credential was challenged and
-its still-current material may need replacement.
-
-Recovery has a separate one-per-operation bound, may update credential state,
-and is reported separately in completion. Both still use the same executor,
-deadline, body replay rules, and limiter admission.
-
-## Retry and response handling
-
-The classifier observes managed connection, transport, or rejected-status
-failure categories. It does not receive arbitrary decode callbacks or native
-response bodies. Authentication challenge is handled before ordinary status
-acceptance and retry classification can finalize the result.
-
-## Why retry is not endpoint syntax
-
-Putting retry in the DSL would mix the remote contract with deployment and
-application tolerance, create another inheritance algebra, and make the same
-contract less reusable across applications. The builder is the correct owner
-for policy that selects runtime behavior rather than remote API structure.
-
-## Related
-
-- [Rate limits](rate_limits.md)
-- [Execution policy](execution_policy.md)
-- [Authentication](auth.md)
-- [Request bodies](request_bodies.md)
+See [runtime retry gates](runtime.md#retry-gates) and the
+[DSL repeatability contract](spec.md#methods-and-repeatability).

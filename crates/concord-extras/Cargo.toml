@@ -16,7 +16,7 @@ oauth2-client = ["dep:bytes", "dep:http", "dep:serde_json", "dep:url"]
 
 [dependencies]
 bytes = { workspace = true, optional = true }
-concord_core = { package = "concord-core", version = "=1.0.0", path = "../concord-core", default-features = false }
+concord_core = { package = "concord-core", version = "=2.0.0", path = "../concord-core", default-features = false }
 csv = { workspace = true, optional = true }
 http = { workspace = true, optional = true }
 httpdate = { workspace = true, optional = true }

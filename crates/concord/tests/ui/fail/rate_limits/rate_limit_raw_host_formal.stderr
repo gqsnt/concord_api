@@ -1,5 +1,5 @@
-error: reusable rate-limit formal `host` is reserved; use built-in dimension `host` without `r#`
- --> tests/ui/fail/rate_limits/rate_limit_raw_host_formal.rs:8:21
+error: `host` and `endpoint` are built-in key dimensions and cannot be profile formals
+ --> tests/ui/fail/rate_limits/rate_limit_raw_host_formal.rs:8:20
   |
-8 |                 by [r#host];
-  |                     ^^^^^^
+8 |             shared(r#host) {
+  |                    ^^^^^^

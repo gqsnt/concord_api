@@ -2,10 +2,11 @@ use concord::api;
 
 api! {
     client NamingApi {
+        timeout off;
         base "https://example.test";
-    }
 
-    GET response_bytes() -> concord::Bytes;
+        GET accepted_bytes() -> concord::Bytes using concord::Bytes;
+    }
 }
 
 fn main() {}

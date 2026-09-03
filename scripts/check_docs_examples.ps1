@@ -9,7 +9,7 @@ $docs = Join-Path $root 'docs'
 $docsIndex = Join-Path $docs 'README.md'
 $fixture = Join-Path $root 'crates/concord-examples/src/docs_spec.rs'
 $dslLanguage = 'concord'
-$dslStart = '^\s*(?:api!|client\s|scope\s|(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE|CONNECT|METHOD)\s|vars\s*\{|credentials\s*\{|host\s|path\s|query\s*\{|headers\s*\{|auth\s|timeout\s|paginate\s|rate_limits\s*\{|rate_limit\s|fmt\[)'
+$dslStart = '^\s*(?:api!|client\s|scope\s|(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s|METHOD\s*\(|values\s*\{|credentials\s*\{|subdomain\s|path\s|query(?:\s+replace)?\s*\{|query\s+off|headers(?:\s+replace)?\s*\{|headers\s+off|auth(?:\s+replace)?\s*\{|auth\s+off|accept\s|timeout\s|repeatability\s|paginate\s+with\s|rate_limits\s*\{|rate_limit\s|concat\s*\[)'
 $sourceMarker = '^\s*<!--\s*concord-source:\s*([^#\s]+)#([A-Za-z0-9_-]+)\s*-->\s*$'
 $removedDocs = @(
     'docs/advanced_endpoints.md',

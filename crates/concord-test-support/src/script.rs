@@ -66,7 +66,7 @@ pub struct CapturedRequest {
     channel: Channel,
     endpoint: Arc<str>,
     method: Method,
-    safe_url: Option<String>,
+    observed_url: Option<String>,
     headers: Vec<CapturedHeader>,
     body_category: BodyCategory,
     known_body_length: Option<usize>,
@@ -89,8 +89,8 @@ impl CapturedRequest {
     }
 
     #[must_use]
-    pub fn safe_url(&self) -> Option<&str> {
-        self.safe_url.as_deref()
+    pub fn observed_url(&self) -> Option<&str> {
+        self.observed_url.as_deref()
     }
 
     #[must_use]
@@ -114,7 +114,7 @@ impl CapturedRequest {
 pub struct BoundaryRequest {
     endpoint: Arc<str>,
     method: Method,
-    safe_url: Option<String>,
+    observed_url: Option<String>,
     headers: Vec<CapturedHeader>,
     body_category: BodyCategory,
     known_body_length: Option<usize>,
@@ -129,7 +129,7 @@ impl BoundaryRequest {
     pub fn __new(
         endpoint: impl Into<Arc<str>>,
         method: Method,
-        safe_url: Option<String>,
+        observed_url: Option<String>,
         headers: Vec<CapturedHeader>,
         body_category: BodyCategory,
         known_body_length: Option<usize>,
@@ -138,7 +138,7 @@ impl BoundaryRequest {
         Self {
             endpoint: endpoint.into(),
             method,
-            safe_url,
+            observed_url,
             headers,
             body_category,
             known_body_length,
@@ -162,7 +162,7 @@ impl BoundaryRequest {
                 channel,
                 endpoint: self.endpoint,
                 method: self.method,
-                safe_url: self.safe_url,
+                observed_url: self.observed_url,
                 headers: self.headers,
                 body_category: self.body_category,
                 known_body_length: self.known_body_length,
@@ -185,7 +185,7 @@ pub(crate) struct BoundaryExpectation {
 /// Explicit fake-value expectations evaluated only inside the harness.
 pub struct ExpectedRequest {
     method: Option<Method>,
-    safe_url: Option<String>,
+    observed_url: Option<String>,
     body: Option<Bytes>,
     native_url: Option<String>,
     headers: HeaderMap,
@@ -196,7 +196,7 @@ impl ExpectedRequest {
     pub fn new() -> Self {
         Self {
             method: None,
-            safe_url: None,
+            observed_url: None,
             body: None,
             native_url: None,
             headers: HeaderMap::new(),
@@ -210,8 +210,8 @@ impl ExpectedRequest {
     }
 
     #[must_use]
-    pub fn safe_url(mut self, safe_url: impl Into<String>) -> Self {
-        self.safe_url = Some(safe_url.into());
+    pub fn observed_url(mut self, observed_url: impl Into<String>) -> Self {
+        self.observed_url = Some(observed_url.into());
         self
     }
 
@@ -246,9 +246,9 @@ impl ExpectedRequest {
             .as_ref()
             .is_none_or(|expected| expected == captured.method())
             && self
-                .safe_url
+                .observed_url
                 .as_deref()
-                .is_none_or(|expected| Some(expected) == captured.safe_url())
+                .is_none_or(|expected| Some(expected) == captured.observed_url())
             && self
                 .body
                 .as_ref()
@@ -275,7 +275,7 @@ impl fmt::Debug for ExpectedRequest {
         formatter
             .debug_struct("ExpectedRequest")
             .field("method", &self.method.is_some())
-            .field("safe_url", &self.safe_url.is_some())
+            .field("observed_url", &self.observed_url.is_some())
             .field("body", &self.body.is_some())
             .field("native_url", &self.native_url.is_some())
             .field("headers", &self.headers.len())

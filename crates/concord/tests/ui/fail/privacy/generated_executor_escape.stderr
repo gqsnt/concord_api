@@ -1,7 +1,7 @@
 error[E0107]: struct takes 0 generic arguments but 1 generic argument was supplied
-  --> tests/ui/fail/privacy/generated_executor_escape.rs:17:19
+  --> tests/ui/fail/privacy/generated_executor_escape.rs:18:19
    |
-17 |     let _: Option<DevelopmentProofApi<()>> = None;
+18 |     let _: Option<DevelopmentProofApi<()>> = None;
    |                   ^^^^^^^^^^^^^^^^^^^---- help: remove the unnecessary generics
    |                   |
    |                   expected 0 generic arguments
@@ -13,9 +13,9 @@ note: struct defined here, with 0 generic parameters
    |            ^^^^^^^^^^^^^^^^^^^
 
 error[E0061]: this function takes 0 arguments but 1 argument was supplied
-  --> tests/ui/fail/privacy/generated_executor_escape.rs:18:13
+  --> tests/ui/fail/privacy/generated_executor_escape.rs:19:13
    |
-18 |     let _ = DevelopmentProofApi::new(());
+19 |     let _ = DevelopmentProofApi::new(());
    |             ^^^^^^^^^^^^^^^^^^^^^^^^ -- unexpected argument of type `()`
    |
 note: associated function defined here
@@ -23,13 +23,14 @@ note: associated function defined here
    |
  3 | / api! {
  4 | |     client DevelopmentProofApi {
- 5 | |         base "http://development-proof.example.test/";
+ 5 | |         timeout off;
+ 6 | |         base "http://development-proof.example.test/";
 ...  |
-14 | | }
-   | |_^
+15 | | }}
+   | |__^
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: remove the extra argument
    |
-18 -     let _ = DevelopmentProofApi::new(());
-18 +     let _ = DevelopmentProofApi::new();
+19 -     let _ = DevelopmentProofApi::new(());
+19 +     let _ = DevelopmentProofApi::new();
    |

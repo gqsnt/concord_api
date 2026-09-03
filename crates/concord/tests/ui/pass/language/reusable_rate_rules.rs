@@ -2,40 +2,36 @@ use concord::api;
 
 api! {
     client ReusableRateApi {
+        timeout off;
         base "https://example.test";
 
         rate_limits {
-            rule account_reads {
+            account_reads(account) {
                 id "service.account.read";
-                by [host, account];
+                key [host, account];
                 cost 1;
-                100 / 1m;
-                1_000 / 1h;
+                allow 100 per 1m;
+                allow 1_000 per 1h;
             }
 
-            rule service_reads {
-                10_000 / 1m;
+            service_reads() {
+                allow 10_000 per 1m;
             }
         }
 
-        rate_limit use service_reads;
-    }
+        rate_limit service_reads();
+
 
     scope accounts(account: String) {
-        rate_limit use account_reads {
-            account = scope.account;
-        }
+        rate_limit account_reads(account = accounts.account);
 
-        GET details() -> Bytes;
+        GET details() -> Bytes using Bytes;
     }
 
-    GET lookup(account: String) -> Bytes {
-        rate_limit use account_reads {
-            account = ep.account;
-            cost 2;
-        }
+    GET lookup(account: String) -> Bytes using Bytes {
+        rate_limit account_reads(account = endpoint.account) { cost 2; }
     }
-}
+}}
 
 fn main() {
     let builder = ReusableRateApi::builder();

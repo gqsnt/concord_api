@@ -1,5 +1,5 @@
 error: unknown rate-limit profile `missing`
- --> tests/ui/fail/rate_limits/rate_limit_undefined_attachment.rs:6:24
+ --> tests/ui/fail/rate_limits/rate_limit_undefined_attachment.rs:7:20
   |
-6 |         rate_limit use missing;
-  |                        ^^^^^^^
+7 |         rate_limit missing();
+  |                    ^^^^^^^

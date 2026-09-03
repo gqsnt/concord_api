@@ -5,7 +5,7 @@ use concord_core::contracts::ErrorCategory;
 
 #[test]
 fn generated_contract_version_matches_generic_specification_capability() {
-    assert_eq!(GENERATED_CONTRACT_VERSION, 31);
+    assert_eq!(GENERATED_CONTRACT_VERSION, 32);
 }
 
 #[test]
@@ -19,13 +19,13 @@ fn structured_head_builder_encodes_values_only_when_prepared() {
         None,
     );
     builder.push_static("resources").expect("static segment");
-    builder.push_value("item%2Ftail").expect("dynamic segment");
+    builder.push_value("item tail").expect("dynamic segment");
     let head = builder.finish().expect("bounded head");
     assert_eq!(head.endpoint(), "proof_api.resources.by_id");
     assert_eq!(head.method(), &Method::GET);
     assert_eq!(
         head.logical_url().as_str(),
-        "https://example.test/api/resources/item%252Ftail"
+        "https://example.test/api/resources/item%20tail"
     );
     assert!(head.public_headers().is_empty());
 }
@@ -56,8 +56,12 @@ fn structured_head_builder_enforces_one_non_dot_segment_per_atom() {
         Err(ErrorCategory::Configuration)
     );
     assert_eq!(
-        dynamic("already%2Fencoded").expect("percent is encoded once by this boundary"),
-        "https://example.test/api/already%252Fencoded"
+        dynamic("already%2Fencoded"),
+        Err(ErrorCategory::Configuration)
+    );
+    assert_eq!(
+        dynamic("50%done").expect("a non-escape percent remains ordinary data"),
+        "https://example.test/api/50%25done"
     );
     for invalid in ["", ".", ".."] {
         assert_eq!(dynamic(invalid), Err(ErrorCategory::Configuration));

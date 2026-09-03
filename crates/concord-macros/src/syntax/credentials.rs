@@ -9,8 +9,7 @@ use super::ast::{
     CredentialSource, CredentialsBlock, SecretDecl,
 };
 use super::diagnostics::{
-    SpanError, is_named_marker, validate_auth_header_name, validate_auth_query_name,
-    validate_authorization_scheme,
+    SpanError, validate_auth_header_name, validate_auth_query_name, validate_authorization_scheme,
 };
 use super::keyword;
 use crate::semantic::surface::canonical_ident;
@@ -27,12 +26,10 @@ pub(super) fn parse_credentials(input: ParseStream<'_>) -> syn::Result<Credentia
         if body.peek(keyword::secret) {
             body.parse::<keyword::secret>()?;
             let name: Ident = body.parse()?;
-            body.parse::<Token![:]>()?;
-            let ty: Type = body.parse()?;
-            if !is_named_marker(&ty, "String") {
-                return Err(ty
-                    .span()
-                    .error("Concord 0.1 secrets are required `String` values without defaults"));
+            if body.peek(Token![:]) {
+                return Err(body.error(
+                    "v1 typed secrets were removed; write `secret NAME;` (the builder accepts `SecretString`)",
+                ));
             }
             body.parse::<Token![;]>()?;
             let canonical = canonical_ident(&name);
@@ -152,6 +149,17 @@ pub(super) fn parse_auth(input: ParseStream<'_>) -> syn::Result<AuthOperation> {
     if replace {
         input.parse::<keyword::replace>()?;
     }
+    if !input.peek(syn::token::Brace)
+        && (input.peek(keyword::bearer)
+            || input.peek(keyword::basic)
+            || input.peek(keyword::authorization)
+            || input.peek(keyword::header)
+            || input.peek(keyword::query))
+    {
+        return Err(input.error(
+            "v1 repeated `auth ...;` clauses were removed; group placements in `auth { ... }`",
+        ));
+    }
     if let Ok(spelling) = input.fork().parse::<Ident>() {
         match canonical_ident(&spelling).as_str() {
             "certificate" => {
@@ -161,12 +169,29 @@ pub(super) fn parse_auth(input: ParseStream<'_>) -> syn::Result<AuthOperation> {
             }
             "all" | "any" | "one_of" | "optional" => {
                 return Err(spelling.span().error(
-                    "authentication combinators are not DSL syntax; write each ordered placement as an `auth ...;` clause",
+                    "authentication combinators are not DSL syntax; write ordered placements inside one `auth { ... }` block",
                 ));
             }
             _ => {}
         }
     }
+    let body;
+    braced!(body in input);
+    let mut placements = Vec::new();
+    while !body.is_empty() {
+        placements.push(parse_auth_placement(&body)?);
+    }
+    if placements.is_empty() {
+        return Err(body.error("an authentication block requires at least one placement"));
+    }
+    Ok(AuthOperation::Modify {
+        replace,
+        clause_spans: vec![key_span],
+        placements,
+    })
+}
+
+fn parse_auth_placement(input: ParseStream<'_>) -> syn::Result<AuthPlacement> {
     let (kind, credential) = if input.peek(keyword::bearer) {
         input.parse::<keyword::bearer>()?;
         (AuthPlacementKind::Bearer, input.parse()?)
@@ -197,40 +222,52 @@ pub(super) fn parse_auth(input: ParseStream<'_>) -> syn::Result<AuthOperation> {
         input.parse::<Token![=]>()?;
         (AuthPlacementKind::Query(name), input.parse()?)
     } else {
+        if let Ok(spelling) = input.fork().parse::<Ident>() {
+            match canonical_ident(&spelling).as_str() {
+                "certificate" => {
+                    return Err(spelling.span().error(
+                        "`auth certificate` is not DSL syntax; supply application client-identity PEM with `.configure_http(|http| http.identity_pem(pem))` on the generated builder",
+                    ));
+                }
+                "all" | "any" | "one_of" | "optional" => {
+                    return Err(spelling.span().error(
+                        "authentication combinators are not DSL syntax; declare the required ordered placements directly inside `auth { ... }`",
+                    ));
+                }
+                _ => {}
+            }
+        }
         return Err(
             input.error(
                 "auth placement must be `bearer`, `basic`, `authorization`, `header`, `query`, or `off`",
             )
         );
     };
-    let challenge = if input.peek(keyword::challenge) {
-        input.parse::<keyword::challenge>()?;
+    let challenge = if input.peek(keyword::recover) {
+        input.parse::<keyword::recover>()?;
+        input.parse::<keyword::on>()?;
         Some(if input.peek(keyword::unauthorized) {
             input.parse::<keyword::unauthorized>()?;
             AuthChallenge::Unauthorized
         } else if input.peek(keyword::unauthorized_or_forbidden) {
             input.parse::<keyword::unauthorized_or_forbidden>()?;
             AuthChallenge::UnauthorizedOrForbidden
-        } else if input.peek(keyword::never) {
-            input.parse::<keyword::never>()?;
-            AuthChallenge::Never
         } else {
-            return Err(input.error(
-                "challenge must be `unauthorized`, `unauthorized_or_forbidden`, or `never`",
-            ));
+            return Err(input
+                .error("recovery signal must be `unauthorized` or `unauthorized_or_forbidden`"));
         })
+    } else if input.peek(keyword::challenge) {
+        return Err(input.error(
+            "v1 `challenge ...` was removed; use `recover on unauthorized`, `recover on unauthorized_or_forbidden`, or omit recovery",
+        ));
     } else {
         None
     };
     input.parse::<Token![;]>()?;
-    Ok(AuthOperation::Modify {
-        replace,
-        placements: vec![AuthPlacement {
-            kind,
-            credential,
-            challenge,
-        }],
-        clause_spans: vec![key_span],
+    Ok(AuthPlacement {
+        kind,
+        credential,
+        challenge,
     })
 }
 
@@ -246,18 +283,19 @@ mod tests {
     fn parses_secret_sources_generic_providers_and_auth_placements() {
         let source = super::super::parse(quote! {
             client AuthApi {
+                timeout off;
                 base "https://example.test";
                 credentials {
-                    secret token: String;
+                    secret token;
                     credential bearer = bearer(secret.token);
                     credential session = custom crate::SessionProvider;
                 }
-                auth bearer bearer;
+                auth { bearer bearer; }
+
+            GET read() -> Bytes using Bytes {
+                auth replace { header "X-Session" = session; }
             }
-            GET read() -> Bytes {
-                auth replace header "X-Session" = session challenge never;
-            }
-        })
+        }})
         .expect("credential syntax");
         let block = &source.client.credentials.as_ref().unwrap().value;
 
@@ -283,8 +321,9 @@ mod tests {
         ] {
             let source = quote! {
                 client AuthApi {
+                    timeout off;
                     base "https://example.test";
-                    auth #spelling;
+                    auth { #spelling; }
                 }
             };
             let error = super::super::parse(source)
@@ -355,26 +394,27 @@ mod tests {
     fn parses_exact_and_static_scheme_authorization_placements() {
         let source = super::super::parse(quote! {
             client AuthApi {
+                timeout off;
                 base "https://example.test";
                 credentials {
-                    secret token: String;
+                    secret token;
                     credential key = api_key(secret.token);
                 }
+
+            GET exact() -> Bytes using Bytes {
+                auth { authorization = key; }
             }
-            GET exact() -> Bytes {
-                auth authorization = key;
+            GET scheme() -> Bytes using Bytes {
+                auth { authorization "tOkEn" = key recover on unauthorized; }
             }
-            GET scheme() -> Bytes {
-                auth authorization "tOkEn" = key challenge unauthorized;
-            }
-        })
+        }})
         .expect("custom Authorization syntax");
 
-        let exact = match &source.children[0] {
+        let exact = match &source.client.children[0] {
             super::super::ast::SourceChild::Endpoint(endpoint) => endpoint,
             _ => panic!("exact endpoint"),
         };
-        let scheme = match &source.children[1] {
+        let scheme = match &source.client.children[1] {
             super::super::ast::SourceChild::Endpoint(endpoint) => endpoint,
             _ => panic!("scheme endpoint"),
         };

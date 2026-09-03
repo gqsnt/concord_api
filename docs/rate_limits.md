@@ -1,104 +1,43 @@
-# Rate limits
+# Rate limiting
 
-- **Audience:** API authors, callers configuring a limiter, and limiter authors
-- **Purpose:** end-to-end concept guide
-- **Normative reference:** [DSL rate-limit rules](spec.md#rate-limit-profiles-and-policy)
+The declaration defines stable quota semantics; a selected runtime limiter
+implements admission, waiting, rejection, and coordination.
 
-Rate limiting separates reusable policy declaration, local attachment and
-binding, resolved semantic policy, and runtime enforcement.
+## Profiles and attachments
 
-## Contract example
+Profiles are client-owned and name every formal. They cannot capture client,
+scope, or endpoint values. An attachment binds each formal exactly once and may
+override cost. Anonymous attachments declare one policy inline.
 
-<!-- concord-source: crates/concord-examples/src/rate_limiting/lexical.rs#rate_limit_contract -->
-```rust
-api! {
-    client RateLimitApi {
-        base "http://rate-limit.example.test/";
-        vars {
-            tenant: String;
-        }
-        rate_limit {
-            id "example.application";
-            500 / 10s;
-        }
-        rate_limits {
-            rule account_reads {
-                id "example.account.read";
-                by [account];
-                cost 1;
-                100 / 1m;
-                1_000 / 1h;
-            }
-        }
-    }
+`id` is stable policy identity. `key` is an ordered dimension schema. `cost`
+defaults to 1, must be positive, and cannot exceed any window capacity. Every
+policy has at least one positive `allow capacity per duration` window.
 
-    scope region(region: String) {
-        host [scope.region, "api"];
-        rate_limit use account_reads {
-            account = scope.region;
-        }
-        rate_limit {
-            by [host];
-            200 / 1m;
-        }
+Policies add across client and nested scopes/endpoints. A descendant cannot turn
+off inherited quota semantics. Duplicate effective use of one ID is rejected;
+reuse elsewhere requires compatible ordered dimensions and windows.
 
-        GET item(item: String) -> Bytes {
-            rate_limit {
-                by [ep.item];
-                cost 2;
-                100 / 1m;
-            }
-        }
-    }
+## Canonical keys
 
-    GET lookup(account: String) -> Bytes {
-        rate_limit use account_reads {
-            account = ep.account;
-            cost 2;
-        }
-    }
+Built-in dimensions are final logical `host` and stable `endpoint` ID. Other
+dimensions are direct total owner references or bound profile formals. Outer
+optional slots and pagination-mutated values are rejected, as are secrets,
+credentials, concatenation, and display formatting.
 
-    GET public() -> Bytes;
-}
-```
+`RateLimitKeyValue` writes bounded deterministic bytes with type and length
+framing. First-party primitives and structural `Option`/`Vec` encodings keep
+variants and boundaries distinct. A required `Option<T>` payload may therefore
+encode `None` as real domain identity; a Concord-optional slot cannot make policy
+presence data-dependent.
 
-A named profile declares stable policy shape and formal logical dimensions. A
-`rate_limit use` attachment binds every formal to values visible at its tree
-site. A small local policy may be anonymous.
+Canonical values are supplied only to the limiter. They do not appear in plans,
+errors, gates, completion, descriptions, or Rustdoc.
 
-Profiles do not capture `vars.*`, `scope.*`, or `ep.*` directly. Explicit
-formals make dependencies, reuse, compatibility, documentation, and generated
-trait obligations visible.
+## Enforcement
 
-## Why policies are additive
-
-Effective policy order is client, outer scope, inner scope, then endpoint.
-Descendants cannot disable inherited policies. A remote quota commonly applies
-at several simultaneous boundaries—application, host, service, endpoint, or
-resource—and allowing a leaf to opt out would make the least local declaration
-able to bypass shared authority.
-
-## Dimensions and keys
-
-Dimensions may use `host`, `endpoint`, or required/defaulted scalar values.
-Their names and order are part of policy compatibility.
-
-Optional values, vectors, formatted expressions, secrets, credentials, and
-pagination-controlled values are rejected. These shapes would make policy
-schema, cardinality, privacy, or page-to-page identity unstable.
-
-Resolved key values may contain tenant, account, host, region, or endpoint
-data. Built-in formatting and errors suppress them. Custom limiters and
-observers are trusted to protect storage and logs.
-
-## Cost and windows
-
-Cost is positive and must not exceed any window capacity. A policy has at least
-one positive ordered window. Explicit IDs allow intentional sharing across
-source renames or clients when the application guarantees schema and remote
-quota compatibility.
-
-## Configure enforcement
+Any generated client with an effective rate policy requires explicit limiter
+selection. There is no implicit allow-all implementation and no production
+bypass method. Tests can select the explicit test limiter from test support.
 
 <!-- concord-source: crates/concord-examples/src/rate_limiting/lexical.rs#configured_rate_limiter -->
 ```rust
@@ -117,45 +56,13 @@ pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
 }
 ```
 
-The façade `rate-limit` feature installs a bounded `LocalRateLimiter` in each
-built client unless an explicit limiter is configured. Without a selected
-limiter, an empty plan executes and a nonempty plan fails closed.
+Admission occurs once per actual network attempt, including policy retry and
+authentication recovery, inside the operation's aggregate deadline. Private
+credential placement follows admission. Response-head limiter observation may
+update future cooldown state but cannot replace the current response.
 
-Default-built clients do not share state. Supplying the same limiter object to
-several clients shares compatible policy, key, and window state.
+Client clones share their selected limiter and budgets. Independent builds
+share quota state only if the application supplies the same limiter handle.
 
-## Runtime order
-
-Each visible attempt acquires every effective policy before private
-authentication placement. Retries and authentication recovery reacquire.
-Pagination recomputes and acquires policy for every page.
-
-`RateLimitObserver` receives the sanitized response head and resolved policy
-plan before the user response hook. It may update cooldown or quota state and
-may reject the operation with a safe error.
-
-## Local versus distributed limiting
-
-`LocalRateLimiter` implements bounded process-local token buckets with finite
-state, pruning, and deterministic eviction. It is not a distributed strict
-quota. A distributed implementation uses the same `RateLimiter` contract and
-owns cross-process consistency and its own finite state.
-
-## Guardrails
-
-The structured policy model enables:
-
-- complete binding of reusable formals;
-- validation that every named profile is used;
-- stable ID/schema compatibility checks;
-- bounded dimensions, keys, costs, and windows;
-- secret and pagination-dependency exclusion;
-- deterministic additive ordering;
-- fail-closed enforcement when policy exists but authority does not.
-
-## Related
-
-- [Retry](retry.md)
-- [Pagination](pagination.md)
-- [Execution policy](execution_policy.md)
-- [Extensions](extensions.md)
+See the exact [rate grammar](spec.md#rate-limits) and
+[runtime admission model](runtime.md#rate-admission).

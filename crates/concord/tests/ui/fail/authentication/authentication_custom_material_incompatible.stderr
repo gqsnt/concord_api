@@ -3,11 +3,11 @@ error[E0277]: the trait bound `NonSecretMaterial: SecretCredential` is not satis
    |
 24 | / api! {
 25 | |     client Api {
-26 | |         base "https://example.test";
-27 | |         credentials {
+26 | |         timeout off;
+27 | |         base "https://example.test";
 ...  |
-35 | | }
-   | |_^ unsatisfied trait bound
+36 | | }}
+   | |__^ unsatisfied trait bound
    |
 help: the trait `SecretCredential` is not implemented for `NonSecretMaterial`
   --> tests/ui/fail/authentication/authentication_custom_material_incompatible.rs:7:1
@@ -21,7 +21,7 @@ help: the following other types implement trait `SecretCredential`
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `AccessToken`
 ...
    | impl SecretCredential for ApiKey {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `ApiKey`
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::auth::ApiKey`
 note: required by a bound in `Auth::bearer`
   --> $WORKSPACE/crates/concord-core/src/auth/placement.rs
    |

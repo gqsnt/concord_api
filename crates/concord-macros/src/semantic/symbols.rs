@@ -1,23 +1,24 @@
 use std::collections::HashMap;
 
 use proc_macro2::Span;
-use syn::spanned::Spanned;
-use syn::{GenericArgument, Ident, PathArguments, Type, TypePath};
+use syn::Ident;
 
 use super::model::{
-    Child, ResolvedDefault, ResolvedValue, ResolvedValueKind, Value, ValueReference, ValueShape,
+    Child, ObservationClass, ResolvedDefault, ResolvedValue, Value, ValuePresence, ValueReference,
 };
 use super::surface::{
     RESERVED_GENERATED_METHODS, canonical_ident, insert_name, value_setter_ident,
 };
 use super::{Resolver, SpanError};
 use crate::syntax::ast::{
-    DefaultExpr as SourceDefault, ValueDecl, ValueKind as SourceValueKind, syntactic_option_inner,
+    DefaultExpr as SourceDefault, Observation as SourceObservation, ValueDecl,
+    ValuePresence as SourcePresence,
 };
 
 #[derive(Clone)]
 pub(super) struct ScopeFrame {
     pub(super) id: usize,
+    pub(super) name: Ident,
     pub(super) values: Vec<Value>,
 }
 
@@ -25,12 +26,26 @@ pub(super) fn convert_values(values: Vec<ValueDecl>) -> syn::Result<Vec<Value>> 
     values
         .into_iter()
         .map(|value| {
-            let shape = value_shape(&value.ty)?;
+            let payload_type = value.payload_type;
+            let effective_type = if matches!(value.presence, SourcePresence::Optional) {
+                syn::parse_quote!(::std::option::Option<#payload_type>)
+            } else {
+                payload_type.clone()
+            };
             Ok(Value {
                 name: value.name,
-                ty: value.ty,
-                kind: resolve_value_kind(value.kind),
-                shape,
+                payload_type,
+                effective_type,
+                presence: match value.presence {
+                    SourcePresence::Required => ValuePresence::Required,
+                    SourcePresence::Optional => ValuePresence::Optional,
+                },
+                initializer: value.initializer.map(resolve_default),
+                observation: match value.observation {
+                    SourceObservation::Ordinary => ObservationClass::OrdinaryPublic,
+                    SourceObservation::Redacted => ObservationClass::RedactedPublic,
+                },
+                docs: value.docs.into_iter().map(|doc| doc.value()).collect(),
                 source_position: value.position,
             })
         })
@@ -40,66 +55,15 @@ pub(super) fn convert_values(values: Vec<ValueDecl>) -> syn::Result<Vec<Value>> 
 pub(super) fn resolve_default(source: SourceDefault) -> ResolvedDefault {
     match source {
         SourceDefault::String(value) => ResolvedDefault::String(value),
+        SourceDefault::Character(value) => ResolvedDefault::Character(value),
         SourceDefault::Integer { negative, literal } => {
             ResolvedDefault::Integer { negative, literal }
         }
         SourceDefault::Boolean(value) => ResolvedDefault::Boolean(value),
+        SourceDefault::Float { negative, literal } => ResolvedDefault::Float { negative, literal },
         SourceDefault::Path(value) => ResolvedDefault::Path(value),
         SourceDefault::TraitDefault(span) => ResolvedDefault::TraitDefault(span),
     }
-}
-
-fn resolve_value_kind(source: SourceValueKind) -> ResolvedValueKind {
-    match source {
-        SourceValueKind::Required => ResolvedValueKind::Required,
-        SourceValueKind::Optional => ResolvedValueKind::Optional,
-        SourceValueKind::Defaulted(value) => ResolvedValueKind::Defaulted(resolve_default(value)),
-    }
-}
-
-fn value_shape(ty: &Type) -> syn::Result<ValueShape> {
-    if let Some(inner) = syntactic_option_inner(ty)? {
-        if let Some(element) = single_outer_argument(&inner, "Vec")? {
-            return Ok(ValueShape::OptionVec { inner, element });
-        }
-        return Ok(ValueShape::Option { inner });
-    }
-    if let Some(element) = single_outer_argument(ty, "Vec")? {
-        return Ok(ValueShape::Vec { element });
-    }
-    Ok(ValueShape::Scalar)
-}
-
-fn single_outer_argument(ty: &Type, expected: &str) -> syn::Result<Option<Type>> {
-    let Type::Path(TypePath {
-        qself: None, path, ..
-    }) = ty
-    else {
-        return Ok(None);
-    };
-    if path.leading_colon.is_some()
-        || path.segments.len() != 1
-        || path.segments[0].ident != expected
-    {
-        return Ok(None);
-    }
-    let PathArguments::AngleBracketed(arguments) = &path.segments[0].arguments else {
-        return Err(ty
-            .span()
-            .error(format!("`{expected}` requires exactly one type argument")));
-    };
-    let mut arguments = arguments.args.iter();
-    let Some(GenericArgument::Type(inner)) = arguments.next() else {
-        return Err(ty
-            .span()
-            .error(format!("`{expected}` requires exactly one type argument")));
-    };
-    if arguments.next().is_some() {
-        return Err(ty
-            .span()
-            .error(format!("`{expected}` requires exactly one type argument")));
-    }
-    Ok(Some(inner.clone()))
 }
 
 pub(super) fn find_value(values: &[Value], name: &Ident) -> Option<usize> {
@@ -139,6 +103,12 @@ pub(super) fn validate_setter_namespace(
             if value.accepts_absence() {
                 insert_name(
                     &mut names,
+                    format!("with_{}", canonical_ident(&value.name)),
+                    value.name.span(),
+                    owner,
+                )?;
+                insert_name(
+                    &mut names,
                     format!("clear_{}", canonical_ident(&value.name)),
                     value.name.span(),
                     owner,
@@ -157,24 +127,13 @@ pub(super) fn validate_setter_namespace(
     Ok(())
 }
 
-pub(super) fn validate_endpoint_setters(
-    parameters: &[Value],
-    scopes: &[ScopeFrame],
-) -> syn::Result<()> {
-    let mut values = scopes
-        .iter()
-        .flat_map(|scope| scope.values.iter())
-        .filter(|value| !value.is_required())
-        .cloned()
-        .collect::<Vec<_>>();
-    values.extend(
-        parameters
-            .iter()
-            .filter(|value| !value.is_required())
-            .cloned(),
-    );
-    validate_setter_namespace(&values, "explicit endpoint controls", false, true)?;
-    validate_setter_namespace(parameters, "endpoint request controls", false, true)
+pub(super) fn validate_endpoint_setters(parameters: &[Value]) -> syn::Result<()> {
+    validate_setter_namespace(
+        parameters,
+        "endpoint intent and request controls",
+        false,
+        true,
+    )
 }
 
 pub(super) fn validate_child_methods(
@@ -197,6 +156,12 @@ pub(super) fn validate_child_methods(
             owner,
         )?;
         if value.accepts_absence() {
+            insert_name(
+                &mut names,
+                format!("with_{}", canonical_ident(&value.name)),
+                value.name.span(),
+                owner,
+            )?;
             insert_name(
                 &mut names,
                 format!("clear_{}", canonical_ident(&value.name)),
@@ -243,56 +208,47 @@ impl Resolver<'_> {
         endpoint: Option<&[Value]>,
     ) -> syn::Result<ResolvedValue> {
         match namespace.to_string().as_str() {
-            "vars" => {
+            "client" => {
                 let index = find_unique_value(self.client_values, name, "client value")?;
                 Ok(ResolvedValue {
                     reference: ValueReference::Client(index),
-                    shape: self.client_values[index].shape.clone(),
+                    presence: self.client_values[index].presence,
+                    observation: self.client_values[index].observation,
                 })
             }
-            "scope" => {
-                let matches = scopes
+            "endpoint" => {
+                let Some(endpoint) = endpoint else {
+                    return Err(name
+                        .span()
+                        .error("`endpoint.NAME` is available only while shaping an endpoint"));
+                };
+                let index = find_unique_value(endpoint, name, "endpoint value")?;
+                Ok(ResolvedValue {
+                    reference: ValueReference::Endpoint(index),
+                    presence: endpoint[index].presence,
+                    observation: endpoint[index].observation,
+                })
+            }
+            scope_name => {
+                let scope = scopes
                     .iter()
-                    .filter_map(|scope| {
-                        find_value(&scope.values, name).map(|parameter| (scope, parameter))
-                    })
-                    .collect::<Vec<_>>();
-                if matches.is_empty() {
-                    return Err(name.span().error(format!(
-                        "unknown visible scope value `{}`",
-                        canonical_ident(name)
-                    )));
-                }
-                if matches.len() != 1 {
-                    return Err(name.span().error(format!(
-                        "ambiguous visible scope value `{}`; qualify the DSL model so the name is unique",
-                        canonical_ident(name)
-                    )));
-                }
-                let (scope, parameter) = matches[0];
+                    .find(|scope| canonical_ident(&scope.name) == scope_name)
+                    .ok_or_else(|| {
+                        namespace.span().error(format!(
+                            "unknown value owner `{scope_name}`; use `client`, `endpoint`, or an exact visible scope identifier"
+                        ))
+                    })?;
+                let parameter =
+                    find_unique_value(&scope.values, name, &format!("scope `{scope_name}` value"))?;
                 Ok(ResolvedValue {
                     reference: ValueReference::Scope {
                         scope_id: scope.id,
                         parameter,
                     },
-                    shape: scope.values[parameter].shape.clone(),
+                    presence: scope.values[parameter].presence,
+                    observation: scope.values[parameter].observation,
                 })
             }
-            "ep" => {
-                let Some(endpoint) = endpoint else {
-                    return Err(name
-                        .span()
-                        .error("`ep.NAME` is available only while shaping an endpoint"));
-                };
-                let index = find_unique_value(endpoint, name, "endpoint value")?;
-                Ok(ResolvedValue {
-                    reference: ValueReference::Endpoint(index),
-                    shape: endpoint[index].shape.clone(),
-                })
-            }
-            _ => Err(namespace
-                .span()
-                .error("value references use only `vars.NAME`, `scope.NAME`, or `ep.NAME`")),
         }
     }
 }
@@ -306,15 +262,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn preserves_existing_type_shape_recognition_without_broadening_qualified_paths() {
+    fn preserves_payload_type_tokens_without_semantic_type_recognition() {
         let api = test_support::resolve_tokens(quote! {
             client ShapeApi {
                 base "https://example.test";
-                vars {
+                timeout off;
+                values {
                     option: Option<T>;
-                    std_option: std::option::Option<T>;
+                    std_option?: std::option::Option<T>;
                     vector: Vec<T>;
-                    option_vector: Option<Vec<T>>;
+                    option_vector?: Option<Vec<T>>;
                     associated: <T as Trait>::Output;
                     custom_option: crate::custom::Option<T>;
                     core_option: core::option::Option<T>;
@@ -325,13 +282,22 @@ mod tests {
         });
         let values = &api.client.values;
 
-        assert!(matches!(values[0].shape, ValueShape::Option { .. }));
-        assert!(matches!(values[1].shape, ValueShape::Option { .. }));
-        assert!(matches!(values[2].shape, ValueShape::Vec { .. }));
-        assert!(matches!(values[3].shape, ValueShape::OptionVec { .. }));
-        for value in &values[4..] {
-            assert!(matches!(value.shape, ValueShape::Scalar));
-        }
+        assert!(matches!(values[0].presence, ValuePresence::Required));
+        assert!(matches!(values[1].presence, ValuePresence::Optional));
+        assert!(matches!(values[2].presence, ValuePresence::Required));
+        assert!(matches!(values[3].presence, ValuePresence::Optional));
+        assert_eq!(
+            values[0].payload_type.to_token_stream().to_string(),
+            "Option < T >"
+        );
+        assert_eq!(
+            values[2].payload_type.to_token_stream().to_string(),
+            "Vec < T >"
+        );
+        assert_eq!(
+            values[3].payload_type.to_token_stream().to_string(),
+            "Option < Vec < T > >"
+        );
     }
 
     #[test]
@@ -339,15 +305,16 @@ mod tests {
         let api = test_support::resolve_tokens(quote! {
             client FunctionPointerApi {
                 base "https://example.test";
+                timeout off;
+                GET process(callback: fn(u32) -> bool) -> Bytes using Bytes;
             }
-            GET process(callback: fn(u32) -> bool) -> Bytes;
         });
         let endpoint = test_support::endpoint(&api.client.children, "process");
         let callback = &endpoint.parameters[0];
 
-        assert!(matches!(callback.shape, ValueShape::Scalar));
+        assert!(matches!(callback.presence, ValuePresence::Required));
         assert_eq!(
-            callback.ty.to_token_stream().to_string(),
+            callback.payload_type.to_token_stream().to_string(),
             quote!(fn(u32) -> bool).to_string()
         );
         assert!(
@@ -362,23 +329,24 @@ mod tests {
         let api = test_support::resolve_tokens(quote! {
             client SymbolsApi {
                 base "https://example.test";
-                vars { tenant: String; }
-            }
-            scope resources(tags: Vec<String>) {
-                GET read(optional: Option<u64>) -> Bytes {
+                timeout off;
+                values { tenant: String; }
+                scope resources(tags: String) {
+                GET read(optional?: u64) -> Bytes using Bytes {
                     query {
-                        "client" = vars.tenant;
-                        "scope" = scope.tags;
-                        "endpoint" = ep.optional;
+                        "client" = client.tenant;
+                        "scope" = resources.tags;
+                        "endpoint" = endpoint.optional;
                     }
+                }
                 }
             }
         });
         let endpoint = test_support::endpoint(&api.client.children, "read");
 
         assert!(matches!(
-            endpoint.parameters[0].shape,
-            ValueShape::Option { .. }
+            endpoint.parameters[0].presence,
+            ValuePresence::Optional
         ));
         let references = endpoint
             .config

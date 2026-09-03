@@ -11,55 +11,57 @@ use concord::http::SafeProxy;
 #[cfg(feature = "rate-limit")]
 use concord::rate_limit::LocalRateLimiter;
 use concord::rate_limit::{
-    BoxFuture, NoopRateLimiter, RateLimitError, RateLimitPermit, RateLimitPlan, RateLimitRequest,
-    RateLimitResponse, RateLimiter,
+    BoxFuture, CanonicalKeyWriter, NoopRateLimiter, RateLimitError, RateLimitKeyValue,
+    RateLimitPermit, RateLimitPlan, RateLimitRequest, RateLimitResponse, RateLimiter,
 };
 use concord::retry::{RetryDecision, RetryFailure, RetryPolicy};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 
 api! {
     client RateApi {
+        timeout off;
         base "http://rate-limit.example.test/";
-        vars {
+        values {
             tenant: String;
         }
         rate_limit {
-            500 / 10s;
-            30000 / 10m;
+            allow 500 per 10s;
+            allow 30000 per 10m;
         }
-    }
+
 
     scope regions(region: String) {
         rate_limit {
-            20 / 1s;
+            allow 20 per 1s;
         }
-        GET read(item: String) -> Bytes {
+        GET read(item: String) -> Bytes using Bytes {
             rate_limit {
                 cost 2;
-                100 / 1m;
+                allow 100 per 1m;
             }
         }
-        GET public() -> Bytes;
+        GET public() -> Bytes using Bytes;
     }
-}
+}}
 
 api! {
     client EmptyRateApi {
+        timeout off;
         base "http://empty-rate.example.test/";
-    }
 
-    GET read() -> Bytes;
-}
 
-pub struct DisplayOnly {
+    GET read() -> Bytes using Bytes;
+}}
+
+pub struct CanonicalOnly {
     text: &'static str,
     calls: Arc<AtomicUsize>,
 }
 
-impl Display for DisplayOnly {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl RateLimitKeyValue for CanonicalOnly {
+    fn write_canonical(&self, out: &mut CanonicalKeyWriter) -> Result<(), RateLimitError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        formatter.write_str(self.text)
+        out.write_tagged_bytes("test.resource/v1", self.text.as_bytes())
     }
 }
 
@@ -67,200 +69,204 @@ pub struct NoDisplay;
 
 api! {
     client MinimalBoundsApi {
+        timeout off;
         base "http://minimal-rate.example.test/";
-    }
 
-    GET read(item: crate::NoDisplay) -> Bytes {
-        rate_limit { 1 / 1s; }
+
+    GET read(item: crate::NoDisplay) -> Bytes using Bytes {
+        rate_limit { allow 1 per 1s; }
     }
-}
+}}
 
 api! {
     client IdentityRateApi {
+        timeout off;
         base "http://identity-rate.example.test/";
-        rate_limit { 100 / 1h; }
-    }
+        rate_limit { allow 100 per 1h; }
 
-    GET direct() -> Bytes;
+
+    GET direct() -> Bytes using Bytes;
     scope outer(region: String) {
-        rate_limit { 20 / 1h; }
-        GET immediate() -> Bytes;
+        rate_limit { allow 20 per 1h; }
+        GET immediate() -> Bytes using Bytes;
         scope inner(kind: String) {
-            rate_limit { 10 / 1h; }
-            GET nested() -> Bytes {
-                rate_limit { cost 2; 30 / 1h; }
+            rate_limit { allow 10 per 1h; }
+            GET nested() -> Bytes using Bytes {
+                rate_limit { cost 2; allow 30 per 1h; }
             }
         }
     }
     scope sibling(region: String) {
-        rate_limit { 7 / 1h; }
-        GET sibling_endpoint() -> Bytes {
+        rate_limit { allow 7 per 1h; }
+        GET sibling_endpoint() -> Bytes using Bytes {
             id "stable.identity.sibling";
-            rate_limit { 5 / 1h; }
+            rate_limit { allow 5 per 1h; }
         }
     }
-    GET outside() -> Bytes;
-}
+    GET outside() -> Bytes using Bytes;
+}}
 
 api! {
     client ExplicitStableRateApi {
+        timeout off;
         base "http://explicit-stable-rate.example.test/";
-    }
+
 
     scope legacy_branch() {
         rate_limit {
             id "service.shared.quota";
             cost 1;
-            2 / 1h;
+            allow 2 per 1h;
         }
-        GET first() -> Bytes;
+        GET first() -> Bytes using Bytes;
     }
 
     scope renamed_branch() {
         rate_limit {
             cost 2;
             id "service.shared.quota";
-            2 / 1h;
+            allow 2 per 1h;
         }
-        GET second() -> Bytes;
+        GET second() -> Bytes using Bytes;
     }
-}
+}}
 
 api! {
     client NamedRuleRateApi {
+        timeout off;
         base "http://named-rule-rate.example.test/";
 
         rate_limits {
-            rule account_reads {
-                by [account];
-                2 / 1h;
+            account_reads(account) {
+                key [account];
+                allow 2 per 1h;
             }
         }
-    }
+
 
     scope accounts(account: String) {
-        rate_limit use account_reads {
-            account = scope.account;
-        }
+        rate_limit account_reads(account = accounts.account);
 
-        GET read() -> Bytes;
+        GET read() -> Bytes using Bytes;
     }
 
     scope profiles(account: String) {
-        rate_limit use account_reads {
-            account = scope.account;
-        }
+        rate_limit account_reads(account = profiles.account);
 
-        GET inspect() -> Bytes;
+        GET inspect() -> Bytes using Bytes;
     }
 
-    GET lookup(account: String) -> Bytes {
-        rate_limit use account_reads {
-            account = ep.account;
-            cost 2;
-        }
+    GET lookup(account: String) -> Bytes using Bytes {
+        rate_limit account_reads(account = endpoint.account) { cost 2; }
     }
-}
+}}
 
 api! {
     client FirstSharedIdApi {
+        timeout off;
         base "http://first-shared-id.example.test/";
-    }
 
-    GET read() -> Bytes {
+
+    GET read() -> Bytes using Bytes {
         rate_limit {
             id "service.cross_contract.quota";
-            1 / 1h;
+            allow 1 per 1h;
         }
     }
-}
+}}
 
 api! {
     client SecondSharedIdApi {
+        timeout off;
         base "http://second-shared-id.example.test/";
-    }
 
-    GET renamed_read() -> Bytes {
+
+    GET renamed_read() -> Bytes using Bytes {
         rate_limit {
             id "service.cross_contract.quota";
-            1 / 1h;
+            allow 1 per 1h;
         }
     }
-}
+}}
 
 api! {
     client ClientBucketRateApi {
+        timeout off;
         base "http://client-bucket.example.test/";
-        rate_limit { 1 / 1h; }
-    }
+        rate_limit { allow 1 per 1h; }
 
-    GET direct() -> Bytes;
+
+    GET direct() -> Bytes using Bytes;
     scope descendant(value: String) {
-        GET nested() -> Bytes;
+        GET nested() -> Bytes using Bytes;
     }
-}
+}}
 
 api! {
     client ScopeBucketRateApi {
+        timeout off;
         base "http://scope-bucket.example.test/";
-        rate_limit { 100 / 1h; }
-    }
+        rate_limit { allow 100 per 1h; }
+
 
     scope branch(value: String) {
-        rate_limit { 1 / 1h; }
-        GET immediate() -> Bytes;
+        rate_limit { allow 1 per 1h; }
+        GET immediate() -> Bytes using Bytes;
         scope nested(value: String) {
-            GET descendant() -> Bytes;
+            GET descendant() -> Bytes using Bytes;
         }
     }
-    GET outside() -> Bytes;
-}
+    GET outside() -> Bytes using Bytes;
+}}
 
 api! {
     client HostBucketRateApi {
+        timeout off;
         base "http://host-bucket.example.test/";
-    }
+
 
     scope region(region: String) {
-        host [scope.region, "api"];
+        subdomain replace [region.region, "api"];
         rate_limit {
-            by [host];
-            100 / 1h;
+            key [host];
+            allow 100 per 1h;
         }
-        GET read() -> Bytes;
+        GET read() -> Bytes using Bytes;
     }
-}
+}}
 
 api! {
     client ScopeValueBucketRateApi {
+        timeout off;
         base "http://scope-value-bucket.example.test/";
-    }
+
 
     scope account(account: String) {
         rate_limit {
-            by [scope.account];
-            100 / 1h;
+            key [account.account];
+            allow 100 per 1h;
         }
-        GET read() -> Bytes;
+        GET read() -> Bytes using Bytes;
     }
-}
+}}
 
 api! {
     client CollisionRateApi {
+        timeout off;
         base "http://collision-rate.example.test/";
-    }
+
 
     scope a__b(value: String) {
-        rate_limit { 1 / 1h; }
-        GET first() -> Bytes;
+        rate_limit { allow 1 per 1h; }
+        GET first() -> Bytes using Bytes;
     }
     scope a(value: String) {
         scope b(value: String) {
-            rate_limit { 1 / 1h; }
-            GET second() -> Bytes;
+            rate_limit { allow 1 per 1h; }
+            GET second() -> Bytes using Bytes;
         }
     }
-}
+}}
 
 #[derive(Clone, Copy)]
 pub(crate) enum RouteHost {
@@ -279,76 +285,80 @@ impl Display for RouteHost {
 
 api! {
     client RouteFamilyApi {
+        timeout off;
         base "http://route-family.example.test/";
-        vars {
+        values {
             platform: crate::RouteHost = crate::RouteHost::Platform;
             regional: crate::RouteHost = crate::RouteHost::Regional;
         }
-    }
+
 
     scope platform() {
-        host [vars.platform, "api"];
-        rate_limit { 100 / 1h; }
-        GET read() -> Bytes;
+        subdomain replace [client.platform, "api"];
+        rate_limit { allow 100 per 1h; }
+        GET read() -> Bytes using Bytes;
     }
 
     scope regional() {
-        host [vars.regional, "api"];
-        rate_limit { 100 / 1h; }
-        GET read() -> Bytes;
+        subdomain replace [client.regional, "api"];
+        rate_limit { allow 100 per 1h; }
+        GET read() -> Bytes using Bytes;
     }
-}
+}}
 
 api! {
     client PartitionedRateApi {
+        timeout off;
         base "http://partitioned-rate.example.test/";
-        vars {
+        values {
             tenant: String;
         }
-    }
+
 
     scope regional(region: String) {
-        host [scope.region, "api"];
+        subdomain replace [regional.region, "api"];
 
-        GET read(resource: crate::DisplayOnly) -> Bytes {
+        GET read(resource: crate::CanonicalOnly) -> Bytes using Bytes {
             id "stable.partitioned.read";
             rate_limit {
-                by [host, endpoint, vars.tenant, scope.region, ep.resource];
-                1 / 1h;
+                key [host, endpoint, client.tenant, regional.region, endpoint.resource];
+                allow 1 per 1h;
             }
         }
     }
-}
+}}
 
 api! {
     client EndpointBucketRateApi {
+        timeout off;
         base "http://endpoint-bucket.example.test/";
         rate_limit {
-            by [endpoint];
-            100 / 1h;
+            key [endpoint];
+            allow 100 per 1h;
         }
-    }
 
-    GET first() -> Bytes {
+
+    GET first() -> Bytes using Bytes {
         id "stable.endpoint.first";
     }
 
-    GET second() -> Bytes {
+    GET second() -> Bytes using Bytes {
         id "stable.endpoint.second";
     }
-}
+}}
 
 mod nested_rate {
     use concord::api;
 
     api! {
         client NestedRateApi {
+            timeout off;
             base "http://nested-rate.example.test/";
-            rate_limit { 1 / 1s; }
-        }
+            rate_limit { allow 1 per 1s; }
 
-        GET read() -> Bytes;
-    }
+
+        GET read() -> Bytes using Bytes;
+    }}
 }
 
 mod repeated_rate {
@@ -356,29 +366,40 @@ mod repeated_rate {
 
     api! {
         client FirstRateApi {
+            timeout off;
             base "http://first-rate.example.test/";
-            rate_limit { 1 / 1s; }
-        }
+            rate_limit { allow 1 per 1s; }
 
-        GET read() -> Bytes;
-    }
+
+        GET read() -> Bytes using Bytes;
+    }}
 
     api! {
         client SecondRateApi {
+            timeout off;
             base "http://second-rate.example.test/";
-            rate_limit { 1 / 1s; }
-        }
+            rate_limit { allow 1 per 1s; }
 
-        GET read() -> Bytes;
-    }
+
+        GET read() -> Bytes using Bytes;
+    }}
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct CapturedRule {
     id: String,
-    parts: Vec<(String, String)>,
+    parts: Vec<(String, Vec<u8>)>,
     cost: u32,
     windows: Vec<(u32, std::time::Duration)>,
+}
+
+fn canonical_utf8(value: &str) -> Vec<u8> {
+    let mut encoded = Vec::with_capacity(1 + 4 + 8 + value.len());
+    encoded.push(4);
+    encoded.extend_from_slice(b"utf8");
+    encoded.extend_from_slice(&(value.len() as u64).to_be_bytes());
+    encoded.extend_from_slice(value.as_bytes());
+    encoded
 }
 
 #[derive(Default)]
@@ -500,14 +521,18 @@ fn builder() -> RateApiBuilder {
     RateApi::builder().set_tenant("tenant-west".to_owned())
 }
 
+#[cfg(feature = "rate-limit")]
+fn local_limiter() -> Arc<dyn RateLimiter> {
+    Arc::new(LocalRateLimiter::new())
+}
+
 #[test]
-fn generated_default_limiter_selection_matches_the_resolved_feature_graph() {
-    match builder().build() {
-        Ok(_client) => {}
-        Err(error) => {
-            assert_eq!(error.kind(), ClientBuildErrorKind::LimiterUnavailable);
-        }
-    }
+fn generated_rate_limited_clients_fail_closed_without_an_explicit_limiter() {
+    let error = match builder().build() {
+        Ok(_) => panic!("rate-limited client unexpectedly built without a limiter"),
+        Err(error) => error,
+    };
+    assert_eq!(error.kind(), ClientBuildErrorKind::LimiterUnavailable);
 }
 
 #[tokio::test]
@@ -656,14 +681,14 @@ async fn scope_rule_by_host_separates_hosts() {
         acquisitions[0][0].parts,
         [(
             "host".to_owned(),
-            "eu.api.host-bucket.example.test".to_owned()
+            canonical_utf8("eu.api.host-bucket.example.test")
         )]
     );
     assert_eq!(
         acquisitions[1][0].parts,
         [(
             "host".to_owned(),
-            "us.api.host-bucket.example.test".to_owned()
+            canonical_utf8("us.api.host-bucket.example.test")
         )]
     );
 }
@@ -699,11 +724,11 @@ async fn scope_rule_by_scope_value_separates_values() {
     assert_eq!(acquisitions[0][0].id, acquisitions[1][0].id);
     assert_eq!(
         acquisitions[0][0].parts,
-        [("scope.account".to_owned(), "account-a".to_owned())]
+        [("account.account".to_owned(), canonical_utf8("account-a"))]
     );
     assert_eq!(
         acquisitions[1][0].parts,
-        [("scope.account".to_owned(), "account-b".to_owned())]
+        [("account.account".to_owned(), canonical_utf8("account-b"))]
     );
 }
 
@@ -724,7 +749,7 @@ async fn composite_keys_are_ordered_and_distinct() {
         .configure_runtime(move |runtime| runtime.rate_limiter(configured))
         .build()
         .expect("partitioned-key client");
-    let display_calls = Arc::new(AtomicUsize::new(0));
+    let canonical_calls = Arc::new(AtomicUsize::new(0));
 
     for (resource, expected) in [
         ("resource-a", Bytes::from_static(b"first")),
@@ -733,35 +758,41 @@ async fn composite_keys_are_ordered_and_distinct() {
     ] {
         let output = client
             .regional("eu".to_owned())
-            .read(DisplayOnly {
+            .read(CanonicalOnly {
                 text: resource,
-                calls: Arc::clone(&display_calls),
+                calls: Arc::clone(&canonical_calls),
             })
             .await
             .expect("partitioned request");
         assert_eq!(output, expected);
     }
 
-    assert_eq!(display_calls.load(Ordering::SeqCst), 3);
+    assert_eq!(canonical_calls.load(Ordering::SeqCst), 3);
     let acquisitions = limiter.acquisitions.lock().expect("partitioned captures");
     assert_eq!(acquisitions.len(), 3);
     assert!(acquisitions.iter().all(|plan| plan.len() == 1));
-    let expected_first = vec![
-        (
-            "host".to_owned(),
-            "eu.api.partitioned-rate.example.test".to_owned(),
-        ),
-        ("endpoint".to_owned(), "stable.partitioned.read".to_owned()),
-        ("vars.tenant".to_owned(), "tenant-a".to_owned()),
-        ("scope.region".to_owned(), "eu".to_owned()),
-        ("ep.resource".to_owned(), "resource-a".to_owned()),
-    ];
-    assert_eq!(acquisitions[0][0].parts, expected_first);
+    assert_eq!(
+        acquisitions[0][0]
+            .parts
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "host",
+            "endpoint",
+            "client.tenant",
+            "regional.region",
+            "endpoint.resource",
+        ]
+    );
     assert_eq!(acquisitions[0][0].parts, acquisitions[1][0].parts);
     assert_ne!(acquisitions[0][0].parts, acquisitions[2][0].parts);
     assert_eq!(
-        acquisitions[2][0].parts.last(),
-        Some(&("ep.resource".to_owned(), "resource-b".to_owned()))
+        acquisitions[2][0]
+            .parts
+            .last()
+            .map(|(name, _)| name.as_str()),
+        Some("endpoint.resource")
     );
 }
 
@@ -774,13 +805,14 @@ async fn client_clones_share_state() {
     let client = PartitionedRateApi::builder()
         .set_tenant("tenant-a".to_owned())
         .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(|runtime| runtime.rate_limiter(local_limiter()))
         .build()
         .expect("default-limited partitioned client");
     let clone = client.clone();
 
     client
         .regional("eu".to_owned())
-        .read(DisplayOnly {
+        .read(CanonicalOnly {
             text: "resource-a",
             calls: Arc::new(AtomicUsize::new(0)),
         })
@@ -790,7 +822,7 @@ async fn client_clones_share_state() {
     let repeated = tokio::spawn(async move {
         clone
             .regional("eu".to_owned())
-            .read(DisplayOnly {
+            .read(CanonicalOnly {
                 text: "resource-a",
                 calls: Arc::new(AtomicUsize::new(0)),
             })
@@ -835,11 +867,17 @@ async fn client_rule_by_endpoint_separates_endpoints() {
     assert_eq!(acquisitions[0][0].id, acquisitions[1][0].id);
     assert_eq!(
         acquisitions[0][0].parts,
-        [("endpoint".to_owned(), "stable.endpoint.first".to_owned())]
+        [(
+            "endpoint".to_owned(),
+            canonical_utf8("stable.endpoint.first")
+        )]
     );
     assert_eq!(
         acquisitions[1][0].parts,
-        [("endpoint".to_owned(), "stable.endpoint.second".to_owned())]
+        [(
+            "endpoint".to_owned(),
+            canonical_utf8("stable.endpoint.second")
+        )]
     );
 }
 
@@ -863,7 +901,7 @@ async fn endpoint_rule_by_argument_separates_values() {
     for resource in ["resource-a", "resource-b"] {
         client
             .regional("eu".to_owned())
-            .read(DisplayOnly {
+            .read(CanonicalOnly {
                 text: resource,
                 calls: Arc::new(AtomicUsize::new(0)),
             })
@@ -878,12 +916,18 @@ async fn endpoint_rule_by_argument_separates_values() {
     assert_eq!(acquisitions[0][0].id, acquisitions[1][0].id);
     assert_ne!(acquisitions[0][0].parts, acquisitions[1][0].parts);
     assert_eq!(
-        acquisitions[0][0].parts.last(),
-        Some(&("ep.resource".to_owned(), "resource-a".to_owned()))
+        acquisitions[0][0]
+            .parts
+            .last()
+            .map(|(name, _)| name.as_str()),
+        Some("endpoint.resource")
     );
     assert_eq!(
-        acquisitions[1][0].parts.last(),
-        Some(&("ep.resource".to_owned(), "resource-b".to_owned()))
+        acquisitions[1][0]
+            .parts
+            .last()
+            .map(|(name, _)| name.as_str()),
+        Some("endpoint.resource")
     );
 }
 
@@ -904,7 +948,7 @@ async fn generated_key_limit_first_excess_is_redacted() {
         .expect("small-key-limit client");
     let error = client
         .regional("eu".to_owned())
-        .read(DisplayOnly {
+        .read(CanonicalOnly {
             text: KEY_SENTINEL,
             calls: Arc::new(AtomicUsize::new(0)),
         })
@@ -1133,7 +1177,7 @@ async fn named_rule_bindings_emit_one_stable_logical_schema_across_branches() {
     assert_eq!(acquisitions[0][0].id, acquisitions[2][0].id);
     assert_eq!(
         acquisitions[0][0].parts,
-        [("account".to_owned(), "shared-account".to_owned())]
+        [("account".to_owned(), canonical_utf8("shared-account"))]
     );
     assert_eq!(acquisitions[0][0].parts, acquisitions[1][0].parts);
     assert_eq!(acquisitions[0][0].parts, acquisitions[2][0].parts);
@@ -1157,6 +1201,7 @@ async fn named_rule_attachments_share_actual_local_limiter_bucket_state() {
             let proxy = SafeProxy::parse(server.url("")).expect("named-rule shared-state proxy");
             move |http| http.proxy(proxy)
         })
+        .configure_runtime(|runtime| runtime.rate_limiter(local_limiter()))
         .build()
         .expect("named-rule shared-state client");
 
@@ -1294,6 +1339,7 @@ async fn independent_clients_with_the_same_explicit_id_keep_isolated_state() {
             let proxy = SafeProxy::parse(server.url("")).expect("first independent proxy");
             move |http| http.proxy(proxy)
         })
+        .configure_runtime(|runtime| runtime.rate_limiter(local_limiter()))
         .build()
         .expect("first independent client");
     let second = SecondSharedIdApi::builder()
@@ -1301,6 +1347,7 @@ async fn independent_clients_with_the_same_explicit_id_keep_isolated_state() {
             let proxy = SafeProxy::parse(server.url("")).expect("second independent proxy");
             move |http| http.proxy(proxy)
         })
+        .configure_runtime(|runtime| runtime.rate_limiter(local_limiter()))
         .build()
         .expect("second independent client");
 

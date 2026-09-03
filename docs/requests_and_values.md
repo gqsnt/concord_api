@@ -1,128 +1,54 @@
 # Requests and values
 
-- **Audience:** API authors and callers
-- **Purpose:** concept guide
-- **Normative reference:** [DSL specification](spec.md)
+## Exact presence
 
-## Values are domain inputs; placement is a separate decision
+Concord never infers semantics from a Rust type name. `x?: T` adds exactly one
+outer `Option`; `x: Option<T>` remains a required payload; `x?: Option<T>` keeps
+all three omit/clear/set states. Aliases and qualified paths behave identically.
 
-A parameter may be used in a host label, path segment, query entry, public
-header, rate dimension, or pagination binding. Its Rust declaration defines
-the caller-facing value and generated controls. Its attachment clause defines
-where it appears or which policy consumes it.
+`#[default]` and stable initializers are independent from presence. The value is
+evaluated once when its owner snapshot is made and retained for reset, retries,
+recovery, and pagination.
 
-This separation keeps endpoint signatures domain-oriented while leaving wire
-mapping explicit for endpoint authors.
+## Public shaping
 
-## Required, absent, and defaulted values
+Restricted public atoms are strings, supported integers, owner-qualified
+references, and bounded `concat`. An optional slot can appear directly only in
+omission-aware query/header assignment. Redacted dependencies redact a complete
+derived atom in observed structures while preserving real wire bytes.
 
-- Required client values use builder setters.
-- Required scope and endpoint values are constructor arguments in declaration
-  order.
-- Direct `Option<T>` spellings are absence-capable.
-- Declaration defaults use `default`, supported literals, or const paths.
-- Absence and default are independent capabilities.
+Subdomain labels compose in front of the fixed DNS host. Path segments append to
+the fixed base path. Replace/off operate only on generated portions. Each value
+is validated as one label/segment and encoded once; raw authority and encoded
+segment escape hatches do not exist.
 
-Default evaluation occurs when the owning client, scope, or endpoint snapshot
-is created. Attempts and pagination pages use the retained snapshot rather than
-reevaluating defaults.
+## Ordered query patch
 
-## Public expression namespaces
+Query assignment removes all exact-key occurrences before emitting. Append
+retains prior occurrences. Remove deletes a key, replace starts empty, and off
+clears the complete public query. Key comparison is case-sensitive and source
+order is observable. `each` is the only collection-cardinality operator.
 
-- `vars.*` refers to client public values.
-- `scope.*` refers to one visible scope value.
-- `ep.*` refers to endpoint-local values.
-- `fmt[...]` constructs one formatted public atom from restricted direct atoms.
+## Header patch
 
-Generated `fmt[...]` trees are flattened and written lazily into the same
-core-owned capped formatter used by direct values. Concord does not first build
-an unbounded intermediate `String`; the first excess byte or `Display` failure
-returns a structured request-configuration error.
-
-The restricted language keeps value dependencies visible for planning,
-validation, rate-policy analysis, and security review.
-
-## Base and host
-
-`base` is one absolute HTTP or HTTPS origin with an optional base path. It
-belongs to the client contract. HTTP configuration such as TLS roots, client
-identity, proxy, or protocol selection belongs to `configure_http`.
-
-`host [...]` selects generated DNS labels and replaces inherited generated
-labels. `host off` removes them. Labels are validated independently and cannot
-inject schemes, ports, paths, or delimiters.
-
-## Path
-
-`path [...]` appends ordered atoms. `path replace [...]` replaces inherited
-generated atoms. `path off` removes them. Each atom is exactly one
-percent-encoded URL segment; dynamic values cannot smuggle `/`, `\`, `.`, or
-`..` across segment boundaries.
-
-Domain containment and wire path are related but distinct. A scope may exist
-for ownership or policy without adding a path; a path may contain literal
-protocol structure that does not deserve a public scope type.
-
-## Query
-
-A query entry maps a domain value to a remote wire name:
-
-```text
-start_time: Option<i64>
-→ "startTime" = ep.start_time
-```
-
-The caller sees `start_time`; the endpoint author sees both names; core owns
-formatting and encoding.
-
-- absent optional values append nothing;
-- an empty present string remains a present empty value;
-- vectors append one pair per element in iteration order;
-- source order is retained;
-- `query` modifies inherited entries;
-- `query replace` replaces them;
-- `remove "name"` removes one inherited name;
-- `query off` removes all generated query entries.
-
-Public query values may appear in safe plans and hooks. Private credential
-query placement is a separate `auth query` operation that exists only in the
-native URL after limiter admission.
-
-## Public headers
-
-Headers use case-insensitive identity and the same modify/replace/remove/off
-model as query entries. Transport-owned, cookie, proxy, and authentication
-headers are rejected as public headers. Authentication placement has separate
-private syntax because it must not enter public planning or observation.
+Header assignment/removal uses case-insensitive identity. Optional absence on
+assignment removes inherited values. Header append is intentionally absent.
+Transport/private/cookie/media-owned fields are reserved. Body and response
+specifications own `Content-Type` and default `Accept` respectively.
 
 ## Timeout selection
 
-A DSL timeout has three states:
+Every root declares a duration or `timeout off`. Descendants inherit by omission
+and may select their own duration/off. Request controls can explicitly override,
+disable, or restore the endpoint's inherited selection. The resulting deadline
+covers the complete terminal, including every pagination page.
 
-- omission: inherit;
-- `timeout DURATION`: explicit selection;
-- `timeout off`: explicit disablement.
+## Planning
 
-Generated request controls can override, disable, or re-inherit the endpoint
-selection. Retry is application runtime policy and therefore belongs to the
-client builder, not the endpoint grammar.
+`request.plan()` borrows the inert request and may run bounded public formatting
+and validation. It never inspects body values, resolves credentials, acquires a
+limiter, invokes execution gates/observers, allocates operation identity, or
+performs I/O. `observed_url()` and sanitized headers may differ from real public
+wire values when redaction is present.
 
-## Guardrails produced from request information
-
-Structured placement enables:
-
-- exact percent encoding and bounded construction;
-- static validation for literal hosts, paths, names, and collisions;
-- runtime validation for dynamic formatted values;
-- public/private information separation;
-- safe request planning;
-- canonical pagination identity;
-- pagination/rate dependency checks;
-- deterministic source-order preservation.
-
-## Unsupported shapes
-
-Concord deliberately does not expose arbitrary raw URL mutation or native
-request callbacks. APIs requiring nonstandard query separators, raw
-pre-encoded path bytes, or signing over the final native serialization may
-need a lower-level transport or a separately designed semantic extension.
+See the exact [DSL rules](spec.md) and [planning model](planning_and_observation.md).

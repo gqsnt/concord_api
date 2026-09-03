@@ -5,24 +5,11 @@ pub(super) fn generate_endpoint_method(
     scopes: &[&Scope],
     endpoint: &Endpoint,
     on_client: bool,
-    facade_path: &TokenStream,
 ) -> TokenStream {
     let method = &endpoint.surface.method_name;
     let endpoint_type = &endpoint.surface.endpoint_type_name;
     let request_type = &endpoint.surface.request_type_name;
-    let invocation_path = if on_client {
-        quote!(super)
-    } else {
-        super_chain(scopes.len() + 1)
-    };
-    let specification_module = specification_module_name(client);
-    let body_type = endpoint.body.as_ref().map(|_| {
-        let body_specification = body_specification_name(endpoint);
-        quote!(
-            <#invocation_path::#specification_module::#body_specification
-                as #facade_path::body::RequestBodySpec>::Input
-        )
-    });
+    let body_type = endpoint.body.as_ref().map(|body| &body.input_type);
     let parameters = endpoint
         .surface
         .required_arguments
@@ -31,7 +18,7 @@ pub(super) fn generate_endpoint_method(
             RequiredArgument::Parameter(index) => {
                 let value = &endpoint.parameters[*index];
                 let name = &value.name;
-                let ty = &value.ty;
+                let ty = &value.effective_type;
                 quote!(#name: #ty,)
             }
             RequiredArgument::Body => {
@@ -63,7 +50,7 @@ pub(super) fn generate_endpoint_method(
     } else {
         quote!(&self.__concord_client)
     };
-    let endpoint_doc = endpoint_method_doc(endpoint);
+    let endpoint_doc = endpoint_method_doc(client, scopes, endpoint);
     quote! {
         #[must_use]
         #[doc = #endpoint_doc]
@@ -99,9 +86,8 @@ pub(super) fn generate_endpoint(
     let response_specification = response_specification_name(endpoint);
     let response = quote!(#invocation_path::#specification_module::#response_specification);
     let (description_static, description_declaration) =
-        generate_endpoint_description(endpoint, &response, facade_path);
-    let endpoint_doc = endpoint_type_doc(endpoint);
-    let constructor_doc = endpoint_constructor_doc(endpoint);
+        generate_endpoint_description(client, scopes, endpoint, &response, facade_path);
+    let endpoint_doc = endpoint_type_doc(client, scopes, endpoint);
 
     let scope_fields = endpoint_scope_fields(scopes);
     let endpoint_fields = endpoint_value_fields(endpoint);
@@ -112,7 +98,13 @@ pub(super) fn generate_endpoint(
             quote!(#invocation_path::#specification_module::#body_specification)
         },
     );
-    let body_input = request_body_input_type(&body_type, facade_path);
+    let body_input = endpoint.body.as_ref().map_or_else(
+        || quote!(()),
+        |body| {
+            let input = &body.input_type;
+            quote!(#input)
+        },
+    );
     let body_storage = Ident::new("BodyInput", Span::mixed_site());
     let (struct_generics, body_field) = match endpoint.surface.clone_eligibility {
         CloneEligibility::Always => (quote!(), quote!(__concord_body: #body_input,)),
@@ -128,31 +120,10 @@ pub(super) fn generate_endpoint(
         __concord_credentials: ::std::option::Option<::std::sync::Arc<#invocation_path::#credentials_store>>,
     );
 
-    let (scope_bindings, endpoint_bindings, body_binding) =
-        explicit_parameter_bindings(scopes, endpoint);
-    let explicit_parameters = explicit_constructor_parameters(
-        scopes,
-        endpoint,
-        &scope_bindings,
-        &endpoint_bindings,
-        body_binding.as_ref(),
-        &body_type,
-        facade_path,
-    );
-    let explicit_initialization = initialize_explicit_endpoint(
-        scopes,
-        endpoint,
-        &scope_bindings,
-        &endpoint_bindings,
-        body_binding.as_ref(),
-        &generated_core,
-        facade_path,
-    );
-    let facade_parameters =
-        endpoint_facade_constructor_parameters(scopes, endpoint, &body_type, facade_path);
+    let facade_parameters = endpoint_facade_constructor_parameters(scopes, endpoint);
     let facade_initialization =
         initialize_facade_endpoint(scopes, endpoint, &generated_core, facade_path);
-    let inherent_setters = generate_explicit_endpoint_setters(scopes, endpoint);
+    let inherent_setters = generate_endpoint_setters(endpoint);
     let clone_fields = endpoint_clone_field_initializers(scopes, endpoint);
     let clone_attribute = matches!(endpoint.surface.clone_eligibility, CloneEligibility::Always)
         .then(|| quote!(#[derive(Clone)]));
@@ -190,26 +161,11 @@ pub(super) fn generate_endpoint(
         }
     };
 
-    let default_impl = (scopes
-        .iter()
-        .flat_map(|scope| scope.parameters.iter())
-        .all(|value| !value.is_required())
-        && endpoint.parameters.iter().all(|value| !value.is_required())
-        && endpoint.body.is_none())
-    .then(|| {
-        quote! {
-            impl ::std::default::Default for #endpoint_name {
-                fn default() -> Self {
-                    Self::new()
-                }
-            }
-        }
-    });
-
     let host_statements = host_statements(client, scopes, endpoint);
     let path_statements = path_statements(client, scopes, endpoint);
     let query_statements = query_statements(client, scopes, endpoint);
     let header_statements = header_statements(client, scopes, endpoint);
+    let accept_statements = accept_statements(client, scopes, endpoint);
     let auth_statements = auth_statements(client, endpoint, facade_path);
     let rate_limit_statements =
         rate_limit_statements(client, scopes, endpoint, facade_path, &invocation_path);
@@ -231,6 +187,7 @@ pub(super) fn generate_endpoint(
     );
     let request_wrapper = generate_request_wrapper(
         client,
+        scopes,
         endpoint,
         RequestBridge {
             support_path: &support_path,
@@ -264,13 +221,7 @@ pub(super) fn generate_endpoint(
         #clone_impl
 
         impl #endpoint_name {
-            #[must_use]
-            #[doc = #constructor_doc]
-            pub fn new(#explicit_parameters) -> Self {
-                #explicit_initialization
-            }
-
-            /// Returns this endpoint's safe static contract description.
+            /// Returns this endpoint's credential-free static contract description.
             #[must_use]
             pub fn description(
                 &self,
@@ -285,7 +236,6 @@ pub(super) fn generate_endpoint(
         }
 
         #setter_impl
-        #default_impl
 
         #[doc(hidden)]
         impl #support_path::__concord_endpoint_seal::Sealed for #endpoint_name {}
@@ -309,6 +259,7 @@ pub(super) fn generate_endpoint(
                 #path_statements
                 #query_statements
                 #header_statements
+                #accept_statements
                 #auth_statements
                 #rate_limit_statements
                 __concord_builder.finish()
@@ -350,13 +301,13 @@ pub(super) fn generate_endpoint(
                 &self,
                 client: &#invocation_path::#client_name,
             ) -> ::std::result::Result<
-                #facade_path::endpoint::SafeRequestPlan,
+                #facade_path::endpoint::CredentialFreeRequestPlan,
                 #facade_path::ApiError,
             > {
-                #generated_core::__private::safe_request_plan(
+                #generated_core::__private::credential_free_request_plan(
                     &client.__concord_core,
                     ::std::sync::LazyLock::force(&#description_static),
-                    <#response as #facade_path::response::ResponseBodySpec>::accept(),
+                    <#response as #facade_path::response::ResponseSpec>::accept(),
                     |builder| self.__concord_prepare_head(
                         &client.__concord_values,
                         &client.__concord_credentials,
@@ -436,7 +387,7 @@ pub(super) fn endpoint_scope_fields(scopes: &[&Scope]) -> TokenStream {
                 .enumerate()
                 .flat_map(move |(index, value)| {
                     let field = scope_value_field(scope.id, index, value);
-                    let ty = &value.ty;
+                    let ty = &value.effective_type;
                     let mut fields = vec![quote!(#field: ::std::sync::Arc<#ty>,)];
                     if value.default().is_some() {
                         let default = scope_default_field(scope.id, index, value);
@@ -456,7 +407,7 @@ pub(super) fn endpoint_value_fields(endpoint: &Endpoint) -> TokenStream {
         .enumerate()
         .flat_map(|(index, value)| {
             let field = endpoint_value_field(index, value);
-            let ty = &value.ty;
+            let ty = &value.effective_type;
             let mut fields = vec![quote!(#field: ::std::sync::Arc<#ty>,)];
             if value.default().is_some() {
                 let default = endpoint_default_field(index, value);
@@ -484,7 +435,7 @@ pub(super) fn generate_pagination_impl(
     let specification_module = specification_module_name(client);
     let response_specification = response_specification_name(endpoint);
     let response = quote!(#invocation_path::#specification_module::#response_specification);
-    let page_type = quote!(<#response as #facade_path::response::ResponseBodySpec>::Output);
+    let page_type = quote!(<#response as #facade_path::response::ResponseSpec>::Output);
     let controller = &pagination.controller;
     let controller_type = pagination_controller_type(controller, invocation_path, false);
     let controller_fields = pagination
@@ -615,144 +566,9 @@ pub(super) fn pagination_controller_type(
     }
 }
 
-pub(super) fn explicit_constructor_parameters(
-    scopes: &[&Scope],
-    endpoint: &Endpoint,
-    scope_bindings: &[Ident],
-    endpoint_bindings: &[Ident],
-    body_binding: Option<&Ident>,
-    body_specification: &TokenStream,
-    facade_path: &TokenStream,
-) -> TokenStream {
-    let mut scope_index = 0;
-    let scope_parameters = scopes
-        .iter()
-        .flat_map(|scope| scope.parameters.iter())
-        .filter(|value| value.is_required())
-        .map(|value| {
-            let binding = &scope_bindings[scope_index];
-            scope_index += 1;
-            let ty = &value.ty;
-            quote!(#binding: #ty,)
-        })
-        .collect::<Vec<_>>();
-    let endpoint_parameters = endpoint
-        .surface
-        .required_arguments
-        .iter()
-        .map(|argument| match argument {
-            RequiredArgument::Parameter(index) => {
-                let value = &endpoint.parameters[*index];
-                let binding_index = endpoint
-                    .parameters
-                    .iter()
-                    .take(*index + 1)
-                    .filter(|value| value.is_required())
-                    .count()
-                    - 1;
-                let binding = &endpoint_bindings[binding_index];
-                let ty = &value.ty;
-                quote!(#binding: #ty,)
-            }
-            RequiredArgument::Body => {
-                let binding = body_binding.expect("body binding");
-                let ty = request_body_input_type(body_specification, facade_path);
-                quote!(#binding: #ty,)
-            }
-        })
-        .collect::<Vec<_>>();
-    quote!(#(#scope_parameters)* #(#endpoint_parameters)*)
-}
-
-pub(super) fn initialize_explicit_endpoint(
-    scopes: &[&Scope],
-    endpoint: &Endpoint,
-    scope_bindings: &[Ident],
-    endpoint_bindings: &[Ident],
-    body_binding: Option<&Ident>,
-    generated_core: &TokenStream,
-    facade_path: &TokenStream,
-) -> TokenStream {
-    let mut scope_binding_index = 0;
-    let scope_statements = scopes
-        .iter()
-        .flat_map(|scope| {
-            scope.parameters.iter().enumerate().map(move |(index, value)| {
-                (scope.id, index, value)
-            })
-        })
-        .map(|(scope_id, index, value)| {
-            let field = scope_value_field(scope_id, index, value);
-            let ty = &value.ty;
-            if value.is_required() {
-                let binding = &scope_bindings[scope_binding_index];
-                scope_binding_index += 1;
-                quote!(let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(#binding);)
-            } else if value.is_optional() {
-                quote!(let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(::std::option::Option::None);)
-            } else {
-                let retained = scope_default_field(scope_id, index, value);
-                let default = default_expr(value.default().expect("default"));
-                quote! {
-                    let #retained: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(#default);
-                    let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::clone(&#retained);
-                }
-            }
-        })
-        .collect::<Vec<_>>();
-    let endpoint_statements = endpoint
-        .parameters
-        .iter()
-        .enumerate()
-        .map(|(index, value)| {
-            let field = endpoint_value_field(index, value);
-            let ty = &value.ty;
-            if value.is_required() {
-                let binding_index = endpoint
-                    .parameters
-                    .iter()
-                    .take(index + 1)
-                    .filter(|value| value.is_required())
-                    .count()
-                    - 1;
-                let binding = &endpoint_bindings[binding_index];
-                quote!(let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(#binding);)
-            } else if value.is_optional() {
-                quote!(let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(::std::option::Option::None);)
-            } else {
-                let retained = endpoint_default_field(index, value);
-                let default = default_expr(value.default().expect("default"));
-                quote! {
-                    let #retained: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(#default);
-                    let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::clone(&#retained);
-                }
-            }
-        })
-        .collect::<Vec<_>>();
-    let fields = endpoint_all_snapshot_field_initializers(scopes, endpoint);
-    let body = body_constructor(
-        endpoint.body.as_ref().map(|body| &body.ty),
-        body_binding,
-        generated_core,
-        facade_path,
-    );
-    quote! {
-        #(#scope_statements)*
-        #(#endpoint_statements)*
-        Self {
-            __concord_client_values: ::std::option::Option::None,
-            __concord_credentials: ::std::option::Option::None,
-            #fields
-            __concord_body: #body,
-        }
-    }
-}
-
 pub(super) fn endpoint_facade_constructor_parameters(
     scopes: &[&Scope],
     endpoint: &Endpoint,
-    body_specification: &TokenStream,
-    facade_path: &TokenStream,
 ) -> TokenStream {
     let scope_parameters = facade_scope_fields_as_parameters(scopes);
     let endpoint_parameters = endpoint
@@ -763,11 +579,11 @@ pub(super) fn endpoint_facade_constructor_parameters(
             RequiredArgument::Parameter(index) => {
                 let value = &endpoint.parameters[*index];
                 let binding = endpoint_constructor_binding(*index, value);
-                let ty = &value.ty;
+                let ty = &value.effective_type;
                 quote!(#binding: #ty,)
             }
             RequiredArgument::Body => {
-                let ty = request_body_input_type(body_specification, facade_path);
+                let ty = &endpoint.body.as_ref().expect("body input").input_type;
                 quote!(__concord_body_input: #ty,)
             }
         })
@@ -787,19 +603,20 @@ pub(super) fn initialize_facade_endpoint(
         .enumerate()
         .map(|(index, value)| {
             let field = endpoint_value_field(index, value);
-            let ty = &value.ty;
+            let ty = &value.effective_type;
             if value.is_required() {
                 let binding = endpoint_constructor_binding(index, value);
                 quote!(let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(#binding);)
-            } else if value.is_optional() {
-                quote!(let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(::std::option::Option::None);)
-            } else {
+            } else if value.has_default() {
                 let retained = endpoint_default_field(index, value);
-                let default = default_expr(value.default().expect("default"));
+                let default = retained_default_expr(value);
                 quote! {
                     let #retained: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(#default);
                     let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::clone(&#retained);
                 }
+            } else {
+                debug_assert!(value.is_optional());
+                quote!(let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(::std::option::Option::None);)
             }
         })
         .collect::<Vec<_>>();
@@ -840,7 +657,7 @@ pub(super) fn initialize_facade_endpoint(
         .as_ref()
         .map(|_| Ident::new("__concord_body_input", Span::call_site()));
     let body = body_constructor(
-        endpoint.body.as_ref().map(|body| &body.ty),
+        endpoint.body.as_ref().map(|body| &body.spec_type),
         body_binding.as_ref(),
         generated_core,
         facade_path,
@@ -855,46 +672,6 @@ pub(super) fn initialize_facade_endpoint(
             __concord_body: #body,
         }
     }
-}
-
-pub(super) fn endpoint_all_snapshot_field_initializers(
-    scopes: &[&Scope],
-    endpoint: &Endpoint,
-) -> TokenStream {
-    let scope_fields = scopes
-        .iter()
-        .flat_map(|scope| {
-            scope
-                .parameters
-                .iter()
-                .enumerate()
-                .flat_map(move |(index, value)| {
-                    let field = scope_value_field(scope.id, index, value);
-                    let mut values = vec![quote!(#field,)];
-                    if value.default().is_some() {
-                        let default = scope_default_field(scope.id, index, value);
-                        values.push(quote!(#default,));
-                    }
-                    values
-                })
-        })
-        .chain(
-            endpoint
-                .parameters
-                .iter()
-                .enumerate()
-                .flat_map(|(index, value)| {
-                    let field = endpoint_value_field(index, value);
-                    let mut values = vec![quote!(#field,)];
-                    if value.default().is_some() {
-                        let default = endpoint_default_field(index, value);
-                        values.push(quote!(#default,));
-                    }
-                    values
-                }),
-        )
-        .collect::<Vec<_>>();
-    quote!(#(#scope_fields)*)
 }
 
 pub(super) fn endpoint_clone_field_initializers(
@@ -942,29 +719,7 @@ pub(super) fn endpoint_clone_field_initializers(
     }
 }
 
-pub(super) fn generate_explicit_endpoint_setters(
-    scopes: &[&Scope],
-    endpoint: &Endpoint,
-) -> TokenStream {
-    let scope_setters = scopes
-        .iter()
-        .flat_map(|scope| {
-            scope
-                .parameters
-                .iter()
-                .enumerate()
-                .filter(|(_, value)| !value.is_required())
-                .map(move |(index, value)| {
-                    generate_endpoint_snapshot_setters(
-                        value,
-                        scope_value_field(scope.id, index, value),
-                        value
-                            .default()
-                            .map(|_| scope_default_field(scope.id, index, value)),
-                    )
-                })
-        })
-        .collect::<Vec<_>>();
+pub(super) fn generate_endpoint_setters(endpoint: &Endpoint) -> TokenStream {
     let endpoint_setters = endpoint
         .parameters
         .iter()
@@ -980,7 +735,7 @@ pub(super) fn generate_explicit_endpoint_setters(
             )
         })
         .collect::<Vec<_>>();
-    quote!(#(#scope_setters)* #(#endpoint_setters)*)
+    quote!(#(#endpoint_setters)*)
 }
 
 pub(super) fn generate_endpoint_snapshot_setters(
@@ -990,31 +745,38 @@ pub(super) fn generate_endpoint_snapshot_setters(
 ) -> TokenStream {
     let setter = value_setter_ident(&value.name);
     let ty = value.setter_argument_type();
-    let selected_value = if value.accepts_absence() {
-        quote!(::std::option::Option::Some(value))
-    } else {
-        quote!(value)
-    };
+    let selected_value = quote!(value);
+    let with = value.accepts_absence().then(|| {
+        let method = helper_ident("with", &value.name);
+        let payload_type = value.with_argument_type();
+        quote! {
+            #[must_use]
+            pub fn #method(mut self, value: #payload_type) -> Self {
+                self.#field = ::std::sync::Arc::new(::std::option::Option::Some(value));
+                self
+            }
+        }
+    });
     let setter_doc = if value.accepts_absence() && value.has_default() {
         format!(
-            "Returns a new explicit endpoint snapshot selecting a present value for defaulted absence-capable value `{}`.",
+            "Returns a new unbound endpoint intent selecting a present value for defaulted absence-capable value `{}`.",
             canonical_ident(&value.name)
         )
     } else if value.accepts_absence() {
         format!(
-            "Returns a new explicit endpoint snapshot selecting a present value for absence-capable value `{}`.",
+            "Returns a new unbound endpoint intent selecting a present value for absence-capable value `{}`.",
             canonical_ident(&value.name)
         )
     } else {
         format!(
-            "Returns a new explicit endpoint snapshot overriding defaulted value `{}`.",
+            "Returns a new unbound endpoint intent overriding defaulted value `{}`.",
             canonical_ident(&value.name)
         )
     };
     let clear = value.accepts_absence().then(|| {
         let clear = helper_ident("clear", &value.name);
         let clear_doc = format!(
-            "Returns a new explicit endpoint snapshot explicitly selecting absence for absence-capable value `{}`.",
+            "Returns a new unbound endpoint intent explicitly selecting absence for absence-capable value `{}`.",
             canonical_ident(&value.name)
         );
         quote! {
@@ -1030,7 +792,7 @@ pub(super) fn generate_endpoint_snapshot_setters(
         let reset = helper_ident("reset", &value.name);
         let default = default.expect("default field");
         let reset_doc = format!(
-            "Returns a new explicit endpoint snapshot restoring the retained `{}` default without re-evaluation.",
+            "Returns a new unbound endpoint intent restoring the retained `{}` default without re-evaluation.",
             canonical_ident(&value.name)
         );
         quote! {
@@ -1050,6 +812,7 @@ pub(super) fn generate_endpoint_snapshot_setters(
             self
         }
 
+        #with
         #clear
         #reset
     }

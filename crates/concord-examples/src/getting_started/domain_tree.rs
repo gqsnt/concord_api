@@ -34,36 +34,37 @@ pub struct ItemSummary {
 // ANCHOR: domain_tree_contract
 api! {
     client CatalogApi {
+        timeout off;
         base "http://catalog.example.test/";
-        vars {
+        values {
             tenant: String;
         }
         path ["api"];
-        query { "tenant" = vars.tenant; }
-    }
+        query { "tenant" = client.tenant; }
+
 
     scope regional(region: String) {
-        host [scope.region, "api"];
+        subdomain replace [regional.region, "api"];
         path ["v1", "catalog"];
 
         GET item_summaries(
-            category: Option<String>,
+            category?: String,
             offset: u64 = 0,
             count: std::num::NonZeroU32 = DEFAULT_PAGE_SIZE,
-        ) -> Json<Vec<ItemSummary>> {
+        ) -> Vec<ItemSummary> using Json<Vec<ItemSummary>> {
             path ["items"];
             query {
-                "category" = ep.category;
-                "offset" = ep.offset;
-                "count" = ep.count;
+                "category" = endpoint.category;
+                "offset" = endpoint.offset;
+                "count" = endpoint.count;
             }
-            paginate concord::pagination::OffsetPagination {
-                offset: bind ep.offset,
-                page_size: bind ep.count,
+            paginate with concord::pagination::OffsetPagination {
+                offset -> endpoint.offset;
+                page_size -> endpoint.count;
             }
         }
     }
-}
+}}
 // ANCHOR_END: domain_tree_contract
 
 /// Builds the example client and constructs a bounded paginated request.
@@ -76,9 +77,9 @@ pub fn construct() -> Result<(), concord::ClientBuildError> {
     let _: PaginatedRequest<_> = client
         .regional("eu".to_owned())
         .item_summaries()
-        .set_category("hardware".to_owned())
+        .with_category("hardware".to_owned())
         .set_count(NonZeroU32::new(50).expect("positive page size"))
-        .paginate(PageLimit::Take(2));
+        .paginate(PageLimit::Prefix(2));
     Ok(())
 }
 // ANCHOR_END: domain_tree_usage
@@ -92,13 +93,13 @@ pub async fn execute(client: &CatalogApi) -> Result<(usize, usize), concord::Api
     let one_page: Vec<ItemSummary> = client
         .regional("eu".to_owned())
         .item_summaries()
-        .set_category("hardware".to_owned())
+        .with_category("hardware".to_owned())
         .await?;
 
     let first_two_pages: Vec<ItemSummary> = client
         .regional("eu".to_owned())
         .item_summaries()
-        .paginate(PageLimit::Take(2))
+        .paginate(PageLimit::Prefix(2))
         .await?;
 
     Ok((one_page.len(), first_two_pages.len()))

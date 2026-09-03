@@ -1,5 +1,5 @@
-error: rate-limit dimension `account` bound to `vars.account` must be a required or defaulted scalar; optional values are unsupported
-  --> tests/ui/fail/rate_limits/rate_limit_named_optional_binding.rs:16:28
+error: rate-limit dimension `account` bound to `client.account` cannot use a Concord-optional slot
+  --> tests/ui/fail/rate_limits/rate_limit_named_optional_binding.rs:16:51
    |
-16 |             account = vars.account;
-   |                            ^^^^^^^
+16 |         rate_limit account_reads(account = client.account);
+   |                                                   ^^^^^^^

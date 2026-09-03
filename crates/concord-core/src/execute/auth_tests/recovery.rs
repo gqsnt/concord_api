@@ -6,7 +6,7 @@ static NEVER_CHALLENGE_ACCEPTANCE_CALLS: AtomicUsize = AtomicUsize::new(0);
 
 struct ChallengePrecedenceAcceptance;
 
-impl ResponseBodySpec for ChallengePrecedenceAcceptance {
+impl ResponseSpec for ChallengePrecedenceAcceptance {
     type Output = Bytes;
     type Mode = Buffered;
 
@@ -22,7 +22,7 @@ impl ResponseBodySpec for ChallengePrecedenceAcceptance {
 
 struct NeverChallengeAcceptance;
 
-impl ResponseBodySpec for NeverChallengeAcceptance {
+impl ResponseSpec for NeverChallengeAcceptance {
     type Output = Bytes;
     type Mode = Buffered;
 
@@ -53,7 +53,7 @@ async fn attributable_challenge_precedes_declared_status_acceptance() {
         EndpointId::from_static("runtime.challenge_precedence"),
         Method::GET,
     )
-    .path_segment("challenge-precedence")
+    .path("challenge-precedence")
     .auth(
         Auth::bearer(CredentialRef::new(Arc::clone(&selector)))
             .challenge(ChallengePolicy::Unauthorized),
@@ -90,7 +90,7 @@ async fn challenge_never_allows_the_response_specification_to_accept_401() {
         EndpointId::from_static("runtime.challenge_never_acceptance"),
         Method::GET,
     )
-    .path_segment("challenge-never-acceptance")
+    .path("challenge-never-acceptance")
     .auth(Auth::bearer(CredentialRef::new(Arc::clone(&selector))).challenge(ChallengePolicy::Never))
     .response::<NeverChallengeAcceptance>()
     .build()
@@ -146,13 +146,13 @@ async fn custom_authorization_recovery_rechecks_exact_current_and_rerenders_sche
         EndpointId::from_static("runtime.custom_authorization_recovery"),
         Method::GET,
     )
-    .path_segment("custom-authorization-recovery")
+    .path("custom-authorization-recovery")
     .auth(
         Auth::authorization_with_scheme("tOkEn", CredentialRef::new(selector))
             .expect("valid static Authorization scheme")
             .challenge(ChallengePolicy::Unauthorized),
     )
-    .response_bytes()
+    .accepted_bytes()
     .build()
     .expect("custom Authorization recovery endpoint");
 
@@ -208,12 +208,12 @@ async fn custom_authorization_is_absent_from_retry_classifier_and_safe_diagnosti
         EndpointId::from_static("runtime.custom_authorization_retry"),
         Method::GET,
     )
-    .path_segment("custom-authorization-retry")
+    .path("custom-authorization-retry")
     .auth(
         Auth::authorization_with_scheme("Token", CredentialRef::new(selector))
             .expect("valid static Authorization scheme"),
     )
-    .response_bytes()
+    .accepted_bytes()
     .build()
     .expect("custom Authorization retry endpoint");
 
@@ -229,7 +229,7 @@ async fn custom_authorization_is_absent_from_retry_classifier_and_safe_diagnosti
             .lock()
             .expect("before hooks")
             .iter()
-            .all(|record| !record.safe_url.contains(SENTINEL))
+            .all(|record| !record.observed_url.contains(SENTINEL))
     );
 
     let diagnostics = format!(
@@ -752,7 +752,9 @@ async fn paginated_tls_recovery_reuses_lexical_plan_across_recovery_and_later_pa
             .http1_only()
             .add_root_certificate_pem(server.certificate_pem()),
         RuntimeConfigBuilder::new()
-            .hooks(hooks.clone())
+            .request_gate(hooks.clone())
+            .response_gate(hooks.clone())
+            .completion_observer(hooks.clone())
             .rate_limiter(limiter),
     )
     .expect("managed TLS pagination core");
@@ -765,7 +767,7 @@ async fn paginated_tls_recovery_reuses_lexical_plan_across_recovery_and_later_pa
                 page: 0,
             },
         ),
-        PageLimit::Take(2),
+        PageLimit::Prefix(2),
     )
     .await
     .expect("paginated authentication recovery");
@@ -864,21 +866,13 @@ async fn paginated_tls_recovery_reuses_lexical_plan_across_recovery_and_later_pa
     assert_eq!(responses[0].3, responses[2].3);
     drop(responses);
 
-    let completion = hooks.completion.lock().expect("completion records");
-    assert_eq!(completion.len(), 2);
-    assert_eq!(completion[0].0, before[0].operation_id);
-    assert!(completion[0].1);
-    assert_eq!(completion[0].2, Some(StatusCode::OK));
-    assert_eq!(completion[0].3, before[0].parent_operation_id);
-    assert_eq!(completion[0].4, 0);
-    assert_eq!((completion[0].6, completion[0].7), (2, 0));
-    assert_eq!(completion[1].0, before[2].operation_id);
-    assert!(!completion[1].1);
-    assert_eq!(completion[1].2, Some(StatusCode::OK));
-    assert_eq!(completion[1].3, before[2].parent_operation_id);
-    assert_eq!(completion[1].4, 1);
-    assert_eq!((completion[1].6, completion[1].7), (1, 0));
-    drop(completion);
+    assert!(
+        hooks
+            .completion
+            .lock()
+            .expect("completion records")
+            .is_empty()
+    );
 
     let pagination = hooks.pagination.lock().expect("pagination records");
     assert_eq!(pagination.len(), 1);
@@ -907,7 +901,7 @@ async fn paginated_authentication_failure_keeps_its_ordinary_category_and_correl
                     page: 0,
                 },
             ),
-            PageLimit::Take(1),
+            PageLimit::Prefix(1),
         )
         .await,
     );
@@ -919,22 +913,19 @@ async fn paginated_authentication_failure_keeps_its_ordinary_category_and_correl
     let before = hooks.before.lock().expect("before records");
     assert_eq!(before.len(), 1);
     assert!(before[0].parent_operation_id.is_some());
-    let page_operation_id = before[0].operation_id;
     let aggregate_operation_id = before[0]
         .parent_operation_id
         .expect("pagination parent operation");
     drop(before);
 
     assert!(hooks.response.lock().expect("response records").is_empty());
-    let completion = hooks.completion.lock().expect("completion records");
-    assert_eq!(completion.len(), 1);
-    assert_eq!(completion[0].0, page_operation_id);
-    assert_eq!(completion[0].2, None);
-    assert_eq!(completion[0].3, Some(aggregate_operation_id));
-    assert_eq!(completion[0].4, 0);
-    assert_eq!(completion[0].5, CompletionOutcome::AuthenticationProvider);
-    assert_eq!((completion[0].6, completion[0].7), (1, 0));
-    drop(completion);
+    assert!(
+        hooks
+            .completion
+            .lock()
+            .expect("completion records")
+            .is_empty()
+    );
 
     let pagination = hooks.pagination.lock().expect("pagination records");
     assert_eq!(pagination.len(), 1);
@@ -1048,11 +1039,11 @@ async fn challenge_recovery_still_observes_each_received_response_once() {
     );
     for record in before {
         assert_eq!(
-            record.safe_url,
+            record.observed_url,
             "https://protected.example.test/v1/protected"
         );
-        assert!(!record.safe_url.contains(INITIAL));
-        assert!(!record.safe_url.contains(REFRESHED));
+        assert!(!record.observed_url.contains(INITIAL));
+        assert!(!record.observed_url.contains(REFRESHED));
     }
     let responses = hooks.response.lock().expect("response records");
     assert_eq!(responses.len(), 2);
@@ -1074,7 +1065,7 @@ async fn challenge_recovery_still_observes_each_received_response_once() {
     assert!(!rendered.contains(REFRESHED));
     let captures = executor.application().captures().expect("captures");
     assert!(captures.iter().all(|capture| {
-        capture.safe_url() == Some("https://protected.example.test/v1/protected")
+        capture.observed_url() == Some("https://protected.example.test/v1/protected")
             && capture.headers().iter().any(|header| {
                 header.name() == AUTHORIZATION && header.value() == &CapturedHeaderValue::Redacted
             })
@@ -1084,7 +1075,7 @@ async fn challenge_recovery_still_observes_each_received_response_once() {
 }
 
 #[tokio::test]
-async fn response_bytes_preserves_authentication_recovery_and_logical_native_url_separation() {
+async fn accepted_bytes_preserves_authentication_recovery_and_logical_native_url_separation() {
     let executor = DeterministicExecutor::new();
     let challenge_body_polls = Arc::new(AtomicUsize::new(0));
     executor
@@ -1153,7 +1144,7 @@ async fn response_bytes_preserves_authentication_recovery_and_logical_native_url
         ChallengePolicy::Unauthorized,
         RequestBody::bytes(Bytes::from_static(b"raw-auth-body")),
     )
-    .response_bytes()
+    .accepted_bytes()
     .await
     .expect("response bytes after one authentication recovery");
     assert_eq!(response.value(), b"raw-auth-success-secret".as_slice());
@@ -1170,7 +1161,7 @@ async fn response_bytes_preserves_authentication_recovery_and_logical_native_url
     assert_eq!(challenge_body_polls.load(Ordering::SeqCst), 0);
 
     let query_response = query_request(core.clone(), &selector)
-        .response_bytes()
+        .accepted_bytes()
         .await
         .expect("response-bytes query-auth response");
     assert_eq!(query_response.value(), b"raw-query-success".as_slice());
@@ -1193,9 +1184,9 @@ async fn response_bytes_preserves_authentication_recovery_and_logical_native_url
         ]
     );
     assert!(before.iter().all(|record| {
-        !record.safe_url.contains(INITIAL)
-            && !record.safe_url.contains(REFRESHED)
-            && !record.safe_url.contains("access=")
+        !record.observed_url.contains(INITIAL)
+            && !record.observed_url.contains(REFRESHED)
+            && !record.observed_url.contains("access=")
     }));
     drop(before);
     let completion = hooks.completion.lock().expect("completion records");
@@ -1301,7 +1292,7 @@ async fn prepared_codec_recovery_reuses_encoding_and_reenters_the_ordinary_limit
     let encode_calls = Arc::new(AtomicUsize::new(0));
     let endpoint =
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.protected"), Method::POST)
-            .path_segment("prepared")
+            .path("prepared")
             .query("session_token", PUBLIC_QUERY)
             .header(
                 http::HeaderName::from_static("x-sensitive-token"),
@@ -1315,7 +1306,7 @@ async fn prepared_codec_recovery_reuses_encoding_and_reenters_the_ordinary_limit
                     .challenge(ChallengePolicy::Unauthorized),
             )
             .rate_limit(prepared_rate_rule())
-            .response_bytes()
+            .accepted_bytes()
             .build()
             .expect("prepared protected endpoint");
 
@@ -1343,10 +1334,11 @@ async fn prepared_codec_recovery_reuses_encoding_and_reenters_the_ordinary_limit
         [INITIAL_ATTEMPT, AUTHENTICATION_RECOVERY_ATTEMPT]
     );
     assert!(before.iter().all(|record| {
-        record.safe_url == "https://protected.example.test/v1/prepared?session_token=%3Credacted%3E"
-            && !record.safe_url.contains(INITIAL)
-            && !record.safe_url.contains(REFRESHED)
-            && !record.safe_url.contains(PUBLIC_QUERY)
+        record.observed_url
+            == "https://protected.example.test/v1/prepared?session_token=%3Credacted%3E"
+            && !record.observed_url.contains(INITIAL)
+            && !record.observed_url.contains(REFRESHED)
+            && !record.observed_url.contains(PUBLIC_QUERY)
     }));
     drop(before);
     let completion = hooks.completion.lock().expect("prepared completion");
@@ -1402,7 +1394,7 @@ async fn prepared_one_shot_body_does_not_perform_an_unsafe_recovery_resend() {
             .auth(
                 Auth::bearer(CredentialRef::new(selector)).challenge(ChallengePolicy::Unauthorized),
             )
-            .response_bytes()
+            .accepted_bytes()
             .build()
             .expect("prepared one-shot endpoint");
 
@@ -1447,7 +1439,7 @@ async fn prepared_one_shot_multipart_does_not_perform_an_unsafe_recovery_resend(
     )
     .body(RequestBody::multipart(multipart))
     .auth(Auth::bearer(CredentialRef::new(selector)).challenge(ChallengePolicy::Unauthorized))
-    .response_bytes()
+    .accepted_bytes()
     .build()
     .expect("prepared one-shot multipart endpoint");
 
@@ -1653,7 +1645,7 @@ async fn recovery_hook_veto_is_primary_and_invalidates_exact_challenged_material
         )
         .await,
     );
-    assert_eq!(error.category(), ErrorCategory::Hook);
+    assert_eq!(error.category(), ErrorCategory::PolicyRejected);
     assert_eq!(refreshes.load(Ordering::SeqCst), 0);
     let current = selector
         .preflight(core.provider_http(None))
@@ -1966,7 +1958,7 @@ async fn default_never_preserves_static_material_and_query_auth_exists_only_in_n
                 .native_url(format!(
                     "https://protected.example.test/v1/protected?access={INITIAL}"
                 ))
-                .safe_url("https://protected.example.test/v1/protected"),
+                .observed_url("https://protected.example.test/v1/protected"),
             ScriptedResponse::success(Bytes::from_static(b"query")),
         )
         .expect("query response");
@@ -1979,7 +1971,7 @@ async fn default_never_preserves_static_material_and_query_auth_exists_only_in_n
     let captures = executor.application().captures().expect("captures");
     let query_capture = captures.last().expect("query capture");
     assert_eq!(
-        query_capture.safe_url(),
+        query_capture.observed_url(),
         Some("https://protected.example.test/v1/protected")
     );
     assert!(!format!("{query_capture:?}").contains(INITIAL));

@@ -1,5 +1,5 @@
-error: host-prefix shaping requires a DNS-domain fixed base; IP-literal bases cannot receive host labels
- --> tests/ui/fail/syntax/ipv6_host_prefix.rs:7:9
+error: subdomain shaping requires a DNS-domain fixed base; IP-literal bases cannot receive generated labels
+ --> tests/ui/fail/syntax/ipv6_host_prefix.rs:8:9
   |
-7 |         host ["api"];
-  |         ^^^^
+8 |         subdomain replace ["api"];
+  |         ^^^^^^^^^

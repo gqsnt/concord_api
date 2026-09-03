@@ -14,62 +14,65 @@ use concord::rate_limit::{LocalRateLimiter, RateLimiter};
 // ANCHOR: partitioning_contract
 api! {
     client PartitioningApi {
+        timeout off;
         base "http://partitioning.example.test/";
         rate_limit {
-            by [endpoint];
-            100 / 1m;
+            key [endpoint];
+            allow 100 per 1m;
         }
-    }
+
 
     scope regions(region: String) {
-        host [scope.region, "api"];
+        subdomain replace [regions.region, "api"];
 
         scope accounts(account: String) {
             rate_limit {
-                by [scope.account];
-                100 / 1m;
+                key [accounts.account];
+                allow 100 per 1m;
             }
 
-            GET channel(channel: String) -> Bytes {
+            GET channel(channel: String) -> Bytes using Bytes {
                 rate_limit {
-                    by [ep.channel];
-                    20 / 1s;
+                    key [endpoint.channel];
+                    allow 20 per 1s;
                 }
             }
 
-            GET composite(account: String) -> Bytes {
+            GET composite(account: String) -> Bytes using Bytes {
                 rate_limit {
-                    by [host, scope.region, ep.account];
+                    key [host, regions.region, endpoint.account];
                     cost 2;
-                    100 / 1m;
+                    allow 100 per 1m;
                 }
             }
         }
     }
-}
+}}
 // ANCHOR_END: partitioning_contract
 
 api! {
     client ResourceStateApi {
+        timeout off;
         base "http://resource-state.example.test/";
-    }
 
-    GET channel(channel: String) -> Bytes {
+
+    GET channel(channel: String) -> Bytes using Bytes {
         rate_limit {
-            by [ep.channel];
-            2 / 1h;
+            key [endpoint.channel];
+            allow 2 per 1h;
         }
     }
-}
+}}
 
 api! {
     client SharedStateApi {
+        timeout off;
         base "http://shared-state.example.test/";
-        rate_limit { 1 / 1h; }
-    }
+        rate_limit { allow 1 per 1h; }
 
-    GET ping() -> Bytes;
-}
+
+    GET ping() -> Bytes using Bytes;
+}}
 
 /// Constructs every partition shape and two clients sharing one limiter.
 ///
@@ -77,7 +80,9 @@ api! {
 /// snapshot and limiter object.
 // ANCHOR: shared_limiter
 pub fn construct() -> Result<(), Box<dyn Error>> {
-    let partitioned = PartitioningApi::builder().build()?;
+    let partitioned = PartitioningApi::builder()
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(LocalRateLimiter::new())))
+        .build()?;
     let account = partitioned
         .regions("eu".to_owned())
         .accounts("account-42".to_owned());

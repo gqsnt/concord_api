@@ -22,10 +22,10 @@ use crate::auth::{
 use crate::body::{EmptyBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec};
 use crate::client::ClientCore;
 use crate::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};
-use crate::error::{ApiError, ErrorCategory, HookError, PaginationErrorKind, RateLimitErrorKind};
+use crate::error::{ApiError, ErrorCategory, GateError, PaginationErrorKind, RateLimitErrorKind};
 use crate::hooks::{
-    AttemptInfo, BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,
-    PaginationCompletionEvent, ResponseHeadEvent, RuntimeHooks,
+    AttemptInfo, BeforeSend, BoxFuture, CompletionEvent, CompletionObserver, CompletionOutcome,
+    DebugLevel, PaginationCompletionEvent, RequestGate, ResponseGate, ResponseHeadEvent,
 };
 use crate::http::HttpConfigBuilder;
 use crate::operation::OperationId;
@@ -34,8 +34,8 @@ use crate::rate_limit::{
 };
 use crate::request::{EndpointSpec, HeadBuilder, PreparedHead, Request, RequestMeta};
 use crate::response::{
-    Buffered, PageResponseSpec, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec,
-    ResponseHead,
+    Buffered, PageResponseSpec, ResponseBodyError, ResponseBodyErrorKind, ResponseHead,
+    ResponseSpec,
 };
 use crate::retry::{RetryDecision, RetryFailure, RetryPolicy};
 use crate::runtime::RuntimeConfigBuilder;
@@ -99,7 +99,7 @@ fn decode_test_page(body: Bytes) -> Result<TestPage, CodecError> {
 
 struct AcceptedPageSpec;
 
-impl ResponseBodySpec for AcceptedPageSpec {
+impl ResponseSpec for AcceptedPageSpec {
     type Output = TestPage;
     type Mode = Buffered;
 
@@ -280,7 +280,7 @@ impl EndpointSpec for HostRateEndpoint {
             "PaginationRuntimeApi::rate_limit::host_page_key",
             [
                 ("host", rate_limit_host.as_str()),
-                ("ep.host", self.host.as_str()),
+                ("endpoint.host", self.host.as_str()),
             ],
             1,
             [(100, Duration::from_secs(60))],
@@ -343,7 +343,7 @@ impl EndpointSpec for RateKeyEndpoint {
         builder.push_auth(Auth::bearer(self.credential.clone()))?;
         builder.push_rate_limit_policy(
             "PaginationRuntimeApi::rate_limit::page_key",
-            [("ep.cursor", self.key.as_str())],
+            [("endpoint.cursor", self.key.as_str())],
             1,
             [(1, Duration::from_secs(60))],
         )?;
@@ -495,15 +495,6 @@ struct BeforeRecord {
 
 #[derive(Clone)]
 struct CompletionRecord {
-    operation_id: OperationId,
-    parent_operation_id: Option<OperationId>,
-    page_index: u32,
-    recovered_authentication: bool,
-    final_status: Option<StatusCode>,
-    outcome: CompletionOutcome,
-    attempts_started: u32,
-    policy_retries: u32,
-    elapsed: Duration,
     safe: String,
 }
 
@@ -535,86 +526,52 @@ struct PaginationProbe {
     response: Mutex<Vec<ResponseRecord>>,
     completion: Mutex<Vec<CompletionRecord>>,
     aggregate: Mutex<Vec<AggregateRecord>>,
-    page_zero_completion_gate: Option<Gate>,
-    aggregate_gate: Option<Gate>,
 }
 
-impl PaginationProbe {
-    fn with_page_zero_completion_gate(gate: Gate) -> Self {
-        Self {
-            page_zero_completion_gate: Some(gate),
-            ..Self::default()
-        }
-    }
-
-    fn with_aggregate_gate(gate: Gate) -> Self {
-        Self {
-            aggregate_gate: Some(gate),
-            ..Self::default()
-        }
-    }
-}
-
-impl RuntimeHooks for PaginationProbe {
+impl RequestGate for PaginationProbe {
     fn before_send<'a>(
         &'a self,
         context: BeforeSend<'a>,
-    ) -> BoxFuture<'a, Result<(), crate::error::HookError>> {
+    ) -> BoxFuture<'a, Result<(), crate::error::GateError>> {
         self.before.lock().expect("before lock").push(BeforeRecord {
             operation_id: context.operation_id,
             parent_operation_id: context.parent_operation_id,
             page_index: context.page_index,
             attempt: context.attempt,
-            safe: format!("{} {:?}", context.safe_url, context.headers),
+            safe: format!("{} {:?}", context.observed_url, context.headers),
         });
         Box::pin(async { Ok(()) })
     }
+}
 
-    fn on_response_head<'a>(
+impl ResponseGate for PaginationProbe {
+    fn before_response_handling<'a>(
         &'a self,
         context: ResponseHeadEvent<'a>,
-    ) -> BoxFuture<'a, Result<(), HookError>> {
+    ) -> BoxFuture<'a, Result<(), GateError>> {
         self.response.lock().expect("response lock").push((
             context.operation_id,
             context.parent_operation_id,
             context.page_index,
             context.attempt,
             context.status,
-            format!("{} {:?}", context.safe_url, context.headers),
+            format!("{} {:?}", context.observed_url, context.headers),
         ));
         Box::pin(async { Ok(()) })
     }
+}
 
-    fn on_complete<'a>(&'a self, context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
+impl CompletionObserver for PaginationProbe {
+    fn on_complete(&self, context: CompletionEvent<'_>) {
         self.completion
             .lock()
             .expect("completion lock")
             .push(CompletionRecord {
-                operation_id: context.operation_id,
-                parent_operation_id: context.parent_operation_id,
-                page_index: context.page_index,
-                recovered_authentication: context.recovered_authentication,
-                final_status: context.final_status,
-                outcome: context.outcome,
-                attempts_started: context.attempts_started,
-                policy_retries: context.policy_retries,
-                elapsed: context.elapsed,
-                safe: context.safe_url.to_owned(),
+                safe: context.observed_url.to_owned(),
             });
-        let gate = (context.page_index == 0)
-            .then(|| self.page_zero_completion_gate.clone())
-            .flatten();
-        Box::pin(async move {
-            if let Some(gate) = gate {
-                gate.wait().await;
-            }
-        })
     }
 
-    fn on_pagination_complete<'a>(
-        &'a self,
-        context: PaginationCompletionEvent<'a>,
-    ) -> BoxFuture<'a, ()> {
+    fn on_pagination_complete(&self, context: PaginationCompletionEvent<'_>) {
         self.aggregate
             .lock()
             .expect("aggregate lock")
@@ -629,12 +586,6 @@ impl RuntimeHooks for PaginationProbe {
                 policy_retries: context.policy_retries,
                 elapsed: context.elapsed,
             });
-        let gate = self.aggregate_gate.clone();
-        Box::pin(async move {
-            if let Some(gate) = gate {
-                gate.wait().await;
-            }
-        })
     }
 }
 
@@ -652,7 +603,7 @@ impl RateLimiter for LimiterProbe {
         self.acquisitions
             .lock()
             .expect("acquisition lock")
-            .push((request.page_index, request.safe_url.to_owned()));
+            .push((request.page_index, request.observed_url.to_owned()));
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
@@ -673,7 +624,7 @@ struct RejectingLimiter {
     acquisitions: AtomicUsize,
 }
 
-type HostLimiterContext = (u32, String, Option<String>, Vec<(String, String)>);
+type HostLimiterContext = (u32, String, Option<String>, Vec<(String, Vec<u8>)>);
 
 #[derive(Default)]
 struct HostLimiterProbe {
@@ -685,7 +636,7 @@ impl HostLimiterProbe {
     fn capture(request: &RateLimitRequest<'_>) -> HostLimiterContext {
         (
             request.page_index,
-            request.safe_url.to_owned(),
+            request.observed_url.to_owned(),
             request.host.map(str::to_owned),
             request
                 .plan
@@ -759,14 +710,15 @@ fn core(
     limiter: Arc<LimiterProbe>,
     configure: impl FnOnce(RuntimeConfigBuilder) -> RuntimeConfigBuilder,
 ) -> ClientCore {
-    let hooks: Arc<dyn RuntimeHooks> = hooks;
     let limiter: Arc<dyn RateLimiter> = limiter;
     ClientCore::build_with_development(
         "http://pagination-runtime.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
         configure(
             RuntimeConfigBuilder::new()
-                .hooks(hooks)
+                .request_gate(hooks.clone())
+                .response_gate(hooks.clone())
+                .completion_observer(hooks)
                 .rate_limiter(limiter),
         ),
         executor,

@@ -14,7 +14,7 @@ async fn vetoed_buffered_request_does_not_invoke_its_encoder() {
     )
     .await
     .expect_err("hook veto");
-    assert_eq!(error.category(), ErrorCategory::Hook);
+    assert_eq!(error.category(), ErrorCategory::PolicyRejected);
     assert_eq!(encoder_calls.load(Ordering::SeqCst), 0);
     assert_eq!(executor.application().request_count().expect("count"), 0);
     assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 1);
@@ -52,7 +52,7 @@ async fn request_stream_and_factory_remain_lazy_through_hook_veto() {
     let request = body_request(stream_core, RequestBody::stream(stream));
     assert_eq!(stream_polls.load(Ordering::SeqCst), 0);
     let error = request.await.expect_err("stream hook veto");
-    assert_eq!(error.category(), ErrorCategory::Hook);
+    assert_eq!(error.category(), ErrorCategory::PolicyRejected);
     assert_eq!(stream_polls.load(Ordering::SeqCst), 0);
     assert_eq!(stream_executor.application().request_count().unwrap(), 0);
     assert!(matches!(
@@ -89,7 +89,7 @@ async fn request_stream_and_factory_remain_lazy_through_hook_veto() {
     assert_eq!(create_calls.load(Ordering::SeqCst), 0);
     assert_eq!(factory_polls.load(Ordering::SeqCst), 0);
     let error = request.await.expect_err("factory hook veto");
-    assert_eq!(error.category(), ErrorCategory::Hook);
+    assert_eq!(error.category(), ErrorCategory::PolicyRejected);
     assert_eq!(content_type_calls.load(Ordering::SeqCst), 1);
     assert_eq!(create_calls.load(Ordering::SeqCst), 0);
     assert_eq!(factory_polls.load(Ordering::SeqCst), 0);
@@ -123,7 +123,7 @@ async fn multipart_stream_and_factory_remain_lazy_through_hook_veto() {
     let error = body_request(direct_core, body)
         .await
         .expect_err("multipart hook veto");
-    assert_eq!(error.category(), ErrorCategory::Hook);
+    assert_eq!(error.category(), ErrorCategory::PolicyRejected);
     assert_eq!(polls.load(Ordering::SeqCst), 0);
     assert_eq!(direct_executor.application().request_count().unwrap(), 0);
     assert!(matches!(
@@ -152,7 +152,7 @@ async fn multipart_stream_and_factory_remain_lazy_through_hook_veto() {
     let error = body_request(factory_core, body)
         .await
         .expect_err("multipart factory hook veto");
-    assert_eq!(error.category(), ErrorCategory::Hook);
+    assert_eq!(error.category(), ErrorCategory::PolicyRejected);
     assert_eq!(create_calls.load(Ordering::SeqCst), 0);
     assert_eq!(factory_executor.application().request_count().unwrap(), 0);
 }
@@ -255,7 +255,7 @@ async fn managed_request_stream_enforces_exact_length_and_aggregate_limit() {
         .queue_expected_response(
             ExpectedRequest::new()
                 .method(Method::POST)
-                .safe_url("http://execution.example.test/v1/body/upload")
+                .observed_url("http://execution.example.test/v1/body/upload")
                 .body("abcde"),
             ScriptedResponse::success("accepted"),
         )
@@ -399,7 +399,7 @@ async fn body_factory_is_created_once_after_approval_and_failure_is_pre_native()
         .queue_expected_response(
             ExpectedRequest::new()
                 .method(Method::POST)
-                .safe_url("http://execution.example.test/v1/body/upload")
+                .observed_url("http://execution.example.test/v1/body/upload")
                 .body("factory"),
             ScriptedResponse::success("factory-ok"),
         )
@@ -471,7 +471,7 @@ async fn bytes_reader_and_file_stream_constructors_use_the_same_native_path() {
             .queue_expected_response(
                 ExpectedRequest::new()
                     .method(Method::POST)
-                    .safe_url("http://execution.example.test/v1/body/upload")
+                    .observed_url("http://execution.example.test/v1/body/upload")
                     .body(Bytes::copy_from_slice(expected)),
                 ScriptedResponse::success(response),
             )

@@ -14,7 +14,7 @@ use concord::endpoint::{EndpointId, Request, RuntimeEndpoint};
 use concord::http::Method;
 use concord::prelude::Bytes;
 use concord::response::{
-    Buffered, ByteStream, Discard, ResponseBodyError, ResponseBodySpec, ResponseHead, Streaming,
+    Buffered, ByteStream, Discard, ResponseBodyError, ResponseHead, ResponseSpec, Streaming,
 };
 
 use concord::codec::{
@@ -83,7 +83,7 @@ impl RequestBodySpec for ExampleRequestSpec {
 // ANCHOR: response_body_spec_extension
 pub struct ExampleBufferedSpec;
 
-impl ResponseBodySpec for ExampleBufferedSpec {
+impl ResponseSpec for ExampleBufferedSpec {
     type Output = usize;
     type Mode = Buffered;
 
@@ -94,7 +94,7 @@ impl ResponseBodySpec for ExampleBufferedSpec {
 
 pub struct ExampleStreamingSpec;
 
-impl ResponseBodySpec for ExampleStreamingSpec {
+impl ResponseSpec for ExampleStreamingSpec {
     type Output = ByteStream;
     type Mode = Streaming;
 
@@ -108,7 +108,7 @@ impl ResponseBodySpec for ExampleStreamingSpec {
 
 pub struct ExampleDiscardSpec;
 
-impl ResponseBodySpec for ExampleDiscardSpec {
+impl ResponseSpec for ExampleDiscardSpec {
     type Output = ();
     type Mode = Discard;
 
@@ -121,15 +121,16 @@ impl ResponseBodySpec for ExampleDiscardSpec {
 // ANCHOR: body_spec_usage
 api! {
     client GenericSpecificationApi {
+        timeout off;
         base "http://generic-specifications.example.test/";
-    }
+
 
     POST buffered(
-        #[body] body: crate::request_response::specifications::ExampleRequestSpec
-    ) -> crate::request_response::specifications::ExampleBufferedSpec;
-    GET streaming() -> crate::request_response::specifications::ExampleStreamingSpec;
-    GET discard() -> crate::request_response::specifications::ExampleDiscardSpec;
-}
+        body body: Bytes using crate::request_response::specifications::ExampleRequestSpec
+    ) -> usize using crate::request_response::specifications::ExampleBufferedSpec;
+    GET streaming() -> concord::response::ByteStream using crate::request_response::specifications::ExampleStreamingSpec;
+    GET discard() -> () using crate::request_response::specifications::ExampleDiscardSpec;
+}}
 
 /// Constructs generated and runtime-defined requests over the same extensions.
 pub fn construct() -> Result<(), Box<dyn std::error::Error>> {

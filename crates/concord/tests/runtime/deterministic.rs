@@ -4,11 +4,12 @@ use std::time::Duration;
 
 use concord::codec::{CodecError, EncodeBody, EncodeContext};
 use concord::endpoint::{EndpointId, RuntimeEndpoint};
-use concord::error::HookError;
-use concord::hooks::{
-    AttemptInfo, BeforeSend, BoxFuture, CompletionEvent, ResponseHeadEvent, RuntimeHooks,
-};
+use concord::error::GateError;
 use concord::http::{Method, SafeProxy};
+use concord::observation::{
+    AttemptInfo, BeforeSend, BoxFuture, CompletionEvent, CompletionObserver, RequestGate,
+    ResponseGate, ResponseHeadEvent,
+};
 use concord::retry::{RetryDecision, RetryFailure, RetryPolicy};
 use concord::{Bytes, api};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
@@ -33,24 +34,26 @@ impl EncodeBody for CountingBody {
 
 api! {
     client RuntimeApi {
+        timeout off;
         base "http://runtime.example.test/";
-    }
+
 
     scope resources(scope_value: String) {
-        path ["resources", scope.scope_value];
+        path ["resources", resources.scope_value];
         POST submit(
             id: String,
-            verbose: Option<bool>,
+            verbose?: bool,
             limit: u32 = 25,
-            #[body] body: crate::CountingBody,
-        ) -> Bytes {
+            body body: crate::runtime::deterministic::BodyInput using crate::CountingBody,
+        ) -> Bytes using Bytes {
             id "runtime.resources.submit";
-            path [ep.id];
-            query { "verbose" = ep.verbose; }
-            headers { "X-Limit" = ep.limit; }
+            path [endpoint.id];
+            query { "verbose" = endpoint.verbose; }
+            headers { "X-Limit" = endpoint.limit; }
+            repeatability idempotent;
         }
     }
-}
+}}
 
 #[derive(Default)]
 struct LifecycleCounts {
@@ -62,8 +65,8 @@ struct LifecycleCounts {
     completion_totals: Mutex<Vec<(u32, u32, bool)>>,
 }
 
-impl RuntimeHooks for LifecycleCounts {
-    fn before_send<'a>(&'a self, context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
+impl RequestGate for LifecycleCounts {
+    fn before_send<'a>(&'a self, context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), GateError>> {
         self.before.fetch_add(1, Ordering::SeqCst);
         self.endpoints
             .lock()
@@ -75,16 +78,20 @@ impl RuntimeHooks for LifecycleCounts {
             .push(context.attempt);
         Box::pin(async { Ok(()) })
     }
+}
 
-    fn on_response_head<'a>(
+impl ResponseGate for LifecycleCounts {
+    fn before_response_handling<'a>(
         &'a self,
         _context: ResponseHeadEvent<'a>,
-    ) -> BoxFuture<'a, Result<(), HookError>> {
+    ) -> BoxFuture<'a, Result<(), GateError>> {
         self.response.fetch_add(1, Ordering::SeqCst);
         Box::pin(async { Ok(()) })
     }
+}
 
-    fn on_complete<'a>(&'a self, context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
+impl CompletionObserver for LifecycleCounts {
+    fn on_complete(&self, context: CompletionEvent<'_>) {
         self.complete.fetch_add(1, Ordering::SeqCst);
         self.completion_totals
             .lock()
@@ -94,7 +101,6 @@ impl RuntimeHooks for LifecycleCounts {
                 context.policy_retries,
                 context.recovered_authentication,
             ));
-        Box::pin(async {})
     }
 }
 
@@ -111,10 +117,15 @@ async fn direct_and_explicit_named_wrappers_preserve_inertness_and_lifecycle_equ
     .expect("scripted runtime server");
     let proxy = SafeProxy::parse(server.url("")).expect("loopback proxy");
     let hooks = Arc::new(LifecycleCounts::default());
-    let hook_object: Arc<dyn RuntimeHooks> = hooks.clone();
+    let observation = hooks.clone();
     let client = RuntimeApi::builder()
         .configure_http(move |http| http.proxy(proxy))
-        .configure_runtime(move |runtime| runtime.hooks(hook_object))
+        .configure_runtime(move |runtime| {
+            runtime
+                .request_gate(observation.clone())
+                .response_gate(observation.clone())
+                .completion_observer(observation)
+        })
         .build()
         .expect("runtime client");
     let encodes = Arc::new(AtomicUsize::new(0));
@@ -128,19 +139,20 @@ async fn direct_and_explicit_named_wrappers_preserve_inertness_and_lifecycle_equ
                 encodes: Arc::clone(&encodes),
             },
         )
-        .set_verbose(true)
+        .with_verbose(true)
         .set_limit(50)
         .timeout(Duration::from_secs(5));
-    let endpoint = runtime_api::resources::Submit::new(
-        SCOPE_SENTINEL.to_owned(),
-        ID_SENTINEL.to_owned(),
-        BodyInput {
-            value: BODY_SENTINEL.to_owned(),
-            encodes: Arc::clone(&encodes),
-        },
-    )
-    .set_verbose(true)
-    .set_limit(50);
+    let endpoint = RuntimeApi::unbound()
+        .resources(SCOPE_SENTINEL.to_owned())
+        .submit(
+            ID_SENTINEL.to_owned(),
+            BodyInput {
+                value: BODY_SENTINEL.to_owned(),
+                encodes: Arc::clone(&encodes),
+            },
+        )
+        .with_verbose(true)
+        .set_limit(50);
     let explicit = client.request(endpoint).timeout(Duration::from_secs(5));
 
     assert_eq!(server.request_count(), 0);
@@ -195,7 +207,7 @@ async fn generated_retry_method_has_direct_explicit_and_runtime_endpoint_parity(
     .expect("scripted retry server");
     let proxy = SafeProxy::parse(server.url("")).expect("loopback proxy");
     let hooks = Arc::new(LifecycleCounts::default());
-    let hook_object: Arc<dyn RuntimeHooks> = hooks.clone();
+    let observation = hooks.clone();
     let classifications = Arc::new(AtomicUsize::new(0));
     let classifications_for_policy = Arc::clone(&classifications);
     let policy = RetryPolicy::builder()
@@ -217,7 +229,12 @@ async fn generated_retry_method_has_direct_explicit_and_runtime_endpoint_parity(
     let client = RuntimeApi::builder()
         .configure_http(move |http| http.proxy(proxy))
         .retry(policy)
-        .configure_runtime(move |runtime| runtime.hooks(hook_object))
+        .configure_runtime(move |runtime| {
+            runtime
+                .request_gate(observation.clone())
+                .response_gate(observation.clone())
+                .completion_observer(observation)
+        })
         .build()
         .expect("retry runtime client");
     let encodes = Arc::new(AtomicUsize::new(0));
@@ -235,14 +252,17 @@ async fn generated_retry_method_has_direct_explicit_and_runtime_endpoint_parity(
         .await
         .expect("managed retry succeeds");
     let explicit = client
-        .request(runtime_api::resources::Submit::new(
-            "retry-scope".to_owned(),
-            "retry-id".to_owned(),
-            BodyInput {
-                value: "encoded-once".to_owned(),
-                encodes: Arc::clone(&encodes),
-            },
-        ))
+        .request(
+            RuntimeApi::unbound()
+                .resources("retry-scope".to_owned())
+                .submit(
+                    "retry-id".to_owned(),
+                    BodyInput {
+                        value: "encoded-once".to_owned(),
+                        encodes: Arc::clone(&encodes),
+                    },
+                ),
+        )
         .response()
         .await
         .expect("explicit managed retry succeeds");
@@ -250,7 +270,7 @@ async fn generated_retry_method_has_direct_explicit_and_runtime_endpoint_parity(
         EndpointId::new("runtime.retry").expect("runtime endpoint ID"),
         Method::GET,
     )
-    .path_segment("runtime-retry")
+    .path("runtime-retry")
     .response::<Bytes>()
     .build()
     .expect("runtime retry endpoint");

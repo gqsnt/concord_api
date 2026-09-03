@@ -43,14 +43,15 @@ impl<Page> concord::pagination::PaginationController<Page> for Controller {
 
 api! {
     client NonClonePageInputApi {
+        timeout off;
         base "https://example.test";
-    }
+
 
     POST read(
-        #[body] body: crate::ConditionalPageCodec<crate::NonCloneInput>,
-    ) -> crate::support::Json<Vec<u8>> {
-        paginate crate::Controller {}
+        body body: crate::NonCloneInput using crate::ConditionalPageCodec<crate::NonCloneInput>,
+    ) -> Vec<u8> using crate::support::Json<Vec<u8>> {
+        paginate with crate::Controller {}
     }
-}
+}}
 
 fn main() {}

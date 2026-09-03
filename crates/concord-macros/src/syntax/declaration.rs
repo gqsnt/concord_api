@@ -3,11 +3,11 @@ use std::collections::HashSet;
 use http::Method;
 use proc_macro2::TokenStream;
 use syn::parse::{Parse, ParseStream};
-use syn::{Ident, LitStr, Token, braced, parenthesized};
+use syn::{Attribute, Ident, LitStr, Token, braced, parenthesized};
 
 use super::ast::{
-    AttachmentSite, Clause, MethodKind, SourceApi, SourceChild, SourceClient, SourceEndpoint,
-    SourceScope,
+    AcceptOperation, AttachmentSite, Clause, MethodKind, RepeatabilityDecl, SourceApi, SourceChild,
+    SourceClient, SourceEndpoint, SourceScope,
 };
 use super::credentials::{parse_auth, parse_credentials};
 use super::diagnostics::{
@@ -17,8 +17,8 @@ use super::diagnostics::{
 use super::keyword;
 use super::pagination::parse_pagination;
 use super::rate_limits::{parse_rate_limit, parse_rate_limits};
-use super::request::{parse_headers, parse_host, parse_path, parse_query, parse_timeout};
-use super::values::{parse_parameters, parse_vars};
+use super::request::{parse_headers, parse_path, parse_query, parse_subdomain, parse_timeout};
+use super::values::{parse_declaration_attributes, parse_parameters, parse_values};
 use crate::semantic::surface::canonical_ident;
 
 pub(crate) fn parse(input: TokenStream) -> syn::Result<SourceApi> {
@@ -33,8 +33,10 @@ impl Parse for SourceApi {
             );
         }
 
-        if !input.peek(keyword::client) {
-            if input.peek(keyword::scope) || endpoint_starts(input) {
+        let fork = input.fork();
+        let _ = fork.call(Attribute::parse_outer)?;
+        if !fork.peek(keyword::client) {
+            if fork.peek(keyword::scope) || endpoint_starts(&fork) {
                 return Err(input
                     .error("the `client` must be the first declaration in an `api!` invocation"));
             }
@@ -48,7 +50,6 @@ impl Parse for SourceApi {
         }
 
         let client: SourceClient = input.parse()?;
-        let children = parse_children(input, 0, "client")?;
         if !input.is_empty() {
             if input.peek(keyword::client) {
                 return Err(input.error(
@@ -60,15 +61,17 @@ impl Parse for SourceApi {
                     input.error("client configuration must be declared inside the `client` block")
                 );
             }
-            return Err(input
-                .error("unsupported `api!` root declaration; expected a scope or HTTP endpoint"));
+            return Err(input.error(
+                "v1 children after the `client` block were removed; move every scope and endpoint inside its owning `client { ... }` block",
+            ));
         }
-        Ok(Self { client, children })
+        Ok(Self { client })
     }
 }
 
 impl Parse for SourceClient {
     fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let attributes = parse_declaration_attributes(input, "client")?;
         input.parse::<keyword::client>()?;
         let name: Ident = input.parse()?;
         let body;
@@ -79,8 +82,13 @@ impl Parse for SourceClient {
         let mut credentials = None;
         let mut rate_limits = None;
         let mut attachment_site = AttachmentSite::default();
+        let mut children = Vec::new();
 
         while !body.is_empty() {
+            if child_starts(&body) {
+                children.push(parse_child(&body, 1)?);
+                continue;
+            }
             if body.peek(keyword::base) {
                 let key_span = body.span();
                 body.parse::<keyword::base>()?;
@@ -90,11 +98,14 @@ impl Parse for SourceClient {
                 insert_clause(&mut base, Clause { key_span, value }, "base", &owner)?;
                 continue;
             }
-            if body.peek(keyword::vars) {
+            if body.peek(keyword::values) {
                 let key_span = body.span();
-                let value = parse_vars(&body)?;
-                insert_clause(&mut values, Clause { key_span, value }, "vars", &owner)?;
+                let value = parse_values(&body)?;
+                insert_clause(&mut values, Clause { key_span, value }, "values", &owner)?;
                 continue;
+            }
+            if body.peek(keyword::vars) {
+                return Err(body.error("v1 `vars { ... }` was removed; write `values { ... }`"));
             }
             if body.peek(keyword::credentials) {
                 let key_span = body.span();
@@ -124,16 +135,11 @@ impl Parse for SourceClient {
             if parse_attachment_site_clause(&body, &mut attachment_site, true, &owner)? {
                 continue;
             }
-            if body.peek(keyword::scope) || endpoint_starts(&body) {
-                return Err(
-                    body.error("scopes and endpoints are declared after the `client` block")
-                );
-            }
             if let Some(error) = retired_clause_diagnostic(&body) {
                 return Err(error);
             }
             return Err(body.error(
-                "unsupported client clause; expected `base`, `vars`, `credentials`, `rate_limits`, `host`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit`",
+                "unsupported client entry; expected a child scope, HTTP endpoint, or `base`, `values`, `credentials`, `rate_limits`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit` clause",
             ));
         }
         let base = base.ok_or_else(|| {
@@ -141,35 +147,44 @@ impl Parse for SourceClient {
                 .error("a client requires exactly one fixed `base \"https://...\";` clause")
         })?;
 
+        if attachment_site.timeout.is_none() {
+            return Err(name.span().error(
+                "a v2 client must explicitly declare `timeout DURATION;` or `timeout off;`",
+            ));
+        }
+        validate_child_names(&children, "client")?;
+
         Ok(Self {
+            attributes,
             name,
             base,
             values,
             credentials,
             rate_limits,
             attachment_site,
+            children,
         })
     }
 }
 
-fn parse_children(
-    input: ParseStream<'_>,
-    depth: usize,
-    owner: &str,
-) -> syn::Result<Vec<SourceChild>> {
-    let mut children = Vec::new();
-    while !input.is_empty() {
-        if input.peek(keyword::scope) {
-            children.push(SourceChild::Scope(Box::new(parse_scope(input, depth + 1)?)));
-        } else if endpoint_starts(input) {
-            children.push(SourceChild::Endpoint(parse_endpoint(input)?));
-        } else {
-            break;
-        }
+fn child_starts(input: ParseStream<'_>) -> bool {
+    let fork = input.fork();
+    if fork.call(Attribute::parse_outer).is_err() {
+        return false;
     }
+    fork.peek(keyword::scope) || endpoint_starts(&fork)
+}
 
-    validate_child_names(&children, owner)?;
-    Ok(children)
+fn parse_child(input: ParseStream<'_>, depth: usize) -> syn::Result<SourceChild> {
+    let fork = input.fork();
+    let _ = fork.call(Attribute::parse_outer)?;
+    if fork.peek(keyword::scope) {
+        Ok(SourceChild::Scope(Box::new(parse_scope(input, depth)?)))
+    } else if endpoint_starts(&fork) {
+        Ok(SourceChild::Endpoint(parse_endpoint(input)?))
+    } else {
+        Err(input.error("expected a scope or endpoint declaration"))
+    }
 }
 
 fn validate_child_names(children: &[SourceChild], owner: &str) -> syn::Result<()> {
@@ -195,6 +210,7 @@ fn parse_scope(input: ParseStream<'_>, depth: usize) -> syn::Result<SourceScope>
             .span()
             .error("scope nesting exceeds the maximum supported depth of 64"));
     }
+    let attributes = parse_declaration_attributes(input, "scope")?;
     input.parse::<keyword::scope>()?;
     let name: Ident = input.parse()?;
     validate_snake_source_identifier(&name, "scope")?;
@@ -208,12 +224,8 @@ fn parse_scope(input: ParseStream<'_>, depth: usize) -> syn::Result<SourceScope>
     let mut attachment_site = AttachmentSite::default();
     let mut children = Vec::new();
     while !body.is_empty() {
-        if body.peek(keyword::scope) {
-            children.push(SourceChild::Scope(Box::new(parse_scope(&body, depth + 1)?)));
-            continue;
-        }
-        if endpoint_starts(&body) {
-            children.push(SourceChild::Endpoint(parse_endpoint(&body)?));
+        if child_starts(&body) {
+            children.push(parse_child(&body, depth + 1)?);
             continue;
         }
         if parse_attachment_site_clause(&body, &mut attachment_site, true, &owner)? {
@@ -232,12 +244,13 @@ fn parse_scope(input: ParseStream<'_>, depth: usize) -> syn::Result<SourceScope>
             return Err(error);
         }
         return Err(body.error(
-            "unsupported scope entry; expected a child scope, HTTP endpoint, or `host`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit` clause",
+            "unsupported scope entry; expected a child scope, HTTP endpoint, or `subdomain`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit` clause",
         ));
     }
     validate_child_names(&children, "scope")?;
 
     Ok(SourceScope {
+        attributes,
         name,
         parameters,
         attachment_site,
@@ -246,6 +259,7 @@ fn parse_scope(input: ParseStream<'_>, depth: usize) -> syn::Result<SourceScope>
 }
 
 fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
+    let attributes = parse_declaration_attributes(input, "endpoint")?;
     let method = parse_method(input)?;
     let name: Ident = input.parse().map_err(|_| {
         input.error("an endpoint method must be followed by an endpoint identifier")
@@ -259,19 +273,28 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
     let (parameters, body) = parse_parameters(&parameters_content, "endpoint", true)?;
 
     input.parse::<Token![->]>()?;
-    let response = input.parse()?;
+    let output = input.parse()?;
+    input.parse::<keyword::using>().map_err(|_| {
+        input.error("a v2 endpoint response must be declared as `-> Output using ResponseSpec`")
+    })?;
+    let response_spec = input.parse()?;
 
     if input.peek(Token![;]) {
         input.parse::<Token![;]>()?;
         Ok(SourceEndpoint {
+            attributes,
             method,
             name,
             parameters,
             body,
             attachment_site: AttachmentSite::default(),
-            response,
+            output,
+            response_spec,
             pagination: None,
             contract_id: None,
+            repeatability: None,
+            accept: None,
+            expose_accepted_bytes: None,
         })
     } else {
         let clauses;
@@ -280,6 +303,9 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
         let mut attachment_site = AttachmentSite::default();
         let mut pagination = None;
         let mut contract_id = None;
+        let mut repeatability = None;
+        let mut accept = None;
+        let mut expose_accepted_bytes: Option<proc_macro2::Span> = None;
         while !clauses.is_empty() {
             if clauses.peek(keyword::paginate) {
                 let key_span = clauses.span();
@@ -290,6 +316,58 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
                     "paginate",
                     &owner,
                 )?;
+                continue;
+            }
+            if clauses.peek(keyword::repeatability) {
+                let key_span = clauses.span();
+                clauses.parse::<keyword::repeatability>()?;
+                let value = if clauses.peek(keyword::idempotent) {
+                    clauses.parse::<keyword::idempotent>()?;
+                    RepeatabilityDecl::Idempotent
+                } else if clauses.peek(keyword::never) {
+                    clauses.parse::<keyword::never>()?;
+                    RepeatabilityDecl::Never
+                } else {
+                    return Err(clauses.error("`repeatability` requires `idempotent` or `never`"));
+                };
+                clauses.parse::<Token![;]>()?;
+                insert_clause(
+                    &mut repeatability,
+                    Clause { key_span, value },
+                    "repeatability",
+                    &owner,
+                )?;
+                continue;
+            }
+            if clauses.peek(keyword::accept) {
+                let key_span = clauses.span();
+                clauses.parse::<keyword::accept>()?;
+                let value = if clauses.peek(keyword::off) {
+                    clauses.parse::<keyword::off>()?;
+                    AcceptOperation::Off
+                } else {
+                    AcceptOperation::Value(super::request::parse_total_public_expr(&clauses)?)
+                };
+                clauses.parse::<Token![;]>()?;
+                insert_clause(&mut accept, Clause { key_span, value }, "accept", &owner)?;
+                continue;
+            }
+            if clauses.peek(keyword::expose) {
+                let span = clauses.span();
+                clauses.parse::<keyword::expose>()?;
+                if !clauses.peek(keyword::accepted_bytes) {
+                    return Err(
+                        clauses.error("the only supported exposure is `expose accepted_bytes;`")
+                    );
+                }
+                clauses.parse::<keyword::accepted_bytes>()?;
+                clauses.parse::<Token![;]>()?;
+                if let Some(first) = expose_accepted_bytes {
+                    let mut error = span.error("duplicate `expose accepted_bytes` clause");
+                    error.combine(first.error("the first exposure is here"));
+                    return Err(error);
+                }
+                expose_accepted_bytes = Some(span);
                 continue;
             }
             if clauses.peek(keyword::id) {
@@ -317,18 +395,23 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
                 return Err(error);
             }
             return Err(clauses.error(
-                "unsupported endpoint clause; expected `id`, `host`, `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, or `paginate`",
+                "unsupported endpoint clause; expected `id`, an attachment, `accept`, `repeatability`, `paginate`, or `expose accepted_bytes`",
             ));
         }
         Ok(SourceEndpoint {
+            attributes,
             method,
             name,
             parameters,
             body,
             attachment_site,
-            response,
+            output,
+            response_spec,
             pagination,
             contract_id,
+            repeatability,
+            accept,
+            expose_accepted_bytes,
         })
     }
 }
@@ -359,6 +442,11 @@ fn parse_method(input: ParseStream<'_>) -> syn::Result<MethodKind> {
                 .span()
                 .error("custom endpoint method must be a valid HTTP method token")
         })?;
+        if literal.value() == "CONNECT" {
+            return Err(literal.span().error(
+                "CONNECT is unsupported because Concord does not expose tunnel or upgrade semantics",
+            ));
+        }
         return Ok(MethodKind::Custom(literal));
     }
 
@@ -375,8 +463,12 @@ fn parse_method(input: ParseStream<'_>) -> syn::Result<MethodKind> {
         "DELETE" => Ok(MethodKind::Delete),
         "HEAD" => Ok(MethodKind::Head),
         "OPTIONS" => Ok(MethodKind::Options),
-        "TRACE" => Ok(MethodKind::Trace),
-        "CONNECT" => Ok(MethodKind::Connect),
+        "TRACE" => Err(method.span().error(
+            "TRACE is not a first-class keyword; declare its unusual security semantics explicitly with `METHOD(\"TRACE\")`",
+        )),
+        "CONNECT" => Err(method.span().error(
+            "CONNECT is unsupported because Concord does not expose tunnel or upgrade semantics",
+        )),
         _ => Err(method.span().error(
             "unsupported endpoint method; use a standard method keyword or `METHOD(\"TOKEN\")`",
         )),
@@ -402,29 +494,27 @@ fn retired_clause_diagnostic(input: ParseStream<'_>) -> Option<syn::Error> {
     }
     if input.peek(Token![default]) {
         return Some(input.error(
-            "`default { ... }` is not DSL syntax; declare a value default with `name: Type = VALUE` in `vars { ... }` or a scope or endpoint parameter list",
+            "`default { ... }` is not DSL syntax; use `#[default]` on a value in `values { ... }` or a scope or endpoint parameter list",
         ));
     }
 
     let spelling = input.fork().parse::<Ident>().ok()?;
     let message = match canonical_ident(&spelling).as_str() {
-        "defaults" => {
-            "`defaults { ... }` is not DSL syntax; declare defaults with `name: Type = VALUE` in `vars { ... }` or a scope or endpoint parameter list"
-        }
+        "defaults" => "`defaults { ... }` is not DSL syntax; use `#[default]` on individual values",
         "policies" => {
             "`policies { ... }` is not DSL syntax; define rate-limit profiles in the client `rate_limits { ... }` block and install retry policy through the generated builder"
         }
         "behaviors" | "behavior" => {
-            "behavior profiles are not DSL syntax; configure hooks and runtime policy through the generated builder"
+            "behavior profiles are not DSL syntax; configure decision gates, completion observation, and runtime policy through the generated builder"
         }
         "prefix" => {
-            "`prefix` is not DSL syntax; use `path [...]` for path atoms or `host [...]` for host labels"
+            "`prefix` is not DSL syntax; use `path [...]` for path atoms or `subdomain [...]` for generated DNS labels"
         }
         "params" => {
             "`params { ... }` is not DSL syntax; declare values in a scope or endpoint parameter list and shape query parameters with `query { ... }`"
         }
         "profile" => {
-            "`profile` is not a DSL keyword; define a rate-limit profile with `rate_limits { rule NAME { ... } }`"
+            "`profile` is not a DSL keyword; define a rate-limit profile with `rate_limits { NAME(formals...) { key [...]; allow N per D; } }`"
         }
         "access_token" => {
             "`access_token` is not DSL syntax; declare a secret and a bearer credential inside `credentials { ... }`"
@@ -440,16 +530,21 @@ fn parse_attachment_site_clause(
     include_rate_limit: bool,
     owner: &str,
 ) -> syn::Result<bool> {
-    if input.peek(keyword::host) {
+    if input.peek(keyword::subdomain) {
         let key_span = input.span();
-        let value = parse_host(input)?;
+        let value = parse_subdomain(input)?;
         insert_clause(
-            &mut attachment_site.host,
+            &mut attachment_site.subdomain,
             Clause { key_span, value },
-            "host",
+            "subdomain",
             owner,
         )?;
         return Ok(true);
+    }
+    if input.peek(keyword::host) {
+        return Err(input.error(
+            "v1 `host [...]` was removed; use composable `subdomain [...]`, `subdomain replace [...]`, or `subdomain off`",
+        ));
     }
     if input.peek(keyword::path) {
         let key_span = input.span();
@@ -528,6 +623,7 @@ fn parse_attachment_site_clause(
 
 fn is_client_configuration_start(input: ParseStream<'_>) -> bool {
     is_client_only_declaration_start(input)
+        || input.peek(keyword::subdomain)
         || input.peek(keyword::host)
         || input.peek(keyword::path)
         || input.peek(keyword::query)
@@ -539,6 +635,7 @@ fn is_client_configuration_start(input: ParseStream<'_>) -> bool {
 
 fn is_client_only_declaration_start(input: ParseStream<'_>) -> bool {
     input.peek(keyword::base)
+        || input.peek(keyword::values)
         || input.peek(keyword::vars)
         || input.peek(keyword::credentials)
         || input.peek(keyword::rate_limits)

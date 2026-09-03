@@ -17,6 +17,7 @@ mod body;
 mod client;
 pub mod codec;
 mod construction;
+mod contract;
 mod endpoint;
 mod error;
 mod generated_contract;
@@ -33,7 +34,7 @@ pub mod retry;
 mod runtime;
 
 pub use pagination::{PageLimit, PaginatedRequest};
-pub use request::{Request, ResponseBytesRequest, ResponseRequest};
+pub use request::{AcceptedBytesRequest, Request, ResponseRequest};
 
 mod execute;
 

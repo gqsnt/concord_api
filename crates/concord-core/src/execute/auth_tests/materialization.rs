@@ -12,7 +12,9 @@ async fn production_managed_reqwest_inserts_auth_over_real_tls_loopback() {
             .http1_only()
             .add_root_certificate_pem(server.certificate_pem()),
         RuntimeConfigBuilder::new()
-            .hooks(hooks.clone())
+            .request_gate(hooks.clone())
+            .response_gate(hooks.clone())
+            .completion_observer(hooks.clone())
             .debug(DebugLevel::Headers),
     )
     .expect("managed TLS core")
@@ -106,7 +108,7 @@ async fn basic_and_custom_header_material_exist_only_at_the_native_boundary() {
     assert_eq!(captures.len(), 2);
     assert!(captures.iter().all(|capture| {
         capture
-            .safe_url()
+            .observed_url()
             .is_some_and(|url| !url.contains(API_KEY) && !url.contains("dXNlcjpwYXNzd29yZA=="))
             && capture
                 .headers()
@@ -126,7 +128,7 @@ async fn prepared_bearer_basic_header_and_query_auth_use_only_the_native_boundar
         .application()
         .queue_expected_response(
             ExpectedRequest::new()
-                .safe_url("https://protected.example.test/v1/bearer")
+                .observed_url("https://protected.example.test/v1/bearer")
                 .native_url("https://protected.example.test/v1/bearer")
                 .header(
                     AUTHORIZATION,
@@ -139,7 +141,7 @@ async fn prepared_bearer_basic_header_and_query_auth_use_only_the_native_boundar
         .application()
         .queue_expected_response(
             ExpectedRequest::new()
-                .safe_url("https://protected.example.test/v1/basic")
+                .observed_url("https://protected.example.test/v1/basic")
                 .native_url("https://protected.example.test/v1/basic")
                 .header(
                     AUTHORIZATION,
@@ -152,7 +154,7 @@ async fn prepared_bearer_basic_header_and_query_auth_use_only_the_native_boundar
         .application()
         .queue_expected_response(
             ExpectedRequest::new()
-                .safe_url("https://protected.example.test/v1/header")
+                .observed_url("https://protected.example.test/v1/header")
                 .native_url("https://protected.example.test/v1/header")
                 .header(
                     http::HeaderName::from_static("x-api-key"),
@@ -165,7 +167,7 @@ async fn prepared_bearer_basic_header_and_query_auth_use_only_the_native_boundar
         .application()
         .queue_expected_response(
             ExpectedRequest::new()
-                .safe_url("https://protected.example.test/v1/query")
+                .observed_url("https://protected.example.test/v1/query")
                 .native_url(
                     "https://protected.example.test/v1/query?access=prepared-api-key-f22b7940bd61",
                 ),
@@ -176,7 +178,7 @@ async fn prepared_bearer_basic_header_and_query_auth_use_only_the_native_boundar
         .application()
         .queue_expected_response(
             ExpectedRequest::new()
-                .safe_url("https://protected.example.test/v1/authorization-exact")
+                .observed_url("https://protected.example.test/v1/authorization-exact")
                 .native_url("https://protected.example.test/v1/authorization-exact")
                 .header(AUTHORIZATION, HeaderValue::from_static(EXACT_AUTHORIZATION)),
             ScriptedResponse::success(Bytes::from_static(b"authorization-exact")),
@@ -186,7 +188,7 @@ async fn prepared_bearer_basic_header_and_query_auth_use_only_the_native_boundar
         .application()
         .queue_expected_response(
             ExpectedRequest::new()
-                .safe_url("https://protected.example.test/v1/authorization-scheme")
+                .observed_url("https://protected.example.test/v1/authorization-scheme")
                 .native_url("https://protected.example.test/v1/authorization-scheme")
                 .header(
                     AUTHORIZATION,
@@ -242,9 +244,9 @@ async fn prepared_bearer_basic_header_and_query_auth_use_only_the_native_boundar
     for (segment, auth, expected) in cases {
         let endpoint =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.auth"), Method::GET)
-                .path_segment(segment)
+                .path(segment)
                 .auth(auth)
-                .response_bytes()
+                .accepted_bytes()
                 .build()
                 .expect("prepared authentication endpoint");
         let actual = Request::new(core.clone(), endpoint)
@@ -324,7 +326,7 @@ async fn prepared_authentication_attachments_materialize_in_builder_order() {
                 )
                 .expect("valid second header placement"),
             )
-            .response_bytes()
+            .accepted_bytes()
             .build()
             .expect("ordered prepared authentication endpoint");
 

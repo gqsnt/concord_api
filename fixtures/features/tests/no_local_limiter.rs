@@ -12,9 +12,8 @@ use runtime::endpoint::{EndpointId, RuntimeEndpoint};
 use runtime::error::{ClientBuildErrorKind, ErrorCategory};
 use runtime::http::{Method, SafeProxy};
 use runtime::rate_limit::{
-    BoxFuture, NoopRateLimiter, RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart,
-    RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimitPolicy, RateLimitWindow,
-    RateLimiter,
+    BoxFuture, NoopRateLimiter, RateLimitError, RateLimitId, RateLimitKey, RateLimitPermit,
+    RateLimitPolicy, RateLimitRequest, RateLimitResponse, RateLimitWindow, RateLimiter,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -25,7 +24,7 @@ const DEADLOCK_BOUND: TokioDuration = TokioDuration::from_secs(10);
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct CapturedRule {
     id: String,
-    parts: Vec<(String, String)>,
+    parts: Vec<(String, Vec<u8>)>,
     cost: u32,
     windows: Vec<(u32, Duration)>,
 }
@@ -173,13 +172,22 @@ fn runtime_rule(id: &str, key: RateLimitKey, cost: u32, windows: &[(u32, u64)]) 
     .expect("runtime rule")
 }
 
+fn canonical_text(value: &str) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(1 + 4 + 8 + value.len());
+    bytes.push(4);
+    bytes.extend_from_slice(b"utf8");
+    bytes.extend_from_slice(&(value.len() as u64).to_be_bytes());
+    bytes.extend_from_slice(value.as_bytes());
+    bytes
+}
+
 fn empty_runtime_endpoint() -> RuntimeEndpoint<Bytes> {
     RuntimeEndpoint::builder(
         EndpointId::try_from("runtime.empty").expect("runtime endpoint ID"),
         Method::GET,
     )
-    .path_segment("runtime-empty")
-    .response_bytes()
+    .path("runtime-empty")
+    .accepted_bytes()
     .build()
     .expect("empty runtime endpoint")
 }
@@ -189,7 +197,7 @@ fn explicit_runtime_endpoint() -> RuntimeEndpoint<Bytes> {
         EndpointId::try_from("runtime.explicit").expect("runtime endpoint ID"),
         Method::GET,
     )
-    .path_segment("runtime-explicit")
+    .path("runtime-explicit")
     .rate_limit(runtime_rule(
         "Runtime::global",
         RateLimitKey::global(),
@@ -198,15 +206,15 @@ fn explicit_runtime_endpoint() -> RuntimeEndpoint<Bytes> {
     ))
     .rate_limit(runtime_rule(
         "Runtime::parts",
-        RateLimitKey::from_parts([
-            RateLimitKeyPart::new("tenant", "fixture-tenant").expect("tenant key part"),
-            RateLimitKeyPart::new("region", "fixture-region").expect("region key part"),
+        RateLimitKey::from_canonical_values([
+            ("tenant", "fixture-tenant"),
+            ("region", "fixture-region"),
         ])
         .expect("runtime explicit key"),
         3,
         &[(7, 2)],
     ))
-    .response_bytes()
+    .accepted_bytes()
     .build()
     .expect("explicit runtime endpoint")
 }
@@ -338,8 +346,8 @@ async fn generated_clients_fail_closed_without_local_limiter_unless_limiter_is_d
             CapturedRule {
                 id: "Runtime::parts".to_owned(),
                 parts: vec![
-                    ("tenant".to_owned(), "fixture-tenant".to_owned()),
-                    ("region".to_owned(), "fixture-region".to_owned())
+                    ("tenant".to_owned(), canonical_text("fixture-tenant")),
+                    ("region".to_owned(), canonical_text("fixture-region"))
                 ],
                 cost: 3,
                 windows: vec![(7, Duration::from_secs(2))]

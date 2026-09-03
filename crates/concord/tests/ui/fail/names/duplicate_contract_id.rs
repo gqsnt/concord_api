@@ -4,15 +4,16 @@ use concord::{Bytes, api};
 
 api! {
     client DuplicateIdApi {
+        timeout off;
         base "http://identity.example.test/";
-    }
 
-    GET first() -> Bytes {
+
+    GET first() -> Bytes using Bytes {
         id "identity.same";
     }
-    GET second() -> Bytes {
+    GET second() -> Bytes using Bytes {
         id "identity.same";
     }
-}
+}}
 
 fn main() {}

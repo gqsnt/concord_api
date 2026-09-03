@@ -1,53 +1,145 @@
-error[E0277]: `NoDisplay` doesn't implement `std::fmt::Display`
-  --> tests/ui/fail/rate_limits/rate_limit_dimension_requires_display.rs:10:24
+error[E0277]: the trait bound `NoDisplay: RateLimitKeyValue` is not satisfied
+  --> tests/ui/fail/rate_limits/rate_limit_dimension_requires_display.rs:5:1
    |
-10 |       GET read(resource: crate::NoDisplay) -> Bytes {
-   |  ________________________^
-11 | |         rate_limit { by [ep.resource]; 1 / 1s; }
-   | |____________________________________^ unsatisfied trait bound
+ 5 | / api! {
+ 6 | |     client Api {
+ 7 | |         timeout off;
+ 8 | |         base "https://example.test";
+...  |
+14 | | }}
+   | |__^ unsatisfied trait bound
    |
-help: the trait `std::fmt::Display` is not implemented for `NoDisplay`
+help: the trait `RateLimitKeyValue` is not implemented for `NoDisplay`
   --> tests/ui/fail/rate_limits/rate_limit_dimension_requires_display.rs:3:1
    |
  3 | pub struct NoDisplay;
    | ^^^^^^^^^^^^^^^^^^^^
+   = help: the following other types implement trait `RateLimitKeyValue`:
+             &T
+             Arc<T>
+             Box<T>
+             Cow<'a, T>
+             Option<T>
+             String
+             Vec<T>
+             [T; N]
+           and $N others
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: `NoDisplay` doesn't implement `std::fmt::Display`
+error[E0277]: the trait bound `NoDisplay: RateLimitKeyValue` is not satisfied
   --> tests/ui/fail/rate_limits/rate_limit_dimension_requires_display.rs:5:1
    |
  5 | / api! {
  6 | |     client Api {
- 7 | |         base "https://example.test";
+ 7 | |         timeout off;
+ 8 | |         base "https://example.test";
 ...  |
-13 | | }
-   | |_^ unsatisfied trait bound
+14 | | }}
+   | |__^ unsatisfied trait bound
    |
-help: the trait `std::fmt::Display` is not implemented for `NoDisplay`
+help: the trait `RateLimitKeyValue` is not implemented for `NoDisplay`
   --> tests/ui/fail/rate_limits/rate_limit_dimension_requires_display.rs:3:1
    |
  3 | pub struct NoDisplay;
    | ^^^^^^^^^^^^^^^^^^^^
-help: the trait `Endpoint` is implemented for `api::Read`
+   = help: the following other types implement trait `RateLimitKeyValue`:
+             &T
+             Arc<T>
+             Box<T>
+             Cow<'a, T>
+             Option<T>
+             String
+             Vec<T>
+             [T; N]
+           and $N others
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `NoDisplay: RateLimitKeyValue` is not satisfied
   --> tests/ui/fail/rate_limits/rate_limit_dimension_requires_display.rs:5:1
    |
  5 | / api! {
  6 | |     client Api {
- 7 | |         base "https://example.test";
+ 7 | |         timeout off;
+ 8 | |         base "https://example.test";
 ...  |
-13 | | }
-   | |_^
-note: required for `api::Read` to implement `Endpoint`
+14 | | }}
+   | |__^ unsatisfied trait bound
+   |
+help: the trait `RateLimitKeyValue` is not implemented for `NoDisplay`
+  --> tests/ui/fail/rate_limits/rate_limit_dimension_requires_display.rs:3:1
+   |
+ 3 | pub struct NoDisplay;
+   | ^^^^^^^^^^^^^^^^^^^^
+   = help: the following other types implement trait `RateLimitKeyValue`:
+             &T
+             Arc<T>
+             Box<T>
+             Cow<'a, T>
+             Option<T>
+             String
+             Vec<T>
+             [T; N]
+           and $N others
+note: required for `api::Read` to implement `concord::__private::EndpointSpec`
   --> tests/ui/fail/rate_limits/rate_limit_dimension_requires_display.rs:5:1
    |
  5 | / api! {
  6 | |     client Api {
- 7 | |         base "https://example.test";
+ 7 | |         timeout off;
+ 8 | |         base "https://example.test";
 ...  |
-10 | |     GET read(resource: crate::NoDisplay) -> Bytes {
+11 | |     GET read(resource: crate::NoDisplay) -> Bytes using Bytes {
    | |         ^^^^
-11 | |         rate_limit { by [ep.resource]; 1 / 1s; }
-   | |                             -------- unsatisfied trait bound introduced here
-12 | |     }
-13 | | }
-   | |_^
+...  |
+14 | | }}
+   | |__^ unsatisfied trait bound introduced here
+note: required by a bound in `concord::__private::request_plan`
+  --> $WORKSPACE/crates/concord-core/src/__private.rs
+   |
+   | pub fn request_plan<E>(
+   |        ------------ required by a bound in this function
+...
+   |     E: EndpointSpec,
+   |        ^^^^^^^^^^^^ required by this bound in `request_plan`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `NoDisplay: RateLimitKeyValue` is not satisfied
+  --> tests/ui/fail/rate_limits/rate_limit_dimension_requires_display.rs:5:1
+   |
+ 5 | / api! {
+ 6 | |     client Api {
+ 7 | |         timeout off;
+ 8 | |         base "https://example.test";
+...  |
+14 | | }}
+   | |__^ unsatisfied trait bound
+   |
+help: the trait `RateLimitKeyValue` is not implemented for `NoDisplay`
+  --> tests/ui/fail/rate_limits/rate_limit_dimension_requires_display.rs:3:1
+   |
+ 3 | pub struct NoDisplay;
+   | ^^^^^^^^^^^^^^^^^^^^
+   = help: the following other types implement trait `RateLimitKeyValue`:
+             &T
+             Arc<T>
+             Box<T>
+             Cow<'a, T>
+             Option<T>
+             String
+             Vec<T>
+             [T; N]
+           and $N others
+note: required for `api::Read` to implement `api::Endpoint`
+  --> tests/ui/fail/rate_limits/rate_limit_dimension_requires_display.rs:5:1
+   |
+ 5 | / api! {
+ 6 | |     client Api {
+ 7 | |         timeout off;
+ 8 | |         base "https://example.test";
+...  |
+11 | |     GET read(resource: crate::NoDisplay) -> Bytes using Bytes {
+   | |         ^^^^
+...  |
+14 | | }}
+   | |__^ unsatisfied trait bound introduced here
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

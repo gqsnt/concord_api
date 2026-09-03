@@ -17,14 +17,15 @@ impl<Page> concord::pagination::PaginationController<Page> for Controller {
 
 api! {
     client ManagedPageBodyApi {
+        timeout off;
         base "https://example.test";
-    }
+
 
     POST read(
-        #[body] body: RequestBody,
-    ) -> crate::support::Json<Vec<u8>> {
-        paginate crate::Controller {}
+        body body: RequestBody using RequestBody,
+    ) -> Vec<u8> using crate::support::Json<Vec<u8>> {
+        paginate with crate::Controller {}
     }
-}
+}}
 
 fn main() {}

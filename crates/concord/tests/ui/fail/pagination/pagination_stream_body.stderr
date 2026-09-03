@@ -3,10 +3,11 @@ error[E0277]: the trait bound `concord::body::Stream<concord::codec::OctetStream
    |
 17 | / api! {
 18 | |     client StreamPageBodyApi {
-19 | |         base "https://example.test";
+19 | |         timeout off;
+20 | |         base "https://example.test";
 ...  |
-27 | | }
-   | |_^ the trait `PageRequestBodySpec` is not implemented for `concord::body::Stream<concord::codec::OctetStream>`
+28 | | }}
+   | |__^ the trait `PageRequestBodySpec` is not implemented for `concord::body::Stream<concord::codec::OctetStream>`
    |
 help: the following other types implement trait `PageRequestBodySpec`
   --> $WORKSPACE/crates/concord-core/src/body/spec.rs
@@ -28,10 +29,11 @@ error[E0277]: the trait bound `StreamBody: Clone` is not satisfied
    |
 17 | / api! {
 18 | |     client StreamPageBodyApi {
-19 | |         base "https://example.test";
+19 | |         timeout off;
+20 | |         base "https://example.test";
 ...  |
-27 | | }
-   | |_^ the trait `Clone` is not implemented for `StreamBody`
+28 | | }}
+   | |__^ the trait `Clone` is not implemented for `StreamBody`
    |
 note: required by a bound in `PageRequestBodySpec`
   --> $WORKSPACE/crates/concord-core/src/body/spec.rs
@@ -48,10 +50,11 @@ error[E0277]: the trait bound `StreamBody: Clone` is not satisfied
    |
 17 | / api! {
 18 | |     client StreamPageBodyApi {
-19 | |         base "https://example.test";
+19 | |         timeout off;
+20 | |         base "https://example.test";
 ...  |
-27 | | }
-   | |_^ the trait `Clone` is not implemented for `StreamBody`
+28 | | }}
+   | |__^ the trait `Clone` is not implemented for `StreamBody`
    |
 note: required by a bound in `concord::__private::PaginatedEndpoint`
   --> $WORKSPACE/crates/concord-core/src/pagination/pending.rs
@@ -61,4 +64,51 @@ note: required by a bound in `concord::__private::PaginatedEndpoint`
 ...
    |     <Self::Body as RequestBodySpec>::Input: Clone,
    |                                             ^^^^^ required by this bound in `PaginatedEndpoint`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `concord::body::Stream<concord::codec::OctetStream>: PageRequestBodySpec` is not satisfied
+  --> tests/ui/fail/pagination/pagination_stream_body.rs:17:1
+   |
+17 | / api! {
+18 | |     client StreamPageBodyApi {
+19 | |         timeout off;
+20 | |         base "https://example.test";
+...  |
+28 | | }}
+   | |__^ the trait `PageRequestBodySpec` is not implemented for `concord::body::Stream<concord::codec::OctetStream>`
+   |
+help: the following other types implement trait `PageRequestBodySpec`
+  --> $WORKSPACE/crates/concord-core/src/body/spec.rs
+   |
+   | impl PageRequestBodySpec for Bytes {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Bytes`
+   |
+   | impl PageRequestBodySpec for Text {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Text`
+   |
+  ::: $WORKSPACE/crates/concord-extras/src/codec/json.rs
+   |
+   | impl<T> PageRequestBodySpec for Json<T> where T: Clone + serde::Serialize + Send + 'static {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Json<T>`
+note: required for `stream_page_body_api::Read` to implement `concord::__private::EndpointSpec`
+  --> tests/ui/fail/pagination/pagination_stream_body.rs:17:1
+   |
+17 | / api! {
+18 | |     client StreamPageBodyApi {
+19 | |         timeout off;
+20 | |         base "https://example.test";
+...  |
+23 | |     POST read(
+   | |          ^^^^
+...  |
+28 | | }}
+   | |__^ unsatisfied trait bound introduced here
+note: required by a bound in `concord::__private::request_plan`
+  --> $WORKSPACE/crates/concord-core/src/__private.rs
+   |
+   | pub fn request_plan<E>(
+   |        ------------ required by a bound in this function
+...
+   |     E: EndpointSpec,
+   |        ^^^^^^^^^^^^ required by this bound in `request_plan`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

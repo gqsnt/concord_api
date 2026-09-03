@@ -2,20 +2,21 @@ use concord::api;
 
 api! {
     client Api {
+        timeout off;
         base "https://example.test";
         rate_limit {
-            by [
-                vars.k00, vars.k01, vars.k02, vars.k03,
-                vars.k04, vars.k05, vars.k06, vars.k07,
-                vars.k08, vars.k09, vars.k10, vars.k11,
-                vars.k12, vars.k13, vars.k14, vars.k15,
-                vars.k16, vars.k17, vars.k18, vars.k19,
-                vars.k20, vars.k21, vars.k22, vars.k23,
-                vars.k24, vars.k25, vars.k26, vars.k27,
-                vars.k28, vars.k29, vars.k30, vars.k31,
-                vars.first_excess,
+            key [
+                client.k00, client.k01, client.k02, client.k03,
+                client.k04, client.k05, client.k06, client.k07,
+                client.k08, client.k09, client.k10, client.k11,
+                client.k12, client.k13, client.k14, client.k15,
+                client.k16, client.k17, client.k18, client.k19,
+                client.k20, client.k21, client.k22, client.k23,
+                client.k24, client.k25, client.k26, client.k27,
+                client.k28, client.k29, client.k30, client.k31,
+                client.first_excess,
             ];
-            1 / 1s;
+            allow 1 per 1s;
         }
     }
 }

@@ -17,12 +17,12 @@ use concord::codec::{
     CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType,
 };
 use concord::endpoint::{EndpointId, RuntimeEndpoint, RuntimeEndpointBuilder};
-use concord::error::{ConfigurationErrorKind, ErrorCategory, HookError};
-use concord::hooks::{BeforeSend, BoxFuture, RuntimeHooks};
+use concord::error::{ConfigurationErrorKind, ErrorCategory, GateError};
 use concord::http::{HeaderName, Method, SafeProxy};
+use concord::observation::{BeforeSend, BoxFuture, RequestGate};
 use concord::rate_limit::{
-    NoopRateLimiter, RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit,
-    RateLimitPolicy, RateLimitRequest, RateLimitWindow, RateLimiter,
+    NoopRateLimiter, RateLimitError, RateLimitId, RateLimitKey, RateLimitPermit, RateLimitPolicy,
+    RateLimitRequest, RateLimitWindow, RateLimiter,
 };
 use concord::response::ByteStream;
 use concord::{ApiResponse, Bytes, NoContent};
@@ -35,31 +35,34 @@ fn runtime_id(value: &str) -> EndpointId {
 
 api! {
     client PreparedAlphaApi {
+        timeout off;
         base "http://alpha.prepared.example.test/root/";
-    }
 
-    GET explicit() -> Bytes { path ["explicit"]; }
-}
+
+    GET explicit() -> Bytes using Bytes { path ["explicit"]; }
+}}
 
 api! {
     client PreparedBetaApi {
+        timeout off;
         base "http://beta.prepared.example.test/other/";
-    }
 
-    GET explicit() -> Bytes { path ["explicit"]; }
-}
+
+    GET explicit() -> Bytes using Bytes { path ["explicit"]; }
+}}
 
 api! {
     client PreparedAuthApi {
+        timeout off;
         base "http://auth.prepared.example.test/";
         credentials {
-            secret token: String;
+            secret token;
             credential api_key = api_key(secret.token);
         }
-    }
 
-    GET explicit() -> NoContent;
-}
+
+    GET explicit() -> () using NoContent;
+}}
 
 struct EchoCodec;
 
@@ -137,7 +140,7 @@ struct CapturingLimiter {
     plans: Mutex<Vec<CapturedPlan>>,
 }
 
-type CapturedKey = Vec<(String, String)>;
+type CapturedKey = Vec<(String, Vec<u8>)>;
 
 #[derive(Debug, PartialEq, Eq)]
 struct CapturedRule {
@@ -148,6 +151,15 @@ struct CapturedRule {
 }
 
 type CapturedPlan = Vec<CapturedRule>;
+
+fn canonical_utf8(value: &str) -> Vec<u8> {
+    let mut encoded = Vec::with_capacity(1 + 4 + 8 + value.len());
+    encoded.push(4);
+    encoded.extend_from_slice(b"utf8");
+    encoded.extend_from_slice(&(value.len() as u64).to_be_bytes());
+    encoded.extend_from_slice(value.as_bytes());
+    encoded
+}
 
 impl RateLimiter for CapturingLimiter {
     fn acquire<'a>(
@@ -183,9 +195,9 @@ impl RateLimiter for CapturingLimiter {
 
 struct RejectingHooks;
 
-impl RuntimeHooks for RejectingHooks {
-    fn before_send<'a>(&'a self, _context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
-        Box::pin(async { Err(HookError::new("prepared hook veto")) })
+impl RequestGate for RejectingHooks {
+    fn before_send<'a>(&'a self, _context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), GateError>> {
+        Box::pin(async { Err(GateError::new("prepared hook veto")) })
     }
 }
 
@@ -193,8 +205,8 @@ struct CountingHooks {
     calls: Arc<AtomicUsize>,
 }
 
-impl RuntimeHooks for CountingHooks {
-    fn before_send<'a>(&'a self, _context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
+impl RequestGate for CountingHooks {
+    fn before_send<'a>(&'a self, _context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), GateError>> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Box::pin(async { Ok(()) })
     }
@@ -234,7 +246,7 @@ fn exact_builder_contracts() {
     let default: RuntimeEndpointBuilder<NoContent> =
         RuntimeEndpoint::builder(runtime_id("runtime.default"), Method::GET);
     let buffered: RuntimeEndpointBuilder<EchoCodec> = default.response::<EchoCodec>();
-    let bytes: RuntimeEndpointBuilder<Bytes> = buffered.response_bytes();
+    let bytes: RuntimeEndpointBuilder<Bytes> = buffered.accepted_bytes();
     let stream: RuntimeEndpointBuilder<StreamSpec<VendorMedia>> =
         bytes.response_stream::<VendorMedia>();
     let no_content: RuntimeEndpointBuilder<NoContent> = stream.response_no_content();
@@ -260,10 +272,10 @@ async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
     let client = alpha(&server);
 
     let buffered = RuntimeEndpoint::builder(runtime_id("runtime.buffered"), Method::POST)
-        .path_segment("items")
-        .path_segment("slash/value")
-        .path_segment("..")
-        .path_segment("tail?query#fragment%")
+        .path("items")
+        .path("slash value")
+        .path("dot-dot")
+        .path("tail?query#fragment%value")
         .query("first", 1)
         .query_optional("omitted", Option::<u8>::None)
         .query_values("repeat", [2, 3])
@@ -278,8 +290,8 @@ async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
     );
 
     let bytes = RuntimeEndpoint::builder(runtime_id("runtime.bytes"), Method::GET)
-        .path_segment("bytes")
-        .response_bytes()
+        .path("bytes")
+        .accepted_bytes()
         .build()
         .expect("bytes runtime endpoint");
     assert_eq!(
@@ -288,7 +300,7 @@ async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
     );
 
     let no_content = RuntimeEndpoint::builder(runtime_id("runtime.none"), Method::DELETE)
-        .path_segment("none")
+        .path("none")
         .build()
         .expect("no-content runtime endpoint");
     client
@@ -297,7 +309,7 @@ async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
         .expect("no-content response");
 
     let stream = RuntimeEndpoint::builder(runtime_id("runtime.stream"), Method::GET)
-        .path_segment("stream")
+        .path("stream")
         .response_stream::<VendorMedia>()
         .build()
         .expect("stream runtime endpoint");
@@ -319,7 +331,7 @@ async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
     let requests = server.requests();
     assert_eq!(requests[0].method(), "POST");
     assert!(requests[0].target().contains(
-        "/root/items/slash%2Fvalue/%252E%252E/tail%3Fquery%23fragment%25?first=1&repeat=2&repeat=3"
+        "/root/items/slash%20value/dot-dot/tail%3Fquery%23fragment%25value?first=1&repeat=2&repeat=3"
     ));
     assert_eq!(requests[0].header("x-prepared-endpoint"), Some("new"));
     assert_eq!(
@@ -333,25 +345,26 @@ async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
 }
 
 #[tokio::test]
-async fn runtime_endpoint_requests_can_select_complete_bounded_response_bytes() {
+async fn runtime_endpoint_requests_can_select_complete_bounded_accepted_bytes() {
     let server = ScriptedServer::start([ResponseScript::ok(b"runtime-undecoded".to_vec())
         .with_header("content-type", "application/x-intentionally-different")])
     .expect("runtime response-bytes server");
     let client = alpha(&server);
-    let endpoint = RuntimeEndpoint::builder(runtime_id("runtime.response_bytes"), Method::GET)
-        .path_segment("response-bytes")
-        .response::<EchoCodec>()
+    let endpoint = RuntimeEndpoint::builder(runtime_id("runtime.accepted_bytes"), Method::GET)
+        .path("accepted-bytes")
+        .accepted_bytes()
+        .accept("application/x-concord-prepared")
         .build()
-        .expect("runtime response-bytes endpoint");
+        .expect("runtime accepted-bytes endpoint");
 
     let response: ApiResponse<Bytes> = client
         .request(endpoint)
-        .response_bytes()
+        .response()
         .await
         .expect("runtime endpoint response bytes");
     assert_eq!(response.value(), b"runtime-undecoded".as_slice());
     assert_eq!(response.status(), concord::http::StatusCode::OK);
-    assert_eq!(response.metadata().endpoint(), "runtime.response_bytes");
+    assert_eq!(response.metadata().endpoint(), "runtime.accepted_bytes");
     assert_eq!(
         server.requests()[0].header("accept"),
         Some("application/x-concord-prepared")
@@ -375,7 +388,7 @@ async fn the_same_prepared_definition_uses_each_selected_client_base_and_core() 
             move |http| http.proxy(proxy)
         })
         .configure_runtime(move |runtime| {
-            runtime.hooks(Arc::new(CountingHooks {
+            runtime.request_gate(Arc::new(CountingHooks {
                 calls: alpha_selected,
             }))
         })
@@ -387,7 +400,7 @@ async fn the_same_prepared_definition_uses_each_selected_client_base_and_core() 
             move |http| http.proxy(proxy)
         })
         .configure_runtime(move |runtime| {
-            runtime.hooks(Arc::new(CountingHooks {
+            runtime.request_gate(Arc::new(CountingHooks {
                 calls: beta_selected,
             }))
         })
@@ -395,8 +408,8 @@ async fn the_same_prepared_definition_uses_each_selected_client_base_and_core() 
         .expect("runtime-distinct beta client");
     let definition = || {
         RuntimeEndpoint::builder(runtime_id("runtime.portable"), Method::GET)
-            .path_segment("portable")
-            .response_bytes()
+            .path("portable")
+            .accepted_bytes()
             .build()
             .expect("portable endpoint")
     };
@@ -511,7 +524,7 @@ async fn hook_rejection_prevents_prepared_factory_and_native_work() {
             let proxy = proxy(&server);
             move |http| http.proxy(proxy)
         })
-        .configure_runtime(|runtime| runtime.hooks(Arc::new(RejectingHooks)))
+        .configure_runtime(|runtime| runtime.request_gate(Arc::new(RejectingHooks)))
         .build()
         .expect("hooked client");
     let endpoint = RuntimeEndpoint::builder(runtime_id("runtime.veto"), Method::POST)
@@ -525,7 +538,7 @@ async fn hook_rejection_prevents_prepared_factory_and_native_work() {
         .request(endpoint)
         .await
         .expect_err("hook must reject");
-    assert_eq!(error.category(), ErrorCategory::Hook);
+    assert_eq!(error.category(), ErrorCategory::PolicyRejected);
     assert_eq!(calls.load(Ordering::SeqCst), 0);
 
     let encode_calls = Arc::new(AtomicUsize::new(0));
@@ -537,7 +550,7 @@ async fn hook_rejection_prevents_prepared_factory_and_native_work() {
         .request(endpoint)
         .await
         .expect_err("hook must reject codec attempt");
-    assert_eq!(error.category(), ErrorCategory::Hook);
+    assert_eq!(error.category(), ErrorCategory::PolicyRejected);
     assert_eq!(encode_calls.load(Ordering::SeqCst), 0);
     assert_eq!(server.request_count(), 0);
 }
@@ -557,7 +570,7 @@ async fn prepared_protected_http_fails_before_hooks_or_body_materialization() {
             move |http| http.proxy(proxy)
         })
         .configure_runtime(move |runtime| {
-            runtime.hooks(Arc::new(CountingHooks {
+            runtime.request_gate(Arc::new(CountingHooks {
                 calls: selected_hooks,
             }))
         })
@@ -655,7 +668,7 @@ async fn prepared_bodies_and_responses_cannot_bypass_runtime_limits() {
         .build()
         .expect("response-limited client");
     let endpoint = RuntimeEndpoint::builder(runtime_id("runtime.limited_response"), Method::GET)
-        .response_bytes()
+        .accepted_bytes()
         .build()
         .expect("limited response endpoint");
     let error = response_client
@@ -683,20 +696,15 @@ async fn prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_ord
             ))
             .rate_limit(rule(
                 "one-part",
-                RateLimitKey::from_parts([
-                    RateLimitKeyPart::new("tenant", "west").expect("tenant key part")
-                ])
-                .expect("one-part rate key"),
+                RateLimitKey::from_canonical_values([("tenant", "west")])
+                    .expect("one-part rate key"),
                 2,
                 &[(20, 2)],
             ))
             .rate_limit(rule(
                 "several-parts",
-                RateLimitKey::from_parts([
-                    RateLimitKeyPart::new("tenant", "east").expect("tenant key part"),
-                    RateLimitKeyPart::new("region", "eu").expect("region key part"),
-                ])
-                .expect("several-parts rate key"),
+                RateLimitKey::from_canonical_values([("tenant", "east"), ("region", "eu")])
+                    .expect("several-parts rate key"),
                 3,
                 &[(30, 3), (300, 30)],
             ))
@@ -742,15 +750,15 @@ async fn prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_ord
             },
             CapturedRule {
                 id: "one-part".to_owned(),
-                parts: vec![("tenant".to_owned(), "west".to_owned())],
+                parts: vec![("tenant".to_owned(), canonical_utf8("west"))],
                 cost: 2,
                 windows: vec![(20, Duration::from_secs(2))],
             },
             CapturedRule {
                 id: "several-parts".to_owned(),
                 parts: vec![
-                    ("tenant".to_owned(), "east".to_owned()),
-                    ("region".to_owned(), "eu".to_owned()),
+                    ("tenant".to_owned(), canonical_utf8("east")),
+                    ("region".to_owned(), canonical_utf8("eu")),
                 ],
                 cost: 3,
                 windows: vec![(30, Duration::from_secs(3)), (300, Duration::from_secs(30))],

@@ -1,5 +1,5 @@
 error: pagination-controlled value `account` cannot partition a rate-limit policy
-  --> tests/ui/fail/rate_limits/rate_limit_named_pagination_binding.rs:16:26
+  --> tests/ui/fail/rate_limits/rate_limit_named_pagination_binding.rs:16:53
    |
-16 |             account = ep.account;
-   |                          ^^^^^^^
+16 |         rate_limit account_reads(account = endpoint.account);
+   |                                                     ^^^^^^^

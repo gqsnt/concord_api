@@ -1,6 +1,6 @@
 //! Runtime endpoint construction alongside the corresponding generated surface.
 //!
-//! Required features: none. Mode: construction, safe planning, and deterministic
+//! Required features: none. Mode: construction, credential-free planning, and deterministic
 //! local execution. Documentation owner:
 //! `docs/runtime_endpoints.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.

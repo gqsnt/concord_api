@@ -2,26 +2,27 @@ use concord::api;
 
 api! {
     client Api {
+        timeout off;
         base "https://example.test";
-    }
+
 
     scope first() {
         rate_limit {
             id "service.shared";
-            10 / 1s;
-            100 / 1m;
+            allow 10 per 1s;
+            allow 100 per 1m;
         }
-        GET read() -> Bytes;
+        GET read() -> Bytes using Bytes;
     }
 
     scope second() {
         rate_limit {
             id "service.shared";
-            100 / 1m;
-            10 / 1s;
+            allow 100 per 1m;
+            allow 10 per 1s;
         }
-        GET write() -> Bytes;
+        GET write() -> Bytes using Bytes;
     }
-}
+}}
 
 fn main() {}

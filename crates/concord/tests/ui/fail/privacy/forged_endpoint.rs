@@ -2,14 +2,15 @@ use concord::api;
 
 api! {
     client SealedApi {
+        timeout off;
         base "https://sealed.example.test";
-    }
+
 
     scope health() {
         path ["health"];
-        GET ping() -> NoContent;
+        GET ping() -> () using NoContent;
     }
-}
+}}
 
 struct ForgedEndpoint;
 
@@ -27,7 +28,7 @@ impl sealed_api::Endpoint for ForgedEndpoint {
         &self,
         _client: &SealedApi,
     ) -> Result<
-        concord::endpoint::SafeRequestPlan,
+        concord::endpoint::CredentialFreeRequestPlan,
         concord::ApiError,
     > {
         unreachable!()

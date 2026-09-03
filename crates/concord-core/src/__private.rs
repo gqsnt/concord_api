@@ -27,8 +27,8 @@ pub use crate::body::{
 pub use crate::client::ClientCore;
 #[doc(hidden)]
 pub use crate::endpoint::{
-    EndpointCapabilities, EndpointDescription, EndpointId, RequestBodyCategory,
-    ResponseAcquisition, SafeRequestPlan, TimeoutSelection,
+    CredentialFreeRequestPlan, EndpointCapabilities, EndpointDescription, EndpointId,
+    Repeatability, RepeatabilitySource, RequestBodyCategory, ResponseAcquisition, TimeoutSelection,
 };
 #[doc(hidden)]
 pub use crate::error::{ApiError, ClientBuildError, ClientInputKind};
@@ -43,14 +43,15 @@ pub use crate::limits::{
 pub use crate::pagination::PaginatedEndpoint;
 #[doc(hidden)]
 pub use crate::rate_limit::{
-    RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPolicy, RateLimitWindow,
+    RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitKeyValue, RateLimitPolicy,
+    RateLimitWindow,
 };
 #[doc(hidden)]
 pub use crate::request::{
     EndpointSpec, HeadBuilder, PreparedHead, RequestMeta, RequestOptions, TimeoutOverride,
 };
 #[doc(hidden)]
-pub use crate::response::{ApiResponse, PageResponseSpec, ResponseBodySpec};
+pub use crate::response::{ApiResponse, PageResponseSpec, ResponseSpec};
 #[doc(hidden)]
 pub use crate::runtime::defaults::{
     DEFAULT_AUTH_FAILURE_COOLDOWN_SECONDS, DEFAULT_PAGINATION_IDENTITY_BYTES,
@@ -214,15 +215,17 @@ pub fn default_runtime_config() -> crate::runtime::RuntimeConfigBuilder {
     crate::runtime::RuntimeConfigBuilder::new()
 }
 
-/// Installs a façade-composed generated default without overriding an explicit
-/// application limiter.
+/// Internal generated-builder selection state.
+///
+/// `UseDeclaration` means that `build` must either evaluate the declaration
+/// default or report a missing required value. `Set` preserves the exact
+/// effective value, including an outer Concord-owned `Option` when present.
 #[doc(hidden)]
-#[must_use]
-pub fn install_generated_default_limiter(
-    runtime: crate::runtime::RuntimeConfigBuilder,
-    limiter: std::sync::Arc<dyn crate::rate_limit::RateLimiter>,
-) -> crate::runtime::RuntimeConfigBuilder {
-    runtime.install_generated_default_limiter(limiter)
+pub enum Override<T> {
+    /// Select declaration behavior at the next build boundary.
+    UseDeclaration,
+    /// Use one caller-selected effective value.
+    Set(T),
 }
 
 /// Applies generated static rate-limit requirements without constructing a
@@ -289,12 +292,12 @@ pub fn request<E>(core: &ClientCore, endpoint: E) -> crate::Request<E> {
 
 /// Creates one no-effect sanitized plan through real public-head preparation.
 #[doc(hidden)]
-pub fn safe_request_plan(
+pub fn credential_free_request_plan(
     core: &ClientCore,
     description: &EndpointDescription,
     response_accept: Option<&'static str>,
     prepare_head: impl FnOnce(HeadBuilder) -> Result<PreparedHead, ApiError>,
-) -> Result<SafeRequestPlan, ApiError> {
+) -> Result<CredentialFreeRequestPlan, ApiError> {
     let meta = RequestMeta::from_description(description);
     let builder = HeadBuilder::new(
         core.base_url(),
@@ -313,16 +316,6 @@ pub fn safe_request_plan(
         ));
     }
     head.validate_rate_limit_key_limit(core.rate_limit_key_limit())?;
-    if let Some(value) = response_accept {
-        crate::response::validate_accept(value).map_err(|error| {
-            drop(error);
-            ApiError::classified(
-                description.endpoint_id().clone(),
-                description.method().clone(),
-                crate::error::ErrorCategory::ResponseContract,
-            )
-        })?;
-    }
     // Safe planning cannot call application-owned body metadata, but the
     // response specification's static Accept value is part of every finalized
     // head and must consume the same aggregate budget as execution.
@@ -337,9 +330,57 @@ pub fn safe_request_plan(
         head.public_headers(),
         Some(head.pagination_sensitive_headers()),
     );
-    Ok(SafeRequestPlan::new(
+    Ok(CredentialFreeRequestPlan::new(
         description.clone(),
-        std::sync::Arc::from(head.safe_url()),
+        std::sync::Arc::from(head.observed_url()),
+        public_headers,
+        head.timeout(),
+        0,
+        head.rate_limit_plan().policies().len(),
+    ))
+}
+
+/// Plans one already-bound inert generated request without inspecting or
+/// materializing its body and without allocating an execution lifecycle.
+#[doc(hidden)]
+pub fn request_plan<E>(
+    request: &crate::Request<E>,
+    description: &EndpointDescription,
+) -> Result<CredentialFreeRequestPlan, ApiError>
+where
+    E: EndpointSpec,
+{
+    let meta = request.endpoint.request_meta();
+    let builder = HeadBuilder::new(
+        request.core.base_url(),
+        meta,
+        &request.options,
+        request.core.default_debug(),
+        request.core.default_runtime_endpoint_timeout(),
+    );
+    let mut head = request.endpoint.prepare_head(builder)?;
+    head.validate_auth_context(request.core.credential_context())?;
+    head.validate_rate_limit_key_limit(request.core.rate_limit_key_limit())?;
+    head.apply_media_headers(E::Response::accept(), None, false)?;
+    head.validate_auth()?;
+    if head.auth().is_empty() {
+        request
+            .core
+            .preflight_url(head.endpoint_id(), head.method(), head.logical_url())?;
+    } else {
+        request.core.preflight_protected_url(
+            head.endpoint_id(),
+            head.method(),
+            head.logical_url(),
+        )?;
+    }
+    let public_headers = crate::redaction::SanitizedHeaderMap::from_headers_with_sensitive(
+        head.public_headers(),
+        Some(head.pagination_sensitive_headers()),
+    );
+    Ok(CredentialFreeRequestPlan::new(
+        description.clone(),
+        std::sync::Arc::from(head.observed_url()),
         public_headers,
         head.timeout(),
         0,
@@ -357,8 +398,8 @@ pub fn response_request<E>(request: crate::Request<E>) -> crate::ResponseRequest
 /// Selects complete bounded bytes for one generated named request wrapper.
 #[doc(hidden)]
 #[must_use]
-pub fn response_bytes_request<E>(request: crate::Request<E>) -> crate::ResponseBytesRequest<E> {
-    crate::ResponseBytesRequest::from_generated(request)
+pub fn accepted_bytes_request<E>(request: crate::Request<E>) -> crate::AcceptedBytesRequest<E> {
+    crate::AcceptedBytesRequest::from_generated(request)
 }
 
 /// Creates one side-effect-free stable pagination wrapper.

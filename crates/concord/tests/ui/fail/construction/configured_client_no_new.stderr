@@ -1,16 +1,16 @@
 error[E0599]: no associated function or constant named `new` found for struct `ConfiguredApi` in the current scope
-  --> tests/ui/fail/construction/configured_client_no_new.rs:19:28
+  --> tests/ui/fail/construction/configured_client_no_new.rs:20:28
    |
  3 | / api! {
  4 | |     client ConfiguredApi {
- 5 | |         base "http://configured.example.test/";
- 6 | |         vars {
+ 5 | |         timeout off;
+ 6 | |         base "http://configured.example.test/";
 ...  |
-15 | |     GET read() -> NoContent;
-16 | | }
-   | |_- associated function or constant `new` not found for this struct
+16 | |     GET read() -> () using NoContent;
+17 | | }}
+   | |__- associated function or constant `new` not found for this struct
 ...
-19 |       let _ = ConfiguredApi::new(
+20 |       let _ = ConfiguredApi::new(
    |                              ^^^ associated function or constant not found in `ConfiguredApi`
    |
    = help: items from traits can only be used if the trait is implemented and in scope

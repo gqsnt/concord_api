@@ -1,14 +1,14 @@
 error[E0599]: no method named `store_as_session` found for struct `OtherRequest` in the current scope
-  --> tests/ui/fail/capabilities/storage_terminal_source_only.rs:36:28
+  --> tests/ui/fail/capabilities/storage_terminal_source_only.rs:37:28
    |
 22 | / api! {
 23 | |     client StorageApi {
-24 | |         base "http://storage.example.test/";
-25 | |         credentials {
+24 | |         timeout off;
+25 | |         base "http://storage.example.test/";
 ...  |
-31 | |     GET other() -> Text;
-32 | | }
-   | |_- method `store_as_session` not found for this struct
+32 | |     GET other() -> String using Text;
+33 | | }}
+   | |__- method `store_as_session` not found for this struct
 ...
-36 |       let _ = client.other().store_as_session();
+37 |       let _ = client.other().store_as_session();
    |                              ^^^^^^^^^^^^^^^^ method not found in `OtherRequest`

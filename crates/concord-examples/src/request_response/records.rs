@@ -71,18 +71,19 @@ impl RecordDecoder for PipeRecords {
 // ANCHOR: records_contract
 api! {
     client RecordsApi {
+        timeout off;
         base "http://records.example.test/";
-    }
 
-    GET custom() -> Records<crate::request_response::records::PipeRecords>;
-    GET buffered_custom() -> BufferedRecords<crate::request_response::records::PipeRecords>;
-    GET csv_rows() -> Csv<(String, u32)>;
-    GET csv_stream() -> Records<Csv<(String, u32)>>;
-    GET configured_csv_rows() -> crate::request_response::records::ConfCsv<(String, u32)>;
-    GET configured_csv_stream() -> Records<crate::request_response::records::ConfCsv<(String, u32)>>;
-    GET nd_json_values() -> NdJson<u32>;
-    GET nd_json_stream() -> Records<NdJson<u32>>;
-}
+
+    GET custom() -> concord::records::RecordStream<crate::request_response::records::PipeRecords> using Records<crate::request_response::records::PipeRecords>;
+    GET buffered_custom() -> Vec<String> using BufferedRecords<crate::request_response::records::PipeRecords>;
+    GET csv_rows() -> Vec<(String, u32)> using Csv<(String, u32)>;
+    GET csv_stream() -> concord::records::RecordStream<Csv<(String, u32)>> using Records<Csv<(String, u32)>>;
+    GET configured_csv_rows() -> Vec<(String, u32)> using crate::request_response::records::ConfCsv<(String, u32)>;
+    GET configured_csv_stream() -> concord::records::RecordStream<crate::request_response::records::ConfCsv<(String, u32)>> using Records<crate::request_response::records::ConfCsv<(String, u32)>>;
+    GET nd_json_values() -> Vec<u32> using NdJson<u32>;
+    GET nd_json_stream() -> concord::records::RecordStream<NdJson<u32>> using Records<NdJson<u32>>;
+}}
 // ANCHOR_END: records_contract
 
 /// Constructs all record-stream requests without opening a connection.

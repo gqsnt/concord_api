@@ -2,15 +2,16 @@ use concord::api;
 
 api! {
     client Api {
+        timeout off;
         base "https://example.test";
         credentials {
-            secret token: String;
+            secret token;
             credential bearer = bearer(secret.token);
         }
-        rate_limit { by [secret.token]; 1 / 1s; }
-    }
+        rate_limit { key [secret.token]; allow 1 per 1s; }
 
-    GET read() -> Bytes;
-}
+
+    GET read() -> Bytes using Bytes;
+}}
 
 fn main() {}

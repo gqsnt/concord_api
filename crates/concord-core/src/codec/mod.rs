@@ -3,7 +3,7 @@
 //! Implement [`EncodeBody`] or [`DecodeBody`] for an ordinary complete
 //! buffered codec. Blanket implementations provide
 //! [`crate::body::RequestBodySpec`] or
-//! [`crate::response::ResponseBodySpec`]. Implement those full lifecycle
+//! [`crate::response::ResponseSpec`]. Implement those full lifecycle
 //! specifications directly only when structural preparation or sealed-mode
 //! response conversion is required.
 

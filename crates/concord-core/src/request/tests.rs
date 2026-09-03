@@ -14,7 +14,7 @@ use crate::body::{EmptyBody, RequestBodyContext, RequestBodyMetadata, RequestBod
 use crate::client::ClientCore;
 use crate::endpoint::EndpointId;
 use crate::error::{ClientBuildErrorKind, ErrorCategory};
-use crate::hooks::{BoxFuture, DebugLevel, RuntimeHooks};
+use crate::hooks::{BoxFuture, DebugLevel, RequestGate};
 use crate::http::HttpConfigBuilder;
 use crate::response::NoContent;
 use crate::runtime::RuntimeConfigBuilder;
@@ -31,11 +31,11 @@ impl CountingHooks {
     }
 }
 
-impl RuntimeHooks for CountingHooks {
+impl RequestGate for CountingHooks {
     fn before_send<'a>(
         &'a self,
         _context: crate::hooks::BeforeSend<'a>,
-    ) -> BoxFuture<'a, Result<(), crate::error::HookError>> {
+    ) -> BoxFuture<'a, Result<(), crate::error::GateError>> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Box::pin(async { Ok(()) })
     }
@@ -122,11 +122,11 @@ impl EndpointSpec for NoContentEndpoint {
     fn into_body(self) {}
 }
 
-fn core(executor: &DeterministicExecutor, hooks: Arc<dyn RuntimeHooks>) -> ClientCore {
+fn core(executor: &DeterministicExecutor, gate: Arc<dyn RequestGate>) -> ClientCore {
     ClientCore::build_with_development(
         "http://preparation.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
-        RuntimeConfigBuilder::new().hooks(hooks),
+        RuntimeConfigBuilder::new().request_gate(gate),
         executor,
     )
     .expect("test core")
@@ -181,11 +181,11 @@ async fn request_creation_and_setters_are_side_effect_free_until_first_poll() {
         "http://preparation.example.test/v1/accounts/team-alpha/bytes"
     );
     assert_eq!(
-        prepared.head.safe_url(),
+        prepared.head.observed_url(),
         prepared.head.logical_url().as_str()
     );
     assert_ne!(
-        prepared.head.safe_url().as_ptr(),
+        prepared.head.observed_url().as_ptr(),
         prepared.head.logical_url().as_str().as_ptr(),
         "safe and logical URL storage must remain distinct"
     );
@@ -275,11 +275,13 @@ async fn runtime_auth_rejects_a_foreign_client_context_before_planning_or_execut
             .auth(Auth::bearer(credential.credential()))
             .build()
             .expect("runtime endpoint");
-    let planning_error =
-        crate::__private::safe_request_plan(&foreign, planned.description(), None, |builder| {
-            planned.prepare_head(builder)
-        })
-        .expect_err("foreign planning context must fail");
+    let planning_error = crate::__private::credential_free_request_plan(
+        &foreign,
+        planned.description(),
+        None,
+        |builder| planned.prepare_head(builder),
+    )
+    .expect_err("foreign planning context must fail");
     assert_eq!(
         planning_error.configuration_kind(),
         Some(crate::error::ConfigurationErrorKind::InvalidAuthentication)
@@ -418,12 +420,12 @@ fn generated_private_endpoint_mapping_preserves_core_and_request_options() {
 }
 
 #[tokio::test]
-async fn live_operation_ids_are_unique_across_cores_sharing_hooks() {
-    let hooks: Arc<dyn RuntimeHooks> = Arc::new(CountingHooks::new());
+async fn live_operation_ids_are_unique_across_cores_sharing_gates() {
+    let gate: Arc<dyn RequestGate> = Arc::new(CountingHooks::new());
     let first_executor = DeterministicExecutor::new();
     let second_executor = DeterministicExecutor::new();
-    let first_core = core(&first_executor, Arc::clone(&hooks));
-    let second_core = core(&second_executor, hooks);
+    let first_core = core(&first_executor, Arc::clone(&gate));
+    let second_core = core(&second_executor, gate);
     let (first, second) = tokio::join!(
         prepare_operation(Request::new(first_core, NoContentEndpoint)),
         prepare_operation(Request::new(second_core, NoContentEndpoint)),
@@ -438,7 +440,7 @@ async fn live_operation_ids_are_unique_across_cores_sharing_hooks() {
 fn fixed_tls_preflights_fail_during_core_construction() {
     let http_only = match ClientCore::build(
         "http://example.test",
-        HttpConfigBuilder::new().https_only(true),
+        HttpConfigBuilder::new().require_https(),
         RuntimeConfigBuilder::new(),
     ) {
         Ok(_) => panic!("https-only must reject a fixed HTTP base"),

@@ -1,8 +1,7 @@
 use std::time::Duration;
 
 use proc_macro2::Span;
-use syn::spanned::Spanned;
-use syn::{GenericArgument, Ident, LitBool, LitInt, LitStr, Path, PathArguments, Type, TypePath};
+use syn::{Ident, LitBool, LitChar, LitFloat, LitInt, LitStr, Path, Type};
 
 #[derive(Clone)]
 pub(crate) struct Clause<T> {
@@ -13,17 +12,18 @@ pub(crate) struct Clause<T> {
 #[derive(Clone)]
 pub(crate) struct SourceApi {
     pub(crate) client: SourceClient,
-    pub(crate) children: Vec<SourceChild>,
 }
 
 #[derive(Clone)]
 pub(crate) struct SourceClient {
+    pub(crate) attributes: DeclarationAttributes,
     pub(crate) name: Ident,
     pub(crate) base: Clause<LitStr>,
     pub(crate) values: Option<Clause<Vec<ValueDecl>>>,
     pub(crate) credentials: Option<Clause<CredentialsBlock>>,
     pub(crate) rate_limits: Option<Clause<Vec<RateLimitDefinitionDecl>>>,
     pub(crate) attachment_site: AttachmentSite,
+    pub(crate) children: Vec<SourceChild>,
 }
 
 #[derive(Clone)]
@@ -37,6 +37,7 @@ pub(crate) enum SourceChild {
 
 #[derive(Clone)]
 pub(crate) struct SourceScope {
+    pub(crate) attributes: DeclarationAttributes,
     pub(crate) name: Ident,
     pub(crate) parameters: Vec<ValueDecl>,
     pub(crate) attachment_site: AttachmentSite,
@@ -45,21 +46,46 @@ pub(crate) struct SourceScope {
 
 #[derive(Clone)]
 pub(crate) struct SourceEndpoint {
+    pub(crate) attributes: DeclarationAttributes,
     pub(crate) method: MethodKind,
     pub(crate) name: Ident,
     pub(crate) parameters: Vec<ValueDecl>,
     pub(crate) body: Option<BodyDecl>,
     pub(crate) attachment_site: AttachmentSite,
-    pub(crate) response: Type,
+    pub(crate) output: Type,
+    pub(crate) response_spec: Type,
     pub(crate) pagination: Option<Clause<PaginationDecl>>,
     pub(crate) contract_id: Option<Clause<LitStr>>,
+    pub(crate) repeatability: Option<Clause<RepeatabilityDecl>>,
+    pub(crate) accept: Option<Clause<AcceptOperation>>,
+    pub(crate) expose_accepted_bytes: Option<Span>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RepeatabilityDecl {
+    Idempotent,
+    Never,
+}
+
+#[derive(Clone)]
+pub(crate) enum AcceptOperation {
+    Value(PublicExpr),
+    Off,
 }
 
 #[derive(Clone)]
 pub(crate) struct BodyDecl {
     pub(crate) name: Ident,
-    pub(crate) ty: Type,
+    pub(crate) input_type: Type,
+    pub(crate) spec_type: Type,
+    pub(crate) docs: Vec<LitStr>,
     pub(crate) position: usize,
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct DeclarationAttributes {
+    pub(crate) docs: Vec<LitStr>,
+    pub(crate) deprecated: Option<LitStr>,
 }
 
 #[derive(Clone)]
@@ -76,7 +102,7 @@ pub(crate) struct PaginationField {
 
 #[derive(Clone)]
 pub(crate) enum PaginationInitializer {
-    Bind {
+    Live {
         namespace: Ident,
         destination: Ident,
     },
@@ -92,22 +118,32 @@ pub(crate) enum PaginationValue {
 #[derive(Clone)]
 pub(crate) struct ValueDecl {
     pub(crate) name: Ident,
-    pub(crate) ty: Type,
-    pub(crate) kind: ValueKind,
+    pub(crate) payload_type: Type,
+    pub(crate) presence: ValuePresence,
+    pub(crate) initializer: Option<DefaultExpr>,
+    pub(crate) observation: Observation,
+    pub(crate) docs: Vec<LitStr>,
     pub(crate) position: usize,
 }
 
-#[derive(Clone)]
-pub(crate) enum ValueKind {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ValuePresence {
     Required,
     Optional,
-    Defaulted(DefaultExpr),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Observation {
+    Ordinary,
+    Redacted,
 }
 
 #[derive(Clone)]
 pub(crate) enum DefaultExpr {
     String(LitStr),
+    Character(LitChar),
     Integer { negative: bool, literal: LitInt },
+    Float { negative: bool, literal: LitFloat },
     Boolean(LitBool),
     Path(Path),
     TraitDefault(Span),
@@ -115,7 +151,7 @@ pub(crate) enum DefaultExpr {
 
 #[derive(Clone, Default)]
 pub(crate) struct AttachmentSite {
-    pub(crate) host: Option<Clause<HostOperation>>,
+    pub(crate) subdomain: Option<Clause<SubdomainOperation>>,
     pub(crate) path: Option<Clause<PathOperation>>,
     pub(crate) query: Option<Clause<QueryOperation>>,
     pub(crate) headers: Option<Clause<HeaderOperation>>,
@@ -133,6 +169,7 @@ pub(crate) enum RateLimitAttachmentDecl {
 #[derive(Clone)]
 pub(crate) struct RateLimitDefinitionDecl {
     pub(crate) name: Ident,
+    pub(crate) formals: Vec<Ident>,
     pub(crate) id: Option<Clause<LitStr>>,
     pub(crate) dimensions: Vec<RateLimitDefinitionDimensionDecl>,
     pub(crate) cost: u32,
@@ -304,7 +341,8 @@ pub(crate) enum AuthChallenge {
 }
 
 #[derive(Clone)]
-pub(crate) enum HostOperation {
+pub(crate) enum SubdomainOperation {
+    Prepend(Vec<PublicExpr>),
     Replace(Vec<PublicExpr>),
     Off,
 }
@@ -325,8 +363,25 @@ pub(crate) enum QueryOperation {
 
 #[derive(Clone)]
 pub(crate) enum QueryEntry {
-    Assign { key: LitStr, value: PublicExpr },
+    Assign {
+        key: LitStr,
+        emission: QueryEmission,
+    },
+    Append {
+        key: LitStr,
+        emission: QueryEmission,
+    },
     Remove(LitStr),
+}
+
+#[derive(Clone)]
+pub(crate) enum QueryEmission {
+    One(PublicExpr),
+    Each {
+        namespace: Ident,
+        name: Ident,
+        span: Span,
+    },
 }
 
 #[derive(Clone)]
@@ -359,7 +414,7 @@ pub(crate) enum PublicExpr {
     String(LitStr),
     Integer(LitInt),
     Reference { namespace: Ident, name: Ident },
-    Format { span: Span, values: Vec<PublicExpr> },
+    Concat { span: Span, values: Vec<PublicExpr> },
 }
 
 #[derive(Clone)]
@@ -371,58 +426,5 @@ pub(crate) enum MethodKind {
     Delete,
     Head,
     Options,
-    Trace,
-    Connect,
     Custom(LitStr),
-}
-
-pub(crate) fn syntactic_option_inner(ty: &Type) -> syn::Result<Option<Type>> {
-    let Type::Path(TypePath {
-        qself: None, path, ..
-    }) = ty
-    else {
-        return Ok(None);
-    };
-    let segments = path.segments.iter().collect::<Vec<_>>();
-    let option = match segments.as_slice() {
-        [option] if path.leading_colon.is_none() && option.ident == "Option" => *option,
-        [std, option_module, option]
-            if std.ident == "std"
-                && option_module.ident == "option"
-                && option.ident == "Option"
-                && matches!(std.arguments, PathArguments::None)
-                && matches!(option_module.arguments, PathArguments::None) =>
-        {
-            *option
-        }
-        _ => return Ok(None),
-    };
-    let PathArguments::AngleBracketed(arguments) = &option.arguments else {
-        return Err(option
-            .ident
-            .span()
-            .error("`Option` requires exactly one type argument"));
-    };
-    let mut values = arguments.args.iter();
-    let Some(GenericArgument::Type(inner)) = values.next() else {
-        return Err(arguments
-            .span()
-            .error("`Option` requires exactly one type argument"));
-    };
-    if values.next().is_some() {
-        return Err(arguments
-            .span()
-            .error("`Option` requires exactly one type argument"));
-    }
-    Ok(Some(inner.clone()))
-}
-
-trait SpanError {
-    fn error(self, message: impl std::fmt::Display) -> syn::Error;
-}
-
-impl SpanError for Span {
-    fn error(self, message: impl std::fmt::Display) -> syn::Error {
-        syn::Error::new(self, message)
-    }
 }

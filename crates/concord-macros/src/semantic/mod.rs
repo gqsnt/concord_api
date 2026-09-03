@@ -13,27 +13,28 @@ use proc_macro2::Span;
 use syn::Ident;
 
 use self::model::{
-    Api, Child, Client, ContractId, Credential, Endpoint, EndpointDocTimeout, NormalizedConfig,
-    RequestBody, ResolvedMethod, Scope, Value,
+    Api, AttachmentFamily, AttachmentIr, AttachmentOperation, Child, Client, ContractId,
+    Credential, DeclarationMetadata, Endpoint, NormalizedConfig, Repeatability, RequestBody,
+    ResolvedAccept, ResolvedMethod, Scope, Value,
 };
 use self::surface::{
-    EndpointDocContext, VisibleScopeDoc, canonical_ident, client_surface, endpoint_doc_model,
-    endpoint_surface, finalize_endpoint_surfaces, scope_surface, to_snake_case,
-    validate_surface_modules,
+    canonical_ident, client_surface, endpoint_surface, finalize_endpoint_surfaces, scope_surface,
+    to_snake_case, validate_surface_modules,
 };
 use crate::syntax::ast::{
-    MethodKind as SourceMethod, SourceApi, SourceChild, SourceEndpoint, SourceScope,
-    TimeoutOperation,
+    AcceptOperation, DeclarationAttributes, MethodKind as SourceMethod, RepeatabilityDecl,
+    SourceApi, SourceChild, SourceEndpoint, SourceScope,
 };
 use auth::{
     convert_credentials, resolve_endpoint_credentials, validate_credential_cycles,
     validate_credential_names,
 };
+use inheritance::{ExpressionUse, local_attachment_ir};
 use pagination::{pagination_bound_values, validate_pagination_binding_destinations};
 use rate_limits::{
-    RateLimitAttachmentSite, RateLimitDefinition, RateLimitResolutionContext,
-    resolve_rate_limit_definitions, source_tree_declares_rate_limits,
-    validate_effective_rate_limit_pagination_dependencies, validate_rate_limit_definitions_used,
+    RateLimitDefinition, RateLimitResolutionContext, resolve_rate_limit_definitions,
+    source_tree_declares_rate_limits, validate_effective_rate_limit_pagination_dependencies,
+    validate_rate_limit_definitions_used,
 };
 use symbols::{
     ScopeFrame, convert_values, validate_child_methods, validate_endpoint_setters,
@@ -46,7 +47,6 @@ type RateLimitSchema = (Vec<String>, Vec<RateLimitWindowSchema>, Span);
 struct Resolver<'a> {
     base: &'a syn::LitStr,
     client_name: &'a Ident,
-    client_surface: &'a self::model::ClientSurface,
     client_values: &'a [Value],
     credentials: &'a [Credential],
     rate_limit_definitions: Vec<RateLimitDefinition>,
@@ -58,8 +58,8 @@ struct Resolver<'a> {
 pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
     let SourceApi {
         client: source_client,
-        children: source_children,
     } = source;
+    let source_children = source_client.children.clone();
     let source_declares_limiter =
         source_tree_declares_rate_limits(&source_client.attachment_site, &source_children);
     let rate_limit_definitions = resolve_rate_limit_definitions(
@@ -83,11 +83,11 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
     let client_name = source_client.name;
     let base = source_client.base.value;
     let surface = client_surface(&client_name);
-    let (config, children) = {
+    let local_attachments = local_attachment_ir(&source_client.attachment_site, "client");
+    let (config, children, rate_limit_profiles) = {
         let mut resolver = Resolver {
             base: &base,
             client_name: &client_name,
-            client_surface: &surface,
             client_values: &values,
             credentials: &credentials,
             rate_limit_definitions,
@@ -102,14 +102,18 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
             &[],
             None,
             &RateLimitResolutionContext {
-                attachment_site: RateLimitAttachmentSite::Client,
                 id_path: &client_id,
                 lexical_origin: "client",
             },
         )?;
         let children = resolver.resolve_children(source_children, &config, &[], &[])?;
         validate_rate_limit_definitions_used(&resolver.rate_limit_definitions)?;
-        (config, children)
+        let rate_limit_profiles = resolver
+            .rate_limit_definitions
+            .iter()
+            .map(RateLimitDefinition::profile)
+            .collect();
+        (config, children, rate_limit_profiles)
     };
     validate_contract_ids(&children)?;
     resolve_endpoint_credentials(&mut credentials, &children)?;
@@ -117,17 +121,20 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
     finalize_endpoint_surfaces(&mut children, &credentials)?;
     validate_surface_modules(&children, None, "generated client module")?;
     validate_credential_cycles(&credentials, &children)?;
-    validate_child_methods(&children, &[], "generated client", true)?;
+    validate_child_methods(&children, &[], "client", true)?;
 
     let client = Client {
+        attributes: declaration_metadata(source_client.attributes),
         name: client_name,
         surface,
         base,
         values,
         secrets,
         credentials,
+        rate_limit_profiles,
         requires_limiter: source_declares_limiter,
         config,
+        local_attachments,
         children,
     };
 
@@ -172,11 +179,28 @@ impl Resolver<'_> {
         let id = self.next_scope_id;
         self.next_scope_id += 1;
         let parameters = convert_values(source.parameters)?;
+        if let Some(existing) = visible_scopes
+            .iter()
+            .find(|scope| canonical_ident(&scope.name) == canonical_ident(&source.name))
+        {
+            let mut error = source.name.span().error(format!(
+                "scope identifier `{}` duplicates an ancestor and would make owner references ambiguous",
+                canonical_ident(&source.name)
+            ));
+            error.combine(
+                existing
+                    .name
+                    .span()
+                    .error("the ancestor scope is declared here"),
+            );
+            return Err(error);
+        }
         validate_setter_namespace(&parameters, "scope facade", false, false)?;
 
         let mut frames = visible_scopes.to_vec();
         frames.push(ScopeFrame {
             id,
+            name: source.name.clone(),
             values: parameters.clone(),
         });
         let mut path = scope_path.to_vec();
@@ -189,13 +213,13 @@ impl Resolver<'_> {
                 .collect::<Vec<_>>()
                 .join("::")
         );
+        let local_attachments = local_attachment_ir(&source.attachment_site, &lexical_origin);
         let config = self.normalize_attachment_site(
             &source.attachment_site,
             parent,
             &frames,
             None,
             &RateLimitResolutionContext {
-                attachment_site: RateLimitAttachmentSite::Scope,
                 id_path: &id_path,
                 lexical_origin: &lexical_origin,
             },
@@ -206,10 +230,12 @@ impl Resolver<'_> {
         let surface = scope_surface(&source.name);
         Ok(Scope {
             id,
+            attributes: declaration_metadata(source.attributes),
             name: source.name,
             surface,
             parameters,
             config,
+            local_attachments,
             children,
         })
     }
@@ -224,7 +250,7 @@ impl Resolver<'_> {
         let id = self.next_endpoint_id;
         self.next_endpoint_id += 1;
         let parameters = convert_values(source.parameters)?;
-        validate_endpoint_setters(&parameters, visible_scopes)?;
+        validate_endpoint_setters(&parameters)?;
         let pagination = self.resolve_pagination(
             source.pagination.map(|clause| clause.value),
             visible_scopes,
@@ -262,36 +288,65 @@ impl Resolver<'_> {
                 .collect::<Vec<_>>()
                 .join("::")
         );
+        let mut local_attachments = local_attachment_ir(&source.attachment_site, &lexical_origin);
+        if let Some(accept) = &source.accept {
+            local_attachments.push(AttachmentIr {
+                family: AttachmentFamily::Accept,
+                operation: match &accept.value {
+                    AcceptOperation::Off => AttachmentOperation::Off,
+                    AcceptOperation::Value(_) => AttachmentOperation::Set,
+                },
+                origin: lexical_origin.clone(),
+                target: None,
+                item_count: usize::from(matches!(&accept.value, AcceptOperation::Value(_))),
+            });
+        }
         let config = self.normalize_attachment_site(
             &source.attachment_site,
             parent,
             visible_scopes,
             Some(&parameters),
             &RateLimitResolutionContext {
-                attachment_site: RateLimitAttachmentSite::Endpoint,
                 id_path: &contract_id.value,
                 lexical_origin: &lexical_origin,
             },
         )?;
         validate_effective_rate_limit_pagination_dependencies(&config, &pagination_values)?;
         validate_pagination_binding_destinations(&pagination_values)?;
-        let timeout = match source.attachment_site.timeout.as_ref() {
-            Some(clause) => match &clause.value {
-                TimeoutOperation::Off => EndpointDocTimeout::Disabled,
-                TimeoutOperation::Set(value) => EndpointDocTimeout::Overridden(value.value),
-            },
-            None => config
-                .timeout
-                .map_or(EndpointDocTimeout::Disabled, EndpointDocTimeout::Inherited),
-        };
         head_limits::validate_static_head(self.base, &config, source.name.span())?;
         let body_position = source.body.as_ref().map(|body| body.position);
         let body = source.body.map(|body| RequestBody {
             name: body.name,
-            ty: body.ty,
+            input_type: body.input_type,
+            spec_type: body.spec_type,
+            docs: body.docs.into_iter().map(|doc| doc.value()).collect(),
         });
         let method = resolve_method(source.method);
-        let response = source.response;
+        let output = source.output;
+        let response_spec = source.response_spec;
+        let repeatability_explicit = source.repeatability.is_some();
+        let repeatability = source.repeatability.map_or_else(
+            || method_default_repeatability(&method),
+            |clause| match clause.value {
+                RepeatabilityDecl::Idempotent => Repeatability::Idempotent,
+                RepeatabilityDecl::Never => Repeatability::Never,
+            },
+        );
+        let expose_accepted_bytes = source.expose_accepted_bytes.is_some();
+        let accept = source
+            .accept
+            .map(|clause| match clause.value {
+                AcceptOperation::Off => Ok(ResolvedAccept::Off),
+                AcceptOperation::Value(value) => self
+                    .resolve_expr(
+                        &value,
+                        visible_scopes,
+                        Some(&parameters),
+                        ExpressionUse::Single,
+                    )
+                    .map(ResolvedAccept::Value),
+            })
+            .transpose()?;
         let surface = endpoint_surface(
             self.client_name,
             scope_path,
@@ -299,46 +354,27 @@ impl Resolver<'_> {
             &parameters,
             body_position,
             pagination.is_some(),
-        );
-        let visible_scope_docs = scope_path
-            .iter()
-            .zip(visible_scopes)
-            .map(|(name, scope)| VisibleScopeDoc {
-                id: scope.id,
-                name,
-                values: &scope.values,
-            })
-            .collect::<Vec<_>>();
-        let docs = endpoint_doc_model(
-            &surface,
-            EndpointDocContext {
-                client_name: self.client_name,
-                client_surface: self.client_surface,
-                base_url: self.base,
-                client_values: self.client_values,
-                scopes: &visible_scope_docs,
-                method: &method,
-                parameters: &parameters,
-                body: body.as_ref(),
-                config: &config,
-                response: &response,
-                timeout,
-                contract_id: &contract_id,
-            },
+            expose_accepted_bytes,
         );
         Ok(Endpoint {
             id,
+            attributes: declaration_metadata(source.attributes),
             method,
             name: source.name,
             surface,
-            docs,
             parameters,
             body,
             contract_id,
             config,
-            response,
+            local_attachments,
+            output,
+            response_spec,
             pagination,
             dsl_path,
+            repeatability,
+            repeatability_explicit,
+            accept,
+            expose_accepted_bytes,
         })
     }
 }
@@ -352,9 +388,28 @@ fn resolve_method(source: SourceMethod) -> ResolvedMethod {
         SourceMethod::Delete => ResolvedMethod::Delete,
         SourceMethod::Head => ResolvedMethod::Head,
         SourceMethod::Options => ResolvedMethod::Options,
-        SourceMethod::Trace => ResolvedMethod::Trace,
-        SourceMethod::Connect => ResolvedMethod::Connect,
         SourceMethod::Custom(value) => ResolvedMethod::Custom(value),
+    }
+}
+
+fn method_default_repeatability(method: &ResolvedMethod) -> Repeatability {
+    match method {
+        ResolvedMethod::Get
+        | ResolvedMethod::Put
+        | ResolvedMethod::Delete
+        | ResolvedMethod::Head
+        | ResolvedMethod::Options => Repeatability::Idempotent,
+        ResolvedMethod::Custom(method) if method.value() == "TRACE" => Repeatability::Idempotent,
+        ResolvedMethod::Post | ResolvedMethod::Patch | ResolvedMethod::Custom(_) => {
+            Repeatability::Never
+        }
+    }
+}
+
+fn declaration_metadata(source: DeclarationAttributes) -> DeclarationMetadata {
+    DeclarationMetadata {
+        docs: source.docs.into_iter().map(|doc| doc.value()).collect(),
+        deprecated: source.deprecated.map(|note| note.value()),
     }
 }
 

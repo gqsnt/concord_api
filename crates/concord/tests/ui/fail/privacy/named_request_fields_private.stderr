@@ -1,5 +1,21 @@
-error[E0616]: field `__concord_inner` of struct `ItemRequest` is private
-  --> tests/ui/fail/privacy/named_request_fields_private.rs:14:21
+error[E0061]: this method takes 1 argument but 0 arguments were supplied
+  --> tests/ui/fail/privacy/named_request_fields_private.rs:14:26
    |
-14 |     let _ = request.__concord_inner;
+14 |     let request = client.item();
+   |                          ^^^^-- argument #1 of type `Option<bool>` is missing
+   |
+note: method defined here
+  --> tests/ui/fail/privacy/named_request_fields_private.rs:9:9
+   |
+ 9 |     GET item(verbose: Option<bool>) -> Bytes using Bytes;
+   |         ^^^^ ---------------------
+help: provide the argument
+   |
+14 |     let request = client.item(/* Option<bool> */);
+   |                               ++++++++++++++++++
+
+error[E0616]: field `__concord_inner` of struct `ItemRequest` is private
+  --> tests/ui/fail/privacy/named_request_fields_private.rs:15:21
+   |
+15 |     let _ = request.__concord_inner;
    |                     ^^^^^^^^^^^^^^^ private field

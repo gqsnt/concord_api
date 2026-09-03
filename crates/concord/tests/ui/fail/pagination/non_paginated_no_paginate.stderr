@@ -1,13 +1,14 @@
 error[E0599]: no method named `paginate` found for struct `ReadRequest` in the current scope
-  --> tests/ui/fail/pagination/non_paginated_no_paginate.rs:13:27
+  --> tests/ui/fail/pagination/non_paginated_no_paginate.rs:14:27
    |
  3 | / api! {
  4 | |     client PlainApi {
- 5 | |         base "http://plain.example.test/";
+ 5 | |         timeout off;
+ 6 | |         base "http://plain.example.test/";
 ...  |
- 8 | |     GET read() -> Bytes;
- 9 | | }
-   | |_- method `paginate` not found for this struct
+ 9 | |     GET read() -> Bytes using Bytes;
+10 | | }}
+   | |__- method `paginate` not found for this struct
 ...
-13 |       let _ = client.read().paginate(1_u32);
+14 |       let _ = client.read().paginate(1_u32);
    |                             ^^^^^^^^ method not found in `ReadRequest`

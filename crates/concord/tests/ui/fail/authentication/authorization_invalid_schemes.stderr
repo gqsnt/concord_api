@@ -1,23 +1,23 @@
 error: an Authorization scheme cannot be empty
-  --> tests/ui/fail/authentication/authorization_invalid_schemes.rs:12:28
+  --> tests/ui/fail/authentication/authorization_invalid_schemes.rs:13:30
    |
-12 |         auth authorization "" = key;
-   |                            ^^
+13 |         auth { authorization "" = key; }
+   |                              ^^
 
 error: an Authorization scheme must contain only ASCII HTTP token characters
-  --> tests/ui/fail/authentication/authorization_invalid_schemes.rs:25:28
+  --> tests/ui/fail/authentication/authorization_invalid_schemes.rs:27:30
    |
-25 |         auth authorization "Token value" = key;
-   |                            ^^^^^^^^^^^^^
+27 |         auth { authorization "Token value" = key; }
+   |                              ^^^^^^^^^^^^^
 
 error: an Authorization scheme must contain only ASCII HTTP token characters
-  --> tests/ui/fail/authentication/authorization_invalid_schemes.rs:38:28
+  --> tests/ui/fail/authentication/authorization_invalid_schemes.rs:41:30
    |
-38 |         auth authorization "Tökén" = key;
-   |                            ^^^^^^^
+41 |         auth { authorization "Tökén" = key; }
+   |                              ^^^^^^^
 
 error: an Authorization scheme permits at most 256 ASCII bytes
-  --> tests/ui/fail/authentication/authorization_invalid_schemes.rs:51:28
+  --> tests/ui/fail/authentication/authorization_invalid_schemes.rs:55:30
    |
-51 | ...on "ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt" = ...
+55 | ...on "ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt" = ...
    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

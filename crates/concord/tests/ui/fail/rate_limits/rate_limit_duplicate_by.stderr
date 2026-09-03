@@ -1,5 +1,5 @@
-error: an anonymous rate-limit attachment permits at most one `by` clause
- --> tests/ui/fail/rate_limits/rate_limit_duplicate_by.rs:8:13
+error: an anonymous rate-limit attachment permits at most one `key` clause
+ --> tests/ui/fail/rate_limits/rate_limit_duplicate_by.rs:9:13
   |
-8 |             by [endpoint];
-  |             ^^
+9 |             key [endpoint];
+  |             ^^^

@@ -2,7 +2,7 @@ use super::*;
 
 struct AcceptedNotFoundStream;
 
-impl ResponseBodySpec for AcceptedNotFoundStream {
+impl ResponseSpec for AcceptedNotFoundStream {
     type Output = ByteStream;
     type Mode = Streaming;
 
@@ -269,7 +269,7 @@ async fn invalid_stream_marker_is_rejected_preflight_and_required_parameters_are
     let error = stream_request::<InvalidStreamMedia>(invalid_core)
         .await
         .expect_err("invalid media marker");
-    assert_eq!(error.category(), ErrorCategory::ResponseContract);
+    assert_eq!(error.category(), ErrorCategory::Configuration);
     assert_eq!(invalid_executor.application().request_count().unwrap(), 0);
     assert!(invalid_hooks.records().iter().all(|record| !matches!(
         record,

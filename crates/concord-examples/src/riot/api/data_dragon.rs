@@ -12,33 +12,33 @@ api! {
     client DDragonApi {
         base "https://ddragon.leagueoflegends.com/";
 
-        vars {
+        values {
             locale: crate::riot::domain::DDragonLocale = crate::riot::domain::DDragonLocale::EnUs;
         }
 
         headers { "User-Agent" = "ConcordRiotExample/1.0"; }
         timeout 20s;
-    }
 
-    GET versions() -> Json<Vec<String>> {
+
+    GET versions() -> Vec<String> using Json<Vec<String>> {
         path ["api", "versions.json"];
     }
 
-    GET realm(region: String) -> Json<serde_json::Value> {
-        path ["realms", fmt[ep.region, ".json"]];
+    GET realm(region: String) -> serde_json::Value using Json<serde_json::Value> {
+        path ["realms", concat [endpoint.region, ".json"]];
     }
 
     scope version(version: String) {
-        path ["cdn", scope.version];
+        path ["cdn", version.version];
 
         scope data() {
-            path ["data", vars.locale];
+            path ["data", client.locale];
 
-            GET champions() -> Json<serde_json::Value> {
+            GET champions() -> serde_json::Value using Json<serde_json::Value> {
                 path ["champion.json"];
             }
 
-            GET items() -> Json<serde_json::Value> {
+            GET items() -> serde_json::Value using Json<serde_json::Value> {
                 path ["item.json"];
             }
         }
@@ -46,13 +46,13 @@ api! {
         scope assets() {
             path ["img"];
 
-            GET champion_image(filename: String) -> Bytes {
-                path ["champion", ep.filename];
+            GET champion_image(filename: String) -> Bytes using Bytes {
+                path ["champion", endpoint.filename];
             }
 
-            GET item_image(filename: String) -> Bytes {
-                path ["item", ep.filename];
+            GET item_image(filename: String) -> Bytes using Bytes {
+                path ["item", endpoint.filename];
             }
         }
     }
-}
+}}

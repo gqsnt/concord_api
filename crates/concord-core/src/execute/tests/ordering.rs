@@ -73,13 +73,19 @@ async fn limiter_observes_before_user_response_hook() {
     assert_eq!(records[0].endpoint, ENDPOINT);
     assert_eq!(records[0].method, Method::GET);
     assert_eq!(
-        records[0].safe_url,
+        records[0].observed_url,
         "http://execution.example.test/v1/health/bytes"
     );
     assert_eq!(records[0].host.as_deref(), Some("execution.example.test"));
     assert_eq!(records[0].page_index, 0);
     assert_eq!(records[0].rule_ids, ["ExecutionApi::rate_limit::tenant"]);
-    assert_eq!(records[0].key_values, [KEY_SENTINEL]);
+    let expected_key = crate::rate_limit::encode_canonical(
+        &KEY_SENTINEL.to_owned(),
+        crate::rate_limit::MAX_RATE_LIMIT_KEY_BYTES,
+    )
+    .expect("canonical test value")
+    .into_vec();
+    assert_eq!(records[0].key_values, [expected_key]);
     let ordinary_diagnostics = format!(
         "{}\n{:?}\n{:?}",
         debug.lock().expect("debug output").join("\n"),
@@ -129,7 +135,7 @@ async fn limiter_learns_cooldown_when_user_hook_would_fail() {
     let error = bytes_request(core)
         .await
         .expect_err("response hook rejection");
-    assert_eq!(error.category(), ErrorCategory::Hook);
+    assert_eq!(error.category(), ErrorCategory::PolicyRejected);
     assert!(limiter.learned_cooldown.load(Ordering::SeqCst));
     assert_eq!(limiter.observations.load(Ordering::SeqCst), 1);
     assert_eq!(body_polls.load(Ordering::SeqCst), 0);
@@ -139,7 +145,7 @@ async fn limiter_learns_cooldown_when_user_hook_would_fail() {
             LifecycleRecord::Before { .. },
             LifecycleRecord::Response(_, StatusCode::TOO_MANY_REQUESTS),
             LifecycleRecord::Complete {
-                outcome: CompletionOutcome::Hook,
+                outcome: CompletionOutcome::PolicyRejected,
                 status: Some(StatusCode::TOO_MANY_REQUESTS),
                 ..
             }
@@ -243,7 +249,7 @@ async fn limiter_observation_uses_sanitized_head() {
     let responses = limiter.response_records();
     assert_eq!(responses.len(), 1);
     assert_eq!(
-        responses[0].safe_url,
+        responses[0].observed_url,
         "http://execution.example.test/v1/health/bytes"
     );
     assert_eq!(responses[0].status, StatusCode::OK);
@@ -254,7 +260,7 @@ async fn limiter_observation_uses_sanitized_head() {
 }
 
 #[tokio::test]
-async fn response_bytes_reuses_limiter_hooks_observation_and_success_completion() {
+async fn accepted_bytes_reuses_limiter_hooks_observation_and_success_completion() {
     const RAW_BODY: &[u8] = b"raw-lifecycle-body-secret-2f5e";
     const RATE_KEY: &str = "raw-lifecycle-rate-key-secret-e3b1";
     let executor = DeterministicExecutor::new();
@@ -276,7 +282,7 @@ async fn response_bytes_reuses_limiter_hooks_observation_and_success_completion(
     .with_debug_output(Arc::clone(&debug));
 
     let response = rate_limited_bytes_request(core, Some(Duration::from_secs(30)), RATE_KEY)
-        .response_bytes()
+        .accepted_bytes()
         .await
         .expect("response-bytes lifecycle success");
     assert_eq!(response.value(), RAW_BODY);
@@ -420,9 +426,9 @@ async fn prepared_plans_use_selected_limiter_metadata_and_configured_key_limit()
     );
     let endpoint =
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.governed"), Method::GET)
-            .path_segment("governed")
+            .path("governed")
             .rate_limit(rule("Prepared::governed", RateLimitKey::global()))
-            .response_bytes()
+            .accepted_bytes()
             .build()
             .expect("prepared governed endpoint");
     assert_eq!(
@@ -453,7 +459,7 @@ async fn prepared_plans_use_selected_limiter_metadata_and_configured_key_limit()
                 ])
                 .expect("prepared oversized key"),
             ))
-            .response_bytes()
+            .accepted_bytes()
             .build()
             .expect("prepared oversized-plan endpoint");
     let error = Request::new(rejected_core, rejected)
@@ -485,7 +491,7 @@ async fn hook_body_and_key_preparation_failures_perform_no_limiter_work() {
     let error = rate_limited_bytes_request(core, Some(Duration::from_secs(30)), "hook-veto-key")
         .await
         .expect_err("hook veto");
-    assert_eq!(error.category(), ErrorCategory::Hook);
+    assert_eq!(error.category(), ErrorCategory::PolicyRejected);
     assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 0);
 
     hooks.veto.store(false, Ordering::SeqCst);
@@ -533,7 +539,7 @@ async fn hook_body_and_key_preparation_failures_perform_no_limiter_work() {
 
 #[tokio::test]
 async fn default_key_limit_accepts_1024_bytes_and_rejects_the_first_excess() {
-    const KEY_PART_NAME_BYTES: usize = "vars.tenant".len();
+    const KEY_BYTES_OVERHEAD: usize = 4 + "client.tenant".len() + 8 + 1 + "utf8".len() + 8;
     let executor = DeterministicExecutor::new();
     executor
         .application()
@@ -547,8 +553,8 @@ async fn default_key_limit_accepts_1024_bytes_and_rejects_the_first_excess() {
         RuntimeConfigBuilder::new().rate_limiter(limiter.clone()),
     );
 
-    let fitting = key_value_with_len(1_024 - KEY_PART_NAME_BYTES, "default-fit-");
-    assert_eq!(fitting.len() + KEY_PART_NAME_BYTES, 1_024);
+    let fitting = key_value_with_len(1_024 - KEY_BYTES_OVERHEAD, "default-fit-");
+    assert_eq!(fitting.len() + KEY_BYTES_OVERHEAD, 1_024);
     assert_eq!(
         rate_limited_bytes_request(core.clone(), Some(Duration::from_secs(30)), fitting)
             .await
@@ -556,7 +562,7 @@ async fn default_key_limit_accepts_1024_bytes_and_rejects_the_first_excess() {
         Bytes::from_static(b"boundary")
     );
 
-    let excess = key_value_with_len(1_025 - KEY_PART_NAME_BYTES, "default-excess-");
+    let excess = key_value_with_len(1_025 - KEY_BYTES_OVERHEAD, "default-excess-");
     let error = rate_limited_bytes_request(core, Some(Duration::from_secs(30)), excess)
         .await
         .expect_err("first excess must fail during preparation");
@@ -580,7 +586,8 @@ async fn default_key_limit_accepts_1024_bytes_and_rejects_the_first_excess() {
 
 #[tokio::test]
 async fn configured_key_limit_enforces_lower_zero_and_increased_boundaries() {
-    const KEY_PART_NAME_BYTES: usize = "vars.tenant".len();
+    const KEY_BYTES_OVERHEAD: usize = 4 + "client.tenant".len() + 8 + 1 + "utf8".len() + 8;
+    const LOWER_LIMIT: usize = 64;
 
     let lower_executor = DeterministicExecutor::new();
     lower_executor
@@ -588,7 +595,7 @@ async fn configured_key_limit_enforces_lower_zero_and_increased_boundaries() {
         .queue_response(ScriptedResponse::success(Bytes::from_static(b"lower")))
         .expect("lower response");
     let lower = Arc::new(ProbeRateLimiter {
-        key_limit: 16,
+        key_limit: LOWER_LIMIT,
         ..ProbeRateLimiter::new()
     });
     let lower_object: Arc<dyn RateLimiter> = lower.clone();
@@ -597,7 +604,7 @@ async fn configured_key_limit_enforces_lower_zero_and_increased_boundaries() {
         Arc::new(ProbeHooks::new()),
         RuntimeConfigBuilder::new().rate_limiter(lower_object),
     );
-    let fitting = key_value_with_len(16 - KEY_PART_NAME_BYTES, "fit16");
+    let fitting = key_value_with_len(LOWER_LIMIT - KEY_BYTES_OVERHEAD, "fit64");
     assert_eq!(
         rate_limited_bytes_request(lower_core.clone(), Some(Duration::from_secs(30)), fitting)
             .await
@@ -607,7 +614,7 @@ async fn configured_key_limit_enforces_lower_zero_and_increased_boundaries() {
     let error = rate_limited_bytes_request(
         lower_core,
         Some(Duration::from_secs(30)),
-        key_value_with_len(17 - KEY_PART_NAME_BYTES, "over16"),
+        key_value_with_len(LOWER_LIMIT + 1 - KEY_BYTES_OVERHEAD, "over64"),
     )
     .await
     .expect_err("first excess over lower limit");
@@ -664,8 +671,8 @@ async fn configured_key_limit_enforces_lower_zero_and_increased_boundaries() {
         Arc::new(ProbeHooks::new()),
         RuntimeConfigBuilder::new().rate_limiter(increased_object),
     );
-    let fitting = key_value_with_len(2_048 - KEY_PART_NAME_BYTES, "increased-fit-");
-    assert!(fitting.len() + KEY_PART_NAME_BYTES > 1_024);
+    let fitting = key_value_with_len(2_048 - KEY_BYTES_OVERHEAD, "increased-fit-");
+    assert!(fitting.len() + KEY_BYTES_OVERHEAD > 1_024);
     assert_eq!(
         rate_limited_bytes_request(
             increased_core.clone(),
@@ -679,7 +686,7 @@ async fn configured_key_limit_enforces_lower_zero_and_increased_boundaries() {
     let error = rate_limited_bytes_request(
         increased_core,
         Some(Duration::from_secs(30)),
-        key_value_with_len(2_049 - KEY_PART_NAME_BYTES, "increased-excess-"),
+        key_value_with_len(2_049 - KEY_BYTES_OVERHEAD, "increased-excess-"),
     )
     .await
     .expect_err("first excess over increased limit");
@@ -696,7 +703,8 @@ async fn configured_key_limit_enforces_lower_zero_and_increased_boundaries() {
 
 #[tokio::test]
 async fn configured_key_limit_snapshot_is_shared_by_clones_and_retained_by_pending_requests() {
-    const KEY_PART_NAME_BYTES: usize = "vars.tenant".len();
+    const KEY_BYTES_OVERHEAD: usize = 4 + "client.tenant".len() + 8 + 1 + "utf8".len() + 8;
+    const CONFIGURED_LIMIT: usize = 64;
     let executor = DeterministicExecutor::new();
     executor
         .application()
@@ -710,7 +718,7 @@ async fn configured_key_limit_snapshot_is_shared_by_clones_and_retained_by_pendi
         .expect("independent response");
 
     let configured = Arc::new(ProbeRateLimiter {
-        key_limit: 16,
+        key_limit: CONFIGURED_LIMIT,
         ..ProbeRateLimiter::new()
     });
     let configured_object: Arc<dyn RateLimiter> = configured.clone();
@@ -724,19 +732,19 @@ async fn configured_key_limit_snapshot_is_shared_by_clones_and_retained_by_pendi
         configured_core.rate_limiter(),
         configured_clone.rate_limiter()
     ));
-    assert_eq!(configured_core.rate_limit_key_limit(), 16);
-    assert_eq!(configured_clone.rate_limit_key_limit(), 16);
+    assert_eq!(configured_core.rate_limit_key_limit(), CONFIGURED_LIMIT);
+    assert_eq!(configured_clone.rate_limit_key_limit(), CONFIGURED_LIMIT);
 
     let pending = rate_limited_bytes_request(
         configured_core,
         Some(Duration::from_secs(30)),
-        key_value_with_len(17 - KEY_PART_NAME_BYTES, "pend17"),
+        key_value_with_len(CONFIGURED_LIMIT + 1 - KEY_BYTES_OVERHEAD, "pend65"),
     );
     assert_eq!(
         rate_limited_bytes_request(
             configured_clone,
             Some(Duration::from_secs(30)),
-            key_value_with_len(16 - KEY_PART_NAME_BYTES, "clone"),
+            key_value_with_len(CONFIGURED_LIMIT - KEY_BYTES_OVERHEAD, "clone"),
         )
         .await
         .expect("clone uses configured limit"),
@@ -755,7 +763,7 @@ async fn configured_key_limit_snapshot_is_shared_by_clones_and_retained_by_pendi
         rate_limited_bytes_request(
             independent,
             Some(Duration::from_secs(30)),
-            key_value_with_len(17 - KEY_PART_NAME_BYTES, "def017"),
+            key_value_with_len(CONFIGURED_LIMIT + 1 - KEY_BYTES_OVERHEAD, "def065"),
         )
         .await
         .expect("independent default build retains default limit"),
@@ -802,7 +810,7 @@ async fn private_fallback_rejects_a_nonempty_runtime_plan_before_send() {
     let endpoint =
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.fallback"), Method::GET)
             .rate_limit(rule)
-            .response_bytes()
+            .accepted_bytes()
             .build()
             .expect("prepared fallback endpoint");
     let error = Request::new(core, endpoint)
@@ -828,7 +836,9 @@ async fn private_protocol_recovery_does_not_reenter_custom_limiter_or_lifecycle(
         &server.base_url(),
         HttpConfigBuilder::new().http2_prior_knowledge(),
         RuntimeConfigBuilder::new()
-            .hooks(hooks.clone())
+            .request_gate(hooks.clone())
+            .response_gate(hooks.clone())
+            .completion_observer(hooks.clone())
             .rate_limiter(configured),
     )
     .expect("real HTTP/2 core");
@@ -867,13 +877,15 @@ async fn private_protocol_recovery_does_not_reenter_custom_limiter_or_lifecycle(
         &prepared_server.base_url(),
         HttpConfigBuilder::new().http2_prior_knowledge(),
         RuntimeConfigBuilder::new()
-            .hooks(prepared_hooks.clone())
+            .request_gate(prepared_hooks.clone())
+            .response_gate(prepared_hooks.clone())
+            .completion_observer(prepared_hooks.clone())
             .rate_limiter(configured),
     )
     .expect("prepared real HTTP/2 core");
     let endpoint =
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.hidden_retry"), Method::GET)
-            .response_bytes()
+            .accepted_bytes()
             .build()
             .expect("prepared protocol-recovery endpoint");
     assert_eq!(
@@ -905,7 +917,7 @@ async fn private_protocol_recovery_does_not_reenter_custom_limiter_or_lifecycle(
 
 #[cfg(feature = "http2")]
 #[tokio::test]
-async fn response_bytes_contains_protocol_recovery_inside_one_logical_attempt() {
+async fn accepted_bytes_contains_protocol_recovery_inside_one_logical_attempt() {
     let server = crate::http::test_support::H2RefusedServer::start(1, 2).await;
     let physical_attempts = server.physical_attempts();
     let hooks = Arc::new(ProbeHooks::new());
@@ -915,13 +927,15 @@ async fn response_bytes_contains_protocol_recovery_inside_one_logical_attempt() 
         &server.base_url(),
         HttpConfigBuilder::new().http2_prior_knowledge(),
         RuntimeConfigBuilder::new()
-            .hooks(hooks.clone())
+            .request_gate(hooks.clone())
+            .response_gate(hooks.clone())
+            .completion_observer(hooks.clone())
             .rate_limiter(configured),
     )
     .expect("response-bytes HTTP/2 core");
 
     let response = bytes_request(core)
-        .response_bytes()
+        .accepted_bytes()
         .await
         .expect("response-bytes private protocol recovery");
     assert!(response.value().is_empty());
@@ -958,7 +972,7 @@ async fn direct_and_metadata_terminals_use_one_typed_managed_path() {
         .queue_expected_response(
             ExpectedRequest::new()
                 .method(Method::GET)
-                .safe_url(expected_url)
+                .observed_url(expected_url)
                 .body(Bytes::new()),
             ScriptedResponse::success(Bytes::from_static(b"direct")),
         )

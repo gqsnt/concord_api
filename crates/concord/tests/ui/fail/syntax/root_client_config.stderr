@@ -1,5 +1,5 @@
-error: client configuration must be declared inside the `client` block
- --> tests/ui/fail/syntax/root_client_config.rs:8:5
+error: a v2 client must explicitly declare `timeout DURATION;` or `timeout off;`
+ --> tests/ui/fail/syntax/root_client_config.rs:4:12
   |
-8 |     timeout 5s;
-  |     ^^^^^^^
+4 |     client RootConfigApi {
+  |            ^^^^^^^^^^^^^

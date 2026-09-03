@@ -1,88 +1,61 @@
-# Planning and observation
+# Planning, reflection, and observation
 
-- **Audience:** API callers, tooling authors, hook authors, and security reviewers
-- **Purpose:** concept guide
-- **Normative references:** [runtime model](runtime.md), [design invariants](design_invariants.md)
+Concord distinguishes static contract facts, inert value-bound plans,
+result-determining gates, fixed completion evidence, public errors, and trusted
+diagnostics.
 
-Concord exposes several purpose-specific views instead of one omniscient native
-request or response object.
+## Static descriptions
 
-## Endpoint descriptions
+`Client::contract()` returns the client/scope/endpoint tree without runtime
+values. Request and unbound intent `.description()` return the same endpoint
+view. Descriptions expose docs/deprecation, value owners and opaque type spelling,
+presence/default/observation, attachment operations and origins, body/response
+contracts, auth categories, timeout, repeatability, rate schemas, pagination,
+capabilities, and identity stability. They never expose credential material.
 
-`endpoint.description()` returns stable structural contract facts:
+Trait-owned behavior is identified as a declared capability or opaque extension
+rather than invented static precision.
 
-- endpoint identity and method;
-- source and route shape;
-- body category and specification identity;
-- response acquisition mode;
-- timeout selection;
-- pagination, authentication, rate, and credential-source capabilities.
+## Credential-free plans
 
-Descriptions contain no bound values, bodies, credentials, resolved rate-key
-values, or runtime objects. They support inventory, documentation, metrics
-registration, and policy review without a built client.
+`request.plan()` borrows an inert request. `client.plan(&intent)` does the same
+after binding an unbound intent to public client values. Planning uses the same
+bounded public shaping operations as execution and exposes endpoint identity,
+method, redaction-aware observed URL/headers, timeout, repeatability, body/
+response categories, rate-policy identities, and terminals.
 
-## Safe planning
+Planning never performs I/O, calls providers, places authentication, acquires a
+limiter, invokes execution gates/observers, inspects/materializes body values,
+or allocates operation/attempt identity. Body information is static metadata
+only.
 
-`client.plan(&endpoint)` executes real public head shaping and validates:
+`CredentialFreeRequestPlan` makes one exact guarantee: credentials are absent.
+Visible ordinary public data may still be personal or operationally sensitive,
+and `observed_url()` may differ from the real public wire URL when redaction is
+declared.
 
-- endpoint identity and method;
-- base, host, path, query, and public headers;
-- dynamic formatting and finite structural budgets;
-- body shape without body work;
-- timeout selection;
-- effective policy structure.
+## Observation classes
 
-Planning does not run hooks, body metadata/preparation, credential acquisition,
-limiter authority, native request construction, HTTP, or completion. It returns
-a credential-free logical URL and is not an authenticated request preview.
+Ordinary public values may be visible. `#[redact]` selects redacted public
+observation while preserving real wire/internal identity. Secrets/credentials
+are a private class structurally excluded from public representations. Structured
+sanitized headers and fixed redacted markers prevent safe accessors from leaking
+values that `Debug` merely hides.
 
-## Public versus private information
+## Operational evidence
 
-| Surface | Public application data | Credential material | Native objects |
-|---|---:|---:|---:|
-| description | structure only | no | no |
-| safe plan | logical URL and public headers | no | no |
-| before-send hook | sanitized public operation facts | no | no |
-| limiter | safe request context and selected rate-key values | no | no |
-| response hook | sanitized response head | no | no |
-| retry classifier | finite reduced failure context | no | no |
-| completion | identities, counts, timing, status, outcome | no | no |
-| explicit accepted response accessors | response application data | no request credentials | no native response |
+Gates receive credential-free/redacted bounded views and may reject at one named
+phase. Completion receives one already-fixed bounded event and cannot change the
+caller result. Rate limiters receive opaque canonical keys under a documented
+application trust boundary; key values are absent elsewhere.
 
-Public values may still be sensitive application data. The boundary guarantees
-absence of DSL secret material and private native state, not universal logging
-safety.
+Public errors expose stable categories, endpoint/method, operation/attempt/page
+identity, stage, and dispatch knowledge where applicable. Ordinary formatting
+excludes bodies, credentials, dependency details, and redacted values. A
+separate trusted diagnostic sink can receive bounded source-chain information;
+applications remain responsible for visible public data.
 
-## Debug and errors
-
-Automatic formatting exposes structure and safe categories rather than values.
-Accepted response headers and decoded output are returned only through explicit
-accessors. Rate-key values and credential material are suppressed from built-in
-formatting and errors.
-
-`ApiError` and `ClientBuildError` retain stable categories and safe kinds.
-Native parser, transport, provider, codec, body, and hook causes are reduced or
-dropped before crossing the public boundary.
-
-## Purpose-specific extensions
-
-Hooks, limiters, retry classifiers, body/response specifications, providers,
-and completion receive different semantic contexts. The narrow context is a
-security and maintainability property: an extension receives what its role
-needs, not an unrestricted request lifecycle object.
-
-## Review questions
-
-- Could this value appear in a logical URL or public header?
-- Is it acceptable in plans, hooks, metrics, and logs?
-- Should the value instead be a secret or private credential placement?
-- Does a custom extension store or log sensitive public values?
-- Can a new observation API be expressed with a narrower semantic structure
-  instead of exposing native transport?
-
-## Related
-
-- [Authentication](auth.md)
-- [Execution policy](execution_policy.md)
-- [Extensions](extensions.md)
+Semantic contract snapshots are deterministic tool-private data. `xtask` diff
+classifies caller API, value/domain, wire, security/auth, runtime policy,
+capability, identity/rate schema, and documentation-only changes without
+promising a public JSON format.

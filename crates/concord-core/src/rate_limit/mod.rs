@@ -6,6 +6,7 @@
 //! core does not copy their values into lifecycle errors, user hook events, or
 //! completion events.
 
+mod canonical;
 mod error;
 mod limiter;
 mod types;
@@ -24,4 +25,7 @@ pub use types::{
     RateLimitWindow,
 };
 
+#[cfg(test)]
+pub(crate) use canonical::encode_canonical;
+pub use canonical::{CanonicalKeyWriter, RateLimitKeyValue};
 pub(crate) use limiter::fallback_limiter;

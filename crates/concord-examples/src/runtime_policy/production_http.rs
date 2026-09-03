@@ -12,13 +12,14 @@ use concord::http::SafeProxy;
 // ANCHOR: production_recipe
 api! {
     client ProductionApi {
+        timeout off;
         base "https://api.example.test/";
-    }
 
-    GET health() -> NoContent {
+
+    GET health() -> () using NoContent {
         timeout 10s;
     }
-}
+}}
 
 /// Builds an HTTPS-only client with an explicit proxy and private trust root.
 // ANCHOR: production_client
@@ -30,7 +31,7 @@ pub fn build_client(
     let root_certificate_pem = root_certificate_pem.to_vec();
     let client = ProductionApi::builder()
         .configure_http(move |http| {
-            http.https_only(true)
+            http.require_https()
                 .proxy(proxy)
                 .connect_timeout(Duration::from_secs(5))
                 .read_timeout(Duration::from_secs(30))

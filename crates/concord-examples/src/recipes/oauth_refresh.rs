@@ -10,16 +10,17 @@ use concord::auth::OAuth2ClientCredentials;
 // ANCHOR: oauth_refresh_recipe
 api! {
     client OAuthRecordsApi {
+        timeout off;
         base "https://records.example.test/";
         credentials {
             credential access = custom OAuth2ClientCredentials;
         }
-    }
 
-    GET records() -> NoContent {
-        auth bearer access challenge unauthorized;
+
+    GET records() -> () using NoContent {
+        auth { bearer access recover on unauthorized; }
     }
-}
+}}
 
 /// Builds a client whose clones share one provider-backed credential slot.
 pub fn build(

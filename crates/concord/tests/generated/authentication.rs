@@ -106,15 +106,16 @@ impl CredentialProvider for BearerProvider {
 
 api! {
     client AuthApi {
+        timeout off;
         base "http://authentication.example.test/";
-        vars {
+        values {
             tenant: String;
         }
         credentials {
-            secret api_secret: String;
-            secret bearer_secret: String;
-            secret username: String;
-            secret password: String;
+            secret api_secret;
+            secret bearer_secret;
+            secret username;
+            secret password;
             credential application_key = api_key(secret.api_secret);
             credential static_bearer = bearer(secret.bearer_secret);
             credential login = basic(secret.username, secret.password);
@@ -122,74 +123,76 @@ api! {
             credential acquired = endpoint login;
             credential session = custom crate::SessionProvider;
         }
-    }
 
-    GET login() -> crate::SessionCodec;
-    GET api_key_endpoint() -> Bytes {
-        auth header "X-Api-Key" = application_key;
+
+    GET login() -> crate::generated::authentication::SessionToken using crate::SessionCodec;
+    GET api_key_endpoint() -> Bytes using Bytes {
+        auth { header "X-Api-Key" = application_key; }
     }
-    GET bearer_endpoint() -> Bytes {
-        auth bearer static_bearer;
+    GET bearer_endpoint() -> Bytes using Bytes {
+        auth { bearer static_bearer; }
     }
-    GET basic_endpoint() -> Bytes {
-        auth basic login;
+    GET basic_endpoint() -> Bytes using Bytes {
+        auth { basic login; }
     }
-    GET provider_bearer_endpoint() -> Bytes {
-        auth bearer rotating_bearer challenge unauthorized;
+    GET provider_bearer_endpoint() -> Bytes using Bytes {
+        auth { bearer rotating_bearer recover on unauthorized; }
     }
     scope nested() {
-        auth header "X-Session" = session challenge never;
-        GET inherited() -> Bytes;
-        GET replaced() -> Bytes {
-            auth replace query "token" = acquired challenge never;
+        auth { header "X-Session" = session; }
+        GET inherited() -> Bytes using Bytes;
+        GET replaced() -> Bytes using Bytes {
+            auth replace { query "token" = acquired; }
         }
-        GET public() -> Bytes {
+        GET public() -> Bytes using Bytes {
             auth off;
         }
     }
-}
+}}
 
 api! {
     client SharedSecretApi {
+        timeout off;
         base "http://shared-secret.example.test/";
         credentials {
-            secret shared: String;
+            secret shared;
             credential key = api_key(secret.shared);
             credential token = bearer(secret.shared);
         }
-    }
 
-    GET keyed() -> Bytes {
-        auth header "X-Api-Key" = key;
+
+    GET keyed() -> Bytes using Bytes {
+        auth { header "X-Api-Key" = key; }
     }
-    GET bearer() -> Bytes {
-        auth bearer token;
+    GET bearer() -> Bytes using Bytes {
+        auth { bearer token; }
     }
-}
+}}
 
 api! {
     client CredentialProofApi {
+        timeout off;
         base "https://localhost/";
         credentials {
-            secret api_secret: String;
+            secret api_secret;
             credential application_key = api_key(secret.api_secret);
             credential session = custom crate::SessionProvider;
         }
-    }
 
-    GET api_key_endpoint() -> Bytes {
-        auth header "X-Api-Key" = application_key;
+
+    GET api_key_endpoint() -> Bytes using Bytes {
+        auth { header "X-Api-Key" = application_key; }
     }
-    GET session_endpoint() -> Bytes {
-        auth header "X-Session" = session challenge never;
+    GET session_endpoint() -> Bytes using Bytes {
+        auth { header "X-Session" = session; }
     }
-    GET exact_authorization() -> Bytes {
-        auth authorization = application_key;
+    GET exact_authorization() -> Bytes using Bytes {
+        auth { authorization = application_key; }
     }
-    GET scheme_authorization() -> Bytes {
-        auth authorization "tOkEn" = session challenge never;
+    GET scheme_authorization() -> Bytes using Bytes {
+        auth { authorization "tOkEn" = session; }
     }
-}
+}}
 
 #[test]
 fn generated_authentication_surface_has_ordered_inputs_and_source_specific_handles() {
@@ -433,10 +436,10 @@ fn custom_authorization_is_absent_from_generated_safe_plans() {
         .expect("custom Authorization planning client");
 
     let exact = client
-        .plan(&credential_proof_api::ExactAuthorization::new())
+        .plan(&CredentialProofApi::unbound().exact_authorization())
         .expect("exact Authorization safe plan");
     let scheme = client
-        .plan(&credential_proof_api::SchemeAuthorization::new())
+        .plan(&CredentialProofApi::unbound().scheme_authorization())
         .expect("scheme Authorization safe plan");
     for rendered in [format!("{exact:?}"), format!("{scheme:?}")] {
         assert!(!rendered.contains(EXACT_SENTINEL));

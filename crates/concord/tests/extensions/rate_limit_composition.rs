@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-#[cfg(not(feature = "rate-limit"))]
 use concord::error::ClientBuildErrorKind;
 use concord::http::SafeProxy;
 use concord::rate_limit::{
@@ -12,21 +11,23 @@ use concord_test_support::server::{ResponseScript, ScriptedServer};
 
 api! {
     client DefaultLocalLimiterApi {
+        timeout off;
         base "http://default-local-limiter.example.test/";
-        rate_limit { 10 / 1s; }
-    }
+        rate_limit { allow 10 per 1s; }
 
-    GET read() -> Bytes;
-}
+
+    GET read() -> Bytes using Bytes;
+}}
 
 api! {
     client ExplicitLimiterApi {
+        timeout off;
         base "http://explicit-limiter.example.test/";
-        rate_limit { 10 / 1s; }
-    }
+        rate_limit { allow 10 per 1s; }
 
-    GET read() -> Bytes;
-}
+
+    GET read() -> Bytes using Bytes;
+}}
 
 struct CapturingLimiter {
     acquisitions: Arc<AtomicUsize>,
@@ -52,26 +53,8 @@ impl RateLimiter for CapturingLimiter {
     }
 }
 
-#[cfg(feature = "rate-limit")]
-#[tokio::test]
-async fn facade_installs_the_extras_local_limiter_as_generated_default() {
-    let server = ScriptedServer::start([ResponseScript::ok(b"default".to_vec())]).expect("server");
-    let proxy = SafeProxy::parse(server.url("")).expect("proxy");
-    let client = DefaultLocalLimiterApi::builder()
-        .configure_http(move |http| http.proxy(proxy))
-        .build()
-        .expect("façade local limiter default");
-
-    assert_eq!(
-        client.read().await.expect("default-governed request"),
-        Bytes::from_static(b"default")
-    );
-    assert_eq!(server.request_count(), 1);
-}
-
-#[cfg(not(feature = "rate-limit"))]
 #[test]
-fn generated_nonempty_plan_fails_closed_without_local_limiter() {
+fn generated_nonempty_plan_fails_closed_without_an_explicit_limiter() {
     let error = match DefaultLocalLimiterApi::builder().build() {
         Ok(_) => panic!("missing generated limiter unexpectedly built"),
         Err(error) => error,

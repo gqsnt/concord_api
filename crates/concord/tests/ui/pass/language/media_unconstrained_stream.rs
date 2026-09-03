@@ -12,15 +12,16 @@ impl MediaType for VendorMedia {
 
 api! {
     client StreamApi {
+        timeout off;
         base "http://stream.example.test/";
-    }
 
-    POST upload(#[body] body: Stream) -> Bytes;
-    GET download() -> Stream;
-    GET explicit_any() -> Stream<AnyMedia>;
-    GET exact_binary() -> Stream<OctetStream>;
-    GET exact_vendor() -> Stream<VendorMedia>;
-}
+
+    POST upload(body body: ::concord::body::StreamBody using Stream) -> Bytes using Bytes;
+    GET download() -> ::concord::response::ByteStream using Stream;
+    GET explicit_any() -> ::concord::response::ByteStream using Stream<AnyMedia>;
+    GET exact_binary() -> ::concord::response::ByteStream using Stream<OctetStream>;
+    GET exact_vendor() -> ::concord::response::ByteStream using Stream<VendorMedia>;
+}}
 
 fn main() {
     let client = StreamApi::new().unwrap();

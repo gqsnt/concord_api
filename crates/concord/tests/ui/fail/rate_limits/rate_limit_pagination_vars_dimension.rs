@@ -2,16 +2,17 @@ use concord::api;
 
 api! {
     client Api {
+        timeout off;
         base "https://example.test";
-        vars { cursor: String; }
-        rate_limit { by [vars.cursor]; 1 / 1s; }
-    }
+        values { cursor: String; }
+        rate_limit { key [client.cursor]; allow 1 per 1s; }
 
-    GET list() -> Bytes {
-        paginate crate::CursorPagination {
-            cursor: bind vars.cursor,
+
+    GET list() -> Bytes using Bytes {
+        paginate with crate::CursorPagination {
+            cursor -> client.cursor;
         }
     }
-}
+}}
 
 fn main() {}

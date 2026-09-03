@@ -7,6 +7,7 @@ pub(super) struct RequestBridge<'a> {
 
 pub(super) fn generate_request_wrapper(
     client: &Client,
+    scopes: &[&Scope],
     endpoint: &Endpoint,
     bridge: RequestBridge<'_>,
     facade_path: &TokenStream,
@@ -18,6 +19,7 @@ pub(super) fn generate_request_wrapper(
     } = bridge;
     let endpoint_name = &endpoint.surface.endpoint_type_name;
     let request_name = &endpoint.surface.request_type_name;
+    let description_static = private_ident("endpoint_description", endpoint.id, &endpoint.name);
     let setter_methods = endpoint
         .surface
         .setters
@@ -100,21 +102,23 @@ pub(super) fn generate_request_wrapper(
             }
         }
     });
-    let response_bytes_method = quote! {
-        /// Selects complete bounded bytes while preserving declared status
-        /// acceptance and `Accept` and skipping validation and decoding.
-        #[must_use]
-        pub fn response_bytes<Mode>(
-            self,
-        ) -> #facade_path::endpoint::ResponseBytesRequest<#endpoint_name>
-        where
-            <#endpoint_name as #support_path::Endpoint>::Response:
-                #generated_core::response::ResponseBodySpec<Mode = Mode>,
-            Mode: #generated_core::response::ResponseBytesMode,
-        {
-            #generated_core::__private::response_bytes_request(self.__concord_inner)
+    let accepted_bytes_method = endpoint.surface.terminals.accepted_bytes.then(|| {
+        quote! {
+            /// Selects complete bounded bytes while preserving declared status
+            /// acceptance and `Accept` and skipping validation and decoding.
+            #[must_use]
+            pub fn accepted_bytes(
+                self,
+            ) -> #facade_path::endpoint::AcceptedBytesRequest<#endpoint_name>
+            where
+                <<#endpoint_name as #support_path::Endpoint>::Response as
+                    #generated_core::response::ResponseSpec>::Mode:
+                    #generated_core::response::AcceptedBytesMode,
+            {
+                #generated_core::__private::accepted_bytes_request(self.__concord_inner)
+            }
         }
-    };
+    });
     let storage_impl = (!storage_methods.is_empty()).then(|| {
         quote! {
             impl #request_name
@@ -124,7 +128,7 @@ pub(super) fn generate_request_wrapper(
             }
         }
     });
-    let request_doc = request_wrapper_doc(endpoint);
+    let request_doc = request_wrapper_doc(client, scopes, endpoint);
     let debug_name = canonical_ident(request_name);
 
     quote! {
@@ -135,6 +139,20 @@ pub(super) fn generate_request_wrapper(
         }
 
         impl #request_name {
+            /// Returns a credential-free, redaction-aware plan while retaining
+            /// this inert request for later execution.
+            pub fn plan(
+                &self,
+            ) -> ::std::result::Result<
+                #facade_path::endpoint::CredentialFreeRequestPlan,
+                #facade_path::ApiError,
+            > {
+                #generated_core::__private::request_plan(
+                    &self.__concord_inner,
+                    ::std::sync::LazyLock::force(&#description_static),
+                )
+            }
+
             /// Replaces the generated operation deadline with one explicit duration.
             #[must_use]
             pub fn timeout(mut self, duration: ::std::time::Duration) -> Self {
@@ -169,7 +187,7 @@ pub(super) fn generate_request_wrapper(
             #(#setter_methods)*
             #pagination_method
             #response_method
-            #response_bytes_method
+            #accepted_bytes_method
         }
 
         #storage_impl
@@ -207,6 +225,20 @@ pub(super) fn request_wrapper_setters(
     generated_core: &TokenStream,
 ) -> TokenStream {
     let ty = value.setter_argument_type();
+    let with_method = value.accepts_absence().then(|| {
+        let method = helper_ident("with", &value.name);
+        let payload_type = value.with_argument_type();
+        quote! {
+            #[must_use]
+            pub fn #method(mut self, value: #payload_type) -> Self {
+                self.__concord_inner = #generated_core::__private::map_endpoint(
+                    self.__concord_inner,
+                    |endpoint| endpoint.#method(value),
+                );
+                self
+            }
+        }
+    });
     let setter_doc = if value.accepts_absence() && value.has_default() {
         format!(
             "Consumes this request and selects a present value for defaulted absence-capable endpoint value `{}`.",
@@ -268,6 +300,7 @@ pub(super) fn request_wrapper_setters(
             self
         }
 
+        #with_method
         #clear_method
         #reset_method
     }
@@ -288,6 +321,7 @@ mod tests {
         let generated_core = quote!(super::__concord_generated::__core);
         let output = generate_request_wrapper(
             &api.client,
+            &[],
             endpoint,
             RequestBridge {
                 support_path: &quote!(super),
@@ -310,14 +344,14 @@ mod tests {
         assert!(output.contains("IntoFuture"));
         assert!(!output.contains("__concord_into_development_request"));
         assert!(!output.contains("emit_generated_development_method"));
-        assert!(output.contains("pub fn response_bytes"));
-        assert!(output.contains("ResponseBytesRequest"));
-        assert!(output.contains("ResponseBytesMode"));
+        assert!(output.contains("pub fn accepted_bytes"));
+        assert!(output.contains("AcceptedBytesRequest"));
+        assert!(output.contains("AcceptedBytesMode"));
         assert!(output.contains(
             "__concord_inner : :: application_facade :: endpoint :: Request < FetchItem >"
         ));
         assert!(output.contains(
-            "super :: __concord_generated :: __core :: __private :: response_bytes_request"
+            "super :: __concord_generated :: __core :: __private :: accepted_bytes_request"
         ));
     }
 }

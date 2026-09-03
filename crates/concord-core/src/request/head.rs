@@ -11,7 +11,7 @@ use url::{Host, Url};
 use super::RequestOptions;
 use crate::auth::{Auth, AuthPlan};
 use crate::construction::format_bounded;
-use crate::endpoint::{EndpointDescription, EndpointId, TimeoutSelection};
+use crate::endpoint::{EndpointDescription, EndpointId, Repeatability, TimeoutSelection};
 use crate::error::{ApiError, ConfigurationErrorKind};
 use crate::hooks::DebugLevel;
 use crate::limits::{
@@ -19,9 +19,9 @@ use crate::limits::{
     MAX_REQUEST_HEADER_COUNT, MAX_REQUEST_URL_BYTES,
 };
 use crate::rate_limit::{
-    RateLimitError, RateLimitId, RateLimitKey, RateLimitPlan, RateLimitPolicy,
+    RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyValue, RateLimitPlan, RateLimitPolicy,
 };
-use crate::redaction::render_safe_url;
+use crate::redaction::render_observed_url;
 
 /// Static generated metadata required before public-head preparation.
 #[doc(hidden)]
@@ -30,15 +30,28 @@ pub struct RequestMeta {
     endpoint: EndpointId,
     method: Method,
     timeout: TimeoutSelection,
+    repeatability: Repeatability,
 }
 
 impl RequestMeta {
     #[doc(hidden)]
     #[must_use]
-    pub const fn new(
+    pub fn new(
         endpoint: &'static str,
         method: Method,
         inherited_timeout: Option<Duration>,
+    ) -> Self {
+        let repeatability = Repeatability::for_method(&method);
+        Self::new_with_repeatability(endpoint, method, inherited_timeout, repeatability)
+    }
+
+    #[doc(hidden)]
+    #[must_use]
+    pub fn new_with_repeatability(
+        endpoint: &'static str,
+        method: Method,
+        inherited_timeout: Option<Duration>,
+        repeatability: Repeatability,
     ) -> Self {
         Self {
             endpoint: EndpointId::from_static(endpoint),
@@ -47,6 +60,7 @@ impl RequestMeta {
                 Some(duration) => TimeoutSelection::Explicit(duration),
                 None => TimeoutSelection::Disabled,
             },
+            repeatability,
         }
     }
 
@@ -57,6 +71,7 @@ impl RequestMeta {
             endpoint: description.endpoint_id().clone(),
             method: description.method().clone(),
             timeout: description.timeout(),
+            repeatability: description.repeatability(),
         }
     }
 
@@ -78,6 +93,11 @@ impl RequestMeta {
     #[doc(hidden)]
     pub const fn timeout_selection(&self) -> TimeoutSelection {
         self.timeout
+    }
+
+    #[doc(hidden)]
+    pub const fn repeatability(&self) -> Repeatability {
+        self.repeatability
     }
 
     pub(crate) const fn resolve_inherited_timeout(
@@ -229,6 +249,8 @@ pub struct HeadBuilder {
     auth: Arc<AuthPlan>,
     rate_limit_policies: Vec<RateLimitPolicy>,
     prepared_rate_limit_plan: Option<Arc<RateLimitPlan>>,
+    accept_override: Option<Option<HeaderValue>>,
+    accept_redacted: bool,
     budget: RequestHeadBudget,
 }
 
@@ -262,6 +284,8 @@ impl HeadBuilder {
             auth: Arc::new(AuthPlan::default()),
             rate_limit_policies: Vec::new(),
             prepared_rate_limit_plan: None,
+            accept_override: None,
+            accept_redacted: false,
             budget: RequestHeadBudget::new(),
         }
     }
@@ -318,7 +342,7 @@ impl HeadBuilder {
     where
         I: IntoIterator<Item = (N, V)>,
         N: AsRef<str>,
-        V: Display,
+        V: RateLimitKeyValue,
         W: IntoIterator<Item = (u32, Duration)>,
     {
         let policy = (|| -> Result<RateLimitPolicy, RateLimitError> {
@@ -327,7 +351,7 @@ impl HeadBuilder {
             let cost = NonZeroU32::new(cost).ok_or_else(|| {
                 RateLimitError::new(crate::error::RateLimitErrorKind::InvalidConfiguration)
             })?;
-            let key = RateLimitKey::from_display_values(parts)?;
+            let key = RateLimitKey::from_canonical_values(parts)?;
             RateLimitPolicy::from_window_values(id, key, cost, windows)
         })()
         .map_err(|error| {
@@ -518,11 +542,7 @@ impl HeadBuilder {
         segment: &str,
         safe_segment: &str,
     ) -> Result<(), ApiError> {
-        if segment.is_empty()
-            || matches!(segment, "." | "..")
-            || segment.contains('/')
-            || segment.contains('\\')
-        {
+        if !valid_path_segment(segment) {
             return Err(invalid_route(self.meta.endpoint_id(), self.meta.method()));
         }
 
@@ -546,35 +566,9 @@ impl HeadBuilder {
         Ok(())
     }
 
-    /// Appends an arbitrary formatted prepared value as exactly one encoded path segment.
+    /// Appends one already-formatted, validated value as exactly one encoded path segment.
     pub(crate) fn push_prepared_segment(&mut self, segment: &str) -> Result<(), ApiError> {
-        // `url` normalizes literal single- and double-dot path segments. Feed those two values as
-        // percent text so the path-segment encoder escapes the percent signs and retains one inert
-        // segment instead of changing the base route.
-        let segment = match segment {
-            "." => "%2E",
-            ".." => "%2E%2E",
-            segment => segment,
-        };
-
-        let mut budget = self.budget;
-        budget
-            .try_add_components(1)
-            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
-        let mut logical_url = self.logical_url.clone();
-        push_url_segment(&mut logical_url, segment, self.appended_segment)
-            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
-        let mut safe_logical_url = self.safe_logical_url.clone();
-        push_url_segment(&mut safe_logical_url, segment, self.appended_segment)
-            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
-        validate_url_pair(&logical_url, &safe_logical_url)
-            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
-
-        self.logical_url = logical_url;
-        self.safe_logical_url = safe_logical_url;
-        self.appended_segment = true;
-        self.budget = budget;
-        Ok(())
+        self.push_segment(segment)
     }
 
     /// Appends one public query pair after formatting its value.
@@ -692,6 +686,52 @@ impl HeadBuilder {
         Ok(())
     }
 
+    /// Replaces the response-specification default `Accept` value through the
+    /// response-owned endpoint syntax.
+    #[doc(hidden)]
+    pub fn set_accept_value<T>(&mut self, value: &T) -> Result<(), ApiError>
+    where
+        T: Display + ?Sized,
+    {
+        self.set_accept_value_with_observation(value, false)
+    }
+
+    /// Replaces `Accept` while marking its observed header value redacted.
+    #[doc(hidden)]
+    pub fn set_redacted_accept_value<T>(&mut self, value: &T) -> Result<(), ApiError>
+    where
+        T: Display + ?Sized,
+    {
+        self.set_accept_value_with_observation(value, true)
+    }
+
+    fn set_accept_value_with_observation<T>(
+        &mut self,
+        value: &T,
+        redacted: bool,
+    ) -> Result<(), ApiError>
+    where
+        T: Display + ?Sized,
+    {
+        let value = format_bounded(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        crate::response::validate_accept(&value)
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        let value = HeaderValue::from_str(&value)
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        self.accept_override = Some(Some(value));
+        self.accept_redacted = redacted;
+        Ok(())
+    }
+
+    /// Suppresses both the response specification's default `Accept` and any
+    /// inherited selection.
+    #[doc(hidden)]
+    pub fn suppress_accept(&mut self) {
+        self.accept_override = Some(None);
+        self.accept_redacted = false;
+    }
+
     /// Finishes one immutable body-free public head.
     #[doc(hidden)]
     pub fn finish(self) -> Result<PreparedHead, ApiError> {
@@ -700,15 +740,15 @@ impl HeadBuilder {
         self.budget
             .validate_headers(&self.public_headers)
             .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
-        let safe_url = render_safe_url(&self.safe_logical_url, &HashSet::new());
-        if safe_url.len() > MAX_REQUEST_URL_BYTES {
+        let observed_url = render_observed_url(&self.safe_logical_url, &HashSet::new());
+        if observed_url.len() > MAX_REQUEST_URL_BYTES {
             return Err(invalid_route(self.meta.endpoint_id(), self.meta.method()));
         }
-        let safe_url: Arc<str> = safe_url.into();
+        let observed_url: Arc<str> = observed_url.into();
         Ok(PreparedHead {
             meta: self.meta,
             logical_url: self.logical_url,
-            safe_url,
+            observed_url,
             public_headers: self.public_headers,
             pagination_sensitive_headers: self.pagination_sensitive_headers,
             timeout: self.timeout,
@@ -719,6 +759,8 @@ impl HeadBuilder {
                     self.rate_limit_policies,
                 ))
             }),
+            accept_override: self.accept_override,
+            accept_redacted: self.accept_redacted,
             budget: self.budget,
         })
     }
@@ -729,13 +771,15 @@ impl HeadBuilder {
 pub struct PreparedHead {
     meta: RequestMeta,
     logical_url: Url,
-    safe_url: Arc<str>,
+    observed_url: Arc<str>,
     public_headers: HeaderMap,
     pagination_sensitive_headers: HashSet<HeaderName>,
     timeout: Option<Duration>,
     debug: DebugLevel,
     auth: Arc<AuthPlan>,
     rate_limit_plan: Arc<RateLimitPlan>,
+    accept_override: Option<Option<HeaderValue>>,
+    accept_redacted: bool,
     budget: RequestHeadBudget,
 }
 
@@ -765,14 +809,24 @@ impl PreparedHead {
 
         let mut headers = self.public_headers.clone();
         let mut budget = self.budget;
-        if let Some(accept) = accept {
-            if !headers.contains_key(ACCEPT) {
-                let value = HeaderValue::from_str(accept)
-                    .map_err(|_| invalid_header(self.meta.endpoint_id(), self.method()))?;
-                budget
-                    .try_insert_header(&headers, &ACCEPT, &value)
-                    .map_err(|_| invalid_header(self.meta.endpoint_id(), self.method()))?;
-                headers.insert(ACCEPT, value);
+        let selected_accept = match &self.accept_override {
+            Some(value) => value.clone(),
+            None => accept
+                .map(|value| {
+                    crate::response::validate_accept(value)
+                        .map_err(|_| invalid_header(self.meta.endpoint_id(), self.method()))?;
+                    HeaderValue::from_str(value)
+                        .map_err(|_| invalid_header(self.meta.endpoint_id(), self.method()))
+                })
+                .transpose()?,
+        };
+        if let Some(value) = selected_accept {
+            budget
+                .try_insert_header(&headers, &ACCEPT, &value)
+                .map_err(|_| invalid_header(self.meta.endpoint_id(), self.method()))?;
+            headers.insert(ACCEPT, value);
+            if self.accept_redacted {
+                self.pagination_sensitive_headers.insert(ACCEPT);
             }
         }
         if let Some(content_type) = content_type {
@@ -796,6 +850,10 @@ impl PreparedHead {
         self.meta.method()
     }
 
+    pub(crate) const fn repeatability(&self) -> Repeatability {
+        self.meta.repeatability()
+    }
+
     #[doc(hidden)]
     pub fn endpoint(&self) -> &str {
         self.meta.endpoint()
@@ -812,8 +870,8 @@ impl PreparedHead {
     }
 
     #[doc(hidden)]
-    pub fn safe_url(&self) -> &str {
-        &self.safe_url
+    pub fn observed_url(&self) -> &str {
+        &self.observed_url
     }
 
     #[doc(hidden)]
@@ -959,6 +1017,20 @@ fn valid_dns_label(label: &str) -> bool {
         && bytes.last().is_some_and(u8::is_ascii_alphanumeric)
 }
 
+fn valid_path_segment(segment: &str) -> bool {
+    !segment.is_empty()
+        && !matches!(segment, "." | "..")
+        && !segment.contains('/')
+        && !segment.contains('\\')
+        && !contains_percent_encoding(segment.as_bytes())
+}
+
+fn contains_percent_encoding(bytes: &[u8]) -> bool {
+    bytes.windows(3).any(|window| {
+        window[0] == b'%' && window[1].is_ascii_hexdigit() && window[2].is_ascii_hexdigit()
+    })
+}
+
 pub(crate) fn reserved_public_header(name: &HeaderName) -> bool {
     matches!(
         name.as_str(),
@@ -974,6 +1046,8 @@ pub(crate) fn reserved_public_header(name: &HeaderName) -> bool {
             | "proxy-authorization"
             | "cookie"
             | "set-cookie"
+            | "content-type"
+            | "accept"
     )
 }
 
@@ -1020,6 +1094,17 @@ mod tests {
                 formatter.write_str(&boundary)?;
                 formatter.write_str(FORMAT_SENTINEL)
             }
+        }
+    }
+
+    impl RateLimitKeyValue for FirstExcessDisplay {
+        fn write_canonical(
+            &self,
+            out: &mut crate::rate_limit::CanonicalKeyWriter,
+        ) -> Result<(), RateLimitError> {
+            let boundary = vec![b'x'; crate::rate_limit::MAX_RATE_LIMIT_KEY_BYTES];
+            out.write_tagged_bytes("first-excess", &boundary)?;
+            out.write_tagged_bytes("sentinel", FORMAT_SENTINEL.as_bytes())
         }
     }
 
@@ -1076,6 +1161,19 @@ mod tests {
                 "generated key formatted the first excess part"
             );
             formatter.write_str(&self.text)
+        }
+    }
+
+    impl RateLimitKeyValue for GuardedRateText {
+        fn write_canonical(
+            &self,
+            out: &mut crate::rate_limit::CanonicalKeyWriter,
+        ) -> Result<(), RateLimitError> {
+            assert!(
+                self.may_inspect,
+                "generated key encoded the first excess part"
+            );
+            out.write_tagged_bytes("guarded", self.text.as_bytes())
         }
     }
 
@@ -1299,7 +1397,7 @@ mod tests {
     }
 
     #[test]
-    fn safe_url_exact_limit() {
+    fn observed_url_exact_limit() {
         const SAFE_SUFFIX: &str = "?token=%3Credacted%3E";
         let base = base_with_serialized_len(MAX_REQUEST_URL_BYTES - SAFE_SUFFIX.len());
         let mut builder = builder(&base);
@@ -1307,12 +1405,12 @@ mod tests {
             .push_query_value("token", &"x")
             .expect("raw URLs remain bounded");
         let head = builder.finish().expect("safe URL exact boundary");
-        assert_eq!(head.safe_url().len(), MAX_REQUEST_URL_BYTES);
+        assert_eq!(head.observed_url().len(), MAX_REQUEST_URL_BYTES);
         assert!(head.logical_url().as_str().len() < MAX_REQUEST_URL_BYTES);
     }
 
     #[test]
-    fn safe_url_first_excess() {
+    fn observed_url_first_excess() {
         const SAFE_SUFFIX: &str = "?token=%3Credacted%3E";
         let base = base_with_serialized_len(MAX_REQUEST_URL_BYTES - SAFE_SUFFIX.len() + 1);
         let mut builder = builder(&base);
@@ -1417,7 +1515,7 @@ mod tests {
         let mut runtime =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.head"), Method::GET);
         for _ in 0..public_components {
-            runtime = runtime.path_segment("x");
+            runtime = runtime.path("x");
         }
         let runtime: RuntimeEndpoint<NoContent> = runtime
             .build()
@@ -1468,7 +1566,7 @@ mod tests {
         assert_format_error_is_safe(&error, ConfigurationErrorKind::InvalidRoute);
         let head = builder.finish().expect("unchanged bounded head");
         assert_eq!(head.logical_url().path(), "/root/");
-        assert!(!head.safe_url().contains(FORMAT_SENTINEL));
+        assert!(!head.observed_url().contains(FORMAT_SENTINEL));
     }
 
     #[test]
@@ -1485,7 +1583,7 @@ mod tests {
         assert_format_error_is_safe(&error, ConfigurationErrorKind::InvalidRoute);
         let head = builder.finish().expect("unchanged bounded head");
         assert_eq!(head.logical_url().query(), None);
-        assert!(!head.safe_url().contains(FORMAT_SENTINEL));
+        assert!(!head.observed_url().contains(FORMAT_SENTINEL));
     }
 
     #[test]
@@ -1547,7 +1645,7 @@ mod tests {
         assert_eq!(head.logical_url().query(), None);
         assert_eq!(head.logical_url().path(), "/root/");
         assert!(head.public_headers().is_empty());
-        assert!(!head.safe_url().contains(FORMAT_SENTINEL));
+        assert!(!head.observed_url().contains(FORMAT_SENTINEL));
     }
 
     #[test]
@@ -1564,7 +1662,7 @@ mod tests {
         assert_format_error_is_safe(&error, ConfigurationErrorKind::InvalidRoute);
         let head = builder.finish().expect("unchanged bounded head");
         assert_eq!(head.logical_url().query(), None);
-        assert!(!head.safe_url().contains(FORMAT_SENTINEL));
+        assert!(!head.observed_url().contains(FORMAT_SENTINEL));
     }
 
     #[test]
@@ -1753,10 +1851,12 @@ mod tests {
         let head = builder.finish().expect("bounded pagination host head");
         assert_eq!(head.rate_limit_host(), Some(expected_host.as_str()));
         assert_eq!(
-            Url::parse(head.safe_url()).expect("safe URL").host_str(),
+            Url::parse(head.observed_url())
+                .expect("safe URL")
+                .host_str(),
             Some("x.example.test")
         );
-        assert!(!head.safe_url().contains(SENTINEL));
+        assert!(!head.observed_url().contains(SENTINEL));
     }
 
     #[test]
@@ -1867,7 +1967,7 @@ mod tests {
             Some("keep=first&tag=one+two&tag=three&api_key=sensitive")
         );
         assert_eq!(
-            Url::parse(head.safe_url()).expect("safe URL").query(),
+            Url::parse(head.observed_url()).expect("safe URL").query(),
             Some("keep=first&tag=one+two&tag=three&api_key=%3Credacted%3E")
         );
     }
@@ -1881,19 +1981,16 @@ mod tests {
         header_builder
             .insert_header_value("x-tenant", &"second")
             .expect("replacement");
-        header_builder
-            .insert_header_value("Accept", &"application/custom")
-            .expect("public Accept");
         let mut head = header_builder.finish().expect("bounded header head");
         assert_eq!(
             head.public_headers().get("X-Tenant"),
             Some(&HeaderValue::from_static("second"))
         );
         head.apply_media_headers(Some("application/json"), None, false)
-            .expect("public Accept wins");
+            .expect("response specification owns Accept");
         assert_eq!(
             head.public_headers().get(ACCEPT),
-            Some(&HeaderValue::from_static("application/custom"))
+            Some(&HeaderValue::from_static("application/json"))
         );
 
         for reserved in [
@@ -1902,6 +1999,8 @@ mod tests {
             "Authorization",
             "Proxy-Authorization",
             "Cookie",
+            "Content-Type",
+            "Accept",
         ] {
             let mut builder = builder("https://example.test/");
             let error = builder
@@ -1941,10 +2040,10 @@ mod tests {
         );
 
         head.apply_media_headers(Some("text/plain"), None, false)
-            .expect("an existing Accept value wins");
+            .expect("the selected response specification replaces Accept");
         assert_eq!(
             head.public_headers().get(ACCEPT),
-            Some(&HeaderValue::from_static("application/vnd.example+json"))
+            Some(&HeaderValue::from_static("text/plain"))
         );
 
         let error = head
@@ -1970,26 +2069,24 @@ mod tests {
     }
 
     #[test]
-    fn bodyless_public_content_type_is_allowed_but_multipart_ownership_conflicts() {
-        let mut bodyless_builder = builder("https://example.test/");
-        bodyless_builder
-            .insert_header_value("Content-Type", &"application/example")
-            .expect("bodyless public Content-Type");
-        let mut head = bodyless_builder.finish().expect("bounded bodyless head");
-        head.apply_media_headers(None, None, false)
-            .expect("no body source owns Content-Type");
+    fn media_headers_are_reserved_even_when_an_endpoint_has_no_body() {
+        for name in ["Content-Type", "Accept"] {
+            let mut builder = builder("https://example.test/");
+            let error = builder
+                .insert_header_value(name, &"application/example")
+                .expect_err("media headers have dedicated owners");
+            assert_eq!(
+                error.configuration_kind(),
+                Some(ConfigurationErrorKind::InvalidHeader)
+            );
+        }
 
-        let mut multipart_builder = builder("https://example.test/");
-        multipart_builder
-            .insert_header_value("Content-Type", &"application/example")
-            .expect("public header is structurally valid");
-        let mut head = multipart_builder.finish().expect("bounded multipart head");
-        let error = head
-            .apply_media_headers(None, None, true)
-            .expect_err("multipart owns its top-level Content-Type boundary");
-        assert_eq!(
-            error.configuration_kind(),
-            Some(ConfigurationErrorKind::InvalidHeader)
-        );
+        let mut head = prepared();
+        head.apply_media_headers(
+            Some("application/example"),
+            Some(&HeaderValue::from_static("application/example")),
+            true,
+        )
+        .expect("response and body specifications may place their owned media headers");
     }
 }

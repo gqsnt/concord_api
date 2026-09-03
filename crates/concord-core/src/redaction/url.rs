@@ -8,7 +8,7 @@ const REDACTED: &str = "<redacted>";
 
 /// Renders a credential-sanitized URL solely from logical URL data and
 /// effective authentication keys.
-pub(crate) fn render_safe_url(logical_url: &Url, auth_query_keys: &HashSet<String>) -> String {
+pub(crate) fn render_observed_url(logical_url: &Url, auth_query_keys: &HashSet<String>) -> String {
     let pairs: Vec<_> = logical_url
         .query_pairs()
         .map(|(key, value)| {
@@ -22,10 +22,10 @@ pub(crate) fn render_safe_url(logical_url: &Url, auth_query_keys: &HashSet<Strin
         })
         .collect();
 
-    let mut safe_url = logical_url.clone();
+    let mut observed_url = logical_url.clone();
     if !pairs.is_empty() {
-        safe_url.set_query(None);
-        safe_url.query_pairs_mut().extend_pairs(pairs);
+        observed_url.set_query(None);
+        observed_url.query_pairs_mut().extend_pairs(pairs);
     }
-    safe_url.to_string()
+    observed_url.to_string()
 }

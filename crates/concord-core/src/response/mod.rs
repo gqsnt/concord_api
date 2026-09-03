@@ -2,10 +2,10 @@
 //!
 //! Ordinary complete buffered codecs implement
 //! [`crate::codec::DecodeBody`]; its blanket implementation supplies
-//! [`ResponseBodySpec`]. Implement `ResponseBodySpec` directly only to own the
+//! [`ResponseSpec`]. Implement `ResponseSpec` directly only to own the
 //! full validation and conversion contract for a sealed response mode. There
 //! is no public `ResponseBody` trait. [`ResponseMode::Body`] is the semantic
-//! value acquired by core and passed to `ResponseBodySpec::from_body`, never a
+//! value acquired by core and passed to `ResponseSpec::from_body`, never a
 //! native response. Every core-owned mode that polls a response body suppresses
 //! empty transport chunks and accepts at most
 //! [`MAX_EMPTY_RESPONSE_CHUNKS`] for one response.
@@ -20,13 +20,13 @@ pub use crate::limits::MAX_EMPTY_RESPONSE_CHUNKS;
 pub use error::{ResponseBodyError, ResponseBodyErrorKind};
 pub use metadata::{ApiResponse, ExecutionMeta};
 pub use spec::{
-    Buffered, Discard, NoContent, PageResponseSpec, ResponseBodySpec, ResponseBytesMode,
-    ResponseHead, ResponseMode, Streaming,
+    AcceptedBytesMode, Buffered, Discard, NoContent, PageResponseSpec, ResponseHead, ResponseMode,
+    ResponseSpec, Streaming,
 };
 pub use stream::ByteStream;
 
 pub(crate) use handler::{ResponseInput, execute_response};
 pub(crate) use spec::{
-    DeclaredResponse, ResponseBytesSelection, ResponseSelection, completion_outcome,
+    AcceptedBytesSelection, DeclaredResponse, ResponseSelection, completion_outcome,
     validate_accept,
 };

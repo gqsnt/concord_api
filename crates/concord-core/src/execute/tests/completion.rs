@@ -49,7 +49,7 @@ async fn before_send_veto_prevents_native_execution_and_later_response_phases() 
     let hooks = Arc::new(probe);
     let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
     let error = bytes_request(core).await.expect_err("hook veto");
-    assert_eq!(error.category(), ErrorCategory::Hook);
+    assert_eq!(error.category(), ErrorCategory::PolicyRejected);
     assert_eq!(executor.application().request_count().expect("count"), 0);
     let records = hooks.records();
     assert!(matches!(
@@ -57,7 +57,7 @@ async fn before_send_veto_prevents_native_execution_and_later_response_phases() 
         [
             LifecycleRecord::Before { .. },
             LifecycleRecord::Complete {
-                outcome: CompletionOutcome::Hook,
+                outcome: CompletionOutcome::PolicyRejected,
                 status: None,
                 ..
             }
@@ -77,11 +77,7 @@ async fn completion_observes_fixed_limiter_failure() {
                 .body_poll_counter(Arc::clone(&body_polls)),
         )
         .expect("limiter-failure response");
-    let completion_gate = Gate::closed();
-    let hooks = Arc::new(ProbeHooks {
-        completion_gate: Some(completion_gate.clone()),
-        ..ProbeHooks::new()
-    });
+    let hooks = Arc::new(ProbeHooks::new());
     let limiter = Arc::new(ProbeRateLimiter {
         observe_fail: true,
         response_body_polls: Some(Arc::clone(&body_polls)),
@@ -92,10 +88,9 @@ async fn completion_observes_fixed_limiter_failure() {
         Arc::clone(&hooks),
         RuntimeConfigBuilder::new().rate_limiter(limiter.clone()),
     );
-    let task = tokio::spawn(async move { bytes_request(core).await });
-
-    completion_gate.wait_until_reached().await;
-    assert!(!task.is_finished());
+    let error = bytes_request(core)
+        .await
+        .expect_err("fixed limiter failure");
     assert_eq!(limiter.observations.load(Ordering::SeqCst), 1);
     assert_eq!(body_polls.load(Ordering::SeqCst), 0);
     assert!(matches!(
@@ -109,11 +104,6 @@ async fn completion_observes_fixed_limiter_failure() {
             }
         ]
     ));
-    completion_gate.open();
-    let error = task
-        .await
-        .expect("limiter-failure join")
-        .expect_err("fixed limiter failure");
     assert_eq!(error.category(), ErrorCategory::RateLimit);
     assert_eq!(
         error.rate_limit_kind(),

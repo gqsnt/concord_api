@@ -1,6 +1,6 @@
 use crate::body::{RequestBodyContext, RequestBodyMetadata, RequestBodySpec};
 use crate::error::ApiError;
-use crate::response::ResponseBodySpec;
+use crate::response::ResponseSpec;
 
 use super::{HeadBuilder, PreparedHead, RequestMeta};
 
@@ -10,7 +10,7 @@ pub trait EndpointSpec: Send + 'static {
     /// Selected request specification, including the private empty bodyless specification.
     type Body: RequestBodySpec;
     /// Selected accepted-response specification.
-    type Response: ResponseBodySpec;
+    type Response: ResponseSpec;
 
     /// Returns stable endpoint identity and inherited timeout metadata.
     fn request_meta(&self) -> RequestMeta;

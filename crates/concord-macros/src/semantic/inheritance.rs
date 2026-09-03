@@ -1,23 +1,213 @@
 use super::auth::{find_credential, validate_auth_compatibility, validate_effective_auth};
 use super::model::{
-    CredentialSource, NormalizedAuth, NormalizedConfig, NormalizedHeader, NormalizedQuery,
-    ResolvedAuthPlacement, ResolvedChallengePolicy, ResolvedExpr, Value, ValueShape,
+    AttachmentFamily, AttachmentIr, AttachmentOperation, NormalizedAuth, NormalizedConfig,
+    NormalizedHeader, NormalizedQuery, QueryCardinality, ResolvedAuthPlacement,
+    ResolvedChallengePolicy, ResolvedExpr, Value, ValuePresence,
 };
 use super::symbols::ScopeFrame;
 use super::{Resolver, SpanError};
 use crate::semantic::rate_limits::RateLimitResolutionContext;
 use crate::syntax::ast::{
     AttachmentSite, AuthChallenge as SourceChallenge, AuthOperation,
-    AuthPlacementKind as SourceAuthPlacement, HeaderEntry, HeaderOperation, HostOperation,
-    PathOperation, PublicExpr, QueryEntry, QueryOperation, TimeoutOperation,
+    AuthPlacementKind as SourceAuthPlacement, HeaderEntry, HeaderOperation, PathOperation,
+    PublicExpr, QueryEmission, QueryEntry, QueryOperation, SubdomainOperation, TimeoutOperation,
 };
 use crate::{MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_POLICIES_PER_PLAN};
 
 #[derive(Clone, Copy)]
-enum ExpressionUse {
+pub(super) enum ExpressionUse {
     Single,
     Query,
     Header,
+}
+
+pub(super) fn local_attachment_ir(site: &AttachmentSite, origin: &str) -> Vec<AttachmentIr> {
+    let mut output = Vec::new();
+    let mut push = |family, operation, target: Option<String>, item_count| {
+        output.push(AttachmentIr {
+            family,
+            operation,
+            origin: origin.to_owned(),
+            target,
+            item_count,
+        });
+    };
+
+    if let Some(clause) = &site.subdomain {
+        match &clause.value {
+            SubdomainOperation::Prepend(values) => push(
+                AttachmentFamily::Subdomain,
+                AttachmentOperation::Prepend,
+                None,
+                values.len(),
+            ),
+            SubdomainOperation::Replace(values) => push(
+                AttachmentFamily::Subdomain,
+                AttachmentOperation::Replace,
+                None,
+                values.len(),
+            ),
+            SubdomainOperation::Off => push(
+                AttachmentFamily::Subdomain,
+                AttachmentOperation::Off,
+                None,
+                0,
+            ),
+        }
+    }
+    if let Some(clause) = &site.path {
+        match &clause.value {
+            PathOperation::Append(values) => push(
+                AttachmentFamily::Path,
+                AttachmentOperation::Append,
+                None,
+                values.len(),
+            ),
+            PathOperation::Replace(values) => push(
+                AttachmentFamily::Path,
+                AttachmentOperation::Replace,
+                None,
+                values.len(),
+            ),
+            PathOperation::Off => push(AttachmentFamily::Path, AttachmentOperation::Off, None, 0),
+        }
+    }
+    if let Some(clause) = &site.query {
+        let entries: &[QueryEntry] = match &clause.value {
+            QueryOperation::Modify(entries) => entries,
+            QueryOperation::Replace(entries) => {
+                push(
+                    AttachmentFamily::Query,
+                    AttachmentOperation::Replace,
+                    None,
+                    0,
+                );
+                entries
+            }
+            QueryOperation::Off => {
+                push(AttachmentFamily::Query, AttachmentOperation::Off, None, 0);
+                &[]
+            }
+        };
+        for entry in entries {
+            match entry {
+                QueryEntry::Assign { key, emission } => push(
+                    AttachmentFamily::Query,
+                    AttachmentOperation::Replace,
+                    Some(key.value()),
+                    usize::from(matches!(emission, QueryEmission::Each { .. })),
+                ),
+                QueryEntry::Append { key, emission } => push(
+                    AttachmentFamily::Query,
+                    AttachmentOperation::Append,
+                    Some(key.value()),
+                    usize::from(matches!(emission, QueryEmission::Each { .. })),
+                ),
+                QueryEntry::Remove(key) => push(
+                    AttachmentFamily::Query,
+                    AttachmentOperation::Remove,
+                    Some(key.value()),
+                    0,
+                ),
+            }
+        }
+    }
+    if let Some(clause) = &site.headers {
+        let entries: &[HeaderEntry] = match &clause.value {
+            HeaderOperation::Modify(entries) => entries,
+            HeaderOperation::Replace(entries) => {
+                push(
+                    AttachmentFamily::Headers,
+                    AttachmentOperation::Replace,
+                    None,
+                    0,
+                );
+                entries
+            }
+            HeaderOperation::Off => {
+                push(AttachmentFamily::Headers, AttachmentOperation::Off, None, 0);
+                &[]
+            }
+        };
+        for entry in entries {
+            match entry {
+                HeaderEntry::Assign { name, .. } => push(
+                    AttachmentFamily::Headers,
+                    AttachmentOperation::Replace,
+                    Some(name.value()),
+                    1,
+                ),
+                HeaderEntry::Remove(name) => push(
+                    AttachmentFamily::Headers,
+                    AttachmentOperation::Remove,
+                    Some(name.value()),
+                    0,
+                ),
+            }
+        }
+    }
+    if let Some(auth) = &site.auth {
+        match auth {
+            AuthOperation::Off { .. } => push(
+                AttachmentFamily::Authentication,
+                AttachmentOperation::Off,
+                None,
+                0,
+            ),
+            AuthOperation::Modify {
+                replace,
+                placements,
+                ..
+            } => {
+                if *replace {
+                    push(
+                        AttachmentFamily::Authentication,
+                        AttachmentOperation::Replace,
+                        None,
+                        0,
+                    );
+                }
+                for placement in placements {
+                    let target = match &placement.kind {
+                        SourceAuthPlacement::Bearer => "authorization:bearer".to_owned(),
+                        SourceAuthPlacement::Basic => "authorization:basic".to_owned(),
+                        SourceAuthPlacement::Authorization(scheme) => scheme.as_ref().map_or_else(
+                            || "authorization:exact".to_owned(),
+                            |value| format!("authorization:{}", value.value()),
+                        ),
+                        SourceAuthPlacement::Header(name) => format!("header:{}", name.value()),
+                        SourceAuthPlacement::Query(name) => format!("query:{}", name.value()),
+                    };
+                    push(
+                        AttachmentFamily::Authentication,
+                        AttachmentOperation::Append,
+                        Some(target),
+                        1,
+                    );
+                }
+            }
+        }
+    }
+    if let Some(clause) = &site.timeout {
+        push(
+            AttachmentFamily::Timeout,
+            match clause.value {
+                TimeoutOperation::Set(_) => AttachmentOperation::Set,
+                TimeoutOperation::Off => AttachmentOperation::Off,
+            },
+            None,
+            1,
+        );
+    }
+    for _ in &site.rate_limits {
+        push(
+            AttachmentFamily::RateLimit,
+            AttachmentOperation::Append,
+            None,
+            1,
+        );
+    }
+    output
 }
 
 fn resolve_auth_placement(source: &SourceAuthPlacement) -> ResolvedAuthPlacement {
@@ -52,34 +242,53 @@ impl Resolver<'_> {
         rate_limit_context: &RateLimitResolutionContext<'_>,
     ) -> syn::Result<NormalizedConfig> {
         let mut normalized = parent.clone();
+        let origin = rate_limit_context.lexical_origin;
 
-        if let Some(operation) = &attachment_site.host {
+        if let Some(operation) = &attachment_site.subdomain {
             normalized.host = match &operation.value {
-                HostOperation::Off => {
+                SubdomainOperation::Off => {
                     normalized.host_span = None;
+                    normalized.host_origins.clear();
                     Vec::new()
                 }
-                HostOperation::Replace(values) => {
+                SubdomainOperation::Replace(values) => {
                     normalized.host_span = Some(operation.key_span);
-                    self.resolve_expressions(values, scopes, endpoint, ExpressionUse::Single)?
+                    let resolved =
+                        self.resolve_expressions(values, scopes, endpoint, ExpressionUse::Single)?;
+                    normalized.host_origins = vec![origin.to_owned(); resolved.len()];
+                    resolved
+                }
+                SubdomainOperation::Prepend(values) => {
+                    normalized.host_span = Some(operation.key_span);
+                    let mut local =
+                        self.resolve_expressions(values, scopes, endpoint, ExpressionUse::Single)?;
+                    let mut local_origins = vec![origin.to_owned(); local.len()];
+                    local_origins.append(&mut normalized.host_origins);
+                    normalized.host_origins = local_origins;
+                    local.extend(::std::mem::take(&mut normalized.host));
+                    local
                 }
             };
         }
         if let Some(operation) = &attachment_site.path {
             let operation = &operation.value;
             match operation {
-                PathOperation::Off => normalized.path.clear(),
+                PathOperation::Off => {
+                    normalized.path.clear();
+                    normalized.path_origins.clear();
+                }
                 PathOperation::Replace(values) => {
                     normalized.path =
                         self.resolve_expressions(values, scopes, endpoint, ExpressionUse::Single)?;
+                    normalized.path_origins = vec![origin.to_owned(); normalized.path.len()];
                 }
                 PathOperation::Append(values) => {
-                    normalized.path.extend(self.resolve_expressions(
-                        values,
-                        scopes,
-                        endpoint,
-                        ExpressionUse::Single,
-                    )?);
+                    let resolved =
+                        self.resolve_expressions(values, scopes, endpoint, ExpressionUse::Single)?;
+                    normalized
+                        .path_origins
+                        .extend(vec![origin.to_owned(); resolved.len()]);
+                    normalized.path.extend(resolved);
                 }
             }
         }
@@ -91,18 +300,28 @@ impl Resolver<'_> {
             if let QueryOperation::Modify(entries) | QueryOperation::Replace(entries) = operation {
                 for entry in entries {
                     let key = match entry {
-                        QueryEntry::Assign { key, .. } | QueryEntry::Remove(key) => key.value(),
+                        QueryEntry::Assign { key, .. }
+                        | QueryEntry::Append { key, .. }
+                        | QueryEntry::Remove(key) => key.value(),
                     };
-                    normalized.query.retain(|entry| entry.key.value() != key);
-                    if let QueryEntry::Assign { key, value } = entry {
+                    if matches!(entry, QueryEntry::Assign { .. } | QueryEntry::Remove(_)) {
+                        normalized.query.retain(|entry| entry.key.value() != key);
+                    }
+                    if let QueryEntry::Assign { key, emission }
+                    | QueryEntry::Append { key, emission } = entry
+                    {
+                        let (value, cardinality) =
+                            self.resolve_query_emission(emission, scopes, endpoint)?;
                         normalized.query.push(NormalizedQuery {
                             key: key.clone(),
-                            value: self.resolve_expr(
-                                value,
-                                scopes,
-                                endpoint,
-                                ExpressionUse::Query,
-                            )?,
+                            value,
+                            cardinality,
+                            operation: if matches!(entry, QueryEntry::Append { .. }) {
+                                AttachmentOperation::Append
+                            } else {
+                                AttachmentOperation::Replace
+                            },
+                            origin: origin.to_owned(),
                         });
                     }
                 }
@@ -141,6 +360,7 @@ impl Resolver<'_> {
                                 endpoint,
                                 ExpressionUse::Header,
                             )?,
+                            origin: origin.to_owned(),
                         });
                     }
                 }
@@ -165,22 +385,13 @@ impl Resolver<'_> {
                             source,
                             &placement.credential,
                         )?;
-                        let challenge = match placement.challenge {
-                            Some(challenge) => challenge,
-                            None => match source {
-                                CredentialSource::Custom { .. } => {
-                                    return Err(placement.credential.span().error(
-                                        "an auth placement using a custom provider requires an explicit challenge suffix",
-                                    ));
-                                }
-                                _ => SourceChallenge::Never,
-                            },
-                        };
+                        let challenge = placement.challenge.unwrap_or(SourceChallenge::Never);
                         normalized.auth.push(NormalizedAuth {
                             kind: resolve_auth_placement(&placement.kind),
                             credential,
                             challenge: resolve_challenge(challenge),
                             span: placement.credential.span(),
+                            origin: origin.to_owned(),
                         });
                     }
                 }
@@ -189,6 +400,7 @@ impl Resolver<'_> {
         validate_effective_auth(&normalized)?;
         if let Some(operation) = &attachment_site.timeout {
             let operation = &operation.value;
+            normalized.timeout_origin = Some(origin.to_owned());
             normalized.timeout = match operation {
                 TimeoutOperation::Off => None,
                 TimeoutOperation::Set(value) => {
@@ -249,7 +461,7 @@ impl Resolver<'_> {
             .collect()
     }
 
-    fn resolve_expr(
+    pub(super) fn resolve_expr(
         &self,
         value: &PublicExpr,
         scopes: &[ScopeFrame],
@@ -259,36 +471,59 @@ impl Resolver<'_> {
         match value {
             PublicExpr::String(value) => Ok(ResolvedExpr::String(value.clone())),
             PublicExpr::Integer(value) => Ok(ResolvedExpr::Integer(value.clone())),
-            PublicExpr::Format { span, values } => {
+            PublicExpr::Concat { span, values } => {
                 let _ = span;
-                Ok(ResolvedExpr::Format(self.resolve_expressions(
-                    values,
-                    scopes,
-                    endpoint,
-                    ExpressionUse::Single,
-                )?))
+                let mut flattened = Vec::new();
+                for value in
+                    self.resolve_expressions(values, scopes, endpoint, ExpressionUse::Single)?
+                {
+                    match value {
+                        ResolvedExpr::Concat(values) => flattened.extend(values),
+                        value => flattened.push(value),
+                    }
+                }
+                Ok(ResolvedExpr::Concat(flattened))
             }
             PublicExpr::Reference { namespace, name } => {
                 let reference = self.resolve_value_reference(namespace, name, scopes, endpoint)?;
                 match usage {
-                    ExpressionUse::Single if !matches!(&reference.shape, ValueShape::Scalar) => {
-                        return Err(name.span().error(
-                            "host, path, and formatted expressions require one scalar value",
-                        ));
-                    }
-                    ExpressionUse::Header
-                        if matches!(
-                            &reference.shape,
-                            ValueShape::Vec { .. } | ValueShape::OptionVec { .. }
-                        ) =>
+                    ExpressionUse::Single
+                        if matches!(reference.presence, ValuePresence::Optional) =>
                     {
-                        return Err(name
-                            .span()
-                            .error("public header declarations do not accept vector values"));
+                        return Err(name.span().error(
+                            "Concord-optional values cannot appear in total scalar contexts such as subdomain, path, concat, accept, or rate keys",
+                        ));
                     }
                     ExpressionUse::Single | ExpressionUse::Query | ExpressionUse::Header => {}
                 }
                 Ok(ResolvedExpr::Value(reference))
+            }
+        }
+    }
+
+    fn resolve_query_emission(
+        &self,
+        emission: &QueryEmission,
+        scopes: &[ScopeFrame],
+        endpoint: Option<&[Value]>,
+    ) -> syn::Result<(ResolvedExpr, QueryCardinality)> {
+        match emission {
+            QueryEmission::One(value) => Ok((
+                self.resolve_expr(value, scopes, endpoint, ExpressionUse::Query)?,
+                QueryCardinality::One,
+            )),
+            QueryEmission::Each {
+                namespace,
+                name,
+                span,
+            } => {
+                let _ = span;
+                Ok((
+                    ResolvedExpr::Value(
+                        self.resolve_value_reference(namespace, name, scopes, endpoint)?,
+                    ),
+                    QueryCardinality::Each,
+                ))
             }
         }
     }
@@ -305,19 +540,20 @@ mod tests {
     fn resolves_lexical_operations_into_one_normalized_public_head() {
         let api = test_support::resolve_tokens(quote! {
             client InheritanceApi {
+                timeout off;
                 base "https://example.test";
                 path ["v1"];
                 query { "client" = "yes"; }
-            }
+
             scope resources() {
                 path ["resources"];
                 query { "scope" = "yes"; }
-                GET read() -> Bytes {
+                GET read() -> Bytes using Bytes {
                     path ["read"];
                     query { remove "client"; "endpoint" = "yes"; }
                 }
             }
-        });
+        }});
         let endpoint = test_support::endpoint(&api.client.children, "read");
 
         assert_eq!(

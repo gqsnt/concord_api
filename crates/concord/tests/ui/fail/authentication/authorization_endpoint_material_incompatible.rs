@@ -25,16 +25,17 @@ impl DecodeBody for NonSecretCodec {
 
 api! {
     client Api {
+        timeout off;
         base "https://example.test";
         credentials {
             credential session = endpoint acquire;
         }
-    }
 
-    GET acquire() -> crate::NonSecretCodec;
-    GET protected() -> Bytes {
-        auth authorization "Session" = session;
+
+    GET acquire() -> crate::NonSecretMaterial using crate::NonSecretCodec;
+    GET protected() -> Bytes using Bytes {
+        auth { authorization "Session" = session; }
     }
-}
+}}
 
 fn main() {}

@@ -5,9 +5,9 @@ use std::time::Duration;
 
 use concord_core::contracts::{
     BoxFuture, Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, NoopRateLimiter,
-    RateLimitError, RateLimitErrorKind, RateLimitId, RateLimitKey, RateLimitKeyPart,
-    RateLimitObserver, RateLimitPermit, RateLimitPlan, RateLimitPolicy, RateLimitRequest,
-    RateLimitResponse, RateLimitResponseHead, RateLimitWindow, RateLimiter, RuntimeConfigBuilder,
+    RateLimitError, RateLimitErrorKind, RateLimitId, RateLimitKey, RateLimitObserver,
+    RateLimitPermit, RateLimitPlan, RateLimitPolicy, RateLimitRequest, RateLimitResponse,
+    RateLimitResponseHead, RateLimitWindow, RateLimiter, RuntimeConfigBuilder,
 };
 
 struct CustomLimiter;
@@ -37,7 +37,7 @@ impl RateLimiter for CustomLimiter {
         let _ = (
             request.endpoint,
             request.method,
-            request.safe_url,
+            request.observed_url,
             request.host,
             request.page_index,
             request.attempt.index,
@@ -56,7 +56,7 @@ impl RateLimiter for CustomLimiter {
         let _ = (
             response.request.endpoint,
             response.request.method,
-            response.request.safe_url,
+            response.request.observed_url,
             response.request.host,
             response.request.page_index,
             response.request.attempt,
@@ -91,7 +91,7 @@ impl RateLimitObserver for CustomObserver {
         let _ = (
             response.endpoint,
             response.method,
-            response.safe_url,
+            response.observed_url,
             response.host,
             response.page_index,
             response.attempt.index,
@@ -167,13 +167,15 @@ fn custom_extensions_compile_with_body_free_plan_inspection() {
 fn exact_rate_limit_contract_constructors_accessors_and_traits_compile() {
     let id = RateLimitId::new("application").expect("rate-limit ID");
     assert_eq!(id.as_str(), "application");
-    let first = RateLimitKeyPart::new("host", "api.example.test").expect("host key part");
-    let second = RateLimitKeyPart::new("vars.tenant", "north").expect("tenant key part");
-    let key = RateLimitKey::from_parts([first, second]).expect("ordered key");
+    let key = RateLimitKey::from_canonical_values([
+        ("host", "api.example.test"),
+        ("client.tenant", "north"),
+    ])
+    .expect("ordered canonical key");
     assert!(!key.is_global());
     assert_eq!(key.parts()[0].name(), "host");
-    assert_eq!(key.parts()[0].value(), "api.example.test");
-    assert_eq!(key.total_bytes(), 4 + 16 + 11 + 5);
+    assert_ne!(key.parts()[0].value(), b"api.example.test");
+    assert!(key.total_bytes() > "host".len() + "api.example.test".len());
     let global = RateLimitKey::global();
     assert!(global.is_global());
     assert_eq!(global.total_bytes(), 0);

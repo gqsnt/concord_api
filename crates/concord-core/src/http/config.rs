@@ -139,10 +139,18 @@ impl HttpConfigBuilder {
         self
     }
 
-    /// Restricts the managed application client to HTTPS when enabled.
+    /// Requires HTTPS for the managed application client.
     #[must_use]
-    pub fn https_only(mut self, enabled: bool) -> Self {
-        self.config.https_only = enabled;
+    pub fn require_https(mut self) -> Self {
+        self.config.https_only = true;
+        self
+    }
+
+    /// Explicitly permits either HTTP or HTTPS for the managed application
+    /// client.
+    #[must_use]
+    pub fn allow_http(mut self) -> Self {
+        self.config.https_only = false;
         self
     }
 
@@ -337,7 +345,7 @@ mod tests {
             .pool_max_idle_per_host(4)
             .tcp_keepalive(Duration::from_secs(5))
             .tcp_nodelay(false)
-            .https_only(true)
+            .require_https()
             .http1_only()
             .proxy(SafeProxy::parse("https://proxy.example").expect("safe proxy"))
             .protocol_recovery(false)

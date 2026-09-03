@@ -16,5 +16,5 @@ pub fn construct(client: &PaginationApi) {
             std::num::NonZeroU64::MIN,
             std::num::NonZeroU32::new(50).expect("positive page size"),
         )
-        .paginate(PageLimit::Take(2));
+        .paginate(PageLimit::Prefix(2));
 }

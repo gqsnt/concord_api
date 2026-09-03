@@ -2,8 +2,8 @@ use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 
 use concord_core::contracts::{
-    Buffered, BufferedRecords, Bytes, BytesMut, PageResponseSpec, ResponseBodyError,
-    ResponseBodySpec, ResponseHead,
+    Buffered, BufferedRecords, Bytes, BytesMut, PageResponseSpec, ResponseBodyError, ResponseHead,
+    ResponseSpec,
 };
 use concord_core::records::{RecordDecoder, RecordError, RecordErrorKind};
 use serde::de::DeserializeOwned;
@@ -395,7 +395,7 @@ where
     }
 }
 
-impl<T, H, D> ResponseBodySpec for Csv<T, H, D>
+impl<T, H, D> ResponseSpec for Csv<T, H, D>
 where
     T: DeserializeOwned + Send + 'static,
     H: CsvHeaderMode,
@@ -405,15 +405,15 @@ where
     type Mode = Buffered;
 
     fn accept() -> Option<&'static str> {
-        <BufferedRecords<Self> as ResponseBodySpec>::accept()
+        <BufferedRecords<Self> as ResponseSpec>::accept()
     }
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
-        <BufferedRecords<Self> as ResponseBodySpec>::validate(head)
+        <BufferedRecords<Self> as ResponseSpec>::validate(head)
     }
 
     fn from_body(body: Bytes, head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
-        <BufferedRecords<Self> as ResponseBodySpec>::from_body(body, head)
+        <BufferedRecords<Self> as ResponseSpec>::from_body(body, head)
     }
 }
 
@@ -755,10 +755,10 @@ mod tests {
 
         fn complete_page_spec<S>()
         where
-            S: ResponseBodySpec<Output = Vec<Row>, Mode = Buffered> + PageResponseSpec,
+            S: ResponseSpec<Output = Vec<Row>, Mode = Buffered> + PageResponseSpec,
         {
         }
         complete_page_spec::<Csv<Row>>();
-        assert_eq!(<Csv<Row> as ResponseBodySpec>::accept(), Some("text/csv"));
+        assert_eq!(<Csv<Row> as ResponseSpec>::accept(), Some("text/csv"));
     }
 }

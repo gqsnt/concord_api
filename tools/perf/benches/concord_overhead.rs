@@ -92,62 +92,64 @@ impl RecordDecoder for BenchRecords {
 
 api! {
     client BenchApi {
+        timeout off;
         base "http://benchmark.example.test/";
         credentials {
-            secret api_secret: String;
+            secret api_secret;
             credential application_key = bearer(secret.api_secret);
         }
-    }
+
 
     scope records(collection: String) {
-        path ["records", scope.collection];
-        GET show(id: String) -> Bytes {
-            path [ep.id];
+        path ["records", records.collection];
+        GET show(id: String) -> Bytes using Bytes {
+            path [endpoint.id];
             auth off;
         }
     }
-    GET bounded() -> Bytes {
+    GET bounded() -> Bytes using Bytes {
         auth off;
     }
-    GET protected() -> Bytes {
-        auth bearer application_key;
+    GET protected() -> Bytes using Bytes {
+        auth { bearer application_key; }
     }
-    GET limited() -> Bytes {
+    GET limited() -> Bytes using Bytes {
         auth off;
-        rate_limit { 1000000 / 1s; }
+        rate_limit { allow 1000000 per 1s; }
     }
-    GET pages(offset: u64, limit: std::num::NonZeroU32) -> crate::PageCodec {
-        query { "offset" = ep.offset; "limit" = ep.limit; }
+    GET pages(offset: u64, limit: std::num::NonZeroU32) -> Vec<u8> using crate::PageCodec {
+        query { "offset" = endpoint.offset; "limit" = endpoint.limit; }
         auth off;
-        paginate concord::pagination::OffsetPagination {
-            offset: bind ep.offset,
-            page_size: bind ep.limit,
+        paginate with concord::pagination::OffsetPagination {
+            offset -> endpoint.offset;
+            page_size -> endpoint.limit;
         }
     }
-    POST codec(#[body] body: crate::BenchCodec) -> crate::BenchCodec {
+    POST codec(body body: String using crate::BenchCodec) -> String using crate::BenchCodec {
         auth off;
     }
-    GET streamed() -> Stream<OctetStream> {
+    GET streamed() -> ::concord::response::ByteStream using Stream<OctetStream> {
         auth off;
     }
-    GET buffered_records() -> BufferedRecords<crate::BenchRecords> {
+    GET buffered_records() -> Vec<Bytes> using BufferedRecords<crate::BenchRecords> {
         auth off;
     }
-}
+}}
 
 api! {
     client CredentialBenchApi {
+        timeout off;
         base "https://localhost/";
         credentials {
-            secret api_secret: String;
+            secret api_secret;
             credential application_key = bearer(secret.api_secret);
         }
-    }
 
-    GET credential_ready() -> Bytes {
-        auth bearer application_key;
+
+    GET credential_ready() -> Bytes using Bytes {
+        auth { bearer application_key; }
     }
-}
+}}
 
 const EXPECTED_CATEGORIES: [&str; 17] = [
     "core client construction",
@@ -258,7 +260,9 @@ fn core_client_construction(iterations: usize, audit: &mut CategoryAudit) {
 fn generated_endpoint_construction(iterations: usize, audit: &mut CategoryAudit) {
     let started = Instant::now();
     for index in 0..iterations {
-        let endpoint = bench_api::records::Show::new("archive".to_owned(), index.to_string());
+        let endpoint = BenchApi::unbound()
+            .records("archive".to_owned())
+            .show(index.to_string());
         black_box(endpoint);
     }
     report(
@@ -272,7 +276,11 @@ fn generated_endpoint_construction(iterations: usize, audit: &mut CategoryAudit)
 fn request_binding(iterations: usize, audit: &mut CategoryAudit) {
     let client = configured_builder().build().expect("benchmark client");
     let endpoints = (0..iterations)
-        .map(|index| bench_api::records::Show::new("archive".to_owned(), index.to_string()))
+        .map(|index| {
+            BenchApi::unbound()
+                .records("archive".to_owned())
+                .show(index.to_string())
+        })
         .collect::<Vec<_>>();
     let started = Instant::now();
     for endpoint in endpoints {
@@ -288,7 +296,11 @@ fn safe_public_planning(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = configured_builder().build()?;
     let endpoints = (0..iterations)
-        .map(|index| bench_api::records::Show::new("archive".to_owned(), index.to_string()))
+        .map(|index| {
+            BenchApi::unbound()
+                .records("archive".to_owned())
+                .show(index.to_string())
+        })
         .collect::<Vec<_>>();
     let started = Instant::now();
     for endpoint in &endpoints {
@@ -385,7 +397,7 @@ fn explicit_generated_endpoint_execution_overhead(
         .configure_http(move |http| http.proxy(proxy))
         .build()?;
     let endpoints = (0..iterations)
-        .map(|_| bench_api::Bounded::new())
+        .map(|_| BenchApi::unbound().bounded())
         .collect::<Vec<_>>();
     let started = Instant::now();
     for endpoint in endpoints {
@@ -417,8 +429,8 @@ fn runtime_endpoint_execution_overhead(
                 EndpointId::new(format!("bench_api.runtime_{index}"))?,
                 Method::GET,
             )
-            .path_segment("runtime")
-            .response_bytes()
+            .path("runtime")
+            .accepted_bytes()
             .build()
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -605,7 +617,7 @@ fn pagination_loop_overhead(
     for _ in 0..iterations {
         let pages: PaginatedRequest<_> = client
             .pages(0, std::num::NonZeroU32::MIN)
-            .paginate(PageLimit::Take(2));
+            .paginate(PageLimit::Prefix(2));
         black_box(runtime.block_on(pages.into_future())?);
     }
     report(audit, "pagination loop overhead", iterations, started);

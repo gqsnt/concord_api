@@ -4,10 +4,11 @@ use concord::api;
 
 api! {
     client HeaderCountLimit {
+        timeout off;
         base "https://example.test/";
-    }
 
-    GET fetch() -> concord::NoContent {
+
+    GET fetch() -> () using concord::NoContent {
         headers {
             "x-h000" = "v"; "x-h001" = "v"; "x-h002" = "v"; "x-h003" = "v"; "x-h004" = "v"; "x-h005" = "v"; "x-h006" = "v"; "x-h007" = "v";
             "x-h008" = "v"; "x-h009" = "v"; "x-h010" = "v"; "x-h011" = "v"; "x-h012" = "v"; "x-h013" = "v"; "x-h014" = "v"; "x-h015" = "v";
@@ -44,6 +45,6 @@ api! {
             "x-h256" = "v";
         }
     }
-}
+}}
 
 fn main() {}

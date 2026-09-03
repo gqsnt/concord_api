@@ -5,7 +5,7 @@ mod pending;
 mod prepare;
 mod prepared;
 
-pub use pending::{Request, ResponseBytesRequest, ResponseRequest};
+pub use pending::{AcceptedBytesRequest, Request, ResponseRequest};
 pub use prepared::{RuntimeEndpoint, RuntimeEndpointBuilder};
 
 pub(crate) use prepare::{

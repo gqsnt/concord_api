@@ -205,7 +205,7 @@ async fn actual_specification_example_runs_generated_and_runtime_endpoints_local
         EndpointId::new("examples.specifications.runtime").expect("runtime ID"),
         Method::POST,
     )
-    .path_segment("runtime")
+    .path("runtime")
     .body_spec::<ExampleRequestSpec>(Bytes::from_static(b"runtime request"))
     .response::<ExampleBufferedSpec>()
     .build()
@@ -241,7 +241,7 @@ async fn actual_pagination_example_binds_each_next_offset_sequentially() {
 
     let values = client
         .offset(0, NonZeroU32::new(2).expect("positive page size"))
-        .paginate(PageLimit::Take(3))
+        .paginate(PageLimit::Prefix(3))
         .await
         .expect("offset pagination");
     assert_eq!(values, [1, 2, 3]);
@@ -280,7 +280,7 @@ async fn post_pagination_repeats_one_stable_json_body_for_every_page() {
 
     let values = client
         .search(0, NonZeroU32::new(2).expect("positive page size"), filter)
-        .paginate(PageLimit::Take(2))
+        .paginate(PageLimit::Prefix(2))
         .await
         .expect("POST search pagination");
     assert_eq!(values, [1, 2, 3]);

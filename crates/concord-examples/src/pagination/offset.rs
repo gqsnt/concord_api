@@ -17,7 +17,7 @@ pub fn construct(client: &PaginationApi) {
             0,
             std::num::NonZeroU32::new(50).expect("positive page size"),
         )
-        .paginate(PageLimit::Take(2));
+        .paginate(PageLimit::Prefix(2));
 }
 // ANCHOR_END: offset_pagination
 
@@ -29,7 +29,7 @@ pub async fn collect(client: &PaginationApi) -> Result<Vec<u32>, concord::ApiErr
             0,
             std::num::NonZeroU32::new(50).expect("positive page size"),
         )
-        .paginate(PageLimit::Take(2))
+        .paginate(PageLimit::Prefix(2))
         .await
 }
 // ANCHOR_END: execute_pagination
@@ -42,8 +42,8 @@ pub async fn collect_all(client: &PaginationApi) -> Result<Vec<u32>, concord::Ap
             0,
             std::num::NonZeroU32::new(50).expect("positive page size"),
         )
-        .paginate(PageLimit::HardCap(
-            std::num::NonZeroU32::new(100).expect("positive hard cap"),
+        .paginate(PageLimit::CompleteWithin(
+            std::num::NonZeroU32::new(100).expect("positive completion limit"),
         ))
         .await
 }

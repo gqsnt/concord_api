@@ -2,13 +2,16 @@ use concord::{Bytes, api};
 
 api! {
     client NamingApi {
+        timeout off;
         base "http://example.test";
-    }
 
-    GET raw_response() -> Bytes;
-}
+
+    GET raw_response() -> Bytes using Bytes {
+        expose accepted_bytes;
+    }
+}}
 
 fn main() {
     let client = NamingApi::new().expect("client");
-    let _ = client.raw_response().response_bytes();
+    let _ = client.raw_response().accepted_bytes();
 }

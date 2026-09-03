@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use http::Method;
 
+use crate::contract::{EndpointContractDescription, SharedEndpointContractDescription};
 use crate::error::{ConfigurationError, ConfigurationErrorKind};
 use crate::redaction::SanitizedHeaderMap;
 
@@ -200,10 +201,44 @@ pub enum ResponseAcquisition {
     Discard,
 }
 
+/// Whether managed policy is permitted to resend an operation after dispatch
+/// may have begun.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Repeatability {
+    /// A resend is permitted only when every mechanical and policy gate also
+    /// admits it.
+    Idempotent,
+    /// A policy-driven resend is forbidden once dispatch may have begun.
+    Never,
+}
+
+impl Repeatability {
+    /// Returns the conservative method-derived v2 default.
+    #[must_use]
+    pub fn for_method(method: &Method) -> Self {
+        match method.as_str() {
+            "GET" | "HEAD" | "PUT" | "DELETE" | "OPTIONS" | "TRACE" => Self::Idempotent,
+            _ => Self::Never,
+        }
+    }
+}
+
+/// Provenance of the resolved repeatability declaration.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum RepeatabilitySource {
+    /// Derived from the exact HTTP method.
+    MethodDefault,
+    /// Written explicitly on the endpoint declaration or runtime endpoint.
+    Explicit,
+}
+
 /// Compile-time endpoint capabilities and declared policy presence.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct EndpointCapabilities {
     pagination: bool,
+    accepted_bytes: bool,
     credential_storage: bool,
     authentication: bool,
     rate_limits: bool,
@@ -214,12 +249,14 @@ impl EndpointCapabilities {
     #[must_use]
     pub const fn generated(
         pagination: bool,
+        accepted_bytes: bool,
         credential_storage: bool,
         authentication: bool,
         rate_limits: bool,
     ) -> Self {
         Self {
             pagination,
+            accepted_bytes,
             credential_storage,
             authentication,
             rate_limits,
@@ -230,6 +267,13 @@ impl EndpointCapabilities {
     #[must_use]
     pub const fn pagination(self) -> bool {
         self.pagination
+    }
+
+    /// Returns whether the endpoint declares the bounded accepted-bytes
+    /// terminal.
+    #[must_use]
+    pub const fn accepted_bytes(self) -> bool {
+        self.accepted_bytes
     }
 
     /// Returns whether accepted responses can update endpoint-backed
@@ -288,6 +332,9 @@ pub struct EndpointDescription {
     response_acquisition: ResponseAcquisition,
     capabilities: EndpointCapabilities,
     timeout: TimeoutSelection,
+    repeatability: Repeatability,
+    repeatability_source: RepeatabilitySource,
+    contract: Option<SharedEndpointContractDescription>,
 }
 
 impl EndpointDescription {
@@ -297,7 +344,7 @@ impl EndpointDescription {
         clippy::too_many_arguments,
         reason = "generated descriptions contain one field for every public contract fact"
     )]
-    pub const fn generated(
+    pub fn generated(
         id: EndpointId,
         method: Method,
         source_path: &'static str,
@@ -307,6 +354,9 @@ impl EndpointDescription {
         response_acquisition: ResponseAcquisition,
         capabilities: EndpointCapabilities,
         timeout: TimeoutSelection,
+        repeatability: Repeatability,
+        repeatability_source: RepeatabilitySource,
+        contract: EndpointContractDescription,
     ) -> Self {
         Self {
             id,
@@ -318,6 +368,9 @@ impl EndpointDescription {
             response_acquisition,
             capabilities,
             timeout,
+            repeatability,
+            repeatability_source,
+            contract: Some(Arc::new(contract)),
         }
     }
 
@@ -335,6 +388,8 @@ impl EndpointDescription {
         response_acquisition: ResponseAcquisition,
         capabilities: EndpointCapabilities,
         timeout: TimeoutSelection,
+        repeatability: Repeatability,
+        repeatability_source: RepeatabilitySource,
     ) -> Self {
         Self {
             id,
@@ -346,6 +401,9 @@ impl EndpointDescription {
             response_acquisition,
             capabilities,
             timeout,
+            repeatability,
+            repeatability_source,
+            contract: None,
         }
     }
 
@@ -409,6 +467,26 @@ impl EndpointDescription {
     pub const fn timeout(&self) -> TimeoutSelection {
         self.timeout
     }
+
+    /// Returns the resolved semantic resend permission.
+    #[must_use]
+    pub const fn repeatability(&self) -> Repeatability {
+        self.repeatability
+    }
+
+    /// Returns whether repeatability was explicit or method-derived.
+    #[must_use]
+    pub const fn repeatability_source(&self) -> RepeatabilitySource {
+        self.repeatability_source
+    }
+
+    /// Returns detailed generated contract facts when this description belongs
+    /// to a generated endpoint. Runtime-defined endpoints describe their
+    /// runtime-bound facts through the common accessors and return `None` here.
+    #[must_use]
+    pub fn contract(&self) -> Option<&EndpointContractDescription> {
+        self.contract.as_deref()
+    }
 }
 
 impl fmt::Debug for EndpointDescription {
@@ -424,6 +502,9 @@ impl fmt::Debug for EndpointDescription {
             .field("response_acquisition", &self.response_acquisition)
             .field("capabilities", &self.capabilities)
             .field("timeout", &self.timeout)
+            .field("repeatability", &self.repeatability)
+            .field("repeatability_source", &self.repeatability_source)
+            .field("contract", &self.contract)
             .finish()
     }
 }
@@ -434,19 +515,19 @@ impl fmt::Debug for EndpointDescription {
 /// rate-limit keys, encoded body bytes, or response values. Public URL values
 /// may still contain operational identifiers or personally identifiable
 /// information.
-pub struct SafeRequestPlan {
+pub struct CredentialFreeRequestPlan {
     description: EndpointDescription,
-    safe_url: Arc<str>,
+    observed_url: Arc<str>,
     public_headers: SanitizedHeaderMap,
     resolved_timeout: Option<Duration>,
     page_index: u32,
     rate_limit_rule_count: usize,
 }
 
-impl SafeRequestPlan {
+impl CredentialFreeRequestPlan {
     pub(crate) fn new(
         description: EndpointDescription,
-        safe_url: Arc<str>,
+        observed_url: Arc<str>,
         public_headers: SanitizedHeaderMap,
         resolved_timeout: Option<Duration>,
         page_index: u32,
@@ -454,7 +535,7 @@ impl SafeRequestPlan {
     ) -> Self {
         Self {
             description,
-            safe_url,
+            observed_url,
             public_headers,
             resolved_timeout,
             page_index,
@@ -480,11 +561,14 @@ impl SafeRequestPlan {
         self.description.method()
     }
 
-    /// Returns the credential-sanitized logical URL produced by real
-    /// public-head shaping.
+    /// Returns the redaction-aware, credential-free logical URL produced by
+    /// real public-head shaping.
+    ///
+    /// Visible public values can still contain operational identifiers or
+    /// personally identifiable information.
     #[must_use]
-    pub fn safe_url(&self) -> &str {
-        &self.safe_url
+    pub fn observed_url(&self) -> &str {
+        &self.observed_url
     }
 
     /// Returns owned sanitized public headers.
@@ -551,12 +635,12 @@ impl SafeRequestPlan {
     }
 }
 
-impl fmt::Debug for SafeRequestPlan {
+impl fmt::Debug for CredentialFreeRequestPlan {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("SafeRequestPlan")
+            .debug_struct("CredentialFreeRequestPlan")
             .field("description", &self.description)
-            .field("safe_url", &self.safe_url)
+            .field("observed_url", &self.observed_url)
             .field("public_headers", &self.public_headers)
             .field("resolved_timeout", &self.resolved_timeout)
             .field("page_index", &self.page_index)

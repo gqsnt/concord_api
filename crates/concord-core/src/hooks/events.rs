@@ -38,7 +38,7 @@ pub struct BeforeSend<'a> {
     pub method: &'a Method,
     /// Credential-sanitized logical URL. Public values may still contain
     /// operational identifiers or personally identifiable information.
-    pub safe_url: &'a str,
+    pub observed_url: &'a str,
     /// Zero-based page index; direct requests use zero.
     pub page_index: u32,
     /// Structural identity of this visible managed attempt.
@@ -64,7 +64,7 @@ pub struct ResponseHeadEvent<'a> {
     pub method: &'a Method,
     /// Credential-sanitized logical URL. Public values may still contain
     /// operational identifiers or personally identifiable information.
-    pub safe_url: &'a str,
+    pub observed_url: &'a str,
     /// Zero-based page index; direct requests use zero.
     pub page_index: u32,
     /// Structural identity of the attempt that produced this head.
@@ -88,7 +88,7 @@ pub struct CompletionEvent<'a> {
     pub method: &'a Method,
     /// Credential-sanitized logical URL. Public values may still contain
     /// operational identifiers or personally identifiable information.
-    pub safe_url: &'a str,
+    pub observed_url: &'a str,
     /// Zero-based page index; direct requests use zero.
     pub page_index: u32,
     /// Number of visible attempts whose before-send stage began.
@@ -154,8 +154,8 @@ pub enum CompletionOutcome {
     AuthenticationRejected,
     /// Rate-limit preparation or acquisition failed.
     RateLimit,
-    /// A result-determining lifecycle hook rejected the operation.
-    Hook,
+    /// A result-determining application gate rejected the operation.
+    PolicyRejected,
     /// The operation deadline expired.
     Timeout,
     /// Native connection establishment failed.
@@ -188,7 +188,7 @@ impl CompletionOutcome {
             ErrorCategory::AuthenticationProvider => Self::AuthenticationProvider,
             ErrorCategory::AuthenticationRejected => Self::AuthenticationRejected,
             ErrorCategory::RateLimit => Self::RateLimit,
-            ErrorCategory::Hook => Self::Hook,
+            ErrorCategory::PolicyRejected => Self::PolicyRejected,
             ErrorCategory::Timeout => Self::Timeout,
             ErrorCategory::Connect => Self::Connect,
             ErrorCategory::Transport => Self::Transport,

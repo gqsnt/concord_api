@@ -2,25 +2,26 @@ use concord::prelude::*;
 
 api! {
     client RateWindowLimitApi {
+        timeout off;
         base "https://example.test";
         rate_limit {
-            1 / 1s;
-            1 / 2s;
-            1 / 3s;
-            1 / 4s;
-            1 / 5s;
-            1 / 6s;
-            1 / 7s;
-            1 / 8s;
-            1 / 9s;
-            1 / 10s;
-            1 / 11s;
-            1 / 12s;
-            1 / 13s;
-            1 / 14s;
-            1 / 15s;
-            1 / 16s;
-            1 / 17s;
+            allow 1 per 1s;
+            allow 1 per 2s;
+            allow 1 per 3s;
+            allow 1 per 4s;
+            allow 1 per 5s;
+            allow 1 per 6s;
+            allow 1 per 7s;
+            allow 1 per 8s;
+            allow 1 per 9s;
+            allow 1 per 10s;
+            allow 1 per 11s;
+            allow 1 per 12s;
+            allow 1 per 13s;
+            allow 1 per 14s;
+            allow 1 per 15s;
+            allow 1 per 16s;
+            allow 1 per 17s;
         }
     }
 }

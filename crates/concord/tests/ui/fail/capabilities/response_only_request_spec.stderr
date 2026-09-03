@@ -3,67 +3,12 @@ error[E0277]: the trait bound `ResponseOnly: EncodeBody` is not satisfied
    |
 15 | / api! {
 16 | |     client InvalidResponseOnlyRequestApi {
-17 | |         base "http://invalid-response-only.example.test/";
+17 | |         timeout off;
+18 | |         base "http://invalid-response-only.example.test/";
 ...  |
-20 | |     POST invalid(#[body] body: crate::ResponseOnly) -> Bytes;
-21 | | }
-   | |_^ unsatisfied trait bound
-   |
-help: the trait `EncodeBody` is not implemented for `ResponseOnly`
-  --> tests/ui/fail/capabilities/response_only_request_spec.rs:4:1
-   |
- 4 | pub struct ResponseOnly;
-   | ^^^^^^^^^^^^^^^^^^^^^^^
-help: the following other types implement trait `EncodeBody`
-  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
-   |
-   |   impl EncodeBody for Text {
-   |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Text`
-   |
-  ::: $WORKSPACE/crates/concord-extras/src/codec/json.rs
-   |
-   | / impl<T> EncodeBody for Json<T>
-   | | where
-   | |     T: serde::Serialize + Send + 'static,
-   | |_________________________________________^ `Json<T>`
-   = note: required for `ResponseOnly` to implement `RequestBodySpec`
-   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `ResponseOnly: EncodeBody` is not satisfied
-  --> tests/ui/fail/capabilities/response_only_request_spec.rs:20:10
-   |
-20 |     POST invalid(#[body] body: crate::ResponseOnly) -> Bytes;
-   |          ^^^^^^^ unsatisfied trait bound
-   |
-help: the trait `EncodeBody` is not implemented for `ResponseOnly`
-  --> tests/ui/fail/capabilities/response_only_request_spec.rs:4:1
-   |
- 4 | pub struct ResponseOnly;
-   | ^^^^^^^^^^^^^^^^^^^^^^^
-help: the following other types implement trait `EncodeBody`
-  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
-   |
-   |   impl EncodeBody for Text {
-   |   ^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Text`
-   |
-  ::: $WORKSPACE/crates/concord-extras/src/codec/json.rs
-   |
-   | / impl<T> EncodeBody for Json<T>
-   | | where
-   | |     T: serde::Serialize + Send + 'static,
-   | |_________________________________________^ `Json<T>`
-   = note: required for `ResponseOnly` to implement `RequestBodySpec`
-
-error[E0277]: the trait bound `ResponseOnly: EncodeBody` is not satisfied
-  --> tests/ui/fail/capabilities/response_only_request_spec.rs:15:1
-   |
-15 | / api! {
-16 | |     client InvalidResponseOnlyRequestApi {
-17 | |         base "http://invalid-response-only.example.test/";
-...  |
-20 | |     POST invalid(#[body] body: crate::ResponseOnly) -> Bytes;
-21 | | }
-   | |_^ unsatisfied trait bound
+21 | |     POST invalid(body body: Bytes using crate::ResponseOnly) -> Bytes using Bytes;
+22 | | }}
+   | |__^ unsatisfied trait bound
    |
 help: the trait `EncodeBody` is not implemented for `ResponseOnly`
   --> tests/ui/fail/capabilities/response_only_request_spec.rs:4:1
@@ -90,11 +35,12 @@ error[E0277]: the trait bound `ResponseOnly: RequestBodySpec` is not satisfied
    |
 15 | / api! {
 16 | |     client InvalidResponseOnlyRequestApi {
-17 | |         base "http://invalid-response-only.example.test/";
+17 | |         timeout off;
+18 | |         base "http://invalid-response-only.example.test/";
 ...  |
-20 | |     POST invalid(#[body] body: crate::ResponseOnly) -> Bytes;
-21 | | }
-   | |_^ unsatisfied trait bound
+21 | |     POST invalid(body body: Bytes using crate::ResponseOnly) -> Bytes using Bytes;
+22 | | }}
+   | |__^ unsatisfied trait bound
    |
 help: the trait `EncodeBody` is not implemented for `ResponseOnly`
   --> tests/ui/fail/capabilities/response_only_request_spec.rs:4:1
@@ -116,16 +62,64 @@ help: the following other types implement trait `EncodeBody`
    = note: required for `ResponseOnly` to implement `RequestBodySpec`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
+error[E0308]: mismatched types
+  --> tests/ui/fail/capabilities/response_only_request_spec.rs:15:1
+   |
+15 | / api! {
+16 | |     client InvalidResponseOnlyRequestApi {
+17 | |         timeout off;
+18 | |         base "http://invalid-response-only.example.test/";
+...  |
+21 | |     POST invalid(body body: Bytes using crate::ResponseOnly) -> Bytes using Bytes;
+22 | | }}
+   | |  ^
+   | |  |
+   | |__expected `&<... as RequestBodySpec>::Input`, found `&Bytes`
+   |    arguments to this function are incorrect
+   |
+   = note: expected reference `&<ResponseOnly as RequestBodySpec>::Input`
+              found reference `&concord::Bytes`
+   = help: consider constraining the associated type `<ResponseOnly as RequestBodySpec>::Input` to `concord::Bytes` or calling a method that returns `<ResponseOnly as RequestBodySpec>::Input`
+   = note: for more information, visit https://doc.rust-lang.org/book/ch19-03-advanced-traits.html
+note: associated function defined here
+  --> $WORKSPACE/crates/concord-core/src/body/spec.rs
+   |
+   |     fn metadata(
+   |        ^^^^^^^^
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/ui/fail/capabilities/response_only_request_spec.rs:15:1
+   |
+15 | / api! {
+16 | |     client InvalidResponseOnlyRequestApi {
+17 | |         timeout off;
+18 | |         base "http://invalid-response-only.example.test/";
+...  |
+21 | |     POST invalid(body body: Bytes using crate::ResponseOnly) -> Bytes using Bytes;
+22 | | }}
+   | |  ^
+   | |  |
+   | |__expected associated type, found `Bytes`
+   |    expected `<ResponseOnly as RequestBodySpec>::Input` because of return type
+   |
+   = note: expected associated type `<ResponseOnly as RequestBodySpec>::Input`
+                       found struct `concord::Bytes`
+   = help: consider constraining the associated type `<ResponseOnly as RequestBodySpec>::Input` to `concord::Bytes` or calling a method that returns `<ResponseOnly as RequestBodySpec>::Input`
+   = note: for more information, visit https://doc.rust-lang.org/book/ch19-03-advanced-traits.html
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
 error[E0277]: the trait bound `ResponseOnly: EncodeBody` is not satisfied
   --> tests/ui/fail/capabilities/response_only_request_spec.rs:15:1
    |
 15 | / api! {
 16 | |     client InvalidResponseOnlyRequestApi {
-17 | |         base "http://invalid-response-only.example.test/";
+17 | |         timeout off;
+18 | |         base "http://invalid-response-only.example.test/";
 ...  |
-20 | |     POST invalid(#[body] body: crate::ResponseOnly) -> Bytes;
-21 | | }
-   | |_^ unsatisfied trait bound
+21 | |     POST invalid(body body: Bytes using crate::ResponseOnly) -> Bytes using Bytes;
+22 | | }}
+   | |__^ unsatisfied trait bound
    |
 help: the trait `EncodeBody` is not implemented for `ResponseOnly`
   --> tests/ui/fail/capabilities/response_only_request_spec.rs:4:1
@@ -145,30 +139,24 @@ help: the following other types implement trait `EncodeBody`
    | |     T: serde::Serialize + Send + 'static,
    | |_________________________________________^ `Json<T>`
    = note: required for `ResponseOnly` to implement `RequestBodySpec`
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0599]: the associated function or constant `__concord_from_facade` exists for struct `Invalid<_>`, but its trait bounds were not satisfied
+note: required for `Invalid` to implement `concord::__private::EndpointSpec`
   --> tests/ui/fail/capabilities/response_only_request_spec.rs:15:1
    |
- 4 |   pub struct ResponseOnly;
-   |   ----------------------- doesn't satisfy `ResponseOnly: EncodeBody`
-...
 15 | / api! {
 16 | |     client InvalidResponseOnlyRequestApi {
-17 | |         base "http://invalid-response-only.example.test/";
+17 | |         timeout off;
+18 | |         base "http://invalid-response-only.example.test/";
 ...  |
-20 | |     POST invalid(#[body] body: crate::ResponseOnly) -> Bytes;
-21 | | }
-   | | ^
-   | | |
-   | |_associated function or constant cannot be called on `Invalid<_>` due to unsatisfied trait bounds
-   |   associated function or constant `__concord_from_facade` not found for this struct
+21 | |     POST invalid(body body: Bytes using crate::ResponseOnly) -> Bytes using Bytes;
+   | |          ^^^^^^^
+22 | | }}
+   | |__^ unsatisfied trait bound introduced here
+note: required by a bound in `concord::__private::request_plan`
+  --> $WORKSPACE/crates/concord-core/src/__private.rs
    |
-   = note: the following trait bounds were not satisfied:
-           `ResponseOnly: EncodeBody`
-note: the trait `EncodeBody` must be implemented
-  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
-   |
-   | pub trait EncodeBody: Send + Sync + 'static {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   | pub fn request_plan<E>(
+   |        ------------ required by a bound in this function
+...
+   |     E: EndpointSpec,
+   |        ^^^^^^^^^^^^ required by this bound in `request_plan`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -7,7 +7,7 @@ use std::task::{Context, Poll};
 use futures_core::Stream;
 
 use crate::response::{
-    ByteStream, ResponseBodyError, ResponseBodySpec, ResponseHead, ResponseMode, Streaming,
+    ByteStream, ResponseBodyError, ResponseHead, ResponseMode, ResponseSpec, Streaming,
 };
 
 use super::driver::{RecordDriver, RecordStep};
@@ -21,7 +21,7 @@ use super::{RecordDecoder, RecordError, RecordErrorKind};
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Records<D>(PhantomData<fn() -> D>);
 
-impl<D> ResponseBodySpec for Records<D>
+impl<D> ResponseSpec for Records<D>
 where
     D: RecordDecoder,
 {

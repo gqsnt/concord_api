@@ -2,8 +2,10 @@
 
 mod command;
 mod fixtures;
+mod migration;
 mod msrv;
 mod policy;
+mod semantic_diff;
 
 use std::env;
 use std::path::{Path, PathBuf};
@@ -36,6 +38,16 @@ fn run() -> Result<(), String> {
             parse_options(&arguments[1..], false)?;
             policy::run(&root)
         }
+        Some("migration-audit") => {
+            let write = parse_options(&arguments[1..], true)?;
+            migration::run(&root, write)
+        }
+        Some("semantic-diff") => {
+            if arguments.len() != 3 {
+                return Err(usage());
+            }
+            semantic_diff::run(Path::new(&arguments[1]), Path::new(&arguments[2]))
+        }
         _ => Err(usage()),
     }
 }
@@ -63,7 +75,7 @@ fn workspace_root() -> Result<PathBuf, String> {
 }
 
 fn usage() -> String {
-    "usage: cargo run -p concord-xtask -- <fixtures [--locked] | msrv-ui [--locked] | policy [--locked]>".to_owned()
+    "usage: cargo run -p concord-xtask -- <fixtures [--locked] | migration-audit [--locked] [--write] | semantic-diff BEFORE AFTER | msrv-ui [--locked] | policy [--locked]>".to_owned()
 }
 
 #[cfg(test)]

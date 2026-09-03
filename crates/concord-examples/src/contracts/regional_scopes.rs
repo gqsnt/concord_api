@@ -1,85 +1,89 @@
 //! Multi-host scopes with inherited authentication and lexical limits.
 //!
 //! Required features: `json` and, for execution, a rate limiter.
-//! Mode: deterministic construction and safe planning.
+//! Mode: deterministic construction and credential-free planning.
 //! Documentation owner: `docs/spec.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
+use std::sync::Arc;
+
 use concord::api;
+use concord::rate_limit::NoopRateLimiter;
 
 // ANCHOR: regional_api_recipe
 api! {
     client RegionalGameApi {
+        timeout off;
         base "https://regional-game.example.test/";
-        vars {
+        values {
             platform: String;
         }
         credentials {
-            secret api_key: String;
+            secret api_key;
             credential developer_key = api_key(secret.api_key);
         }
-        host [vars.platform, "api"];
+        subdomain replace [client.platform, "api"];
         path ["game"];
         headers { "X-Developer-Key" = "example-only"; }
-        auth header "X-Game-Token" = developer_key challenge never;
-        rate_limit { 20 / 1s; 100 / 2m; }
-    }
+        auth { header "X-Game-Token" = developer_key; }
+        rate_limit { allow 20 per 1s; allow 100 per 2m; }
+
 
     scope accounts(region: String) {
-        host [scope.region, "accounts"];
+        subdomain replace [accounts.region, "accounts"];
         path ["accounts"];
-        GET by_id(account_id: String) -> Json<Vec<String>> {
-            path ["by-id", ep.account_id];
-            rate_limit { 10 / 10s; }
+        GET by_id(account_id: String) -> Vec<String> using Json<Vec<String>> {
+            path ["by-id", endpoint.account_id];
+            rate_limit { allow 10 per 10s; }
         }
-        GET by_name(game_name: String, tag_line: String) -> Json<Vec<String>> {
-            path ["by-name", ep.game_name, ep.tag_line];
-            rate_limit { 10 / 10s; }
+        GET by_name(game_name: String, tag_line: String) -> Vec<String> using Json<Vec<String>> {
+            path ["by-name", endpoint.game_name, endpoint.tag_line];
+            rate_limit { allow 10 per 10s; }
         }
     }
 
     scope matches(region: String) {
-        host [scope.region, "matches"];
+        subdomain replace [matches.region, "matches"];
         path ["matches"];
-        GET by_id(match_id: String) -> Json<Vec<String>> {
-            path [ep.match_id];
-            rate_limit { 10 / 10s; }
+        GET by_id(match_id: String) -> Vec<String> using Json<Vec<String>> {
+            path [endpoint.match_id];
+            rate_limit { allow 10 per 10s; }
         }
-        GET by_account(account_id: String, start: u64, count: std::num::NonZeroU32) -> Json<Vec<String>> {
-            path ["by-account", ep.account_id];
-            query { "start" = ep.start; "count" = ep.count; }
-            rate_limit { 10 / 10s; }
-            paginate concord::pagination::OffsetPagination {
-                offset: bind ep.start,
-                page_size: bind ep.count,
+        GET by_account(account_id: String, start: u64, count: std::num::NonZeroU32) -> Vec<String> using Json<Vec<String>> {
+            path ["by-account", endpoint.account_id];
+            query { "start" = endpoint.start; "count" = endpoint.count; }
+            rate_limit { allow 10 per 10s; }
+            paginate with concord::pagination::OffsetPagination {
+                offset -> endpoint.start;
+                page_size -> endpoint.count;
             }
         }
-        GET timeline(match_id: String) -> Json<Vec<String>> {
-            path [ep.match_id, "timeline"];
-            rate_limit { 10 / 10s; }
+        GET timeline(match_id: String) -> Vec<String> using Json<Vec<String>> {
+            path [endpoint.match_id, "timeline"];
+            rate_limit { allow 10 per 10s; }
         }
     }
 
     scope league(region: String) {
-        host [scope.region, "league"];
+        subdomain replace [league.region, "league"];
         path ["league"];
-        GET challenger(queue: String) -> Json<Vec<String>> {
+        GET challenger(queue: String) -> Vec<String> using Json<Vec<String>> {
             path ["challenger"];
-            query { "queue" = ep.queue; }
-            rate_limit { 10 / 10s; }
+            query { "queue" = endpoint.queue; }
+            rate_limit { allow 10 per 10s; }
         }
-        GET grandmaster(queue: String) -> Json<Vec<String>> {
+        GET grandmaster(queue: String) -> Vec<String> using Json<Vec<String>> {
             path ["grandmaster"];
-            query { "queue" = ep.queue; }
-            rate_limit { 10 / 10s; }
+            query { "queue" = endpoint.queue; }
+            rate_limit { allow 10 per 10s; }
         }
-        GET master(queue: String) -> Json<Vec<String>> {
+        GET master(queue: String) -> Vec<String> using Json<Vec<String>> {
             path ["master"];
-            query { "queue" = ep.queue; }
-            rate_limit { 10 / 10s; }
+            query { "queue" = endpoint.queue; }
+            rate_limit { allow 10 per 10s; }
         }
     }
-}
+}}
 // ANCHOR_END: regional_api_recipe
 
 /// Constructs representative requests from each regional scope.
@@ -91,6 +95,9 @@ pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
             concord::SecretString::try_new("example-developer-key")
                 .expect("bounded example developer key"),
         )
+        // Planning is the only operation in this recipe; the explicit test
+        // limiter keeps rate enforcement a required construction decision.
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
         .build()?;
     let _: regional_game_api::accounts::ByIdRequest = client
         .accounts("europe".to_owned())

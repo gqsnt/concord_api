@@ -129,7 +129,7 @@ fn pagination_ceiling_kinds_are_public_and_structured() {
         PaginationErrorKind::Controller,
         PaginationErrorKind::Overflow,
         PaginationErrorKind::RepeatedRequest,
-        PaginationErrorKind::HardCapExceeded,
+        PaginationErrorKind::CompletionLimitExceeded,
         PaginationErrorKind::PageCeilingExceeded,
         PaginationErrorKind::CollectedItemCeilingExceeded,
         PaginationErrorKind::IdentityStorageCeilingExceeded,
@@ -143,7 +143,7 @@ fn pagination_ceiling_kinds_are_public_and_structured() {
     }
     assert_ne!(
         PaginationErrorKind::PageCeilingExceeded,
-        PaginationErrorKind::HardCapExceeded
+        PaginationErrorKind::CompletionLimitExceeded
     );
     assert_ne!(
         PaginationErrorKind::CollectedItemCeilingExceeded,

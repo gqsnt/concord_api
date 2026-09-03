@@ -1,5 +1,5 @@
 error: this declaration is client-only and cannot appear in a scope
- --> tests/ui/fail/rate_limits/rate_limits_scope_block.rs:9:9
-  |
-9 |         rate_limits {
-  |         ^^^^^^^^^^^
+  --> tests/ui/fail/rate_limits/rate_limits_scope_block.rs:10:9
+   |
+10 |         rate_limits {
+   |         ^^^^^^^^^^^

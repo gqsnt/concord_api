@@ -4,8 +4,8 @@ mod public_api {
     mod codec_extensions;
     mod error_api;
     mod generated_contract;
-    mod hooks_api;
     mod multipart_extensions;
+    mod observation_api;
     mod operation_identity;
     mod pagination_api;
     mod rate_limit_api;

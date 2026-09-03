@@ -28,21 +28,33 @@ pub use crate::codec::{
     AnyMedia, CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext,
     MediaType, OctetStream, Text,
 };
+pub use crate::contract::{
+    AttachmentDescription, AttachmentFamily, AttachmentOperation, AttachmentView,
+    AuthenticationDescription, BodyDescription, ContractDescription, ContractFactClass,
+    CredentialDescription, CredentialSourceKind, DeclarationDescription, DeclarationKind,
+    EndpointContractDescription, ObservationClass, PaginationDescription,
+    PaginationFieldDescription, RateLimitWindowDescription, RatePolicyDescription,
+    RateProfileDescription, ResponseDescription, ScopeDescription, SecretDescription,
+    SemanticChangeClass, ValueDescription, ValueInitializer, ValueOwnerKind, ValuePresence,
+    contract_tool_snapshot, diff_contract_tool_snapshots,
+};
 pub use crate::endpoint::{
-    EndpointCapabilities, EndpointDescription, EndpointId, MAX_ENDPOINT_ID_BYTES,
-    MAX_FORMATTED_PUBLIC_VALUE_BYTES, MAX_REQUEST_HEAD_COMPONENTS, MAX_REQUEST_HEADER_BYTES,
-    MAX_REQUEST_HEADER_COUNT, MAX_REQUEST_URL_BYTES, MAX_RUNTIME_ENDPOINT_COMPONENTS,
-    MAX_RUNTIME_ENDPOINT_METHOD_BYTES, MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, RequestBodyCategory,
-    ResponseAcquisition, SafeRequestPlan, TimeoutSelection,
+    CredentialFreeRequestPlan, EndpointCapabilities, EndpointDescription, EndpointId,
+    MAX_ENDPOINT_ID_BYTES, MAX_FORMATTED_PUBLIC_VALUE_BYTES, MAX_REQUEST_HEAD_COMPONENTS,
+    MAX_REQUEST_HEADER_BYTES, MAX_REQUEST_HEADER_COUNT, MAX_REQUEST_URL_BYTES,
+    MAX_RUNTIME_ENDPOINT_COMPONENTS, MAX_RUNTIME_ENDPOINT_METHOD_BYTES,
+    MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, Repeatability, RepeatabilitySource, RequestBodyCategory,
+    ResponseAcquisition, TimeoutSelection,
 };
 pub use crate::error::{
     ApiError, AuthErrorKind, ClientBuildError, ClientBuildErrorKind, ClientInputKind,
-    ConfigurationError, ConfigurationErrorKind, ErrorCategory, HookError, HttpResponseFailure,
-    PaginationErrorKind, RateLimitErrorKind, StatusBody, StatusBodyDecodeError, StatusBodyState,
+    ConfigurationError, ConfigurationErrorKind, DispatchKnowledge, ErrorCategory, FailureStage,
+    GateError, HttpResponseFailure, PaginationErrorKind, RateLimitErrorKind, StatusBody,
+    StatusBodyDecodeError, StatusBodyState,
 };
 pub use crate::hooks::{
-    AttemptInfo, BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,
-    PaginationCompletionEvent, ResponseHeadEvent, RuntimeHooks,
+    AttemptInfo, BeforeSend, BoxFuture, CompletionEvent, CompletionObserver, CompletionOutcome,
+    DebugLevel, PaginationCompletionEvent, RequestGate, ResponseGate, ResponseHeadEvent,
 };
 pub use crate::http::provider::{
     ProviderBody, ProviderBodyFactory, ProviderHttp, ProviderRequest, ProviderResponse,
@@ -54,12 +66,12 @@ pub use crate::http::{
 pub use crate::operation::OperationId;
 pub use crate::pagination::{PaginationController, PaginationError};
 pub use crate::rate_limit::{
-    Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_ID_BYTES,
-    MAX_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS,
-    MAX_RATE_LIMIT_POLICIES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_POLICY, NoopRateLimiter,
-    RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitObserver,
-    RateLimitPermit, RateLimitPlan, RateLimitPolicy, RateLimitRequest, RateLimitResponse,
-    RateLimitResponseHead, RateLimitWindow, RateLimiter,
+    CanonicalKeyWriter, Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES,
+    MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES,
+    MAX_RATE_LIMIT_KEY_PARTS, MAX_RATE_LIMIT_POLICIES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_POLICY,
+    NoopRateLimiter, RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart,
+    RateLimitKeyValue, RateLimitObserver, RateLimitPermit, RateLimitPlan, RateLimitPolicy,
+    RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimitWindow, RateLimiter,
 };
 #[cfg(feature = "records")]
 pub use crate::records::{
@@ -67,11 +79,11 @@ pub use crate::records::{
     Records,
 };
 pub use crate::redaction::{SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders};
-pub use crate::request::{ResponseBytesRequest, RuntimeEndpoint, RuntimeEndpointBuilder};
+pub use crate::request::{AcceptedBytesRequest, RuntimeEndpoint, RuntimeEndpointBuilder};
 pub use crate::response::{
-    ApiResponse, Buffered, ByteStream, Discard, ExecutionMeta, MAX_EMPTY_RESPONSE_CHUNKS,
-    NoContent, PageResponseSpec, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec,
-    ResponseBytesMode, ResponseHead, ResponseMode, Streaming,
+    AcceptedBytesMode, ApiResponse, Buffered, ByteStream, Discard, ExecutionMeta,
+    MAX_EMPTY_RESPONSE_CHUNKS, NoContent, PageResponseSpec, ResponseBodyError,
+    ResponseBodyErrorKind, ResponseHead, ResponseMode, ResponseSpec, Streaming,
 };
 pub use crate::retry::{
     MAX_POLICY_RETRIES_PER_OPERATION, RetryAttempt, RetryClassifier, RetryDecision, RetryFailure,

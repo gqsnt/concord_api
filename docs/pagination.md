@@ -1,35 +1,33 @@
 # Pagination
 
-- **Audience:** endpoint authors, callers, and controller authors
-- **Purpose:** end-to-end concept guide
-- **Normative reference:** [DSL pagination rules](spec.md#pagination)
+The declared endpoint output is one page. A pagination terminal repeatedly uses
+that same endpoint contract and flattens its ordered page items into a bounded
+aggregate.
 
-Pagination is a controlled sequence of ordinary endpoint executions. Initial
-pagination values remain caller-visible request inputs; explicit bindings give
-a controller exclusive authority to advance selected fields.
-
-## Declaration
+## Directional controller bindings
 
 <!-- concord-source: crates/concord-examples/src/pagination/mod.rs#offset_endpoint -->
 ```rust
-    GET offset(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
-        query { "offset" = ep.offset; "limit" = ep.limit; }
-        paginate concord::pagination::OffsetPagination {
-            offset: bind ep.offset,
-            page_size: bind ep.limit,
+    GET offset(offset: u64, limit: std::num::NonZeroU32) -> Vec<u32> using Json<Vec<u32>> {
+        query { "offset" = endpoint.offset; "limit" = endpoint.limit; }
+        paginate with concord::pagination::OffsetPagination {
+            offset -> endpoint.offset;
+            page_size -> endpoint.limit;
         }
     }
 ```
 
-Binding is explicit because APIs use many naming conventions and because field
-names should not silently grant runtime mutation rights. Fields and
-destinations are unique. A body is not a binding destination. The controller
-type is opaque to the macro; Rust checks its fields and trait obligations.
+An arrow grants the generated adapter live authority to update exactly one
+endpoint slot. An equals initializer copies stable controller state without
+granting mutation. Controller fields and destinations are unique and reflected
+in source order.
 
-## One page and finite prefix
+Client/scope values, body input, credentials, secrets, and arbitrary request
+state cannot be live destinations. A live pagination slot cannot be a rate-key
+dimension. Callers may configure optional/defaulted endpoint values before
+pagination; the controller takes over bound slots when the terminal begins.
 
-Directly awaiting the endpoint performs one ordinary request. A finite prefix
-uses `PageLimit::Take`:
+## Page limits
 
 <!-- concord-source: crates/concord-examples/src/pagination/offset.rs#execute_pagination -->
 ```rust
@@ -39,110 +37,32 @@ pub async fn collect(client: &PaginationApi) -> Result<Vec<u32>, concord::ApiErr
             0,
             std::num::NonZeroU32::new(50).expect("positive page size"),
         )
-        .paginate(PageLimit::Take(2))
+        .paginate(PageLimit::Prefix(2))
         .await
 }
 ```
 
-`Take(0)` performs no controller or page work. `Take(n)` succeeds with the
-accumulated prefix after at most `n` pages without requiring natural
-termination.
+`Prefix(0)` returns an empty aggregate without body, provider, limiter, gate,
+observer, or HTTP work. `Prefix(n)` returns at most `n` successfully collected
+pages even if continuation remains. It never turns an errored page into partial
+success.
 
-## Natural completion with a hard cap
+`CompleteWithin(n)` requires natural completion by page `n`. If continuation
+remains, the terminal returns a pagination-limit error with no partial output.
 
-<!-- concord-source: crates/concord-examples/src/pagination/offset.rs#paginate_all -->
-```rust
-pub async fn collect_all(client: &PaginationApi) -> Result<Vec<u32>, concord::ApiError> {
-    client
-        .offset(
-            0,
-            std::num::NonZeroU32::new(50).expect("positive page size"),
-        )
-        .paginate(PageLimit::HardCap(
-            std::num::NonZeroU32::new(100).expect("positive hard cap"),
-        ))
-        .await
-}
-```
+## Runtime guarantees
 
-`HardCap(n)` permits natural termination through page `n` and fails when the
-controller still has another state. It prevents an incomplete prefix from
-being silently labeled complete.
+Pagination is sequential and cycle-detecting. One aggregate deadline covers
+controller work, every page, limiter wait, retry/backoff, recovery, response
+acquisition, conversion, and completion. A page cannot reset the timeout.
 
-There is no unbounded public all-pages variant. Natural completion is requested
-through a finite hard cap.
+Independent bounds cover page count, item count, cumulative accepted response
+bytes, cycle identity count/bytes, controller state and formatting, attempts,
+and deadline. A paginated request body must explicitly prove page stability.
 
-## Page execution
+Cycle detection uses real credential-free request identity—including the real
+values of redacted public fields—while diagnostics expose only redacted forms.
+Credentials never participate. Every actual send reacquires rate admission.
 
-Each page:
-
-1. clones the original endpoint snapshot;
-2. writes current controller fields into declared bindings;
-3. prepares the ordinary public request head;
-4. constructs canonical credential-free page identity;
-5. checks cycles and finite state;
-6. executes through the same hooks, credentials, limiter, transport, response,
-   error, and completion path as a direct request;
-7. decodes one complete page;
-8. asks the controller for continue, finish, or failure.
-
-## Cycle detection and bounds
-
-Canonical identity uses endpoint ID, method, logical URL, and public headers.
-Credential material and body bytes are excluded. Page-stable bodies therefore
-cannot hide a repeated public page request.
-
-Page count, item count, aggregate accepted page-response bytes, retained
-identity count, retained identity bytes, per-response body limits, and the
-call-site limit are independent. The default aggregate page-response budget is
-64 MiB. `pagination_total_response_body_limit` changes it for one built client.
-
-The aggregate budget charges the exact post-decompression buffered body length
-of every successfully decoded page before that page's items are appended to the
-result. A first-excess page is dropped and returns
-`CollectedResponseByteCeilingExceeded`; previously accepted items are also
-dropped by the all-or-error result. At most the already accepted aggregate plus
-one independently bounded page can exist transiently during the check.
-
-This byte budget bounds the remote response input represented by retained page
-items; the item ceiling separately bounds collection overhead. Custom codecs
-and controllers remain trusted extension code and must not amplify a small body
-into disproportionate process-owned state. First excess fails without retaining
-the excess value in the aggregate result.
-
-## Body and response requirements
-
-A bodyless endpoint is page-stable. A body-bearing endpoint requires
-`PageRequestBodySpec`, promising independent preparation of the same body for
-every cloned page.
-
-Pagination requires a buffered page-capable response specification. Streaming,
-record-stream, discard, and explicit response-bytes terminals are not
-page-capable.
-
-## Rate limits and authentication
-
-Policy is recomputed for each updated page. A rate key cannot depend on a
-pagination-controlled value; `host` is also rejected when host shaping depends
-on one. Every page and admitted retry performs ordinary limiter admission and
-private authentication placement.
-
-## Result semantics
-
-Later-page failure returns one error and no accumulated complete value.
-`PageLimit::Take` is the explicit finite-prefix success mode. Hard-cap or
-controller completion preserves the all-or-error meaning of the returned
-collection.
-
-## Extension boundary
-
-`PaginationController<Page>` owns typed state and deterministic continuation.
-It receives no transport or external I/O authority and can update only
-compiler-declared bindings.
-
-## Related
-
-- [Request bodies](request_bodies.md)
-- [Responses](responses.md)
-- [Rate limits](rate_limits.md)
-- [Execution policy](execution_policy.md)
+See the [pagination grammar](spec.md#pagination-declarations) and
+[runtime semantics](runtime.md#pagination).

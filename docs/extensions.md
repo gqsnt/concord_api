@@ -1,32 +1,34 @@
-# Extensions
+# Extension boundaries
 
-- **Audience:** semantic extension and runtime-configuration authors
-- **Purpose:** guide
-- **Normative references:** [runtime model](runtime.md), [design invariants](design_invariants.md)
+Concord exposes traits only where runtime behavior genuinely varies. Static DSL
+operations stay generated concrete data.
 
-Concord extends semantic roles while core retains native transport, ordering,
-limits, and information-flow boundaries.
+| Extension | May decide | Cannot decide |
+|---|---|---|
+| `EncodeBody` | bounded complete encoding | route, auth, retry, native request |
+| `DecodeBody` | typed conversion from accepted bounded bytes | acquisition mechanics |
+| `RequestBodySpec` | media, preparation, replay/page stability | route, auth, rate, retry policy |
+| `ResponseSpec` | acceptance, media, sealed mode, conversion | native polling/deadline |
+| `RecordDecoder` | framing and record decode | network polling/global buffers |
+| `CredentialProvider` | acquire/recover its material | placement target or endpoint mutation |
+| `PaginationController` | next bound values/completion | arbitrary request mutation/order |
+| `RateLimiter` | admit/wait/reject canonical policies | auth or endpoint semantics |
+| `RetryClassifier` | retry recommendation | core safety gates |
+| request/response gate | reject at one named phase | native/private mutation |
+| completion observer | record a fixed event | alter the outcome |
 
-## Extension families
+Response acquisition modes are sealed and finite. Credential providers receive
+isolated bounded provider HTTP. Rate limiters can see opaque canonical key values
+under their documented trust boundary; those values do not leak to other
+observers. No extension receives a universal application context.
 
-| Trait family | Responsibility |
-|---|---|
-| `EncodeBody`, `DecodeBody` | complete typed buffered encoding and decoding |
-| `RequestBodySpec`, `ResponseBodySpec` | request input lifecycle and response delivery mode |
-| `RecordDecoder` | incremental bounded record framing and decoding |
-| `CredentialProvider` | bounded credential acquisition and recovery |
-| `PaginationController` | deterministic page-state transitions |
-| `RateLimiter`, `RateLimitObserver` | policy admission and sanitized response observation |
-| `RetryClassifier` | safe retry decisions |
-| `RuntimeHooks` | sanitized lifecycle observation |
-
-## Custom response modes remain core-owned
+## Response specification example
 
 <!-- concord-source: crates/concord-examples/src/request_response/specifications.rs#response_body_spec_extension -->
 ```rust
 pub struct ExampleBufferedSpec;
 
-impl ResponseBodySpec for ExampleBufferedSpec {
+impl ResponseSpec for ExampleBufferedSpec {
     type Output = usize;
     type Mode = Buffered;
 
@@ -37,7 +39,7 @@ impl ResponseBodySpec for ExampleBufferedSpec {
 
 pub struct ExampleStreamingSpec;
 
-impl ResponseBodySpec for ExampleStreamingSpec {
+impl ResponseSpec for ExampleStreamingSpec {
     type Output = ByteStream;
     type Mode = Streaming;
 
@@ -51,7 +53,7 @@ impl ResponseBodySpec for ExampleStreamingSpec {
 
 pub struct ExampleDiscardSpec;
 
-impl ResponseBodySpec for ExampleDiscardSpec {
+impl ResponseSpec for ExampleDiscardSpec {
     type Output = ();
     type Mode = Discard;
 
@@ -61,76 +63,15 @@ impl ResponseBodySpec for ExampleDiscardSpec {
 }
 ```
 
-Custom response specifications select one sealed mode—buffered, streaming, or
-discard. Core owns native response acquisition, byte/non-progress limits,
-cancellation, status ordering, and completion. The extension owns semantic
-acceptance and conversion within its mode.
+Extension callbacks are trusted application work. Core bounds inputs it owns and
+checks deadlines around synchronous result-determining callbacks, but cannot
+preempt them or automatically bound arbitrary retained application state.
+Implementations must bound CPU, memory, queues, map/metric cardinality, spawned
+work, external I/O, and diagnostic output.
 
-## HTTP configuration
+Optional first-party codecs, OAuth/provider support, CSV/NDJSON records,
+multipart/streams, local limiting, and bounded export adapters belong in
+`concord-extras`; the macro never recognizes their type names.
 
-Generated builders expose `configure_http` for transport and deployment
-choices such as HTTPS-only policy, protocol selection, proxy, roots,
-application identity PEM, connection behavior, and content decoding.
-
-Application and provider HTTP clients are separate. Both may use custom roots;
-only the application client uses application identity PEM.
-
-## Runtime configuration
-
-`configure_runtime` selects hooks, limiter, finite limits, debug, and related
-runtime components. Setters replace one selected component or limit. Repeated
-closures apply immediately in call order before `build()` freezes the snapshot.
-
-Retry has its own generated builder method because it is a coherent runtime
-policy with shared rolling-budget state.
-
-## Trust boundary
-
-Extensions are ordinary application Rust and are trusted with the data they
-receive. They must own:
-
-- finite internal execution and state;
-- safe public error messages;
-- logging and storage policy;
-- external I/O behavior permitted by the trait;
-- no hidden retry loops or detached correctness work.
-
-Core bounds its own retained data and supplies finite context, but does not
-sandbox custom Rust.
-
-## What extensions do not receive
-
-No extension receives an unrestricted native application request or response.
-Providers receive isolated HTTP rather than the application client. Body and
-response specs receive semantic bounded data. Hooks receive sanitized events.
-Limiters receive rate plans and key values but no credentials or body.
-
-## First-excess and progress rules
-
-Extensions honor context limits. Known excess fails before retention. Unknown
-excess withholds the first excess unit. Request streams, response streams, and
-record decoders must make finite progress.
-
-## Crate ownership
-
-- `concord-core` owns semantic traits and the managed executor.
-- `concord-extras` owns optional first-party implementations.
-- `concord` re-exports the supported application surface and composes enabled
-  defaults.
-
-Applications depend on `concord`.
-
-## Design question for a new extension
-
-Ask whether the use case can be represented as a semantic role with bounded
-input and output. If it requires unrestricted native request mutation or a
-second execution path, it conflicts with the core product model and should be a
-separate lower-level integration rather than a Concord extension.
-
-## Related
-
-- [Request bodies](request_bodies.md)
-- [Responses](responses.md)
-- [Authentication](auth.md)
-- [Rate limits](rate_limits.md)
-- [Runtime endpoints](runtime_endpoints.md)
+See the [design invariants](design_invariants.md) and
+[runtime trust model](runtime.md#extension-trust).

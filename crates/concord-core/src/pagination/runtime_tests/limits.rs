@@ -16,7 +16,7 @@ async fn zero_page_and_configured_ceilings_cut_off_the_first_forbidden_work() {
         CursorController::new("unused"),
     );
     let zero_construction_calls = Arc::clone(&zero_endpoint.construction_calls);
-    let zero = paginate_with(Request::new(zero_core, zero_endpoint), PageLimit::Take(0))
+    let zero = paginate_with(Request::new(zero_core, zero_endpoint), PageLimit::Prefix(0))
         .await
         .expect("zero-page success");
     assert!(zero.is_empty());
@@ -34,14 +34,7 @@ async fn zero_page_and_configured_ceilings_cut_off_the_first_forbidden_work() {
             .is_empty()
     );
     let zero_aggregate = zero_hooks.aggregate.lock().expect("aggregate lock").clone();
-    assert_eq!(zero_aggregate.len(), 1);
-    assert_eq!(zero_aggregate[0].pages_completed, 0);
-    assert_eq!(zero_aggregate[0].items_collected, 0);
-    assert!(!zero_aggregate[0].recovered_authentication);
-    assert_eq!(zero_aggregate[0].attempts_started, 0);
-    assert_eq!(zero_aggregate[0].policy_retries, 0);
-    assert_eq!(zero_aggregate[0].final_status, None);
-    assert_eq!(zero_aggregate[0].outcome, CompletionOutcome::Success);
+    assert!(zero_aggregate.is_empty());
 
     let page_executor = DeterministicExecutor::new();
     let page_hooks = Arc::new(PaginationProbe::default());
@@ -58,7 +51,7 @@ async fn zero_page_and_configured_ceilings_cut_off_the_first_forbidden_work() {
     );
     let page_construction_calls = Arc::clone(&page_endpoint.construction_calls);
     let error = pagination_error(
-        paginate_with(Request::new(page_core, page_endpoint), PageLimit::Take(2)).await,
+        paginate_with(Request::new(page_core, page_endpoint), PageLimit::Prefix(2)).await,
     );
     assert_eq!(
         error.pagination_kind(),
@@ -105,7 +98,7 @@ async fn zero_page_and_configured_ceilings_cut_off_the_first_forbidden_work() {
     );
     let maximum = collect(
         maximum_core,
-        PageLimit::HardCap(NonZeroU32::new(2).expect("positive hard cap")),
+        PageLimit::CompleteWithin(NonZeroU32::new(2).expect("positive completion limit")),
         CursorController::new("first"),
         Some(Duration::from_secs(30)),
     )
@@ -141,7 +134,7 @@ async fn zero_page_and_configured_ceilings_cut_off_the_first_forbidden_work() {
     let identity_error = pagination_error(
         collect(
             identity_core,
-            PageLimit::Take(1),
+            PageLimit::Prefix(1),
             CursorController::new("identity-first-excess-sentinel-6f11"),
             Some(Duration::from_secs(30)),
         )
@@ -191,7 +184,7 @@ async fn zero_page_and_configured_ceilings_cut_off_the_first_forbidden_work() {
     let item_error = pagination_error(
         collect(
             item_core,
-            PageLimit::Take(1),
+            PageLimit::Prefix(1),
             CursorController::new("item-page"),
             Some(Duration::from_secs(30)),
         )
@@ -241,7 +234,7 @@ async fn aggregate_response_body_budget_accepts_exact_total_and_drops_first_exce
     );
     let exact = collect(
         exact_core,
-        PageLimit::HardCap(NonZeroU32::new(2).expect("two-page hard cap")),
+        PageLimit::CompleteWithin(NonZeroU32::new(2).expect("two-page completion limit")),
         CursorController::new("first-state"),
         Some(Duration::from_secs(30)),
     )
@@ -282,7 +275,7 @@ async fn aggregate_response_body_budget_accepts_exact_total_and_drops_first_exce
     let error = pagination_error(
         collect(
             excess_core,
-            PageLimit::HardCap(NonZeroU32::new(2).expect("two-page hard cap")),
+            PageLimit::CompleteWithin(NonZeroU32::new(2).expect("two-page completion limit")),
             controller,
             Some(Duration::from_secs(30)),
         )
@@ -303,14 +296,13 @@ async fn aggregate_response_body_budget_accepts_exact_total_and_drops_first_exce
         2
     );
     assert_eq!(next_calls.load(Ordering::SeqCst), 1);
-    let page_completions = excess_hooks.completion.lock().expect("completion lock");
-    assert_eq!(page_completions.len(), 2);
     assert!(
-        page_completions
-            .iter()
-            .all(|completion| completion.outcome == CompletionOutcome::Success)
+        excess_hooks
+            .completion
+            .lock()
+            .expect("completion lock")
+            .is_empty()
     );
-    drop(page_completions);
     let excess_aggregate = excess_hooks.aggregate.lock().expect("aggregate lock");
     assert_eq!(excess_aggregate[0].pages_completed, 1);
     assert_eq!(excess_aggregate[0].items_collected, 1);
@@ -335,7 +327,7 @@ async fn controller_construction_and_validation_failures_are_page_side_effect_fr
                 factory_core,
                 PageEndpoint::failing_construction(Some(Duration::from_secs(30))),
             ),
-            PageLimit::Take(1),
+            PageLimit::Prefix(1),
         )
         .await,
     );
@@ -385,7 +377,7 @@ async fn controller_construction_and_validation_failures_are_page_side_effect_fr
     let validate_error = pagination_error(
         collect(
             validate_core,
-            PageLimit::Take(1),
+            PageLimit::Prefix(1),
             controller,
             Some(Duration::from_secs(30)),
         )
@@ -453,7 +445,7 @@ async fn final_soft_and_controller_selected_count_pages_apply_exact_next_precede
     let next_calls = Arc::clone(&controller.next_calls);
     let items = collect(
         soft_core,
-        PageLimit::Take(1),
+        PageLimit::Prefix(1),
         controller,
         Some(Duration::from_secs(30)),
     )
@@ -480,7 +472,7 @@ async fn final_soft_and_controller_selected_count_pages_apply_exact_next_precede
     let next_calls = Arc::clone(&controller.next_calls);
     let items = collect(
         empty_core,
-        PageLimit::HardCap(NonZeroU32::MIN),
+        PageLimit::CompleteWithin(NonZeroU32::MIN),
         controller,
         Some(Duration::from_secs(30)),
     )
@@ -506,7 +498,7 @@ async fn final_soft_and_controller_selected_count_pages_apply_exact_next_precede
     );
     let items = collect(
         continuing_core,
-        PageLimit::HardCap(NonZeroU32::new(2).expect("two-page cap")),
+        PageLimit::CompleteWithin(NonZeroU32::new(2).expect("two-page cap")),
         CursorController::new("empty-first"),
         Some(Duration::from_secs(30)),
     )
@@ -530,7 +522,7 @@ async fn final_soft_and_controller_selected_count_pages_apply_exact_next_precede
     let error = pagination_error(
         collect(
             retained_error_core,
-            PageLimit::HardCap(NonZeroU32::MIN),
+            PageLimit::CompleteWithin(NonZeroU32::MIN),
             CursorController::failing_next("retained-error"),
             Some(Duration::from_secs(30)),
         )
@@ -594,7 +586,7 @@ async fn immediate_two_state_and_long_cycles_stop_before_protected_page_work() {
         let error = pagination_error(
             collect(
                 core,
-                PageLimit::Take(10),
+                PageLimit::Prefix(10),
                 CursorController::new(*initial),
                 Some(Duration::from_secs(30)),
             )

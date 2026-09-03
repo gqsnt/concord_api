@@ -3,10 +3,11 @@ error[E0277]: the trait bound `support::Json<std::string::String>: PageRequestBo
    |
 17 | / api! {
 18 | |     client NonRepeatableCodecApi {
-19 | |         base "https://example.test";
+19 | |         timeout off;
+20 | |         base "https://example.test";
 ...  |
-27 | | }
-   | |_^ unsatisfied trait bound
+28 | | }}
+   | |__^ unsatisfied trait bound
    |
 help: the trait `PageRequestBodySpec` is not implemented for `support::Json<std::string::String>`
   --> tests/ui/fail/pagination/../../../support/mod.rs
@@ -26,4 +27,56 @@ help: the following other types implement trait `PageRequestBodySpec`
    |
    | impl<T> PageRequestBodySpec for Json<T> where T: Clone + serde::Serialize + Send + 'static {}
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Json<T>`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `support::Json<std::string::String>: PageRequestBodySpec` is not satisfied
+  --> tests/ui/fail/pagination/pagination_non_repeatable_codec.rs:17:1
+   |
+17 | / api! {
+18 | |     client NonRepeatableCodecApi {
+19 | |         timeout off;
+20 | |         base "https://example.test";
+...  |
+28 | | }}
+   | |__^ unsatisfied trait bound
+   |
+help: the trait `PageRequestBodySpec` is not implemented for `support::Json<std::string::String>`
+  --> tests/ui/fail/pagination/../../../support/mod.rs
+   |
+   | pub struct Json<T>(PhantomData<fn() -> T>);
+   | ^^^^^^^^^^^^^^^^^^
+help: the following other types implement trait `PageRequestBodySpec`
+  --> $WORKSPACE/crates/concord-core/src/body/spec.rs
+   |
+   | impl PageRequestBodySpec for Bytes {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Bytes`
+   |
+   | impl PageRequestBodySpec for Text {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Text`
+   |
+  ::: $WORKSPACE/crates/concord-extras/src/codec/json.rs
+   |
+   | impl<T> PageRequestBodySpec for Json<T> where T: Clone + serde::Serialize + Send + 'static {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Json<T>`
+note: required for `non_repeatable_codec_api::Read` to implement `concord::__private::EndpointSpec`
+  --> tests/ui/fail/pagination/pagination_non_repeatable_codec.rs:17:1
+   |
+17 | / api! {
+18 | |     client NonRepeatableCodecApi {
+19 | |         timeout off;
+20 | |         base "https://example.test";
+...  |
+23 | |     POST read(
+   | |          ^^^^
+...  |
+28 | | }}
+   | |__^ unsatisfied trait bound introduced here
+note: required by a bound in `concord::__private::request_plan`
+  --> $WORKSPACE/crates/concord-core/src/__private.rs
+   |
+   | pub fn request_plan<E>(
+   |        ------------ required by a bound in this function
+...
+   |     E: EndpointSpec,
+   |        ^^^^^^^^^^^^ required by this bound in `request_plan`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

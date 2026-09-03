@@ -2,6 +2,10 @@
 
 #[cfg(feature = "default-tls")]
 use concord::SecretString;
+#[cfg(feature = "default-tls")]
+use concord::rate_limit::NoopRateLimiter;
+#[cfg(feature = "default-tls")]
+use std::sync::Arc;
 
 #[test]
 fn imports_and_constructs_every_enabled_canonical_declaration() {
@@ -21,6 +25,7 @@ fn imports_and_constructs_every_enabled_canonical_declaration() {
         let reference = ReferenceApi::builder()
             .set_tenant("tenant-a".to_owned())
             .api_key(SecretString::try_new("construction-key").expect("bounded construction key"))
+            .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
             .build()
             .expect("reference client");
         let _explicit = concord_examples::contracts::explicit_endpoints::construct(&reference);
@@ -45,6 +50,9 @@ fn imports_and_constructs_every_enabled_canonical_declaration() {
         concord_examples::contracts::regional_scopes::construct()
             .expect("regional scope construction");
     }
+
+    #[cfg(all(feature = "json", feature = "rate-limit", feature = "default-tls"))]
+    concord_examples::contracts::catalog_v2::construct().expect("complete v2 catalog construction");
 
     #[cfg(feature = "json")]
     {

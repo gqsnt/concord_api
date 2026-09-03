@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use url::Url;
 
-use super::super::url::render_safe_url;
+use super::super::url::render_observed_url;
 
 const REDACTED: &str = "<redacted>";
 
@@ -15,13 +15,13 @@ fn query_pairs(url: &str) -> Vec<(String, String)> {
 }
 
 #[test]
-fn safe_url_preserves_order_duplicates_public_values_and_source() {
+fn observed_url_preserves_order_duplicates_public_values_and_source() {
     let logical = Url::parse(
         "https://example.invalid/a%2Fb/segment?first=one&dup=before&client_secret=hidden&dup=after&last=two#frag%2Fment",
     )
     .expect("logical URL should parse");
     let original = logical.to_string();
-    let safe = render_safe_url(&logical, &HashSet::new());
+    let safe = render_observed_url(&logical, &HashSet::new());
 
     assert_eq!(logical.to_string(), original);
     assert_eq!(
@@ -44,13 +44,13 @@ fn safe_url_preserves_order_duplicates_public_values_and_source() {
 }
 
 #[test]
-fn safe_url_redacts_ordinary_looking_and_multiple_auth_keys() {
+fn observed_url_redacts_ordinary_looking_and_multiple_auth_keys() {
     let logical = Url::parse(
         "https://example.invalid/path?signature=one&public=visible&proof=two&signature=three",
     )
     .expect("logical URL should parse");
     let auth_keys = HashSet::from(["signature".to_owned(), "proof".to_owned()]);
-    let safe = render_safe_url(&logical, &auth_keys);
+    let safe = render_observed_url(&logical, &auth_keys);
 
     assert_eq!(
         query_pairs(&safe),
@@ -67,7 +67,7 @@ fn safe_url_redacts_ordinary_looking_and_multiple_auth_keys() {
 }
 
 #[test]
-fn safe_url_property_auth_values_never_survive_rendering() {
+fn observed_url_property_auth_values_never_survive_rendering() {
     const SEED: u64 = 0x5afe_c0de_2026_0717;
     let auth_keys = [
         "signature",
@@ -113,7 +113,7 @@ fn safe_url_property_auth_values_never_survive_rendering() {
                     }
 
                     let original = logical.to_string();
-                    let safe = render_safe_url(&logical, &HashSet::from([auth_key.to_owned()]));
+                    let safe = render_observed_url(&logical, &HashSet::from([auth_key.to_owned()]));
                     let safe_pairs = query_pairs(&safe);
                     let logical_pairs: Vec<_> = logical
                         .query_pairs()

@@ -6,22 +6,85 @@ pub(super) fn generate_specification_aliases(children: &[Child]) -> TokenStream 
         .map(|child| match child {
             Child::Endpoint(endpoint) => {
                 let response_name = response_specification_name(endpoint);
-                let response = &endpoint.response;
+                let response_output_name = response_output_name(endpoint);
+                let response = &endpoint.response_spec;
+                let output = &endpoint.output;
                 let body = endpoint.body.as_ref().map(|body| {
                     let body_name = body_specification_name(endpoint);
-                    let body = &body.ty;
-                    quote!(#[doc(hidden)] pub type #body_name = #body;)
+                    let body_input_name = body_input_name(endpoint);
+                    let body_spec = &body.spec_type;
+                    let input = &body.input_type;
+                    quote! {
+                        #[doc(hidden)] pub type #body_name = #body_spec;
+                        #[doc(hidden)] pub type #body_input_name = #input;
+                    }
                 });
                 quote! {
                     #body
                     #[doc(hidden)]
                     pub type #response_name = #response;
+                    #[doc(hidden)]
+                    pub type #response_output_name = #output;
                 }
             }
             Child::Scope(scope) => generate_specification_aliases(&scope.children),
         })
         .collect::<Vec<_>>();
     quote!(#(#aliases)*)
+}
+
+pub(super) fn generate_specification_assertions(
+    children: &[Child],
+    facade_path: &TokenStream,
+    specification_module: &Ident,
+) -> TokenStream {
+    let assertions = children.iter().map(|child| match child {
+        Child::Endpoint(endpoint) => {
+            let response_name = response_specification_name(endpoint);
+            let response_output_name = response_output_name(endpoint);
+            let response = quote!(#specification_module::#response_name);
+            let output = quote!(#specification_module::#response_output_name);
+            let body = endpoint.body.as_ref().map(|body| {
+                let _ = body;
+                let body_name = body_specification_name(endpoint);
+                let body_input_name = body_input_name(endpoint);
+                let body_spec = quote!(#specification_module::#body_name);
+                let input = quote!(#specification_module::#body_input_name);
+                quote! {
+                    const _: fn(
+                        <#body_spec as #facade_path::body::RequestBodySpec>::Input
+                    ) -> #input = |value| value;
+                    const _: fn(#input) ->
+                        <#body_spec as #facade_path::body::RequestBodySpec>::Input =
+                        |value| value;
+                }
+            });
+            quote! {
+                #body
+                const _: fn(
+                    <#response as #facade_path::response::ResponseSpec>::Output
+                ) -> #output = |value| value;
+                const _: fn(#output) ->
+                    <#response as #facade_path::response::ResponseSpec>::Output =
+                    |value| value;
+            }
+        }
+        Child::Scope(scope) => {
+            generate_specification_assertions(&scope.children, facade_path, specification_module)
+        }
+    });
+    quote!(#(#assertions)*)
+}
+
+fn body_input_name(endpoint: &Endpoint) -> Ident {
+    Ident::new(&format!("BodyInput{}", endpoint.id), Span::mixed_site())
+}
+
+fn response_output_name(endpoint: &Endpoint) -> Ident {
+    Ident::new(
+        &format!("ResponseOutput{}", endpoint.id),
+        Span::mixed_site(),
+    )
 }
 
 pub(super) fn specification_module_name(client: &Client) -> Ident {
@@ -64,7 +127,7 @@ pub(super) fn endpoint_where_clause(
             .chain(scopes.iter().flat_map(|scope| scope.parameters.iter()))
             .chain(endpoint.parameters.iter())
         {
-            let ty = &value.ty;
+            let ty = &value.effective_type;
             bounds.push(quote!(#ty: ::std::marker::Send + ::std::marker::Sync + 'static));
         }
     }
@@ -74,8 +137,9 @@ pub(super) fn endpoint_where_clause(
                 reference, span, ..
             } = dimension
             {
-                let ty = resolved_value_type(*reference, client, scopes, endpoint);
-                bounds.push(quote_spanned!(*span=> #ty: ::std::fmt::Display));
+                let ty = resolved_value_payload_type(*reference, client, scopes, endpoint);
+                bounds
+                    .push(quote_spanned!(*span=> #ty: #facade_path::rate_limit::RateLimitKeyValue));
             }
         }
     }
@@ -118,9 +182,15 @@ pub(super) fn endpoint_where_clause(
     let response_specification = response_specification_name(endpoint);
     let response = quote!(#invocation_path::#specification_module::#response_specification);
     if include_execution {
-        bounds.push(quote!(#response: #facade_path::response::ResponseBodySpec));
+        bounds.push(quote!(#response: #facade_path::response::ResponseSpec));
+        if endpoint.expose_accepted_bytes {
+            bounds.push(quote!(
+                <#response as #facade_path::response::ResponseSpec>::Mode:
+                    #facade_path::response::AcceptedBytesMode
+            ));
+        }
         if let Some(pagination) = &endpoint.pagination {
-            let page = quote!(<#response as #facade_path::response::ResponseBodySpec>::Output);
+            let page = quote!(<#response as #facade_path::response::ResponseSpec>::Output);
             let controller =
                 pagination_controller_type(&pagination.controller, invocation_path, false);
             bounds.push(quote!(#response: #facade_path::response::PageResponseSpec));
@@ -154,7 +224,9 @@ fn collect_config_display_types(
         collect_expression_display_types(expression, client, scopes, endpoint, false, output);
     }
     for entry in &config.query {
-        collect_expression_display_types(&entry.value, client, scopes, endpoint, true, output);
+        if matches!(entry.cardinality, QueryCardinality::One) {
+            collect_expression_display_types(&entry.value, client, scopes, endpoint, false, output);
+        }
     }
     for entry in &config.headers {
         collect_expression_display_types(&entry.value, client, scopes, endpoint, true, output);
@@ -166,26 +238,16 @@ fn collect_expression_display_types(
     client: &Client,
     scopes: &[&Scope],
     endpoint: &Endpoint,
-    collection_aware: bool,
+    _collection_aware: bool,
     output: &mut Vec<Type>,
 ) {
     match expression {
         ResolvedExpr::Value(value) => {
-            let declared = resolved_value_type(value.reference, client, scopes, endpoint);
-            let ty = if collection_aware {
-                match &value.shape {
-                    ValueShape::Option { inner } => inner.clone(),
-                    ValueShape::Vec { element } | ValueShape::OptionVec { element, .. } => {
-                        element.clone()
-                    }
-                    ValueShape::Scalar => declared.clone(),
-                }
-            } else {
-                declared.clone()
-            };
-            output.push(ty);
+            output.push(
+                resolved_value_payload_type(value.reference, client, scopes, endpoint).clone(),
+            );
         }
-        ResolvedExpr::Format(values) => {
+        ResolvedExpr::Concat(values) => {
             for value in values {
                 collect_expression_display_types(value, client, scopes, endpoint, false, output);
             }
@@ -194,14 +256,14 @@ fn collect_expression_display_types(
     }
 }
 
-fn resolved_value_type<'a>(
+fn resolved_value_payload_type<'a>(
     reference: ValueReference,
     client: &'a Client,
     scopes: &[&'a Scope],
     endpoint: &'a Endpoint,
 ) -> &'a Type {
     match reference {
-        ValueReference::Client(index) => &client.values[index].ty,
+        ValueReference::Client(index) => &client.values[index].payload_type,
         ValueReference::Scope {
             scope_id,
             parameter,
@@ -211,9 +273,9 @@ fn resolved_value_type<'a>(
                 .find(|scope| scope.id == scope_id)
                 .expect("scope reference")
                 .parameters[parameter]
-                .ty
+                .payload_type
         }
-        ValueReference::Endpoint(index) => &endpoint.parameters[index].ty,
+        ValueReference::Endpoint(index) => &endpoint.parameters[index].payload_type,
     }
 }
 
@@ -240,24 +302,25 @@ mod tests {
         assert!(output.contains("pub type"));
         assert!(output.contains("ResponseSpecification"));
         assert!(bounds.contains("RequestBodySpec"));
-        assert!(bounds.contains("ResponseBodySpec"));
+        assert!(bounds.contains("ResponseSpec"));
     }
 
     #[test]
     fn paginated_body_emits_the_trusted_repeatability_obligation() {
         let api = crate::semantic::test_support::resolve_tokens(quote! {
             client SearchApi {
+                timeout off;
                 base "https://example.test";
-            }
+
             POST search(
                 offset: u64,
-                #[body] filter: crate::SearchCodec,
-            ) -> crate::PageCodec {
-                paginate crate::Controller {
-                    offset: bind ep.offset,
+                body filter: crate::SearchInput using crate::SearchCodec,
+            ) -> Vec<u8> using crate::PageCodec {
+                paginate with crate::Controller {
+                    offset -> endpoint.offset;
                 }
             }
-        });
+        }});
         let endpoint = crate::semantic::test_support::endpoint(&api.client.children, "search");
         let bounds = endpoint_where_clause(
             &api.client,
@@ -274,25 +337,26 @@ mod tests {
     }
 
     #[test]
-    fn only_referenced_dimension_types_require_display() {
+    fn only_referenced_dimension_types_require_canonical_rate_keys() {
         let api = crate::semantic::test_support::resolve_tokens(quote! {
             client RateApi {
+                timeout off;
                 base "https://example.test";
-                vars {
+                values {
                     tenant: crate::TenantKey;
                     unrelated: crate::ClientWithoutDisplay;
                 }
-            }
+
             GET read(
                 resource: crate::ResourceKey,
                 unrelated: crate::EndpointWithoutDisplay,
-            ) -> Bytes {
+            ) -> Bytes using Bytes {
                 rate_limit {
-                    by [vars.tenant, ep.resource];
-                    1 / 1s;
+                    key [client.tenant, endpoint.resource];
+                    allow 1 per 1s;
                 }
             }
-        });
+        }});
         let endpoint = crate::semantic::test_support::endpoint(&api.client.children, "read");
         let bounds = endpoint_where_clause(
             &api.client,
@@ -304,34 +368,44 @@ mod tests {
         )
         .to_string();
 
-        assert!(bounds.contains("crate :: TenantKey : :: std :: fmt :: Display"));
-        assert!(bounds.contains("crate :: ResourceKey : :: std :: fmt :: Display"));
-        assert!(!bounds.contains("ClientWithoutDisplay : :: std :: fmt :: Display"));
-        assert!(!bounds.contains("EndpointWithoutDisplay : :: std :: fmt :: Display"));
+        assert!(
+            bounds.contains("crate :: TenantKey : :: concord :: rate_limit :: RateLimitKeyValue")
+        );
+        assert!(
+            bounds.contains("crate :: ResourceKey : :: concord :: rate_limit :: RateLimitKeyValue")
+        );
+        assert!(
+            !bounds
+                .contains("ClientWithoutDisplay : :: concord :: rate_limit :: RateLimitKeyValue")
+        );
+        assert!(
+            !bounds
+                .contains("EndpointWithoutDisplay : :: concord :: rate_limit :: RateLimitKeyValue")
+        );
+        assert!(!bounds.contains("std :: fmt :: Display"));
     }
 
     #[test]
-    fn named_binding_types_receive_only_the_existing_display_obligation() {
+    fn named_binding_types_receive_only_the_canonical_key_obligation() {
         let api = crate::semantic::test_support::resolve_tokens(quote! {
             client RateApi {
+                timeout off;
                 base "https://example.test";
-                vars { unrelated: crate::ClientWithoutDisplay; }
+                values { unrelated: crate::ClientWithoutDisplay; }
                 rate_limits {
-                    rule account_reads {
-                        by [account];
-                        1 / 1s;
+                    account_reads(account) {
+                        key [account];
+                        allow 1 per 1s;
                     }
                 }
-            }
+
             GET read(
                 resource: crate::ResourceKey,
                 unrelated: crate::EndpointWithoutDisplay,
-            ) -> Bytes {
-                rate_limit use account_reads {
-                    account = ep.resource;
-                }
+            ) -> Bytes using Bytes {
+                rate_limit account_reads(account = endpoint.resource);
             }
-        });
+        }});
         let endpoint = crate::semantic::test_support::endpoint(&api.client.children, "read");
         let bounds = endpoint_where_clause(
             &api.client,
@@ -343,9 +417,18 @@ mod tests {
         )
         .to_string();
 
-        assert!(bounds.contains("crate :: ResourceKey : :: std :: fmt :: Display"));
-        assert!(!bounds.contains("ClientWithoutDisplay : :: std :: fmt :: Display"));
-        assert!(!bounds.contains("EndpointWithoutDisplay : :: std :: fmt :: Display"));
+        assert!(
+            bounds.contains("crate :: ResourceKey : :: concord :: rate_limit :: RateLimitKeyValue")
+        );
+        assert!(
+            !bounds
+                .contains("ClientWithoutDisplay : :: concord :: rate_limit :: RateLimitKeyValue")
+        );
+        assert!(
+            !bounds
+                .contains("EndpointWithoutDisplay : :: concord :: rate_limit :: RateLimitKeyValue")
+        );
+        assert!(!bounds.contains("std :: fmt :: Display"));
         assert!(!bounds.contains("Clone"));
         assert!(!bounds.contains("Serialize"));
     }

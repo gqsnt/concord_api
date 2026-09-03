@@ -1,12 +1,13 @@
 error[E0599]: no method named `paginate` found for struct `DownloadRequest` in the current scope
-  --> tests/ui/fail/pagination/stream_pagination_absent.rs:16:43
+  --> tests/ui/fail/pagination/stream_pagination_absent.rs:17:43
    |
  3 | / api! {
  4 | |     client StreamingApi {
- 5 | |         base "http://streaming.example.test";
+ 5 | |         timeout off;
+ 6 | |         base "http://streaming.example.test";
 ...  |
-12 | | }
-   | |_- method `paginate` not found for this struct
+13 | | }}
+   | |__- method `paginate` not found for this struct
 ...
-16 |       let _ = client.transfers().download().paginate(1_u32);
+17 |       let _ = client.transfers().download().paginate(1_u32);
    |                                             ^^^^^^^^ method not found in `DownloadRequest`

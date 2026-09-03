@@ -1,95 +1,107 @@
 error: the fixed base must be absolute HTTP(S), contain a host, and contain no user information, query, or fragment
- --> tests/ui/fail/syntax/spec_rejections.rs:5:14
+ --> tests/ui/fail/syntax/spec_rejections.rs:6:14
   |
-5 |         base "https://user@example.test/";
+6 |         base "https://user@example.test/";
   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: the fixed base must be absolute HTTP(S), contain a host, and contain no user information, query, or fragment
-  --> tests/ui/fail/syntax/spec_rejections.rs:11:14
+  --> tests/ui/fail/syntax/spec_rejections.rs:13:14
    |
-11 |         base "https://example.test/?page=1";
+13 |         base "https://example.test/?page=1";
    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: the fixed base must be absolute HTTP(S), contain a host, and contain no user information, query, or fragment
-  --> tests/ui/fail/syntax/spec_rejections.rs:17:14
+  --> tests/ui/fail/syntax/spec_rejections.rs:20:14
    |
-17 |         base "https://example.test/#fragment";
+20 |         base "https://example.test/#fragment";
    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: a static path atom must be one non-empty, non-dot segment without `/` or `\`
-  --> tests/ui/fail/syntax/spec_rejections.rs:24:15
+  --> tests/ui/fail/syntax/spec_rejections.rs:28:15
    |
-24 |         path [""];
+28 |         path [""];
    |               ^^
 
 error: a static path atom must be one non-empty, non-dot segment without `/` or `\`
-  --> tests/ui/fail/syntax/spec_rejections.rs:31:15
+  --> tests/ui/fail/syntax/spec_rejections.rs:36:15
    |
-31 |         path ["."];
+36 |         path ["."];
    |               ^^^
 
 error: a static path atom must be one non-empty, non-dot segment without `/` or `\`
-  --> tests/ui/fail/syntax/spec_rejections.rs:38:15
+  --> tests/ui/fail/syntax/spec_rejections.rs:44:15
    |
-38 |         path [".."];
+44 |         path [".."];
    |               ^^^^
-
-error: a static path atom must be one non-empty, non-dot segment without `/` or `\`
-  --> tests/ui/fail/syntax/spec_rejections.rs:45:15
-   |
-45 |         path ["/"];
-   |               ^^^
 
 error: a static path atom must be one non-empty, non-dot segment without `/` or `\`
   --> tests/ui/fail/syntax/spec_rejections.rs:52:15
    |
-52 |         path ["\\"];
+52 |         path ["/"];
+   |               ^^^
+
+error: a static path atom must be one non-empty, non-dot segment without `/` or `\`
+  --> tests/ui/fail/syntax/spec_rejections.rs:60:15
+   |
+60 |         path ["\\"];
    |               ^^^^
 
 error: a static host atom must be one 1-63 byte ASCII DNS label beginning and ending with an alphanumeric character
-  --> tests/ui/fail/syntax/spec_rejections.rs:59:15
+  --> tests/ui/fail/syntax/spec_rejections.rs:68:28
    |
-59 |         host ["bad_label"];
-   |               ^^^^^^^^^^^
+68 |         subdomain replace ["bad_label"];
+   |                            ^^^^^^^^^^^
 
-error: unsupported public-expression namespace; secrets and credentials are not expressible
-  --> tests/ui/fail/syntax/spec_rejections.rs:73:15
+error: secrets are private credential sources and cannot appear in public expressions
+  --> tests/ui/fail/syntax/spec_rejections.rs:83:15
    |
-73 |         path [secret.token];
+83 |         path [secret.token];
    |               ^^^^^^
 
-error: arbitrary Rust expressions are not supported; use `vars.NAME`, `scope.NAME`, or `ep.NAME`
-  --> tests/ui/fail/syntax/spec_rejections.rs:84:15
+error: arbitrary Rust expressions are not supported; use `client.NAME`, `endpoint.NAME`, or a visible named scope owner
+  --> tests/ui/fail/syntax/spec_rejections.rs:95:15
    |
-84 |         path [make_path()];
+95 |         path [make_path()];
    |               ^^^^^^^^^
 
-error: an effective public or authentication header already owns this authentication target; remove one placement or use a distinct header name
-   --> tests/ui/fail/syntax/spec_rejections.rs:101:21
+error: a endpoint `read` accepts one grouped `auth` attachment; `auth off` is exclusive
+   --> tests/ui/fail/syntax/spec_rejections.rs:113:9
     |
-101 |         auth header "x-key" = second;
-    |                     ^^^^^^^
+113 |         auth { header "x-key" = second; }
+    |         ^^^^
 
-error: multiple effective authentication placements own `Authorization`; keep only one bearer, Basic, exact, or static-scheme placement
-   --> tests/ui/fail/syntax/spec_rejections.rs:117:21
+error: the first authentication attachment is here
+   --> tests/ui/fail/syntax/spec_rejections.rs:112:9
     |
-117 |         auth bearer first;
-    |                     ^^^^^
+112 |         auth { header "X-Key" = first; }
+    |         ^^^^
+
+error: a endpoint `read` accepts one grouped `auth` attachment; `auth off` is exclusive
+   --> tests/ui/fail/syntax/spec_rejections.rs:131:9
+    |
+131 |         auth { bearer second; }
+    |         ^^^^
+
+error: the first authentication attachment is here
+   --> tests/ui/fail/syntax/spec_rejections.rs:130:9
+    |
+130 |         auth { bearer first; }
+    |         ^^^^
 
 error: this public header name is reserved by transport, authentication, cookies, or proxy authentication
-   --> tests/ui/fail/syntax/spec_rejections.rs:126:13
+   --> tests/ui/fail/syntax/spec_rejections.rs:140:13
     |
-126 |             "Authorization" = "public";
+140 |             "Authorization" = "public";
     |             ^^^^^^^^^^^^^^^
 
-error: an anonymous rate-limit attachment requires at least one positive window; add a window such as `100 / 1m;`
-   --> tests/ui/fail/syntax/spec_rejections.rs:134:9
+error: an anonymous rate-limit attachment requires at least one positive window; add `allow 100 per 1m;`
+   --> tests/ui/fail/syntax/spec_rejections.rs:149:9
     |
-134 |         rate_limit {}
+149 |         rate_limit {}
     |         ^^^^^^^^^^
 
-error: a rate-limit profile requires at least one positive window; add a window such as `100 / 1m;`
-   --> tests/ui/fail/syntax/spec_rejections.rs:142:18
+error: a rate-limit profile requires at least one positive window; add `allow 100 per 1m;`
+   --> tests/ui/fail/syntax/spec_rejections.rs:158:13
     |
-142 |             rule empty {}
-    |                  ^^^^^
+158 |             empty() {}
+    |             ^^^^^

@@ -22,9 +22,9 @@ brotli = ["concord_core/brotli"]
 deflate = ["concord_core/deflate"]
 
 [dependencies]
-concord_core = { package = "concord-core", version = "=1.0.0", path = "../concord-core", default-features = false }
-concord_extras = { package = "concord-extras", version = "=1.0.0", path = "../concord-extras", default-features = false }
-concord_macros = { package = "concord-macros", version = "=1.0.0", path = "../concord-macros", default-features = false }
+concord_core = { package = "concord-core", version = "=2.0.0", path = "../concord-core", default-features = false }
+concord_extras = { package = "concord-extras", version = "=2.0.0", path = "../concord-extras", default-features = false }
+concord_macros = { package = "concord-macros", version = "=2.0.0", path = "../concord-macros", default-features = false }
 
 [dev-dependencies]
 concord_test_support = { package = "concord-test-support", path = "../concord-test-support", default-features = false, features = ["loopback"] }

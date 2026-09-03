@@ -73,18 +73,18 @@ where
     }
 }
 
-#[doc(hidden)]
+#[cfg(test)]
 #[allow(private_bounds)]
 impl<E> Request<E>
 where
     E: EndpointSpec,
-    <E::Response as crate::response::ResponseBodySpec>::Mode: crate::response::ResponseBytesMode,
+    <E::Response as crate::response::ResponseSpec>::Mode: crate::response::AcceptedBytesMode,
 {
-    /// Selects complete bounded bytes while preserving the declared status
-    /// acceptance and `Accept` header and skipping validation and decoding.
+    /// Test-only construction for the capability wrapper used by generated
+    /// endpoint request types.
     #[must_use]
-    pub fn response_bytes(self) -> ResponseBytesRequest<E> {
-        ResponseBytesRequest { request: self }
+    pub(crate) fn accepted_bytes(self) -> AcceptedBytesRequest<E> {
+        AcceptedBytesRequest { request: self }
     }
 }
 
@@ -116,13 +116,13 @@ impl<E> ResponseRequest<E> {
 /// Fields are intentionally private:
 ///
 /// ```compile_fail
-/// let _ = concord_core::ResponseBytesRequest::<()> {};
+/// let _ = concord_core::AcceptedBytesRequest::<()> {};
 /// ```
-pub struct ResponseBytesRequest<E> {
+pub struct AcceptedBytesRequest<E> {
     pub(crate) request: Request<E>,
 }
 
-impl<E> ResponseBytesRequest<E> {
+impl<E> AcceptedBytesRequest<E> {
     pub(crate) fn from_generated(request: Request<E>) -> Self {
         Self { request }
     }

@@ -1,101 +1,57 @@
-# Overview
+# Concord v2 overview
 
-- **Audience:** developers evaluating Concord
-- **Purpose:** explanation
-- **Normative references:** [DSL specification](spec.md), [runtime model](runtime.md), [design invariants](design_invariants.md)
+Concord is for Rust applications that want an HTTP API to read like its domain
+while retaining one bounded operational authority. An API author declares one
+client tree. Concord projects that tree into generated navigation, inert unbound
+intents, request plans, static contract descriptions, and managed execution.
 
-## The problem
+## What an author declares
 
-A large HTTP API has a domain structure even when its client library presents a
-flat list of methods. Resources belong to services and versions; routing values
-apply to subtrees; authentication and quotas apply at different boundaries;
-endpoints have typed inputs, output forms, and local transport mappings.
+A declaration answers questions a reviewer otherwise reconstructs across client
+code and middleware:
 
-A flat client usually encodes that structure in long method names and repeated
-implementation code. A hand-written tree can represent the domain better, but
-requires scope structs, constructors, shared ownership, path and policy
-propagation, request wrappers, value controls, documentation, and tests.
+- which values belong to the client, each lexical scope, and an endpoint;
+- whether a value is required, optional, or defaulted;
+- where each public value shapes subdomain, path, query, or headers;
+- which body input and response output the caller sees;
+- which credential source is placed where and whether one recovery is allowed;
+- which stable endpoint/rate identity, repeatability, timeout, pagination, and
+  terminal capabilities apply.
 
-Concord changes the cost of representing the domain correctly. The declaration
-states the tree and the local differences; generation pays the repetitive Rust
-cost.
+Rust type spellings are opaque. `?` controls one outer presence layer, `each`
+controls repeated query emission, and `using Spec` selects body/response
+behavior.
 
-## Two equally important surfaces
+## What a caller receives
 
-### The declaration surface
+The generated API is the declaration tree: a client builder, immutable scope
+snapshots, domain-named endpoint methods, exact typed controls, and only the
+terminals an endpoint supports. `Client::unbound()` creates the same navigation
+without runtime state so intent can cross application boundaries and be planned
+or bound later.
 
-A reader should understand the operation from its signature before reading its
-wire mapping:
+Request construction and planning are inert. Await begins effects. Direct and
+unbound-bound forms share endpoint identity, shaping, credentials, rate policy,
+deadline, capabilities, and executor behavior.
 
-```text
-signature:
-GET item_summaries(category: Option<String>, offset: u64 = 0, count: NonZeroU32 = DEFAULT)
-    -> Json<Vec<ItemSummary>>
-```
+## What the runtime guarantees
 
-The signature communicates the domain action, required or optional inputs,
-defaults, constraints, and response semantics. Path, query, body, policy, and
-pagination clauses form a second reading depth for endpoint authors and
-reviewers.
+One executor owns credential-free public shaping, gates, body lifecycle,
+credential isolation, rate admission, dispatch, retry/recovery, bounded response
+acquisition, conversion, pagination, errors, and completion evidence. Every
+growing dimension is finite.
 
-### The generated Rust surface
+Plans are credential-free and propagate declared redaction. They are not a
+claim that visible application data is harmless. Public error context reports
+dispatch knowledge rather than pretending to know whether a remote side effect
+committed.
 
-A caller should navigate the same domain and express only application choices:
+## Deliberate limits
 
-```text
-client.regional("eu")
-    .item_summaries()
-    .set_category("hardware")
-    .paginate(PageLimit::Take(2))
-    .await
-```
+Concord does not expose native request/response mutation, arbitrary Rust
+expressions in the DSL, general middleware, a dependency container, or endpoint
+syntax for transport/retry algorithms. Runtime-defined endpoints are dynamic
+contracts using the same core structures, not an escape from them.
 
-Wire names, encoding, inherited routes, private authentication, limiter
-admission, retries, page loops, and response acquisition remain centrally
-implemented.
-
-## Structured information becomes guardrails
-
-| Contract information | Derived result |
-|---|---|
-| tree position | generated modules, scope snapshots, visibility, and inherited semantics |
-| `Option<T>` | omission plus `set_*` and `clear_*` controls |
-| declaration default | retained default plus `set_*` and `reset_*` controls |
-| `#[body]` | caller input/spec separation and body lifecycle obligations |
-| response specification | output type and available response terminals |
-| auth placement | private mutation, target collision checks, and challenge attribution |
-| pagination binding | exclusive live mutation and `.paginate(...)` capability |
-| rate dimensions | stable bounded policy keys and compatibility validation |
-
-The DSL is valuable because it preserves information, not because it merely
-uses fewer characters.
-
-## Internal cost accepted for the external result
-
-Concord accepts:
-
-- a real parser and semantic compiler;
-- generated-code and compile-time cost;
-- a restricted public expression language;
-- family-specific inheritance rules;
-- one managed executor with strict ordering;
-- bounded semantic extension contracts instead of native request access;
-- a large proof surface for generated presence, absence, lifecycle, security,
-  and documentation.
-
-These costs make the declaration and usage honest rather than cosmetic.
-
-## Appropriate and inappropriate uses
-
-Concord is most appropriate for large, hierarchical, policy-rich HTTP APIs
-consumed from Rust. A small hand-written client or a generic request builder is
-often better for a handful of unrelated endpoints. OpenAPI generation is often
-better when a standardized upstream schema is authoritative. A lower-level
-transport is better when arbitrary native middleware or exact wire signing is
-the primary requirement.
-
-## Next
-
-- Build a client in the [quick start](quick_start.md).
-- Learn the concepts in the [mental model](mental_model.md).
-- See the model at scale in the [Riot walkthrough](riot_walkthrough.md).
+Start with the [quick start](quick_start.md), then use the normative
+[DSL specification](spec.md) and [runtime model](runtime.md).

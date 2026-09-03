@@ -23,7 +23,7 @@ async fn pagination_pages_use_the_declared_status_acceptance_policy() {
         CursorController::new("initial"),
     ));
 
-    let items = paginate_with(Request::new(core, endpoint), PageLimit::Take(1))
+    let items = paginate_with(Request::new(core, endpoint), PageLimit::Prefix(1))
         .await
         .expect("accepted-status pagination page");
     assert_eq!(items, ["accepted-page-item"]);
@@ -35,12 +35,7 @@ async fn pagination_pages_use_the_declared_status_acceptance_policy() {
             .as_slice(),
         [(0, StatusCode::NOT_FOUND)]
     );
-    let completion = hooks.completion.lock().expect("completion lock");
-    assert_eq!(completion.len(), 1);
-    assert_eq!(completion[0].final_status, Some(StatusCode::NOT_FOUND));
-    assert_eq!(completion[0].outcome, CompletionOutcome::Success);
-    assert_eq!(completion[0].attempts_started, 1);
-    assert_eq!(completion[0].policy_retries, 0);
+    assert!(hooks.completion.lock().expect("completion lock").is_empty());
     let aggregate = hooks.aggregate.lock().expect("aggregate lock");
     assert_eq!(aggregate.len(), 1);
     assert_eq!(aggregate[0].pages_completed, 1);
@@ -101,7 +96,7 @@ async fn page_lifecycle_is_sequential_correlated_and_limited_once_per_page() {
 
     let operation = tokio::spawn(collect(
         core,
-        PageLimit::Take(5),
+        PageLimit::Prefix(5),
         CursorController::new(FIRST_CURSOR),
         Some(Duration::from_secs(30)),
     ));
@@ -173,21 +168,7 @@ async fn page_lifecycle_is_sequential_correlated_and_limited_once_per_page() {
         assert!(!record.safe.contains(SECOND_CURSOR));
     }
 
-    let completion = hooks.completion.lock().expect("completion lock").clone();
-    assert_eq!(completion.len(), 2);
-    for (before, completion) in before.iter().zip(&completion) {
-        assert_eq!(completion.operation_id, before.operation_id);
-        assert_eq!(completion.parent_operation_id, before.parent_operation_id);
-        assert_eq!(completion.page_index, before.page_index);
-        assert!(!completion.recovered_authentication);
-        assert_eq!(completion.final_status, Some(StatusCode::OK));
-        assert_eq!(completion.outcome, CompletionOutcome::Success);
-        assert_eq!(completion.attempts_started, 1);
-        assert_eq!(completion.policy_retries, 0);
-        assert!(completion.elapsed <= Duration::from_secs(30));
-        assert!(!completion.safe.contains(FIRST_CURSOR));
-        assert!(!completion.safe.contains(SECOND_CURSOR));
-    }
+    assert!(hooks.completion.lock().expect("completion lock").is_empty());
 
     let aggregate = hooks.aggregate.lock().expect("aggregate lock").clone();
     assert_eq!(aggregate.len(), 1);
@@ -200,7 +181,7 @@ async fn page_lifecycle_is_sequential_correlated_and_limited_once_per_page() {
     assert_eq!(aggregate.outcome, CompletionOutcome::Success);
     assert_eq!(aggregate.attempts_started, 2);
     assert_eq!(aggregate.policy_retries, 0);
-    assert!(aggregate.elapsed >= completion[0].elapsed);
+    assert!(aggregate.elapsed <= Duration::from_secs(30));
 
     assert_eq!(
         limiter
@@ -297,7 +278,7 @@ async fn one_page_retry_preserves_page_progress_and_aggregates_visible_attempts(
     let construction_calls = Arc::clone(&endpoint.construction_calls);
     let binding_calls = Arc::clone(&endpoint.binding_calls);
 
-    let items = paginate_with(Request::new(core, endpoint), PageLimit::Take(5))
+    let items = paginate_with(Request::new(core, endpoint), PageLimit::Prefix(5))
         .await
         .expect("one page retries without advancing the controller");
     assert_eq!(items, ["first-item", "second-item"]);
@@ -339,19 +320,7 @@ async fn one_page_retry_preserves_page_progress_and_aggregates_visible_attempts(
         )]
     );
 
-    let completion = hooks.completion.lock().expect("completion lock").clone();
-    assert_eq!(completion.len(), 2);
-    assert_eq!(
-        completion
-            .iter()
-            .map(|record| (
-                record.page_index,
-                record.attempts_started,
-                record.policy_retries
-            ))
-            .collect::<Vec<_>>(),
-        [(0, 2, 1), (1, 1, 0)]
-    );
+    assert!(hooks.completion.lock().expect("completion lock").is_empty());
     let aggregate = hooks.aggregate.lock().expect("aggregate lock").clone();
     assert_eq!(aggregate.len(), 1);
     assert_eq!(aggregate[0].pages_completed, 2);
@@ -407,7 +376,7 @@ async fn non_clone_non_sync_controller_is_constructed_once_validated_and_bound_p
     let binding_calls = Arc::clone(&endpoint.binding_calls);
     let original = endpoint.clone();
 
-    let items = paginate_with(Request::new(core, endpoint), PageLimit::Take(5))
+    let items = paginate_with(Request::new(core, endpoint), PageLimit::Prefix(5))
         .await
         .expect("moved controller pagination");
     assert_eq!(items, ["item"]);
@@ -425,13 +394,14 @@ async fn protocol_recovery_does_not_repeat_pagination_preparation_or_page_lifecy
     let physical_attempts = server.physical_attempts();
     let hooks = Arc::new(PaginationProbe::default());
     let limiter = Arc::new(LimiterProbe::default());
-    let configured_hooks: Arc<dyn RuntimeHooks> = hooks.clone();
     let configured_limiter: Arc<dyn RateLimiter> = limiter.clone();
     let core = ClientCore::build(
         &server.base_url(),
         HttpConfigBuilder::new().http2_prior_knowledge(),
         RuntimeConfigBuilder::new()
-            .hooks(configured_hooks)
+            .request_gate(hooks.clone())
+            .response_gate(hooks.clone())
+            .completion_observer(hooks.clone())
             .rate_limiter(configured_limiter),
     )
     .expect("HTTP/2 pagination core");
@@ -441,7 +411,7 @@ async fn protocol_recovery_does_not_repeat_pagination_preparation_or_page_lifecy
     let endpoint = PageEndpoint::get(Some(Duration::from_secs(30)), controller);
     let construction_calls = Arc::clone(&endpoint.construction_calls);
 
-    let items = paginate_with(Request::new(core, endpoint), PageLimit::Take(1))
+    let items = paginate_with(Request::new(core, endpoint), PageLimit::Prefix(1))
         .await
         .expect("private protocol-recovery pagination");
     assert!(items.is_empty());
@@ -453,7 +423,7 @@ async fn protocol_recovery_does_not_repeat_pagination_preparation_or_page_lifecy
     assert_eq!(next_calls.load(Ordering::SeqCst), 0);
     assert_eq!(hooks.before.lock().expect("before lock").len(), 1);
     assert_eq!(hooks.response.lock().expect("response lock").len(), 1);
-    assert_eq!(hooks.completion.lock().expect("completion lock").len(), 1);
+    assert!(hooks.completion.lock().expect("completion lock").is_empty());
     assert_eq!(hooks.aggregate.lock().expect("aggregate lock").len(), 1);
     assert_eq!(
         limiter.acquisitions.lock().expect("acquisition lock").len(),
@@ -484,7 +454,7 @@ async fn cancellation_drops_request_local_state_and_prevents_later_pages() {
     let core = core(&executor, Arc::clone(&hooks), limiter, |runtime| runtime);
     let task = tokio::spawn(collect(
         core,
-        PageLimit::Take(5),
+        PageLimit::Prefix(5),
         CursorController::new("initial"),
         Some(Duration::from_secs(30)),
     ));
@@ -526,13 +496,13 @@ async fn separate_collections_execute_concurrently_with_operation_local_identity
 
     let first = tokio::spawn(collect(
         core.clone(),
-        PageLimit::Take(1),
+        PageLimit::Prefix(1),
         CursorController::new("same-operation-local-cursor"),
         Some(Duration::from_secs(30)),
     ));
     let second = tokio::spawn(collect(
         core,
-        PageLimit::Take(1),
+        PageLimit::Prefix(1),
         CursorController::new("same-operation-local-cursor"),
         Some(Duration::from_secs(30)),
     ));

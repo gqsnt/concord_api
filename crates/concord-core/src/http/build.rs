@@ -314,7 +314,7 @@ mod tests {
     #[test]
     fn fixed_base_policy_failures_have_exact_safe_kinds() {
         let http = HttpConfigBuilder::new()
-            .https_only(true)
+            .require_https()
             .resolve()
             .expect("HTTP configuration");
         let cleartext = url::Url::parse("http://example.test").expect("cleartext URL");
@@ -534,7 +534,7 @@ mod tests {
         let ordinary = managed(HttpConfigBuilder::new());
         assert!(!ordinary.application.https_only());
 
-        let restricted = managed(HttpConfigBuilder::new().https_only(true));
+        let restricted = managed(HttpConfigBuilder::new().require_https());
         assert!(restricted.application.https_only());
     }
 

@@ -3,7 +3,7 @@
 use std::any::type_name;
 
 use concord::{
-    auth, body, codec, endpoint, error, hooks, http, pagination, rate_limit, response, retry,
+    auth, body, codec, endpoint, error, http, observation, pagination, rate_limit, response, retry,
     runtime,
 };
 
@@ -62,12 +62,12 @@ fn semantic_domains_are_available_without_implementation_crate_imports() {
         public_type::<codec::Text>(),
         public_type::<endpoint::RuntimeEndpoint>(),
         public_type::<endpoint::Request<()>>(),
-        public_type::<endpoint::ResponseBytesRequest<()>>(),
+        public_type::<endpoint::AcceptedBytesRequest<()>>(),
         public_type::<endpoint::ResponseRequest<()>>(),
         public_type::<error::ApiError>(),
         public_type::<error::ClientInputKind>(),
-        public_type::<hooks::AttemptInfo>(),
-        public_type::<hooks::DebugLevel>(),
+        public_type::<observation::AttemptInfo>(),
+        public_type::<observation::DebugLevel>(),
         public_type::<http::Method>(),
         public_type::<pagination::OffsetPagination>(),
         public_type::<pagination::PaginatedRequest<()>>(),
@@ -82,9 +82,9 @@ fn semantic_domains_are_available_without_implementation_crate_imports() {
 
     assert!(names.iter().all(|name| !name.is_empty()));
 
-    fn supports_response_bytes<T: response::ResponseBytesMode>() {}
-    supports_response_bytes::<response::Buffered>();
-    supports_response_bytes::<response::Discard>();
+    fn supports_accepted_bytes<T: response::AcceptedBytesMode>() {}
+    supports_accepted_bytes::<response::Buffered>();
+    supports_accepted_bytes::<response::Discard>();
 
     fn supports_page_body<B>()
     where
@@ -171,7 +171,7 @@ fn records_contracts_are_exposed_by_the_records_domain() {
 
     fn buffered_page_spec<S>()
     where
-        S: response::ResponseBodySpec<Output = Vec<NonCloneRecord>, Mode = response::Buffered>
+        S: response::ResponseSpec<Output = Vec<NonCloneRecord>, Mode = response::Buffered>
             + response::PageResponseSpec,
     {
     }

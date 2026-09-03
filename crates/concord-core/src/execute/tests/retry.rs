@@ -62,8 +62,8 @@ impl RetryLifecycleProbe {
     }
 }
 
-impl RuntimeHooks for RetryLifecycleProbe {
-    fn before_send<'a>(&'a self, event: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
+impl RequestGate for RetryLifecycleProbe {
+    fn before_send<'a>(&'a self, event: BeforeSend<'a>) -> BoxFuture<'a, Result<(), GateError>> {
         self.trace.lock().expect("retry trace").push("before_send");
         self.before
             .lock()
@@ -88,17 +88,19 @@ impl RuntimeHooks for RetryLifecycleProbe {
                 gate.wait().await;
             }
             if self.fail_before_attempt == Some(event.attempt.index) {
-                Err(HookError::new("safe retry hook veto"))
+                Err(GateError::new("safe retry hook veto"))
             } else {
                 Ok(())
             }
         })
     }
+}
 
-    fn on_response_head<'a>(
+impl ResponseGate for RetryLifecycleProbe {
+    fn before_response_handling<'a>(
         &'a self,
         event: ResponseHeadEvent<'a>,
-    ) -> BoxFuture<'a, Result<(), HookError>> {
+    ) -> BoxFuture<'a, Result<(), GateError>> {
         self.trace
             .lock()
             .expect("retry trace")
@@ -118,14 +120,16 @@ impl RuntimeHooks for RetryLifecycleProbe {
                 gate.wait().await;
             }
             if self.fail_response_hook_attempt == Some(event.attempt.index) {
-                Err(HookError::new("safe retry response-hook veto"))
+                Err(GateError::new("safe retry response-hook veto"))
             } else {
                 Ok(())
             }
         })
     }
+}
 
-    fn on_complete<'a>(&'a self, event: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
+impl CompletionObserver for RetryLifecycleProbe {
+    fn on_complete(&self, event: CompletionEvent<'_>) {
         self.trace.lock().expect("retry trace").push("complete");
         self.completions
             .lock()
@@ -138,7 +142,6 @@ impl RuntimeHooks for RetryLifecycleProbe {
                 outcome: event.outcome,
                 final_status: event.final_status,
             });
-        Box::pin(async {})
     }
 }
 
@@ -219,13 +222,14 @@ fn retry_core(
 ) -> ClientCore {
     #[cfg(not(feature = "default-tls"))]
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let hooks: Arc<dyn RuntimeHooks> = probe.clone();
-    let limiter: Arc<dyn RateLimiter> = probe;
+    let limiter: Arc<dyn RateLimiter> = probe.clone();
     ClientCore::build_with_development(
         "http://execution.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
         RuntimeConfigBuilder::new()
-            .hooks(hooks)
+            .request_gate(probe.clone())
+            .response_gate(probe.clone())
+            .completion_observer(probe)
             .rate_limiter(limiter)
             .retry_policy(policy),
         executor,
@@ -288,13 +292,14 @@ async fn private_protocol_recovery_is_one_visible_attempt_and_consumes_no_policy
         .expect("bounded protocol-recovery observation policy");
     let shared_policy = policy.clone();
     let probe = Arc::new(RetryLifecycleProbe::default());
-    let hooks: Arc<dyn RuntimeHooks> = probe.clone();
     let limiter: Arc<dyn RateLimiter> = probe.clone();
     let core = ClientCore::build(
         &base_url,
         HttpConfigBuilder::new().http2_prior_knowledge(),
         RuntimeConfigBuilder::new()
-            .hooks(hooks)
+            .request_gate(probe.clone())
+            .response_gate(probe.clone())
+            .completion_observer(probe.clone())
             .rate_limiter(limiter)
             .retry_policy(policy),
     )
@@ -342,13 +347,14 @@ async fn private_protocol_recovery_does_not_resend_a_one_shot_native_body() {
     let server = crate::http::test_support::H2RefusedServer::start(1, 1).await;
     let physical_attempts = server.physical_attempts();
     let probe = Arc::new(RetryLifecycleProbe::default());
-    let hooks: Arc<dyn RuntimeHooks> = probe.clone();
     let limiter: Arc<dyn RateLimiter> = probe.clone();
     let core = ClientCore::build(
         &server.base_url(),
         HttpConfigBuilder::new().http2_prior_knowledge(),
         RuntimeConfigBuilder::new()
-            .hooks(hooks)
+            .request_gate(probe.clone())
+            .response_gate(probe.clone())
+            .completion_observer(probe.clone())
             .rate_limiter(limiter),
     )
     .expect("HTTP/2 one-shot core");
@@ -574,7 +580,7 @@ async fn rejected_status_observation_and_hook_precede_classifier_and_body_is_unp
 
 struct AcceptServiceUnavailable;
 
-impl ResponseBodySpec for AcceptServiceUnavailable {
+impl ResponseSpec for AcceptServiceUnavailable {
     type Output = Bytes;
     type Mode = Buffered;
 
@@ -865,7 +871,7 @@ async fn failures_after_retry_reservation_use_their_ordinary_categories() {
     let hook = retry_request(hook_core, Duration::from_secs(30))
         .await
         .expect_err("retry hook veto");
-    assert_eq!(hook.category(), ErrorCategory::Hook);
+    assert_eq!(hook.category(), ErrorCategory::PolicyRejected);
     assert_eq!(hook_probe.completions()[0].attempts_started, 2);
     assert_eq!(hook_probe.completions()[0].policy_retries, 1);
 
@@ -917,7 +923,7 @@ async fn failures_after_retry_reservation_use_their_ordinary_categories() {
     let response_hook = retry_request(response_hook_core, Duration::from_secs(30))
         .await
         .expect_err("retry response-hook failure");
-    assert_eq!(response_hook.category(), ErrorCategory::Hook);
+    assert_eq!(response_hook.category(), ErrorCategory::PolicyRejected);
     assert_eq!(response_hook_probe.observations().len(), 2);
     assert_eq!(response_hook_probe.completions()[0].policy_retries, 1);
 }

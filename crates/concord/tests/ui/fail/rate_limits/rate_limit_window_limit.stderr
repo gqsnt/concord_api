@@ -1,5 +1,5 @@
 error: an anonymous rate-limit attachment permits at most 16 windows
-  --> tests/ui/fail/rate_limits/rate_limit_window_limit.rs:23:13
+  --> tests/ui/fail/rate_limits/rate_limit_window_limit.rs:24:19
    |
-23 |             1 / 17s;
-   |             ^
+24 |             allow 1 per 17s;
+   |                   ^

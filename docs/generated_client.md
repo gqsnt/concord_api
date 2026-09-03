@@ -1,141 +1,65 @@
-# Generated client
+# Generated client surface
 
-- **Audience:** API callers and authors reviewing generated usage
-- **Purpose:** guide and generated-surface reference
-- **Normative references:** [DSL specification](spec.md), [runtime model](runtime.md)
+The generated Rust API mirrors the declaration tree and keeps fields private.
 
-The generated Rust API is a product surface, not an implementation detail. It
-must mirror the domain tree and expose only actions supported by the resolved
-contract and Rust trait obligations.
+## Client construction
 
-## Declaration-to-usage map
+`Client::builder()` is canonical. Required client values use exact `set_x(T)`
+methods; optional values use `set_x(Option<T>)`, `with_x(T)`, and `clear_x()`;
+defaulted values add `reset_x()`. Secrets accept exactly `SecretString`. Custom
+providers and an explicit limiter are required when the contract needs them.
 
-| Declaration | Generated Rust |
-|---|---|
-| `client CatalogApi` | `CatalogApi`, `CatalogApiBuilder`, module `catalog_api` |
-| root `GET health` | method `health`, `catalog_api::Health`, `HealthRequest` |
-| `scope regional` | method/module `regional`, immutable `Regional` snapshot |
-| scoped `GET by_id` | method `by_id`, `ById` endpoint, `ByIdRequest` wrapper |
+`.retry(policy)`, `.configure_http(...)`, and `.configure_runtime(...)` keep
+transport and operational configuration cohesive. `build()` deterministically
+reports missing input categories and never panics for ordinary configuration.
 
-Scope modules follow declaration nesting. There is one generated endpoint tree
-and no generated prelude requirement for ordinary inherent methods.
+`Client::new()` exists only when no required client value, secret, custom
+provider, limiter, or other runtime choice is missing.
 
-## Construction
+## Scopes and endpoints
 
-`Client::new()` exists only when no required client value, secret, or custom
-provider is missing. It performs the same validation as
-`Client::builder().build()`.
+A required non-defaulted scope value appears on its domain method:
+`client.regional(region)`. Optional/defaulted scope controls live on the returned
+scope, so ownership stays visible before selecting a child.
 
-The generated builder owns:
+An endpoint method takes required non-defaulted ordinary values and body inputs
+in declaration order. Optional/defaulted endpoint values become controls on the
+request snapshot. Required endpoint values have no public setter; construct a
+new endpoint intent to change them.
 
-- required and non-required client value controls;
-- named secret and provider inputs;
-- `retry(policy)`;
-- `configure_http(|http| ...)`;
-- `configure_runtime(|runtime| ...)`;
-- `build()`.
+Generated controls consume `self` and return an immutable new snapshot. `clear`
+and `reset` are distinct whenever a retained optional default is present.
 
-Repeated transformations apply immediately in call order. A successful build
-freezes one immutable runtime snapshot.
+## Request and terminals
 
-## Scope snapshots
+Requests are `#[must_use]`, body-free in `Debug`, and inert until polled. Every
+endpoint supports await for its declared output and `.response().await` for
+`ApiResponse<Output>`. Only declared capabilities add `.accepted_bytes()`,
+`.paginate(limit)`, or credential storage terminals.
 
-`client.scope_name(required_arguments)` returns an immutable scope snapshot.
-It owns selected public values and retains the shared client runtime. Generated
-controls consume one snapshot and return another; sibling snapshots remain
-isolated.
+Every request also supports `.timeout(duration)`, `.disable_timeout()`, and
+`.inherit_timeout()`. Request-level controls do not duplicate ancestor value
+controls.
 
-Scopes provide generated navigation, but are also explicit values that may be
-stored, cloned, configured through consuming controls, and used to construct
-several related endpoint requests.
+## Unbound tree
 
-## Endpoint leaves have three useful forms
+`Client::unbound()` starts an isomorphic tree with scope/endpoint values and body
+input but no client values, credentials, transport, limiter, gates, or runtime.
+An intent is storable, passable, describable, and inert.
 
-```text
-direct:
-client_or_scope.endpoint(required arguments) -> EndpointNameRequest
+`client.plan(&intent)` creates a credential-free plan without consuming it.
+`client.request(intent)` returns the same named request shape as direct
+construction. Direct and unbound-bound paths share identity, values, attachments,
+capabilities, and executor behavior.
 
-explicit:
-module::EndpointName::new(required arguments) -> EndpointName
-client.request(endpoint_value) -> EndpointNameRequest
+## Reflection
 
-runtime-defined:
-RuntimeEndpoint::builder(...) -> RuntimeEndpoint
-client.request(runtime_endpoint) -> Request<_>
-```
+`Client::contract()` returns the immutable value-free contract tree. Request and
+intent `.description()` return the same endpoint view. Docs, deprecation,
+presence/default/observation, type spelling, attachment origins, body/response
+contracts, auth categories, timeout, repeatability, rate schema, pagination, and
+terminals derive from the same resolved IR as generated code.
 
-Direct and explicit generated forms resolve the same endpoint semantics.
-Explicit endpoint values retain inherited scope controls and expose
-`description()`. Binding them to a client produces the same named request
-wrapper as the direct method.
-
-The generated module contains a sealed `Endpoint` trait. Applications cannot
-forge generated endpoint ownership.
-
-## Value controls
-
-| Declaration property | Controls |
-|---|---|
-| required, no absence, no default | constructor argument or required client builder `set_*` |
-| absence-capable | `set_*`, `clear_*` |
-| defaulted | `set_*`, `reset_*` |
-| absence-capable and defaulted | `set_*`, `clear_*`, `reset_*` |
-
-For `Option<T>`, `set_*` accepts `T`. `clear_*` selects absence. `reset_*`
-restores the declaration default retained by the current snapshot.
-
-## Request controls and terminals
-
-Every named request wrapper supports:
-
-- `.await` for the declared output;
-- `.response().await` for accepted metadata and output;
-- `.response_bytes().await` when the response mode is buffered or discard;
-- `.timeout(duration)`;
-- `.disable_timeout()`;
-- `.inherit_timeout()`;
-- `.debug(level)`.
-
-A paginated endpoint additionally supports `.paginate(limit)`. An endpoint used
-as a credential source additionally supports its generated
-`.store_as_NAME().await` terminal.
-
-Unavailable capabilities are absent or fail a sealed trait bound. They do not
-fall back to another executor.
-
-## Descriptions and planning
-
-`endpoint.description()` returns stable structural facts: identity, method,
-source/route shape, body and response categories, timeout selection, and
-capability flags.
-
-`client.plan(&endpoint)` performs real public head shaping and returns a
-`SafeRequestPlan`. Descriptions and plans exclude bound bodies, credentials,
-resolved rate-key values, native requests, and runtime objects.
-
-## Public namespaces
-
-The façade exposes semantic modules for `auth`, `body`, `codec`, `endpoint`,
-`error`, `hooks`, `http`, `pagination`, `rate_limit`, `records`, `response`,
-`retry`, and `runtime`.
-
-`concord::prelude` is a convenience import for handwritten code. Generated
-inherent methods require no trait import.
-
-## Design review checklist
-
-Before freezing a declaration, inspect the generated surface:
-
-- Does navigation follow the domain?
-- Are values owned at the correct level?
-- Are optional/default controls clear?
-- Are names concise because the parent tree already supplies context?
-- Are unsupported operations absent?
-- Can explicit endpoints be planned and inspected without hidden effects?
-
-## Related
-
-- [Mental model](mental_model.md)
-- [Modeling APIs](modeling_apis.md)
-- [Runtime endpoints](runtime_endpoints.md)
-- [Planning and observation](planning_and_observation.md)
+The facade provides narrow modules for authentication, body/codec, endpoint,
+error, HTTP, observation, pagination, rate limiting, response, retry, and
+runtime configuration. Ordinary generated use does not require a broad prelude.

@@ -3,11 +3,11 @@ error[E0277]: the trait bound `NonSecretMaterial: SecretCredential` is not satis
    |
 26 | / api! {
 27 | |     client Api {
-28 | |         base "https://example.test";
-29 | |         credentials {
+28 | |         timeout off;
+29 | |         base "https://example.test";
 ...  |
-38 | | }
-   | |_^ unsatisfied trait bound
+39 | | }}
+   | |__^ unsatisfied trait bound
    |
 help: the trait `SecretCredential` is not implemented for `NonSecretMaterial`
   --> tests/ui/fail/authentication/authorization_endpoint_material_incompatible.rs:6:1
@@ -21,7 +21,54 @@ help: the following other types implement trait `SecretCredential`
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `AccessToken`
 ...
    | impl SecretCredential for ApiKey {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `ApiKey`
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::auth::ApiKey`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `NonSecretMaterial: SecretCredential` is not satisfied
+  --> tests/ui/fail/authentication/authorization_endpoint_material_incompatible.rs:26:1
+   |
+26 | / api! {
+27 | |     client Api {
+28 | |         timeout off;
+29 | |         base "https://example.test";
+...  |
+39 | | }}
+   | |__^ unsatisfied trait bound
+   |
+help: the trait `SecretCredential` is not implemented for `NonSecretMaterial`
+  --> tests/ui/fail/authentication/authorization_endpoint_material_incompatible.rs:6:1
+   |
+ 6 | struct NonSecretMaterial;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+help: the following other types implement trait `SecretCredential`
+  --> $WORKSPACE/crates/concord-core/src/auth/material.rs
+   |
+   | impl SecretCredential for AccessToken {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `AccessToken`
+...
+   | impl SecretCredential for ApiKey {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::auth::ApiKey`
+note: required for `Protected` to implement `concord::__private::EndpointSpec`
+  --> tests/ui/fail/authentication/authorization_endpoint_material_incompatible.rs:26:1
+   |
+26 | / api! {
+27 | |     client Api {
+28 | |         timeout off;
+29 | |         base "https://example.test";
+...  |
+36 | |     GET protected() -> Bytes using Bytes {
+   | |         ^^^^^^^^^
+...  |
+39 | | }}
+   | |__^ unsatisfied trait bound introduced here
+note: required by a bound in `concord::__private::request_plan`
+  --> $WORKSPACE/crates/concord-core/src/__private.rs
+   |
+   | pub fn request_plan<E>(
+   |        ------------ required by a bound in this function
+...
+   |     E: EndpointSpec,
+   |        ^^^^^^^^^^^^ required by this bound in `request_plan`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `NonSecretMaterial: SecretCredential` is not satisfied
@@ -29,11 +76,11 @@ error[E0277]: the trait bound `NonSecretMaterial: SecretCredential` is not satis
    |
 26 | / api! {
 27 | |     client Api {
-28 | |         base "https://example.test";
-29 | |         credentials {
+28 | |         timeout off;
+29 | |         base "https://example.test";
 ...  |
-38 | | }
-   | |_^ unsatisfied trait bound
+39 | | }}
+   | |__^ unsatisfied trait bound
    |
 help: the trait `SecretCredential` is not implemented for `NonSecretMaterial`
   --> tests/ui/fail/authentication/authorization_endpoint_material_incompatible.rs:6:1
@@ -47,18 +94,18 @@ help: the following other types implement trait `SecretCredential`
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `AccessToken`
 ...
    | impl SecretCredential for ApiKey {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `ApiKey`
-note: required for `Protected` to implement `Endpoint`
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::auth::ApiKey`
+note: required for `Protected` to implement `api::Endpoint`
   --> tests/ui/fail/authentication/authorization_endpoint_material_incompatible.rs:26:1
    |
 26 | / api! {
 27 | |     client Api {
-28 | |         base "https://example.test";
-29 | |         credentials {
+28 | |         timeout off;
+29 | |         base "https://example.test";
 ...  |
-35 | |     GET protected() -> Bytes {
+36 | |     GET protected() -> Bytes using Bytes {
    | |         ^^^^^^^^^
 ...  |
-38 | | }
-   | |_^ unsatisfied trait bound introduced here
+39 | | }}
+   | |__^ unsatisfied trait bound introduced here
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

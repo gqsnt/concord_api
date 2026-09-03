@@ -2,23 +2,22 @@ use concord::api;
 
 api! {
     client Api {
+        timeout off;
         base "https://example.test";
         rate_limits {
-            rule account_reads {
-                by [account];
-                1 / 1s;
+            account_reads(account) {
+                key [account];
+                allow 1 per 1s;
             }
         }
-    }
 
-    GET list(account: String) -> Bytes {
-        rate_limit use account_reads {
-            account = ep.account;
-        }
-        paginate crate::CursorPagination {
-            account: bind ep.account,
+
+    GET list(account: String) -> Bytes using Bytes {
+        rate_limit account_reads(account = endpoint.account);
+        paginate with crate::CursorPagination {
+            account -> endpoint.account;
         }
     }
-}
+}}
 
 fn main() {}

@@ -1,18 +1,19 @@
 error[E0599]: no method named `label` found for struct `endpoint_setter_api::Read` in the current scope
-  --> tests/ui/fail/capabilities/bare_endpoint_value_setter_absent.rs:13:46
+  --> tests/ui/fail/capabilities/bare_endpoint_value_setter_absent.rs:16:10
    |
  4 | / api! {
  5 | |     client EndpointSetterApi {
- 6 | |         base "http://endpoint-setter.example.test";
+ 6 | |         timeout off;
+ 7 | |         base "http://endpoint-setter.example.test";
 ...  |
- 9 | |     GET read(label: Option<String>) -> Bytes;
-10 | | }
-   | |_- method `label` not found for this struct
+10 | |     GET read(label: Option<String>) -> Bytes using Bytes;
+11 | | }}
+   | |__- method `label` not found for this struct
 ...
-13 |       let _ = endpoint_setter_api::Read::new().label("selected".to_owned());
-   |                                                ^^^^^
+14 |       let _ = EndpointSetterApi::unbound()
+   |  _____________-
+15 | |         .read(None)
+16 | |         .label("selected".to_owned());
+   | |         -^^^^^ method not found in `endpoint_setter_api::Read`
+   | |_________|
    |
-help: there is a method `set_label` with a similar name
-   |
-13 |     let _ = endpoint_setter_api::Read::new().set_label("selected".to_owned());
-   |                                              ++++

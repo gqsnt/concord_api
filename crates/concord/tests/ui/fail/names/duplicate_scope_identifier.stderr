@@ -1,0 +1,11 @@
+error: scope identifier `regional` duplicates an ancestor and would make owner references ambiguous
+ --> tests/ui/fail/names/duplicate_scope_identifier.rs:9:19
+  |
+9 |             scope regional(code: String) {
+  |                   ^^^^^^^^
+
+error: the ancestor scope is declared here
+ --> tests/ui/fail/names/duplicate_scope_identifier.rs:8:15
+  |
+8 |         scope regional(id: String) {
+  |               ^^^^^^^^

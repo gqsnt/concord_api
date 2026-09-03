@@ -9,9 +9,7 @@ pub(super) fn generate_client_child_methods(
         .iter()
         .map(|child| match child {
             Child::Scope(scope) => generate_scope_entry(client, &[], scope, true, facade_path),
-            Child::Endpoint(endpoint) => {
-                generate_endpoint_method(client, &[], endpoint, true, facade_path)
-            }
+            Child::Endpoint(endpoint) => generate_endpoint_method(client, &[], endpoint, true),
         })
         .collect::<Vec<_>>();
     quote!(#(#methods)*)
@@ -51,7 +49,7 @@ pub(super) fn generate_scope_module(
     let client_name = &client.name;
     let scope_values = value_category_summary(&scope.parameters, "Scope");
     let facade_doc = format!(
-        "Immutable `{}` scope selection. {scope_values} Optional and defaulted inputs use consuming `set_*` controls. Optional values also expose `clear_*`; defaulted values expose `reset_*`, which restores the retained default without re-evaluation. A `= default` declaration invokes application-owned `Default::default()` when the scope snapshot is constructed.",
+        "Immutable `{}` scope selection. {scope_values} Optional and defaulted inputs use consuming `set_*` controls. Optional values also expose `with_*` and `clear_*`; defaulted values expose `reset_*`, which restores the retained default without re-evaluation. A `#[default]` declaration invokes application-owned `Default::default()` when the scope snapshot is constructed.",
         scope.name
     );
 
@@ -74,11 +72,12 @@ pub(super) fn generate_scope_module(
                 generate_scope_entry(client, &visible, child_scope, false, facade_path)
             }
             Child::Endpoint(endpoint) => {
-                generate_endpoint_method(client, &visible, endpoint, false, facade_path)
+                generate_endpoint_method(client, &visible, endpoint, false)
             }
         })
         .collect::<Vec<_>>();
     let nested = generate_scope_tree(client, &scope.children, &visible, facade_path);
+    let unbound = generate_scope_unbound(client, scope, ancestors);
 
     quote! {
         pub mod #module_name {
@@ -106,6 +105,7 @@ pub(super) fn generate_scope_module(
                 #(#child_methods)*
             }
 
+            #unbound
             #nested
         }
     }
@@ -130,7 +130,7 @@ pub(super) fn generate_scope_entry(
         .iter()
         .map(|value| {
             let name = &value.name;
-            let ty = &value.ty;
+            let ty = &value.effective_type;
             quote!(#name: #ty,)
         })
         .collect::<Vec<_>>();
@@ -182,21 +182,22 @@ pub(super) fn initialize_scope_values(scope: &Scope, required: &[&Value]) -> Tok
         .enumerate()
         .map(|(index, value)| {
             let field = scope_value_field(scope.id, index, value);
-            let ty = &value.ty;
+            let ty = &value.effective_type;
             if value.is_required() {
                 let name = required_names
                     .get(&canonical_ident(&value.name))
                     .expect("required scope binding");
                 quote!(let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(#name);)
-            } else if value.is_optional() {
-                quote!(let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(::std::option::Option::None);)
-            } else {
+            } else if value.has_default() {
                 let default_field = scope_default_field(scope.id, index, value);
-                let default = default_expr(value.default().expect("defaulted scope value"));
+                let default = retained_default_expr(value);
                 quote! {
                     let #default_field: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(#default);
                     let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::clone(&#default_field);
                 }
+            } else {
+                debug_assert!(value.is_optional());
+                quote!(let #field: ::std::sync::Arc<#ty> = ::std::sync::Arc::new(::std::option::Option::None);)
             }
         })
         .collect::<Vec<_>>();
@@ -213,7 +214,7 @@ pub(super) fn facade_scope_fields(scopes: &[&Scope]) -> TokenStream {
                 .enumerate()
                 .flat_map(move |(index, value)| {
                     let field = scope_value_field(scope.id, index, value);
-                    let ty = &value.ty;
+                    let ty = &value.effective_type;
                     let mut values = vec![quote!(#field: ::std::sync::Arc<#ty>,)];
                     if value.default().is_some() {
                         let default = scope_default_field(scope.id, index, value);
@@ -248,7 +249,7 @@ pub(super) fn facade_scope_fields_as_parameters(scopes: &[&Scope]) -> TokenStrea
                 .enumerate()
                 .flat_map(move |(index, value)| {
                     let field = scope_value_field(scope.id, index, value);
-                    let ty = &value.ty;
+                    let ty = &value.effective_type;
                     let mut values = vec![quote!(#field: ::std::sync::Arc<#ty>,)];
                     if value.default().is_some() {
                         let default = scope_default_field(scope.id, index, value);
@@ -330,11 +331,18 @@ pub(super) fn generate_facade_setters(scope_id: usize, index: usize, value: &Val
     let setter = value_setter_ident(&value.name);
     let field = scope_value_field(scope_id, index, value);
     let setter_type = value.setter_argument_type();
-    let selected_value = if value.accepts_absence() {
-        quote!(::std::option::Option::Some(value))
-    } else {
-        quote!(value)
-    };
+    let selected_value = quote!(value);
+    let with = value.accepts_absence().then(|| {
+        let method = helper_ident("with", &value.name);
+        let payload_type = value.with_argument_type();
+        quote! {
+            #[must_use]
+            pub fn #method(mut self, value: #payload_type) -> Self {
+                self.#field = ::std::sync::Arc::new(::std::option::Option::Some(value));
+                self
+            }
+        }
+    });
     let setter_doc = if value.accepts_absence() && value.has_default() {
         format!(
             "Returns a new facade selecting a present value for defaulted absence-capable scope value `{}`.",
@@ -390,6 +398,7 @@ pub(super) fn generate_facade_setters(scope_id: usize, index: usize, value: &Val
             self
         }
 
+        #with
         #clear
         #reset
     }

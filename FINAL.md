@@ -1,19 +1,17 @@
-# Concord v1 freeze
+# Concord v2 constitution
 
-Concord v1.0.0 is the final frozen state of this private project.
+Concord 2.0.0 is the single active language and runtime contract in this
+repository. It supersedes the previous major-version contract.
 
-The DSL, generated client surface, runtime contracts, and documentation are
-frozen at the annotated `v1.0.0` tag.
+The product identity, projection laws, non-goals, and migration posture are
+recorded in [the v2 architecture decision](docs/v2_architecture.md). Normative
+syntax, execution, and cross-cutting rules live in the
+[DSL specification](docs/spec.md), [runtime model](docs/runtime.md), and
+[design invariants](docs/design_invariants.md).
 
-Changes may fix implementation defects or documentation errors without adding
-public syntax, generated capabilities, or runtime escape paths.
+There is no production v1 parser mode, public compatibility alias, or alternate
+executor. Selected old spellings exist only in migration diagnostics and the
+[migration guide](docs/migration_v1_to_v2.md).
 
-## Non-goals
-
-- Publication, crates.io metadata, and release packaging are excluded.
-- OpenAPI import is excluded.
-- Request coalescing is excluded.
-- A website is excluded.
-
-Finalization judgments are recorded in
-[`dev_doc/finalization_decisions.md`](dev_doc/finalization_decisions.md).
+The release gate is `just verify`; workspace version 2.0.0 and generated
+contract handshake 32 move together.

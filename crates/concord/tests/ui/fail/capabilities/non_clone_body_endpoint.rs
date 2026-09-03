@@ -5,13 +5,14 @@ use concord::Bytes;
 
 api! {
     client UploadApi {
+        timeout off;
         base "http://upload.example.test/";
-    }
 
-    POST upload(#[body] body: Stream<OctetStream>) -> Bytes;
-}
+
+    POST upload(body body: ::concord::body::StreamBody using Stream<OctetStream>) -> Bytes using Bytes;
+}}
 
 fn main() {
-    let endpoint = upload_api::Upload::new(StreamBody::from_bytes(Bytes::new()));
+    let endpoint = UploadApi::unbound().upload(StreamBody::from_bytes(Bytes::new()));
     let _ = endpoint.clone();
 }

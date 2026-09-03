@@ -2,14 +2,15 @@ use concord::api;
 
 api! {
     client Api {
+        timeout off;
         base "https://example.test";
-        vars {
-            tenant: Option<String>;
+        values {
+            tenant?: String;
         }
-        rate_limit { by [vars.tenant]; 1 / 1s; }
-    }
+        rate_limit { key [client.tenant]; allow 1 per 1s; }
 
-    GET read() -> Bytes;
-}
+
+    GET read() -> Bytes using Bytes;
+}}
 
 fn main() {}

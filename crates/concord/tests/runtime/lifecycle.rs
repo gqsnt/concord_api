@@ -14,31 +14,32 @@ use concord::codec::{
     OctetStream,
 };
 use concord::endpoint::ResponseRequest;
-use concord::error::{ClientBuildErrorKind, HookError};
-use concord::hooks::{
-    BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel, ResponseHeadEvent,
-    RuntimeHooks,
-};
+use concord::error::{ClientBuildErrorKind, GateError};
 use concord::http::{SafeProxy, StatusCode};
+use concord::observation::{
+    BeforeSend, BoxFuture, CompletionEvent, CompletionObserver, CompletionOutcome, DebugLevel,
+    RequestGate, ResponseGate, ResponseHeadEvent,
+};
 use concord::response::{ApiResponse, ByteStream};
-use concord::{Bytes, ClientBuildError};
+use concord::{Bytes, ClientBuildError, Text};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 use futures_core::Stream as FuturesStream;
 
 api! {
     client ExampleApi {
+        timeout off;
         base "http://generated.example.test/v1/";
-    }
+
 
     scope health() {
         path ["health"];
-        GET bytes() -> Bytes;
-        GET ping() -> NoContent;
-        GET item(id: String) -> Bytes {
-            path ["items", ep.id];
+        GET bytes() -> Bytes using Bytes;
+        GET ping() -> () using NoContent;
+        GET item(id: String) -> Bytes using Bytes {
+            path ["items", endpoint.id];
         }
     }
-}
+}}
 
 pub struct VendorStreamMedia;
 
@@ -48,18 +49,19 @@ impl MediaType for VendorStreamMedia {
 
 api! {
     client StreamingApi {
+        timeout off;
         base "http://streaming.generated.example.test/v1/";
-    }
+
 
     scope transfers() {
         path ["transfers"];
-        POST upload(#[body] body: Stream<OctetStream>) -> Bytes;
-        POST vendor_upload(#[body] body: Stream<crate::VendorStreamMedia>) -> Bytes;
-        GET download() -> Stream<OctetStream>;
-        GET vendor_download() -> Stream<crate::VendorStreamMedia>;
-        POST multipart_upload(#[body] body: Multipart) -> Bytes;
+        POST upload(body body: ::concord::body::StreamBody using Stream<OctetStream>) -> Bytes using Bytes;
+        POST vendor_upload(body body: ::concord::body::StreamBody using Stream<crate::VendorStreamMedia>) -> Bytes using Bytes;
+        GET download() -> ::concord::response::ByteStream using Stream<OctetStream>;
+        GET vendor_download() -> ::concord::response::ByteStream using Stream<crate::VendorStreamMedia>;
+        POST multipart_upload(body body: ::concord::body::MultipartBody using Multipart) -> Bytes using Bytes;
     }
-}
+}}
 
 pub struct WireCodec;
 
@@ -96,22 +98,23 @@ impl DecodeBody for WireCodec {
 
 api! {
     client BufferedApi {
+        timeout off;
         base "http://buffered.generated.example.test/v1/";
-    }
+
 
     scope messages() {
         path ["messages"];
-        POST text_echo(#[body] body: Text) -> Text;
+        POST text_echo(body body: String using Text) -> String using Text;
         POST json_echo(
-            #[body] body: crate::support::Json<Vec<u32>>,
-        ) -> crate::support::Json<Vec<u32>>;
-        POST custom_echo(#[body] body: crate::WireCodec) -> crate::WireCodec;
-        POST bytes_echo(#[body] body: Text) -> Bytes;
-        POST raw_bytes(#[body] body: Bytes) -> Bytes;
-        POST managed_body(#[body] body: RequestBody) -> Bytes;
-        POST no_content_echo(#[body] body: Text) -> NoContent;
+            body body: Vec<u32> using crate::support::Json<Vec<u32>>,
+        ) -> Vec<u32> using crate::support::Json<Vec<u32>>;
+        POST custom_echo(body body: String using crate::WireCodec) -> String using crate::WireCodec;
+        POST bytes_echo(body body: String using Text) -> Bytes using Bytes;
+        POST raw_bytes(body body: Bytes using Bytes) -> Bytes using Bytes;
+        POST managed_body(body body: RequestBody using RequestBody) -> Bytes using Bytes;
+        POST no_content_echo(body body: String using Text) -> () using NoContent;
     }
-}
+}}
 
 pub(crate) struct CountingValue {
     text: &'static str,
@@ -127,42 +130,50 @@ impl Display for CountingValue {
 
 api! {
     client LazyApi {
+        timeout off;
         base "http://lazy.generated.example.test/";
-    }
+
 
     scope resources(scope_value: crate::CountingValue) {
-        path ["scopes", scope.scope_value, "resources"];
-        GET by_id(endpoint_value: crate::CountingValue) -> Bytes {
-            path [ep.endpoint_value];
+        path ["scopes", resources.scope_value, "resources"];
+        GET by_id(endpoint_value: crate::CountingValue) -> Bytes using Bytes {
+            path [endpoint.endpoint_value];
         }
-        GET ping() -> NoContent;
+        GET ping() -> () using NoContent;
     }
-}
+}}
 
 mod nested_case {
     pub mod inner {
+        use concord::Text;
         use concord::api;
+        use concord::body::Stream;
+        use concord::codec::OctetStream;
 
         api! {
             client NestedApi {
+                timeout off;
                 base "http://nested.generated.example.test/";
-            }
+
 
             scope health() {
                 path ["health"];
-                GET ping() -> NoContent;
-                POST echo(#[body] body: Text) -> Text;
-                POST upload(#[body] body: Stream<OctetStream>) -> NoContent;
-                GET download() -> Stream<OctetStream>;
+                GET ping() -> () using NoContent;
+                POST echo(body body: String using Text) -> String using Text;
+                POST upload(body body: ::concord::body::StreamBody using Stream<OctetStream>) -> () using NoContent;
+                GET download() -> ::concord::response::ByteStream using Stream<OctetStream>;
             }
-        }
+        }}
     }
 }
 
 mod repeated_case {
     #![allow(dead_code)]
 
+    use concord::Text;
     use concord::api;
+    use concord::body::Stream;
+    use concord::codec::OctetStream;
 
     struct Result;
     struct Option;
@@ -175,29 +186,35 @@ mod repeated_case {
 
     api! {
         client AlphaApi {
+            timeout off;
             base "http://alpha.generated.example.test/";
-        }
+
 
         scope health() {
             path ["health"];
-            GET ping() -> NoContent;
-            POST echo(#[body] body: Text) -> Text;
-            GET download() -> Stream<OctetStream>;
+            GET ping() -> () using NoContent;
+            POST echo(
+                body body: ::std::string::String using Text,
+            ) -> ::std::string::String using Text;
+            GET download() -> ::concord::response::ByteStream using Stream<OctetStream>;
         }
-    }
+    }}
 
     api! {
         client BetaApi {
+            timeout off;
             base "http://beta.generated.example.test/";
-        }
+
 
         scope health() {
             path ["health"];
-            GET ping() -> NoContent;
-            POST echo(#[body] body: Text) -> Text;
-            GET download() -> Stream<OctetStream>;
+            GET ping() -> () using NoContent;
+            POST echo(
+                body body: ::std::string::String using Text,
+            ) -> ::std::string::String using Text;
+            GET download() -> ::concord::response::ByteStream using Stream<OctetStream>;
         }
-    }
+    }}
 
     pub fn requests_are_isolated() {
         let alpha = AlphaApi::new().expect("alpha client");
@@ -212,11 +229,11 @@ mod repeated_case {
         fn accepts_alpha_endpoint<E: alpha_api::Endpoint>(_: &E) {}
         fn accepts_beta_endpoint<E: beta_api::Endpoint>(_: &E) {}
 
-        let alpha_endpoint = alpha_api::health::Ping::new();
+        let alpha_endpoint = AlphaApi::unbound().health().ping();
         accepts_alpha_endpoint(&alpha_endpoint);
         let _: alpha_api::health::PingRequest = alpha.request(alpha_endpoint);
 
-        let beta_endpoint = beta_api::health::Ping::new();
+        let beta_endpoint = BetaApi::unbound().health().ping();
         accepts_beta_endpoint(&beta_endpoint);
         let _: beta_api::health::PingRequest = beta.request(beta_endpoint);
     }
@@ -244,27 +261,30 @@ impl CountingHooks {
     }
 }
 
-impl RuntimeHooks for CountingHooks {
-    fn before_send<'a>(&'a self, _context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
+impl RequestGate for CountingHooks {
+    fn before_send<'a>(&'a self, _context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), GateError>> {
         self.before.fetch_add(1, Ordering::SeqCst);
         Box::pin(async { Ok(()) })
     }
+}
 
-    fn on_response_head<'a>(
+impl ResponseGate for CountingHooks {
+    fn before_response_handling<'a>(
         &'a self,
         _context: ResponseHeadEvent<'a>,
-    ) -> BoxFuture<'a, Result<(), HookError>> {
+    ) -> BoxFuture<'a, Result<(), GateError>> {
         self.response.fetch_add(1, Ordering::SeqCst);
         Box::pin(async { Ok(()) })
     }
+}
 
-    fn on_complete<'a>(&'a self, context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
+impl CompletionObserver for CountingHooks {
+    fn on_complete(&self, context: CompletionEvent<'_>) {
         self.complete.fetch_add(1, Ordering::SeqCst);
         self.outcomes
             .lock()
             .expect("outcome lock")
             .push(context.outcome);
-        Box::pin(async {})
     }
 }
 
@@ -272,12 +292,17 @@ fn proxy(server: &ScriptedServer) -> SafeProxy {
     SafeProxy::parse(server.url("")).expect("local proxy origin")
 }
 
-fn proxied_example(server: &ScriptedServer, hooks: Option<Arc<dyn RuntimeHooks>>) -> ExampleApi {
+fn proxied_example(server: &ScriptedServer, hooks: Option<Arc<CountingHooks>>) -> ExampleApi {
     let proxy = proxy(server);
     let builder = ExampleApi::builder().configure_http(move |http| http.proxy(proxy));
     let builder = match hooks {
-        Some(hooks) => builder
-            .configure_runtime(move |runtime| runtime.hooks(hooks).debug(DebugLevel::Headers)),
+        Some(hooks) => builder.configure_runtime(move |runtime| {
+            runtime
+                .request_gate(hooks.clone())
+                .response_gate(hooks.clone())
+                .completion_observer(hooks)
+                .debug(DebugLevel::Headers)
+        }),
         None => builder,
     };
     builder.build().expect("proxied generated client")
@@ -291,11 +316,16 @@ fn proxied_buffered(server: &ScriptedServer) -> BufferedApi {
         .expect("proxied buffered generated client")
 }
 
-fn proxied_streaming(server: &ScriptedServer, hooks: Arc<dyn RuntimeHooks>) -> StreamingApi {
+fn proxied_streaming(server: &ScriptedServer, hooks: Arc<CountingHooks>) -> StreamingApi {
     let proxy = proxy(server);
     StreamingApi::builder()
         .configure_http(move |http| http.proxy(proxy))
-        .configure_runtime(move |runtime| runtime.hooks(hooks))
+        .configure_runtime(move |runtime| {
+            runtime
+                .request_gate(hooks.clone())
+                .response_gate(hooks.clone())
+                .completion_observer(hooks)
+        })
         .build()
         .expect("proxied streaming generated client")
 }
@@ -329,7 +359,7 @@ fn new_builder_and_public_request_shapes_are_final() {
     let _: example_api::health::PingRequest = from_named_builder.health().ping();
     let _: ResponseRequest<_> = from_builder.health().bytes().response();
     let _: example_api::health::BytesRequest =
-        from_builder.request(example_api::health::Bytes::new());
+        from_builder.request(ExampleApi::unbound().health().bytes());
 }
 
 #[test]
@@ -338,11 +368,11 @@ fn repeated_configuration_closures_compose_immediately_in_call_order() {
     let builder = ExampleApi::builder()
         .configure_http(|http| {
             assert_eq!(http_order.fetch_add(1, Ordering::SeqCst), 0);
-            http.https_only(true).protocol_recovery(false)
+            http.require_https().protocol_recovery(false)
         })
         .configure_http(|http| {
             assert_eq!(http_order.fetch_add(1, Ordering::SeqCst), 1);
-            http.https_only(false).protocol_recovery(true)
+            http.allow_http().protocol_recovery(true)
         });
     assert_eq!(http_order.load(Ordering::SeqCst), 2);
     builder
@@ -373,7 +403,7 @@ fn repeated_configuration_closures_compose_immediately_in_call_order() {
 fn fixed_base_https_policy_failure_is_precise_during_generated_build() {
     let error = build_error(
         ExampleApi::builder()
-            .configure_http(|http| http.https_only(true))
+            .configure_http(|http| http.require_https())
             .build(),
     );
     assert_eq!(error.kind(), ClientBuildErrorKind::HttpsRequired);
@@ -387,8 +417,7 @@ async fn exact_generated_direct_and_metadata_workflows_execute_through_local_pro
     ])
     .expect("generated proxy");
     let hooks = Arc::new(CountingHooks::new());
-    let hook_object: Arc<dyn RuntimeHooks> = hooks.clone();
-    let client = proxied_example(&server, Some(hook_object));
+    let client = proxied_example(&server, Some(hooks.clone()));
 
     let bytes: Bytes = client.health().bytes().await.expect("generated bytes");
     assert_eq!(bytes, b"healthy"[..]);
@@ -432,7 +461,9 @@ async fn generated_buffered_facade_and_explicit_endpoints_use_typed_codecs_end_t
         .expect("facade text");
     assert_eq!(text, "facade-text-response");
 
-    let endpoint = buffered_api::messages::TextEcho::new("explicit-text-request".to_owned());
+    let endpoint = BufferedApi::unbound()
+        .messages()
+        .text_echo("explicit-text-request".to_owned());
     let text: ApiResponse<String> = client
         .request(endpoint)
         .response()
@@ -454,8 +485,9 @@ async fn generated_buffered_facade_and_explicit_endpoints_use_typed_codecs_end_t
         .await
         .expect("custom facade");
     assert_eq!(custom, "custom-facade-response");
-    let custom_endpoint =
-        buffered_api::messages::CustomEcho::new("custom-explicit-request".to_owned());
+    let custom_endpoint = BufferedApi::unbound()
+        .messages()
+        .custom_echo("custom-explicit-request".to_owned());
     let custom = client
         .request(custom_endpoint)
         .response()
@@ -550,8 +582,7 @@ async fn generated_stream_and_multipart_facade_and_explicit_endpoints_use_one_ru
     ])
     .expect("generated streaming proxy");
     let hooks = Arc::new(CountingHooks::new());
-    let hook_object: Arc<dyn RuntimeHooks> = hooks.clone();
-    let client = proxied_streaming(&server, hook_object);
+    let client = proxied_streaming(&server, hooks.clone());
 
     let upload: Bytes = client
         .transfers()
@@ -562,9 +593,12 @@ async fn generated_stream_and_multipart_facade_and_explicit_endpoints_use_one_ru
         .expect("generated stream upload");
     assert_eq!(upload, b"upload-ok"[..]);
 
-    let vendor_endpoint = streaming_api::transfers::VendorUpload::new(StreamBody::from_bytes(
-        Bytes::from_static(b"generated-vendor-upload"),
-    ));
+    let vendor_endpoint =
+        StreamingApi::unbound()
+            .transfers()
+            .vendor_upload(StreamBody::from_bytes(Bytes::from_static(
+                b"generated-vendor-upload",
+            )));
     let vendor_upload: Bytes = client
         .request(vendor_endpoint)
         .await
@@ -585,7 +619,7 @@ async fn generated_stream_and_multipart_facade_and_explicit_endpoints_use_one_ru
     }
     assert_eq!(downloaded, b"facade-download");
 
-    let vendor_endpoint = streaming_api::transfers::VendorDownload::new();
+    let vendor_endpoint = StreamingApi::unbound().transfers().vendor_download();
     let response: ApiResponse<ByteStream> = client
         .request(vendor_endpoint)
         .response()
@@ -683,7 +717,7 @@ async fn facade_and_explicit_endpoints_execute_with_identical_encoded_paths() {
         .debug(DebugLevel::None)
         .await
         .expect("facade request");
-    let explicit = example_api::health::Item::new(dynamic);
+    let explicit = ExampleApi::unbound().health().item(dynamic);
     let explicit = client
         .request(explicit)
         .inherit_timeout()
@@ -708,10 +742,15 @@ async fn request_creation_is_lazy_and_generated_client_clone_shares_runtime_conf
     .expect("lazy proxy");
     let proxy = proxy(&server);
     let hooks = Arc::new(CountingHooks::new());
-    let hook_object: Arc<dyn RuntimeHooks> = hooks.clone();
+    let observation = hooks.clone();
     let client = LazyApi::builder()
         .configure_http(move |http| http.proxy(proxy))
-        .configure_runtime(move |runtime| runtime.hooks(hook_object))
+        .configure_runtime(move |runtime| {
+            runtime
+                .request_gate(observation.clone())
+                .response_gate(observation.clone())
+                .completion_observer(observation)
+        })
         .build()
         .expect("lazy client");
     let clone = client.clone();
@@ -767,6 +806,6 @@ fn nested_and_repeated_invocations_keep_generated_paths_isolated() {
         .upload(StreamBody::from_bytes(Bytes::from_static(b"nested-stream")));
     let _: nested_case::inner::nested_api::health::DownloadRequest = nested.health().download();
     let _: nested_case::inner::nested_api::health::PingRequest =
-        nested.request(nested_case::inner::nested_api::health::Ping::new());
+        nested.request(nested_case::inner::NestedApi::unbound().health().ping());
     repeated_case::requests_are_isolated();
 }

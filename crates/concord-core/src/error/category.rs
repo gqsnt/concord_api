@@ -16,8 +16,8 @@ pub enum ErrorCategory {
     AuthenticationRejected,
     /// Client-side rate-limit processing failed.
     RateLimit,
-    /// An application runtime hook failed.
-    Hook,
+    /// An application decision gate rejected the operation.
+    PolicyRejected,
     /// A request timed out.
     Timeout,
     /// A connection could not be established.
@@ -36,6 +36,36 @@ pub enum ErrorCategory {
     Pagination,
     /// An internal invariant failed safely.
     Internal,
+}
+
+/// Stable stage at which a managed operation failed.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FailureStage {
+    /// Inert values or a prepared operation could not be constructed.
+    Preparation,
+    /// A managed gate or local prerequisite failed before native dispatch.
+    BeforeDispatch,
+    /// Native dispatch began and no response head established a narrower fact.
+    DuringDispatchOrUnknown,
+    /// A response head was received but its status was rejected.
+    RejectedResponse,
+    /// An accepted response body could not be acquired completely.
+    ResponseAcquisition,
+    /// Acquired response data could not be converted to the declared output.
+    ResponseConversion,
+}
+
+/// What Concord can truthfully establish about dispatch for a failed outcome.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DispatchKnowledge {
+    /// Native dispatch conclusively did not begin.
+    NotDispatched,
+    /// Dispatch began or the transport cannot prove that it did not.
+    PossiblyDispatched,
+    /// A response head was received.
+    ResponseReceived,
 }
 
 /// Stable authentication failure classification.
@@ -94,8 +124,8 @@ pub enum PaginationErrorKind {
     Overflow,
     /// Pagination prepared a request already seen in the operation.
     RepeatedRequest,
-    /// A configured hard cap was exceeded.
-    HardCapExceeded,
+    /// `CompleteWithin` reached its page limit while continuation remained.
+    CompletionLimitExceeded,
     /// The configured maximum page count was exceeded.
     PageCeilingExceeded,
     /// The configured maximum collected-item count was exceeded.

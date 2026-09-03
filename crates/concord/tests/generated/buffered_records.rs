@@ -5,13 +5,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use concord::ApiResponse;
 use concord::api;
 use concord::codec::BytesMut;
-use concord::endpoint::{EndpointId, ResponseBytesRequest, RuntimeEndpoint};
+use concord::endpoint::{AcceptedBytesRequest, EndpointId, RuntimeEndpoint};
 use concord::error::ErrorCategory;
 use concord::http::{Method, SafeProxy};
 use concord::pagination::PaginatedRequest;
 use concord::prelude::BufferedRecords;
 use concord::records::{RecordDecoder, RecordError, RecordErrorKind};
-use concord::response::{PageResponseSpec, ResponseBodySpec};
+use concord::response::{PageResponseSpec, ResponseSpec};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 
 static VALIDATE_CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -78,23 +78,24 @@ fn parse_record(bytes: &[u8]) -> Result<u32, RecordError> {
 
 api! {
     client BufferedRecordApi {
+        timeout off;
         base "http://buffered-record.example.test/v1/";
-    }
 
-    GET buffered_custom() -> BufferedRecords<MyDecoder>;
 
-    GET pages(offset: u64, limit: std::num::NonZeroU32) -> BufferedRecords<MyDecoder> {
+    GET buffered_custom() -> Vec<u32> using BufferedRecords<MyDecoder> { expose accepted_bytes; }
+
+    GET pages(offset: u64, limit: std::num::NonZeroU32) -> Vec<u32> using BufferedRecords<MyDecoder> {
         path ["pages"];
         query {
-            "offset" = ep.offset;
-            "limit" = ep.limit;
+            "offset" = endpoint.offset;
+            "limit" = endpoint.limit;
         }
-        paginate crate::support::OffsetController {
-            offset: bind ep.offset,
-            page_size: bind ep.limit,
+        paginate with crate::support::OffsetController {
+            offset -> endpoint.offset;
+            page_size -> endpoint.limit;
         }
     }
-}
+}}
 
 fn build_client(server: &ScriptedServer) -> BufferedRecordApi {
     let proxy = SafeProxy::parse(server.url("")).expect("buffered-record loopback proxy");
@@ -107,15 +108,14 @@ fn build_client(server: &ScriptedServer) -> BufferedRecordApi {
 #[test]
 fn generated_buffered_record_terminals_have_buffered_and_page_capabilities() {
     let client = BufferedRecordApi::new().expect("side-effect-free buffered-record client");
-    let _: ResponseBytesRequest<_> = client.buffered_custom().response_bytes();
+    let _: AcceptedBytesRequest<_> = client.buffered_custom().accepted_bytes();
     let _: PaginatedRequest<_> = client
         .pages(0, NonZeroU32::new(2).expect("positive page size"))
         .paginate(4_u32);
 
     fn assert_spec<S>()
     where
-        S: ResponseBodySpec<Output = Vec<u32>, Mode = concord::response::Buffered>
-            + PageResponseSpec,
+        S: ResponseSpec<Output = Vec<u32>, Mode = concord::response::Buffered> + PageResponseSpec,
     {
     }
     assert_spec::<BufferedRecords<MyDecoder>>();
@@ -163,7 +163,7 @@ async fn generated_runtime_raw_and_paginated_buffered_records_share_the_public_a
 
     let raw = client
         .buffered_custom()
-        .response_bytes()
+        .accepted_bytes()
         .await
         .expect("raw response bytes bypass records");
     assert_eq!(raw.value(), b"raw-decoder-bypass".as_slice());

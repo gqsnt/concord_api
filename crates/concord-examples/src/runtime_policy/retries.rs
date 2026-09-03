@@ -8,11 +8,12 @@ use concord::retry::{RetryDecision, RetryFailure, RetryPolicy};
 
 api! {
     client RetryApi {
+        timeout off;
         base "http://retry.example.test/";
-    }
 
-    GET health() -> Bytes;
-}
+
+    GET health() -> Bytes using Bytes;
+}}
 
 /// Builds a finite policy for transient connection, transport, and selected
 /// rejected-status failures.

@@ -1,14 +1,15 @@
 use crate::body::{PageRequestBodySpec, RequestBodySpec};
 use crate::error::{ApiError, PaginationErrorKind};
 use crate::hooks::{BoxFuture, CompletionOutcome, PaginationCompletionEvent};
+use crate::operation::OperationDeadline;
 use crate::request::{EndpointSpec, Request, prepare_pagination_page};
-use crate::response::{PageResponseSpec, ResponseBodySpec};
+use crate::response::{PageResponseSpec, ResponseSpec};
 
 use super::identity::CanonicalIdentity;
 use super::limits::CycleDetector;
 use super::{PageLimit, PaginatedEndpoint, PaginationController, PaginationError};
 
-type DecodedPage<E> = <<E as EndpointSpec>::Response as ResponseBodySpec>::Output;
+type DecodedPage<E> = <<E as EndpointSpec>::Response as ResponseSpec>::Output;
 type PageItem<E> = <DecodedPage<E> as IntoIterator>::Item;
 type PaginationResult<E> = Result<Vec<PageItem<E>>, ApiError>;
 
@@ -30,8 +31,22 @@ where
             endpoint,
             options,
         } = request;
+        if matches!(limit, PageLimit::Prefix(0)) {
+            return Ok(Vec::new());
+        }
         let meta = endpoint.request_meta();
         let aggregate_started = tokio::time::Instant::now();
+        let timeout = options.resolve_timeout(
+            meta.resolve_inherited_timeout(core.default_runtime_endpoint_timeout()),
+        );
+        let aggregate_deadline =
+            OperationDeadline::new(aggregate_started, timeout).map_err(|_| {
+                ApiError::configuration(
+                    meta.endpoint_id().clone(),
+                    meta.method().clone(),
+                    crate::error::ConfigurationErrorKind::InvalidValue,
+                )
+            })?;
         let aggregate_operation_id =
             core.allocate_operation_id(meta.endpoint_id(), meta.method())?;
         let max_pages = core.pagination_max_pages().get();
@@ -48,13 +63,11 @@ where
         let mut final_status = None;
 
         let requested_pages = match limit {
-            PageLimit::Take(pages) => pages,
-            PageLimit::HardCap(pages) => pages.get(),
+            PageLimit::Prefix(pages) => pages,
+            PageLimit::CompleteWithin(pages) => pages.get(),
         };
 
-        let result = if requested_pages == 0 {
-            Ok(Vec::new())
-        } else if requested_pages > max_pages {
+        let result = if requested_pages > max_pages {
             Err(pagination_api_error(
                 &meta,
                 PaginationError::new(PaginationErrorKind::PageCeilingExceeded),
@@ -69,6 +82,7 @@ where
                         limit,
                         controller,
                         aggregate_operation_id,
+                        aggregate_deadline,
                         max_pages,
                         max_items,
                         max_response_body_bytes,
@@ -107,7 +121,9 @@ where
         };
         core.debug_dispatcher(options.resolve_debug(core.default_debug()))
             .pagination_completion(&event);
-        core.hooks().on_pagination_complete(event).await;
+        let observer_started = std::time::Instant::now();
+        core.completion_observer().on_pagination_complete(event);
+        let _observer_elapsed = observer_started.elapsed();
         result
     })
 }
@@ -123,6 +139,7 @@ async fn run_pages<E>(
     limit: PageLimit,
     mut controller: E::Controller,
     aggregate_operation_id: crate::operation::OperationId,
+    aggregate_deadline: OperationDeadline,
     max_pages: u32,
     max_items: usize,
     max_response_body_bytes: usize,
@@ -149,12 +166,21 @@ where
     let mut page_index = 0_u32;
 
     loop {
+        aggregate_deadline
+            .check()
+            .map_err(|_| aggregate_timeout(&meta))?;
         controller
             .validate()
             .map_err(|error| pagination_api_error(&meta, error))?;
+        aggregate_deadline
+            .check()
+            .map_err(|_| aggregate_timeout(&meta))?;
         let mut endpoint = original_endpoint.clone();
         E::bind_controller(&mut endpoint, &controller)
             .map_err(|error| pagination_api_error(&meta, error))?;
+        aggregate_deadline
+            .check()
+            .map_err(|_| aggregate_timeout(&meta))?;
 
         let page = prepare_pagination_page(Request {
             core: core.clone(),
@@ -180,9 +206,13 @@ where
             .retain(identity, digest)
             .map_err(|error| pagination_api_error(&meta, error))?;
 
-        let executed =
-            crate::execute::execute_pagination_page(page, aggregate_operation_id, page_index)
-                .await?;
+        let executed = crate::execute::execute_pagination_page(
+            page,
+            aggregate_operation_id,
+            page_index,
+            aggregate_deadline,
+        )
+        .await?;
         let page_response_body_bytes = executed.response_body_bytes;
         let next_attempts_started = (*attempts_started)
             .checked_add(executed.attempts_started)
@@ -219,12 +249,19 @@ where
         }
 
         let final_soft_page =
-            matches!(limit, PageLimit::Take(maximum) if accepted_page_count == maximum);
+            matches!(limit, PageLimit::Prefix(maximum) if accepted_page_count == maximum);
         let candidate = if final_soft_page {
             None
         } else {
             let short_page_size = controller.short_page_size();
-            Some((short_page_size, controller.next(&page)))
+            aggregate_deadline
+                .check()
+                .map_err(|_| aggregate_timeout(&meta))?;
+            let next = controller.next(&page);
+            aggregate_deadline
+                .check()
+                .map_err(|_| aggregate_timeout(&meta))?;
+            Some((short_page_size, next))
         };
 
         let mut page_item_count = 0_usize;
@@ -251,8 +288,8 @@ where
         if final_soft_page {
             return Ok(items);
         }
-        let (short_page_size, candidate) =
-            candidate.expect("non-final soft and hard-cap pages retain one controller result");
+        let (short_page_size, candidate) = candidate
+            .expect("non-final prefix and complete-within pages retain a controller result");
         if short_page_size.is_some_and(|size| page_item_count < size.get()) {
             return Ok(items);
         }
@@ -262,10 +299,10 @@ where
             return Ok(items);
         };
 
-        if matches!(limit, PageLimit::HardCap(cap) if accepted_page_count == cap.get()) {
+        if matches!(limit, PageLimit::CompleteWithin(cap) if accepted_page_count == cap.get()) {
             return Err(pagination_kind_error(
                 &meta,
-                PaginationErrorKind::HardCapExceeded,
+                PaginationErrorKind::CompletionLimitExceeded,
             ));
         }
 
@@ -274,6 +311,14 @@ where
             .checked_add(1)
             .ok_or_else(|| pagination_kind_error(&meta, PaginationErrorKind::Overflow))?;
     }
+}
+
+fn aggregate_timeout(meta: &crate::request::RequestMeta) -> ApiError {
+    ApiError::classified(
+        meta.endpoint_id().clone(),
+        meta.method().clone(),
+        crate::error::ErrorCategory::Timeout,
+    )
 }
 
 fn pagination_api_error(meta: &crate::request::RequestMeta, error: PaginationError) -> ApiError {

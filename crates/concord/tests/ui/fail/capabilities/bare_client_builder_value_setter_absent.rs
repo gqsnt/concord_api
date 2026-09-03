@@ -3,14 +3,15 @@ use concord::api;
 
 api! {
     client BuilderSetterApi {
-        vars {
-            label: Option<String>;
+        timeout off;
+        values {
+            label?: String;
         }
         base "http://builder-setter.example.test";
-    }
 
-    GET read() -> Bytes;
-}
+
+    GET read() -> Bytes using Bytes;
+}}
 
 fn main() {
     let _ = BuilderSetterApi::builder().label("selected".to_owned());

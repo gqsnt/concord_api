@@ -1,13 +1,11 @@
 use super::*;
 
 #[tokio::test(start_paused = true)]
-async fn timeout_in_before_send_is_fixed_then_completion_runs_outside_deadline() {
+async fn timeout_in_request_gate_is_fixed_before_synchronous_completion_observation() {
     let executor = DeterministicExecutor::new();
     let before_gate = Gate::closed();
-    let completion_gate = Gate::closed();
     let hooks = Arc::new(ProbeHooks {
         before_gate: Some(before_gate.clone()),
-        completion_gate: Some(completion_gate.clone()),
         ..ProbeHooks::new()
     });
     let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
@@ -16,11 +14,7 @@ async fn timeout_in_before_send_is_fixed_then_completion_runs_outside_deadline()
 
     before_gate.wait_until_reached().await;
     tokio::time::advance(Duration::from_secs(5)).await;
-    completion_gate.wait_until_reached().await;
-    assert!(
-        !task.is_finished(),
-        "completion hook must delay future delivery"
-    );
+    let error = task.await.expect("join").expect_err("fixed timeout");
 
     let records = hooks.records();
     let before_id = match records.first() {
@@ -33,40 +27,35 @@ async fn timeout_in_before_send_is_fixed_then_completion_runs_outside_deadline()
     assert_eq!(status, None);
     assert_eq!(elapsed, Duration::from_secs(5));
 
-    tokio::time::advance(Duration::from_secs(60)).await;
-    assert_eq!(completion(&hooks.records()).3, elapsed);
-    assert!(!task.is_finished());
-    completion_gate.open();
-    let error = task.await.expect("join").expect_err("fixed timeout");
     assert_eq!(error.category(), ErrorCategory::Timeout);
     assert_eq!(executor.application().request_count().expect("count"), 0);
     assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test(start_paused = true)]
-async fn prepared_builder_deadline_is_fixed_and_completion_remains_outside_it() {
+async fn prepared_builder_deadline_is_fixed_before_completion_observation() {
     let executor = DeterministicExecutor::new();
     let before_gate = Gate::closed();
-    let completion_gate = Gate::closed();
     let hooks = Arc::new(ProbeHooks {
         before_gate: Some(before_gate.clone()),
-        completion_gate: Some(completion_gate.clone()),
         ..ProbeHooks::new()
     });
     let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
     let endpoint =
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.deadline"), Method::GET)
-            .path_segment("prepared-deadline")
+            .path("prepared-deadline")
             .timeout(Duration::from_secs(5))
-            .response_bytes()
+            .accepted_bytes()
             .build()
             .expect("prepared deadline endpoint");
     let task = tokio::spawn(async move { Request::new(core, endpoint).await });
 
     before_gate.wait_until_reached().await;
     tokio::time::advance(Duration::from_secs(5)).await;
-    completion_gate.wait_until_reached().await;
-    assert!(!task.is_finished());
+    let error = task
+        .await
+        .expect("prepared deadline join")
+        .expect_err("prepared deadline timeout");
     let records = hooks.records();
     let before_id = match records.first() {
         Some(LifecycleRecord::Before { operation_id, .. }) => *operation_id,
@@ -78,50 +67,34 @@ async fn prepared_builder_deadline_is_fixed_and_completion_remains_outside_it() 
     assert_eq!(status, None);
     assert_eq!(elapsed, Duration::from_secs(5));
 
-    tokio::time::advance(Duration::from_secs(60)).await;
-    assert_eq!(completion(&hooks.records()).3, elapsed);
-    assert!(!task.is_finished());
-    completion_gate.open();
-    let error = task
-        .await
-        .expect("prepared deadline join")
-        .expect_err("prepared deadline timeout");
     assert_eq!(error.category(), ErrorCategory::Timeout);
     assert_eq!(executor.application().request_count().expect("count"), 0);
     assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test(start_paused = true)]
-async fn success_and_status_results_remain_fixed_while_completion_is_delayed() {
+async fn synchronous_completion_observation_cannot_transform_success_or_status() {
     let success_executor = DeterministicExecutor::new();
     success_executor
         .application()
         .queue_response(ScriptedResponse::success(Bytes::from_static(b"fixed")))
         .expect("success script");
-    let success_gate = Gate::closed();
-    let success_hooks = Arc::new(ProbeHooks {
-        completion_gate: Some(success_gate.clone()),
-        ..ProbeHooks::new()
-    });
+    let success_hooks = Arc::new(ProbeHooks::new());
     let success_core = development_core(
         &success_executor,
         Arc::clone(&success_hooks),
         RuntimeConfigBuilder::new(),
     );
-    let success_task = tokio::spawn(async move {
+    assert_eq!(
         bytes_request(success_core)
             .timeout(Duration::from_secs(1))
             .await
-    });
-    success_gate.wait_until_reached().await;
-    let success_elapsed = completion(&success_hooks.records()).3;
-    tokio::time::advance(Duration::from_secs(10)).await;
-    assert!(!success_task.is_finished());
-    assert_eq!(completion(&success_hooks.records()).3, success_elapsed);
-    success_gate.open();
-    assert_eq!(
-        success_task.await.expect("join").expect("fixed success"),
+            .expect("fixed success"),
         b"fixed"[..]
+    );
+    assert_eq!(
+        completion(&success_hooks.records()).1,
+        CompletionOutcome::Success
     );
 
     let status_executor = DeterministicExecutor::new();
@@ -132,25 +105,16 @@ async fn success_and_status_results_remain_fixed_while_completion_is_delayed() {
             Bytes::from_static(b"status"),
         ))
         .expect("status script");
-    let status_gate = Gate::closed();
-    let status_hooks = Arc::new(ProbeHooks {
-        completion_gate: Some(status_gate.clone()),
-        ..ProbeHooks::new()
-    });
+    let status_hooks = Arc::new(ProbeHooks::new());
     let status_core = development_core(
         &status_executor,
         Arc::clone(&status_hooks),
         RuntimeConfigBuilder::new(),
     );
-    let status_task = tokio::spawn(async move {
-        bytes_request(status_core)
-            .timeout(Duration::from_secs(1))
-            .await
-    });
-    status_gate.wait_until_reached().await;
-    tokio::time::advance(Duration::from_secs(10)).await;
-    status_gate.open();
-    let error = status_task.await.expect("join").expect_err("fixed status");
+    let error = bytes_request(status_core)
+        .timeout(Duration::from_secs(1))
+        .await
+        .expect_err("fixed status");
     assert_eq!(error.category(), ErrorCategory::HttpStatus);
     assert_eq!(error.http_status(), Some(StatusCode::SERVICE_UNAVAILABLE));
     assert_eq!(
@@ -160,36 +124,25 @@ async fn success_and_status_results_remain_fixed_while_completion_is_delayed() {
 }
 
 #[tokio::test]
-async fn cancellation_while_awaiting_completion_may_prevent_delivery() {
+async fn completion_observer_runs_once_and_has_no_result_authority() {
     let executor = DeterministicExecutor::new();
     executor
         .application()
         .queue_response(ScriptedResponse::success(Bytes::new()))
         .expect("response");
-    let completion_gate = Gate::closed();
-    let hooks = Arc::new(ProbeHooks {
-        completion_gate: Some(completion_gate.clone()),
-        ..ProbeHooks::new()
-    });
+    let hooks = Arc::new(ProbeHooks::new());
     let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
-    let task = tokio::spawn(async move { bytes_request(core).await });
-    completion_gate.wait_until_reached().await;
-    task.abort();
-    assert!(task.await.expect_err("cancelled join").is_cancelled());
-    completion_gate.open();
-    tokio::task::yield_now().await;
-    assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 0);
+    assert_eq!(bytes_request(core).await.expect("success"), Bytes::new());
+    assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 1);
     assert_eq!(hooks.records().len(), 3);
 }
 
 #[tokio::test(start_paused = true)]
-async fn response_bytes_keeps_the_fixed_deadline_and_cancellation_contract() {
+async fn accepted_bytes_keeps_the_fixed_deadline_and_cancellation_contract() {
     let timeout_executor = DeterministicExecutor::new();
     let before_gate = Gate::closed();
-    let completion_gate = Gate::closed();
     let timeout_hooks = Arc::new(ProbeHooks {
         before_gate: Some(before_gate.clone()),
-        completion_gate: Some(completion_gate.clone()),
         ..ProbeHooks::new()
     });
     let timeout_core = development_core(
@@ -200,22 +153,17 @@ async fn response_bytes_keeps_the_fixed_deadline_and_cancellation_contract() {
     let timeout_task = tokio::spawn(async move {
         bytes_request(timeout_core)
             .timeout(Duration::from_secs(5))
-            .response_bytes()
+            .accepted_bytes()
             .await
     });
     before_gate.wait_until_reached().await;
     tokio::time::advance(Duration::from_secs(5)).await;
-    completion_gate.wait_until_reached().await;
-    let fixed_elapsed = completion(&timeout_hooks.records()).3;
-    assert_eq!(fixed_elapsed, Duration::from_secs(5));
-    tokio::time::advance(Duration::from_secs(60)).await;
-    assert_eq!(completion(&timeout_hooks.records()).3, fixed_elapsed);
-    assert!(!timeout_task.is_finished());
-    completion_gate.open();
     let error = timeout_task
         .await
-        .expect("response-bytes timeout join")
-        .expect_err("response-bytes fixed timeout");
+        .expect("accepted-bytes timeout join")
+        .expect_err("accepted-bytes fixed timeout");
+    let fixed_elapsed = completion(&timeout_hooks.records()).3;
+    assert_eq!(fixed_elapsed, Duration::from_secs(5));
     assert_eq!(error.category(), ErrorCategory::Timeout);
     assert_eq!(
         timeout_executor
@@ -231,17 +179,18 @@ async fn response_bytes_keeps_the_fixed_deadline_and_cancellation_contract() {
         .queue_response(ScriptedResponse::success(Bytes::from_static(b"fixed raw")))
         .expect("response-bytes cancellation response");
     let cancellation_gate = Gate::closed();
-    let cancellation_hooks = Arc::new(ProbeHooks {
-        completion_gate: Some(cancellation_gate.clone()),
-        ..ProbeHooks::new()
-    });
+    cancellation_executor
+        .application()
+        .pause_before_execution(cancellation_gate.clone())
+        .expect("accepted-bytes cancellation gate");
+    let cancellation_hooks = Arc::new(ProbeHooks::new());
     let cancellation_core = development_core(
         &cancellation_executor,
         Arc::clone(&cancellation_hooks),
         RuntimeConfigBuilder::new(),
     );
     let cancellation_task =
-        tokio::spawn(async move { bytes_request(cancellation_core).response_bytes().await });
+        tokio::spawn(async move { bytes_request(cancellation_core).accepted_bytes().await });
     cancellation_gate.wait_until_reached().await;
     cancellation_task.abort();
     assert!(
@@ -250,14 +199,13 @@ async fn response_bytes_keeps_the_fixed_deadline_and_cancellation_contract() {
             .expect_err("response-bytes request task must be cancelled")
             .is_cancelled()
     );
-    cancellation_gate.open();
-    tokio::task::yield_now().await;
     assert_eq!(
         cancellation_hooks
             .completion_returned
             .load(Ordering::SeqCst),
         0
     );
+    cancellation_gate.open();
 }
 
 #[tokio::test(start_paused = true)]

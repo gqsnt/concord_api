@@ -5,16 +5,17 @@ macro_rules! reserved_auth_header_case {
 
             api! {
                 client ReservedAuthHeaderApi {
+                    timeout off;
                     base "https://example.test/";
                     credentials {
-                        secret key: String;
+                        secret key;
                         credential key = api_key(secret.key);
                     }
-                    auth header $header = key;
-                }
+                    auth { header $header = key; }
 
-                GET read() -> NoContent;
-            }
+
+                GET read() -> () using NoContent;
+            }}
         }
     };
 }

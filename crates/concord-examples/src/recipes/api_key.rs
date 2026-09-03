@@ -9,17 +9,18 @@ use concord::{SecretString, api};
 // ANCHOR: api_key_recipe
 api! {
     client ApiKeyApi {
+        timeout off;
         base "https://api-key.example.test/";
         credentials {
-            secret api_key: String;
+            secret api_key;
             credential application_key = api_key(secret.api_key);
         }
-    }
 
-    GET profile() -> NoContent {
-        auth header "X-Api-Key" = application_key challenge never;
+
+    GET profile() -> () using NoContent {
+        auth { header "X-Api-Key" = application_key; }
     }
-}
+}}
 
 /// Builds one immutable client from bounded protected input.
 pub fn build(api_key: impl AsRef<str>) -> Result<ApiKeyApi, Box<dyn std::error::Error>> {

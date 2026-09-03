@@ -9,8 +9,8 @@ use std::error::Error;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
-use concord::hooks::SanitizedHeaderValue;
 use concord::http::HeaderName;
+use concord::observation::SanitizedHeaderValue;
 use concord::prelude::PageLimit;
 use concord::rate_limit::{
     Cooldown, CooldownScope, LocalRateLimiter, RateLimitObserver, RateLimitResponseHead,
@@ -66,6 +66,7 @@ pub fn construct() -> Result<(), concord::ClientBuildError> {
             concord::SecretString::try_new("manual-example-key")
                 .expect("bounded manual example key"),
         )
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(LocalRateLimiter::new())))
         .build()?;
     let _: riot_api::platform::summoner_v4::SummonerByPuuidRequest = riot
         .platform(crate::riot::domain::PlatformRoute::Euw1)
@@ -76,9 +77,9 @@ pub fn construct() -> Result<(), concord::ClientBuildError> {
         .regional(super::domain::RegionalRoute::Europe)
         .match_v5()
         .match_ids_by_puuid("example-puuid".to_owned())
-        .set_match_type(MatchType::Ranked)
+        .with_match_type(MatchType::Ranked)
         .set_count(NonZeroU32::new(10).expect("positive page size"))
-        .paginate(PageLimit::Take(2));
+        .paginate(PageLimit::Prefix(2));
     // ANCHOR_END: riot_paginated_request
 
     let data_dragon = DDragonApi::builder().build()?;
@@ -146,7 +147,7 @@ pub async fn run_live_from_environment() -> Result<(), Box<dyn Error>> {
         .platform(crate::riot::domain::PlatformRoute::Euw1)
         .champion_mastery_v4()
         .top_masteries_by_puuid(account.puuid.clone())
-        .set_count(5)
+        .with_count(5)
         .await?;
 
     println!("Top champion masteries: {}", top_masteries.len());
@@ -155,9 +156,9 @@ pub async fn run_live_from_environment() -> Result<(), Box<dyn Error>> {
         .regional(crate::riot::domain::RegionalRoute::Europe)
         .match_v5()
         .match_ids_by_puuid(account.puuid.clone())
-        .set_match_type(MatchType::Ranked)
+        .with_match_type(MatchType::Ranked)
         .set_count(NonZeroU32::new(20).expect("20 is non-zero"))
-        .paginate(PageLimit::Take(2))
+        .paginate(PageLimit::Prefix(2))
         .await?;
 
     println!("Collected {} recent ranked match IDs", match_ids.len());

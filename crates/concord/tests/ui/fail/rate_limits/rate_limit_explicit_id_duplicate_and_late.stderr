@@ -1,17 +1,17 @@
 error: an anonymous rate-limit attachment permits at most one `id` clause
- --> tests/ui/fail/rate_limits/rate_limit_explicit_id_duplicate_and_late.rs:8:13
+ --> tests/ui/fail/rate_limits/rate_limit_explicit_id_duplicate_and_late.rs:9:13
   |
-8 |             id "service.second";
+9 |             id "service.second";
   |             ^^
 
 error: the first `id` clause is here
- --> tests/ui/fail/rate_limits/rate_limit_explicit_id_duplicate_and_late.rs:7:13
+ --> tests/ui/fail/rate_limits/rate_limit_explicit_id_duplicate_and_late.rs:8:13
   |
-7 |             id "service.first";
+8 |             id "service.first";
   |             ^^
 
-error: `id`, `by`, and `cost` clauses must appear before rate-limit windows
-  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_duplicate_and_late.rs:19:13
+error: `id`, `key`, and `cost` clauses must appear before rate-limit windows
+  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_duplicate_and_late.rs:21:13
    |
-19 |             id "service.late";
+21 |             id "service.late";
    |             ^^

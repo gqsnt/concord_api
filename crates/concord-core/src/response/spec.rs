@@ -56,7 +56,7 @@ pub struct Discard;
 pub trait ResponseMode: private::Sealed + Send + Sync + 'static {
     /// Semantic body value delivered after core-owned acquisition.
     ///
-    /// This associated type is the input to [`ResponseBodySpec::from_body`];
+    /// This associated type is the input to [`ResponseSpec::from_body`];
     /// it is not a public `ResponseBody` trait or a native transport response.
     type Body: Send + 'static;
 
@@ -135,16 +135,16 @@ impl private::Sealed for Discard {
 }
 
 /// Sealed response-acquisition capability accepted by
-/// [`Request::response_bytes`](crate::Request::response_bytes).
+/// endpoint-declared accepted-byte terminals.
 ///
 /// Concord implements this trait only for [`Buffered`] and [`Discard`].
 /// Applications cannot implement new response modes because [`ResponseMode`]
 /// is itself sealed.
-pub trait ResponseBytesMode: ResponseMode {}
+pub trait AcceptedBytesMode: ResponseMode {}
 
-impl ResponseBytesMode for Buffered {}
+impl AcceptedBytesMode for Buffered {}
 
-impl ResponseBytesMode for Discard {}
+impl AcceptedBytesMode for Discard {}
 
 /// Borrowed accepted response-head facts supplied to a response extension.
 ///
@@ -206,7 +206,7 @@ pub struct ResponseHead<'a> {
 /// the output value produced by `from_body`. Every core-owned body-polling mode
 /// suppresses empty transport chunks and applies the same finite response-wide
 /// empty-chunk ceiling before extension conversion.
-pub trait ResponseBodySpec: Send + Sync + 'static {
+pub trait ResponseSpec: Send + Sync + 'static {
     /// Accepted semantic output.
     type Output: Send + 'static;
     /// Core-owned acquisition mode selected by this specification.
@@ -241,7 +241,7 @@ pub trait ResponseBodySpec: Send + Sync + 'static {
 
 pub(crate) trait ResponseSelection<R>
 where
-    R: ResponseBodySpec,
+    R: ResponseSpec,
 {
     type Output: Send + 'static;
     type Mode: ResponseMode;
@@ -260,7 +260,7 @@ pub(crate) struct DeclaredResponse<R>(std::marker::PhantomData<fn() -> R>);
 
 impl<R> ResponseSelection<R> for DeclaredResponse<R>
 where
-    R: ResponseBodySpec,
+    R: ResponseSpec,
 {
     type Output = R::Output;
     type Mode = R::Mode;
@@ -281,11 +281,11 @@ where
     }
 }
 
-pub(crate) struct ResponseBytesSelection<R>(std::marker::PhantomData<fn() -> R>);
+pub(crate) struct AcceptedBytesSelection<R>(std::marker::PhantomData<fn() -> R>);
 
-impl<R> ResponseSelection<R> for ResponseBytesSelection<R>
+impl<R> ResponseSelection<R> for AcceptedBytesSelection<R>
 where
-    R: ResponseBodySpec,
+    R: ResponseSpec,
 {
     type Output = Bytes;
     type Mode = Buffered;
@@ -306,7 +306,7 @@ where
     }
 }
 
-impl<C> ResponseBodySpec for C
+impl<C> ResponseSpec for C
 where
     C: DecodeBody,
 {
@@ -347,7 +347,7 @@ where
     }
 }
 
-impl ResponseBodySpec for Bytes {
+impl ResponseSpec for Bytes {
     type Output = Bytes;
     type Mode = Buffered;
 
@@ -363,7 +363,7 @@ impl ResponseBodySpec for Bytes {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct NoContent;
 
-impl ResponseBodySpec for NoContent {
+impl ResponseSpec for NoContent {
     type Output = ();
     type Mode = Discard;
 
@@ -375,7 +375,7 @@ impl ResponseBodySpec for NoContent {
     }
 }
 
-impl ResponseBodySpec for Stream<AnyMedia> {
+impl ResponseSpec for Stream<AnyMedia> {
     type Output = ByteStream;
     type Mode = Streaming;
 
@@ -387,7 +387,7 @@ impl ResponseBodySpec for Stream<AnyMedia> {
     }
 }
 
-impl<M> ResponseBodySpec for Stream<M>
+impl<M> ResponseSpec for Stream<M>
 where
     M: MediaType,
 {
@@ -428,8 +428,8 @@ where
 /// Downstream buffered specifications opt in explicitly. Complete codecs whose
 /// output implements [`IntoIterator`] receive the capability automatically.
 /// Bytes, discard, byte streams, and record streams do not acquire it merely by
-/// implementing [`ResponseBodySpec`].
-pub trait PageResponseSpec: ResponseBodySpec<Mode = Buffered> {}
+/// implementing [`ResponseSpec`].
+pub trait PageResponseSpec: ResponseSpec<Mode = Buffered> {}
 
 impl<C> PageResponseSpec for C
 where
@@ -440,7 +440,7 @@ where
 
 pub(crate) fn completion_outcome<R, S>() -> CompletionOutcome
 where
-    R: ResponseBodySpec,
+    R: ResponseSpec,
     S: ResponseSelection<R>,
 {
     <S::Mode as private::Sealed>::COMPLETION_OUTCOME
@@ -560,7 +560,7 @@ mod tests {
 
     #[test]
     fn media_unconstrained_stream_has_no_accept_or_content_type_validation() {
-        assert_eq!(<Stream as ResponseBodySpec>::accept(), None);
+        assert_eq!(<Stream as ResponseSpec>::accept(), None);
 
         let endpoint = EndpointId::from_static("stream.any_media");
         let method = Method::GET;
@@ -584,7 +584,7 @@ mod tests {
                 content_length: None,
                 metadata: &metadata,
             };
-            <Stream as ResponseBodySpec>::validate(&head)
+            <Stream as ResponseSpec>::validate(&head)
                 .expect("bare stream makes no media assertion");
         }
     }

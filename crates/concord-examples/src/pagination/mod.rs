@@ -16,25 +16,26 @@ pub mod search;
 // ANCHOR: pagination_contract
 api! {
     client PaginationApi {
+        timeout off;
         base "http://pagination.example.test/";
-    }
+
 
     // ANCHOR: offset_endpoint
-    GET offset(offset: u64, limit: std::num::NonZeroU32) -> Json<Vec<u32>> {
-        query { "offset" = ep.offset; "limit" = ep.limit; }
-        paginate concord::pagination::OffsetPagination {
-            offset: bind ep.offset,
-            page_size: bind ep.limit,
+    GET offset(offset: u64, limit: std::num::NonZeroU32) -> Vec<u32> using Json<Vec<u32>> {
+        query { "offset" = endpoint.offset; "limit" = endpoint.limit; }
+        paginate with concord::pagination::OffsetPagination {
+            offset -> endpoint.offset;
+            page_size -> endpoint.limit;
         }
     }
     // ANCHOR_END: offset_endpoint
 
     // ANCHOR: page_endpoint
-    GET page(page: std::num::NonZeroU64, per_page: std::num::NonZeroU32) -> Json<Vec<u32>> {
-        query { "page" = ep.page; "per_page" = ep.per_page; }
-        paginate concord::pagination::PagePagination {
-            page: bind ep.page,
-            page_size: bind ep.per_page,
+    GET page(page: std::num::NonZeroU64, per_page: std::num::NonZeroU32) -> Vec<u32> using Json<Vec<u32>> {
+        query { "page" = endpoint.page; "per_page" = endpoint.per_page; }
+        paginate with concord::pagination::PagePagination {
+            page -> endpoint.page;
+            page_size -> endpoint.per_page;
         }
     }
     // ANCHOR_END: page_endpoint
@@ -43,34 +44,34 @@ api! {
     POST search(
         offset: u64,
         limit: std::num::NonZeroU32,
-        #[body] filter: Json<crate::pagination::search::SearchFilter>,
-    ) -> Json<Vec<u32>> {
+        body filter: crate::pagination::search::SearchFilter using concord::Json<crate::pagination::search::SearchFilter>,
+    ) -> Vec<u32> using Json<Vec<u32>> {
         path ["search"];
-        query { "offset" = ep.offset; "limit" = ep.limit; }
-        paginate concord::pagination::OffsetPagination {
-            offset: bind ep.offset,
-            page_size: bind ep.limit,
+        query { "offset" = endpoint.offset; "limit" = endpoint.limit; }
+        paginate with concord::pagination::OffsetPagination {
+            offset -> endpoint.offset;
+            page_size -> endpoint.limit;
         }
     }
     // ANCHOR_END: post_search_endpoint
 
     // ANCHOR: cursor_endpoints
     GET cursor(
-        cursor: Option<String>
-    ) -> crate::pagination::custom::ExamplePageCodec {
-        query { "cursor" = ep.cursor; }
-        paginate concord::pagination::CursorPagination<String> {
-            cursor: bind ep.cursor,
+        cursor?: String
+    ) -> crate::pagination::custom::ExamplePage using crate::pagination::custom::ExamplePageCodec {
+        query { "cursor" = endpoint.cursor; }
+        paginate with concord::pagination::CursorPagination<String> {
+            cursor -> endpoint.cursor;
         }
     }
     GET custom(
-        cursor: Option<String>
-    ) -> crate::pagination::custom::ExamplePageCodec {
-        query { "cursor" = ep.cursor; }
-        paginate crate::pagination::custom::ExampleController {
-            cursor: bind ep.cursor,
+        cursor?: String
+    ) -> crate::pagination::custom::ExamplePage using crate::pagination::custom::ExamplePageCodec {
+        query { "cursor" = endpoint.cursor; }
+        paginate with crate::pagination::custom::ExampleController {
+            cursor -> endpoint.cursor;
         }
     }
     // ANCHOR_END: cursor_endpoints
-}
+}}
 // ANCHOR_END: pagination_contract

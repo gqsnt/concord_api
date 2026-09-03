@@ -75,70 +75,76 @@ impl runtime::pagination::PaginationController<Vec<u8>> for RenamedController {
 
 api! {
     client RenamedApi {
+        timeout off;
         base "http://renamed.example.test";
-        vars {
+        values {
             tenant: String;
-            locale: Option<String>;
+            locale?: String;
             page_size: u32 = 25;
         }
         credentials {
-            secret api_key: String;
+            secret api_key;
             credential application_key = api_key(secret.api_key);
         }
-    }
+
 
     scope resources(
         scope_value: String,
-        region: Option<String>,
+        region?: String,
         scope_limit: u32 = 50,
     ) {
-        path ["scopes", scope.scope_value, "resources"];
+        path ["scopes", resources.scope_value, "resources"];
         POST by_id(
             endpoint_value: String,
-            verbose: Option<bool>,
+            verbose?: bool,
             limit: u32 = 10,
-            #[body] body: Text,
-        ) -> Text {
-            path [ep.endpoint_value];
-            auth authorization "Token" = application_key;
+            body body: String using ::runtime::Text,
+        ) -> String using ::runtime::Text {
+            path [endpoint.endpoint_value];
+            auth { authorization "Token" = application_key; }
         }
-        POST custom(#[body] body: crate::WireCodec) -> crate::WireCodec;
-        POST stream_upload(#[body] body: Stream<OctetStream>) -> Bytes;
-        GET stream_download() -> Stream<OctetStream>;
-        POST multipart_upload(#[body] body: Multipart) -> NoContent;
+        POST custom(body body: String using crate::WireCodec) -> String using crate::WireCodec {
+            expose accepted_bytes;
+        }
+        POST stream_upload(
+            body body: ::runtime::body::StreamBody using ::runtime::body::Stream<::runtime::codec::OctetStream>,
+        ) -> ::runtime::Bytes using ::runtime::Bytes;
+        GET stream_download() -> ::runtime::response::ByteStream using ::runtime::body::Stream<::runtime::codec::OctetStream>;
+        POST multipart_upload(
+            body body: ::runtime::body::MultipartBody using ::runtime::body::Multipart,
+        ) -> () using ::runtime::NoContent;
         POST pages(
-            cursor: Option<String>,
-            #[body] filter: Text,
-        ) -> crate::PageCodec {
-            query { "cursor" = ep.cursor; }
-            paginate crate::RenamedController {
-                cursor: bind ep.cursor,
+            cursor?: String,
+            body filter: String using ::runtime::Text,
+        ) -> Vec<u8> using crate::PageCodec {
+            query { "cursor" = endpoint.cursor; }
+            paginate with crate::RenamedController {
+                cursor -> endpoint.cursor;
             }
         }
     }
-}
+}}
 
 api! {
     client RenamedRateApi {
+        timeout off;
         base "http://renamed-rate.example.test";
-        vars {
+        values {
             tenant: String;
         }
         rate_limits {
-            rule tenant_reads {
-                by [tenant];
-                10 / 1m;
+            tenant_reads(tenant) {
+                key [tenant];
+                allow 10 per 1m;
             }
         }
-        rate_limit { 10 / 1m; }
-    }
+        rate_limit { allow 10 per 1m; }
 
-    GET read() -> Bytes {
-        rate_limit use tenant_reads {
-            tenant = vars.tenant;
-        }
+
+    GET read() -> ::runtime::Bytes using ::runtime::Bytes {
+        rate_limit tenant_reads(tenant = client.tenant);
     }
-}
+}}
 
 pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
     let retry_policy = runtime::retry::RetryPolicy::builder()
@@ -156,34 +162,30 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
     let _ = client.credentials().application_key().credential();
     let request = client
         .resources("renamed-scope".to_owned())
-        .set_region("eu".to_owned())
+        .with_region("eu".to_owned())
         .set_scope_limit(20)
         .reset_scope_limit()
         .by_id("renamed-endpoint".to_owned(), "renamed-body".to_owned())
-        .set_verbose(true)
+        .with_verbose(true)
         .set_limit(20)
         .reset_limit();
     let _: renamed_api::resources::ByIdRequest = request;
-    let endpoint = renamed_api::resources::ById::new(
-        "renamed-scope".to_owned(),
-        "renamed-endpoint".to_owned(),
-        "renamed-body".to_owned(),
-    );
-    let _: renamed_api::resources::ByIdRequest = client.request(
-        endpoint
-            .set_region("eu".to_owned())
-            .set_scope_limit(20)
-            .reset_scope_limit()
-            .set_verbose(true)
-            .set_limit(20)
-            .reset_limit(),
-    );
+    let endpoint = RenamedApi::unbound()
+        .resources("renamed-scope".to_owned())
+        .with_region("eu".to_owned())
+        .set_scope_limit(20)
+        .reset_scope_limit()
+        .by_id("renamed-endpoint".to_owned(), "renamed-body".to_owned())
+        .with_verbose(true)
+        .set_limit(20)
+        .reset_limit();
+    let _: renamed_api::resources::ByIdRequest = client.request(endpoint);
     let runtime_endpoint = runtime::endpoint::RuntimeEndpoint::builder(
         runtime::endpoint::EndpointId::new("renamed_api.runtime")
             .expect("valid renamed runtime endpoint ID"),
         runtime::http::Method::GET,
     )
-    .path_segment("prepared")
+    .path("prepared")
     .query_values("value", ["first", "second"])
     .response::<runtime::Text>()
     .build()
@@ -192,7 +194,7 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
     let bytes_request: renamed_api::resources::CustomRequest = client
         .resources("renamed-scope".to_owned())
         .custom("custom-body".to_owned());
-    let _: runtime::endpoint::ResponseBytesRequest<_> = bytes_request.response_bytes();
+    let _: runtime::endpoint::AcceptedBytesRequest<_> = bytes_request.accepted_bytes();
     let _: renamed_api::resources::StreamUploadRequest =
         client.resources("renamed-scope".to_owned()).stream_upload(
             runtime::body::StreamBody::from_bytes(runtime::Bytes::from_static(b"renamed stream")),
@@ -203,7 +205,7 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
     let _: runtime::pagination::PaginatedRequest<_> = client
         .resources("renamed-scope".to_owned())
         .pages("renamed-page-body".to_owned())
-        .paginate(runtime::prelude::PageLimit::Take(1));
+        .paginate(runtime::prelude::PageLimit::Prefix(1));
     let multipart = runtime::body::MultipartBody::new()
         .part(
             "field",

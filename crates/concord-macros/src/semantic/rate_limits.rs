@@ -2,7 +2,7 @@ use super::Resolver;
 use super::SpanError;
 use super::model::{
     NormalizedConfig, NormalizedRateLimitDimension, NormalizedRateLimitPolicy,
-    NormalizedRateLimitWindow, ResolvedExpr, ValueReference, ValueShape,
+    NormalizedRateLimitWindow, RateLimitProfile, ResolvedExpr, ValuePresence, ValueReference,
 };
 use super::pagination::PaginationBoundValue;
 use super::surface::{canonical_ident, to_snake_case};
@@ -20,6 +20,7 @@ pub(super) struct RateLimitDefinition {
     id: String,
     explicit_id: bool,
     id_span: proc_macro2::Span,
+    formals: Vec<String>,
     dimensions: Vec<ResolvedDefinitionDimension>,
     cost: u32,
     windows: Vec<NormalizedRateLimitWindow>,
@@ -40,25 +41,35 @@ enum ResolvedDefinitionDimension {
     },
 }
 
-#[derive(Clone, Copy)]
-pub(super) enum RateLimitAttachmentSite {
-    Client,
-    Scope,
-    Endpoint,
+impl ResolvedDefinitionDimension {
+    fn public_name(&self) -> &str {
+        match self {
+            Self::Host { .. } => "host",
+            Self::Endpoint { .. } => "endpoint",
+            Self::Formal { public_name, .. } => public_name,
+        }
+    }
 }
 
-impl RateLimitAttachmentSite {
-    const fn name(self) -> &'static str {
-        match self {
-            Self::Client => "client",
-            Self::Scope => "scope",
-            Self::Endpoint => "endpoint",
+impl RateLimitDefinition {
+    pub(super) fn profile(&self) -> RateLimitProfile {
+        RateLimitProfile {
+            name: self.name.clone(),
+            id: self.id.clone(),
+            explicit_id: self.explicit_id,
+            formals: self.formals.clone(),
+            dimensions: self
+                .dimensions
+                .iter()
+                .map(|dimension| dimension.public_name().to_owned())
+                .collect(),
+            cost: self.cost,
+            windows: self.windows.clone(),
         }
     }
 }
 
 pub(super) struct RateLimitResolutionContext<'a> {
-    pub(super) attachment_site: RateLimitAttachmentSite,
     pub(super) id_path: &'a str,
     pub(super) lexical_origin: &'a str,
 }
@@ -135,6 +146,7 @@ pub(super) fn resolve_rate_limit_definitions(
                 id,
                 explicit_id,
                 id_span,
+                formals: definition.formals.iter().map(canonical_ident).collect(),
                 dimensions,
                 cost: definition.cost,
                 windows,
@@ -380,57 +392,17 @@ impl Resolver<'_> {
                 "a rate-limit key-part name permits 1-{MAX_RATE_LIMIT_KEY_PART_NAME_BYTES} UTF-8 bytes"
             )));
         }
-        match (canonical_ident(namespace).as_str(), context.attachment_site) {
-            ("scope", RateLimitAttachmentSite::Client) => {
-                let owner = if named_binding {
-                    "attachment"
-                } else {
-                    "declaration"
-                };
-                return Err(name.span().error(format!(
-                    "`{source_name}` is unavailable in a client rate-limit {owner}"
-                )));
-            }
-            ("ep", RateLimitAttachmentSite::Client | RateLimitAttachmentSite::Scope) => {
-                let owner = if named_binding {
-                    "attachment"
-                } else {
-                    "declaration"
-                };
-                return Err(name.span().error(format!(
-                    "`{source_name}` is unavailable in a {} rate-limit {owner}",
-                    context.attachment_site.name()
-                )));
-            }
-            _ => {}
-        }
+        let _ = context;
         let value = self.resolve_value_reference(namespace, name, scopes, endpoint)?;
-        match &value.shape {
-            ValueShape::Option { .. } | ValueShape::OptionVec { .. } => {
-                let message = if named_binding {
-                    format!(
-                        "rate-limit dimension `{logical_name}` bound to `{source_name}` must be a required or defaulted scalar; optional values are unsupported"
-                    )
-                } else {
-                    format!(
-                        "rate-limit dimension `{logical_name}` must be a required or defaulted scalar; optional values are unsupported"
-                    )
-                };
-                return Err(name.span().error(message));
-            }
-            ValueShape::Vec { .. } => {
-                let message = if named_binding {
-                    format!(
-                        "rate-limit dimension `{logical_name}` bound to `{source_name}` must be a scalar; vector values are unsupported"
-                    )
-                } else {
-                    format!(
-                        "rate-limit dimension `{logical_name}` must be a scalar; vector values are unsupported"
-                    )
-                };
-                return Err(name.span().error(message));
-            }
-            ValueShape::Scalar => {}
+        if matches!(value.presence, ValuePresence::Optional) {
+            let message = if named_binding {
+                format!(
+                    "rate-limit dimension `{logical_name}` bound to `{source_name}` cannot use a Concord-optional slot"
+                )
+            } else {
+                format!("rate-limit dimension `{logical_name}` cannot use a Concord-optional slot")
+            };
+            return Err(name.span().error(message));
         }
         Ok(NormalizedRateLimitDimension::Value {
             public_name: logical_name.to_owned(),
@@ -551,7 +523,7 @@ fn collect_resolved_expression_dependencies(
                 dependencies.push(value.reference);
             }
         }
-        ResolvedExpr::Format(values) => {
+        ResolvedExpr::Concat(values) => {
             for value in values {
                 collect_resolved_expression_dependencies(value, dependencies);
             }
@@ -578,18 +550,19 @@ mod tests {
     fn definition_registry_alone_does_not_request_a_runtime_limiter() {
         let source = crate::syntax::parse(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
                 rate_limits {
-                    rule unused_here { 1 / 1s; }
+                    unused_here() { allow 1 per 1s; }
                 }
-            }
-            GET read() -> Bytes;
-        })
+
+            GET read() -> Bytes using Bytes;
+        }})
         .expect("definition-only syntax");
 
         assert!(!super::source_tree_declares_rate_limits(
             &source.client.attachment_site,
-            &source.children
+            &source.client.children
         ));
     }
 
@@ -597,35 +570,40 @@ mod tests {
     fn reusable_rule_owns_stable_identity_dimensions_and_attachment_cost() {
         let api = test_support::resolve_tokens(quote! {
             client ReusableApi {
+                timeout off;
                 base "https://example.test";
-                vars { tenant: String; }
-                rate_limit use service_reads;
+                values { tenant: String; }
+                rate_limit service_reads();
                 rate_limits {
-                    rule account_reads {
+                    account_reads(account) {
                         id "service.account.read";
-                        by [host, endpoint, account];
-                        100 / 1m;
+                        key [host, endpoint, account];
+                        allow 100 per 1m;
                     }
-                    rule service_reads {
-                        10_000 / 1m;
+                    service_reads() {
+                        allow 10_000 per 1m;
                     }
                 }
-            }
+
             scope accounts(account: String) {
-                rate_limit use account_reads {
-                    account = scope.account;
-                }
-                GET read() -> Bytes;
+                rate_limit account_reads(account = accounts.account);
+                GET read() -> Bytes using Bytes;
             }
-            GET lookup(account: String) -> Bytes {
-                rate_limit use account_reads {
-                    cost 2;
-                    account = ep.account;
-                }
+            GET lookup(account: String) -> Bytes using Bytes {
+                rate_limit account_reads(account = endpoint.account) { cost 2; }
             }
-        });
+        }});
         let scoped = test_support::endpoint(&api.client.children, "read");
         let root = test_support::endpoint(&api.client.children, "lookup");
+
+        assert_eq!(api.client.rate_limit_profiles.len(), 2);
+        let account_profile = &api.client.rate_limit_profiles[0];
+        assert_eq!(account_profile.name, "account_reads");
+        assert_eq!(account_profile.id, "service.account.read");
+        assert_eq!(account_profile.formals, ["account"]);
+        assert_eq!(account_profile.dimensions, ["host", "endpoint", "account"]);
+        assert_eq!(account_profile.cost, 1);
+        assert_eq!(account_profile.windows.len(), 1);
 
         assert_eq!(scoped.config.rate_limits.len(), 2);
         assert_eq!(root.config.rate_limits.len(), 2);
@@ -681,18 +659,19 @@ mod tests {
     fn local_named_and_inline_attachments_preserve_source_order() {
         let api = test_support::resolve_tokens(quote! {
             client OrderedApi {
+                timeout off;
                 base "https://example.test";
                 rate_limits {
-                    rule first { 10 / 1m; }
-                    rule second { 20 / 1m; }
+                    first() { allow 10 per 1m; }
+                    second() { allow 20 per 1m; }
                 }
+
+            GET read() -> Bytes using Bytes {
+                rate_limit first();
+                rate_limit { allow 5 per 1s; }
+                rate_limit second() { cost 2; }
             }
-            GET read() -> Bytes {
-                rate_limit use first;
-                rate_limit { 5 / 1s; }
-                rate_limit use second { cost 2; }
-            }
-        });
+        }});
         let endpoint = test_support::endpoint(&api.client.children, "read");
         assert_eq!(
             endpoint
@@ -714,59 +693,59 @@ mod tests {
     fn reusable_rule_registry_rejects_unknown_unused_and_invalid_bindings() {
         let unknown = resolve_error(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
-                rate_limit use missing;
+                rate_limit missing();
             }
         });
         assert!(unknown.contains("unknown rate-limit profile `missing`"));
 
         let unused = resolve_error(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
                 rate_limits {
-                    rule unused { 1 / 1s; }
+                    unused() { allow 1 per 1s; }
                 }
-            }
-            GET read() -> Bytes;
-        });
+
+            GET read() -> Bytes using Bytes;
+        }});
         assert!(unused.contains("rate-limit profile `unused` is never attached"));
 
         let missing = resolve_error(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
                 rate_limits {
-                    rule shared { by [account]; 1 / 1s; }
+                    shared(account) { key [account]; allow 1 per 1s; }
                 }
-                rate_limit use shared;
+                rate_limit shared();
             }
         });
         assert!(missing.contains("requires a binding for dimension `account`"));
 
         let unknown_binding = resolve_error(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
-                vars { tenant: String; }
+                values { tenant: String; }
                 rate_limits {
-                    rule shared { by [account]; 1 / 1s; }
+                    shared(account) { key [account]; allow 1 per 1s; }
                 }
-                rate_limit use shared {
-                    tenant = vars.tenant;
-                }
+                rate_limit shared(tenant = client.tenant);
             }
         });
         assert!(unknown_binding.contains("unknown binding `tenant`"));
 
         let builtin_binding = resolve_error(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
-                vars { tenant: String; }
+                values { tenant: String; }
                 rate_limits {
-                    rule shared { by [host, account]; 1 / 1s; }
+                    shared(account) { key [host, account]; allow 1 per 1s; }
                 }
-                rate_limit use shared {
-                    host = vars.tenant;
-                    account = vars.tenant;
-                }
+                rate_limit shared(host = client.tenant, account = client.tenant);
             }
         });
         assert!(builtin_binding.contains("built-in rate-limit dimension `host` cannot be bound"));
@@ -776,112 +755,106 @@ mod tests {
     fn reusable_bindings_enforce_visibility_shape_pagination_and_cost() {
         let client_scope = resolve_error(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
                 rate_limits {
-                    rule shared { by [account]; 1 / 1s; }
+                    shared(account) { key [account]; allow 1 per 1s; }
                 }
-                rate_limit use shared {
-                    account = scope.account;
-                }
-            }
-            scope accounts(account: String) { GET read() -> Bytes; }
-        });
-        assert!(client_scope.contains("`scope.account` is unavailable in a client"));
+                rate_limit shared(account = accounts.account);
+
+            scope accounts(account: String) { GET read() -> Bytes using Bytes; }
+        }});
+        assert!(client_scope.contains("unknown value owner `accounts`"));
 
         let scope_endpoint = resolve_error(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
                 rate_limits {
-                    rule shared { by [account]; 1 / 1s; }
+                    shared(account) { key [account]; allow 1 per 1s; }
                 }
-            }
+
             scope accounts() {
-                rate_limit use shared {
-                    account = ep.account;
-                }
-                GET read(account: String) -> Bytes;
+                rate_limit shared(account = endpoint.account);
+                GET read(account: String) -> Bytes using Bytes;
             }
-        });
-        assert!(scope_endpoint.contains("`ep.account` is unavailable in a scope"));
+        }});
+        assert!(
+            scope_endpoint.contains("`endpoint.NAME` is available only while shaping an endpoint")
+        );
 
         let client_endpoint = resolve_error(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
                 rate_limits {
-                    rule shared { by [account]; 1 / 1s; }
+                    shared(account) { key [account]; allow 1 per 1s; }
                 }
-                rate_limit use shared {
-                    account = ep.account;
-                }
-            }
-            GET read(account: String) -> Bytes;
-        });
-        assert!(client_endpoint.contains("`ep.account` is unavailable in a client"));
+                rate_limit shared(account = endpoint.account);
+
+            GET read(account: String) -> Bytes using Bytes;
+        }});
+        assert!(
+            client_endpoint.contains("`endpoint.NAME` is available only while shaping an endpoint")
+        );
 
         let ambiguous_scope = resolve_error(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
                 rate_limits {
-                    rule shared { by [account]; 1 / 1s; }
+                    shared(account) { key [account]; allow 1 per 1s; }
+                }
+
+            scope branch(account: String) {
+                scope branch(account: String) {
+                    rate_limit shared(account = branch.account);
+                    GET read() -> Bytes using Bytes;
                 }
             }
-            scope outer(account: String) {
-                scope inner(account: String) {
-                    rate_limit use shared {
-                        account = scope.account;
-                    }
-                    GET read() -> Bytes;
+        }});
+        assert!(ambiguous_scope.contains("scope identifier `branch` duplicates an ancestor"));
+
+        let optional = resolve_error(quote! {
+            client Api {
+                timeout off;
+                base "https://example.test";
+                values { account?: String; }
+                rate_limits {
+                    shared(account) { key [account]; allow 1 per 1s; }
                 }
+                rate_limit shared(account = client.account);
             }
         });
-        assert!(ambiguous_scope.contains("ambiguous visible scope value `account`"));
-
-        for (ty, expected) in [
-            (quote!(Option<String>), "optional values are unsupported"),
-            (quote!(Vec<String>), "vector values are unsupported"),
-        ] {
-            let error = resolve_error(quote! {
-                client Api {
-                    base "https://example.test";
-                    vars { account: #ty; }
-                    rate_limits {
-                        rule shared { by [account]; 1 / 1s; }
-                    }
-                    rate_limit use shared {
-                        account = vars.account;
-                    }
-                }
-            });
-            assert!(error.contains(expected), "unexpected error: {error}");
-        }
+        assert!(optional.contains("cannot use a Concord-optional slot"));
 
         let pagination = resolve_error(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
                 rate_limits {
-                    rule shared { by [account]; 1 / 1s; }
+                    shared(account) { key [account]; allow 1 per 1s; }
+                }
+
+            GET list(account: String) -> Vec<u32> using crate::PageSpec {
+                rate_limit shared(account = endpoint.account);
+                paginate with crate::Cursor {
+                    account -> endpoint.account;
                 }
             }
-            GET list(account: String) -> crate::PageSpec {
-                rate_limit use shared {
-                    account = ep.account;
-                }
-                paginate crate::Cursor {
-                    account: bind ep.account,
-                }
-            }
-        });
+        }});
         assert!(pagination.contains(
             "pagination-controlled value `account` cannot partition a rate-limit policy"
         ));
 
         let cost = resolve_error(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
                 rate_limits {
-                    rule shared { 2 / 1s; }
+                    shared() { allow 2 per 1s; }
                 }
-                rate_limit use shared { cost 3; }
+                rate_limit shared() { cost 3; }
             }
         });
         assert!(cost.contains("cost override"));
@@ -891,17 +864,18 @@ mod tests {
     fn composes_rate_rules_in_lexical_order_with_contract_identity() {
         let api = test_support::resolve_tokens(quote! {
             client RateApi {
+                timeout off;
                 base "https://example.test";
-                rate_limit { 100 / 1m; }
-            }
+                rate_limit { allow 100 per 1m; }
+
             scope resources() {
-                rate_limit { cost 2; 20 / 1s; }
-                GET read() -> Bytes {
+                rate_limit { cost 2; allow 20 per 1s; }
+                GET read() -> Bytes using Bytes {
                     id "stable.read";
-                    rate_limit { 5 / 1s; }
+                    rate_limit { allow 5 per 1s; }
                 }
             }
-        });
+        }});
         let endpoint = test_support::endpoint(&api.client.children, "read");
 
         assert_eq!(
@@ -931,30 +905,32 @@ mod tests {
     fn explicit_ids_are_exact_and_stable_across_source_renames() {
         let original = test_support::resolve_tokens(quote! {
             client OriginalApi {
+                timeout off;
                 base "https://example.test";
-            }
+
             scope old_branch() {
-                GET old_endpoint() -> Bytes {
+                GET old_endpoint() -> Bytes using Bytes {
                     rate_limit {
                         id "riot.application";
-                        1 / 1s;
+                        allow 1 per 1s;
                     }
                 }
             }
-        });
+        }});
         let renamed = test_support::resolve_tokens(quote! {
             client RenamedApi {
+                timeout off;
                 base "https://example.test";
-            }
+
             scope new_branch() {
-                GET new_endpoint() -> Bytes {
+                GET new_endpoint() -> Bytes using Bytes {
                     rate_limit {
                         id "riot.application";
-                        1 / 1s;
+                        allow 1 per 1s;
                     }
                 }
             }
-        });
+        }});
         let original = test_support::endpoint(&original.client.children, "old_endpoint");
         let renamed = test_support::endpoint(&renamed.client.children, "new_endpoint");
 
@@ -968,29 +944,30 @@ mod tests {
     fn disjoint_explicit_id_reuse_accepts_identical_schema_and_different_costs() {
         let api = test_support::resolve_tokens(quote! {
             client SharedRateApi {
+                timeout off;
                 base "https://example.test";
-            }
+
             scope first() {
                 rate_limit {
                     id "riot.shared";
-                    by [host, endpoint];
+                    key [host, endpoint];
                     cost 1;
-                    10 / 1s;
-                    100 / 1m;
+                    allow 10 per 1s;
+                    allow 100 per 1m;
                 }
-                GET read() -> Bytes;
+                GET read() -> Bytes using Bytes;
             }
             scope second() {
                 rate_limit {
                     cost 2;
-                    by [host, endpoint];
+                    key [host, endpoint];
                     id "riot.shared";
-                    10 / 1s;
-                    100 / 1m;
+                    allow 10 per 1s;
+                    allow 100 per 1m;
                 }
-                GET write() -> Bytes;
+                GET write() -> Bytes using Bytes;
             }
-        });
+        }});
         let first = test_support::endpoint(&api.client.children, "read");
         let second = test_support::endpoint(&api.client.children, "write");
         assert_eq!(first.config.rate_limits[0].id, "riot.shared");
@@ -1001,29 +978,30 @@ mod tests {
 
     #[test]
     fn explicit_id_reuse_rejects_different_dimension_names_or_order() {
-        for second_dimensions in [quote!(endpoint, host), quote!(host, vars.tenant)] {
+        for second_dimensions in [quote!(endpoint, host), quote!(host, client.tenant)] {
             let error = resolve_error(quote! {
                 client SharedRateApi {
+                    timeout off;
                     base "https://example.test";
-                    vars { tenant: String; }
-                }
+                    values { tenant: String; }
+
                 scope first() {
                     rate_limit {
                         id "riot.shared";
-                        by [host, endpoint];
-                        10 / 1s;
+                        key [host, endpoint];
+                        allow 10 per 1s;
                     }
-                    GET read() -> Bytes;
+                    GET read() -> Bytes using Bytes;
                 }
                 scope second() {
                     rate_limit {
                         id "riot.shared";
-                        by [#second_dimensions];
-                        10 / 1s;
+                        key [#second_dimensions];
+                        allow 10 per 1s;
                     }
-                    GET write() -> Bytes;
+                    GET write() -> Bytes using Bytes;
                 }
-            });
+            }});
             assert!(error.contains(
                 "rate-limit ID `riot.shared` is reused with incompatible ordered dimensions or windows"
             ));
@@ -1032,27 +1010,31 @@ mod tests {
 
     #[test]
     fn explicit_id_reuse_rejects_different_windows_or_window_order() {
-        for second_windows in [quote!(10 / 1s; 101 / 1m;), quote!(100 / 1m; 10 / 1s;)] {
+        for second_windows in [
+            quote!(allow 10 per 1s; allow 101 per 1m;),
+            quote!(allow 100 per 1m; allow 10 per 1s;),
+        ] {
             let error = resolve_error(quote! {
                 client SharedRateApi {
+                    timeout off;
                     base "https://example.test";
-                }
+
                 scope first() {
                     rate_limit {
                         id "riot.shared";
-                        10 / 1s;
-                        100 / 1m;
+                        allow 10 per 1s;
+                        allow 100 per 1m;
                     }
-                    GET read() -> Bytes;
+                    GET read() -> Bytes using Bytes;
                 }
                 scope second() {
                     rate_limit {
                         id "riot.shared";
                         #second_windows
                     }
-                    GET write() -> Bytes;
+                    GET write() -> Bytes using Bytes;
                 }
-            });
+            }});
             assert!(error.contains(
                 "rate-limit ID `riot.shared` is reused with incompatible ordered dimensions or windows"
             ));
@@ -1063,22 +1045,23 @@ mod tests {
     fn explicit_id_cannot_incompatibly_reuse_a_disjoint_derived_id() {
         let error = resolve_error(quote! {
             client SharedRateApi {
+                timeout off;
                 base "https://example.test";
-            }
+
             scope first() {
                 rate_limit {
-                    10 / 1s;
+                    allow 10 per 1s;
                 }
-                GET read() -> Bytes;
+                GET read() -> Bytes using Bytes;
             }
             scope second() {
                 rate_limit {
                     id "shared_rate_api.first.rate_limit";
-                    20 / 1s;
+                    allow 20 per 1s;
                 }
-                GET write() -> Bytes;
+                GET write() -> Bytes using Bytes;
             }
-        });
+        }});
 
         assert!(error.contains(
             "rate-limit ID `shared_rate_api.first.rate_limit` is reused with incompatible ordered dimensions or windows"
@@ -1089,20 +1072,21 @@ mod tests {
     fn repeated_explicit_id_in_one_effective_plan_is_rejected_first() {
         let error = resolve_error(quote! {
             client SharedRateApi {
+                timeout off;
                 base "https://example.test";
                 rate_limit {
                     id "riot.shared";
-                    10 / 1s;
+                    allow 10 per 1s;
                 }
-            }
-            GET read() -> Bytes {
+
+            GET read() -> Bytes using Bytes {
                 rate_limit {
                     id "riot.shared";
                     cost 2;
-                    10 / 1s;
+                    allow 10 per 1s;
                 }
             }
-        });
+        }});
 
         assert!(error.contains("an effective rate-limit plan contains a duplicate policy ID"));
     }
@@ -1111,45 +1095,48 @@ mod tests {
     fn client_rule_rejects_scope_reference() {
         let error = resolve_error(quote! {
             client RateApi {
+                timeout off;
                 base "https://example.test";
-                rate_limit { by [scope.region]; 1 / 1s; }
-            }
-            scope regional(region: String) {
-                GET read() -> Bytes;
-            }
-        });
+                rate_limit { key [scope.region]; allow 1 per 1s; }
 
-        assert!(error.contains("`scope.region` is unavailable in a client"));
+            scope regional(region: String) {
+                GET read() -> Bytes using Bytes;
+            }
+        }});
+
+        assert!(error.contains("v1 `scope.NAME` was removed"));
     }
 
     #[test]
     fn client_rule_rejects_endpoint_reference() {
         let error = resolve_error(quote! {
             client RateApi {
+                timeout off;
                 base "https://example.test";
-                rate_limit { by [ep.account]; 1 / 1s; }
-            }
-            GET read(account: String) -> Bytes;
-        });
+                rate_limit { key [endpoint.account]; allow 1 per 1s; }
 
-        assert!(error.contains("`ep.account` is unavailable in a client"));
+            GET read(account: String) -> Bytes using Bytes;
+        }});
+
+        assert!(error.contains("`endpoint.NAME` is available only while shaping an endpoint"));
     }
 
     #[test]
     fn scope_rule_accepts_visible_scope_value() {
         let api = test_support::resolve_tokens(quote! {
             client RateApi {
+                timeout off;
                 base "https://example.test";
-                vars { tenant: String; }
-            }
+                values { tenant: String; }
+
             scope regional(region: String, shard: u32 = 1) {
                 rate_limit {
-                    by [host, endpoint, vars.tenant, scope.region, scope.shard];
-                    1 / 1s;
+                    key [host, endpoint, client.tenant, regional.region, regional.shard];
+                    allow 1 per 1s;
                 }
-                GET read() -> Bytes;
+                GET read() -> Bytes using Bytes;
             }
-        });
+        }});
         let endpoint = test_support::endpoint(&api.client.children, "read");
         let dimensions = &endpoint.config.rate_limits[0].dimensions;
 
@@ -1167,7 +1154,7 @@ mod tests {
                 public_name,
                 reference: ValueReference::Client(0),
                 ..
-            } if public_name == "vars.tenant"
+            } if public_name == "client.tenant"
         ));
         assert!(matches!(
             &dimensions[3],
@@ -1178,7 +1165,7 @@ mod tests {
                     parameter: 0,
                 },
                 ..
-            } if public_name == "scope.region"
+            } if public_name == "regional.region"
         ));
         assert!(matches!(
             &dimensions[4],
@@ -1189,39 +1176,41 @@ mod tests {
                     parameter: 1,
                 },
                 ..
-            } if public_name == "scope.shard"
+            } if public_name == "regional.shard"
         ));
     }
 
     #[test]
     fn scope_rule_rejects_endpoint_reference() {
         let error = resolve_error(quote! {
-            client RateApi { base "https://example.test"; }
+            client RateApi {
+                timeout off; base "https://example.test";
             scope regional(region: String) {
-                rate_limit { by [ep.account]; 1 / 1s; }
-                GET read(account: String) -> Bytes;
+                rate_limit { key [endpoint.account]; allow 1 per 1s; }
+                GET read(account: String) -> Bytes using Bytes;
             }
-        });
+        }});
 
-        assert!(error.contains("`ep.account` is unavailable in a scope"));
+        assert!(error.contains("`endpoint.NAME` is available only while shaping an endpoint"));
     }
 
     #[test]
     fn endpoint_rule_accepts_client_scope_and_endpoint_values() {
         let api = test_support::resolve_tokens(quote! {
             client RateApi {
+                timeout off;
                 base "https://example.test";
-                vars { tenant: String; }
-            }
+                values { tenant: String; }
+
             scope regional(region: String) {
-                GET read(account: String, weight: u32 = 1) -> Bytes {
+                GET read(account: String, weight: u32 = 1) -> Bytes using Bytes {
                     rate_limit {
-                        by [vars.tenant, scope.region, ep.account, ep.weight];
-                        1 / 1s;
+                        key [client.tenant, regional.region, endpoint.account, endpoint.weight];
+                        allow 1 per 1s;
                     }
                 }
             }
-        });
+        }});
         let endpoint = test_support::endpoint(&api.client.children, "read");
         let dimensions = &endpoint.config.rate_limits[0].dimensions;
 
@@ -1261,160 +1250,161 @@ mod tests {
     #[test]
     fn ambiguous_scope_dimension_is_rejected() {
         let error = resolve_error(quote! {
-            client RateApi { base "https://example.test"; }
-            scope outer(account: String) {
-                scope inner(account: String) {
-                    rate_limit { by [scope.account]; 1 / 1s; }
-                    GET read() -> Bytes;
+            client RateApi {
+                timeout off; base "https://example.test";
+            scope branch(account: String) {
+                scope branch(account: String) {
+                    rate_limit { key [branch.account]; allow 1 per 1s; }
+                    GET read() -> Bytes using Bytes;
                 }
             }
-        });
+        }});
 
-        assert!(error.contains("ambiguous visible scope value `account`"));
+        assert!(error.contains("scope identifier `branch` duplicates an ancestor"));
     }
 
     #[test]
     fn optional_dimension_is_rejected() {
         let error = resolve_error(quote! {
             client RateApi {
+                timeout off;
                 base "https://example.test";
-                vars { tenant: Option<String>; }
-                rate_limit { by [vars.tenant]; 1 / 1s; }
+                values { tenant?: String; }
+                rate_limit { key [client.tenant]; allow 1 per 1s; }
             }
         });
 
-        assert!(error.contains("optional values are unsupported"));
+        assert!(error.contains("cannot use a Concord-optional slot"));
     }
 
     #[test]
-    fn vector_dimension_is_rejected() {
-        let error = resolve_error(quote! {
+    fn vector_payload_is_not_classified_by_the_macro() {
+        let api = test_support::resolve_tokens(quote! {
             client RateApi {
+                timeout off;
                 base "https://example.test";
-                vars { tenants: Vec<String>; }
-                rate_limit { by [vars.tenants]; 1 / 1s; }
+                values { tenants: Vec<String>; }
+                rate_limit { key [client.tenants]; allow 1 per 1s; }
             }
         });
 
-        assert!(error.contains("vector values are unsupported"));
+        assert_eq!(api.client.config.rate_limits.len(), 1);
     }
 
     #[test]
     fn endpoint_rule_rejects_pagination_bound_endpoint_value() {
         let error = resolve_error(quote! {
-            client RateApi { base "https://example.test"; }
-            GET list(cursor: String) -> crate::PageSpec {
-                rate_limit { by [ep.cursor]; 1 / 1s; }
-                paginate crate::Cursor {
-                    cursor: bind ep.cursor,
+            client RateApi {
+                timeout off; base "https://example.test";
+            GET list(cursor: String) -> Vec<u32> using crate::PageSpec {
+                rate_limit { key [endpoint.cursor]; allow 1 per 1s; }
+                paginate with crate::Cursor {
+                    cursor -> endpoint.cursor;
                 }
             }
-        });
+        }});
 
         assert!(error.contains(
-            "pagination-controlled value `ep.cursor` cannot partition a rate-limit policy"
+            "pagination-controlled value `endpoint.cursor` cannot partition a rate-limit policy"
         ));
     }
 
     #[test]
     fn endpoint_rule_rejects_pagination_bound_scope_value() {
         let error = resolve_error(quote! {
-            client RateApi { base "https://example.test"; }
+            client RateApi {
+                timeout off; base "https://example.test";
             scope pages(cursor: String) {
-                GET list() -> crate::PageSpec {
-                    rate_limit { by [scope.cursor]; 1 / 1s; }
-                    paginate crate::Cursor {
-                        cursor: bind scope.cursor,
+                GET list() -> Vec<u32> using crate::PageSpec {
+                    rate_limit { key [pages.cursor]; allow 1 per 1s; }
+                    paginate with crate::Cursor {
+                        cursor -> pages.cursor;
                     }
                 }
             }
-        });
+        }});
 
-        assert!(error.contains(
-            "pagination-controlled value `scope.cursor` cannot partition a rate-limit policy"
-        ));
+        assert!(error.contains("live pagination binding may update only an endpoint-owned slot"));
     }
 
     #[test]
     fn endpoint_rule_rejects_pagination_bound_client_value() {
         let error = resolve_error(quote! {
             client RateApi {
+                timeout off;
                 base "https://example.test";
-                vars { cursor: String; }
-            }
-            GET list() -> crate::PageSpec {
-                rate_limit { by [vars.cursor]; 1 / 1s; }
-                paginate crate::Cursor {
-                    cursor: bind vars.cursor,
+                values { cursor: String; }
+
+            GET list() -> Vec<u32> using crate::PageSpec {
+                rate_limit { key [client.cursor]; allow 1 per 1s; }
+                paginate with crate::Cursor {
+                    cursor -> client.cursor;
                 }
             }
-        });
+        }});
 
-        assert!(error.contains(
-            "pagination-controlled value `vars.cursor` cannot partition a rate-limit policy"
-        ));
+        assert!(error.contains("live pagination binding may update only an endpoint-owned slot"));
     }
 
     #[test]
     fn inherited_scope_rule_rejects_pagination_bound_scope_value() {
         let error = resolve_error(quote! {
-            client RateApi { base "https://example.test"; }
+            client RateApi {
+                timeout off; base "https://example.test";
             scope pages(cursor: String) {
-                rate_limit { by [scope.cursor]; 1 / 1s; }
-                GET list() -> crate::PageSpec {
-                    paginate crate::Cursor {
-                        cursor: bind scope.cursor,
+                rate_limit { key [pages.cursor]; allow 1 per 1s; }
+                GET list() -> Vec<u32> using crate::PageSpec {
+                    paginate with crate::Cursor {
+                        cursor -> pages.cursor;
                     }
                 }
             }
-        });
+        }});
 
-        assert!(error.contains(
-            "pagination-controlled value `scope.cursor` cannot partition a rate-limit policy"
-        ));
+        assert!(error.contains("live pagination binding may update only an endpoint-owned slot"));
     }
 
     #[test]
     fn inherited_client_rule_rejects_pagination_bound_client_value() {
         let error = resolve_error(quote! {
             client RateApi {
+                timeout off;
                 base "https://example.test";
-                vars { cursor: String; }
-                rate_limit { by [vars.cursor]; 1 / 1s; }
-            }
-            GET list() -> crate::PageSpec {
-                paginate crate::Cursor {
-                    cursor: bind vars.cursor,
+                values { cursor: String; }
+                rate_limit { key [client.cursor]; allow 1 per 1s; }
+
+            GET list() -> Vec<u32> using crate::PageSpec {
+                paginate with crate::Cursor {
+                    cursor -> client.cursor;
                 }
             }
-        });
+        }});
 
-        assert!(error.contains(
-            "pagination-controlled value `vars.cursor` cannot partition a rate-limit policy"
-        ));
+        assert!(error.contains("live pagination binding may update only an endpoint-owned slot"));
     }
 
     #[test]
     fn unrelated_pagination_leaves_client_scope_and_endpoint_dimensions_valid() {
         let api = test_support::resolve_tokens(quote! {
             client RateApi {
+                timeout off;
                 base "https://example.test";
-                vars {
+                values {
                     tenant: String;
                 }
-            }
+
             scope pages(region: String) {
-                GET list(account: String, cursor: String) -> crate::PageSpec {
+                GET list(account: String, cursor: String) -> Vec<u32> using crate::PageSpec {
                     rate_limit {
-                        by [vars.tenant, scope.region, ep.account];
-                        1 / 1s;
+                        key [client.tenant, pages.region, endpoint.account];
+                        allow 1 per 1s;
                     }
-                    paginate crate::Cursor {
-                        endpoint_cursor: bind ep.cursor,
+                    paginate with crate::Cursor {
+                        endpoint_cursor -> endpoint.cursor;
                     }
                 }
             }
-        });
+        }});
         let endpoint = test_support::endpoint(&api.client.children, "list");
 
         assert_eq!(endpoint.config.rate_limits[0].dimensions.len(), 3);
@@ -1424,15 +1414,16 @@ mod tests {
     fn host_dimension_accepts_static_host_with_unrelated_pagination() {
         let api = test_support::resolve_tokens(quote! {
             client RateApi {
+                timeout off;
                 base "https://example.test";
-                rate_limit { by [host]; 1 / 1s; }
-            }
-            GET list(cursor: String) -> crate::PageSpec {
-                paginate crate::Cursor {
-                    cursor: bind ep.cursor,
+                rate_limit { key [host]; allow 1 per 1s; }
+
+            GET list(cursor: String) -> Vec<u32> using crate::PageSpec {
+                paginate with crate::Cursor {
+                    cursor -> endpoint.cursor;
                 }
             }
-        });
+        }});
 
         assert_eq!(
             test_support::endpoint(&api.client.children, "list")
@@ -1446,17 +1437,18 @@ mod tests {
     #[test]
     fn host_dimension_accepts_dynamic_non_pagination_dependency() {
         let api = test_support::resolve_tokens(quote! {
-            client RateApi { base "https://example.test"; }
-            scope pages(region: String, cursor: String) {
-                host [scope.region, "api"];
-                rate_limit { by [host]; 1 / 1s; }
-                GET list() -> crate::PageSpec {
-                    paginate crate::Cursor {
-                        cursor: bind scope.cursor,
+            client RateApi {
+                timeout off; base "https://example.test";
+            scope pages(region: String) {
+                subdomain [pages.region, "api"];
+                rate_limit { key [host]; allow 1 per 1s; }
+                GET list(cursor: String) -> Vec<u32> using crate::PageSpec {
+                    paginate with crate::Cursor {
+                        cursor -> endpoint.cursor;
                     }
                 }
             }
-        });
+        }});
 
         assert_eq!(
             test_support::endpoint(&api.client.children, "list")
@@ -1471,98 +1463,99 @@ mod tests {
     fn host_dimension_rejects_pagination_bound_client_host_input() {
         let error = resolve_error(quote! {
             client RateApi {
+                timeout off;
                 base "https://example.test";
-                vars { region: String; }
-                host [vars.region, "api"];
-                rate_limit { by [host]; 1 / 1s; }
-            }
-            GET list() -> crate::PageSpec {
-                paginate crate::Cursor {
-                    region: bind vars.region,
+                values { region: String; }
+                subdomain [client.region, "api"];
+                rate_limit { key [host]; allow 1 per 1s; }
+
+            GET list() -> Vec<u32> using crate::PageSpec {
+                paginate with crate::Cursor {
+                    region -> client.region;
                 }
             }
-        });
+        }});
 
-        assert!(error.contains(
-            "`host` cannot partition this rate-limit policy because final host shaping depends on pagination-controlled value `vars.region`"
-        ));
+        assert!(error.contains("live pagination binding may update only an endpoint-owned slot"));
     }
 
     #[test]
     fn host_dimension_rejects_pagination_bound_scope_host_input() {
         let error = resolve_error(quote! {
-            client RateApi { base "https://example.test"; }
+            client RateApi {
+                timeout off; base "https://example.test";
             scope pages(region: String) {
-                host [scope.region, "api"];
-                rate_limit { by [host]; 1 / 1s; }
-                GET list() -> crate::PageSpec {
-                    paginate crate::Cursor {
-                        region: bind scope.region,
+                subdomain [pages.region, "api"];
+                rate_limit { key [host]; allow 1 per 1s; }
+                GET list() -> Vec<u32> using crate::PageSpec {
+                    paginate with crate::Cursor {
+                        region -> pages.region;
                     }
                 }
             }
-        });
+        }});
 
-        assert!(error.contains(
-            "`host` cannot partition this rate-limit policy because final host shaping depends on pagination-controlled value `scope.region`"
-        ));
+        assert!(error.contains("live pagination binding may update only an endpoint-owned slot"));
     }
 
     #[test]
     fn host_dimension_rejects_pagination_bound_endpoint_host_input() {
         let error = resolve_error(quote! {
-            client RateApi { base "https://example.test"; }
-            GET list(region: String) -> crate::PageSpec {
-                host [ep.region, "api"];
-                rate_limit { by [host]; 1 / 1s; }
-                paginate crate::Cursor {
-                    region: bind ep.region,
+            client RateApi {
+                timeout off; base "https://example.test";
+            GET list(region: String) -> Vec<u32> using crate::PageSpec {
+                subdomain [endpoint.region, "api"];
+                rate_limit { key [host]; allow 1 per 1s; }
+                paginate with crate::Cursor {
+                    region -> endpoint.region;
                 }
             }
-        });
+        }});
 
         assert!(error.contains(
-            "`host` cannot partition this rate-limit policy because final host shaping depends on pagination-controlled value `ep.region`"
+            "`host` cannot partition this rate-limit policy because final host shaping depends on pagination-controlled value `endpoint.region`"
         ));
     }
 
     #[test]
     fn formatted_host_dependency_is_detected_recursively() {
         let error = resolve_error(quote! {
-            client RateApi { base "https://example.test"; }
-            scope pages(region: String) {
-                host [fmt["edge-", fmt["regional-", scope.region]]];
-                rate_limit { by [host]; 1 / 1s; }
-                GET list() -> crate::PageSpec {
-                    paginate crate::Cursor {
-                        region: bind scope.region,
+            client RateApi {
+                timeout off; base "https://example.test";
+            scope pages() {
+                rate_limit { key [host]; allow 1 per 1s; }
+                GET list(region: String) -> Vec<u32> using crate::PageSpec {
+                    subdomain [concat["edge-", concat["regional-", endpoint.region]]];
+                    paginate with crate::Cursor {
+                        region -> endpoint.region;
                     }
                 }
             }
-        });
+        }});
 
-        assert!(error.contains("pagination-controlled value `scope.region`"));
+        assert!(error.contains("pagination-controlled value `endpoint.region`"));
     }
 
     #[test]
     fn inherited_host_dimension_is_revalidated_at_endpoint() {
         let error = resolve_error(quote! {
             client RateApi {
+                timeout off;
                 base "https://example.test";
-                rate_limit { by [host]; 1 / 1s; }
-            }
-            scope pages(region: String) {
-                host [scope.region, "api"];
-                GET list() -> crate::PageSpec {
-                    paginate crate::Cursor {
-                        region: bind scope.region,
+                rate_limit { key [host]; allow 1 per 1s; }
+
+            scope pages() {
+                GET list(region: String) -> Vec<u32> using crate::PageSpec {
+                    subdomain [endpoint.region, "api"];
+                    paginate with crate::Cursor {
+                        region -> endpoint.region;
                     }
                 }
             }
-        });
+        }});
 
         assert!(error.contains(
-            "`host` cannot partition this rate-limit policy because final host shaping depends on pagination-controlled value `scope.region`"
+            "`host` cannot partition this rate-limit policy because final host shaping depends on pagination-controlled value `endpoint.region`"
         ));
     }
 
@@ -1570,15 +1563,16 @@ mod tests {
     fn secret_dimension_is_rejected() {
         let error = resolve_error(quote! {
             client RateApi {
+                timeout off;
                 base "https://example.test";
                 credentials {
-                    secret token: String;
+                    secret token;
                     credential bearer = bearer(secret.token);
                 }
-                rate_limit { by [secret.token]; 1 / 1s; }
+                rate_limit { key [secret.token]; allow 1 per 1s; }
             }
         });
 
-        assert!(error.contains("unknown rate-limit dimension namespace `secret`"));
+        assert!(error.contains("secrets and credentials cannot be rate-limit dimensions"));
     }
 }

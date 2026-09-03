@@ -2,7 +2,7 @@ use quote::quote;
 
 use super::model::{
     CloneEligibility, PaginationInitializer, PaginationValue, RequiredArgument,
-    ResolvedAuthPlacement, ResolvedChallengePolicy, ResolvedValue, ValueReference, ValueShape,
+    ResolvedAuthPlacement, ResolvedChallengePolicy, ResolvedValue, ValuePresence, ValueReference,
 };
 use super::*;
 use crate::syntax as parse;
@@ -16,25 +16,26 @@ fn resolve_ok(tokens: proc_macro2::TokenStream) -> Api {
 fn rate_limit_normalization_inherits_lexical_order_and_static_values() {
     let api = resolve_ok(quote! {
         client RateApi {
+            timeout off;
             base "https://example.test";
             rate_limit {
-                500 / 10s;
-                30000 / 10m;
+                allow 500 per 10s;
+                allow 30000 per 10m;
             }
-        }
+
         scope regions(region: String) {
             rate_limit {
                 cost 2;
-                20 / 1s;
+                allow 20 per 1s;
             }
-            GET read(id: String) -> Bytes {
+            GET read(id: String) -> Bytes using Bytes {
                 rate_limit {
-                    5 / 1s;
+                    allow 5 per 1s;
                 }
             }
-            GET public() -> Bytes;
+            GET public() -> Bytes using Bytes;
         }
-    });
+    }});
     let client = &api.client;
     assert!(client.requires_limiter);
     let client_rule = &client.config.rate_limits;
@@ -73,14 +74,15 @@ fn rate_limit_normalization_inherits_lexical_order_and_static_values() {
 fn rate_limit_normalization_does_not_resolve_request_values() {
     let api = resolve_ok(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
-        }
+
         scope regions(region: String) {
-            GET read(item: String) -> Bytes {
-                rate_limit { 1 / 1s; }
+            GET read(item: String) -> Bytes using Bytes {
+                rate_limit { allow 1 per 1s; }
             }
         }
-    });
+    }});
     let Child::Scope(scope) = &api.client.children[0] else {
         panic!("scope")
     };
@@ -103,17 +105,15 @@ fn rate_limit_normalization_does_not_resolve_request_values() {
 fn rate_limit_requires_a_complete_inline_or_named_attachment() {
     let syntax = parse::parse(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
             rate_limit missing;
         }
     })
     .err()
     .expect("incomplete attachment");
-    assert!(
-        syntax
-            .to_string()
-            .contains("`rate_limit { ... }` or `rate_limit use RULE")
-    );
+    let message = syntax.to_string();
+    assert!(message.contains("named rate-limit attachment"), "{message}");
 }
 
 #[test]
@@ -121,18 +121,21 @@ fn rate_limit_normalization_rejects_the_first_excess_effective_rule() {
     let mut source = String::from(
         r#"
             client RateApi {
+                timeout off;
                 base "https://example.test";
-                rate_limit { 1 / 1s; }
-            }
+                rate_limit { id "p.0"; allow 1 per 1s; }
         "#,
     );
-    for _ in 1..MAX_RATE_LIMIT_POLICIES_PER_PLAN {
-        source.push_str("scope s() { rate_limit { 1 / 1s; }");
+    for index in 1..MAX_RATE_LIMIT_POLICIES_PER_PLAN {
+        source.push_str(&format!(
+            "scope s{index}() {{ rate_limit {{ id \"p.{index}\"; allow 1 per 1s; }}"
+        ));
     }
-    source.push_str("GET read() -> Bytes { rate_limit { 1 / 1s; } }");
+    source.push_str(&format!("GET read() -> Bytes using Bytes {{ rate_limit {{ id \"p.{MAX_RATE_LIMIT_POLICIES_PER_PLAN}\"; allow 1 per 1s; }} }}"));
     for _ in 1..MAX_RATE_LIMIT_POLICIES_PER_PLAN {
         source.push('}');
     }
+    source.push('}');
     let tokens = source
         .parse::<proc_macro2::TokenStream>()
         .expect("test token stream");
@@ -141,10 +144,10 @@ fn rate_limit_normalization_rejects_the_first_excess_effective_rule() {
         .err()
         .expect("first excess effective rate-limit policy");
 
+    let message = error.to_string();
     assert!(
-        error
-            .to_string()
-            .contains("an effective rate-limit plan permits at most 64 policies")
+        message.contains("an effective rate-limit plan permits at most 64 policies"),
+        "{message}"
     );
 }
 
@@ -152,14 +155,15 @@ fn rate_limit_normalization_rejects_the_first_excess_effective_rule() {
 fn rate_limit_normalization_rejects_duplicate_effective_ids() {
     let source = parse::parse(quote! {
         client RateApi {
+            timeout off;
             base "https://example.test";
-            rate_limit { 1 / 1s; }
-        }
-        GET read() -> Bytes {
+            rate_limit { allow 1 per 1s; }
+
+        GET read() -> Bytes using Bytes {
             id "rate_api";
-            rate_limit { 1 / 1s; }
+            rate_limit { allow 1 per 1s; }
         }
-    })
+    }})
     .expect("source syntax");
     let error = resolve(source)
         .err()
@@ -182,8 +186,9 @@ fn rate_limit_normalization_rejects_the_first_excess_id_byte() {
     let tokens = format!(
         r#"
             client {client_name} {{
+                timeout off;
                 base "https://example.test";
-                rate_limit {{ 1 / 1s; }}
+                rate_limit {{ allow 1 per 1s; }}
             }}
         "#
     )
@@ -205,19 +210,20 @@ fn rate_limit_normalization_rejects_the_first_excess_id_byte() {
 fn normalization_removes_attachment_site_operations_and_preserves_order() {
     let api = resolve_ok(quote! {
         client ShapeApi {
+            timeout off;
             base "https://example.test/root";
-            vars { tenant: String; }
+            values { tenant: String; }
             path ["v1"];
             query { "first" = "one"; "replace" = "old"; }
             headers { "X-First" = "one"; }
-        }
+
         scope users(region: String) {
-            path replace ["users", scope.region];
-            query { remove "replace"; "second" = vars.tenant; }
-            headers replace { "X-Second" = scope.region; }
-            GET by_id(id: String) -> Bytes { path [ep.id]; timeout 2s; }
+            path replace ["users", users.region];
+            query { remove "replace"; "second" = client.tenant; }
+            headers replace { "X-Second" = users.region; }
+            GET by_id(id: String) -> Bytes using Bytes { path [endpoint.id]; timeout 2s; }
         }
-    });
+    }});
     let Child::Scope(scope) = &api.client.children[0] else {
         panic!("scope")
     };
@@ -246,33 +252,35 @@ fn lexical_resolution_rejects_ambiguous_visible_scope_names() {
     let error = resolve(
         parse::parse(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
-            }
-            scope outer(id: String) {
-                scope inner(id: String) {
-                    GET read() -> Bytes { path [scope.id]; }
+
+            scope branch(id: String) {
+                scope branch(id: String) {
+                    GET read() -> Bytes using Bytes { path [branch.id]; }
                 }
             }
-        })
+        }})
         .expect("AST"),
     )
     .err()
     .expect("ambiguous scope name");
-    assert!(error.to_string().contains("ambiguous visible scope value"));
+    assert!(error.to_string().contains("duplicates an ancestor"));
 }
 
 #[test]
 fn endpoint_surfaces_include_final_paths_names_and_capabilities() {
     let api = resolve_ok(quote! {
         client ExampleApi {
+            timeout off;
             base "https://example.test";
-        }
+
         scope regions(region: String) {
             scope users(tenant: String) {
-                GET fetch(verbose: Option<bool>) -> Bytes;
+                GET fetch(verbose?: bool) -> Bytes using Bytes;
             }
         }
-    });
+    }});
     let Child::Scope(regions) = &api.client.children[0] else {
         panic!()
     };
@@ -314,18 +322,18 @@ fn endpoint_surfaces_include_final_paths_names_and_capabilities() {
 }
 
 #[test]
-fn normalization_resolves_replace_remove_off_and_type_shapes() {
+fn normalization_resolves_replace_remove_off_and_explicit_presence() {
     let api = resolve_ok(quote! {
         client AttachmentApi {
             base "https://example.test/fixed";
-            host ["client"];
+            subdomain ["client"];
             path ["client"];
             query { "keep" = "client"; "change" = "client"; }
             headers { "X-Keep" = "client"; "X-Change" = "client"; }
             timeout 5s;
-        }
+
         scope shaped() {
-            host off;
+            subdomain off;
             path replace ["scope"];
             query {
                 "change" = "scope";
@@ -338,23 +346,23 @@ fn normalization_resolves_replace_remove_off_and_type_shapes() {
             timeout off;
             GET modified(
                 scalar: String,
-                optional: Option<String>,
+                optional?: String,
                 vector: Vec<String>,
-                optional_vector: Option<Vec<String>>,
-            ) -> Bytes;
-            GET cleared() -> Bytes {
-                host ["endpoint"];
+                optional_vector?: Vec<String>,
+            ) -> Bytes using Bytes;
+            GET cleared() -> Bytes using Bytes {
+                subdomain ["endpoint"];
                 path off;
                 query off;
                 headers off;
                 timeout 1ms;
             }
-            GET replaced() -> Bytes {
+            GET replaced() -> Bytes using Bytes {
                 query replace { "only" = "endpoint"; }
                 headers replace { "X-Only" = "endpoint"; }
             }
         }
-    });
+    }});
     let Child::Scope(scope) = &api.client.children[0] else {
         panic!("scope")
     };
@@ -382,18 +390,21 @@ fn normalization_resolves_replace_remove_off_and_type_shapes() {
         ["x-keep", "x-change", "x-local"]
     );
     assert_eq!(modified.config.timeout, None);
-    assert!(matches!(modified.parameters[0].shape, ValueShape::Scalar));
     assert!(matches!(
-        modified.parameters[1].shape,
-        ValueShape::Option { .. }
+        modified.parameters[0].presence,
+        ValuePresence::Required
     ));
     assert!(matches!(
-        modified.parameters[2].shape,
-        ValueShape::Vec { .. }
+        modified.parameters[1].presence,
+        ValuePresence::Optional
     ));
     assert!(matches!(
-        modified.parameters[3].shape,
-        ValueShape::OptionVec { .. }
+        modified.parameters[2].presence,
+        ValuePresence::Required
+    ));
+    assert!(matches!(
+        modified.parameters[3].presence,
+        ValuePresence::Optional
     ));
 
     let Child::Endpoint(cleared) = &scope.children[1] else {
@@ -421,18 +432,19 @@ fn normalization_resolves_replace_remove_off_and_type_shapes() {
 fn absence_and_default_capabilities_are_independent_and_syntactic() {
     let api = resolve_ok(quote! {
         client CapabilityApi {
+            timeout off;
             base "https://example.test";
-            vars {
+            values {
                 plain: String;
-                absence: Option<String>;
+                absence?: String;
                 defaulted: u32 = 7;
-                both: Option<String> = None;
-                both_vector: Option<Vec<String>> = None;
+                both?: Option<String> = None;
+                both_vector?: Option<Vec<String>> = None;
                 opaque_option_alias: MaybeString;
             }
-        }
-        GET read() -> Bytes;
-    });
+
+        GET read() -> Bytes using Bytes;
+    }});
     let [plain, absence, defaulted, both, both_vector, opaque] = api.client.values.as_slice()
     else {
         panic!("capability values")
@@ -446,31 +458,42 @@ fn absence_and_default_capabilities_are_independent_and_syntactic() {
     assert!(absence.is_optional());
     assert!(absence.accepts_absence());
     assert!(!absence.has_default());
-    assert_eq!(type_name(absence.setter_argument_type()), "String");
-    assert_eq!(type_name(absence.client_builder_storage_type()), "String");
+    assert_eq!(
+        type_name(absence.setter_argument_type()),
+        ":: std :: option :: Option < String >"
+    );
+    assert_eq!(
+        type_name(absence.client_builder_storage_type()),
+        ":: std :: option :: Option < String >"
+    );
+    assert_eq!(type_name(absence.with_argument_type()), "String");
 
     assert!(!defaulted.accepts_absence());
     assert!(defaulted.has_default());
     assert_eq!(type_name(defaulted.setter_argument_type()), "u32");
 
-    assert!(!both.is_optional());
+    assert!(both.is_optional());
     assert!(both.accepts_absence());
     assert!(both.has_default());
-    assert_eq!(type_name(both.setter_argument_type()), "String");
+    assert_eq!(
+        type_name(both.setter_argument_type()),
+        ":: std :: option :: Option < Option < String > >"
+    );
+    assert_eq!(type_name(both.with_argument_type()), "Option < String >");
     assert_eq!(
         type_name(both.client_builder_storage_type()),
-        "Option < String >"
+        ":: std :: option :: Option < Option < String > >"
     );
 
     assert!(both_vector.accepts_absence());
     assert!(both_vector.has_default());
     assert_eq!(
         type_name(both_vector.setter_argument_type()),
-        "Vec < String >"
+        ":: std :: option :: Option < Option < Vec < String > > >"
     );
     assert_eq!(
         type_name(both_vector.client_builder_storage_type()),
-        "Option < Vec < String > >"
+        ":: std :: option :: Option < Option < Vec < String > > >"
     );
 
     assert!(opaque.is_required());
@@ -480,14 +503,15 @@ fn absence_and_default_capabilities_are_independent_and_syntactic() {
 }
 
 #[test]
-fn semantic_references_and_header_vector_use_fail_with_focused_diagnostics() {
+fn semantic_references_fail_focused_and_header_payload_types_remain_opaque() {
     let unknown = resolve(
         parse::parse(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
-            }
-            GET read() -> Bytes { path [ep.missing]; }
-        })
+
+            GET read() -> Bytes using Bytes { path [endpoint.missing]; }
+        }})
         .expect("AST"),
     )
     .err()
@@ -501,34 +525,32 @@ fn semantic_references_and_header_vector_use_fail_with_focused_diagnostics() {
     let vector_header = resolve(
         parse::parse(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
+
+            GET read(values: Vec<String>) -> Bytes using Bytes {
+                headers { "X-Values" = endpoint.values; }
             }
-            GET read(values: Vec<String>) -> Bytes {
-                headers { "X-Values" = ep.values; }
-            }
-        })
+        }})
         .expect("AST"),
     )
-    .err()
-    .expect("vector header");
-    assert!(
-        vector_header
-            .to_string()
-            .contains("do not accept vector values")
-    );
+    .expect("header payload type is opaque to semantic resolution");
+    let endpoint = test_support::endpoint(&vector_header.client.children, "read");
+    assert_eq!(endpoint.config.headers.len(), 1);
 
     let secret_namespace = parse::parse(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
-        }
-        GET read() -> Bytes { query { "token" = credentials.token; } }
-    })
+
+        GET read() -> Bytes using Bytes { query { "token" = credentials.token; } }
+    }})
     .err()
     .expect("credential expression namespace");
     assert!(
         secret_namespace
             .to_string()
-            .contains("secrets and credentials are not expressible")
+            .contains("credentials are private and cannot appear in public expressions")
     );
 }
 
@@ -536,31 +558,32 @@ fn semantic_references_and_header_vector_use_fail_with_focused_diagnostics() {
 fn authentication_normalization_appends_replaces_clears_and_resolves_defaults() {
     let api = resolve_ok(quote! {
         client AuthApi {
+            timeout off;
             base "https://example.test";
             credentials {
-                secret key_value: String;
-                secret bearer_value: String;
+                secret key_value;
+                secret bearer_value;
                 credential key = api_key(secret.key_value);
                 credential bearer = bearer(secret.bearer_value);
                 credential rotating = custom crate::RotatingProvider;
                 credential acquired = endpoint login;
                 credential custom = custom crate::SessionProvider;
             }
-            auth header "X-Api-Key" = key;
-        }
-        GET login() -> Bytes;
+            auth { header "X-Api-Key" = key; }
+
+        GET login() -> Bytes using Bytes;
         scope secured() {
-            auth bearer rotating challenge unauthorized;
-            GET inherited() -> Bytes;
-            GET replaced() -> Bytes {
-                auth replace bearer bearer;
+            auth { bearer rotating recover on unauthorized; }
+            GET inherited() -> Bytes using Bytes;
+            GET replaced() -> Bytes using Bytes {
+                auth replace { bearer bearer; }
             }
-            GET custom() -> Bytes {
-                auth replace header "X-Session" = custom challenge never;
+            GET custom() -> Bytes using Bytes {
+                auth replace { header "X-Session" = custom; }
             }
-            GET public() -> Bytes { auth off; }
+            GET public() -> Bytes using Bytes { auth off; }
         }
-    });
+    }});
     let client = &api.client;
     assert_eq!(client.config.auth.len(), 1);
     assert_eq!(
@@ -609,30 +632,31 @@ fn authentication_normalization_appends_replaces_clears_and_resolves_defaults() 
 fn custom_authorization_normalizes_source_compatibility_defaults_and_collisions() {
     let api = resolve_ok(quote! {
         client AuthApi {
+            timeout off;
             base "https://example.test";
             credentials {
-                secret key_value: String;
-                secret token_value: String;
+                secret key_value;
+                secret token_value;
                 credential key = api_key(secret.key_value);
                 credential token = bearer(secret.token_value);
                 credential acquired = endpoint login;
                 credential custom = custom crate::SessionProvider;
             }
+
+        GET login() -> Bytes using Bytes;
+        GET exact() -> Bytes using Bytes {
+            auth { authorization = key; }
         }
-        GET login() -> Bytes;
-        GET exact() -> Bytes {
-            auth authorization = key;
+        GET scheme() -> Bytes using Bytes {
+            auth { authorization "tOkEn" = token; }
         }
-        GET scheme() -> Bytes {
-            auth authorization "tOkEn" = token;
+        GET endpoint_backed() -> Bytes using Bytes {
+            auth { authorization "Session" = acquired; }
         }
-        GET endpoint_backed() -> Bytes {
-            auth authorization "Session" = acquired;
+        GET provider_backed() -> Bytes using Bytes {
+            auth { authorization = custom; }
         }
-        GET provider_backed() -> Bytes {
-            auth authorization = custom challenge never;
-        }
-    });
+    }});
 
     for (name, expected_scheme) in [
         ("exact", None),
@@ -664,41 +688,48 @@ fn custom_authorization_normalizes_source_compatibility_defaults_and_collisions(
 
     let basic = semantic_error(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
             credentials {
-                secret username: String;
-                secret password: String;
+                secret username;
+                secret password;
                 credential login = basic(secret.username, secret.password);
             }
-        }
-        GET read() -> Bytes { auth authorization = login; }
-    });
+
+        GET read() -> Bytes using Bytes { auth { authorization = login; } }
+    }});
     assert!(basic.contains("incompatible"));
 
-    let custom_default = semantic_error(quote! {
+    let custom_default = resolve_ok(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
             credentials { credential custom = custom crate::SessionProvider; }
-        }
-        GET read() -> Bytes { auth authorization "Token" = custom; }
-    });
-    assert!(custom_default.contains("requires an explicit challenge suffix"));
+
+        GET read() -> Bytes using Bytes { auth { authorization "Token" = custom; } }
+    }});
+    let custom_default = test_support::endpoint(&custom_default.client.children, "read");
+    assert_eq!(
+        custom_default.config.auth[0].challenge,
+        ResolvedChallengePolicy::Never
+    );
 
     let collision = semantic_error(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
             credentials {
-                secret first_value: String;
-                secret second_value: String;
+                secret first_value;
+                secret second_value;
                 credential first = bearer(secret.first_value);
                 credential second = api_key(secret.second_value);
             }
-            auth bearer first;
+            auth { bearer first; }
+
+        GET read() -> Bytes using Bytes {
+            auth { authorization "Token" = second; }
         }
-        GET read() -> Bytes {
-            auth authorization "Token" = second;
-        }
-    });
+    }});
     assert!(collision.contains("placements own `Authorization`"));
 }
 
@@ -709,7 +740,7 @@ fn generated_authentication_plan_accepts_exact_limit_and_rejects_first_excess_af
             .map(|index| {
                 let name =
                     syn::LitStr::new(&format!("auth-{index}"), proc_macro2::Span::call_site());
-                quote!(auth query #name = key;)
+                quote!(query #name = key;)
             })
             .collect()
     }
@@ -717,15 +748,16 @@ fn generated_authentication_plan_accepts_exact_limit_and_rejects_first_excess_af
     let exact = placements(0, MAX_AUTH_PLACEMENTS);
     let api = resolve_ok(quote! {
         client ExactAuthApi {
+            timeout off;
             base "https://example.test";
             credentials {
-                secret key_value: String;
+                secret key_value;
                 credential key = api_key(secret.key_value);
             }
-            #(#exact)*
-        }
-        GET read() -> Bytes;
-    });
+            auth { #(#exact)* }
+
+        GET read() -> Bytes using Bytes;
+    }});
     assert_eq!(api.client.config.auth.len(), MAX_AUTH_PLACEMENTS);
 
     let client = placements(0, MAX_AUTH_PLACEMENTS / 2);
@@ -733,20 +765,21 @@ fn generated_authentication_plan_accepts_exact_limit_and_rejects_first_excess_af
     let error = resolve(
         parse::parse(quote! {
             client InheritedAuthApi {
+                timeout off;
                 base "https://example.test";
                 credentials {
-                    secret key_value: String;
+                    secret key_value;
                     credential key = api_key(secret.key_value);
                 }
-                #(#client)*
-            }
+                auth { #(#client)* }
+
             scope secured() {
-                #(#scope)*
-                GET first_excess() -> Bytes {
-                    auth query "auth-first-excess" = key;
+                auth { #(#scope)* }
+                GET first_excess() -> Bytes using Bytes {
+                    auth { query "auth-first-excess" = key; }
                 }
             }
-        })
+        }})
         .expect("first-excess authentication AST"),
     )
     .err()
@@ -770,104 +803,120 @@ fn authentication_semantics_reject_unknown_incompatible_ambiguous_and_colliding_
 
     let unknown = error(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
-        }
-        GET read() -> Bytes { auth bearer missing; }
-    });
+
+        GET read() -> Bytes using Bytes { auth { bearer missing; } }
+    }});
     assert!(unknown.contains("unknown credential `missing`"));
 
     let incompatible = error(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
             credentials {
-                secret key_value: String;
+                secret key_value;
                 credential key = api_key(secret.key_value);
             }
-        }
-        GET read() -> Bytes { auth bearer key; }
-    });
+
+        GET read() -> Bytes using Bytes { auth { bearer key; } }
+    }});
     assert!(incompatible.contains("incompatible"));
 
-    let custom = error(quote! {
+    let custom = resolve_ok(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
             credentials { credential session = custom crate::SessionProvider; }
-        }
-        GET read() -> Bytes { auth bearer session; }
-    });
-    assert!(custom.contains("requires an explicit challenge suffix"));
+
+        GET read() -> Bytes using Bytes { auth { bearer session; } }
+    }});
+    let custom = test_support::endpoint(&custom.client.children, "read");
+    assert_eq!(
+        custom.config.auth[0].challenge,
+        ResolvedChallengePolicy::Never
+    );
 
     let challengers = error(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
             credentials {
-                secret first_value: String;
-                secret second_value: String;
+                secret first_value;
+                secret second_value;
                 credential first = bearer(secret.first_value);
                 credential second = api_key(secret.second_value);
             }
+
+        GET read() -> Bytes using Bytes {
+            auth {
+                bearer first recover on unauthorized;
+                query "key" = second recover on unauthorized_or_forbidden;
+            }
         }
-        GET read() -> Bytes {
-            auth bearer first challenge unauthorized;
-            auth query "key" = second challenge unauthorized_or_forbidden;
-        }
-    });
+    }});
     assert!(challengers.contains("at most one challenge-enabled"));
 
     let authorization = error(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
             credentials {
-                secret token: String;
+                secret token;
                 credential bearer = bearer(secret.token);
             }
             headers { "Authorization" = "public"; }
-        }
-        GET read() -> Bytes { auth bearer bearer; }
-    });
+
+        GET read() -> Bytes using Bytes { auth { bearer bearer; } }
+    }});
     assert!(authorization.contains("reserved by transport, authentication"));
 
     let header = error(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
             credentials {
-                secret key_value: String;
+                secret key_value;
                 credential key = api_key(secret.key_value);
             }
             headers { "X-Key" = "public"; }
-        }
-        GET read() -> Bytes { auth header "x-key" = key; }
-    });
+
+        GET read() -> Bytes using Bytes { auth { header "x-key" = key; } }
+    }});
     assert!(header.contains("already owns this authentication target"));
 
     let query = error(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
             credentials {
-                secret key_value: String;
+                secret key_value;
                 credential key = api_key(secret.key_value);
             }
             query { "key" = "public"; }
-        }
-        GET read() -> Bytes { auth query "key" = key; }
-    });
+
+        GET read() -> Bytes using Bytes { auth { query "key" = key; } }
+    }});
     assert!(query.contains("already owns this authentication target"));
 
     let duplicate_auth = error(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
             credentials {
-                secret first_value: String;
-                secret second_value: String;
+                secret first_value;
+                secret second_value;
                 credential first = api_key(secret.first_value);
                 credential second = api_key(secret.second_value);
             }
+
+        GET read() -> Bytes using Bytes {
+            auth {
+                header "X-Key" = first;
+                header "x-key" = second;
+            }
         }
-        GET read() -> Bytes {
-            auth header "X-Key" = first;
-            auth header "x-key" = second;
-        }
-    });
+    }});
     assert!(duplicate_auth.contains("already owns this authentication target"));
 }
 
@@ -875,22 +924,25 @@ fn authentication_semantics_reject_unknown_incompatible_ambiguous_and_colliding_
 fn optional_public_values_defer_authentication_material_collision_to_request_preparation() {
     resolve_ok(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
             credentials {
-                secret key_value: String;
+                secret key_value;
                 credential key = api_key(secret.key_value);
             }
-        }
+
         GET optional(
-            query_value: Option<String>,
-            header_value: Option<String>,
-        ) -> Bytes {
-            query { "key" = ep.query_value; }
-            headers { "X-Key" = ep.header_value; }
-            auth query "key" = key;
-            auth header "X-Key" = key;
+            query_value?: String,
+            header_value?: String,
+        ) -> Bytes using Bytes {
+            query { "key" = endpoint.query_value; }
+            headers { "X-Key" = endpoint.header_value; }
+            auth {
+                query "key" = key;
+                header "X-Key" = key;
+            }
         }
-    });
+    }});
 }
 
 #[test]
@@ -904,30 +956,32 @@ fn endpoint_backed_dependency_and_authentication_cycles_are_rejected() {
 
     let direct = error(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
             credentials { credential session = endpoint login; }
+
+        GET login() -> Bytes using Bytes {
+            auth { bearer session; }
         }
-        GET login() -> Bytes {
-            auth bearer session challenge never;
-        }
-    });
+    }});
     assert!(direct.contains("dependency or authentication cycle"));
 
     let mutual = error(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
             credentials {
                 credential first = endpoint first;
                 credential second = endpoint second;
             }
+
+        GET first() -> Bytes using Bytes {
+            auth { bearer second; }
         }
-        GET first() -> Bytes {
-            auth bearer second challenge never;
+        GET second() -> Bytes using Bytes {
+            auth { bearer first; }
         }
-        GET second() -> Bytes {
-            auth bearer first challenge never;
-        }
-    });
+    }});
     assert!(mutual.contains("dependency or authentication cycle"));
 }
 
@@ -936,10 +990,11 @@ fn generated_name_collisions_cover_request_types_and_inherent_methods() {
     let retry_method = resolve(
         parse::parse(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
-            }
-            GET r#retry() -> Bytes;
-        })
+
+            GET r#retry() -> Bytes using Bytes;
+        }})
         .expect("AST"),
     )
     .err()
@@ -950,11 +1005,12 @@ fn generated_name_collisions_cover_request_types_and_inherent_methods() {
     let trait_item = resolve(
         parse::parse(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
-            }
-            GET read(value: Option<String>) -> Bytes;
-            GET read_request() -> Bytes;
-        })
+
+            GET read(value?: String) -> Bytes using Bytes;
+            GET read_request() -> Bytes using Bytes;
+        }})
         .expect("AST"),
     )
     .err()
@@ -963,24 +1019,26 @@ fn generated_name_collisions_cover_request_types_and_inherent_methods() {
 
     let request_method = resolve_ok(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
-        }
-        GET read(timeout: Option<u64>) -> Bytes;
-    });
+
+        GET read(timeout?: u64) -> Bytes using Bytes;
+    }});
     let request_method = test_support::endpoint(&request_method.client.children, "read");
     assert_eq!(request_method.surface.setters[0].setter, "set_timeout");
 
     let helper_names = resolve_ok(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
-        }
+
         GET read(
-            value: Option<String>,
-            clear_value: Option<String>,
+            value?: String,
+            clear_value?: String,
             limit: u32 = 25,
-            reset_limit: Option<bool>,
-        ) -> Bytes;
-    });
+            reset_limit?: bool,
+        ) -> Bytes using Bytes;
+    }});
     let helper_names = test_support::endpoint(&helper_names.client.children, "read");
     assert_eq!(
         helper_names
@@ -1000,12 +1058,13 @@ fn generated_name_collisions_cover_request_types_and_inherent_methods() {
     let child_setter = resolve(
         parse::parse(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
+
+            scope resources(region?: String) {
+                GET set_region() -> Bytes using Bytes;
             }
-            scope resources(region: Option<String>) {
-                GET set_region() -> Bytes;
-            }
-        })
+        }})
         .expect("AST"),
     )
     .err()
@@ -1017,12 +1076,13 @@ fn generated_name_collisions_cover_request_types_and_inherent_methods() {
         let collision = resolve(
             parse::parse(quote! {
                 client Api {
+                    timeout off;
                     base "https://example.test";
+
+                scope resources(label?: Option<String> = None) {
+                    GET #helper() -> Bytes using Bytes;
                 }
-                scope resources(label: Option<String> = None) {
-                    GET #helper() -> Bytes;
-                }
-            })
+            }})
             .expect("AST"),
         )
         .err()
@@ -1034,12 +1094,13 @@ fn generated_name_collisions_cover_request_types_and_inherent_methods() {
     let scope_type = resolve(
         parse::parse(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
-            }
+
             scope resources() {
-                GET resources() -> Bytes;
+                GET resources() -> Bytes using Bytes;
             }
-        })
+        }})
         .expect("AST"),
     )
     .err()
@@ -1049,10 +1110,11 @@ fn generated_name_collisions_cover_request_types_and_inherent_methods() {
     let endpoint_trait = resolve(
         parse::parse(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
-            }
-            GET endpoint() -> Bytes;
-        })
+
+            GET endpoint() -> Bytes using Bytes;
+        }})
         .expect("AST"),
     )
     .err()
@@ -1061,13 +1123,14 @@ fn generated_name_collisions_cover_request_types_and_inherent_methods() {
 
     let storage_terminal = resolve_ok(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
             credentials {
                 credential session = endpoint source;
             }
-        }
-        GET source(store_as_session: Option<bool>) -> Bytes;
-    });
+
+        GET source(store_as_session?: bool) -> Bytes using Bytes;
+    }});
     let storage_terminal = test_support::endpoint(&storage_terminal.client.children, "source");
     assert_eq!(
         storage_terminal.surface.setters[0].setter,
@@ -1090,9 +1153,10 @@ fn authentication_generated_names_cover_builder_accessor_and_acquisition_namespa
 
     let reserved_secret = error(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
             credentials {
-                secret build: String;
+                secret build;
                 credential key = api_key(secret.build);
             }
         }
@@ -1102,10 +1166,11 @@ fn authentication_generated_names_cover_builder_accessor_and_acquisition_namespa
 
     let helper_secret = error(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
-            vars { token: Option<String>; }
+            values { token?: String; }
             credentials {
-                secret clear_token: String;
+                secret clear_token;
                 credential key = api_key(secret.clear_token);
             }
         }
@@ -1115,10 +1180,11 @@ fn authentication_generated_names_cover_builder_accessor_and_acquisition_namespa
 
     let reset_secret = error(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
-            vars { limit: u32 = 25; }
+            values { limit: u32 = 25; }
             credentials {
-                secret reset_limit: String;
+                secret reset_limit;
                 credential key = api_key(secret.reset_limit);
             }
         }
@@ -1128,10 +1194,11 @@ fn authentication_generated_names_cover_builder_accessor_and_acquisition_namespa
 
     let defaulted_option_clear_secret = error(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
-            vars { label: Option<String> = None; }
+            values { label?: Option<String> = None; }
             credentials {
-                secret clear_label: String;
+                secret clear_label;
                 credential key = api_key(secret.clear_label);
             }
         }
@@ -1141,10 +1208,11 @@ fn authentication_generated_names_cover_builder_accessor_and_acquisition_namespa
 
     let defaulted_option_reset_secret = error(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
-            vars { label: Option<String> = None; }
+            values { label?: Option<String> = None; }
             credentials {
-                secret reset_label: String;
+                secret reset_label;
                 credential key = api_key(secret.reset_label);
             }
         }
@@ -1154,9 +1222,10 @@ fn authentication_generated_names_cover_builder_accessor_and_acquisition_namespa
 
     let internal_accessor = error(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
             credentials {
-                secret value: String;
+                secret value;
                 credential __concord_new = api_key(secret.value);
             }
         }
@@ -1166,10 +1235,11 @@ fn authentication_generated_names_cover_builder_accessor_and_acquisition_namespa
 
     let set_prefixed_secret = error(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
-            vars { region: String; }
+            values { region: String; }
             credentials {
-                secret set_region: String;
+                secret set_region;
                 credential key = api_key(secret.set_region);
             }
         }
@@ -1179,12 +1249,13 @@ fn authentication_generated_names_cover_builder_accessor_and_acquisition_namespa
 
     let request_wrapper = error(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
             credentials { credential session = endpoint read; }
-        }
-        GET read() -> Bytes;
-        GET read_request() -> Bytes;
-    });
+
+        GET read() -> Bytes using Bytes;
+        GET read_request() -> Bytes using Bytes;
+    }});
     assert!(request_wrapper.contains("collides"));
 }
 
@@ -1192,23 +1263,24 @@ fn authentication_generated_names_cover_builder_accessor_and_acquisition_namespa
 fn pagination_normalizes_one_controller_type_and_field_initializer_ir() {
     let api = resolve_ok(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
-            vars { tenant: String; }
-        }
-        GET offset(offset: u64, limit: u32) -> PageSpec<Vec<u32>> {
-            paginate concord_core::contracts::OffsetController {
-                offset: bind ep.offset,
-                page_size: bind ep.limit,
+            values { tenant: String; }
+
+        GET offset(offset: u64, limit: u32) -> Vec<u32> using PageSpec<Vec<u32>> {
+            paginate with concord_core::contracts::OffsetController {
+                offset -> endpoint.offset;
+                page_size -> endpoint.limit;
             }
         }
-        GET vendor(cursor: Option<String>) -> PageSpec<Vec<u32>> {
-            paginate crate::Vendor<String> {
-                cursor: bind ep.cursor,
-                tenant: vars.tenant,
-                attempts: 0,
+        GET vendor(cursor?: String) -> Vec<u32> using PageSpec<Vec<u32>> {
+            paginate with crate::Vendor<String> {
+                cursor -> endpoint.cursor;
+                tenant = client.tenant;
+                attempts = 0;
             }
         }
-    });
+    }});
     let endpoints = &api.client.children;
     let Child::Endpoint(offset) = &endpoints[0] else {
         panic!("offset endpoint");
@@ -1268,15 +1340,16 @@ fn pagination_normalizes_one_controller_type_and_field_initializer_ir() {
 fn pagination_resolution_validates_destination_ownership_not_controller_semantics() {
     let api = resolve_ok(quote! {
         client Api {
+            timeout off;
             base "https://example.test";
-        }
-        GET read(offset: String, limit: bool) -> PageSpec<Vec<u32>> {
-            paginate crate::ArbitraryController {
-                anything: bind ep.offset,
-                another: bind ep.limit,
+
+        GET read(offset: String, limit: bool) -> Vec<u32> using PageSpec<Vec<u32>> {
+            paginate with crate::ArbitraryController {
+                anything -> endpoint.offset;
+                another -> endpoint.limit;
             }
         }
-    });
+    }});
     let Child::Endpoint(endpoint) = &api.client.children[0] else {
         panic!("endpoint");
     };
@@ -1293,14 +1366,15 @@ fn pagination_resolution_validates_destination_ownership_not_controller_semantic
     let undefined = resolve(
         parse::parse(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
-            }
-            GET read(offset: u64) -> PageSpec<Vec<u32>> {
-                paginate crate::Controller {
-                    state: bind ep.missing,
+
+            GET read(offset: u64) -> Vec<u32> using PageSpec<Vec<u32>> {
+                paginate with crate::Controller {
+                    state -> endpoint.missing;
                 }
             }
-        })
+        }})
         .expect("source AST"),
     )
     .err()
@@ -1314,17 +1388,18 @@ fn pagination_resolution_validates_destination_ownership_not_controller_semantic
     let body_binding = resolve(
         parse::parse(quote! {
             client Api {
+                timeout off;
                 base "https://example.test";
-            }
+
             POST read(
                 offset: u64,
-                #[body] filter: Text,
-            ) -> PageSpec<Vec<u32>> {
-                paginate crate::Controller {
-                    state: bind ep.filter,
+                body filter: String using Text,
+            ) -> Vec<u32> using PageSpec<Vec<u32>> {
+                paginate with crate::Controller {
+                    state -> endpoint.filter;
                 }
             }
-        })
+        }})
         .expect("source AST"),
     )
     .err()
@@ -1339,18 +1414,19 @@ fn pagination_resolution_validates_destination_ownership_not_controller_semantic
 #[test]
 fn v2_names_required_argument_order_and_syntactic_optionality_are_resolved_once() {
     let api = resolve_ok(quote! {
-        client HTTPApi { base "https://example.test"; }
+        client HTTPApi {
+            timeout off; base "https://example.test";
         scope http_status() {
             GET get_http_status(
                 first: String,
-                #[body] payload: Text,
-                optional: std::option::Option<u32>,
+                body payload: String using Text,
+                optional?: std::option::Option<u32>,
                 second: bool,
                 alias_value: crate::MaybeString,
-            ) -> Bytes;
-            GET r#type() -> Bytes;
+            ) -> Bytes using Bytes;
+            GET r#type() -> Bytes using Bytes;
         }
-    });
+    }});
     let Child::Scope(scope) = &api.client.children[0] else {
         panic!("scope")
     };
@@ -1388,18 +1464,19 @@ fn v2_names_required_argument_order_and_syntactic_optionality_are_resolved_once(
 fn explicit_and_default_contract_ids_are_stable_unique_and_rate_authoritative() {
     let api = resolve_ok(quote! {
         client RiotApi {
+            timeout off;
             base "https://example.test";
-            rate_limit { 100 / 1m; }
-        }
+            rate_limit { allow 100 per 1m; }
+
         scope match_v5() {
-            rate_limit { 50 / 1m; }
-            GET match_by_id() -> Bytes {
+            rate_limit { allow 50 per 1m; }
+            GET match_by_id() -> Bytes using Bytes {
                 id "riot.match_v5.match_by_id";
-                rate_limit { 10 / 1m; }
+                rate_limit { allow 10 per 1m; }
             }
-            GET timeline_by_id() -> Bytes;
+            GET timeline_by_id() -> Bytes using Bytes;
         }
-    });
+    }});
     let Child::Scope(scope) = &api.client.children[0] else {
         panic!("scope")
     };
@@ -1432,11 +1509,12 @@ fn explicit_and_default_contract_ids_are_stable_unique_and_rate_authoritative() 
 
     for endpoint_name in [quote!(renamed_once), quote!(renamed_twice)] {
         let renamed = resolve_ok(quote! {
-            client OtherRustName { base "https://example.test"; }
-            GET #endpoint_name() -> Bytes {
+            client OtherRustName {
+                timeout off; base "https://example.test";
+            GET #endpoint_name() -> Bytes using Bytes {
                 id "stable.remote.operation";
             }
-        });
+        }});
         let Child::Endpoint(endpoint) = &renamed.client.children[0] else {
             panic!("renamed endpoint")
         };
@@ -1445,10 +1523,11 @@ fn explicit_and_default_contract_ids_are_stable_unique_and_rate_authoritative() 
 
     let duplicate = resolve(
         parse::parse(quote! {
-            client Api { base "https://example.test"; }
-            GET first() -> Bytes { id "duplicate.operation"; }
-            GET second() -> Bytes { id "duplicate.operation"; }
-        })
+            client Api {
+                timeout off; base "https://example.test";
+            GET first() -> Bytes using Bytes { id "duplicate.operation"; }
+            GET second() -> Bytes using Bytes { id "duplicate.operation"; }
+        }})
         .expect("source AST"),
     )
     .err()

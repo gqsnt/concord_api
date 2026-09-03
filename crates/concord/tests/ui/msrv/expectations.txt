@@ -5,8 +5,8 @@ rate_limit_missing_named_binding|requires a binding for dimension `account`|crat
 non_paginated_no_paginate|no method named `paginate`|crates/concord/tests/ui/fail/pagination/non_paginated_no_paginate.rs
 wrong_endpoint_setter_absent|no method named `verbose`|crates/concord/tests/ui/fail/capabilities/wrong_endpoint_setter_absent.rs
 bare_client_builder_value_setter_absent|no method named `label`;;set_label|crates/concord/tests/ui/fail/capabilities/bare_client_builder_value_setter_absent.rs
-bare_endpoint_value_setter_absent|no method named `label`;;set_label|crates/concord/tests/ui/fail/capabilities/bare_endpoint_value_setter_absent.rs
-bare_scope_value_setter_absent|no method named `label`;;set_label|crates/concord/tests/ui/fail/capabilities/bare_scope_value_setter_absent.rs
-bare_value_setter_absent|no method named `verbose`;;set_verbose|crates/concord/tests/ui/fail/capabilities/bare_value_setter_absent.rs
+bare_endpoint_value_setter_absent|no method named `label`|crates/concord/tests/ui/fail/capabilities/bare_endpoint_value_setter_absent.rs
+bare_scope_value_setter_absent|no method named `label`|crates/concord/tests/ui/fail/capabilities/bare_scope_value_setter_absent.rs
+bare_value_setter_absent|no method named `verbose`|crates/concord/tests/ui/fail/capabilities/bare_value_setter_absent.rs
 endpoint_id_into_unavailable|EndpointId: From<&str>;;is not satisfied|msrv/facade/src/bin/endpoint_id_into_unavailable.rs
 trait_default_requires_default|NoDefault: Default;;is not satisfied|crates/concord/tests/ui/fail/syntax/trait_default_requires_default.rs

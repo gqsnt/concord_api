@@ -57,30 +57,31 @@ impl CredentialProvider for Provider {
 
 api! {
     client Api {
+        timeout off;
         base "https://example.test";
         credentials {
-            secret key: String;
-            secret token: String;
+            secret key;
+            secret token;
             credential api_key = api_key(secret.key);
             credential bearer = bearer(secret.token);
             credential endpoint = endpoint acquire;
             credential provider = custom crate::Provider;
         }
-    }
 
-    GET acquire() -> crate::SessionCodec;
-    GET exact_key() -> Bytes {
-        auth authorization = api_key;
+
+    GET acquire() -> crate::Session using crate::SessionCodec;
+    GET exact_key() -> Bytes using Bytes {
+        auth { authorization = api_key; }
     }
-    GET exact_bearer() -> Bytes {
-        auth authorization = bearer;
+    GET exact_bearer() -> Bytes using Bytes {
+        auth { authorization = bearer; }
     }
-    GET scheme_endpoint() -> Bytes {
-        auth authorization "Session" = endpoint;
+    GET scheme_endpoint() -> Bytes using Bytes {
+        auth { authorization "Session" = endpoint; }
     }
-    GET scheme_provider() -> Bytes {
-        auth authorization "tOkEn" = provider challenge never;
+    GET scheme_provider() -> Bytes using Bytes {
+        auth { authorization "tOkEn" = provider; }
     }
-}
+}}
 
 fn main() {}

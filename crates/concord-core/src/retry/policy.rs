@@ -6,6 +6,7 @@ use std::time::Duration;
 use http::{Method, StatusCode};
 use url::Url;
 
+use crate::error::{DispatchKnowledge, FailureStage};
 use crate::hooks::AttemptInfo;
 use crate::redaction::SanitizedHeaders;
 
@@ -366,6 +367,28 @@ pub enum RetryFailure<'a> {
         /// Sanitized final response headers.
         headers: SanitizedHeaders<'a>,
     },
+}
+
+impl RetryFailure<'_> {
+    /// Returns the managed failure stage represented by this classifier input.
+    #[must_use]
+    pub const fn stage(self) -> FailureStage {
+        match self {
+            Self::Connect => FailureStage::BeforeDispatch,
+            Self::Transport => FailureStage::DuringDispatchOrUnknown,
+            Self::RejectedStatus { .. } => FailureStage::RejectedResponse,
+        }
+    }
+
+    /// Returns Concord's dispatch knowledge for this classifier input.
+    #[must_use]
+    pub const fn dispatch_knowledge(self) -> DispatchKnowledge {
+        match self {
+            Self::Connect => DispatchKnowledge::NotDispatched,
+            Self::Transport => DispatchKnowledge::PossiblyDispatched,
+            Self::RejectedStatus { .. } => DispatchKnowledge::ResponseReceived,
+        }
+    }
 }
 
 impl fmt::Debug for RetryFailure<'_> {

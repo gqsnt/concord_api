@@ -2,42 +2,43 @@ use concord::{Bytes, NoContent, Text, api};
 
 api! {
     client FacadeApi {
+        timeout off;
         base "http://facade.example.test/";
-    }
+
 
     scope resources(
         scope_value: String,
-        region: Option<String>,
+        region?: String,
         scope_limit: u32 = 50,
     ) {
-        path ["resources", scope.scope_value];
+        path ["resources", resources.scope_value];
         GET fetch(
             id: String,
-            verbose: Option<bool>,
+            verbose?: bool,
             page_size: u32 = 25,
-        ) -> Bytes {
-            path [ep.id];
+        ) -> Bytes using Bytes {
+            path [endpoint.id];
         }
-        POST update(id: String, #[body] payload: Text, revision: u32) -> Bytes {
-            path [ep.id];
-            headers { "X-Revision" = ep.revision; }
+        POST update(id: String, body payload: String using Text, revision: u32) -> Bytes using Bytes {
+            path [endpoint.id];
+            headers { "X-Revision" = endpoint.revision; }
         }
-        GET delete(id: String) -> NoContent {
-            path [ep.id];
+        GET delete(id: String) -> () using NoContent {
+            path [endpoint.id];
         }
     }
-}
+}}
 
 #[test]
 fn one_facade_dependency_exposes_predictable_named_inherent_surface() {
     let client = FacadeApi::new().expect("zero-input façade client");
     let request = client
         .resources("tenant".to_owned())
-        .set_region("eu".to_owned())
+        .with_region("eu".to_owned())
         .set_scope_limit(75)
         .reset_scope_limit()
         .fetch("resource".to_owned())
-        .set_verbose(true)
+        .with_verbose(true)
         .clear_verbose()
         .set_page_size(100)
         .reset_page_size();
@@ -52,8 +53,10 @@ fn one_facade_dependency_exposes_predictable_named_inherent_surface() {
             .resources("tenant".to_owned())
             .update("resource".to_owned(), "body".to_owned(), 7);
 
-    let endpoint = facade_api::resources::Fetch::new("tenant".to_owned(), "resource".to_owned())
-        .set_verbose(true)
+    let endpoint = FacadeApi::unbound()
+        .resources("tenant".to_owned())
+        .fetch("resource".to_owned())
+        .with_verbose(true)
         .set_page_size(100);
     let cloned = endpoint.clone();
     let stored = [endpoint.clone(), cloned];
@@ -63,7 +66,7 @@ fn one_facade_dependency_exposes_predictable_named_inherent_surface() {
     assert_eq!(description.source_path(), "FacadeApi::resources::fetch");
     assert_eq!(
         description.route_shape(),
-        "/resources/{scope.scope_value}/{ep.id}"
+        "/resources/{resources.scope_value}/{endpoint.id}"
     );
     assert_eq!(description.method(), concord::http::Method::GET);
     assert_eq!(
@@ -72,8 +75,7 @@ fn one_facade_dependency_exposes_predictable_named_inherent_surface() {
     );
     let _: facade_api::resources::FetchRequest = client.request(endpoint);
 
-    let body_endpoint = facade_api::resources::Update::new(
-        "tenant".to_owned(),
+    let body_endpoint = FacadeApi::unbound().resources("tenant".to_owned()).update(
         "resource".to_owned(),
         "body".to_owned(),
         7,
@@ -102,7 +104,9 @@ fn one_facade_dependency_exposes_predictable_named_inherent_surface() {
     }
 
     assert_bytes_response::<facade_api::resources::Fetch>();
-    let reusable = facade_api::resources::Fetch::new("tenant".to_owned(), "resource".to_owned());
+    let reusable = FacadeApi::unbound()
+        .resources("tenant".to_owned())
+        .fetch("resource".to_owned());
     assert_eq!(describe(&reusable).id(), "facade_api.resources.fetch");
     let _: facade_api::resources::FetchRequest = bind(&client, reusable);
 }

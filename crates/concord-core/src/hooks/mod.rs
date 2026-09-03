@@ -1,4 +1,4 @@
-//! Safe request lifecycle observation and built-in debug selection.
+//! Credential-free decision gates and fixed-outcome completion observation.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -13,7 +13,7 @@ pub use events::{
     ResponseHeadEvent,
 };
 
-use crate::error::HookError;
+use crate::error::GateError;
 
 /// A boxed, sendable future used by stable asynchronous extension contracts.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -30,58 +30,68 @@ pub enum DebugLevel {
     Headers,
 }
 
-/// Safe lifecycle callbacks shared by every clone of one built client.
+/// Pre-dispatch decision authority for one managed attempt.
 ///
-/// Calls may overlap. Result-determining hooks run under the operation
-/// deadline. Completion hooks observe an already-fixed result outside that
-/// deadline. Completion is awaited exactly once and blocks delivery of that
-/// fixed result, so completion observers are a trusted application liveness
-/// boundary and must bound their own work. Hook metadata is credential-sanitized
-/// but may still contain operational identifiers or personally identifiable
-/// information; implementations own all logging and storage. They must bound
-/// CPU, memory, retries, maps, queues, spawned tasks, metric cardinality, and
-/// external I/O. Hook futures are dropped on cancellation, without rollback of
-/// completed extension effects. Concord does not automatically time-limit
-/// completion callbacks or bound custom hook state, synchronous work before a
-/// future is returned, or application-created tasks.
-pub trait RuntimeHooks: Send + Sync + 'static {
+/// The gate receives only bounded credential-free/redacted metadata. It cannot
+/// inspect body values or bytes, credentials, rate keys, or native requests,
+/// and cannot mutate the request. Its future runs under the aggregate
+/// operation deadline and is dropped when the caller cancels the request.
+pub trait RequestGate: Send + Sync + 'static {
     /// Approves or rejects one attempt before body materialization and native
-    /// execution begin.
-    fn before_send<'a>(&'a self, _context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
+    /// dispatch begin.
+    fn before_send<'a>(&'a self, _context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), GateError>> {
         Box::pin(async { Ok(()) })
-    }
-
-    /// Observes or rejects one final response head after core limiter
-    /// observation and before challenge, status, or body handling.
-    fn on_response_head<'a>(
-        &'a self,
-        _context: ResponseHeadEvent<'a>,
-    ) -> BoxFuture<'a, Result<(), HookError>> {
-        Box::pin(async { Ok(()) })
-    }
-
-    /// Observes one already-fixed direct request or page result outside its
-    /// deadline and delays delivery until this future completes.
-    fn on_complete<'a>(&'a self, _context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
-        Box::pin(async {})
-    }
-
-    /// Observes one already-fixed aggregate pagination result outside its
-    /// deadline and delays delivery until this future completes.
-    fn on_pagination_complete<'a>(
-        &'a self,
-        _context: PaginationCompletionEvent<'a>,
-    ) -> BoxFuture<'a, ()> {
-        Box::pin(async {})
     }
 }
 
-pub(crate) struct NoopHooks;
+/// Response-head decision authority before challenge/status/body handling.
+///
+/// This gate sees bounded sanitized response metadata, never a native response
+/// or response body. Its future runs under the aggregate operation deadline.
+pub trait ResponseGate: Send + Sync + 'static {
+    /// Approves or rejects handling of one received response head.
+    fn before_response_handling<'a>(
+        &'a self,
+        _context: ResponseHeadEvent<'a>,
+    ) -> BoxFuture<'a, Result<(), GateError>> {
+        Box::pin(async { Ok(()) })
+    }
+}
 
-impl RuntimeHooks for NoopHooks {}
+/// Synchronous non-authoritative observation of already-fixed outcomes.
+///
+/// An observer receives bounded credential-free/redacted events, returns no
+/// decision, and cannot transform the caller's result. Calls are synchronous,
+/// may overlap across threads, and must be trusted, nonblocking, and bounded.
+/// Applications that export asynchronously must close over a separately owned
+/// bounded queue/sink with an explicit backpressure and shutdown policy.
+pub trait CompletionObserver: Send + Sync + 'static {
+    /// Records one already-fixed request or page outcome.
+    fn on_complete(&self, _event: CompletionEvent<'_>) {}
 
-pub(crate) fn default_hooks() -> std::sync::Arc<dyn RuntimeHooks> {
-    std::sync::Arc::new(NoopHooks)
+    /// Records one already-fixed aggregate pagination outcome.
+    fn on_pagination_complete(&self, _event: PaginationCompletionEvent<'_>) {}
+}
+
+pub(crate) struct NoopRequestGate;
+impl RequestGate for NoopRequestGate {}
+
+pub(crate) struct NoopResponseGate;
+impl ResponseGate for NoopResponseGate {}
+
+pub(crate) struct NoopCompletionObserver;
+impl CompletionObserver for NoopCompletionObserver {}
+
+pub(crate) fn default_request_gate() -> std::sync::Arc<dyn RequestGate> {
+    std::sync::Arc::new(NoopRequestGate)
+}
+
+pub(crate) fn default_response_gate() -> std::sync::Arc<dyn ResponseGate> {
+    std::sync::Arc::new(NoopResponseGate)
+}
+
+pub(crate) fn default_completion_observer() -> std::sync::Arc<dyn CompletionObserver> {
+    std::sync::Arc::new(NoopCompletionObserver)
 }
 
 #[cfg(test)]
@@ -94,14 +104,14 @@ mod tests {
     use crate::operation::OperationId;
     use crate::redaction::SanitizedHeaders;
 
-    struct CountingHooks {
+    struct CountingPolicy {
         before: AtomicUsize,
         response: AtomicUsize,
         complete: AtomicUsize,
         pagination: AtomicUsize,
     }
 
-    impl CountingHooks {
+    impl CountingPolicy {
         const fn new() -> Self {
             Self {
                 before: AtomicUsize::new(0),
@@ -112,40 +122,37 @@ mod tests {
         }
     }
 
-    impl RuntimeHooks for CountingHooks {
+    impl RequestGate for CountingPolicy {
         fn before_send<'a>(
             &'a self,
             _context: BeforeSend<'a>,
-        ) -> BoxFuture<'a, Result<(), HookError>> {
+        ) -> BoxFuture<'a, Result<(), GateError>> {
             Box::pin(async move {
                 self.before.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             })
         }
+    }
 
-        fn on_response_head<'a>(
+    impl ResponseGate for CountingPolicy {
+        fn before_response_handling<'a>(
             &'a self,
             _context: ResponseHeadEvent<'a>,
-        ) -> BoxFuture<'a, Result<(), HookError>> {
+        ) -> BoxFuture<'a, Result<(), GateError>> {
             Box::pin(async move {
                 self.response.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             })
         }
+    }
 
-        fn on_complete<'a>(&'a self, _context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
-            Box::pin(async move {
-                self.complete.fetch_add(1, Ordering::SeqCst);
-            })
+    impl CompletionObserver for CountingPolicy {
+        fn on_complete(&self, _event: CompletionEvent<'_>) {
+            self.complete.fetch_add(1, Ordering::SeqCst);
         }
 
-        fn on_pagination_complete<'a>(
-            &'a self,
-            _context: PaginationCompletionEvent<'a>,
-        ) -> BoxFuture<'a, ()> {
-            Box::pin(async move {
-                self.pagination.fetch_add(1, Ordering::SeqCst);
-            })
+        fn on_pagination_complete(&self, _event: PaginationCompletionEvent<'_>) {
+            self.pagination.fetch_add(1, Ordering::SeqCst);
         }
     }
 
@@ -163,7 +170,7 @@ mod tests {
             parent_operation_id: None,
             endpoint: "HooksApi::health::ping",
             method,
-            safe_url: "https://hooks.example.test/health",
+            observed_url: "https://hooks.example.test/health",
             page_index: 0,
             attempt: AttemptInfo::INITIAL,
             headers: SanitizedHeaders::new(headers),
@@ -173,98 +180,44 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn default_hooks_are_noop_and_concurrent_calls_overlap_safely() {
+    async fn gates_are_async_decisions_and_completion_is_synchronous_observation() {
         let method = Method::GET;
         let headers = HeaderMap::new();
-        let noop = NoopHooks;
-        noop.before_send(before(id(), &method, &headers))
+        let policy = CountingPolicy::new();
+        policy
+            .before_send(before(id(), &method, &headers))
             .await
-            .expect("default before-send");
-
-        let hooks = CountingHooks::new();
-        let first = hooks.before_send(before(id(), &method, &headers));
-        let second = hooks.before_send(before(id(), &method, &headers));
-        let (first, second) = tokio::join!(first, second);
-        first.expect("first hook");
-        second.expect("second hook");
-        assert_eq!(hooks.before.load(Ordering::SeqCst), 2);
-
-        let operation_id = id();
-        hooks
-            .on_response_head(ResponseHeadEvent {
-                operation_id,
+            .expect("request gate");
+        policy
+            .before_response_handling(ResponseHeadEvent {
+                operation_id: id(),
                 parent_operation_id: None,
                 endpoint: "HooksApi::health::ping",
                 method: &method,
-                safe_url: "https://hooks.example.test/health",
+                observed_url: "https://hooks.example.test/health",
                 page_index: 0,
                 attempt: AttemptInfo::INITIAL,
                 status: StatusCode::NO_CONTENT,
                 headers: SanitizedHeaders::new(&headers),
             })
             .await
-            .expect("response hook");
-        hooks
-            .on_complete(CompletionEvent {
-                operation_id,
-                parent_operation_id: None,
-                endpoint: "HooksApi::health::ping",
-                method: &method,
-                safe_url: "https://hooks.example.test/health",
-                page_index: 0,
-                attempts_started: 1,
-                policy_retries: 0,
-                recovered_authentication: false,
-                elapsed: std::time::Duration::ZERO,
-                final_status: Some(StatusCode::NO_CONTENT),
-                outcome: CompletionOutcome::Success,
-            })
-            .await;
-        hooks
-            .on_pagination_complete(PaginationCompletionEvent {
-                operation_id: id(),
-                endpoint: "HooksApi::health::ping",
-                method: &method,
-                pages_completed: 0,
-                items_collected: 0,
-                attempts_started: 0,
-                policy_retries: 0,
-                recovered_authentication: false,
-                elapsed: std::time::Duration::ZERO,
-                final_status: None,
-                outcome: CompletionOutcome::Success,
-            })
-            .await;
-
-        assert_eq!(hooks.response.load(Ordering::SeqCst), 1);
-        assert_eq!(hooks.complete.load(Ordering::SeqCst), 1);
-        assert_eq!(hooks.pagination.load(Ordering::SeqCst), 1);
-    }
-
-    #[test]
-    fn pagination_completion_debug_has_no_continuation_or_private_state() {
-        let method = Method::GET;
-        let event = PaginationCompletionEvent {
+            .expect("response gate");
+        policy.on_complete(CompletionEvent {
             operation_id: id(),
-            endpoint: "HooksApi::items::list",
+            parent_operation_id: None,
+            endpoint: "HooksApi::health::ping",
             method: &method,
-            pages_completed: 3,
-            items_collected: 7,
-            attempts_started: 3,
+            observed_url: "https://hooks.example.test/health",
+            page_index: 0,
+            attempts_started: 1,
             policy_retries: 0,
             recovered_authentication: false,
-            elapsed: std::time::Duration::from_millis(4),
-            final_status: Some(StatusCode::OK),
+            elapsed: std::time::Duration::ZERO,
+            final_status: Some(StatusCode::NO_CONTENT),
             outcome: CompletionOutcome::Success,
-        };
-        let debug = format!("{event:?}");
-        for forbidden in [
-            "cursor-sentinel",
-            "continuation-sentinel",
-            "identity-sentinel",
-            "partial-item-sentinel",
-        ] {
-            assert!(!debug.contains(forbidden));
-        }
+        });
+        assert_eq!(policy.before.load(Ordering::SeqCst), 1);
+        assert_eq!(policy.response.load(Ordering::SeqCst), 1);
+        assert_eq!(policy.complete.load(Ordering::SeqCst), 1);
     }
 }

@@ -2,17 +2,18 @@ use concord::api;
 
 api! {
     client Api {
+        timeout off;
         base "https://example.test";
         credentials {
-            secret username: String;
-            secret password: String;
+            secret username;
+            secret password;
             credential login = basic(secret.username, secret.password);
         }
-    }
 
-    GET protected() -> Bytes {
-        auth authorization = login;
+
+    GET protected() -> Bytes using Bytes {
+        auth { authorization = login; }
     }
-}
+}}
 
 fn main() {}

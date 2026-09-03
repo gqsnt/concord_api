@@ -6,7 +6,7 @@ use concord::codec::{AnyMedia, MediaType, OctetStream};
 use concord::endpoint::{EndpointId, RuntimeEndpoint};
 use concord::error::ErrorCategory;
 use concord::http::{Method, SafeProxy};
-use concord::response::{ByteStream, ResponseBodySpec, Streaming};
+use concord::response::{ByteStream, ResponseSpec, Streaming};
 use concord::{ApiError, Bytes};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 use futures_core::Stream as _;
@@ -19,45 +19,46 @@ impl MediaType for VendorMedia {
 
 api! {
     client AnyStreamApi {
+        timeout off;
         base "http://any-stream.example.test/root/";
-    }
 
-    POST upload(#[body] body: Stream) -> Bytes {
+
+    POST upload(body body: ::concord::body::StreamBody using Stream) -> Bytes using Bytes {
         path ["upload"];
     }
 
-    POST exact_upload(#[body] body: Stream<OctetStream>) -> Bytes {
+    POST exact_upload(body body: ::concord::body::StreamBody using Stream<OctetStream>) -> Bytes using Bytes {
         path ["exact-upload"];
     }
 
-    GET missing_media() -> Stream {
+    GET missing_media() -> ::concord::response::ByteStream using Stream {
         path ["missing-media"];
     }
 
-    GET malformed_media() -> Stream {
+    GET malformed_media() -> ::concord::response::ByteStream using Stream {
         path ["malformed-media"];
     }
 
-    GET arbitrary_media() -> Stream {
+    GET arbitrary_media() -> ::concord::response::ByteStream using Stream {
         path ["arbitrary-media"];
     }
 
-    GET empty() -> Stream {
+    GET empty() -> ::concord::response::ByteStream using Stream {
         path ["empty"];
     }
 
-    GET exact() -> Stream<OctetStream> {
+    GET exact() -> ::concord::response::ByteStream using Stream<OctetStream> {
         path ["exact"];
     }
 
-    GET vendor() -> Stream<crate::generated::any_stream::VendorMedia> {
+    GET vendor() -> ::concord::response::ByteStream using Stream<crate::generated::any_stream::VendorMedia> {
         path ["vendor"];
     }
 
-    GET exact_mismatch() -> Stream<OctetStream> {
+    GET exact_mismatch() -> ::concord::response::ByteStream using Stream<OctetStream> {
         path ["exact-mismatch"];
     }
-}
+}}
 
 fn client(server: &ScriptedServer) -> AnyStreamApi {
     let proxy = SafeProxy::parse(server.url("")).expect("any-stream loopback proxy");
@@ -87,7 +88,7 @@ fn default_and_explicit_any_media_streams_have_the_same_public_contract() {
 
     fn assert_response<S>()
     where
-        S: ResponseBodySpec<Output = ByteStream, Mode = Streaming>,
+        S: ResponseSpec<Output = ByteStream, Mode = Streaming>,
     {
     }
 
@@ -97,9 +98,9 @@ fn default_and_explicit_any_media_streams_have_the_same_public_contract() {
     assert_response::<Stream>();
     assert_response::<Stream<AnyMedia>>();
     assert_response::<Stream<OctetStream>>();
-    assert_eq!(<Stream as ResponseBodySpec>::accept(), None);
+    assert_eq!(<Stream as ResponseSpec>::accept(), None);
     assert_eq!(
-        <Stream<OctetStream> as ResponseBodySpec>::accept(),
+        <Stream<OctetStream> as ResponseSpec>::accept(),
         Some("application/octet-stream")
     );
 }
@@ -198,7 +199,7 @@ async fn generated_and_runtime_streams_preserve_bare_and_exact_wire_semantics() 
         EndpointId::try_from("runtime.any_stream").expect("runtime stream endpoint ID"),
         Method::GET,
     )
-    .path_segment("runtime")
+    .path("runtime")
     .response::<Stream>()
     .build()
     .expect("runtime bare stream response");

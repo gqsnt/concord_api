@@ -1,0 +1,19 @@
+error[E0599]: no associated function or constant named `new` found for struct `RateLimitedApi` in the current scope
+  --> tests/ui/fail/construction/rate_limited_client_no_new.rs:19:29
+   |
+ 3 | / api! {
+ 4 | |     client RateLimitedApi {
+ 5 | |         base "https://rate.example.test";
+ 6 | |         timeout off;
+...  |
+16 | | }
+   | |_- associated function or constant `new` not found for this struct
+...
+19 |       let _ = RateLimitedApi::new();
+   |                               ^^^ associated function or constant not found in `RateLimitedApi`
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following traits define an item `new`, perhaps you need to implement one of them:
+           candidate #1: `brotli::enc::backward_references::hash_to_binary_tree::Allocable`
+           candidate #2: `brotli::enc::threading::AnyBoxConstructor`
+           candidate #3: `ring::aead::BoundKey`

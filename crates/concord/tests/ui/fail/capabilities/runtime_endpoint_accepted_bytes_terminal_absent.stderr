@@ -1,0 +1,5 @@
+error[E0599]: no method named `accepted_bytes` found for struct `concord::endpoint::Request<E>` in the current scope
+  --> tests/ui/fail/capabilities/runtime_endpoint_accepted_bytes_terminal_absent.rs:23:38
+   |
+23 |     let _ = client.request(endpoint).accepted_bytes();
+   |                                      ^^^^^^^^^^^^^^ method not found in `concord::endpoint::Request<RuntimeEndpoint<concord::Bytes>>`

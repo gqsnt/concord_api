@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use bytes::Bytes;
 
 use crate::response::{
-    Buffered, PageResponseSpec, ResponseBodyError, ResponseBodySpec, ResponseHead, ResponseMode,
+    Buffered, PageResponseSpec, ResponseBodyError, ResponseHead, ResponseMode, ResponseSpec,
 };
 
 use super::driver::{RecordDriver, RecordStep};
@@ -20,7 +20,7 @@ use super::{RecordDecoder, RecordError};
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct BufferedRecords<D>(PhantomData<fn() -> D>);
 
-impl<D> ResponseBodySpec for BufferedRecords<D>
+impl<D> ResponseSpec for BufferedRecords<D>
 where
     D: RecordDecoder,
 {

@@ -208,7 +208,7 @@ impl LocalRateLimiter {
         let RateLimitRequest {
             endpoint,
             method,
-            safe_url,
+            observed_url,
             host,
             page_index,
             attempt,
@@ -217,7 +217,7 @@ impl LocalRateLimiter {
         let response_head = RateLimitResponseHead {
             endpoint,
             method,
-            safe_url,
+            observed_url,
             host,
             page_index,
             attempt,
@@ -366,8 +366,11 @@ impl PolicyKeys {
 #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
 struct PolicyKey {
     id: Arc<str>,
-    parts: Arc<[(Arc<str>, Arc<str>)]>,
+    parts: OwnedCanonicalKeyParts,
 }
+
+type OwnedCanonicalKeyPart = (Arc<str>, Arc<[u8]>);
+type OwnedCanonicalKeyParts = Arc<[OwnedCanonicalKeyPart]>;
 
 impl PolicyKey {
     fn new(policy: &RateLimitPolicy) -> Self {

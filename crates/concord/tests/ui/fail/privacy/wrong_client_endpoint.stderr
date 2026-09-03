@@ -1,8 +1,8 @@
 error[E0277]: the trait bound `first_api::Read: second_api::Endpoint` is not satisfied
-  --> tests/ui/fail/privacy/wrong_client_endpoint.rs:21:28
+  --> tests/ui/fail/privacy/wrong_client_endpoint.rs:23:28
    |
-21 |     let _ = client.request(first_api::Read::new());
-   |                    ------- ^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+23 |     let _ = client.request(FirstApi::unbound().read());
+   |                    ------- ^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
    |                    |
    |                    required by a bound introduced by this call
    |
@@ -11,33 +11,36 @@ help: the trait `second_api::Endpoint` is not implemented for `first_api::Read`
    |
  3 | / api! {
  4 | |     client FirstApi {
- 5 | |         base "http://first.example.test/";
+ 5 | |         timeout off;
+ 6 | |         base "http://first.example.test/";
 ...  |
- 8 | |     GET read() -> Bytes;
- 9 | | }
-   | |_^
+ 9 | |     GET read() -> Bytes using Bytes;
+10 | | }}
+   | |__^
    = note: `first_api::Read` implements similarly named trait `first_api::Endpoint`, but not `second_api::Endpoint`
 help: the following other types implement trait `second_api::Endpoint`
-  --> tests/ui/fail/privacy/wrong_client_endpoint.rs:11:1
+  --> tests/ui/fail/privacy/wrong_client_endpoint.rs:12:1
    |
-11 | / api! {
-12 | |     client SecondApi {
-13 | |         base "http://second.example.test/";
+12 | / api! {
+13 | |     client SecondApi {
+14 | |         timeout off;
+15 | |         base "http://second.example.test/";
 ...  |
-16 | |     GET read() -> Bytes;
-17 | | }
-   | | ^
-   | | |
-   | |_`RuntimeEndpoint<R>`
-   |   `second_api::Read`
+18 | |     GET read() -> Bytes using Bytes;
+19 | | }}
+   | |  ^
+   | |  |
+   | |__`RuntimeEndpoint<R>`
+   |    `second_api::Read`
 note: required by a bound in `second_api::<impl SecondApi>::request`
-  --> tests/ui/fail/privacy/wrong_client_endpoint.rs:11:1
+  --> tests/ui/fail/privacy/wrong_client_endpoint.rs:12:1
    |
-11 | / api! {
-12 | |     client SecondApi {
-13 | |         base "http://second.example.test/";
+12 | / api! {
+13 | |     client SecondApi {
+14 | |         timeout off;
+15 | |         base "http://second.example.test/";
 ...  |
-16 | |     GET read() -> Bytes;
-17 | | }
-   | |_^ required by this bound in `second_api::<impl SecondApi>::request`
+18 | |     GET read() -> Bytes using Bytes;
+19 | | }}
+   | |__^ required by this bound in `second_api::<impl SecondApi>::request`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

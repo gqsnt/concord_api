@@ -1,0 +1,13 @@
+error[E0599]: no associated function or constant named `from_flat_values` found for struct `Item` in the current scope
+  --> tests/ui/fail/capabilities/flat_endpoint_constructor_absent.rs:15:39
+   |
+ 3 | / api! {
+ 4 | |     client TreeApi {
+ 5 | |         timeout off;
+ 6 | |         base "https://tree.example.test";
+...  |
+12 | | }
+   | |_- associated function or constant `from_flat_values` not found for this struct
+...
+15 |       let _ = tree_api::regional::Item::from_flat_values(
+   |                                         ^^^^^^^^^^^^^^^^ associated function or constant not found in `Item`

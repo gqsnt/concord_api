@@ -3,9 +3,10 @@ use concord::api;
 
 api! {
     client Api {
+        timeout off;
         base "http://example.test";
         credentials {
-            secret token: String;
+            secret token;
             credential session = bearer(secret.token);
         }
     }

@@ -2,19 +2,20 @@ use concord::api;
 
 api! {
     client Api {
+        timeout off;
         base "https://example.test";
-    }
+
 
     scope pages(region: String) {
-        host [scope.region, "api"];
-        rate_limit { by [host]; 1 / 1s; }
+        subdomain replace [pages.region, "api"];
+        rate_limit { key [host]; allow 1 per 1s; }
 
-        GET list() -> Bytes {
-            paginate crate::CursorPagination {
-                region: bind scope.region,
+        GET list() -> Bytes using Bytes {
+            paginate with crate::CursorPagination {
+                region -> pages.region;
             }
         }
     }
-}
+}}
 
 fn main() {}

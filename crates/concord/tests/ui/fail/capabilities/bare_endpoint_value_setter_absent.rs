@@ -3,12 +3,15 @@ use concord::api;
 
 api! {
     client EndpointSetterApi {
+        timeout off;
         base "http://endpoint-setter.example.test";
-    }
 
-    GET read(label: Option<String>) -> Bytes;
-}
+
+    GET read(label: Option<String>) -> Bytes using Bytes;
+}}
 
 fn main() {
-    let _ = endpoint_setter_api::Read::new().label("selected".to_owned());
+    let _ = EndpointSetterApi::unbound()
+        .read(None)
+        .label("selected".to_owned());
 }

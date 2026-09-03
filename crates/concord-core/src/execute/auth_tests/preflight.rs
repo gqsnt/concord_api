@@ -4,7 +4,7 @@ use super::*;
 async fn configured_key_limit_failure_cuts_off_every_protected_side_effect_and_redacts_key() {
     const KEY_SENTINEL: &str = "configured-key-private-73cf9a0d";
     const KEY_LIMIT: usize = 64;
-    const KEY_PART_NAME_BYTES: usize = "vars.tenant".len();
+    const KEY_PART_NAME_BYTES: usize = "client.tenant".len();
     let executor = DeterministicExecutor::new();
     let provider_calls = Arc::new(AtomicUsize::new(0));
     let selector = SlotSelector::provider(
@@ -228,7 +228,7 @@ async fn limiter_rejection_precedes_custom_authorization_materialization() {
         Auth::authorization_with_scheme("Token", CredentialRef::new(selector))
             .expect("valid static Authorization scheme"),
     )
-    .response_bytes()
+    .accepted_bytes()
     .build()
     .expect("custom Authorization endpoint");
 
@@ -644,7 +644,10 @@ async fn authenticated_cleartext_fails_in_public_preparation_before_hook_body_or
     let core = ClientCore::build_with_development(
         "http://cleartext.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
-        RuntimeConfigBuilder::new().hooks(hooks.clone()),
+        RuntimeConfigBuilder::new()
+            .request_gate(hooks.clone())
+            .response_gate(hooks.clone())
+            .completion_observer(hooks.clone()),
         &executor,
     )
     .expect("cleartext core remains valid for public endpoints");

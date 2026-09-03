@@ -79,6 +79,6 @@ impl PaginationController<ExamplePage> for ExampleController {
 
 /// Constructs a bounded request using the downstream controller.
 pub fn construct(client: &PaginationApi) {
-    let _: PaginatedRequest<_> = client.custom().paginate(PageLimit::Take(2));
+    let _: PaginatedRequest<_> = client.custom().paginate(PageLimit::Prefix(2));
 }
 // ANCHOR_END: pagination_controller_extension

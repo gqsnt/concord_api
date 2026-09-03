@@ -1,0 +1,8 @@
+caller API change
+value/domain meaning change
+wire route/query/header change
+security/auth change
+runtime-policy/repeatability/deadline change
+capability/terminal change
+identity/rate-schema change
+documentation-only change

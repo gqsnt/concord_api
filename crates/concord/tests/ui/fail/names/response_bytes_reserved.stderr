@@ -1,5 +1,0 @@
-error: generated generated client method `response_bytes` collides with a reserved Concord method
- --> tests/ui/fail/names/response_bytes_reserved.rs:8:9
-  |
-8 |     GET response_bytes() -> concord::Bytes;
-  |         ^^^^^^^^^^^^^^

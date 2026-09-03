@@ -20,7 +20,7 @@ pub struct RateLimitRequest<'a> {
     pub method: &'a Method,
     /// Credential-sanitized logical URL. Public values may still contain
     /// operational identifiers or personally identifiable information.
-    pub safe_url: &'a str,
+    pub observed_url: &'a str,
     /// Final logical host when one exists.
     pub host: Option<&'a str>,
     /// Zero-based page index; direct endpoint execution uses zero.
@@ -118,7 +118,7 @@ pub struct RateLimitResponseHead<'a> {
     pub method: &'a Method,
     /// Credential-sanitized logical URL. Public values may still contain
     /// operational identifiers or personally identifiable information.
-    pub safe_url: &'a str,
+    pub observed_url: &'a str,
     /// Final logical host when one exists.
     pub host: Option<&'a str>,
     /// Zero-based page index; direct endpoint execution uses zero.
@@ -215,7 +215,7 @@ mod tests {
             .acquire(RateLimitRequest {
                 endpoint: "RateApi::get",
                 method: &method,
-                safe_url: "https://example.test/get",
+                observed_url: "https://example.test/get",
                 host: Some("example.test"),
                 page_index: 0,
                 attempt: AttemptInfo::INITIAL,
@@ -227,7 +227,7 @@ mod tests {
             .acquire(RateLimitRequest {
                 endpoint: "RateApi::get",
                 method: &method,
-                safe_url: "https://example.test/get",
+                observed_url: "https://example.test/get",
                 host: Some("example.test"),
                 page_index: 0,
                 attempt: AttemptInfo::INITIAL,

@@ -1,5 +1,5 @@
-error: `scope.region` is unavailable in a client rate-limit declaration
- --> tests/ui/fail/rate_limits/rate_limit_client_scope_dimension.rs:6:32
+error: v1 `scope.NAME` was removed; use the actual scope identifier
+ --> tests/ui/fail/rate_limits/rate_limit_client_scope_dimension.rs:7:27
   |
-6 |         rate_limit { by [scope.region]; 1 / 1s; }
-  |                                ^^^^^^
+7 |         rate_limit { key [scope.region]; allow 1 per 1s; }
+  |                           ^^^^^

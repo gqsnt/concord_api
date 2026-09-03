@@ -1,5 +1,5 @@
-error: duplicate rate-limit dimension `vars.tenant`
- --> tests/ui/fail/rate_limits/rate_limit_duplicate_dimension.rs:7:39
+error: duplicate rate-limit dimension `client.tenant`
+ --> tests/ui/fail/rate_limits/rate_limit_duplicate_dimension.rs:8:42
   |
-7 |         rate_limit { by [vars.tenant, vars.tenant]; 1 / 1s; }
-  |                                       ^^^^
+8 |         rate_limit { key [client.tenant, client.tenant]; allow 1 per 1s; }
+  |                                          ^^^^^^

@@ -3,13 +3,14 @@ use concord::api;
 
 api! {
     client ScopeSetterApi {
+        timeout off;
         base "http://scope-setter.example.test";
-    }
+
 
     scope control_scope(label: Option<String>) {
-        GET list() -> Bytes;
+        GET list() -> Bytes using Bytes;
     }
-}
+}}
 
 fn main() {
     let client = ScopeSetterApi::new().unwrap();

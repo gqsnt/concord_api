@@ -21,15 +21,16 @@ impl DecodeBody for SessionCodec {
 
 api! {
     client StorageApi {
+        timeout off;
         base "http://storage.example.test/";
         credentials {
             credential session = endpoint source;
         }
-    }
 
-    GET source() -> crate::SessionCodec;
-    GET other() -> Text;
-}
+
+    GET source() -> crate::SessionToken using crate::SessionCodec;
+    GET other() -> String using Text;
+}}
 
 fn main() {
     let client = StorageApi::new().unwrap();

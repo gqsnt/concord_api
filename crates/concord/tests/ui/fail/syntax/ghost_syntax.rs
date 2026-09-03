@@ -2,13 +2,15 @@ use concord::api;
 
 api! {
     client FlatSecretApi {
+        timeout off;
         base "https://example.test/";
-        secret token: String;
+        secret token;
     }
 }
 
 api! {
     client FlatCredentialApi {
+        timeout off;
         base "https://example.test/";
         credential token = bearer(secret.token);
     }
@@ -16,6 +18,7 @@ api! {
 
 api! {
     client DefaultBlockApi {
+        timeout off;
         base "https://example.test/";
         default { timeout 1s; }
     }
@@ -23,6 +26,7 @@ api! {
 
 api! {
     client DefaultsBlockApi {
+        timeout off;
         base "https://example.test/";
         defaults { timeout 1s; }
     }
@@ -30,6 +34,7 @@ api! {
 
 api! {
     client PoliciesBlockApi {
+        timeout off;
         base "https://example.test/";
         policies { }
     }
@@ -37,6 +42,7 @@ api! {
 
 api! {
     client BehaviorsBlockApi {
+        timeout off;
         base "https://example.test/";
         behaviors { }
     }
@@ -44,6 +50,7 @@ api! {
 
 api! {
     client BehaviorApi {
+        timeout off;
         base "https://example.test/";
         behavior finite;
     }
@@ -51,6 +58,7 @@ api! {
 
 api! {
     client PrefixApi {
+        timeout off;
         base "https://example.test/";
         prefix ["v1"];
     }
@@ -58,13 +66,15 @@ api! {
 
 api! {
     client ParamsApi {
+        timeout off;
         base "https://example.test/";
-        params { "id" = vars.id; }
+        params { "id" = client.id; }
     }
 }
 
 api! {
     client ProfileApi {
+        timeout off;
         base "https://example.test/";
         profile standard { }
     }
@@ -72,6 +82,7 @@ api! {
 
 api! {
     client AccessTokenApi {
+        timeout off;
         base "https://example.test/";
         access_token token: String;
     }
@@ -79,47 +90,53 @@ api! {
 
 api! {
     client CertificateApi {
+        timeout off;
         base "https://example.test/";
-        auth certificate;
+        auth { certificate; }
     }
 }
 
 api! {
     client AuthCombinatorApi {
+        timeout off;
         base "https://example.test/";
-        auth any;
+        auth { any; }
     }
 }
 
 api! {
     client AllAuthCombinatorApi {
+        timeout off;
         base "https://example.test/";
-        auth all;
+        auth { all; }
     }
 }
 
 api! {
     client OneOfAuthCombinatorApi {
+        timeout off;
         base "https://example.test/";
-        auth one_of;
+        auth { one_of; }
     }
 }
 
 api! {
     client OptionalAuthCombinatorApi {
+        timeout off;
         base "https://example.test/";
-        auth optional;
+        auth { optional; }
     }
 }
 
 api! {
     client InterpolationApi {
+        timeout off;
         base "https://example.test/";
-    }
 
-    GET read(id: String) -> Bytes {
-        path [["items-", ep.id]];
+
+    GET read(id: String) -> Bytes using Bytes {
+        path [["items-", endpoint.id]];
     }
-}
+}}
 
 fn main() {}

@@ -1,15 +1,15 @@
 error[E0599]: no method named `set` found for struct `CustomProviderCredentialHandle<M>` in the current scope
-  --> tests/ui/fail/authentication/authentication_custom_set_absent.rs:38:44
+  --> tests/ui/fail/authentication/authentication_custom_set_absent.rs:39:44
    |
 24 | / api! {
 25 | |     client Api {
-26 | |         base "http://example.test";
-27 | |         credentials {
+26 | |         timeout off;
+27 | |         base "http://example.test";
 ...  |
-31 | | }
+32 | | }
    | |_- method `set` not found for this struct
 ...
-38 |       let _ = client.credentials().session().set(SessionToken);
+39 |       let _ = client.credentials().session().set(SessionToken);
    |                                              ^^^
    |
    = help: items from traits can only be used if the trait is implemented and in scope
@@ -20,9 +20,9 @@ help: there is a method `is_set` with a similar name, but with different argumen
    |
 24 | / api! {
 25 | |     client Api {
-26 | |         base "http://example.test";
-27 | |         credentials {
+26 | |         timeout off;
+27 | |         base "http://example.test";
 ...  |
-31 | | }
+32 | | }
    | |_^
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

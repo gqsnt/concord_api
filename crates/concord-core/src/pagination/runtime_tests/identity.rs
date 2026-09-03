@@ -32,7 +32,6 @@ async fn selected_limiter_receives_actual_page_hosts_while_automatic_surfaces_st
     }
 
     let hooks = Arc::new(PaginationProbe::default());
-    let configured_hooks: Arc<dyn RuntimeHooks> = hooks.clone();
     let limiter = Arc::new(HostLimiterProbe::default());
     let configured_limiter: Arc<dyn RateLimiter> = limiter.clone();
     let debug = Arc::new(Mutex::new(Vec::new()));
@@ -40,7 +39,9 @@ async fn selected_limiter_receives_actual_page_hosts_while_automatic_surfaces_st
         "http://pagination-runtime.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
         RuntimeConfigBuilder::new()
-            .hooks(configured_hooks)
+            .request_gate(hooks.clone())
+            .response_gate(hooks.clone())
+            .completion_observer(hooks.clone())
             .rate_limiter(configured_limiter)
             .debug(DebugLevel::Headers),
         &executor,
@@ -56,13 +57,13 @@ async fn selected_limiter_receives_actual_page_hosts_while_automatic_surfaces_st
                     host: INITIAL.to_owned(),
                 },
             ),
-            PageLimit::HardCap(NonZeroU32::new(2).expect("hard cap")),
+            PageLimit::CompleteWithin(NonZeroU32::new(2).expect("completion limit")),
         )
         .await,
     );
     assert_eq!(
         error.pagination_kind(),
-        Some(PaginationErrorKind::HardCapExceeded)
+        Some(PaginationErrorKind::CompletionLimitExceeded)
     );
 
     let acquisitions = limiter
@@ -83,21 +84,29 @@ async fn selected_limiter_receives_actual_page_hosts_while_automatic_surfaces_st
     );
     let initial_host = format!("{INITIAL}.pagination-runtime.example.test");
     let second_host = format!("{SECOND}.pagination-runtime.example.test");
+    let canonical = |value: &str| {
+        crate::rate_limit::encode_canonical(
+            &value.to_owned(),
+            crate::rate_limit::MAX_RATE_LIMIT_KEY_BYTES,
+        )
+        .expect("canonical test value")
+        .into_vec()
+    };
     assert_eq!(acquisitions[0].2.as_deref(), Some(initial_host.as_str()));
     assert_eq!(acquisitions[1].2.as_deref(), Some(second_host.as_str()));
     assert_ne!(acquisitions[0].2, acquisitions[1].2);
     assert_eq!(
         acquisitions[0].3,
         [
-            ("host".to_owned(), initial_host),
-            ("ep.host".to_owned(), INITIAL.to_owned()),
+            ("host".to_owned(), canonical(&initial_host)),
+            ("endpoint.host".to_owned(), canonical(INITIAL)),
         ]
     );
     assert_eq!(
         acquisitions[1].3,
         [
-            ("host".to_owned(), second_host),
-            ("ep.host".to_owned(), SECOND.to_owned()),
+            ("host".to_owned(), canonical(&second_host)),
+            ("endpoint.host".to_owned(), canonical(SECOND)),
         ]
     );
 
@@ -158,13 +167,14 @@ fn rate_key_core(
     limiter: Arc<KeyBoundLimiter>,
     debug: Arc<Mutex<Vec<String>>>,
 ) -> ClientCore {
-    let hooks: Arc<dyn RuntimeHooks> = hooks;
     let limiter: Arc<dyn RateLimiter> = limiter;
     ClientCore::build_with_development(
         "https://pagination-runtime.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
         RuntimeConfigBuilder::new()
-            .hooks(hooks)
+            .request_gate(hooks.clone())
+            .response_gate(hooks.clone())
+            .completion_observer(hooks)
             .rate_limiter(limiter)
             .debug(DebugLevel::Headers),
         executor,
@@ -187,7 +197,7 @@ fn collect_rate_key(
                 credential,
             },
         ),
-        PageLimit::Take(1),
+        PageLimit::Prefix(1),
     )
 }
 
@@ -195,8 +205,9 @@ fn collect_rate_key(
 #[cfg(feature = "default-tls")]
 async fn pagination_rate_key_limit_uses_actual_value_and_cuts_off_protected_work() {
     const BOUNDARY: &str = "page-rate-key-boundary-sentinel-4a871f";
-    const KEY_NAME: &str = "ep.cursor";
-    let key_limit = KEY_NAME.len() + BOUNDARY.len();
+    const KEY_NAME: &str = "endpoint.cursor";
+    const CANONICAL_UTF8_OVERHEAD: usize = 1 + "utf8".len() + 8;
+    let key_limit = 4 + KEY_NAME.len() + 8 + CANONICAL_UTF8_OVERHEAD + BOUNDARY.len();
 
     let accepted_executor = DeterministicExecutor::new();
     accepted_executor
@@ -251,9 +262,12 @@ async fn pagination_rate_key_limit_uses_actual_value_and_cuts_off_protected_work
     );
     assert_eq!(accepted_hooks.before.lock().expect("before").len(), 1);
     assert_eq!(accepted_hooks.response.lock().expect("response").len(), 1);
-    assert_eq!(
-        accepted_hooks.completion.lock().expect("completion").len(),
-        1
+    assert!(
+        accepted_hooks
+            .completion
+            .lock()
+            .expect("completion")
+            .is_empty()
     );
     let accepted_hook_safe = {
         let before = accepted_hooks.before.lock().expect("accepted before");

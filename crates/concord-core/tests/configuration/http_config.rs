@@ -10,7 +10,7 @@ fn always_available_methods(builder: HttpConfigBuilder, proxy: SafeProxy) -> Htt
         .pool_max_idle_per_host(4)
         .tcp_keepalive(Duration::from_secs(5))
         .tcp_nodelay(true)
-        .https_only(true)
+        .require_https()
         .http1_only()
         .proxy(proxy)
         .protocol_recovery(false)

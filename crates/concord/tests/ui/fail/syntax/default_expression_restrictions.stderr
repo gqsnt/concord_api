@@ -1,35 +1,35 @@
-error: defaults accept a Rust const path, not a call, method, macro, block, or collection expression
- --> tests/ui/fail/syntax/default_expression_restrictions.rs:7:40
+error: defaults accept a Rust const/static path, not a call, method, macro, block, or collection expression
+ --> tests/ui/fail/syntax/default_expression_restrictions.rs:8:40
   |
-7 |             value: String = String::new();
+8 |             value: String = String::new();
   |                                        ^
 
-error: defaults accept a Rust const path, not a call, method, macro, block, or collection expression
-  --> tests/ui/fail/syntax/default_expression_restrictions.rs:16:40
+error: defaults accept a Rust const/static path, not a call, method, macro, block, or collection expression
+  --> tests/ui/fail/syntax/default_expression_restrictions.rs:18:40
    |
-16 |             value: String = crate::TEXT.to_owned();
+18 |             value: String = crate::TEXT.to_owned();
    |                                        ^
 
-error: defaults accept a Rust const path, not a call, method, macro, block, or collection expression
-  --> tests/ui/fail/syntax/default_expression_restrictions.rs:25:33
+error: defaults accept a Rust const/static path, not a call, method, macro, block, or collection expression
+  --> tests/ui/fail/syntax/default_expression_restrictions.rs:28:33
    |
-25 |             value: Vec<u8> = vec![];
+28 |             value: Vec<u8> = vec![];
    |                                 ^
 
-error: defaults accept only `default`, a string literal, signed integer literal, boolean literal, or Rust const path
-  --> tests/ui/fail/syntax/default_expression_restrictions.rs:34:25
+error: defaults accept only string, char, boolean, signed numeric literals, or a Rust const/static path
+  --> tests/ui/fail/syntax/default_expression_restrictions.rs:38:25
    |
-34 |             value: u8 = { 0 };
+38 |             value: u8 = { 0 };
    |                         ^
 
-error: defaults accept only `default`, a string literal, signed integer literal, boolean literal, or Rust const path
-  --> tests/ui/fail/syntax/default_expression_restrictions.rs:43:30
+error: defaults accept only string, char, boolean, signed numeric literals, or a Rust const/static path
+  --> tests/ui/fail/syntax/default_expression_restrictions.rs:48:30
    |
-43 |             value: Vec<u8> = [0];
+48 |             value: Vec<u8> = [0];
    |                              ^
 
 error: a request body parameter cannot have a default
-  --> tests/ui/fail/syntax/default_expression_restrictions.rs:53:38
+  --> tests/ui/fail/syntax/default_expression_restrictions.rs:59:47
    |
-53 |     POST send(#[body] payload: Bytes = default) -> Bytes;
-   |                                      ^
+59 |     POST send(body payload: Bytes using Bytes = default) -> Bytes using Bytes;
+   |                                               ^

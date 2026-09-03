@@ -35,8 +35,8 @@ test:
 ui:
     cargo nextest --version
     cargo nextest run -p concord-macros --lib
-    cargo nextest run -p concord --test ui --no-default-features
-    cargo nextest run -p concord --test ui --all-features
+    cargo nextest run -p concord --test ui --no-default-features --test-threads 1
+    cargo nextest run -p concord --test ui --all-features --test-threads 1
     cargo nextest run -p concord-core --test ui --no-default-features
 
 msrv:

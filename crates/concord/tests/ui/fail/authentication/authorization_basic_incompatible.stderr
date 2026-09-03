@@ -1,5 +1,5 @@
 error: credential source is incompatible with this authentication placement
-  --> tests/ui/fail/authentication/authorization_basic_incompatible.rs:14:30
+  --> tests/ui/fail/authentication/authorization_basic_incompatible.rs:15:32
    |
-14 |         auth authorization = login;
-   |                              ^^^^^
+15 |         auth { authorization = login; }
+   |                                ^^^^^

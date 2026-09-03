@@ -8,36 +8,38 @@ pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> Tok
     let credentials_store = credentials_store_name(client);
     let specification_module = specification_module_name(client);
     let specification_aliases = generate_specification_aliases(&client.children);
+    let specification_assertions =
+        generate_specification_assertions(&client.children, facade_path, &specification_module);
     let base = &client.base;
     let contract_assertion = generated_contract_assertion();
 
-    let value_summary = value_category_summary(&client.values, "Client vars");
+    let value_summary = value_category_summary(&client.values, "Client values");
     let credential_summary = credential_summary(client);
     let timeout_summary = client.config.timeout.map_or_else(
         || "Default operation timeout: disabled.".to_owned(),
         |duration| format!("Default operation timeout: {}.", human_duration(duration)),
     );
     let rate_summary = if client.requires_limiter {
-        "Rate-limit policies are declared; building requires a selected functional or explicit no-op limiter."
+        "Rate-limit policies are declared; building requires an explicitly selected limiter, and Concord never supplies one implicitly."
     } else {
         "Rate-limit policies: none."
     };
     let client_doc = format!(
-        "Immutable generated client for base URL `{}`. Build it with [`{builder_name}`]. Transport, runtime policy, vars, and credential sources are fixed in the built snapshot.",
+        "Immutable generated client for base URL `{}`. Build it with [`{builder_name}`]. Transport, runtime policy, client values, and credential sources are fixed in the built snapshot.",
         client.base.value()
     );
     let builder_doc = format!(
-        "Builder for [`{client_name}`].\n\n# Inputs\n\n{value_summary} {credential_summary}\n\n# Value controls\n\nMutate public values with `set_*`. Optional values also expose `clear_*`; defaulted values also expose `reset_*`. A builder reset discards the override so `build` evaluates the DSL default.\n\n# Defaults\n\nBase URL: `{}`. {timeout_summary} {rate_summary} Default expressions are evaluated once by `build` unless overridden. The `= default` shorthand invokes application-owned `Default::default()` at that point and may perform application effects; Concord performs no managed I/O during construction.\n\n# Configuration\n\nUse `retry` for a Concord-managed retry policy, `configure_http` for transport policy, and `configure_runtime` for hooks, limits, limiter selection, and runtime policy. Transformations apply immediately in call order.",
+        "Builder for [`{client_name}`].\n\n# Inputs\n\n{value_summary} {credential_summary}\n\n# Value controls\n\n`set_*` replaces the exact effective type. Concord-optional values also expose `with_*` and `clear_*`; defaulted values expose `reset_*`. A builder reset discards the override so the next successful `build` evaluates the declaration default once.\n\n# Defaults\n\nBase URL: `{}`. {timeout_summary} {rate_summary} `#[default]` invokes application-owned `Default::default()` for the written payload type; explicit stable initializers are evaluated at the same owner boundary. Concord performs no managed I/O during construction.\n\n# Configuration\n\nUse `retry` for a Concord-managed retry policy, `configure_http` for transport policy, and `configure_runtime` for gates, completion observation, finite limits, limiter selection, and runtime policy. Transformations apply immediately in call order.",
         client.base.value()
     );
     let support_doc = format!(
-        "Generated scope methods, explicit endpoint types, and named requests for [`{client_name}`]."
+        "Generated scope navigation, unbound endpoint intents, and named requests for [`{client_name}`]."
     );
     let constructor_doc = format!(
-        "Builds `{client_name}` with its declared defaults. This constructor exists only when no required vars, secrets, or custom providers are missing."
+        "Builds `{client_name}` with its declared defaults. This constructor exists only when no required client values, secrets, custom providers, limiter selection, or other runtime choices are missing."
     );
     let capability_doc = format!(
-        "Sealed endpoint contract for [`{client_name}`]. Its associated [`Request`](Endpoint::Request) is the named bound request type returned by this client's direct and explicit binding paths. Downstream types cannot implement this trait."
+        "Sealed endpoint contract for [`{client_name}`]. Its associated [`Request`](Endpoint::Request) is the named bound request type returned by this client's direct and unbound-then-bound paths. Downstream types cannot implement this trait."
     );
 
     let value_fields = client
@@ -46,7 +48,7 @@ pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> Tok
         .enumerate()
         .map(|(index, value)| {
             let field = client_value_field(index, value);
-            let ty = &value.ty;
+            let ty = &value.effective_type;
             quote!(#field: #ty,)
         })
         .collect::<Vec<_>>();
@@ -57,7 +59,7 @@ pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> Tok
         .map(|(index, value)| {
             let field = builder_value_field(index, value);
             let ty = value.client_builder_storage_type();
-            quote!(#field: ::std::option::Option<#ty>,)
+            quote!(#field: #facade_path::__private::Override<#ty>,)
         })
         .collect::<Vec<_>>();
     let secret_builder_fields = client
@@ -93,7 +95,7 @@ pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> Tok
         .enumerate()
         .map(|(index, value)| {
             let field = builder_value_field(index, value);
-            quote!(#field: ::std::option::Option::None,)
+            quote!(#field: #facade_path::__private::Override::UseDeclaration,)
         })
         .collect::<Vec<_>>();
     let secret_builder_initializers = client
@@ -176,11 +178,17 @@ pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> Tok
     );
 
     let scope_tree = generate_scope_tree(client, &client.children, &[], facade_path);
+    let unbound_tree = generate_unbound_tree(client);
+    let unbound_type_path = Ident::new("Unbound", Span::mixed_site());
+    let unbound_value = &unbound_type_path;
     let client_child_methods = generate_client_child_methods(client, facade_path);
     let rate_limit_identity_constants = rate_limit_identity_constants(client);
+    let (contract_static, contract_declaration) =
+        generate_contract_description(client, facade_path);
 
     quote! {
         #rate_limit_identity_constants
+        #specification_assertions
 
         #[doc(hidden)]
         pub mod #specification_module {
@@ -222,6 +230,8 @@ pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> Tok
             #[allow(unused_imports)]
             use super::*;
 
+            #contract_declaration
+
             mod __concord_generated {
                 pub(super) mod __core {
                     pub use #facade_path::*;
@@ -242,7 +252,7 @@ pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> Tok
                 /// Response specification selected by this endpoint declaration.
                 type Response;
 
-                /// Returns the safe static or bounded runtime endpoint description.
+                /// Returns the value-free static or bounded runtime endpoint description.
                 fn description(
                     &self,
                 ) -> &#facade_path::endpoint::EndpointDescription;
@@ -255,7 +265,7 @@ pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> Tok
                     &self,
                     client: &super::#client_name,
                 ) -> ::std::result::Result<
-                    #facade_path::endpoint::SafeRequestPlan,
+                    #facade_path::endpoint::CredentialFreeRequestPlan,
                     #facade_path::ApiError,
                 >;
             }
@@ -264,13 +274,13 @@ pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> Tok
             impl<R> __concord_endpoint_seal::Sealed
                 for #facade_path::endpoint::RuntimeEndpoint<R>
             where
-                R: #facade_path::response::ResponseBodySpec,
+                R: #facade_path::response::ResponseSpec,
             {}
 
             #[doc(hidden)]
             impl<R> Endpoint for #facade_path::endpoint::RuntimeEndpoint<R>
             where
-                R: #facade_path::response::ResponseBodySpec,
+                R: #facade_path::response::ResponseSpec,
             {
                 type Request = #facade_path::endpoint::Request<Self>;
                 type Response = R;
@@ -292,13 +302,13 @@ pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> Tok
                     &self,
                     client: &super::#client_name,
                 ) -> ::std::result::Result<
-                    #facade_path::endpoint::SafeRequestPlan,
+                    #facade_path::endpoint::CredentialFreeRequestPlan,
                     #facade_path::ApiError,
                 > {
-                    __concord_generated::__core::__private::safe_request_plan(
+                    __concord_generated::__core::__private::credential_free_request_plan(
                         &client.__concord_core,
                         self.description(),
-                        <R as #facade_path::response::ResponseBodySpec>::accept(),
+                        <R as #facade_path::response::ResponseSpec>::accept(),
                         |builder| {
                             <Self as __concord_generated::__core::__private::EndpointSpec>::prepare_head(
                                 self,
@@ -311,6 +321,7 @@ pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> Tok
 
             #credentials_module
 
+            #unbound_tree
             #scope_tree
 
             impl super::#client_name {
@@ -322,12 +333,24 @@ pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> Tok
                     super::#builder_name::new()
                 }
 
+                /// Starts the inert declaration-shaped unbound endpoint tree.
+                #[must_use]
+                pub const fn unbound() -> #unbound_type_path {
+                    #unbound_value
+                }
+
+                /// Returns the immutable, value-free v2 contract tree.
+                #[must_use]
+                pub fn contract() -> &'static #facade_path::endpoint::ContractDescription {
+                    ::std::sync::LazyLock::force(&#contract_static)
+                }
+
                 #client_child_methods
                 #credentials_method
 
                 #[must_use]
-                /// Creates a side-effect-free pending request from an explicit endpoint generated
-                /// for this client or a stable runtime endpoint.
+                /// Creates a side-effect-free pending request from an unbound endpoint intent
+                /// generated for this client or a stable runtime endpoint.
                 pub fn request<E>(&self, endpoint: E) -> E::Request
                 where
                     E: Endpoint,
@@ -335,12 +358,12 @@ pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> Tok
                     <E as Endpoint>::__concord_bind(endpoint, self)
                 }
 
-                /// Builds one sanitized no-effect plan by borrowing an endpoint value.
+                /// Builds one credential-free, redaction-aware no-effect plan by borrowing an endpoint value.
                 pub fn plan<E>(
                     &self,
                     endpoint: &E,
                 ) -> ::std::result::Result<
-                    #facade_path::endpoint::SafeRequestPlan,
+                    #facade_path::endpoint::CredentialFreeRequestPlan,
                     #facade_path::ApiError,
                 >
                 where
@@ -459,33 +482,291 @@ pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> Tok
     }
 }
 
+fn generate_contract_description(
+    client: &Client,
+    facade_path: &TokenStream,
+) -> (Ident, TokenStream) {
+    let static_name = private_ident("contract_description", 0, &client.name);
+    let client_path_text = canonical_ident(&client.name);
+    let client_path = syn::LitStr::new(&client_path_text, client.name.span());
+    let declaration = declaration_tokens(
+        &client.name,
+        &client_path_text,
+        &client.attributes,
+        quote!(#facade_path::endpoint::DeclarationKind::Client),
+        facade_path,
+    );
+    let values = client.values.iter().map(|value| {
+        value_tokens(
+            value,
+            quote!(#facade_path::endpoint::ValueOwnerKind::Client),
+            &client_path,
+            facade_path,
+        )
+    });
+    let secrets = client.secrets.iter().map(|secret| {
+        let name = syn::LitStr::new(&canonical_ident(&secret.name), secret.name.span());
+        quote!(#facade_path::endpoint::SecretDescription::generated(#name))
+    });
+    let credentials = client.credentials.iter().map(|credential| {
+        let name = syn::LitStr::new(&canonical_ident(&credential.name), credential.name.span());
+        let (source, protected_input_count, endpoint_id, provider_type, behavior_class) =
+            match &credential.source {
+                CredentialSource::ApiKey { .. } => (
+                    quote!(#facade_path::endpoint::CredentialSourceKind::ApiKey),
+                    1_usize,
+                    quote!(::std::option::Option::None),
+                    quote!(::std::option::Option::None),
+                    quote!(#facade_path::endpoint::ContractFactClass::StaticDeclaration),
+                ),
+                CredentialSource::Bearer { .. } => (
+                    quote!(#facade_path::endpoint::CredentialSourceKind::Bearer),
+                    1_usize,
+                    quote!(::std::option::Option::None),
+                    quote!(::std::option::Option::None),
+                    quote!(#facade_path::endpoint::ContractFactClass::StaticDeclaration),
+                ),
+                CredentialSource::Basic { .. } => (
+                    quote!(#facade_path::endpoint::CredentialSourceKind::Basic),
+                    2_usize,
+                    quote!(::std::option::Option::None),
+                    quote!(::std::option::Option::None),
+                    quote!(#facade_path::endpoint::ContractFactClass::StaticDeclaration),
+                ),
+                CredentialSource::Endpoint { endpoint_id, .. } => {
+                    let endpoint_id = endpoint_id
+                        .and_then(|id| endpoint_contract_id_by_semantic_id(&client.children, id))
+                        .map_or_else(
+                            || quote!(::std::option::Option::None),
+                            |id| {
+                                let id = syn::LitStr::new(id, credential.name.span());
+                                quote!(::std::option::Option::Some(#id))
+                            },
+                        );
+                    (
+                        quote!(#facade_path::endpoint::CredentialSourceKind::Endpoint),
+                        0_usize,
+                        endpoint_id,
+                        quote!(::std::option::Option::None),
+                        quote!(#facade_path::endpoint::ContractFactClass::StaticDeclaration),
+                    )
+                }
+                CredentialSource::Custom { provider } => {
+                    let provider = type_literal(provider);
+                    (
+                        quote!(#facade_path::endpoint::CredentialSourceKind::CustomProvider),
+                        0_usize,
+                        quote!(::std::option::Option::None),
+                        quote!(::std::option::Option::Some(#provider)),
+                        quote!(#facade_path::endpoint::ContractFactClass::OpaqueExtension),
+                    )
+                }
+            };
+        quote! {
+            #facade_path::endpoint::CredentialDescription::generated(
+                #name,
+                #source,
+                #protected_input_count,
+                #endpoint_id,
+                #provider_type,
+                #behavior_class,
+            )
+        }
+    });
+    let rate_profiles = client.rate_limit_profiles.iter().map(|profile| {
+        let name = syn::LitStr::new(&profile.name, client.name.span());
+        let id = syn::LitStr::new(&profile.id, client.name.span());
+        let explicit_id = profile.explicit_id;
+        let formals = profile
+            .formals
+            .iter()
+            .map(|formal| syn::LitStr::new(formal, client.name.span()));
+        let dimensions = profile
+            .dimensions
+            .iter()
+            .map(|dimension| syn::LitStr::new(dimension, client.name.span()));
+        let cost = profile.cost;
+        let windows = profile.windows.iter().map(|window| {
+            let capacity = window.capacity;
+            let seconds = window.duration.as_secs();
+            let nanos = window.duration.subsec_nanos();
+            quote! {
+                #facade_path::endpoint::RateLimitWindowDescription::generated(
+                    #capacity,
+                    ::std::time::Duration::new(#seconds, #nanos),
+                )
+            }
+        });
+        quote! {
+            #facade_path::endpoint::RateProfileDescription::generated(
+                #name,
+                #id,
+                #explicit_id,
+                ::std::vec![#(#formals),*],
+                ::std::vec![#(#dimensions),*],
+                #cost,
+                ::std::vec![#(#windows),*],
+            )
+        }
+    });
+    let local = client
+        .local_attachments
+        .iter()
+        .map(|attachment| attachment_tokens(attachment, true, facade_path));
+    let effective = effective_config_attachment_tokens(&client.config, facade_path);
+    let scopes = client.children.iter().filter_map(|child| match child {
+        Child::Scope(scope) => Some(scope_contract_tokens(client, scope, &[], facade_path)),
+        Child::Endpoint(_) => None,
+    });
+    let endpoints = client.children.iter().filter_map(|child| match child {
+        Child::Endpoint(endpoint) => Some(endpoint_description_clone(endpoint, &[])),
+        Child::Scope(_) => None,
+    });
+    let timeout = client.config.timeout.map_or_else(
+        || quote!(#facade_path::endpoint::TimeoutSelection::Disabled),
+        |duration| {
+            let seconds = duration.as_secs();
+            let nanos = duration.subsec_nanos();
+            quote!(#facade_path::endpoint::TimeoutSelection::Explicit(
+                ::std::time::Duration::new(#seconds, #nanos)
+            ))
+        },
+    );
+    let base = &client.base;
+    let tokens = quote! {
+        static #static_name: ::std::sync::LazyLock<#facade_path::endpoint::ContractDescription> =
+            ::std::sync::LazyLock::new(|| {
+                #facade_path::endpoint::ContractDescription::generated(
+                    #declaration,
+                    #base,
+                    #timeout,
+                    ::std::vec![#(#values),*],
+                    ::std::vec![#(#secrets),*],
+                    ::std::vec![#(#credentials),*],
+                    ::std::vec![#(#rate_profiles),*],
+                    ::std::vec![#(#local),*],
+                    ::std::vec![#(#effective),*],
+                    ::std::vec![#(#scopes),*],
+                    ::std::vec![#(#endpoints),*],
+                )
+            });
+    };
+    (static_name, tokens)
+}
+
+fn endpoint_contract_id_by_semantic_id(children: &[Child], id: usize) -> Option<&str> {
+    for child in children {
+        match child {
+            Child::Endpoint(endpoint) if endpoint.id == id => {
+                return Some(&endpoint.contract_id.value);
+            }
+            Child::Scope(scope) => {
+                if let Some(contract_id) = endpoint_contract_id_by_semantic_id(&scope.children, id)
+                {
+                    return Some(contract_id);
+                }
+            }
+            Child::Endpoint(_) => {}
+        }
+    }
+    None
+}
+
+fn scope_contract_tokens(
+    client: &Client,
+    scope: &Scope,
+    ancestors: &[&Scope],
+    facade_path: &TokenStream,
+) -> TokenStream {
+    let mut visible = ancestors.to_vec();
+    visible.push(scope);
+    let path_text = std::iter::once(canonical_ident(&client.name))
+        .chain(visible.iter().map(|scope| canonical_ident(&scope.name)))
+        .collect::<Vec<_>>()
+        .join("::");
+    let path = syn::LitStr::new(&path_text, scope.name.span());
+    let declaration = declaration_tokens(
+        &scope.name,
+        &path_text,
+        &scope.attributes,
+        quote!(#facade_path::endpoint::DeclarationKind::Scope),
+        facade_path,
+    );
+    let values = scope.parameters.iter().map(|value| {
+        value_tokens(
+            value,
+            quote!(#facade_path::endpoint::ValueOwnerKind::Scope),
+            &path,
+            facade_path,
+        )
+    });
+    let local = scope
+        .local_attachments
+        .iter()
+        .map(|attachment| attachment_tokens(attachment, true, facade_path));
+    let effective = effective_config_attachment_tokens(&scope.config, facade_path);
+    let scopes = scope.children.iter().filter_map(|child| match child {
+        Child::Scope(child) => Some(scope_contract_tokens(client, child, &visible, facade_path)),
+        Child::Endpoint(_) => None,
+    });
+    let module_path = visible
+        .iter()
+        .map(|scope| scope.surface.module_name.clone())
+        .collect::<Vec<_>>();
+    let endpoints = scope.children.iter().filter_map(|child| match child {
+        Child::Endpoint(endpoint) => Some(endpoint_description_clone(endpoint, &module_path)),
+        Child::Scope(_) => None,
+    });
+    quote!(#facade_path::endpoint::ScopeDescription::generated(
+        #declaration,
+        ::std::vec![#(#values),*],
+        ::std::vec![#(#local),*],
+        ::std::vec![#(#effective),*],
+        ::std::vec![#(#scopes),*],
+        ::std::vec![#(#endpoints),*],
+    ))
+}
+
+fn endpoint_description_clone(endpoint: &Endpoint, modules: &[Ident]) -> TokenStream {
+    let description = private_ident("endpoint_description", endpoint.id, &endpoint.name);
+    if modules.is_empty() {
+        quote!(::std::sync::LazyLock::force(&#description).clone())
+    } else {
+        quote!(::std::sync::LazyLock::force(&#(#modules)::*::#description).clone())
+    }
+}
+
 pub(super) fn generate_builder_value_methods(index: usize, value: &Value) -> TokenStream {
     let setter = value_setter_ident(&value.name);
     let field = builder_value_field(index, value);
     let setter_type = value.setter_argument_type();
-    let selected_value = if value.accepts_absence() && !value.is_optional() {
-        quote!(::std::option::Option::Some(::std::option::Option::Some(
-            value
-        )))
-    } else {
-        quote!(::std::option::Option::Some(value))
-    };
+    let selected_value = quote!(__concord_generated::__core::__private::Override::Set(value));
+    let with = value.accepts_absence().then(|| {
+        let method = helper_ident("with", &value.name);
+        let payload_type = value.with_argument_type();
+        quote! {
+            #[must_use]
+            pub fn #method(mut self, value: #payload_type) -> Self {
+                self.#field = __concord_generated::__core::__private::Override::Set(
+                    ::std::option::Option::Some(value),
+                );
+                self
+            }
+        }
+    });
     let clear = value.accepts_absence().then(|| {
         let clear = helper_ident("clear", &value.name);
         let clear_doc = format!(
             "Explicitly selects absence for the absence-capable client value `{}`.",
             canonical_ident(&value.name)
         );
-        let cleared_value = if value.is_optional() {
-            quote!(::std::option::Option::None)
-        } else {
-            quote!(::std::option::Option::Some(::std::option::Option::None))
-        };
         quote! {
             #[doc = #clear_doc]
             #[must_use]
             pub fn #clear(mut self) -> Self {
-                self.#field = #cleared_value;
+                self.#field = __concord_generated::__core::__private::Override::Set(
+                    ::std::option::Option::None,
+                );
                 self
             }
         }
@@ -500,33 +781,15 @@ pub(super) fn generate_builder_value_methods(index: usize, value: &Value) -> Tok
             #[doc = #reset_doc]
             #[must_use]
             pub fn #reset(mut self) -> Self {
-                self.#field = ::std::option::Option::None;
+                self.#field = __concord_generated::__core::__private::Override::UseDeclaration;
                 self
             }
         }
     });
-    let setter_doc = match &value.kind {
-        ResolvedValueKind::Required if value.accepts_absence() => format!(
-            "Selects a present value for required absence-capable client value `{}`; a later call replaces this selection.",
-            canonical_ident(&value.name)
-        ),
-        ResolvedValueKind::Required => format!(
-            "Sets the required client value `{}`; a later call replaces this selection.",
-            canonical_ident(&value.name)
-        ),
-        ResolvedValueKind::Optional => format!(
-            "Selects a present value for absence-capable client value `{}`; a later call replaces this selection.",
-            canonical_ident(&value.name)
-        ),
-        ResolvedValueKind::Defaulted(_) if value.accepts_absence() => format!(
-            "Selects a present value for defaulted absence-capable client value `{}`; while selected, its DSL default is not evaluated.",
-            canonical_ident(&value.name)
-        ),
-        ResolvedValueKind::Defaulted(_) => format!(
-            "Overrides defaulted client value `{}`; while selected, its DSL default is not evaluated.",
-            canonical_ident(&value.name)
-        ),
-    };
+    let setter_doc = format!(
+        "Replaces client value `{}` with its exact effective type; a later call replaces this override.",
+        canonical_ident(&value.name)
+    );
     quote! {
         #[doc = #setter_doc]
         #[must_use]
@@ -535,6 +798,7 @@ pub(super) fn generate_builder_value_methods(index: usize, value: &Value) -> Tok
             self
         }
 
+        #with
         #clear
         #reset
     }
@@ -544,12 +808,12 @@ pub(super) fn generate_client_value_resolution(index: usize, value: &Value) -> T
     let builder_field = builder_value_field(index, value);
     let resolved = resolved_client_value(index, value);
     let method = &value.name;
-    let ty = &value.ty;
-    match &value.kind {
-        ResolvedValueKind::Required => quote! {
+    let ty = &value.effective_type;
+    if value.is_required() {
+        return quote! {
             let #resolved: #ty = match self.#builder_field {
-                ::std::option::Option::Some(value) => value,
-                ::std::option::Option::None => {
+                __concord_generated::__core::__private::Override::Set(value) => value,
+                __concord_generated::__core::__private::Override::UseDeclaration => {
                     return ::std::result::Result::Err(
                         __concord_generated::__core::__private::missing_input_error(
                             ::std::stringify!(#method),
@@ -558,18 +822,30 @@ pub(super) fn generate_client_value_resolution(index: usize, value: &Value) -> T
                     );
                 }
             };
-        },
-        ResolvedValueKind::Optional => quote! {
-            let #resolved: #ty = self.#builder_field;
-        },
-        ResolvedValueKind::Defaulted(default) => {
-            let default = default_expr(default);
-            quote! {
-                let #resolved: #ty = match self.#builder_field {
-                    ::std::option::Option::Some(value) => value,
-                    ::std::option::Option::None => #default,
-                };
-            }
+        };
+    }
+    if let Some(default) = value.default() {
+        let default = default_expr(default);
+        let default = if value.is_optional() {
+            quote!(::std::option::Option::Some(#default))
+        } else {
+            default
+        };
+        quote! {
+            let #resolved: #ty = match self.#builder_field {
+                __concord_generated::__core::__private::Override::Set(value) => value,
+                __concord_generated::__core::__private::Override::UseDeclaration => #default,
+            };
+        }
+    } else {
+        debug_assert!(value.is_optional());
+        quote! {
+            let #resolved: #ty = match self.#builder_field {
+                __concord_generated::__core::__private::Override::Set(value) => value,
+                __concord_generated::__core::__private::Override::UseDeclaration => {
+                    ::std::option::Option::None
+                }
+            };
         }
     }
 }

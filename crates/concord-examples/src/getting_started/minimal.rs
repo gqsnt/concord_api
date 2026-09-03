@@ -11,13 +11,14 @@ use concord::api;
 
 api! {
     client MinimalApi {
+        timeout off;
         base "http://minimal.example.test/v1/";
-    }
 
-    GET health() -> NoContent {
+
+    GET health() -> () using NoContent {
         path ["health"];
     }
-}
+}}
 // ANCHOR_END: first_api
 
 // ANCHOR: build_client

@@ -18,13 +18,16 @@ use concord::codec::Text;
 #[cfg(feature = "default-tls")]
 use concord::endpoint::RequestBodyCategory;
 use concord::endpoint::{EndpointId, ResponseAcquisition, RuntimeEndpoint, TimeoutSelection};
-use concord::error::{ConfigurationErrorKind, HookError};
-#[cfg(feature = "default-tls")]
-use concord::hooks::SanitizedHeaderValue;
-use concord::hooks::{BeforeSend, CompletionEvent, ResponseHeadEvent, RuntimeHooks};
+use concord::error::{ConfigurationErrorKind, GateError};
 use concord::http::{Method, SafeProxy};
+#[cfg(feature = "default-tls")]
+use concord::observation::SanitizedHeaderValue;
+use concord::observation::{
+    BeforeSend, CompletionEvent, CompletionObserver, RequestGate, ResponseGate, ResponseHeadEvent,
+};
 use concord::rate_limit::{
-    RateLimitError, RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimiter,
+    NoopRateLimiter, RateLimitError, RateLimitPermit, RateLimitRequest, RateLimitResponse,
+    RateLimiter,
 };
 use concord::{Bytes, api};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
@@ -183,12 +186,12 @@ struct CountingHooks {
     effects: Arc<EffectCounts>,
 }
 
-impl RuntimeHooks for CountingHooks {
-    fn before_send<'a>(&'a self, context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
+impl RequestGate for CountingHooks {
+    fn before_send<'a>(&'a self, context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), GateError>> {
         self.effects.before_send.fetch_add(1, Ordering::SeqCst);
         self.effects.heads.lock().expect("head capture").push((
             context.endpoint.to_owned(),
-            context.safe_url.to_owned(),
+            context.observed_url.to_owned(),
             format!("{:?}", context.headers),
         ));
         self.effects
@@ -198,11 +201,13 @@ impl RuntimeHooks for CountingHooks {
             .push((context.endpoint.to_owned(), "before_send"));
         Box::pin(async { Ok(()) })
     }
+}
 
-    fn on_response_head<'a>(
+impl ResponseGate for CountingHooks {
+    fn before_response_handling<'a>(
         &'a self,
         context: ResponseHeadEvent<'a>,
-    ) -> BoxFuture<'a, Result<(), HookError>> {
+    ) -> BoxFuture<'a, Result<(), GateError>> {
         self.effects.response_head.fetch_add(1, Ordering::SeqCst);
         self.effects
             .lifecycle
@@ -211,89 +216,94 @@ impl RuntimeHooks for CountingHooks {
             .push((context.endpoint.to_owned(), "response_head"));
         Box::pin(async { Ok(()) })
     }
+}
 
-    fn on_complete<'a>(&'a self, context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
+impl CompletionObserver for CountingHooks {
+    fn on_complete(&self, context: CompletionEvent<'_>) {
         self.effects.completion.fetch_add(1, Ordering::SeqCst);
         self.effects
             .lifecycle
             .lock()
             .expect("lifecycle capture")
             .push((context.endpoint.to_owned(), "completion"));
-        Box::pin(async {})
     }
 }
 
 api! {
     client SecurePlanningApi {
+        timeout off;
         base "https://secure-planning.example.test/root/";
         credentials {
             credential bearer = custom crate::CountingProvider;
         }
-    }
+
 
     POST protected(
         resource: String,
         protected_query: String,
         protected_header: String,
-        #[body] body: crate::PlanningBodySpec,
-    ) -> Bytes {
+        body body: crate::runtime::planning::PlanningBodyInput using crate::PlanningBodySpec,
+    ) -> Bytes using Bytes {
         id "planning.secure.protected";
-        path ["resources", ep.resource];
-        query { "api_key" = ep.protected_query; }
-        headers { "X-Api-Key" = ep.protected_header; }
-        auth bearer bearer challenge unauthorized;
-        rate_limit { 1 / 1s; }
+        path ["resources", endpoint.resource];
+        query { "api_key" = endpoint.protected_query; }
+        headers { "X-Api-Key" = endpoint.protected_header; }
+        auth { bearer bearer recover on unauthorized; }
+        rate_limit { allow 1 per 1s; }
     }
-}
+}}
 
 api! {
     client PublicPlanningApi {
+        timeout off;
         base "http://public-planning.example.test/root/";
-    }
+
 
     POST public_head(
         resource: String,
         query_value: String,
         header_value: String,
-        #[body] body: crate::PlanningBodySpec,
-    ) -> Bytes {
+        body body: crate::runtime::planning::PlanningBodyInput using crate::PlanningBodySpec,
+    ) -> Bytes using Bytes {
         id "planning.public.head";
-        path ["resources", ep.resource];
-        query { "q" = ep.query_value; }
-        headers { "X-Public" = ep.header_value; }
-        rate_limit { 1 / 1s; }
+        path ["resources", endpoint.resource];
+        query { "q" = endpoint.query_value; }
+        headers { "X-Public" = endpoint.header_value; }
+        rate_limit { allow 1 per 1s; }
     }
 
-    GET lifecycle_probe() -> Bytes {
+    GET lifecycle_probe() -> Bytes using Bytes {
         id "planning.generated.lifecycle";
         path ["lifecycle"];
     }
 
-    GET aggregate_head(values: Vec<u16>) -> Text {
+    GET aggregate_head(values: Vec<u16>) -> String using Text {
         id "planning.generated.aggregate_head";
-        query { "value" = ep.values; }
+        query { "value" = each endpoint.values; }
     }
-}
+}}
 
 api! {
     client StableBeforeApi {
+        timeout off;
         base "http://stable-before.example.test/";
-    }
 
-    GET old_rust_name() -> Bytes {
+
+    GET old_rust_name() -> Bytes using Bytes {
         id "stable.contract.identity";
     }
-}
+}}
 
 api! {
     client StableAfterApi {
+        timeout off;
         base "http://stable-after.example.test/";
-    }
 
-    GET renamed_rust_name() -> Bytes {
+
+    GET renamed_rust_name() -> Bytes using Bytes {
         id "stable.contract.identity";
     }
-}
+}}
 
 fn configured_public_client(
     server: &ScriptedServer,
@@ -304,7 +314,7 @@ fn configured_public_client(
     let limiter: Arc<dyn RateLimiter> = Arc::new(CountingLimiter {
         effects: Arc::clone(effects),
     });
-    let hooks: Arc<dyn RuntimeHooks> = Arc::new(CountingHooks {
+    let hooks = Arc::new(CountingHooks {
         effects: Arc::clone(effects),
     });
     PublicPlanningApi::builder()
@@ -313,7 +323,9 @@ fn configured_public_client(
             runtime
                 .runtime_endpoint_timeout(timeout)
                 .rate_limiter(limiter)
-                .hooks(hooks)
+                .request_gate(hooks.clone())
+                .response_gate(hooks.clone())
+                .completion_observer(hooks)
         })
         .build()
         .expect("public planning client")
@@ -326,17 +338,23 @@ fn safe_planning_uses_real_head_shaping_without_any_lifecycle_effect() {
     let limiter: Arc<dyn RateLimiter> = Arc::new(CountingLimiter {
         effects: Arc::clone(&effects),
     });
-    let hooks: Arc<dyn RuntimeHooks> = Arc::new(CountingHooks {
+    let hooks = Arc::new(CountingHooks {
         effects: Arc::clone(&effects),
     });
     let client = SecurePlanningApi::builder()
         .bearer_provider(CountingProvider {
             effects: Arc::clone(&effects),
         })
-        .configure_runtime(move |runtime| runtime.rate_limiter(limiter).hooks(hooks))
+        .configure_runtime(move |runtime| {
+            runtime
+                .rate_limiter(limiter)
+                .request_gate(hooks.clone())
+                .response_gate(hooks.clone())
+                .completion_observer(hooks)
+        })
         .build()
         .expect("secure planning client");
-    let endpoint = secure_planning_api::Protected::new(
+    let endpoint = SecurePlanningApi::unbound().protected(
         "resource".to_owned(),
         QUERY_SENTINEL.to_owned(),
         HEADER_SENTINEL.to_owned(),
@@ -346,14 +364,16 @@ fn safe_planning_uses_real_head_shaping_without_any_lifecycle_effect() {
     );
 
     effects.assert_no_effects();
-    let plan = client.plan(&endpoint).expect("safe protected plan");
+    let plan = client
+        .plan(&endpoint)
+        .expect("credential-free protected plan");
     effects.assert_no_effects();
 
     let description = endpoint.description();
     assert_eq!(description.id(), "planning.secure.protected");
     assert_eq!(description.method(), Method::POST);
     assert_eq!(description.source_path(), "SecurePlanningApi::protected");
-    assert_eq!(description.route_shape(), "/resources/{ep.resource}");
+    assert_eq!(description.route_shape(), "/resources/{endpoint.resource}");
     assert_eq!(
         description.body_category(),
         RequestBodyCategory::Specification
@@ -393,7 +413,7 @@ fn safe_planning_uses_real_head_shaping_without_any_lifecycle_effect() {
 
     let safe_output = format!(
         "{plan:?}\n{description:?}\n{}\n{:?}",
-        plan.safe_url(),
+        plan.observed_url(),
         plan.public_headers()
     );
     for sentinel in [
@@ -415,12 +435,14 @@ fn credential_references_cannot_cross_independent_client_builds() {
         .bearer_provider(CountingProvider {
             effects: Arc::clone(&owner_effects),
         })
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
         .build()
         .expect("credential owner client");
     let foreign = SecurePlanningApi::builder()
         .bearer_provider(CountingProvider {
             effects: Arc::clone(&foreign_effects),
         })
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
         .build()
         .expect("foreign client");
     let endpoint = RuntimeEndpoint::builder(
@@ -455,7 +477,7 @@ async fn runtime_endpoint_timeout_does_not_change_generated_timeout_or_lazy_exec
         ScriptedServer::start([ResponseScript::ok(b"planned".to_vec())]).expect("plan server");
     let effects = Arc::new(EffectCounts::default());
     let client = configured_public_client(&server, &effects, Duration::from_secs(17));
-    let endpoint = public_planning_api::PublicHead::new(
+    let endpoint = PublicPlanningApi::unbound().public_head(
         "item".to_owned(),
         "summary".to_owned(),
         "visible".to_owned(),
@@ -491,7 +513,7 @@ async fn runtime_endpoint_timeout_does_not_change_generated_timeout_or_lazy_exec
     let heads = effects.heads.lock().expect("head capture");
     assert_eq!(heads.len(), 1);
     assert_eq!(heads[0].0, plan.endpoint_id());
-    assert_eq!(heads[0].1, plan.safe_url());
+    assert_eq!(heads[0].1, plan.observed_url());
     assert_eq!(heads[0].2, format!("{:?}", plan.public_headers()));
 }
 
@@ -505,26 +527,26 @@ fn runtime_endpoint_plan_remains_zero_effect() {
         EndpointId::new("runtime.timeout.inherited").expect("owned ID"),
         Method::GET,
     )
-    .path_segment("inherited")
-    .response_bytes()
+    .path("inherited")
+    .accepted_bytes()
     .build()
     .expect("inherited runtime endpoint");
     let explicit = RuntimeEndpoint::builder(
         EndpointId::new("runtime.timeout.explicit").expect("valid endpoint ID"),
         Method::GET,
     )
-    .path_segment("explicit")
+    .path("explicit")
     .timeout(Duration::from_secs(7))
-    .response_bytes()
+    .accepted_bytes()
     .build()
     .expect("explicit runtime endpoint");
     let disabled = RuntimeEndpoint::builder(
         EndpointId::new("runtime.timeout.disabled").expect("valid endpoint ID"),
         Method::GET,
     )
-    .path_segment("disabled")
+    .path("disabled")
     .disable_timeout()
-    .response_bytes()
+    .accepted_bytes()
     .build()
     .expect("disabled runtime endpoint");
 
@@ -560,7 +582,7 @@ fn runtime_endpoint_plan_remains_zero_effect() {
     assert_eq!(description.source_path(), "runtime");
     assert_eq!(
         description.route_shape(),
-        "/<client-base>/<runtime-segment>"
+        "<client-base-host>/<client-base>/<runtime-segment>"
     );
     assert_eq!(
         description.response_acquisition(),
@@ -581,7 +603,7 @@ fn runtime_method_limit_is_public_bounded_and_preserved_by_planning() {
         EndpointId::new("runtime.method.exact").expect("valid endpoint ID"),
         exact_method.clone(),
     )
-    .response_bytes()
+    .accepted_bytes()
     .build()
     .expect("exact runtime method limit");
     let plan = client.plan(&endpoint).expect("exact method plan");
@@ -612,11 +634,12 @@ fn generated_and_runtime_planning_share_final_head_limits() {
     let client = configured_public_client(&server, &effects, Duration::from_secs(23));
     let dynamic_components = concord::endpoint::MAX_REQUEST_HEAD_COMPONENTS - 1;
 
-    let generated_exact = public_planning_api::AggregateHead::new(vec![1; dynamic_components]);
+    let generated_exact = PublicPlanningApi::unbound().aggregate_head(vec![1; dynamic_components]);
     client
         .plan(&generated_exact)
         .expect("generated head exact boundary including Accept");
-    let generated_excess = public_planning_api::AggregateHead::new(vec![1; dynamic_components + 1]);
+    let generated_excess =
+        PublicPlanningApi::unbound().aggregate_head(vec![1; dynamic_components + 1]);
     let error = client
         .plan(&generated_excess)
         .expect_err("generated first excess including Accept");
@@ -630,7 +653,7 @@ fn generated_and_runtime_planning_share_final_head_limits() {
         Method::GET,
     );
     for _ in 0..dynamic_components {
-        runtime_exact = runtime_exact.path_segment("x");
+        runtime_exact = runtime_exact.path("x");
     }
     let runtime_exact = runtime_exact
         .response::<Text>()
@@ -645,7 +668,7 @@ fn generated_and_runtime_planning_share_final_head_limits() {
         Method::GET,
     );
     for _ in 0..(dynamic_components + 1) {
-        runtime_excess = runtime_excess.path_segment("x");
+        runtime_excess = runtime_excess.path("x");
     }
     let error = runtime_excess
         .response::<Text>()
@@ -674,8 +697,8 @@ async fn generated_and_runtime_endpoints_use_the_same_ordered_lifecycle() {
         EndpointId::new("planning.runtime.lifecycle").expect("valid endpoint ID"),
         Method::GET,
     )
-    .path_segment("lifecycle")
-    .response_bytes()
+    .path("lifecycle")
+    .accepted_bytes()
     .build()
     .expect("runtime lifecycle endpoint");
     assert_eq!(
@@ -706,8 +729,8 @@ async fn generated_and_runtime_endpoints_use_the_same_ordered_lifecycle() {
 
 #[test]
 fn explicit_contract_identity_survives_a_rust_endpoint_rename() {
-    let before = stable_before_api::OldRustName::new();
-    let after = stable_after_api::RenamedRustName::new();
+    let before = StableBeforeApi::unbound().old_rust_name();
+    let after = StableAfterApi::unbound().renamed_rust_name();
     assert_eq!(before.description().id(), "stable.contract.identity");
     assert_eq!(before.description().id(), after.description().id());
     assert_ne!(

@@ -20,8 +20,8 @@ Applications depend only on `concord`.
 
 ## Compiler pipeline
 
-The macro pipeline is parse, normalize, validate, resolve the generated
-surface, and emit.
+The macro pipeline is raw parse, owner/name resolution, canonical semantic IR,
+validation/surface computation, then projection.
 
 ### Parse
 
@@ -30,13 +30,15 @@ literal structure, duplicate local entries, and bounded nesting.
 
 The parser does not inspect concrete Rust type meaning.
 
-### Normalize
+### Resolve canonical IR
 
-`semantic::inheritance` resolves client, scope, and endpoint-leaf operations
-into one effective request configuration.
+`semantic` assigns stable owner, value, endpoint, and attachment identities and
+resolves client, scope, and endpoint-leaf operations into one effective request
+configuration with source origins.
 
-Host, path, query, headers, authentication, timeout, and rate-limit semantics
-are normalized once. Source order is retained for ordered entries.
+Subdomain, path, ordered query/header patches, authentication, timeout,
+repeatability, pagination, and rate-limit semantics are normalized once. Source
+order is retained for ordered entries. Rust types remain opaque.
 
 ### Validate
 
@@ -49,8 +51,9 @@ Cross-attachment-site rules are checked against each final endpoint leaf.
 
 ### Surface
 
-`semantic::surface` derives public names, modules, request capabilities,
-descriptions, and trait obligations.
+`semantic::surface` derives public names, modules, request capabilities and
+trait obligations. Descriptions, Rustdoc, semantic snapshots, diagnostics, and
+code emission consume the same resolved model.
 
 Name collision checking uses the exact emitted helper set.
 
@@ -75,7 +78,8 @@ Core owns:
 - native HTTP construction;
 - response acquisition and conversion;
 - pagination execution;
-- hooks, completion, safe errors, and redaction.
+- decision gates, fixed completion observation, structured errors, trusted
+  diagnostics, and redaction.
 
 Extras implement JSON, CSV, NDJSON, OAuth2 client credentials, and the local
 rate limiter behind façade features.
@@ -137,16 +141,16 @@ fixture exists to prove, not merely that the fixture still fails.
 |---|---|
 | unknown and ghost syntax | `crates/concord/tests/ui/fail/syntax/ghost_syntax.rs` |
 | defaults and public-expression grammar | `default_expression_restrictions.rs`, `spec_rejections.rs`, and `names/` |
-| fixed base, static host, static path, and reserved headers | `spec_rejections.rs`, `ipv4_host_prefix.rs`, and `ipv6_host_prefix.rs` |
+| fixed base, static subdomain, static path, and reserved headers | `spec_rejections.rs`, `ipv4_host_prefix.rs`, and `ipv6_host_prefix.rs` |
 | credential compatibility and duplicate authentication targets | `authentication/` and `spec_rejections.rs` |
 | pagination syntax, bindings, bodies, modes, and terminal capabilities | `pagination/` |
 | rate-limit structure, visibility, bindings, keys, windows, and identity | `rate_limits/` and `spec_rejections.rs` |
-| dynamic host labels and path atoms | `concord_core::request::head` unit tests and `concord-core/tests/public_api/generated_contract.rs` |
+| dynamic subdomain labels and path atoms | `concord_core::request::head` unit tests and `concord-core/tests/public_api/generated_contract.rs` |
 
 ## Security review
 
 Security tests use unique sentinels and inspect `Debug`, `Display`, sources,
-plans, descriptions, hooks, completion, limiter metadata, provider failures,
+plans, descriptions, gates, completion, limiter metadata, provider failures,
 status bodies, and generated Rustdoc.
 
 Positive loopback tests prove private authentication reaches transport while
@@ -171,8 +175,10 @@ Topic guides explain concepts end to end without becoming parallel specification
 
 The documentation checker validates DSL fences, source-anchored usage examples, local links, and inventory coverage.
 
-## Frozen state
+## Active version
 
-The private v1 surface is frozen by `FINAL.md` and the annotated `v1.0.0` tag.
-New syntax, generated capabilities, publication preparation, website
-machinery, and alternate executors are outside the frozen state.
+Concord 2.0.0 is the sole production language. The generated macro/core
+handshake is 32. Selected retired syntax exists only in migration diagnostics;
+there is no compatibility semantic mode or alternate executor. `FINAL.md`
+records the active constitution and `just verify` is the release-equivalent
+gate.

@@ -66,7 +66,7 @@ pub(crate) fn run_all(root: &Path) -> Result<(), String> {
         "concord-fixture-contract-mismatch",
         "dependency/contract-mismatch",
         &[],
-        &["concord macro/facade contract mismatch: facade 999, generated 31"],
+        &["concord macro/facade contract mismatch: facade 999, generated 32"],
     )?;
 
     for (binary, features, expected) in [

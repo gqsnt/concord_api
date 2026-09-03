@@ -1,5 +1,5 @@
 error: rate-limit cost must not exceed any window capacity
- --> tests/ui/fail/rate_limits/rate_limit_invalid_cost.rs:6:34
+ --> tests/ui/fail/rate_limits/rate_limit_invalid_cost.rs:7:42
   |
-6 |         rate_limit { cost 2; 1 / 1s; }
-  |                                  ^^
+7 |         rate_limit { cost 2; allow 1 per 1s; }
+  |                                          ^^

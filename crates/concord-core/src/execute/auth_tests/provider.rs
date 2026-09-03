@@ -26,7 +26,9 @@ async fn real_tls_provider_http_remains_outside_application_limiter_lifecycle() 
             .http1_only()
             .add_root_certificate_pem(application_server.certificate_pem()),
         RuntimeConfigBuilder::new()
-            .hooks(hooks.clone())
+            .request_gate(hooks.clone())
+            .response_gate(hooks.clone())
+            .completion_observer(hooks.clone())
             .rate_limiter(limiter),
     )
     .expect("managed application/provider core");
@@ -92,7 +94,9 @@ async fn paginated_provider_http_never_enters_page_lifecycle_or_limiter_work() {
             .http1_only()
             .add_root_certificate_pem(application_server.certificate_pem()),
         RuntimeConfigBuilder::new()
-            .hooks(hooks.clone())
+            .request_gate(hooks.clone())
+            .response_gate(hooks.clone())
+            .completion_observer(hooks.clone())
             .rate_limiter(limiter),
     )
     .expect("managed pagination application/provider core");
@@ -105,7 +109,7 @@ async fn paginated_provider_http_never_enters_page_lifecycle_or_limiter_work() {
                 page: 0,
             },
         ),
-        PageLimit::Take(1),
+        PageLimit::Prefix(1),
     )
     .await
     .expect("provider-backed pagination");
@@ -122,7 +126,13 @@ async fn paginated_provider_http_never_enters_page_lifecycle_or_limiter_work() {
     assert_eq!(application_server.requests().len(), 1);
     assert_eq!(hooks.before.lock().expect("before hooks").len(), 1);
     assert_eq!(hooks.response.lock().expect("response hooks").len(), 1);
-    assert_eq!(hooks.completion.lock().expect("completion hooks").len(), 1);
+    assert!(
+        hooks
+            .completion
+            .lock()
+            .expect("completion hooks")
+            .is_empty()
+    );
     assert_eq!(hooks.pagination.lock().expect("pagination hooks").len(), 1);
     assert_eq!(limiter_acquires.load(Ordering::SeqCst), 1);
     assert_eq!(limiter_observations.load(Ordering::SeqCst), 1);
@@ -190,7 +200,7 @@ async fn provider_http_data_stays_outside_application_hooks_debug_and_channel() 
 
     let provider_capture = executor.provider().captures().expect("provider captures");
     assert_eq!(provider_capture.len(), 1);
-    assert!(provider_capture[0].safe_url().is_none());
+    assert!(provider_capture[0].observed_url().is_none());
     assert!(provider_capture[0].headers().iter().any(|header| {
         header.name() == "x-provider-secret" && header.value() == &CapturedHeaderValue::Redacted
     }));

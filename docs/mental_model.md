@@ -1,179 +1,82 @@
 # Mental model
 
-- **Audience:** API authors, callers, reviewers, and extension authors
-- **Purpose:** explanation
-- **Normative references:** [DSL specification](spec.md), [runtime model](runtime.md), [design invariants](design_invariants.md)
-
-## Concord is one semantic model with two public projections
-
-The DSL and generated Rust API are not independent products. They are two views
-of one resolved contract:
+Think of a Concord contract as five linked projections of one semantic tree.
 
 ```text
-declaration facts
-→ normalized semantic model
-→ generated Rust surface
-→ typed runtime plan
+declaration tree
+  -> generated Rust navigation and request controls
+  -> unbound intent tree
+  -> static descriptions and semantic snapshots
+  -> bounded managed execution and evidence
 ```
 
-A good declaration must generate desirable usage. A generated method must have
-a meaning that is visible in the declaration.
+## Tree and owners
 
-## Client, scope, endpoint
+Each `api!` invocation owns one client. Scopes and endpoints live inside it and
+nested scopes live inside their lexical parent. A value is owned by the client,
+one exact named scope, or an endpoint. Public expressions make that ownership
+visible with `client.name`, `regional.name`, or `endpoint.name`.
 
-```text
-client
-└── scope
-    └── nested scope
-        └── endpoint leaf
-```
+The same containment appears in generated modules, direct methods,
+`Client::unbound()`, and `ContractDescription`. A scope is an immutable selected
+domain context, not a cosmetic namespace.
 
-### Client
+## Values are independent facts
 
-The client is the contract root and built runtime owner. It owns the fixed base,
-client values, credential sources, reusable rate profiles, client-level
-attachments, and the immutable runtime snapshot.
+A value has an opaque payload type, required/optional presence, optional
+initializer, observation class, and owner. These facts do not leak into each
+other. In particular:
 
-### Scope
+- `x: Option<T>` is a required domain payload;
+- `x?: T` adds `Option<T>` owned by Concord;
+- `Vec<T>` is not repeated until a placement says `each`;
+- `#[redact]` changes observation, not the real request value.
 
-A scope is an immutable selected domain context. It may own typed values,
-inherited request semantics, policy attachments, child scopes, endpoint
-leaves, generated modules, and generated navigation methods.
+Defaults are evaluated once when their narrowest client/scope/endpoint snapshot
+is created and are retained for reset and every later attempt/page.
 
-A scope is not merely a path prefix or visual folder. Domain containment and
-wire path often align, but remain separate decisions.
+## Attachments are explicit algebras
 
-### Endpoint leaf
+Subdomain and path support inherit, ordinary composition, replace, and off.
+Query is an ordered multimap patch with assignment, append, remove, replace,
+and off. Headers use case-insensitive assignment/removal without generic append.
+Authentication placements add, replace, or turn off. Rate policies only add.
 
-An endpoint is one typed domain operation plus its local HTTP and policy delta.
-The signature is the primary semantic statement. Its clauses explain how the
-operation maps to the wire and runtime.
+The macro resolves these operations with source origins before emission. A
+request does not dynamically rediscover inheritance.
 
-## Four different actions
+## Public and private
 
-### Declaration
+Public route/head shaping produces both the real public wire representation and
+a redaction-aware observed representation. A plan borrows the inert request and
+stops there. During execution, credentials are resolved privately, rate
+admission occurs, and only then are credentials placed on a native attempt.
 
-Creates a concept: a client, scope, endpoint, value, credential source, or rate
-profile.
+Secrets and credentials never become “redacted public values”; they are absent
+from public structures. A redacted ordinary value remains real for wire shaping,
+canonical rate keys, and internal pagination identity, while observations see a
+fixed marker.
 
-### Attachment
+## Terminals and effects
 
-Applies semantics at a client, scope, or endpoint: path, query, headers, auth,
-timeout, or rate policy.
+A request is inert until a terminal future is polled. Await returns the declared
+output. `.response()` adds accepted metadata. Pagination, accepted bytes, and
+credential storage exist only for endpoints that declare and prove them.
 
-### Binding
+One terminal creates one operation deadline. Pagination passes it through every
+page, retry, recovery, limiter wait, acquisition, conversion, and controller
+step.
 
-Connects a reusable or runtime-controlled field to a visible value. Examples
-include rate-profile formals and pagination controller fields.
+## Runtime authority
 
-### Execution
+Retry classification advises; core repeatability, dispatch stage, replayability,
+budget, attempt, and deadline gates decide. Request/response gates may reject at
+named phases. Completion observers receive an already-fixed bounded outcome and
+cannot change it.
 
-Starts managed work by polling a request terminal. Construction, scope
-selection, endpoint construction, and planning remain inert.
+Runtime endpoints plug into this same model. They may choose public shape,
+specifications, auth, repeatability, and rate policies through bounded builders,
+but never receive native request mutation authority.
 
-Collapsing these actions into one generic configuration mechanism would make
-ownership and timing ambiguous.
-
-## Values, absence, defaults, and snapshots
-
-| Declaration property | Generated controls |
-|---|---|
-| required | constructor argument or required client builder setter |
-| `Option<T>` | `set_*`, `clear_*` |
-| defaulted | `set_*`, `reset_*` |
-| `Option<T>` with a default | `set_*`, `clear_*`, `reset_*` |
-
-Absence and default are different. Clearing selects semantic absence. Resetting
-restores the declaration default retained by the current immutable snapshot.
-Defaults are evaluated when their owner snapshot is created, not on every
-attempt or page.
-
-## Public and private request worlds
-
-```text
-public values
-→ logical URL and public headers
-→ plans, hooks, rate dimensions, safe observation
-
-credential material
-→ private placement after limiter admission
-→ native request owned by core
-```
-
-A credential-free plan may still contain sensitive application data such as
-account or tenant identifiers. “Public” means permitted in public request
-shaping, not universally safe to log.
-
-## Capability-shaped generated API
-
-The generated method set reflects declared and trait-proven capabilities:
-
-- pagination exists only for declared paginated endpoints;
-- raw accepted response bytes exist only for buffered or discard modes;
-- credential-storage terminals exist only for source endpoints;
-- applications cannot forge generated endpoints through the sealed trait.
-
-The absence of a method is part of the contract.
-
-## One executor is a consequence
-
-Direct methods, explicit endpoints, runtime endpoints, retries, authentication
-recovery, pagination pages, and response-byte terminals must preserve the same
-behavior. One managed executor prevents each surface from becoming a separate
-implementation of deadlines, limiting, credentials, response handling,
-cancellation, errors, and completion.
-
-## Semantic extension, not native escape
-
-Custom types extend a role—body, response, credential source, controller,
-limiter, classifier, or hook—through bounded semantic data. Runtime-defined
-endpoints escape compile-time generation but still use the same semantic model
-and executor. The escape hatch leaves the macro, not the guarantees.
-
-## Example
-
-<!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_contract -->
-```rust
-api! {
-    client CatalogApi {
-        base "http://catalog.example.test/";
-        vars {
-            tenant: String;
-        }
-        path ["api"];
-        query { "tenant" = vars.tenant; }
-    }
-
-    scope regional(region: String) {
-        host [scope.region, "api"];
-        path ["v1", "catalog"];
-
-        GET item_summaries(
-            category: Option<String>,
-            offset: u64 = 0,
-            count: std::num::NonZeroU32 = DEFAULT_PAGE_SIZE,
-        ) -> Json<Vec<ItemSummary>> {
-            path ["items"];
-            query {
-                "category" = ep.category;
-                "offset" = ep.offset;
-                "count" = ep.count;
-            }
-            paginate concord::pagination::OffsetPagination {
-                offset: bind ep.offset,
-                page_size: bind ep.count,
-            }
-        }
-    }
-}
-```
-
-The tree communicates ownership; the signature communicates the operation;
-the clauses communicate the local wire mapping; the generated use follows the
-same structure.
-
-## Continue
-
-- [Modeling APIs](modeling_apis.md)
-- [Generated client](generated_client.md)
-- [Execution policy](execution_policy.md)
+See the [architecture decision](v2_architecture.md) for projection laws and the
+[design invariants](design_invariants.md) for maintainer obligations.

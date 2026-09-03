@@ -1,16 +1,17 @@
-error[E0599]: the method `clone` exists for struct `Upload<StreamBody>`, but its trait bounds were not satisfied
-  --> tests/ui/fail/capabilities/non_clone_body_endpoint.rs:16:22
+error[E0599]: the method `clone` exists for struct `Upload`, but its trait bounds were not satisfied
+  --> tests/ui/fail/capabilities/non_clone_body_endpoint.rs:17:22
    |
  6 | / api! {
  7 | |     client UploadApi {
- 8 | |         base "http://upload.example.test/";
+ 8 | |         timeout off;
+ 9 | |         base "http://upload.example.test/";
 ...  |
-11 | |     POST upload(#[body] body: Stream<OctetStream>) -> Bytes;
-12 | | }
-   | |_- method `clone` not found for this struct because it doesn't satisfy `Upload<StreamBody>: Clone`
+12 | |     POST upload(body body: ::concord::body::StreamBody using Stream<OctetStream>) -> Bytes using Bytes;
+13 | | }}
+   | |__- method `clone` not found for this struct because it doesn't satisfy `Upload: Clone`
 ...
-16 |       let _ = endpoint.clone();
-   |                        ^^^^^ method cannot be called on `Upload<StreamBody>` due to unsatisfied trait bounds
+17 |       let _ = endpoint.clone();
+   |                        ^^^^^ method cannot be called on `Upload` due to unsatisfied trait bounds
    |
   ::: $WORKSPACE/crates/concord-core/src/body/stream.rs
    |
@@ -22,11 +23,12 @@ note: trait bound `StreamBody: Clone` was not satisfied
    |
  6 | / api! {
  7 | |     client UploadApi {
- 8 | |         base "http://upload.example.test/";
+ 8 | |         timeout off;
+ 9 | |         base "http://upload.example.test/";
 ...  |
-11 | |     POST upload(#[body] body: Stream<OctetStream>) -> Bytes;
-12 | | }
-   | |_^
+12 | |     POST upload(body body: ::concord::body::StreamBody using Stream<OctetStream>) -> Bytes using Bytes;
+13 | | }}
+   | |__^
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following trait defines an item `clone`, perhaps you need to implement it:
            candidate #1: `Clone`

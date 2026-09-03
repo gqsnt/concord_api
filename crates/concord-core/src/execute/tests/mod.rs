@@ -33,8 +33,8 @@ use crate::codec::{
     MediaType, OctetStream, Text,
 };
 use crate::endpoint::EndpointId;
-use crate::error::{ErrorCategory, HookError, StatusBodyState};
-use crate::hooks::{BoxFuture, RuntimeHooks};
+use crate::error::{ErrorCategory, GateError, StatusBodyState};
+use crate::hooks::{BoxFuture, CompletionObserver, RequestGate, ResponseGate};
 use crate::http::HttpConfigBuilder;
 #[cfg(feature = "records")]
 use crate::rate_limit::NoopRateLimiter;
@@ -51,8 +51,8 @@ use crate::request::{HeadBuilder, PreparedHead, RequestMeta, RuntimeEndpoint};
 #[cfg(feature = "records")]
 use crate::response::ApiResponse;
 use crate::response::{
-    Buffered, ByteStream, NoContent, ResponseBodyError, ResponseBodyErrorKind, ResponseBodySpec,
-    ResponseHead, Streaming,
+    Buffered, ByteStream, NoContent, ResponseBodyError, ResponseBodyErrorKind, ResponseHead,
+    ResponseSpec, Streaming,
 };
 use crate::runtime::RuntimeConfigBuilder;
 
@@ -85,7 +85,7 @@ impl<R> ResponseEndpoint<R> {
 
 impl<R> EndpointSpec for ResponseEndpoint<R>
 where
-    R: ResponseBodySpec,
+    R: ResponseSpec,
 {
     type Body = EmptyBody;
     type Response = R;
@@ -120,7 +120,7 @@ impl<M> StreamEndpoint<M> {
 
 impl<M> EndpointSpec for StreamEndpoint<M>
 where
-    StreamSpec<M>: ResponseBodySpec,
+    StreamSpec<M>: ResponseSpec,
 {
     type Body = EmptyBody;
     type Response = StreamSpec<M>;
@@ -176,7 +176,7 @@ impl<R> SurfaceEndpoint<R> {
 #[cfg(feature = "records")]
 impl<R> EndpointSpec for SurfaceEndpoint<R>
 where
-    R: ResponseBodySpec,
+    R: ResponseSpec,
 {
     type Body = EmptyBody;
     type Response = R;
@@ -211,7 +211,7 @@ where
 #[cfg(feature = "records")]
 fn surface_request<R>(core: ClientCore, query: &'static str) -> Request<SurfaceEndpoint<R>>
 where
-    R: ResponseBodySpec,
+    R: ResponseSpec,
 {
     Request::new(core, SurfaceEndpoint::new(query))
 }
@@ -503,7 +503,7 @@ impl fmt::Debug for SensitiveBufferedOutput {
 struct SensitiveBufferedSpec;
 
 #[cfg(feature = "records")]
-impl ResponseBodySpec for SensitiveBufferedSpec {
+impl ResponseSpec for SensitiveBufferedSpec {
     type Output = SensitiveBufferedOutput;
     type Mode = Buffered;
 
@@ -518,7 +518,7 @@ impl ResponseBodySpec for SensitiveBufferedSpec {
 struct FailingBufferedSpec;
 
 #[cfg(feature = "records")]
-impl ResponseBodySpec for FailingBufferedSpec {
+impl ResponseSpec for FailingBufferedSpec {
     type Output = ();
     type Mode = Buffered;
 
@@ -577,7 +577,12 @@ impl EndpointSpec for BodyEndpoint {
     type Response = Bytes;
 
     fn request_meta(&self) -> RequestMeta {
-        RequestMeta::new(BODY_ENDPOINT, Method::POST, Some(Duration::from_secs(30)))
+        RequestMeta::new_with_repeatability(
+            BODY_ENDPOINT,
+            Method::POST,
+            Some(Duration::from_secs(30)),
+            crate::endpoint::Repeatability::Idempotent,
+        )
     }
 
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
@@ -766,7 +771,12 @@ where
     type Response = Decoder;
 
     fn request_meta(&self) -> RequestMeta {
-        RequestMeta::new(CODEC_ENDPOINT, Method::POST, Some(Duration::from_secs(30)))
+        RequestMeta::new_with_repeatability(
+            CODEC_ENDPOINT,
+            Method::POST,
+            Some(Duration::from_secs(30)),
+            crate::endpoint::Repeatability::Idempotent,
+        )
     }
 
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
@@ -1001,7 +1011,7 @@ impl EndpointSpec for RateLimitedBytesEndpoint {
         builder.push_static("bytes")?;
         builder.push_rate_limit_policy(
             "ExecutionApi::rate_limit::tenant",
-            [("vars.tenant", self.key.as_str())],
+            [("client.tenant", self.key.as_str())],
             1,
             [(self.capacity, self.window)],
         )?;
@@ -1126,7 +1136,6 @@ struct ProbeHooks {
     trace: Option<Arc<Mutex<Vec<String>>>>,
     before_gate: Option<Gate>,
     response_gate: Option<Gate>,
-    completion_gate: Option<Gate>,
     veto: AtomicBool,
     response_fail: bool,
     completion_returned: AtomicUsize,
@@ -1136,16 +1145,16 @@ struct ProbeHooks {
 struct LimiterRequestRecord {
     endpoint: String,
     method: Method,
-    safe_url: String,
+    observed_url: String,
     host: Option<String>,
     page_index: u32,
     rule_ids: Vec<String>,
-    key_values: Vec<String>,
+    key_values: Vec<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct LimiterResponseRecord {
-    safe_url: String,
+    observed_url: String,
     status: StatusCode,
     headers: String,
 }
@@ -1188,27 +1197,33 @@ impl AutomaticSurfaceHooks {
 }
 
 #[cfg(feature = "records")]
-impl RuntimeHooks for AutomaticSurfaceHooks {
-    fn before_send<'a>(&'a self, context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
+impl RequestGate for AutomaticSurfaceHooks {
+    fn before_send<'a>(&'a self, context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), GateError>> {
         self.entries
             .lock()
             .expect("automatic hook entries")
             .push(format!("before-send {context:?}"));
         Box::pin(async { Ok(()) })
     }
+}
 
-    fn on_response_head<'a>(
+#[cfg(feature = "records")]
+impl ResponseGate for AutomaticSurfaceHooks {
+    fn before_response_handling<'a>(
         &'a self,
         context: ResponseHeadEvent<'a>,
-    ) -> BoxFuture<'a, Result<(), HookError>> {
+    ) -> BoxFuture<'a, Result<(), GateError>> {
         self.entries
             .lock()
             .expect("automatic hook entries")
             .push(format!("response-head {context:?}"));
         Box::pin(async { Ok(()) })
     }
+}
 
-    fn on_complete<'a>(&'a self, context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
+#[cfg(feature = "records")]
+impl CompletionObserver for AutomaticSurfaceHooks {
+    fn on_complete(&self, context: CompletionEvent<'_>) {
         self.entries
             .lock()
             .expect("automatic hook entries")
@@ -1217,7 +1232,6 @@ impl RuntimeHooks for AutomaticSurfaceHooks {
             .lock()
             .expect("automatic completion outcomes")
             .push(context.outcome);
-        Box::pin(async {})
     }
 }
 
@@ -1258,7 +1272,7 @@ impl RateLimiter for AutomaticSurfaceLimiter {
             .expect("automatic limiter entries")
             .push(format!(
                 "acquire endpoint={} method={} url={} page={} keys={keys:?}",
-                request.endpoint, request.method, request.safe_url, request.page_index
+                request.endpoint, request.method, request.observed_url, request.page_index
             ));
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
@@ -1275,7 +1289,7 @@ impl RateLimiter for AutomaticSurfaceLimiter {
                 "observe endpoint={} method={} url={} page={} status={} headers={:?}",
                 response.request.endpoint,
                 response.request.method,
-                response.request.safe_url,
+                response.request.observed_url,
                 response.request.page_index,
                 response.status,
                 response.headers,
@@ -1334,7 +1348,7 @@ impl RateLimiter for ProbeRateLimiter {
             .push(LimiterRequestRecord {
                 endpoint: request.endpoint.to_owned(),
                 method: request.method.clone(),
-                safe_url: request.safe_url.to_owned(),
+                observed_url: request.observed_url.to_owned(),
                 host: request.host.map(str::to_owned),
                 page_index: request.page_index,
                 rule_ids: request
@@ -1380,7 +1394,7 @@ impl RateLimiter for ProbeRateLimiter {
             .lock()
             .expect("limiter responses")
             .push(LimiterResponseRecord {
-                safe_url: response.request.safe_url.to_owned(),
+                observed_url: response.request.observed_url.to_owned(),
                 status: response.status,
                 headers: format!("{:?}", response.headers),
             });
@@ -1423,7 +1437,6 @@ impl ProbeHooks {
             trace: None,
             before_gate: None,
             response_gate: None,
-            completion_gate: None,
             veto: AtomicBool::new(false),
             response_fail: false,
             completion_returned: AtomicUsize::new(0),
@@ -1448,8 +1461,8 @@ impl ProbeHooks {
     }
 }
 
-impl RuntimeHooks for ProbeHooks {
-    fn before_send<'a>(&'a self, context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), HookError>> {
+impl RequestGate for ProbeHooks {
+    fn before_send<'a>(&'a self, context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), GateError>> {
         self.push_trace("before_send");
         self.records
             .lock()
@@ -1464,17 +1477,19 @@ impl RuntimeHooks for ProbeHooks {
                 gate.wait().await;
             }
             if self.veto.load(Ordering::SeqCst) {
-                Err(HookError::new("safe hook veto"))
+                Err(GateError::new("safe hook veto"))
             } else {
                 Ok(())
             }
         })
     }
+}
 
-    fn on_response_head<'a>(
+impl ResponseGate for ProbeHooks {
+    fn before_response_handling<'a>(
         &'a self,
         context: ResponseHeadEvent<'a>,
-    ) -> BoxFuture<'a, Result<(), HookError>> {
+    ) -> BoxFuture<'a, Result<(), GateError>> {
         self.push_trace("on_response_head");
         self.records
             .lock()
@@ -1488,14 +1503,16 @@ impl RuntimeHooks for ProbeHooks {
                 gate.wait().await;
             }
             if self.response_fail {
-                Err(HookError::new("safe response-hook rejection"))
+                Err(GateError::new("safe response-hook rejection"))
             } else {
                 Ok(())
             }
         })
     }
+}
 
-    fn on_complete<'a>(&'a self, context: CompletionEvent<'a>) -> BoxFuture<'a, ()> {
+impl CompletionObserver for ProbeHooks {
+    fn on_complete(&self, context: CompletionEvent<'_>) {
         self.push_trace("on_complete");
         self.records
             .lock()
@@ -1506,12 +1523,7 @@ impl RuntimeHooks for ProbeHooks {
                 status: context.final_status,
                 elapsed: context.elapsed,
             });
-        Box::pin(async move {
-            if let Some(gate) = &self.completion_gate {
-                gate.wait().await;
-            }
-            self.completion_returned.fetch_add(1, Ordering::SeqCst);
-        })
+        self.completion_returned.fetch_add(1, Ordering::SeqCst);
     }
 }
 
@@ -1525,7 +1537,10 @@ fn development_core(
     ClientCore::build_with_development(
         "http://execution.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
-        runtime.hooks(hooks),
+        runtime
+            .request_gate(hooks.clone())
+            .response_gate(hooks.clone())
+            .completion_observer(hooks),
         executor,
     )
     .expect("development core")
@@ -1545,7 +1560,9 @@ fn automatic_surface_core(
         "http://execution.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
         RuntimeConfigBuilder::new()
-            .hooks(hooks)
+            .request_gate(hooks.clone())
+            .response_gate(hooks.clone())
+            .completion_observer(hooks)
             .rate_limiter(configured)
             .debug(DebugLevel::Headers),
         executor,
@@ -1564,7 +1581,10 @@ fn real_core(
     ClientCore::build(
         &server.url("/v1/"),
         HttpConfigBuilder::new().http1_only(),
-        runtime.hooks(hooks),
+        runtime
+            .request_gate(hooks.clone())
+            .response_gate(hooks.clone())
+            .completion_observer(hooks),
     )
     .expect("real HTTP core")
 }
@@ -1610,14 +1630,14 @@ fn body_request(core: ClientCore, body: RequestBody) -> Request<BodyEndpoint> {
 
 fn stream_request<M>(core: ClientCore) -> Request<StreamEndpoint<M>>
 where
-    StreamSpec<M>: ResponseBodySpec,
+    StreamSpec<M>: ResponseSpec,
 {
     Request::new(core, StreamEndpoint::new())
 }
 
 fn response_request<R>(core: ClientCore, timeout: Option<Duration>) -> Request<ResponseEndpoint<R>>
 where
-    R: ResponseBodySpec,
+    R: ResponseSpec,
 {
     Request::new(core, ResponseEndpoint::new(timeout))
 }

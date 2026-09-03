@@ -2,14 +2,15 @@ use concord::api;
 
 api! {
     client Api {
+        timeout off;
         base "https://example.test";
         rate_limits {
-            rule account_reads {
-                by [account];
-                1 / 1s;
+            account_reads(account) {
+                key [account];
+                allow 1 per 1s;
             }
         }
-        rate_limit use account_reads;
+        rate_limit account_reads();
     }
 }
 

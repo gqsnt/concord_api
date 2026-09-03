@@ -31,11 +31,11 @@ fn identity(
 
 #[test]
 fn page_limits_and_safe_errors_have_exact_stable_structure() {
-    assert_eq!(PageLimit::from(0), PageLimit::Take(0));
-    assert_eq!(PageLimit::from(7), PageLimit::Take(7));
+    assert_eq!(PageLimit::from(0), PageLimit::Prefix(0));
+    assert_eq!(PageLimit::from(7), PageLimit::Prefix(7));
     assert_eq!(
-        PageLimit::HardCap(NonZeroU32::new(3).expect("nonzero")),
-        PageLimit::HardCap(NonZeroU32::new(3).expect("nonzero"))
+        PageLimit::CompleteWithin(NonZeroU32::new(3).expect("nonzero")),
+        PageLimit::CompleteWithin(NonZeroU32::new(3).expect("nonzero"))
     );
 
     let error = PaginationError::with_safe_message(

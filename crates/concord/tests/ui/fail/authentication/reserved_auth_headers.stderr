@@ -1,89 +1,89 @@
 error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:36:40
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:37:40
    |
-36 | reserved_auth_header_case!(user_agent, "User-Agent");
+37 | reserved_auth_header_case!(user_agent, "User-Agent");
    |                                        ^^^^^^^^^^^^
 
 error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:35:42
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:36:42
    |
-35 | reserved_auth_header_case!(content_type, "Content-Type");
+36 | reserved_auth_header_case!(content_type, "Content-Type");
    |                                          ^^^^^^^^^^^^^^
 
 error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:34:36
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:35:36
    |
-34 | reserved_auth_header_case!(accept, "Accept");
+35 | reserved_auth_header_case!(accept, "Accept");
    |                                    ^^^^^^^^
 
 error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:33:40
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:34:40
    |
-33 | reserved_auth_header_case!(set_cookie, "Set-Cookie");
+34 | reserved_auth_header_case!(set_cookie, "Set-Cookie");
    |                                        ^^^^^^^^^^^^
 
 error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:32:36
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:33:36
    |
-32 | reserved_auth_header_case!(cookie, "Cookie");
+33 | reserved_auth_header_case!(cookie, "Cookie");
    |                                    ^^^^^^^^
 
 error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:31:43
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:32:43
    |
-31 | reserved_auth_header_case!(authorization, "Authorization");
+32 | reserved_auth_header_case!(authorization, "Authorization");
    |                                           ^^^^^^^^^^^^^^^
 
 error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:30:49
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:31:49
    |
-30 | reserved_auth_header_case!(proxy_authorization, "Proxy-Authorization");
+31 | reserved_auth_header_case!(proxy_authorization, "Proxy-Authorization");
    |                                                 ^^^^^^^^^^^^^^^^^^^^^
+
+error: this authentication header name is owned by Concord request or transport processing
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:30:37
+   |
+30 | reserved_auth_header_case!(upgrade, "Upgrade");
+   |                                     ^^^^^^^^^
 
 error: this authentication header name is owned by Concord request or transport processing
   --> tests/ui/fail/authentication/reserved_auth_headers.rs:29:37
    |
-29 | reserved_auth_header_case!(upgrade, "Upgrade");
+29 | reserved_auth_header_case!(trailer, "Trailer");
    |                                     ^^^^^^^^^
 
 error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:28:37
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:28:32
    |
-28 | reserved_auth_header_case!(trailer, "Trailer");
-   |                                     ^^^^^^^^^
-
-error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:27:32
-   |
-27 | reserved_auth_header_case!(te, "TE");
+28 | reserved_auth_header_case!(te, "TE");
    |                                ^^^^
+
+error: this authentication header name is owned by Concord request or transport processing
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:27:40
+   |
+27 | reserved_auth_header_case!(keep_alive, "Keep-Alive");
+   |                                        ^^^^^^^^^^^^
 
 error: this authentication header name is owned by Concord request or transport processing
   --> tests/ui/fail/authentication/reserved_auth_headers.rs:26:40
    |
-26 | reserved_auth_header_case!(keep_alive, "Keep-Alive");
+26 | reserved_auth_header_case!(connection, "Connection");
    |                                        ^^^^^^^^^^^^
 
 error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:25:40
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:25:47
    |
-25 | reserved_auth_header_case!(connection, "Connection");
-   |                                        ^^^^^^^^^^^^
-
-error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:24:47
-   |
-24 | reserved_auth_header_case!(transfer_encoding, "Transfer-Encoding");
+25 | reserved_auth_header_case!(transfer_encoding, "Transfer-Encoding");
    |                                               ^^^^^^^^^^^^^^^^^^^
 
 error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:23:44
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:24:44
    |
-23 | reserved_auth_header_case!(content_length, "Content-Length");
+24 | reserved_auth_header_case!(content_length, "Content-Length");
    |                                            ^^^^^^^^^^^^^^^^
 
 error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:22:34
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:23:34
    |
-22 | reserved_auth_header_case!(host, "Host");
+23 | reserved_auth_header_case!(host, "Host");
    |                                  ^^^^^^

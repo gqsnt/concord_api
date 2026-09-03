@@ -1,6 +1,6 @@
 //! Generated and runtime-defined endpoint values share one request/executor.
 //!
-//! Required features: none. Mode: construction, safe planning, and local
+//! Required features: none. Mode: construction, credential-free planning, and local
 //! execution. Documentation owner:
 //! `docs/runtime_endpoints.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
@@ -14,11 +14,12 @@ use concord::http::{HeaderName, Method};
 // ANCHOR: runtime_endpoint_client
 api! {
     client PreparedApi {
+        timeout off;
         base "http://prepared.example.test/";
-    }
 
-    GET generated() -> NoContent;
-}
+
+    GET generated() -> () using NoContent;
+}}
 // ANCHOR_END: runtime_endpoint_client
 
 /// Constructs one generated and one runtime-defined request.
@@ -26,8 +27,8 @@ api! {
 pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
     let client = PreparedApi::builder().build()?;
     let endpoint = RuntimeEndpoint::builder(EndpointId::new("prepared_api.lookup")?, Method::POST)
-        .path_segment("records")
-        .path_segment("42")
+        .path("records")
+        .path("42")
         .query("view", "summary")
         .header(HeaderName::from_static("x-example"), "canonical")
         .timeout(Duration::from_secs(5))

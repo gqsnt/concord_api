@@ -19,12 +19,12 @@ use crate::operation::{OperationDeadline, OperationId};
 use crate::rate_limit::{RateLimitRequest, RateLimitResponse};
 use crate::redaction::SanitizedHeaders;
 use crate::request::{
-    EndpointSpec, OperationPreparation, PreparationFailure, PreparedOperation,
-    PreparedPaginationPage, Request, ResponseBytesRequest, ResponseRequest, prepare_operation,
+    AcceptedBytesRequest, EndpointSpec, OperationPreparation, PreparationFailure,
+    PreparedOperation, PreparedPaginationPage, Request, ResponseRequest, prepare_operation,
 };
 use crate::response::{
-    ApiResponse, DeclaredResponse, ExecutionMeta, ResponseBodySpec, ResponseBytesSelection,
-    ResponseHead, ResponseInput, ResponseSelection, completion_outcome, execute_response,
+    AcceptedBytesSelection, ApiResponse, DeclaredResponse, ExecutionMeta, ResponseHead,
+    ResponseInput, ResponseSelection, ResponseSpec, completion_outcome, execute_response,
 };
 use crate::retry::{RetryAttempt, RetryDecision, RetryFailure, RetryPolicy};
 
@@ -33,7 +33,7 @@ impl<E> IntoFuture for Request<E>
 where
     E: EndpointSpec,
 {
-    type Output = Result<<E::Response as ResponseBodySpec>::Output, ApiError>;
+    type Output = Result<<E::Response as ResponseSpec>::Output, ApiError>;
     type IntoFuture = BoxFuture<'static, Self::Output>;
 
     fn into_future(self) -> Self::IntoFuture {
@@ -46,7 +46,7 @@ impl<E> IntoFuture for ResponseRequest<E>
 where
     E: EndpointSpec,
 {
-    type Output = Result<ApiResponse<<E::Response as ResponseBodySpec>::Output>, ApiError>;
+    type Output = Result<ApiResponse<<E::Response as ResponseSpec>::Output>, ApiError>;
     type IntoFuture = BoxFuture<'static, Self::Output>;
 
     fn into_future(self) -> Self::IntoFuture {
@@ -55,24 +55,24 @@ where
 }
 
 #[doc(hidden)]
-impl<E> IntoFuture for ResponseBytesRequest<E>
+impl<E> IntoFuture for AcceptedBytesRequest<E>
 where
     E: EndpointSpec,
-    <E::Response as ResponseBodySpec>::Mode: crate::response::ResponseBytesMode,
+    <E::Response as ResponseSpec>::Mode: crate::response::AcceptedBytesMode,
 {
     type Output = Result<ApiResponse<bytes::Bytes>, ApiError>;
     type IntoFuture = BoxFuture<'static, Self::Output>;
 
     fn into_future(self) -> Self::IntoFuture {
         Box::pin(async move {
-            execute_request_as::<E, ResponseBytesSelection<E::Response>>(self.request).await
+            execute_request_as::<E, AcceptedBytesSelection<E::Response>>(self.request).await
         })
     }
 }
 
 async fn execute_request<E>(
     request: Request<E>,
-) -> Result<ApiResponse<<E::Response as ResponseBodySpec>::Output>, ApiError>
+) -> Result<ApiResponse<<E::Response as ResponseSpec>::Output>, ApiError>
 where
     E: EndpointSpec,
 {
@@ -128,7 +128,8 @@ pub(crate) async fn execute_pagination_page<E>(
     page: PreparedPaginationPage<E>,
     parent_operation_id: OperationId,
     page_index: u32,
-) -> Result<ExecutedPage<<E::Response as ResponseBodySpec>::Output>, ApiError>
+    deadline: OperationDeadline,
+) -> Result<ExecutedPage<<E::Response as ResponseSpec>::Output>, ApiError>
 where
     E: EndpointSpec,
 {
@@ -138,44 +139,9 @@ where
         head,
         body_metadata,
     } = page;
-    let started = tokio::time::Instant::now();
     let operation_id = core.allocate_operation_id(head.endpoint_id(), head.method())?;
     let context = ExecutionContext::page(parent_operation_id, page_index);
-    let deadline = match OperationDeadline::new(started, head.timeout()) {
-        Ok(deadline) => deadline,
-        Err(_) => {
-            let error = ApiError::configuration(
-                head.endpoint_id().clone(),
-                head.method().clone(),
-                crate::error::ConfigurationErrorKind::InvalidValue,
-            );
-            let result = deliver_completion(
-                &core,
-                operation_id,
-                context,
-                head.endpoint(),
-                head.method(),
-                head.safe_url(),
-                head.debug(),
-                tokio::time::Instant::now().saturating_duration_since(started),
-                None,
-                CompletionOutcome::Success,
-                0,
-                0,
-                false,
-                Err(error),
-            )
-            .await;
-            return Ok(ExecutedPage {
-                result,
-                response_body_bytes: 0,
-                final_status: None,
-                attempts_started: 0,
-                policy_retries: 0,
-                recovered_authentication: false,
-            });
-        }
-    };
+    check_deadline(deadline, head.endpoint_id(), head.method())?;
     Ok(
         execute_prepared_operation::<E, DeclaredResponse<E::Response>>(
             PreparedOperation {
@@ -301,6 +267,7 @@ where
                                 &mut attempt_info,
                                 &mut attempts_started,
                                 &mut policy_retries,
+                                failure.dispatch_knowledge(),
                             )?
                         {
                             prepared_auth = prepare_policy_retry(
@@ -450,6 +417,7 @@ where
                     &mut attempt_info,
                     &mut attempts_started,
                     &mut policy_retries,
+                    failure.dispatch_knowledge(),
                 )?
             {
                 // A rejected response selected for retry is dropped without
@@ -537,7 +505,7 @@ where
         context,
         head.endpoint(),
         head.method(),
-        head.safe_url(),
+        head.observed_url(),
         head.debug(),
         elapsed,
         final_status,
@@ -595,13 +563,20 @@ fn admit_policy_retry(
     attempt: &mut AttemptInfo,
     attempts_started: &mut u32,
     policy_retries: &mut u32,
+    dispatch_knowledge: crate::error::DispatchKnowledge,
 ) -> Result<bool, ApiError> {
     let Some(policy) = policy else {
         return Ok(false);
     };
 
-    // Retry authority is intentionally ordered: the per-operation maximum,
-    // body replayability, then shared budget admission.
+    // Retry authority is intentionally ordered: semantic resend permission,
+    // the per-operation maximum, body replayability, then shared budget
+    // admission.
+    if head.repeatability() == crate::endpoint::Repeatability::Never
+        && dispatch_knowledge != crate::error::DispatchKnowledge::NotDispatched
+    {
+        return Ok(false);
+    }
     if *policy_retries >= policy.max_retries_per_operation() {
         return Ok(false);
     }
@@ -681,7 +656,7 @@ async fn complete_preparation_failure<E>(
         core,
         operation_id,
         meta,
-        safe_url,
+        observed_url,
         debug,
         elapsed,
         error,
@@ -692,7 +667,7 @@ async fn complete_preparation_failure<E>(
         ExecutionContext::DIRECT,
         meta.endpoint(),
         meta.method(),
-        &safe_url,
+        &observed_url,
         debug,
         elapsed,
         None,
@@ -715,7 +690,7 @@ async fn run_before_send(
     attempt: AttemptInfo,
 ) -> Result<(), ApiError> {
     check_deadline(deadline, head.endpoint_id(), head.method())?;
-    let future = core.hooks().before_send(before_send_event(
+    let future = core.request_gate().before_send(before_send_event(
         operation_id,
         context,
         head,
@@ -731,13 +706,13 @@ async fn run_before_send(
             Err(ApiError::classified(
                 head.endpoint_id().clone(),
                 head.method().clone(),
-                ErrorCategory::Hook,
+                ErrorCategory::PolicyRejected,
             ))
         }
     }
 }
 
-async fn run_response_head_hook(
+async fn run_response_head_gate(
     core: &ClientCore,
     deadline: OperationDeadline,
     endpoint_id: &EndpointId,
@@ -746,7 +721,7 @@ async fn run_response_head_hook(
     check_deadline(deadline, endpoint_id, event.method)?;
     let endpoint_id = endpoint_id.clone();
     let method = event.method;
-    let future = core.hooks().on_response_head(event);
+    let future = core.response_gate().before_response_handling(event);
     check_deadline(deadline, &endpoint_id, method)?;
     match deadline.run(future).await {
         Err(_) => Err(timeout_error(&endpoint_id, method)),
@@ -756,7 +731,7 @@ async fn run_response_head_hook(
             Err(ApiError::classified(
                 endpoint_id,
                 method.clone(),
-                ErrorCategory::Hook,
+                ErrorCategory::PolicyRejected,
             ))
         }
     }
@@ -774,7 +749,7 @@ fn before_send_event<'a>(
         parent_operation_id: context.parent_operation_id,
         endpoint: head.endpoint(),
         method: head.method(),
-        safe_url: head.safe_url(),
+        observed_url: head.observed_url(),
         page_index: context.page_index,
         attempt,
         headers: head.sanitized_public_headers(),
@@ -793,7 +768,7 @@ async fn deliver_completion<T>(
     context: ExecutionContext,
     endpoint: &str,
     method: &Method,
-    safe_url: &str,
+    observed_url: &str,
     debug: DebugLevel,
     elapsed: std::time::Duration,
     final_status: Option<StatusCode>,
@@ -803,6 +778,13 @@ async fn deliver_completion<T>(
     recovered_authentication: bool,
     result: Result<T, ApiError>,
 ) -> Result<T, ApiError> {
+    let attempt = attempts_started.checked_sub(1).map(|index| AttemptInfo {
+        index,
+        policy_retry_index: policy_retries,
+        authentication_recovery: recovered_authentication && index > policy_retries,
+    });
+    let result = result
+        .map_err(|error| error.with_execution_context(operation_id, attempt, context.page_index));
     let outcome = match &result {
         Ok(_) => success_outcome,
         Err(error) => CompletionOutcome::from_error_category(error.category()),
@@ -812,7 +794,7 @@ async fn deliver_completion<T>(
         parent_operation_id: context.parent_operation_id,
         endpoint,
         method,
-        safe_url,
+        observed_url,
         page_index: context.page_index,
         attempts_started,
         policy_retries,
@@ -822,7 +804,11 @@ async fn deliver_completion<T>(
         outcome,
     };
     core.debug_dispatcher(debug).completion(&event);
-    core.hooks().on_complete(event).await;
+    if context.parent_operation_id.is_none() {
+        let observer_started = std::time::Instant::now();
+        core.completion_observer().on_complete(event);
+        let _observer_elapsed = observer_started.elapsed();
+    }
     result
 }
 
@@ -890,14 +876,14 @@ async fn send_attempt(
             head.endpoint_id(),
             head.method(),
             request,
-            head.safe_url(),
+            head.observed_url(),
             head.public_headers(),
             head.pagination_sensitive_headers(),
             body_metadata.kind,
             body_metadata.known_length(),
         ))
         .await
-        .map_err(|_| timeout_error(head.endpoint_id(), head.method()))??;
+        .map_err(|_| dispatched_timeout_error(head.endpoint_id(), head.method()))??;
 
     let status = response.status();
     *final_status = Some(status);
@@ -906,7 +892,7 @@ async fn send_attempt(
         parent_operation_id: context.parent_operation_id,
         endpoint: head.endpoint(),
         method: head.method(),
-        safe_url: head.safe_url(),
+        observed_url: head.observed_url(),
         page_index: context.page_index,
         attempt,
         status,
@@ -924,7 +910,7 @@ async fn send_attempt(
         response.headers(),
     )
     .await?;
-    run_response_head_hook(core, deadline, head.endpoint_id(), response_event).await?;
+    run_response_head_gate(core, deadline, head.endpoint_id(), response_event).await?;
     Ok(AttemptResponse {
         response,
         applied_auth,
@@ -972,7 +958,7 @@ async fn acquire_rate_limit_authority(
     let request = RateLimitRequest {
         endpoint: head.endpoint(),
         method: head.method(),
-        safe_url: head.safe_url(),
+        observed_url: head.observed_url(),
         host: head.rate_limit_host(),
         page_index: context.page_index,
         attempt,
@@ -1004,7 +990,7 @@ async fn observe_rate_limit_response(
         request: RateLimitRequest {
             endpoint: head.endpoint(),
             method: head.method(),
-            safe_url: head.safe_url(),
+            observed_url: head.observed_url(),
             host: head.rate_limit_host(),
             page_index: context.page_index,
             attempt,
@@ -1037,6 +1023,13 @@ fn check_deadline(
 
 fn timeout_error(endpoint: &EndpointId, method: &Method) -> ApiError {
     ApiError::classified(endpoint.clone(), method.clone(), ErrorCategory::Timeout)
+}
+
+fn dispatched_timeout_error(endpoint: &EndpointId, method: &Method) -> ApiError {
+    ApiError::classified(endpoint.clone(), method.clone(), ErrorCategory::Timeout).with_stage(
+        crate::error::FailureStage::DuringDispatchOrUnknown,
+        crate::error::DispatchKnowledge::PossiblyDispatched,
+    )
 }
 
 fn internal_error(endpoint: &EndpointId, method: &Method) -> ApiError {

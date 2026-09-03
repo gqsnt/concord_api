@@ -7,7 +7,7 @@ use syn::spanned::Spanned;
 use super::SpanError;
 use super::model::{
     Child, Credential, CredentialSource, Endpoint, NormalizedConfig, ResolvedAuthPlacement,
-    ResolvedChallengePolicy, ResolvedExpr, Secret, Value, ValueShape,
+    ResolvedChallengePolicy, ResolvedExpr, Secret, Value, ValuePresence,
 };
 use super::surface::{
     RESERVED_GENERATED_METHODS, canonical_ident, insert_name, to_snake_case, value_setter_ident,
@@ -208,8 +208,8 @@ pub(super) fn validate_effective_auth(config: &NormalizedConfig) -> syn::Result<
 
 fn resolved_expr_is_guaranteed_present(value: &ResolvedExpr) -> bool {
     match value {
-        ResolvedExpr::Value(value) => matches!(value.shape, ValueShape::Scalar),
-        ResolvedExpr::String(_) | ResolvedExpr::Integer(_) | ResolvedExpr::Format(_) => true,
+        ResolvedExpr::Value(value) => matches!(value.presence, ValuePresence::Required),
+        ResolvedExpr::String(_) | ResolvedExpr::Integer(_) | ResolvedExpr::Concat(_) => true,
     }
 }
 
@@ -230,6 +230,12 @@ pub(super) fn validate_credential_names(
             "generated client builder method",
         )?;
         if value.accepts_absence() {
+            insert_name(
+                &mut builder,
+                format!("with_{}", canonical_ident(&value.name)),
+                value.name.span(),
+                "generated client builder method",
+            )?;
             insert_name(
                 &mut builder,
                 format!("clear_{}", canonical_ident(&value.name)),
@@ -398,15 +404,16 @@ mod tests {
     fn normalizes_generic_credential_sources_and_effective_auth() {
         let api = test_support::resolve_tokens(quote! {
             client AuthApi {
+                timeout off;
                 base "https://example.test";
                 credentials {
-                    secret token: String;
+                    secret token;
                     credential bearer = bearer(secret.token);
                 }
-                auth bearer bearer;
-            }
-            GET read() -> Bytes;
-        });
+                auth { bearer bearer; }
+
+            GET read() -> Bytes using Bytes;
+        }});
         let endpoint = test_support::endpoint(&api.client.children, "read");
 
         assert_eq!(api.client.credentials.len(), 1);
@@ -426,13 +433,14 @@ mod tests {
     fn unused_secret_is_rejected() {
         let error = resolve(quote! {
             client AuthApi {
+                timeout off;
                 base "https://example.test";
                 credentials {
-                    secret unused: String;
+                    secret unused;
                 }
-            }
-            GET read() -> Bytes;
-        })
+
+            GET read() -> Bytes using Bytes;
+        }})
         .err()
         .expect("unused secret");
 
@@ -446,19 +454,20 @@ mod tests {
     fn all_builtin_secret_uses_count_as_used() {
         resolve(quote! {
             client AuthApi {
+                timeout off;
                 base "https://example.test";
                 credentials {
-                    secret api_key: String;
-                    secret token: String;
-                    secret username: String;
-                    secret password: String;
+                    secret api_key;
+                    secret token;
+                    secret username;
+                    secret password;
                     credential api = api_key(secret.api_key);
                     credential bearer = bearer(secret.token);
                     credential basic = basic(secret.username, secret.password);
                 }
-            }
-            GET read() -> Bytes;
-        })
+
+            GET read() -> Bytes using Bytes;
+        }})
         .expect("all built-in credential sources consume their declared secrets");
     }
 
@@ -466,15 +475,16 @@ mod tests {
     fn basic_username_and_password_each_count_as_used() {
         resolve(quote! {
             client AuthApi {
+                timeout off;
                 base "https://example.test";
                 credentials {
-                    secret username: String;
-                    secret password: String;
+                    secret username;
+                    secret password;
                     credential basic = basic(secret.username, secret.password);
                 }
-            }
-            GET read() -> Bytes;
-        })
+
+            GET read() -> Bytes using Bytes;
+        }})
         .expect("both Basic components consume their declared secrets");
     }
 
@@ -482,15 +492,16 @@ mod tests {
     fn one_secret_used_by_multiple_credentials_is_valid() {
         resolve(quote! {
             client AuthApi {
+                timeout off;
                 base "https://example.test";
                 credentials {
-                    secret shared: String;
+                    secret shared;
                     credential first = api_key(secret.shared);
                     credential second = api_key(secret.shared);
                 }
-            }
-            GET read() -> Bytes;
-        })
+
+            GET read() -> Bytes using Bytes;
+        }})
         .expect("one declared secret may be shared by credentials");
     }
 
@@ -498,16 +509,17 @@ mod tests {
     fn multiple_unused_secrets_report_deterministically() {
         let error = resolve(quote! {
             client AuthApi {
+                timeout off;
                 base "https://example.test";
                 credentials {
-                    secret first: String;
-                    secret used: String;
-                    secret second: String;
+                    secret first;
+                    secret used;
+                    secret second;
                     credential bearer = bearer(secret.used);
                 }
-            }
-            GET read() -> Bytes;
-        })
+
+            GET read() -> Bytes using Bytes;
+        }})
         .err()
         .expect("multiple unused secrets");
         let diagnostic = error.into_compile_error().to_string();

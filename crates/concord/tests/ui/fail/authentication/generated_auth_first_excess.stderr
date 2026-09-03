@@ -1,5 +1,11 @@
-error: an effective authentication plan permits at most 64 placements
-  --> tests/ui/fail/authentication/generated_auth_first_excess.rs:77:32
+error: a endpoint `read` accepts one grouped `auth` attachment; `auth off` is exclusive
+  --> tests/ui/fail/authentication/generated_auth_first_excess.rs:15:9
    |
-77 |         auth query "auth-64" = key;
-   |                                ^^^
+15 |         auth { query "auth-01" = key; }
+   |         ^^^^
+
+error: the first authentication attachment is here
+  --> tests/ui/fail/authentication/generated_auth_first_excess.rs:14:9
+   |
+14 |         auth { query "auth-00" = key; }
+   |         ^^^^

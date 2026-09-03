@@ -24,7 +24,7 @@ async fn later_page_errors_keep_ordinary_categories_and_aggregate_status() {
     let error = pagination_error(
         collect(
             status_core,
-            PageLimit::Take(5),
+            PageLimit::Prefix(5),
             CursorController::new("first"),
             Some(Duration::from_secs(30)),
         )
@@ -66,7 +66,7 @@ async fn later_page_errors_keep_ordinary_categories_and_aggregate_status() {
     let error = pagination_error(
         collect(
             decode_core,
-            PageLimit::Take(5),
+            PageLimit::Prefix(5),
             CursorController::new("first"),
             Some(Duration::from_secs(30)),
         )
@@ -103,7 +103,7 @@ async fn later_page_errors_keep_ordinary_categories_and_aggregate_status() {
     let error = pagination_error(
         collect(
             timeout_core,
-            PageLimit::Take(5),
+            PageLimit::Prefix(5),
             CursorController::new("first"),
             Some(Duration::from_secs(30)),
         )
@@ -121,13 +121,14 @@ async fn later_page_errors_keep_ordinary_categories_and_aggregate_status() {
     let rate_executor = DeterministicExecutor::new();
     let rate_hooks = Arc::new(PaginationProbe::default());
     let rejecting_limiter = Arc::new(RejectingLimiter::default());
-    let configured_hooks: Arc<dyn RuntimeHooks> = rate_hooks.clone();
     let configured_limiter: Arc<dyn RateLimiter> = rejecting_limiter.clone();
     let rate_core = ClientCore::build_with_development(
         "http://pagination-runtime.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
         RuntimeConfigBuilder::new()
-            .hooks(configured_hooks)
+            .request_gate(rate_hooks.clone())
+            .response_gate(rate_hooks.clone())
+            .completion_observer(rate_hooks.clone())
             .rate_limiter(configured_limiter),
         &rate_executor,
     )
@@ -135,7 +136,7 @@ async fn later_page_errors_keep_ordinary_categories_and_aggregate_status() {
     let error = pagination_error(
         collect(
             rate_core,
-            PageLimit::Take(1),
+            PageLimit::Prefix(1),
             CursorController::new("rate-limit-page"),
             Some(Duration::from_secs(30)),
         )
@@ -149,13 +150,13 @@ async fn later_page_errors_keep_ordinary_categories_and_aggregate_status() {
         rate_executor.application().request_count().expect("count"),
         0
     );
-    let completion = rate_hooks
-        .completion
-        .lock()
-        .expect("completion lock")
-        .clone();
-    assert_eq!(completion.len(), 1);
-    assert_eq!(completion[0].outcome, CompletionOutcome::RateLimit);
+    assert!(
+        rate_hooks
+            .completion
+            .lock()
+            .expect("completion lock")
+            .is_empty()
+    );
     let aggregate = rate_hooks.aggregate.lock().expect("aggregate lock").clone();
     assert_eq!(aggregate.len(), 1);
     assert_eq!(aggregate[0].pages_completed, 0);
@@ -163,8 +164,8 @@ async fn later_page_errors_keep_ordinary_categories_and_aggregate_status() {
     assert_eq!(aggregate[0].outcome, CompletionOutcome::RateLimit);
 }
 
-#[tokio::test(start_paused = true)]
-async fn page_completion_delay_is_outside_deadline_and_later_page_gets_a_fresh_deadline() {
+#[tokio::test]
+async fn pagination_emits_no_internal_page_terminal_observation() {
     let executor = DeterministicExecutor::new();
     executor
         .application()
@@ -174,67 +175,51 @@ async fn page_completion_delay_is_outside_deadline_and_later_page_gets_a_fresh_d
         .application()
         .queue_response(ScriptedResponse::success(Bytes::from_static(b"two|-")))
         .expect("second page");
-    let completion_gate = Gate::closed();
-    let hooks = Arc::new(PaginationProbe::with_page_zero_completion_gate(
-        completion_gate.clone(),
-    ));
+    let hooks = Arc::new(PaginationProbe::default());
     let core = core(
         &executor,
         Arc::clone(&hooks),
         Arc::new(LimiterProbe::default()),
         |runtime| runtime,
     );
-    let operation = tokio::spawn(collect(
+    let items = collect(
         core,
-        PageLimit::Take(5),
+        PageLimit::Prefix(5),
         CursorController::new("first"),
-        Some(Duration::from_secs(1)),
-    ));
-    completion_gate.wait_until_reached().await;
-    assert_eq!(executor.application().request_count().expect("count"), 1);
-
-    tokio::time::advance(Duration::from_secs(100)).await;
-    completion_gate.open();
-    let items = operation
-        .await
-        .expect("pagination task")
-        .expect("later page uses a fresh deadline");
+        Some(Duration::from_secs(30)),
+    )
+    .await
+    .expect("pagination succeeds");
     assert_eq!(items, ["one", "two"]);
     assert_eq!(executor.application().request_count().expect("count"), 2);
-    assert_eq!(hooks.completion.lock().expect("completion lock").len(), 2);
+    assert!(hooks.completion.lock().expect("completion lock").is_empty());
+    assert_eq!(hooks.aggregate.lock().expect("aggregate lock").len(), 1);
 }
 
-#[tokio::test(start_paused = true)]
-async fn aggregate_completion_observes_a_fixed_result_and_excludes_its_hook_delay() {
+#[tokio::test]
+async fn aggregate_completion_observes_one_fixed_result() {
     let executor = DeterministicExecutor::new();
     executor
         .application()
         .queue_response(ScriptedResponse::success(Bytes::from_static(b"one|-")))
         .expect("page");
-    let aggregate_gate = Gate::closed();
-    let hooks = Arc::new(PaginationProbe::with_aggregate_gate(aggregate_gate.clone()));
+    let hooks = Arc::new(PaginationProbe::default());
     let core = core(
         &executor,
         Arc::clone(&hooks),
         Arc::new(LimiterProbe::default()),
         |runtime| runtime,
     );
-    let operation = tokio::spawn(collect(
+    let items = collect(
         core,
-        PageLimit::Take(1),
+        PageLimit::Prefix(1),
         CursorController::new("first"),
         Some(Duration::from_secs(1)),
-    ));
-    aggregate_gate.wait_until_reached().await;
-    assert!(!operation.is_finished(), "the aggregate hook is awaited");
-    let fixed_elapsed = hooks.aggregate.lock().expect("aggregate lock")[0].elapsed;
-
-    tokio::time::advance(Duration::from_secs(100)).await;
-    aggregate_gate.open();
-    let items = operation
-        .await
-        .expect("pagination task")
-        .expect("fixed success survives aggregate hook delay");
+    )
+    .await
+    .expect("fixed success");
     assert_eq!(items, ["one"]);
-    assert!(fixed_elapsed < Duration::from_secs(100));
+    let aggregate = hooks.aggregate.lock().expect("aggregate lock");
+    assert_eq!(aggregate.len(), 1);
+    assert_eq!(aggregate[0].outcome, CompletionOutcome::Success);
 }

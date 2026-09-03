@@ -5,24 +5,24 @@ use crate::body::{PageRequestBodySpec, RequestBodySpec};
 use crate::error::ApiError;
 use crate::hooks::BoxFuture;
 use crate::request::Request;
-use crate::response::{PageResponseSpec, ResponseBodySpec};
+use crate::response::{PageResponseSpec, ResponseSpec};
 
 use super::{PaginationController, PaginationError};
 
 /// A finite requested pagination limit.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PageLimit {
-    /// Collect at most this many pages and succeed after the final allowed
-    /// page without asking the controller for another state.
-    Take(u32),
-    /// Permit natural termination through this page and fail when another
-    /// controller state still exists at the cap.
-    HardCap(NonZeroU32),
+    /// Return the successfully collected prefix of at most this many pages.
+    /// `Prefix(0)` performs no managed work.
+    Prefix(u32),
+    /// Require natural completion within this many pages and fail without a
+    /// partial aggregate when continuation remains at the limit.
+    CompleteWithin(NonZeroU32),
 }
 
 impl From<u32> for PageLimit {
     fn from(value: u32) -> Self {
-        Self::Take(value)
+        Self::Prefix(value)
     }
 }
 
@@ -54,13 +54,13 @@ where
     Self::Body: PageRequestBodySpec,
     <Self::Body as RequestBodySpec>::Input: Clone,
     Self::Response: PageResponseSpec,
-    <Self::Response as ResponseBodySpec>::Output: IntoIterator<Item = Self::Item> + Send + 'static,
+    <Self::Response as ResponseSpec>::Output: IntoIterator<Item = Self::Item> + Send + 'static,
 {
     /// One collected item from the decoded page's ordinary `IntoIterator`.
     type Item: Send + 'static;
 
     /// Request-local typed pagination controller.
-    type Controller: PaginationController<<Self::Response as ResponseBodySpec>::Output>;
+    type Controller: PaginationController<<Self::Response as ResponseSpec>::Output>;
 
     /// Constructs the complete initial controller exactly once.
     fn initial_controller(&self) -> Result<Self::Controller, PaginationError>;
@@ -79,7 +79,7 @@ where
     E::Body: PageRequestBodySpec,
     <E::Body as RequestBodySpec>::Input: Clone,
     E::Response: PageResponseSpec,
-    <E::Response as ResponseBodySpec>::Output: IntoIterator<Item = E::Item> + Send + 'static,
+    <E::Response as ResponseSpec>::Output: IntoIterator<Item = E::Item> + Send + 'static,
 {
     type Output = Result<Vec<E::Item>, ApiError>;
     type IntoFuture = BoxFuture<'static, Self::Output>;

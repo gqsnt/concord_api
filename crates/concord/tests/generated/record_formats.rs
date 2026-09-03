@@ -10,7 +10,7 @@ use concord::records::Csv;
 #[cfg(feature = "ndjson")]
 use concord::records::NdJson;
 use concord::records::{RecordDecoder, RecordError, RecordErrorKind, RecordStream, Records};
-use concord::response::{Buffered, PageResponseSpec, ResponseBodySpec};
+use concord::response::{Buffered, PageResponseSpec, ResponseSpec};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 use futures_core::Stream;
 use serde::Deserialize;
@@ -64,24 +64,25 @@ pub struct Row {
 #[cfg(feature = "csv")]
 api! {
     client CsvResponseApi {
+        timeout off;
         base "http://csv-response.example.test/v1/";
-    }
 
-    GET csv_rows() -> Csv<Row>;
-    GET csv_stream() -> Records<Csv<Row>>;
 
-    GET csv_pages(offset: u64, limit: std::num::NonZeroU32) -> Csv<Row> {
+    GET csv_rows() -> Vec<Row> using Csv<Row> { expose accepted_bytes; }
+    GET csv_stream() -> ::concord::records::RecordStream<Csv<Row>> using Records<Csv<Row>>;
+
+    GET csv_pages(offset: u64, limit: std::num::NonZeroU32) -> Vec<Row> using Csv<Row> {
         path ["pages"];
         query {
-            "offset" = ep.offset;
-            "limit" = ep.limit;
+            "offset" = endpoint.offset;
+            "limit" = endpoint.limit;
         }
-        paginate crate::support::OffsetController {
-            offset: bind ep.offset,
-            page_size: bind ep.limit,
+        paginate with crate::support::OffsetController {
+            offset -> endpoint.offset;
+            page_size -> endpoint.limit;
         }
     }
-}
+}}
 
 #[cfg(feature = "csv")]
 fn csv_client(server: &ScriptedServer) -> CsvResponseApi {
@@ -97,7 +98,7 @@ fn csv_client(server: &ScriptedServer) -> CsvResponseApi {
 fn csv_is_both_a_complete_page_spec_and_a_record_decoder() {
     fn assert_complete<S>()
     where
-        S: ResponseBodySpec<Output = Vec<Row>, Mode = Buffered> + PageResponseSpec,
+        S: ResponseSpec<Output = Vec<Row>, Mode = Buffered> + PageResponseSpec,
     {
     }
     fn assert_decoder<D: RecordDecoder<Record = Row>>() {}
@@ -195,7 +196,7 @@ async fn direct_streamed_runtime_raw_and_paginated_csv_have_one_engine_semantics
 
     let raw = client
         .csv_rows()
-        .response_bytes()
+        .accepted_bytes()
         .await
         .expect("CSV response bytes bypass");
     assert_eq!(raw.value(), b"raw-csv-decoder-bypass".as_slice());
@@ -326,24 +327,25 @@ pub struct Event {
 #[cfg(feature = "ndjson")]
 api! {
     client NdJsonResponseApi {
+        timeout off;
         base "http://ndjson-response.example.test/v1/";
-    }
 
-    GET ndjson_events() -> NdJson<Event>;
-    GET ndjson_stream() -> Records<NdJson<Event>>;
 
-    GET ndjson_pages(offset: u64, limit: std::num::NonZeroU32) -> NdJson<Event> {
+    GET ndjson_events() -> Vec<Event> using NdJson<Event> { expose accepted_bytes; }
+    GET ndjson_stream() -> ::concord::records::RecordStream<NdJson<Event>> using Records<NdJson<Event>>;
+
+    GET ndjson_pages(offset: u64, limit: std::num::NonZeroU32) -> Vec<Event> using NdJson<Event> {
         path ["pages"];
         query {
-            "offset" = ep.offset;
-            "limit" = ep.limit;
+            "offset" = endpoint.offset;
+            "limit" = endpoint.limit;
         }
-        paginate crate::support::OffsetController {
-            offset: bind ep.offset,
-            page_size: bind ep.limit,
+        paginate with crate::support::OffsetController {
+            offset -> endpoint.offset;
+            page_size -> endpoint.limit;
         }
     }
-}
+}}
 
 #[cfg(feature = "ndjson")]
 fn ndjson_client(server: &ScriptedServer) -> NdJsonResponseApi {
@@ -359,7 +361,7 @@ fn ndjson_client(server: &ScriptedServer) -> NdJsonResponseApi {
 fn ndjson_is_both_a_complete_page_spec_and_a_record_decoder() {
     fn assert_complete<S>()
     where
-        S: ResponseBodySpec<Output = Vec<Event>, Mode = Buffered> + PageResponseSpec,
+        S: ResponseSpec<Output = Vec<Event>, Mode = Buffered> + PageResponseSpec,
     {
     }
     fn assert_decoder<D: RecordDecoder<Record = Event>>() {}
@@ -450,7 +452,7 @@ async fn direct_streamed_runtime_raw_and_paginated_ndjson_have_one_engine_semant
 
     let raw = client
         .ndjson_events()
-        .response_bytes()
+        .accepted_bytes()
         .await
         .expect("NDJSON response bytes bypass");
     assert_eq!(raw.value(), b"raw-ndjson-decoder-bypass".as_slice());

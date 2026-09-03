@@ -9,8 +9,6 @@ pub(super) fn method_token(method: &ResolvedMethod, facade_path: &TokenStream) -
         ResolvedMethod::Delete => quote!(#facade_path::__private::Method::DELETE),
         ResolvedMethod::Head => quote!(#facade_path::__private::Method::HEAD),
         ResolvedMethod::Options => quote!(#facade_path::__private::Method::OPTIONS),
-        ResolvedMethod::Trace => quote!(#facade_path::__private::Method::TRACE),
-        ResolvedMethod::Connect => quote!(#facade_path::__private::Method::CONNECT),
         ResolvedMethod::Custom(value) => quote!(
             #facade_path::__private::Method::from_bytes(#value.as_bytes())
                 .expect("the Concord macro validates custom HTTP method tokens")
@@ -18,23 +16,28 @@ pub(super) fn method_token(method: &ResolvedMethod, facade_path: &TokenStream) -
     }
 }
 
-pub(super) fn request_body_input_type(
-    body: &TokenStream,
-    facade_path: &TokenStream,
-) -> TokenStream {
-    quote!(<#body as #facade_path::body::RequestBodySpec>::Input)
-}
-
 pub(super) fn default_expr(value: &ResolvedDefault) -> TokenStream {
     match value {
         ResolvedDefault::String(value) => quote!(#value),
+        ResolvedDefault::Character(value) => quote!(#value),
         ResolvedDefault::Integer { negative, literal } if *negative => quote!(-#literal),
         ResolvedDefault::Integer { literal, .. } => quote!(#literal),
+        ResolvedDefault::Float { negative, literal } if *negative => quote!(-#literal),
+        ResolvedDefault::Float { literal, .. } => quote!(#literal),
         ResolvedDefault::Boolean(value) => quote!(#value),
         ResolvedDefault::Path(value) => quote!(#value),
         ResolvedDefault::TraitDefault(span) => {
             quote_spanned!(*span=> ::core::default::Default::default())
         }
+    }
+}
+
+pub(super) fn retained_default_expr(value: &Value) -> TokenStream {
+    let default = default_expr(value.default().expect("defaulted value"));
+    if value.is_optional() {
+        quote!(::std::option::Option::Some(#default))
+    } else {
+        default
     }
 }
 

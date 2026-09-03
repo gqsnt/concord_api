@@ -11,5 +11,5 @@ use super::PaginationApi;
 
 /// Constructs a bounded cursor-pagination request.
 pub fn construct(client: &PaginationApi) {
-    let _: PaginatedRequest<_> = client.cursor().paginate(PageLimit::Take(2));
+    let _: PaginatedRequest<_> = client.cursor().paginate(PageLimit::Prefix(2));
 }

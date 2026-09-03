@@ -1,0 +1,13 @@
+error[E0624]: associated function `new` is private
+ --> tests/ui/fail/rate_limits/raw_rate_key_part_constructor_absent.rs:4:31
+  |
+4 |       let _ = RateLimitKeyPart::new("tenant", b"unframed");
+  |                                 ^^^ private associated function
+  |
+ ::: $WORKSPACE/crates/concord-core/src/rate_limit/types.rs
+  |
+  | /     pub(crate) fn new(
+  | |         name: impl AsRef<str>,
+  | |         value: impl AsRef<[u8]>,
+  | |     ) -> Result<Self, RateLimitError> {
+  | |_____________________________________- private associated function defined here

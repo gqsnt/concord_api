@@ -89,7 +89,7 @@ mod tests {
         let response = RateLimitResponseHead {
             endpoint: "RateApi::get",
             method: &method,
-            safe_url: "https://example.test/get",
+            observed_url: "https://example.test/get",
             host: Some("example.test"),
             page_index: 0,
             attempt: concord_core::contracts::AttemptInfo {

@@ -115,7 +115,7 @@ async fn fake_value_mismatch_diagnostics_are_value_free() {
     application
         .queue_expected_response(
             ExpectedRequest::new()
-                .safe_url(EXPECTED_URL)
+                .observed_url(EXPECTED_URL)
                 .body(Bytes::from_static(EXPECTED_BODY.as_bytes())),
             response,
         )

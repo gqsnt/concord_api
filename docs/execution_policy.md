@@ -1,110 +1,60 @@
 # Execution policy
 
-- **Audience:** API callers, runtime configurators, and extension authors
-- **Purpose:** explanation and operational guide
-- **Normative reference:** [runtime model](runtime.md)
+Concord separates domain contract from application/runtime policy while keeping
+one execution authority.
 
-## One operation
+## One managed pipeline
 
-Polling a request terminal starts one operation with:
+Every direct, unbound-bound, runtime-defined, credential-source, retry, recovery,
+page, response, and accepted-byte path enters the same executor. The stable
+authority order is public shaping, request gate, prerequisites/body work,
+credential validation/resolution, rate admission, private placement, dispatch,
+challenge handling, response gate/status, acquisition, conversion, fixed result,
+then completion observation.
 
-- one operation identity;
-- one resolved deadline selection;
-- one final result;
-- one completion event.
+No extension receives a native request/response mutation handle. Transport
+proxy and client identity remain HTTP configuration. Endpoint declarations do
+not choose backoff, jitter, token buckets, or distributed coordination.
 
-Retries and authentication recovery are visible attempts inside that operation.
-Pagination creates child page operations plus one aggregate operation.
+## Gates versus observers
 
-## One managed executor
+`RequestGate` and `ResponseGate` may reject only at their named pre-outcome
+phase. Their bounded lifecycle views contain IDs, method, observed URL/headers,
+attempt/page facts, and structural body information—not bodies, credentials,
+native state, or decoded output.
 
-Generated direct requests, explicit endpoints, runtime-defined endpoints,
-endpoint-backed credential acquisition, retries, recovery attempts, pagination
-pages, and response-byte terminals all use the same executor.
-
-This is the internal cost of promising that every public request surface has the
-same hooks, limiting, credential boundary, deadline, body replay, response
-handling, cancellation, errors, and completion.
-
-## Exact stage order
-
-```text
-1  resolve and validate public method, logical URL, headers, identity, timeout, budgets
-2  inspect body metadata
-3  run before-send hook
-4  prepare or reconstruct body
-5  resolve current credential material without placing it
-6  acquire every rate policy
-7  place private authentication and materialize native request
-8  perform HTTP under the operation deadline
-9  present sanitized response head to limiter observer
-10 present sanitized response head to user response hook
-11 apply authentication recovery or admitted retry decision
-12 apply declared status acceptance
-13 acquire buffered, streaming, or discard response data
-14 dispatch one completion event after the result is fixed
-15 deliver the result
-```
-
-## Why ordering matters
-
-| Ordering | Guarantee |
-|---|---|
-| hook before body preparation | a veto avoids expensive or sensitive body work |
-| limiter admission before private placement | limiter and waiting logic never require credentials |
-| limiter observer before user response hook | quota state is updated before application observation |
-| challenge/retry before status acceptance | a declared accepted status cannot bypass credential recovery |
-| status acceptance before body success | rejected bodies are handled under bounded error rules |
-| completion after fixed outcome | observation cannot alter success or failure |
-
-## Deadline
-
-The operation timeout covers preparation, hooks, credential acquisition,
-limiter waiting, transport, response-head observation, and complete buffered
-acquisition and conversion.
-
-Completion runs outside the operation timeout because it observes an already
-fixed result. It is awaited and not detached. An accepted streaming response
-completes when the stream opens; later polling is consumer-owned and follows
-stream limits rather than the completed operation deadline.
-
-## Cancellation
-
-Dropping a request future cancels remaining foreground work. Concord does not
-detach hooks, completion, or correctness work. Already completed external
-effects are not rolled back. Application extensions can spawn their own work,
-but that work is outside Concord’s guarantee.
-
-## Hooks
+`CompletionObserver` runs after the result is fixed, returns no decision, and
+cannot transform success/failure. Applications needing asynchronous export use
+an explicitly bounded queue/sink with owned shutdown and backpressure policy;
+core does not spawn unbounded detached work.
 
 <!-- concord-source: crates/concord-examples/src/runtime_policy/hooks.rs#hooks_client -->
 ```rust
 pub fn construct() -> Result<ObservedApi, concord::ClientBuildError> {
+    let observation = Arc::new(CountingHooks::default());
     ObservedApi::builder()
-        .configure_runtime(|runtime| {
+        .configure_runtime(move |runtime| {
             runtime
-                .hooks(Arc::new(CountingHooks::default()))
+                .request_gate(observation.clone())
+                .response_gate(observation.clone())
+                .completion_observer(observation)
                 .debug(DebugLevel::Basic)
         })
         .build()
 }
 ```
 
-Before-send and response hooks may reject their current stage with safe errors.
-Completion receives one fixed outcome. Hooks receive purpose-specific sanitized
-structures, not body bytes, credential material, native objects, or native
-error chains.
+The example implementation happens to combine all three traits in one object;
+their authorities remain separate.
 
-## Retry and recovery
+## Deadline and cancellation
 
-Retry remains bounded by policy, extra-load budget, remaining deadline, body
-replayability, and limiter admission. Authentication recovery remains separately
-bounded and may replace still-current credential material. Both use the same
-attempt pipeline.
+One terminal gets one aggregate absolute deadline, covering every wait,
+callback, attempt, page, and conversion. Core checks before/after synchronous
+trusted callbacks but cannot preempt them.
 
-## Related
+Dropping the future stops further local polling. It does not prove a dispatched
+remote operation was canceled or rolled back. No hidden task continues request
+execution unless an explicitly named runtime service owns that lifecycle.
 
-- [Runtime model](runtime.md)
-- [Retry](retry.md)
-- [Authentication](auth.md)
-- [Planning and observation](planning_and_observation.md)
+See the normative [runtime model](runtime.md).

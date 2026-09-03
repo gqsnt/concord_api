@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 
 use super::model::{
-    Pagination, PaginationField, PaginationInitializer, PaginationValue, Value, ValueReference,
+    Pagination, PaginationField, PaginationInitializer, PaginationValue, Value, ValuePresence,
+    ValueReference,
 };
 use super::surface::canonical_ident;
 use super::symbols::{ScopeFrame, resolve_default};
@@ -51,7 +52,7 @@ fn public_value_name(
 ) -> String {
     match reference {
         ValueReference::Client(index) => {
-            format!("vars.{}", canonical_ident(&client[index].name))
+            format!("client.{}", canonical_ident(&client[index].name))
         }
         ValueReference::Scope {
             scope_id,
@@ -61,10 +62,14 @@ fn public_value_name(
                 .iter()
                 .find(|scope| scope.id == scope_id)
                 .expect("resolved pagination scope must remain visible");
-            format!("scope.{}", canonical_ident(&scope.values[parameter].name))
+            format!(
+                "{}.{}",
+                canonical_ident(&scope.name),
+                canonical_ident(&scope.values[parameter].name)
+            )
         }
         ValueReference::Endpoint(index) => {
-            format!("ep.{}", canonical_ident(&endpoint[index].name))
+            format!("endpoint.{}", canonical_ident(&endpoint[index].name))
         }
     }
 }
@@ -85,7 +90,7 @@ impl Resolver<'_> {
             .into_iter()
             .map(|field| {
                 let initializer = match field.initializer {
-                    SourcePaginationInitializer::Bind {
+                    SourcePaginationInitializer::Live {
                         namespace,
                         destination,
                     } => {
@@ -106,12 +111,18 @@ impl Resolver<'_> {
                     SourcePaginationInitializer::Value(value) => {
                         let value = match value {
                             SourcePaginationValue::Reference { namespace, name } => {
-                                PaginationValue::Reference(self.resolve_value_reference(
+                                let value = self.resolve_value_reference(
                                     &namespace,
                                     &name,
                                     scopes,
                                     Some(endpoint),
-                                )?)
+                                )?;
+                                if matches!(value.presence, ValuePresence::Optional) {
+                                    return Err(name.span().error(
+                                        "a stable pagination initializer cannot use a Concord-optional value",
+                                    ));
+                                }
+                                PaginationValue::Reference(value)
                             }
                             SourcePaginationValue::Stable(value) => {
                                 PaginationValue::Stable(resolve_default(value))
@@ -139,7 +150,7 @@ pub(super) fn validate_pagination_binding_destinations(
     {
         return Err(value
             .span
-            .error("`bind` accepts only direct `ep.FIELD` or `scope.FIELD` destinations"));
+            .error("live pagination authority may update only an endpoint-owned slot"));
     }
     Ok(())
 }
@@ -156,17 +167,18 @@ mod tests {
     fn resolves_controller_fields_to_owned_normalized_references() {
         let api = test_support::resolve_tokens(quote! {
             client PaginationApi {
+                timeout off;
                 base "https://example.test";
-                vars { tenant: String; }
-            }
-            GET list(cursor: Option<String>) -> PageSpec<Vec<u32>> {
-                paginate crate::Controller {
-                    cursor: bind ep.cursor,
-                    tenant: vars.tenant,
-                    attempts: 0,
+                values { tenant: String; }
+
+            GET list(cursor?: String) -> Vec<u32> using PageSpec<Vec<u32>> {
+                paginate with crate::Controller {
+                    cursor -> endpoint.cursor;
+                    tenant = client.tenant;
+                    attempts = 0;
                 }
             }
-        });
+        }});
         let endpoint = test_support::endpoint(&api.client.children, "list");
         let pagination = endpoint.pagination.as_ref().expect("pagination");
 
@@ -198,21 +210,20 @@ mod tests {
     fn client_binding_without_a_rate_dependency_remains_rejected() {
         let error = test_support::try_resolve_tokens(quote! {
             client PaginationApi {
+                timeout off;
                 base "https://example.test";
-                vars { cursor: String; }
-            }
-            GET list() -> PageSpec<Vec<u32>> {
-                paginate crate::Controller {
-                    cursor: bind vars.cursor,
+                values { cursor: String; }
+
+            GET list() -> Vec<u32> using PageSpec<Vec<u32>> {
+                paginate with crate::Controller {
+                    cursor -> client.cursor;
                 }
             }
-        })
+        }})
         .err()
         .expect("client pagination bindings remain unsupported")
         .to_string();
 
-        assert!(
-            error.contains("`bind` accepts only direct `ep.FIELD` or `scope.FIELD` destinations")
-        );
+        assert!(error.contains("live pagination binding may update only an endpoint-owned slot"));
     }
 }

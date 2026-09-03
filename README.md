@@ -1,54 +1,56 @@
 # Concord
 
-Concord describes an HTTP API as a typed domain tree and generates the Rust
-client API that developers would want to read and use.
+Concord v2 describes one typed HTTP API contract and projects it into a
+domain-shaped Rust client, bounded managed execution, and credential-free,
+redaction-aware operational evidence.
 
-The declaration keeps domain structure, typed inputs, outputs, wire placement,
-and policy in one reviewable contract. The generated client turns the same
-structure into ordinary Rust methods, immutable scope snapshots, typed request
-controls, and capability-specific terminals.
+The declaration owns domain values, lexical scopes, wire placement,
+authentication, response semantics, pagination, and quota identity. Transport,
+retry policy, limiter implementation, gates, observation, and finite runtime
+limits remain cohesive client configuration.
 
-## The two product surfaces
+## One declaration, one domain tree
 
 <!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_contract -->
 ```rust
 api! {
     client CatalogApi {
+        timeout off;
         base "http://catalog.example.test/";
-        vars {
+        values {
             tenant: String;
         }
         path ["api"];
-        query { "tenant" = vars.tenant; }
-    }
+        query { "tenant" = client.tenant; }
+
 
     scope regional(region: String) {
-        host [scope.region, "api"];
+        subdomain replace [regional.region, "api"];
         path ["v1", "catalog"];
 
         GET item_summaries(
-            category: Option<String>,
+            category?: String,
             offset: u64 = 0,
             count: std::num::NonZeroU32 = DEFAULT_PAGE_SIZE,
-        ) -> Json<Vec<ItemSummary>> {
+        ) -> Vec<ItemSummary> using Json<Vec<ItemSummary>> {
             path ["items"];
             query {
-                "category" = ep.category;
-                "offset" = ep.offset;
-                "count" = ep.count;
+                "category" = endpoint.category;
+                "offset" = endpoint.offset;
+                "count" = endpoint.count;
             }
-            paginate concord::pagination::OffsetPagination {
-                offset: bind ep.offset,
-                page_size: bind ep.count,
+            paginate with concord::pagination::OffsetPagination {
+                offset -> endpoint.offset;
+                page_size -> endpoint.count;
             }
         }
     }
-}
+}}
 ```
 
-The generated use follows the same tree. Required values are arguments;
-optional and defaulted values become typed controls; pagination exists because
-the endpoint declares it.
+The generated use follows the same lexical tree. Required non-defaulted scope
+and endpoint values are positional; optional/defaulted values are exact typed
+controls; terminals exist only for declared capabilities.
 
 <!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_usage -->
 ```rust
@@ -60,114 +62,52 @@ pub fn construct() -> Result<(), concord::ClientBuildError> {
     let _: PaginatedRequest<_> = client
         .regional("eu".to_owned())
         .item_summaries()
-        .set_category("hardware".to_owned())
+        .with_category("hardware".to_owned())
         .set_count(NonZeroU32::new(50).expect("positive page size"))
-        .paginate(PageLimit::Take(2));
+        .paginate(PageLimit::Prefix(2));
     Ok(())
 }
 ```
 
-The endpoint author writes the domain operation and its local HTTP mapping. The
-compiler resolves inherited behavior, generates the client surface, checks
-cross-feature constraints, and sends every request form through one managed
-runtime.
+`CatalogApi::unbound()` provides the same tree without a runtime. An intent can
+be stored, described, planned against a client, and later bound. Construction
+and planning are inert; managed effects start only when a terminal is polled.
 
-## Why Concord
+## Core guarantees
 
-### Read a large API as a domain
-
-`client`, `scope`, and endpoint leaves show what belongs to what. Scopes are
-immutable selected contexts, not cosmetic folders: they own visible values,
-inherited request semantics, child declarations, and generated navigation.
-
-### Add endpoints locally
-
-Place a new endpoint in the correct scope, declare its typed signature, then
-state only its local path, query, body, response, pagination, or policy delta.
-The author does not rebuild scope types, request wrappers, encoding, credential
-placement, limiter admission, retry, cancellation, or response acquisition.
-
-### Derive guardrails from the contract
-
-Because Concord knows tree position, value capabilities, body role, response
-mode, authentication placement, rate dimensions, and pagination bindings, it
-can generate the correct methods and reject invalid combinations. Unsupported
-operations are absent or fail a sealed trait bound instead of becoming runtime
-`Unsupported` branches.
-
-### Extend semantics without bypassing them
-
-Custom bodies, responses, providers, controllers, limiters, classifiers, hooks,
-and runtime-defined endpoints participate through typed bounded contracts.
-They do not receive unrestricted native application requests or responses.
-
-## Implementation model
-
-`concord::api!` parses a source-shaped contract, normalizes inheritance,
-validates cross-site semantics, derives the generated Rust surface, and emits
-against the public `concord` façade. The runtime receives typed resolved plans
-and never interprets DSL syntax.
-
-Request construction and planning are inert. Awaiting a request starts public
-request shaping, hooks, body preparation, credential acquisition, rate-limit
-admission, private authentication placement, HTTP, bounded response
-acquisition, conversion, and completion.
+- Rust type spelling never controls optionality or repetition. `?` adds one
+  outer presence layer and `each` selects repeated placement.
+- Public shaping and credential-free observation happen before private
+  authentication placement.
+- One executor owns direct, unbound-bound, runtime-defined, retry, recovery,
+  pagination, response, and accepted-byte paths.
+- Every growing dimension is bounded, and pagination shares one aggregate
+  deadline across all pages and attempts.
+- Plans and ordinary evidence structurally exclude credentials and propagate
+  `#[redact]`; visible public data may still be sensitive.
+- Rate keys use canonical typed framing, and a rate-limited contract cannot
+  build without an explicit limiter.
 
 ## Use from this checkout
 
 ```toml
 [dependencies]
-concord = { path = "../concord_api/crates/concord", features = ["json"] }
+concord = { path = "../concord_api2/crates/concord", features = ["json"] }
 ```
 
-Concord requires Rust 1.86 or newer. The packages have `publish = false`.
+The workspace uses Rust edition 2024 and MSRV 1.86. Packages remain private
+(`publish = false`).
 
-## Documentation
+Start with the [documentation index](docs/README.md), the
+[quick start](docs/quick_start.md), or the normative
+[DSL specification](docs/spec.md). Existing v1 contracts should follow the
+[migration guide](docs/migration_v1_to_v2.md).
 
-Start with the [documentation index](docs/README.md).
-
-| Goal | Read |
-|---|---|
-| Understand the product | [Overview](docs/overview.md) and [mental model](docs/mental_model.md) |
-| Declare and call a client | [Quick start](docs/quick_start.md) |
-| Model a large API | [Modeling APIs](docs/modeling_apis.md) and [Riot walkthrough](docs/riot_walkthrough.md) |
-| Look up exact syntax | [DSL specification](docs/spec.md) |
-| Understand execution | [Runtime model](docs/runtime.md) |
-| Extend Concord | [Extensions](docs/extensions.md) |
-| Maintain the project | [Maintainer internals](dev_doc/internals.md) |
-
-## Validation
-
-`cargo test --workspace` is not the repository gate. UI, MSRV, feature-isolation,
-documentation, and fixture targets are configured separately, and several are
-excluded from ordinary test runs. Use the maintained `just` recipes.
-
-Fast local loop:
-
-```text
-just fmt
-just docs-check
-cargo nextest run --workspace
-```
-
-Before committing:
-
-```text
-just check
-just test
-just ui
-just docs
-just msrv
-```
-
-Full pre-release equivalent of CI:
+The complete repository gate is:
 
 ```text
 just verify
 ```
 
-`just verify` runs `fmt`, `check`, `lint`, `test`, `ui`, `msrv`, `fixtures`,
-`docs`, `deny`, `workflow`, `analyzer`, and `bench`. See
-[maintainer internals](dev_doc/internals.md) for what each level owns.
-
-Internal project. v1 final. Not published. See [FINAL.md](FINAL.md).
+See the [v2 constitution](FINAL.md) and
+[maintainer internals](dev_doc/internals.md) for gate ownership.

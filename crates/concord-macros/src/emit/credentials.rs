@@ -499,22 +499,18 @@ pub(super) fn credential_material_type(
         CredentialSource::Endpoint {
             endpoint_id: Some(endpoint_id),
             ..
-        } => response_output_type(
-            &find_endpoint_by_id(&client.children, *endpoint_id)
+        } => {
+            let output = &find_endpoint_by_id(&client.children, *endpoint_id)
                 .expect("resolved endpoint credential")
-                .response,
-            facade_path,
-        ),
+                .output;
+            quote!(#output)
+        }
         CredentialSource::Endpoint {
             endpoint_id: None, ..
         } => {
             unreachable!("endpoint credentials are resolved before code generation")
         }
     }
-}
-
-pub(super) fn response_output_type(response: &Type, facade_path: &TokenStream) -> TokenStream {
-    quote!(<#response as #facade_path::response::ResponseBodySpec>::Output)
 }
 
 pub(super) fn find_endpoint_by_id(children: &[Child], id: usize) -> Option<&Endpoint> {

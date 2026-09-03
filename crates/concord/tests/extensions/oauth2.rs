@@ -13,7 +13,8 @@ use concord::auth::{
 };
 use concord::error::ErrorCategory;
 use concord::rate_limit::{
-    RateLimitError, RateLimitErrorKind, RateLimitPermit, RateLimitRequest, RateLimiter,
+    NoopRateLimiter, RateLimitError, RateLimitErrorKind, RateLimitPermit, RateLimitRequest,
+    RateLimiter,
 };
 use concord_test_support::tls::TlsServer;
 
@@ -21,20 +22,22 @@ type OAuthAlias = OAuth2ClientCredentials;
 
 api! {
     client OAuthRuntimeApi {
+        timeout off;
         base "https://application.invalid/";
         credentials {
             credential oauth = custom OAuthAlias;
         }
-    }
 
-    GET protected() -> Bytes {
-        auth bearer oauth challenge unauthorized;
-        rate_limit { 1 / 1s; }
+
+    GET protected() -> Bytes using Bytes {
+        auth { bearer oauth recover on unauthorized; }
+        rate_limit { allow 1 per 1s; }
     }
-}
+}}
 
 api! {
     client ProviderPathApi {
+        timeout off;
         base "https://provider-paths.invalid/";
         credentials {
             credential aliased = custom OAuthAlias;
@@ -240,7 +243,9 @@ async fn oauth_form_body_uses_runtime_provider_limit_before_transport() {
         .oauth_provider(oauth)
         .configure_http(move |http| http.http1_only().add_root_certificate_pem(certificate))
         .configure_runtime(|runtime| {
-            runtime.provider_request_limit(NonZeroUsize::new(1).expect("finite request limit"))
+            runtime
+                .provider_request_limit(NonZeroUsize::new(1).expect("finite request limit"))
+                .rate_limiter(Arc::new(NoopRateLimiter::new()))
         })
         .build()
         .expect("generated OAuth client");
