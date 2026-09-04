@@ -56,13 +56,20 @@ pub(crate) fn run(root: &Path) -> Result<(), String> {
     fs::write(&manifest, &manifest_body)
         .map_err(|error| format!("could not write {}: {error}", manifest.display()))?;
 
+    // Pass workspace-relative paths to external tools. On Windows, a
+    // canonicalized workspace root carries the `\\?\` verbatim prefix; Git for
+    // Windows does not accept that spelling as an `--output` path.
+    let archive_argument = workspace_relative(root, &archive)?;
+    let manifest_argument = workspace_relative(root, &manifest)?;
+    let extraction_argument = workspace_relative(root, &extraction_root)?;
+
     let archive_arguments = vec![
         OsString::from("archive"),
         OsString::from("--format=tar"),
         OsString::from(format!("--prefix={archive_prefix}")),
-        OsString::from(format!("--add-file={}", manifest.display())),
+        OsString::from(format!("--add-file={}", manifest_argument.display())),
         OsString::from("--output"),
-        archive.as_os_str().to_owned(),
+        archive_argument.as_os_str().to_owned(),
         OsString::from("HEAD"),
     ];
     command_success(root, "git", &archive_arguments)?;
@@ -71,9 +78,9 @@ pub(crate) fn run(root: &Path) -> Result<(), String> {
         "tar",
         &[
             OsString::from("-xf"),
-            archive.as_os_str().to_owned(),
+            archive_argument.as_os_str().to_owned(),
             OsString::from("-C"),
-            extraction_root.as_os_str().to_owned(),
+            extraction_argument.as_os_str().to_owned(),
         ],
     )?;
 
@@ -105,6 +112,16 @@ pub(crate) fn run(root: &Path) -> Result<(), String> {
     println!("source-export extracted and audited {entries} entries");
     println!("source-export excludes Git/build/temp/editor/package-staging/process artifacts");
     Ok(())
+}
+
+fn workspace_relative<'a>(root: &'a Path, path: &'a Path) -> Result<&'a Path, String> {
+    path.strip_prefix(root).map_err(|error| {
+        format!(
+            "generated path {} is not inside workspace {}: {error}",
+            path.display(),
+            root.display()
+        )
+    })
 }
 
 fn audit_extracted_tree(root: &Path) -> Result<usize, String> {
@@ -235,7 +252,7 @@ fn command_success(root: &Path, program: &str, arguments: &[OsString]) -> Result
 
 #[cfg(test)]
 mod tests {
-    use super::forbidden_export_path;
+    use super::{forbidden_export_path, workspace_relative};
     use std::path::Path;
 
     #[test]
@@ -263,5 +280,15 @@ mod tests {
                 "unexpected rejection: {accepted}"
             );
         }
+    }
+
+    #[test]
+    fn external_tool_paths_are_workspace_relative() {
+        let root = Path::new("workspace");
+        assert_eq!(
+            workspace_relative(root, Path::new("workspace/target/export.tar")),
+            Ok(Path::new("target/export.tar"))
+        );
+        assert!(workspace_relative(root, Path::new("elsewhere/export.tar")).is_err());
     }
 }
