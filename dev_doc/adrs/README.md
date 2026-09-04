@@ -12,7 +12,7 @@
 | 0008 | future-admission rate feedback and one server-delay fact | selected |
 | 0009 | exact optional controls with provisional `with_x` | superseded by 0012 |
 | 0010 | optional initial static secret | selected, real-use pending |
-| 0011 | separate byte and item stream carriers | selected, performance pending |
+| 0011 | separate byte and item stream carriers | selected; comparative evidence passed |
 | 0012 | exact optional controls without convenience aliases | selected; human comprehension pending |
 
 Update statuses only when the linked release gate supplies evidence. Supersede an ADR rather than editing history invisibly after a consequential reversal.
