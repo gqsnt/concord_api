@@ -332,7 +332,7 @@ mod tests {
         assert!(output.contains("pub struct FetchItemRequest"));
         assert!(output.contains("pub fn set_verbose"));
         assert!(output.contains(
-            "Consumes this request and selects a present value for absence-capable endpoint value"
+            "Consumes this request and replaces endpoint value `verbose` with its exact effective type."
         ));
         assert!(output.contains(
             "Consumes this request and explicitly selects absence for absence-capable endpoint value"
