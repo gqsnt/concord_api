@@ -4,7 +4,6 @@ description = "First-party implementations of Concord semantic extension contrac
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-publish = false
 
 [features]
 default = []

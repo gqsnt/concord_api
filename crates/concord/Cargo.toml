@@ -4,7 +4,6 @@ description = "Contract compiler and bounded managed HTTP runtime for typed Rust
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-publish = false
 
 [features]
 default = ["default-tls", "http2", "rate-limit"]
