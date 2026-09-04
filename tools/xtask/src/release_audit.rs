@@ -61,11 +61,11 @@ fn check_source_sentinels(root: &Path) -> Result<(), String> {
                 }
             }
             for marker in [
-                "panic!(\"TODO",
-                "panic!(\"placeholder",
-                "panic!(\"not implemented",
-                "TemporaryPublic",
-                "TEMP_PUBLIC",
+                concat!("panic!(\"", "TODO"),
+                concat!("panic!(\"", "placeholder"),
+                concat!("panic!(\"", "not implemented"),
+                concat!("Temporary", "Public"),
+                concat!("TEMP_", "PUBLIC"),
             ] {
                 if source.contains(marker) {
                     findings.push(format!(
