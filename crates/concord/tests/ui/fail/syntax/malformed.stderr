@@ -1,4 +1,4 @@
-error: unsupported scope entry; expected a child scope, HTTP endpoint, or `subdomain`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit` clause
+error: unsupported scope entry; expected a child scope, HTTP endpoint, or `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit` clause
   --> tests/ui/fail/syntax/malformed.rs:11:9
    |
 11 |         FETCH ById(endpoint_value: String) -> Empty {

@@ -1,0 +1,5 @@
+error: unsupported endpoint clause; expected `id`, an attachment, `status`, `effect`, `paginate`, or `expose accepted_bytes`
+ --> tests/ui/fail/syntax/unsupported_endpoint_clause.rs:9:13
+  |
+9 |             unsupported;
+  |             ^^^^^^^^^^^

@@ -21,6 +21,10 @@ use super::request::{parse_headers, parse_path, parse_query, parse_subdomain, pa
 use super::values::{parse_declaration_attributes, parse_parameters, parse_values};
 use crate::semantic::surface::canonical_ident;
 
+const UNSUPPORTED_CLIENT_ENTRY: &str = "unsupported client entry; expected a child scope, HTTP endpoint, or `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit` clause";
+const UNSUPPORTED_SCOPE_ENTRY: &str = "unsupported scope entry; expected a child scope, HTTP endpoint, or `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit` clause";
+const UNSUPPORTED_ENDPOINT_CLAUSE: &str = "unsupported endpoint clause; expected `id`, an attachment, `status`, `effect`, `paginate`, or `expose accepted_bytes`";
+
 pub(crate) fn parse(input: TokenStream) -> syn::Result<SourceApi> {
     syn::parse2(input)
 }
@@ -141,9 +145,7 @@ impl Parse for SourceClient {
             if let Some(error) = retired_clause_diagnostic(&body) {
                 return Err(error);
             }
-            return Err(body.error(
-                "unsupported client entry; expected a child scope, HTTP endpoint, or `base`, `values`, `credentials`, `rate_limits`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit` clause",
-            ));
+            return Err(body.error(UNSUPPORTED_CLIENT_ENTRY));
         }
         let base = base.ok_or_else(|| {
             name.span()
@@ -249,9 +251,7 @@ fn parse_scope(input: ParseStream<'_>, depth: usize) -> syn::Result<SourceScope>
         if let Some(error) = retired_clause_diagnostic(&body) {
             return Err(error);
         }
-        return Err(body.error(
-            "unsupported scope entry; expected a child scope, HTTP endpoint, or `subdomain`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit` clause",
-        ));
+        return Err(body.error(UNSUPPORTED_SCOPE_ENTRY));
     }
     validate_child_names(&children, "scope")?;
 
@@ -410,9 +410,7 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
             if let Some(error) = retired_clause_diagnostic(&clauses) {
                 return Err(error);
             }
-            return Err(clauses.error(
-                "unsupported endpoint clause; expected `id`, an attachment, `effect`, `paginate`, or `expose accepted_bytes`",
-            ));
+            return Err(clauses.error(UNSUPPORTED_ENDPOINT_CLAUSE));
         }
         Ok(SourceEndpoint {
             attributes,

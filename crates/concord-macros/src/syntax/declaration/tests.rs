@@ -108,6 +108,42 @@ fn endpoint_status_and_effect_forms_are_finite_and_canonical() {
 }
 
 #[test]
+fn fallback_diagnostics_name_every_current_clause_family() {
+    let client = parse(quote! {
+        client Api {
+            timeout 30s;
+            base "https://example.test";
+            unsupported;
+        }
+    })
+    .err()
+    .expect("unsupported client clause");
+    assert_eq!(client.to_string(), UNSUPPORTED_CLIENT_ENTRY);
+
+    let scope = parse(quote! {
+        client Api {
+            timeout 30s;
+            base "https://example.test";
+            scope items() { unsupported; }
+        }
+    })
+    .err()
+    .expect("unsupported scope clause");
+    assert_eq!(scope.to_string(), UNSUPPORTED_SCOPE_ENTRY);
+
+    let endpoint = parse(quote! {
+        client Api {
+            timeout 30s;
+            base "https://example.test";
+            GET item() -> Bytes via Binary { unsupported; }
+        }
+    })
+    .err()
+    .expect("unsupported endpoint clause");
+    assert_eq!(endpoint.to_string(), UNSUPPORTED_ENDPOINT_CLAUSE);
+}
+
+#[test]
 fn singular_api_structure_and_vars_diagnostics_are_focused() {
     let empty = parse(TokenStream::new()).err().expect("missing client");
     assert!(empty.to_string().contains("exactly one `client`"));
