@@ -2,13 +2,13 @@ use concord::api;
 
 api! {
     client MultipartApi {
-        timeout off;
+        timeout 30s;
         base "http://multipart.example.test";
 
 
     scope uploads() {
         path ["uploads"];
-        GET invalid() -> () using Multipart;
+        GET invalid() -> () via Multipart;
     }
 }}
 

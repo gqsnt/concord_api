@@ -1,7 +1,23 @@
 # Runtime-defined endpoints
 
-Runtime endpoints are the dynamic-contract escape route. They are not a native
-HTTP escape route and cannot mutate generated client/scope values.
+Runtime endpoints are a pressure valve for operations discovered or configured at runtime under an existing Concord client/scope context. They are not a native HTTP escape.
+
+## Suitable uses
+
+- discovered relative resources under a fixed service origin;
+- plugin/configuration-defined operations using Concord representations;
+- rare/admin/test operations not worth static generation;
+- dynamic local query/header/value structure that still fits the managed executor.
+
+Unsuitable:
+
+- arbitrary external absolute URLs under an existing client’s credentials;
+- CONNECT, TRACE, WebSocket, upgrade, cookies, or caching;
+- raw signing over final native serialization;
+- unrestricted middleware/native request/response mutation;
+- bypassing auth/rate/deadline/body/response limits.
+
+## Builder
 
 <!-- concord-source: crates/concord-examples/src/runtime_endpoints/generated_and_runtime.rs#runtime_endpoint -->
 ```rust
@@ -16,35 +32,96 @@ pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
         .body_codec::<crate::request_response::specifications::ExampleCodec>(
             "request body".to_owned(),
         )
-        .response::<crate::request_response::specifications::ExampleCodec>()
+        .response::<crate::request_response::specifications::ExampleCodec, String>()
         .build()?;
-    let _: Request<_> = client.request(endpoint);
+    let _: Request<_> = endpoint.try_bind(&client)?;
     Ok(())
 }
 ```
 
-Construction is inert and first-error latched. Once one operation fails, later
-values/iterators are not formatted or consumed. Component and public-byte limits
-apply while building, and route/head limits are shared with generated requests.
+## Binding
 
-The builder uses v2 vocabulary: validated `subdomain`, `replace_subdomains`, and
-`subdomain_off`; validated/once-encoded `path`, `replace_path`, and `path_off`;
-ordered query assignment/append/removal/off; header replacement/removal/off;
-auth add/replace/off; timeout selection; explicit `Repeatability`;
-response-owned `accept`/off; body/response specs; canonical rate policies; and
-explicit accepted-byte response selection.
+A runtime endpoint binds fallibly through a built client root or generated selected scope:
 
-`client.plan(&endpoint)` uses the same public shaping and returns the same
-credential-free plan model. `client.request(endpoint)` binds it to that client's
-transport, security identity, credential context, limiter, retry policy, gates,
-observer, limits, and executor. Credential references from another independent
-build are rejected before private/native work.
+```text
+let request = endpoint.try_bind(&client)?;
+let request = endpoint.try_bind(&regional_scope)?;
+```
 
-Runtime endpoints have a value-owned `EndpointDescription`. Their runtime-bound
-shape is represented honestly rather than pretending arbitrary extension code
-is statically known. They obey the same deadline, retry/replay, auth recovery,
-rate admission, response acquisition, redaction, cancellation, and error laws.
+The binding owner supplies:
 
-Runtime pagination is intentionally absent unless it can preserve the same
-generated slot-authority and aggregate-bound model; callers should prefer a
-generated paginated contract rather than arbitrary mutation.
+- fixed/effective logical origin and base path;
+- inherited public patches;
+- inherited representation defaults/fences where typed compatibility permits;
+- auth, timeout, and additive rate policies;
+- runtime/security context.
+
+The runtime endpoint contributes validated local operations. It cannot select a scope by string, replace the logical origin, or add arbitrary dynamic subdomains.
+
+Generated unbound binding remains separate and infallible:
+
+```text
+client.request(generated_intent)
+```
+
+Do not weaken it to match runtime endpoints.
+
+## Patch parity
+
+Runtime endpoints must be able to express the same local meanings:
+
+- scalar/optional/ordered assignment;
+- conditional override;
+- append;
+- remove;
+- family replace/off;
+- explicit atom adapters;
+- ordinary versus sensitive public values;
+- body/response representation;
+- status, effect, finite timeout;
+- private auth/rate capability through validated references.
+
+They do not receive compile-time domain navigation or generated pagination. Automatic runtime pagination remains deferred.
+
+## Sensitivity
+
+Plain runtime values are ordinary public. Use a bounded wrapper:
+
+```text
+RuntimeValue::visible(value)
+RuntimeValue::sensitive(value)
+```
+
+The wrapper cannot reveal inner data through `Debug`. Real and sanitized atoms derive from one encoding pass. It is not for credentials or bodies.
+
+## Auth/security context
+
+A runtime endpoint carrying a credential reference is bound to the originating client security context. Binding under another independently built client fails before body/provider/limiter work.
+
+## Same executor
+
+After binding, runtime endpoints use the same:
+
+- public atom/patch machinery;
+- reserved-target and origin checks;
+- representation/body/response lifecycle;
+- auth/rate/retry/effect/deadline gates;
+- errors, plans, observer, and completion;
+- native HTTP executor.
+
+No `.raw_send`, native builder accessor, or second transport path exists.
+
+## Latched builder errors
+
+A first-error-latched builder is acceptable for fallible iterator insertion. Once latched, it must stop consuming potentially effectful/custom iterators. `build()` returns the original structured error with operation context.
+
+## Evidence
+
+- fixed-origin binding at client and scope;
+- complete query/header patch parity;
+- sensitivity for scalar/optional/repeated values;
+- security-context mismatch before private/body/rate work;
+- same runtime trace and limits as generated endpoints;
+- no raw/native escape;
+- first-error latch stops consumption;
+- no automatic pagination.

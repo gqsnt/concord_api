@@ -4,12 +4,12 @@ pub struct NoDisplay;
 
 api! {
     client Api {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read(resource: crate::NoDisplay) -> Bytes using Bytes {
-        rate_limit { key [endpoint.resource]; allow 1 per 1s; }
+    GET read(resource: crate::NoDisplay) -> Bytes via Binary {
+        rate_limit { id "concord.rate_limit_dimension_requires_display.1"; cost 1;  key [endpoint.resource]; allow 1 per 1s; }
     }
 }}
 

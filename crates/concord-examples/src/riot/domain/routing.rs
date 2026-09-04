@@ -7,6 +7,8 @@
 use std::fmt;
 use std::num::NonZeroU32;
 
+use concord::{AtomError, BoundedAtomWriter, RequestAtom};
+
 /// Riot's documented starting application limit for a production API key.
 ///
 /// Riot applies the application limit per routing host. The unified client
@@ -70,6 +72,28 @@ impl fmt::Display for PlatformRoute {
     }
 }
 
+impl RequestAtom for PlatformRoute {
+    fn write_atom(&self, output: &mut BoundedAtomWriter<'_>) -> Result<(), AtomError> {
+        output.push_str(match self {
+            Self::Br1 => "br1",
+            Self::Eun1 => "eun1",
+            Self::Euw1 => "euw1",
+            Self::Jp1 => "jp1",
+            Self::Kr => "kr",
+            Self::La1 => "la1",
+            Self::La2 => "la2",
+            Self::Me1 => "me1",
+            Self::Na1 => "na1",
+            Self::Oc1 => "oc1",
+            Self::Ru => "ru",
+            Self::Sg2 => "sg2",
+            Self::Tr1 => "tr1",
+            Self::Tw2 => "tw2",
+            Self::Vn2 => "vn2",
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum RegionalRoute {
     Americas,
@@ -81,6 +105,17 @@ pub enum RegionalRoute {
 impl fmt::Display for RegionalRoute {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
+            Self::Americas => "americas",
+            Self::Asia => "asia",
+            Self::Europe => "europe",
+            Self::Sea => "sea",
+        })
+    }
+}
+
+impl RequestAtom for RegionalRoute {
+    fn write_atom(&self, output: &mut BoundedAtomWriter<'_>) -> Result<(), AtomError> {
+        output.push_str(match self {
             Self::Americas => "americas",
             Self::Asia => "asia",
             Self::Europe => "europe",

@@ -1,73 +1,73 @@
-error[E0277]: the trait bound `concord::response::Streaming: AcceptedBytesMode` is not satisfied
+error[E0277]: the trait bound `concord::response::Streaming: AcceptedBytesDriver` is not satisfied
   --> tests/ui/fail/capabilities/accepted_bytes_stream_mode_rejected.rs:4:1
    |
  4 | / api! {
  5 | |     client StreamApi {
- 6 | |         timeout off;
+ 6 | |         timeout 30s;
  7 | |         base "http://stream.example.test/";
 ...  |
 13 | | }
-   | |_^ the trait `AcceptedBytesMode` is not implemented for `concord::response::Streaming`
+   | |_^ the trait `AcceptedBytesDriver` is not implemented for `concord::response::Streaming`
    |
-help: the following other types implement trait `AcceptedBytesMode`
+help: the following other types implement trait `AcceptedBytesDriver`
   --> $WORKSPACE/crates/concord-core/src/response/spec.rs
    |
-   | impl AcceptedBytesMode for Buffered {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::response::Buffered`
+   | impl AcceptedBytesDriver for Buffered {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::response::Buffered`
    |
-   | impl AcceptedBytesMode for Discard {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::response::Discard`
+   | impl AcceptedBytesDriver for DiscardDriver {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `DiscardDriver`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `concord::response::Streaming: AcceptedBytesMode` is not satisfied
+error[E0277]: the trait bound `concord::response::Streaming: AcceptedBytesDriver` is not satisfied
   --> tests/ui/fail/capabilities/accepted_bytes_stream_mode_rejected.rs:4:1
    |
  4 | / api! {
  5 | |     client StreamApi {
- 6 | |         timeout off;
+ 6 | |         timeout 30s;
  7 | |         base "http://stream.example.test/";
 ...  |
 13 | | }
-   | |_^ the trait `AcceptedBytesMode` is not implemented for `concord::response::Streaming`
+   | |_^ the trait `AcceptedBytesDriver` is not implemented for `concord::response::Streaming`
    |
-help: the following other types implement trait `AcceptedBytesMode`
+help: the following other types implement trait `AcceptedBytesDriver`
   --> $WORKSPACE/crates/concord-core/src/response/spec.rs
    |
-   | impl AcceptedBytesMode for Buffered {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::response::Buffered`
+   | impl AcceptedBytesDriver for Buffered {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::response::Buffered`
    |
-   | impl AcceptedBytesMode for Discard {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::response::Discard`
+   | impl AcceptedBytesDriver for DiscardDriver {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `DiscardDriver`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `concord::response::Streaming: AcceptedBytesMode` is not satisfied
+error[E0277]: the trait bound `concord::response::Streaming: AcceptedBytesDriver` is not satisfied
   --> tests/ui/fail/capabilities/accepted_bytes_stream_mode_rejected.rs:4:1
    |
  4 | / api! {
  5 | |     client StreamApi {
- 6 | |         timeout off;
+ 6 | |         timeout 30s;
  7 | |         base "http://stream.example.test/";
 ...  |
 13 | | }
-   | |_^ the trait `AcceptedBytesMode` is not implemented for `concord::response::Streaming`
+   | |_^ the trait `AcceptedBytesDriver` is not implemented for `concord::response::Streaming`
    |
-help: the following other types implement trait `AcceptedBytesMode`
+help: the following other types implement trait `AcceptedBytesDriver`
   --> $WORKSPACE/crates/concord-core/src/response/spec.rs
    |
-   | impl AcceptedBytesMode for Buffered {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::response::Buffered`
+   | impl AcceptedBytesDriver for Buffered {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::response::Buffered`
    |
-   | impl AcceptedBytesMode for Discard {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::response::Discard`
+   | impl AcceptedBytesDriver for DiscardDriver {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `DiscardDriver`
 note: required for `Download` to implement `concord::__private::EndpointSpec`
   --> tests/ui/fail/capabilities/accepted_bytes_stream_mode_rejected.rs:4:1
    |
  4 | / api! {
  5 | |     client StreamApi {
- 6 | |         timeout off;
+ 6 | |         timeout 30s;
  7 | |         base "http://stream.example.test/";
  8 | |
- 9 | |         GET download() -> concord::response::ByteStream using Stream {
+ 9 | |         GET download() -> concord::response::ByteStream via Binary {
    | |             ^^^^^^^^
 ...  |
 13 | | }

@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 use bytes::Bytes;
 
 use super::prepared::{NativeBody, stream_native};
-use super::{BodyError, BodyErrorKind, StreamBody};
+use super::{BodyError, BodyErrorKind, RequestStream};
 
 /// Maximum number of parts retained by one multipart recipe.
 pub const MAX_MULTIPART_PARTS: usize = 128;
@@ -21,7 +21,7 @@ pub const MAX_MULTIPART_INLINE_TEXT_BYTES: usize = 16_777_216;
 
 /// Creates a fresh complete multipart recipe for one Concord attempt.
 ///
-/// `create` is called only after `before_send` approves the attempt. A factory
+/// `create` is called once for each visible managed attempt. A factory
 /// implementation must return a new complete recipe on every call.
 ///
 /// Calls for independent operations may overlap and occur only after the
@@ -170,7 +170,7 @@ pub struct MultipartPart {
 enum MultipartPartValue {
     Text(String),
     Bytes(Bytes),
-    Stream(StreamBody),
+    Stream(RequestStream),
 }
 
 impl MultipartPart {
@@ -202,7 +202,7 @@ impl MultipartPart {
 
     /// Creates a one-shot streaming part.
     #[must_use]
-    pub const fn stream(value: StreamBody) -> Self {
+    pub const fn stream(value: RequestStream) -> Self {
         Self {
             value: MultipartPartValue::Stream(value),
             filename: None,
@@ -548,7 +548,7 @@ mod tests {
         let streamed = MultipartBody::new()
             .part(
                 "stream",
-                MultipartPart::stream(StreamBody::from_bytes(Bytes::from_static(b"data"))),
+                MultipartPart::stream(RequestStream::from_bytes(Bytes::from_static(b"data"))),
             )
             .expect("part");
         let metadata = streamed.metadata().expect("metadata");

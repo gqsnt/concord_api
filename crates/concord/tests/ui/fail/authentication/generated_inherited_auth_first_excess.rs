@@ -2,7 +2,7 @@ use concord::api;
 
 api! {
     client InheritedAuthPlacementFirstExcess {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
         credentials {
             secret key_value;
@@ -76,7 +76,7 @@ api! {
         auth { query "auth-62" = key; }
         auth { query "auth-63" = key; }
 
-        GET read() -> () using concord::NoContent {
+        GET read() -> () via concord::Empty {
             auth { query "auth-64" = key; }
         }
     }

@@ -11,5 +11,5 @@ mod runtime {
 
 pub(crate) use runtime::deterministic::CountingBody;
 #[cfg(feature = "multipart")]
-pub(crate) use runtime::lifecycle::{CountingValue, VendorStreamMedia, WireCodec};
+pub(crate) use runtime::lifecycle::{CountingValue, WireCodec};
 pub(crate) use runtime::planning::{CountingProvider, PlanningBodySpec};

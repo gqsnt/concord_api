@@ -4,10 +4,9 @@
 //! quota and cooldown state belongs to one object in one process. It preserves
 //! active history under capacity pressure and returns recoverable
 //! `RateLimitErrorKind::StateCapacity` for a new key that does not fit.
-//! [`RetryAfterObserver`] is its built-in final-429 observer.
+//! Typed final-429 server delays are applied to future admission without
+//! exposing response headers to limiter implementations.
 
 mod local;
-mod observer;
 
 pub use local::LocalRateLimiter;
-pub use observer::RetryAfterObserver;

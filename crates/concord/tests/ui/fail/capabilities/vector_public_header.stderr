@@ -1,46 +1,56 @@
-error[E0277]: `Vec<String>` doesn't implement `std::fmt::Display`
+error[E0277]: the trait bound `Vec<String>: RequestAtom` is not satisfied
   --> tests/ui/fail/capabilities/vector_public_header.rs:3:1
    |
  3 | / api! {
  4 | |     client HeaderApi {
- 5 | |         timeout off;
+ 5 | |         timeout 30s;
  6 | |         base "https://header.example.test";
 ...  |
 12 | | }}
-   | |__^ the trait `std::fmt::Display` is not implemented for `Vec<String>`
+   | |__^ the trait `RequestAtom` is not implemented for `Vec<String>`
    |
+   = help: the following other types implement trait `RequestAtom`:
+             &T
+             NonZero<i128>
+             NonZero<i16>
+             NonZero<i32>
+             NonZero<i64>
+             NonZero<i8>
+             NonZero<isize>
+             NonZero<u128>
+           and $N others
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: `Vec<String>` doesn't implement `std::fmt::Display`
+error[E0277]: the trait bound `Vec<String>: RequestAtom` is not satisfied
   --> tests/ui/fail/capabilities/vector_public_header.rs:3:1
    |
  3 | / api! {
  4 | |     client HeaderApi {
- 5 | |         timeout off;
+ 5 | |         timeout 30s;
  6 | |         base "https://header.example.test";
 ...  |
 12 | | }}
-   | |__^ the trait `std::fmt::Display` is not implemented for `Vec<String>`
+   | |__^ the trait `RequestAtom` is not implemented for `Vec<String>`
    |
-help: the trait `concord::__private::EndpointSpec` is implemented for `Item`
-  --> tests/ui/fail/capabilities/vector_public_header.rs:3:1
-   |
- 3 | / api! {
- 4 | |     client HeaderApi {
- 5 | |         timeout off;
- 6 | |         base "https://header.example.test";
-...  |
-12 | | }}
-   | |__^
+   = help: the following other types implement trait `RequestAtom`:
+             &T
+             NonZero<i128>
+             NonZero<i16>
+             NonZero<i32>
+             NonZero<i64>
+             NonZero<i8>
+             NonZero<isize>
+             NonZero<u128>
+           and $N others
 note: required for `Item` to implement `concord::__private::EndpointSpec`
   --> tests/ui/fail/capabilities/vector_public_header.rs:3:1
    |
  3 | / api! {
  4 | |     client HeaderApi {
- 5 | |         timeout off;
+ 5 | |         timeout 30s;
  6 | |         base "https://header.example.test";
 ...  |
- 9 | |     GET item(values: Vec<String>) -> Bytes using Bytes {
+ 9 | |     GET item(values: Vec<String>) -> Bytes via Binary {
    | |         ^^^^
 ...  |
 12 | | }}
@@ -55,36 +65,36 @@ note: required by a bound in `concord::__private::request_plan`
    |        ^^^^^^^^^^^^ required by this bound in `request_plan`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: `Vec<String>` doesn't implement `std::fmt::Display`
+error[E0277]: the trait bound `Vec<String>: RequestAtom` is not satisfied
   --> tests/ui/fail/capabilities/vector_public_header.rs:3:1
    |
  3 | / api! {
  4 | |     client HeaderApi {
- 5 | |         timeout off;
+ 5 | |         timeout 30s;
  6 | |         base "https://header.example.test";
 ...  |
 12 | | }}
-   | |__^ the trait `std::fmt::Display` is not implemented for `Vec<String>`
+   | |__^ the trait `RequestAtom` is not implemented for `Vec<String>`
    |
-help: the trait `header_api::Endpoint` is implemented for `Item`
-  --> tests/ui/fail/capabilities/vector_public_header.rs:3:1
-   |
- 3 | / api! {
- 4 | |     client HeaderApi {
- 5 | |         timeout off;
- 6 | |         base "https://header.example.test";
-...  |
-12 | | }}
-   | |__^
+   = help: the following other types implement trait `RequestAtom`:
+             &T
+             NonZero<i128>
+             NonZero<i16>
+             NonZero<i32>
+             NonZero<i64>
+             NonZero<i8>
+             NonZero<isize>
+             NonZero<u128>
+           and $N others
 note: required for `Item` to implement `header_api::Endpoint`
   --> tests/ui/fail/capabilities/vector_public_header.rs:3:1
    |
  3 | / api! {
  4 | |     client HeaderApi {
- 5 | |         timeout off;
+ 5 | |         timeout 30s;
  6 | |         base "https://header.example.test";
 ...  |
- 9 | |     GET item(values: Vec<String>) -> Bytes using Bytes {
+ 9 | |     GET item(values: Vec<String>) -> Bytes via Binary {
    | |         ^^^^
 ...  |
 12 | | }}

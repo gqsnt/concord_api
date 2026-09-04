@@ -2,9 +2,9 @@ use concord::prelude::*;
 
 api! {
     client RateWindowLimitApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
-        rate_limit {
+        rate_limit { id "concord.rate_limit_window_limit.1"; key [origin]; cost 1;
             allow 1 per 1s;
             allow 1 per 2s;
             allow 1 per 3s;

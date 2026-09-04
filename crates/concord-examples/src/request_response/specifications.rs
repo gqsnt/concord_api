@@ -8,13 +8,14 @@
 use concord::api;
 use concord::body::{
     BodyError, BodyKind, LengthHint, RequestBody, RequestBodyContext, RequestBodyMetadata,
-    RequestBodySpec, RequestContentType,
+    RequestContentType, RequestRepresentation,
 };
 use concord::endpoint::{EndpointId, Request, RuntimeEndpoint};
 use concord::http::Method;
 use concord::prelude::Bytes;
 use concord::response::{
-    Buffered, ByteStream, Discard, ResponseBodyError, ResponseHead, ResponseSpec, Streaming,
+    Buffered, ByteStream, DiscardDriver, ResponseBodyError, ResponseHead, ResponseRepresentation,
+    Streaming,
 };
 
 use concord::codec::{
@@ -57,11 +58,9 @@ impl DecodeBody for ExampleCodec {
 // ANCHOR: request_body_spec_extension
 pub struct ExampleRequestSpec;
 
-impl RequestBodySpec for ExampleRequestSpec {
-    type Input = Bytes;
-
+impl RequestRepresentation<Bytes> for ExampleRequestSpec {
     fn metadata(
-        input: &Self::Input,
+        input: &Bytes,
         _context: RequestBodyContext<'_>,
     ) -> Result<RequestBodyMetadata, BodyError> {
         Ok(RequestBodyMetadata {
@@ -71,10 +70,7 @@ impl RequestBodySpec for ExampleRequestSpec {
         })
     }
 
-    fn prepare(
-        input: Self::Input,
-        _context: RequestBodyContext<'_>,
-    ) -> Result<RequestBody, BodyError> {
+    fn prepare(input: Bytes, _context: RequestBodyContext<'_>) -> Result<RequestBody, BodyError> {
         Ok(RequestBody::bytes(input))
     }
 }
@@ -83,9 +79,8 @@ impl RequestBodySpec for ExampleRequestSpec {
 // ANCHOR: response_body_spec_extension
 pub struct ExampleBufferedSpec;
 
-impl ResponseSpec for ExampleBufferedSpec {
-    type Output = usize;
-    type Mode = Buffered;
+impl ResponseRepresentation<usize> for ExampleBufferedSpec {
+    type Driver = Buffered;
 
     fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<usize, ResponseBodyError> {
         Ok(body.len())
@@ -94,9 +89,8 @@ impl ResponseSpec for ExampleBufferedSpec {
 
 pub struct ExampleStreamingSpec;
 
-impl ResponseSpec for ExampleStreamingSpec {
-    type Output = ByteStream;
-    type Mode = Streaming;
+impl ResponseRepresentation<ByteStream> for ExampleStreamingSpec {
+    type Driver = Streaming;
 
     fn from_body(
         body: ByteStream,
@@ -108,9 +102,8 @@ impl ResponseSpec for ExampleStreamingSpec {
 
 pub struct ExampleDiscardSpec;
 
-impl ResponseSpec for ExampleDiscardSpec {
-    type Output = ();
-    type Mode = Discard;
+impl ResponseRepresentation<()> for ExampleDiscardSpec {
+    type Driver = DiscardDriver;
 
     fn from_body((): (), _head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         Ok(())
@@ -121,15 +114,15 @@ impl ResponseSpec for ExampleDiscardSpec {
 // ANCHOR: body_spec_usage
 api! {
     client GenericSpecificationApi {
-        timeout off;
+        timeout 30s;
         base "http://generic-specifications.example.test/";
 
 
     POST buffered(
-        body body: Bytes using crate::request_response::specifications::ExampleRequestSpec
-    ) -> usize using crate::request_response::specifications::ExampleBufferedSpec;
-    GET streaming() -> concord::response::ByteStream using crate::request_response::specifications::ExampleStreamingSpec;
-    GET discard() -> () using crate::request_response::specifications::ExampleDiscardSpec;
+        body body: Bytes via crate::request_response::specifications::ExampleRequestSpec
+    ) -> usize via crate::request_response::specifications::ExampleBufferedSpec;
+    GET streaming() -> concord::response::ByteStream via crate::request_response::specifications::ExampleStreamingSpec;
+    GET discard() -> () via crate::request_response::specifications::ExampleDiscardSpec;
 }}
 
 /// Constructs generated and runtime-defined requests over the same extensions.
@@ -144,10 +137,10 @@ pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
         EndpointId::new("generic_specification_api.runtime")?,
         Method::POST,
     )
-    .body_spec::<ExampleRequestSpec>(Bytes::from_static(b"runtime generic request"))
-    .response::<ExampleBufferedSpec>()
+    .body_spec::<ExampleRequestSpec, _>(Bytes::from_static(b"runtime generic request"))
+    .response::<ExampleBufferedSpec, usize>()
     .build()?;
-    let _: Request<_> = client.request(runtime);
+    let _: Request<_> = runtime.try_bind(&client)?;
     Ok(())
 }
 // ANCHOR_END: body_spec_usage

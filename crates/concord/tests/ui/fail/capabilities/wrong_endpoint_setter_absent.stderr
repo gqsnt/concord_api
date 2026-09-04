@@ -3,10 +3,10 @@ error[E0599]: no method named `verbose` found for struct `SecondRequest` in the 
    |
  4 | / api! {
  5 | |     client SetterApi {
- 6 | |         timeout off;
+ 6 | |         timeout 30s;
  7 | |         base "http://setter.example.test";
 ...  |
-11 | |     GET second() -> Bytes using Bytes;
+11 | |     GET second() -> Bytes via Binary;
 12 | | }}
    | |__- method `verbose` not found for this struct
 ...

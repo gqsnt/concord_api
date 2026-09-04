@@ -29,12 +29,42 @@ pub(super) fn generate_request_wrapper(
             request_wrapper_setters(
                 value,
                 &setter.setter,
-                setter.clear.as_ref(),
+                setter.omit.as_ref(),
                 setter.reset.as_ref(),
                 generated_core,
             )
         })
         .collect::<Vec<_>>();
+    let body_setters = endpoint.surface.body_setter.as_ref().map(|setter| {
+        let body = endpoint
+            .body
+            .as_ref()
+            .expect("optional body setter has a body");
+        let effective = &body.effective_input_type;
+        let set = &setter.setter;
+        let omit = &setter.omit;
+        quote! {
+            /// Replaces the optional request body with its exact outer presence value.
+            #[must_use]
+            pub fn #set(mut self, value: #effective) -> Self {
+                self.__concord_inner = #generated_core::__private::map_endpoint(
+                    self.__concord_inner,
+                    |endpoint| endpoint.#set(value),
+                );
+                self
+            }
+
+            /// Selects absence for the optional request body.
+            #[must_use]
+            pub fn #omit(mut self) -> Self {
+                self.__concord_inner = #generated_core::__private::map_endpoint(
+                    self.__concord_inner,
+                    |endpoint| endpoint.#omit(),
+                );
+                self
+            }
+        }
+    });
     let storage_methods = endpoint
         .surface
         .terminals
@@ -82,12 +112,10 @@ pub(super) fn generate_request_wrapper(
         quote! {
             /// Consumes this request and creates one directly awaitable bounded sequential pagination operation.
             #[must_use]
-            pub fn paginate<L>(
+            pub fn paginate(
                 self,
-                limit: L,
+                limit: #facade_path::PageLimit,
             ) -> #facade_path::pagination::PaginatedRequest<#endpoint_name>
-            where
-                L: ::std::convert::Into<#facade_path::PageLimit>,
             {
                 #generated_core::__private::paginate_request(self.__concord_inner, limit)
             }
@@ -112,8 +140,10 @@ pub(super) fn generate_request_wrapper(
             ) -> #facade_path::endpoint::AcceptedBytesRequest<#endpoint_name>
             where
                 <<#endpoint_name as #support_path::Endpoint>::Response as
-                    #generated_core::response::ResponseSpec>::Mode:
-                    #generated_core::response::AcceptedBytesMode,
+                    #generated_core::response::ResponseRepresentation<
+                        <#endpoint_name as #support_path::Endpoint>::Output
+                    >>::Driver:
+                    #generated_core::response::AcceptedBytesDriver,
             {
                 #generated_core::__private::accepted_bytes_request(self.__concord_inner)
             }
@@ -144,7 +174,7 @@ pub(super) fn generate_request_wrapper(
             pub fn plan(
                 &self,
             ) -> ::std::result::Result<
-                #facade_path::endpoint::CredentialFreeRequestPlan,
+                #facade_path::endpoint::RequestPlan,
                 #facade_path::ApiError,
             > {
                 #generated_core::__private::request_plan(
@@ -160,17 +190,10 @@ pub(super) fn generate_request_wrapper(
                 self
             }
 
-            /// Disables the generated operation deadline for this request.
+            /// Resets this request to its retained effective endpoint deadline.
             #[must_use]
-            pub fn disable_timeout(mut self) -> Self {
-                self.__concord_inner = self.__concord_inner.disable_timeout();
-                self
-            }
-
-            /// Restores the endpoint's inherited deadline selection.
-            #[must_use]
-            pub fn inherit_timeout(mut self) -> Self {
-                self.__concord_inner = self.__concord_inner.inherit_timeout();
+            pub fn reset_timeout(mut self) -> Self {
+                self.__concord_inner = self.__concord_inner.reset_timeout();
                 self
             }
 
@@ -185,6 +208,7 @@ pub(super) fn generate_request_wrapper(
             }
 
             #(#setter_methods)*
+            #body_setters
             #pagination_method
             #response_method
             #accepted_bytes_method
@@ -220,53 +244,27 @@ pub(super) fn generate_request_wrapper(
 pub(super) fn request_wrapper_setters(
     value: &Value,
     setter: &Ident,
-    clear: Option<&Ident>,
+    omit: Option<&Ident>,
     reset: Option<&Ident>,
     generated_core: &TokenStream,
 ) -> TokenStream {
     let ty = value.setter_argument_type();
-    let with_method = value.accepts_absence().then(|| {
-        let method = helper_ident("with", &value.name);
-        let payload_type = value.with_argument_type();
-        quote! {
-            #[must_use]
-            pub fn #method(mut self, value: #payload_type) -> Self {
-                self.__concord_inner = #generated_core::__private::map_endpoint(
-                    self.__concord_inner,
-                    |endpoint| endpoint.#method(value),
-                );
-                self
-            }
-        }
-    });
-    let setter_doc = if value.accepts_absence() && value.has_default() {
-        format!(
-            "Consumes this request and selects a present value for defaulted absence-capable endpoint value `{}`.",
-            canonical_ident(&value.name)
-        )
-    } else if value.accepts_absence() {
-        format!(
-            "Consumes this request and selects a present value for absence-capable endpoint value `{}`.",
-            canonical_ident(&value.name)
-        )
-    } else {
-        format!(
-            "Consumes this request and overrides defaulted endpoint value `{}`.",
-            canonical_ident(&value.name)
-        )
-    };
-    let clear_method = clear.map(|clear| {
-        let clear_doc = format!(
+    let setter_doc = format!(
+        "Consumes this request and replaces endpoint value `{}` with its exact effective type.",
+        canonical_ident(&value.name)
+    );
+    let omit_method = omit.map(|omit| {
+        let omit_doc = format!(
             "Consumes this request and explicitly selects absence for absence-capable endpoint value `{}`.",
             canonical_ident(&value.name)
         );
         quote! {
-            #[doc = #clear_doc]
+            #[doc = #omit_doc]
             #[must_use]
-            pub fn #clear(mut self) -> Self {
+            pub fn #omit(mut self) -> Self {
                 self.__concord_inner = #generated_core::__private::map_endpoint(
                     self.__concord_inner,
-                    |endpoint| endpoint.#clear(),
+                    |endpoint| endpoint.#omit(),
                 );
                 self
             }
@@ -300,8 +298,7 @@ pub(super) fn request_wrapper_setters(
             self
         }
 
-        #with_method
-        #clear_method
+        #omit_method
         #reset_method
     }
 }
@@ -335,7 +332,7 @@ mod tests {
         assert!(output.contains("pub struct FetchItemRequest"));
         assert!(output.contains("pub fn set_verbose"));
         assert!(output.contains(
-            "Consumes this request and selects a present value for absence-capable endpoint value"
+            "Consumes this request and replaces endpoint value `verbose` with its exact effective type."
         ));
         assert!(output.contains(
             "Consumes this request and explicitly selects absence for absence-capable endpoint value"
@@ -346,7 +343,7 @@ mod tests {
         assert!(!output.contains("emit_generated_development_method"));
         assert!(output.contains("pub fn accepted_bytes"));
         assert!(output.contains("AcceptedBytesRequest"));
-        assert!(output.contains("AcceptedBytesMode"));
+        assert!(output.contains("AcceptedBytesDriver"));
         assert!(output.contains(
             "__concord_inner : :: application_facade :: endpoint :: Request < FetchItem >"
         ));

@@ -12,9 +12,9 @@ async fn production_managed_reqwest_inserts_auth_over_real_tls_loopback() {
             .http1_only()
             .add_root_certificate_pem(server.certificate_pem()),
         RuntimeConfigBuilder::new()
-            .request_gate(hooks.clone())
-            .response_gate(hooks.clone())
-            .completion_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
             .debug(DebugLevel::Headers),
     )
     .expect("managed TLS core")
@@ -113,6 +113,9 @@ async fn basic_and_custom_header_material_exist_only_at_the_native_boundary() {
             && capture
                 .headers()
                 .iter()
+                .filter(|header| {
+                    header.name() == AUTHORIZATION || header.name().as_str() == "x-api-key"
+                })
                 .all(|header| header.value() == &CapturedHeaderValue::Redacted)
     }));
 }

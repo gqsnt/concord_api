@@ -2,15 +2,15 @@ use concord::api;
 
 api! {
     client Api {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
     scope accounts() {
         rate_limits {
-            account_reads() { allow 1 per 1s; }
+            policy account_reads() { id "concord.rate_limits_scope_block.1"; key [origin]; cost 1;  allow 1 per 1s; }
         }
-        GET read() -> Bytes using Bytes;
+        GET read() -> Bytes via Binary;
     }
 }}
 

@@ -68,14 +68,26 @@ pub struct RenamedController {
 }
 
 impl runtime::pagination::PaginationController<Vec<u8>> for RenamedController {
-    fn next(self, _page: &Vec<u8>) -> Result<Option<Self>, runtime::pagination::PaginationError> {
-        Ok(None)
+    type Item = u8;
+
+    const DESCRIPTION: runtime::pagination::PaginationDescription =
+        runtime::pagination::PaginationDescription::NONE;
+
+    fn advance(
+        self,
+        page: runtime::pagination::PageResponse<Vec<u8>>,
+        _limits: runtime::pagination::PageDecisionLimits,
+    ) -> Result<runtime::pagination::PageStep<Self, Self::Item>, runtime::pagination::PaginationError>
+    {
+        Ok(runtime::pagination::PageStep::Done {
+            items: page.into_page(),
+        })
     }
 }
 
 api! {
     client RenamedApi {
-        timeout off;
+        timeout 30s;
         base "http://renamed.example.test";
         values {
             tenant: String;
@@ -98,27 +110,28 @@ api! {
             endpoint_value: String,
             verbose?: bool,
             limit: u32 = 10,
-            body body: String using ::runtime::Text,
-        ) -> String using ::runtime::Text {
+            body body: String via ::runtime::Text,
+        ) -> String via ::runtime::Text {
             path [endpoint.endpoint_value];
             auth { authorization "Token" = application_key; }
         }
-        POST custom(body body: String using crate::WireCodec) -> String using crate::WireCodec {
+        POST custom(body body: String via crate::WireCodec) -> String via crate::WireCodec {
             expose accepted_bytes;
         }
         POST stream_upload(
-            body body: ::runtime::body::StreamBody using ::runtime::body::Stream<::runtime::codec::OctetStream>,
-        ) -> ::runtime::Bytes using ::runtime::Bytes;
-        GET stream_download() -> ::runtime::response::ByteStream using ::runtime::body::Stream<::runtime::codec::OctetStream>;
+            body body: ::runtime::body::RequestStream via ::runtime::Binary,
+        ) -> ::runtime::Bytes via ::runtime::Binary;
+        GET stream_download() -> ::runtime::response::ByteStream via ::runtime::Binary;
         POST multipart_upload(
-            body body: ::runtime::body::MultipartBody using ::runtime::body::Multipart,
-        ) -> () using ::runtime::NoContent;
+            body body: ::runtime::body::MultipartBody via ::runtime::body::Multipart,
+        ) -> () via ::runtime::Empty;
         POST pages(
             cursor?: String,
-            body filter: String using ::runtime::Text,
-        ) -> Vec<u8> using crate::PageCodec {
+            body filter: String via ::runtime::Text,
+        ) -> Vec<u8> via crate::PageCodec {
             query { "cursor" = endpoint.cursor; }
-            paginate with crate::RenamedController {
+            effect safe;
+            paginate via crate::RenamedController {
                 cursor -> endpoint.cursor;
             }
         }
@@ -127,21 +140,28 @@ api! {
 
 api! {
     client RenamedRateApi {
-        timeout off;
+        timeout 30s;
         base "http://renamed-rate.example.test";
         values {
             tenant: String;
         }
         rate_limits {
-            tenant_reads(tenant) {
+            policy tenant_reads(tenant) {
+                id "renamed.tenant.read";
                 key [tenant];
+                cost 1;
                 allow 10 per 1m;
             }
         }
-        rate_limit { allow 10 per 1m; }
+        rate_limit {
+            id "renamed.global.read";
+            key [origin];
+            cost 1;
+            allow 10 per 1m;
+        }
 
 
-    GET read() -> ::runtime::Bytes using ::runtime::Bytes {
+    GET read() -> ::runtime::Bytes via ::runtime::Binary {
         rate_limit tenant_reads(tenant = client.tenant);
     }
 }}
@@ -162,21 +182,21 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
     let _ = client.credentials().application_key().credential();
     let request = client
         .resources("renamed-scope".to_owned())
-        .with_region("eu".to_owned())
+        .set_region(Some("eu".to_owned()))
         .set_scope_limit(20)
         .reset_scope_limit()
         .by_id("renamed-endpoint".to_owned(), "renamed-body".to_owned())
-        .with_verbose(true)
+        .set_verbose(Some(true))
         .set_limit(20)
         .reset_limit();
     let _: renamed_api::resources::ByIdRequest = request;
     let endpoint = RenamedApi::unbound()
         .resources("renamed-scope".to_owned())
-        .with_region("eu".to_owned())
+        .set_region(Some("eu".to_owned()))
         .set_scope_limit(20)
         .reset_scope_limit()
         .by_id("renamed-endpoint".to_owned(), "renamed-body".to_owned())
-        .with_verbose(true)
+        .set_verbose(Some(true))
         .set_limit(20)
         .reset_limit();
     let _: renamed_api::resources::ByIdRequest = client.request(endpoint);
@@ -186,18 +206,20 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
         runtime::http::Method::GET,
     )
     .path("prepared")
-    .query_values("value", ["first", "second"])
-    .response::<runtime::Text>()
+    .query_each("value", ["first", "second"])
+    .response::<runtime::Text, String>()
     .build()
     .expect("valid renamed runtime endpoint");
-    let _: runtime::endpoint::Request<_> = client.request(runtime_endpoint);
+    let _: runtime::endpoint::Request<_> = runtime_endpoint
+        .try_bind(&client)
+        .expect("renamed runtime endpoint binds to the generated client");
     let bytes_request: renamed_api::resources::CustomRequest = client
         .resources("renamed-scope".to_owned())
         .custom("custom-body".to_owned());
     let _: runtime::endpoint::AcceptedBytesRequest<_> = bytes_request.accepted_bytes();
     let _: renamed_api::resources::StreamUploadRequest =
         client.resources("renamed-scope".to_owned()).stream_upload(
-            runtime::body::StreamBody::from_bytes(runtime::Bytes::from_static(b"renamed stream")),
+            runtime::body::RequestStream::from_bytes(runtime::Bytes::from_static(b"renamed stream")),
         );
     let _: renamed_api::resources::StreamDownloadRequest = client
         .resources("renamed-scope".to_owned())

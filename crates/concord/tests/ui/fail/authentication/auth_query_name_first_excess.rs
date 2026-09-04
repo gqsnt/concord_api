@@ -2,7 +2,7 @@ use concord::api;
 
 api! {
     client QueryNameApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         credentials {
             secret key;
@@ -11,7 +11,7 @@ api! {
         auth { query "abcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopq" = key; }
 
 
-    GET read() -> () using NoContent;
+    GET read() -> () via Empty;
 }}
 
 fn main() {}

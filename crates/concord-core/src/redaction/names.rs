@@ -17,7 +17,7 @@ const MANDATORY_SENSITIVE_CATEGORIES: &[&str] = &[
 ];
 
 /// Classifies a header or query name at the central redaction boundary.
-pub(super) fn is_sensitive_name(name: &str) -> bool {
+pub(crate) fn is_sensitive_name(name: &str) -> bool {
     let normalized: String = name
         .bytes()
         .map(|byte| match byte {

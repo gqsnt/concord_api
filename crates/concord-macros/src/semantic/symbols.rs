@@ -103,13 +103,7 @@ pub(super) fn validate_setter_namespace(
             if value.accepts_absence() {
                 insert_name(
                     &mut names,
-                    format!("with_{}", canonical_ident(&value.name)),
-                    value.name.span(),
-                    owner,
-                )?;
-                insert_name(
-                    &mut names,
-                    format!("clear_{}", canonical_ident(&value.name)),
+                    format!("omit_{}", canonical_ident(&value.name)),
                     value.name.span(),
                     owner,
                 )?;
@@ -158,13 +152,7 @@ pub(super) fn validate_child_methods(
         if value.accepts_absence() {
             insert_name(
                 &mut names,
-                format!("with_{}", canonical_ident(&value.name)),
-                value.name.span(),
-                owner,
-            )?;
-            insert_name(
-                &mut names,
-                format!("clear_{}", canonical_ident(&value.name)),
+                format!("omit_{}", canonical_ident(&value.name)),
                 value.name.span(),
                 owner,
             )?;
@@ -266,7 +254,7 @@ mod tests {
         let api = test_support::resolve_tokens(quote! {
             client ShapeApi {
                 base "https://example.test";
-                timeout off;
+                timeout 30s;
                 values {
                     option: Option<T>;
                     std_option?: std::option::Option<T>;
@@ -305,8 +293,8 @@ mod tests {
         let api = test_support::resolve_tokens(quote! {
             client FunctionPointerApi {
                 base "https://example.test";
-                timeout off;
-                GET process(callback: fn(u32) -> bool) -> Bytes using Bytes;
+                timeout 30s;
+                GET process(callback: fn(u32) -> bool) -> Bytes via Binary;
             }
         });
         let endpoint = test_support::endpoint(&api.client.children, "process");
@@ -329,10 +317,10 @@ mod tests {
         let api = test_support::resolve_tokens(quote! {
             client SymbolsApi {
                 base "https://example.test";
-                timeout off;
+                timeout 30s;
                 values { tenant: String; }
                 scope resources(tags: String) {
-                GET read(optional?: u64) -> Bytes using Bytes {
+                GET read(optional?: u64) -> Bytes via Binary {
                     query {
                         "client" = client.tenant;
                         "scope" = resources.tags;

@@ -66,7 +66,7 @@ impl ApiError {
             pagination_kind: None,
             detail: Some(Box::new(ApiErrorDetail::Response(response))),
             stage: FailureStage::RejectedResponse,
-            dispatch_knowledge: DispatchKnowledge::ResponseReceived,
+            dispatch_knowledge: DispatchKnowledge::ResponseObserved,
             operation_id: None,
             attempt: None,
             page_index: None,
@@ -563,6 +563,7 @@ mod tests {
     fn pagination_ceiling_kinds_keep_structural_category_and_safe_formatting() {
         for kind in [
             PaginationErrorKind::PageCeilingExceeded,
+            PaginationErrorKind::AttemptCeilingExceeded,
             PaginationErrorKind::CollectedItemCeilingExceeded,
             PaginationErrorKind::CollectedResponseByteCeilingExceeded,
             PaginationErrorKind::IdentityStorageCeilingExceeded,

@@ -7,7 +7,10 @@
 // ANCHOR: pagination_controller_extension
 use concord::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};
 use concord::pagination::PaginatedRequest;
-use concord::pagination::{HasNextCursor, PaginationController, PaginationError};
+use concord::pagination::{
+    HasNextCursor, PageDecisionLimits, PageResponse, PageStep, PaginationController,
+    PaginationDescription, PaginationError, PaginationErrorKind,
+};
 use concord::{Bytes, PageLimit};
 
 use super::PaginationApi;
@@ -70,14 +73,32 @@ pub struct ExampleController {
 }
 
 impl PaginationController<ExamplePage> for ExampleController {
-    fn next(self, page: &ExamplePage) -> Result<Option<Self>, PaginationError> {
-        Ok(page.next.as_ref().map(|cursor| Self {
+    type Item = u32;
+
+    const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
+
+    fn advance(
+        self,
+        page: PageResponse<ExamplePage>,
+        limits: PageDecisionLimits,
+    ) -> Result<PageStep<Self, Self::Item>, PaginationError> {
+        let next = page.page().next.as_ref().map(|cursor| Self {
             cursor: Some(cursor.clone()),
-        }))
+        });
+        let items = page.into_page().items;
+        if items.len() > limits.remaining_items() {
+            return Err(PaginationError::new(
+                PaginationErrorKind::CollectedItemCeilingExceeded,
+            ));
+        }
+        Ok(match next {
+            Some(next) => PageStep::Continue { items, next },
+            None => PageStep::Done { items },
+        })
     }
 }
 
-/// Constructs a bounded request using the downstream controller.
+/// Constructs a bounded request via the downstream controller.
 pub fn construct(client: &PaginationApi) {
     let _: PaginatedRequest<_> = client.custom().paginate(PageLimit::Prefix(2));
 }

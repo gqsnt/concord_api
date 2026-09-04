@@ -5,6 +5,9 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 
 use super::names::is_sensitive_name;
 
+const MAX_STRUCTURAL_RESPONSE_HEADER_VALUES: usize = 64;
+const MAX_STRUCTURAL_RESPONSE_HEADER_NAME_BYTES: usize = 4_096;
+
 /// A header value after applying Concord's central sanitization policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SanitizedHeaderValue<'a> {
@@ -24,7 +27,7 @@ pub struct SanitizedHeaders<'a> {
 }
 
 impl<'a> SanitizedHeaders<'a> {
-    /// Creates a borrowed view using Concord's built-in sensitive-header policy.
+    /// Creates a borrowed view via Concord's built-in sensitive-header policy.
     ///
     /// Runtime-owned views may additionally protect declaration-selected names.
     #[must_use]
@@ -35,6 +38,7 @@ impl<'a> SanitizedHeaders<'a> {
         }
     }
 
+    #[cfg(test)]
     pub(crate) const fn with_sensitive(
         headers: &'a HeaderMap,
         sensitive: &'a HashSet<HeaderName>,
@@ -109,6 +113,7 @@ pub struct SanitizedHeaderMap {
 }
 
 impl SanitizedHeaderMap {
+    #[cfg(test)]
     pub(crate) fn from_headers(headers: &HeaderMap) -> Self {
         Self::from_headers_with_sensitive(headers, None)
     }
@@ -130,6 +135,24 @@ impl SanitizedHeaderMap {
                 (name.clone(), value)
             })
             .collect();
+        Self { entries }
+    }
+
+    /// Retains a bounded structural response-header view without copying any
+    /// remote value into an error or diagnostic object.
+    pub(crate) fn from_response_headers(headers: &HeaderMap) -> Self {
+        let mut entries = Vec::new();
+        let mut name_bytes = 0_usize;
+        for (name, _) in headers.iter().take(MAX_STRUCTURAL_RESPONSE_HEADER_VALUES) {
+            let Some(next_name_bytes) = name_bytes.checked_add(name.as_str().len()) else {
+                break;
+            };
+            if next_name_bytes > MAX_STRUCTURAL_RESPONSE_HEADER_NAME_BYTES {
+                break;
+            }
+            name_bytes = next_name_bytes;
+            entries.push((name.clone(), OwnedSanitizedHeaderValue::Redacted));
+        }
         Self { entries }
     }
 
@@ -344,5 +367,33 @@ mod tests {
         assert_eq!(owned.len(), 0);
         assert!(owned.is_empty());
         assert_eq!(owned.iter().count(), 0);
+    }
+
+    #[test]
+    fn response_header_storage_is_bounded_and_value_free() {
+        const UNKNOWN_SENTINEL: &str = "unknown-response-value-4f3e7d";
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-unknown-response",
+            HeaderValue::from_static(UNKNOWN_SENTINEL),
+        );
+        for index in 0..100 {
+            let name = HeaderName::from_bytes(format!("x-extra-{index}").as_bytes())
+                .expect("valid test name");
+            headers.insert(name, HeaderValue::from_static(UNKNOWN_SENTINEL));
+        }
+
+        let stored = SanitizedHeaderMap::from_response_headers(&headers);
+        assert!(stored.len() <= MAX_STRUCTURAL_RESPONSE_HEADER_VALUES);
+        assert_eq!(
+            stored.get(&HeaderName::from_static("x-unknown-response")),
+            Some(SanitizedHeaderValue::Redacted)
+        );
+        assert!(!format!("{stored:?}").contains(UNKNOWN_SENTINEL));
+        assert!(
+            !stored
+                .iter()
+                .any(|(_, value)| matches!(value, SanitizedHeaderValue::Text(UNKNOWN_SENTINEL)))
+        );
     }
 }

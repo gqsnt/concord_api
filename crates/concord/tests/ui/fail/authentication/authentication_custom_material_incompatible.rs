@@ -23,14 +23,14 @@ impl CredentialProvider for NonSecretProvider {
 
 api! {
     client Api {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
         credentials {
             credential session = custom crate::NonSecretProvider;
         }
 
 
-    GET protected() -> Bytes using Bytes {
+    GET protected() -> Bytes via Binary {
         auth { bearer session; }
     }
 }}

@@ -8,7 +8,6 @@ use url::Url;
 
 use crate::error::{DispatchKnowledge, FailureStage};
 use crate::hooks::AttemptInfo;
-use crate::redaction::SanitizedHeaders;
 
 use super::budget::{FixedRatio, RetryBudget};
 
@@ -16,6 +15,7 @@ const DEFAULT_MAX_EXTRA_LOAD: f64 = 0.20;
 const DEFAULT_MAX_RETRIES_PER_OPERATION: u32 = 2;
 const DEFAULT_BUDGET_SCOPE_CAPACITY: usize = 4_096;
 const DEFAULT_BUDGET_SCOPE_TTL: Duration = Duration::from_secs(15 * 60);
+const DEFAULT_SERVER_DELAY_WILLINGNESS: Duration = Duration::ZERO;
 
 /// Hard maximum number of managed policy retries for one request or page.
 pub const MAX_POLICY_RETRIES_PER_OPERATION: u32 = 16;
@@ -57,6 +57,23 @@ impl RetryPolicy {
             .is_none_or(|budget| budget.reserve_retry(url))
     }
 
+    pub(crate) fn retry_delay(
+        &self,
+        retry_number: u32,
+        entropy: u64,
+        server_minimum: Option<Duration>,
+    ) -> Option<Duration> {
+        if server_minimum.is_some_and(|minimum| minimum > self.inner.server_delay_willingness) {
+            return None;
+        }
+        Some(
+            self.inner
+                .backoff
+                .delay(retry_number, entropy)
+                .max(server_minimum.unwrap_or(Duration::ZERO)),
+        )
+    }
+
     #[cfg(test)]
     pub(super) fn budget(&self) -> Option<&RetryBudget> {
         self.inner.budget.as_ref()
@@ -85,6 +102,11 @@ impl fmt::Debug for RetryPolicy {
                 &self.inner.max_retries_per_operation,
             )
             .field("budget_enabled", &self.inner.budget.is_some())
+            .field("backoff", &self.inner.backoff)
+            .field(
+                "server_delay_willingness",
+                &self.inner.server_delay_willingness,
+            )
             .field("classifier", &"<application classifier omitted>")
             .finish()
     }
@@ -94,6 +116,8 @@ struct RetryPolicyInner {
     classifier: Arc<dyn RetryClassifier>,
     max_retries_per_operation: u32,
     budget: Option<RetryBudget>,
+    backoff: RetryBackoff,
+    server_delay_willingness: Duration,
 }
 
 /// Builder for one explicit managed retry policy.
@@ -103,6 +127,8 @@ pub struct RetryPolicyBuilder {
     budget_enabled: bool,
     budget_scope_capacity: usize,
     budget_scope_ttl: Duration,
+    backoff: RetryBackoff,
+    server_delay_willingness: Duration,
     classifier: Option<Arc<dyn RetryClassifier>>,
 }
 
@@ -114,6 +140,8 @@ impl RetryPolicyBuilder {
             budget_enabled: true,
             budget_scope_capacity: DEFAULT_BUDGET_SCOPE_CAPACITY,
             budget_scope_ttl: DEFAULT_BUDGET_SCOPE_TTL,
+            backoff: RetryBackoff::none(),
+            server_delay_willingness: DEFAULT_SERVER_DELAY_WILLINGNESS,
             classifier: None,
         }
     }
@@ -171,6 +199,23 @@ impl RetryPolicyBuilder {
         self
     }
 
+    /// Replaces the bounded delay strategy applied before shared retry-budget admission.
+    #[must_use]
+    pub const fn backoff(mut self, backoff: RetryBackoff) -> Self {
+        self.backoff = backoff;
+        self
+    }
+
+    /// Allows a standard server minimum up to the supplied duration.
+    ///
+    /// A larger parsed minimum denies the retry; Concord never retries earlier
+    /// than the server requested. The default willingness is zero.
+    #[must_use]
+    pub const fn honor_server_delay_up_to(mut self, maximum: Duration) -> Self {
+        self.server_delay_willingness = maximum;
+        self
+    }
+
     /// Selects an application retry classifier.
     #[must_use]
     pub fn classify<C>(mut self, classifier: C) -> Self
@@ -221,6 +266,8 @@ impl RetryPolicyBuilder {
                 classifier,
                 max_retries_per_operation: self.max_retries_per_operation,
                 budget,
+                backoff: self.backoff,
+                server_delay_willingness: self.server_delay_willingness,
             }),
         })
     }
@@ -235,10 +282,111 @@ impl fmt::Debug for RetryPolicyBuilder {
             .field("budget_enabled", &self.budget_enabled)
             .field("budget_scope_capacity", &self.budget_scope_capacity)
             .field("budget_scope_ttl", &self.budget_scope_ttl)
+            .field("backoff", &self.backoff)
+            .field("server_delay_willingness", &self.server_delay_willingness)
             .field("classifier_configured", &self.classifier.is_some())
             .finish()
     }
 }
+
+/// Bounded jitter applied to a retry backoff delay.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RetryJitter {
+    /// Use the computed delay exactly.
+    None,
+    /// Select a deterministic operation-local value in `0..=delay`.
+    Full,
+    /// Select a deterministic operation-local value in `delay/2..=delay`.
+    Equal,
+}
+
+/// A finite retry backoff strategy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RetryBackoff {
+    initial: Duration,
+    maximum: Duration,
+    exponential: bool,
+    jitter: RetryJitter,
+}
+
+impl RetryBackoff {
+    const fn none() -> Self {
+        Self {
+            initial: Duration::ZERO,
+            maximum: Duration::ZERO,
+            exponential: false,
+            jitter: RetryJitter::None,
+        }
+    }
+
+    /// Uses one fixed delay before every admitted retry.
+    #[must_use]
+    pub const fn fixed(delay: Duration) -> Self {
+        Self {
+            initial: delay,
+            maximum: delay,
+            exponential: false,
+            jitter: RetryJitter::None,
+        }
+    }
+
+    /// Builds capped exponential backoff with an explicit jitter policy.
+    pub fn exponential(
+        initial: Duration,
+        maximum: Duration,
+        jitter: RetryJitter,
+    ) -> Result<Self, RetryBackoffError> {
+        if initial.is_zero() || maximum < initial {
+            return Err(RetryBackoffError);
+        }
+        Ok(Self {
+            initial,
+            maximum,
+            exponential: true,
+            jitter,
+        })
+    }
+
+    pub(super) fn delay(self, retry_number: u32, entropy: u64) -> Duration {
+        let mut delay = self.initial;
+        if self.exponential {
+            for _ in 1..retry_number {
+                delay = delay.saturating_mul(2).min(self.maximum);
+            }
+        }
+        match self.jitter {
+            RetryJitter::None => delay,
+            RetryJitter::Full => scale_duration(delay, entropy),
+            RetryJitter::Equal => {
+                let half = delay / 2;
+                half.saturating_add(scale_duration(delay.saturating_sub(half), entropy))
+            }
+        }
+    }
+}
+
+fn scale_duration(duration: Duration, entropy: u64) -> Duration {
+    if duration.is_zero() {
+        return Duration::ZERO;
+    }
+    let fraction = entropy as f64 / u64::MAX as f64;
+    duration.mul_f64(fraction)
+}
+
+/// Structural failure to construct a retry backoff.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RetryBackoffError;
+
+impl fmt::Display for RetryBackoffError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(
+            "retry backoff requires a positive initial delay not greater than its maximum",
+        )
+    }
+}
+
+impl Error for RetryBackoffError {}
 
 struct FunctionClassifier<F>(F);
 
@@ -266,7 +414,7 @@ pub struct RetryAttempt<'a> {
     page_index: u32,
     attempt: AttemptInfo,
     retries_performed: u32,
-    failure: RetryFailure<'a>,
+    failure: RetryFailure,
 }
 
 impl<'a> RetryAttempt<'a> {
@@ -281,7 +429,7 @@ impl<'a> RetryAttempt<'a> {
         page_index: u32,
         attempt: AttemptInfo,
         retries_performed: u32,
-        failure: RetryFailure<'a>,
+        failure: RetryFailure,
     ) -> Self {
         Self {
             endpoint,
@@ -332,7 +480,7 @@ impl<'a> RetryAttempt<'a> {
 
     /// Returns the finite failure offered for classification.
     #[must_use]
-    pub const fn failure(&self) -> RetryFailure<'a> {
+    pub const fn failure(&self) -> RetryFailure {
         self.failure
     }
 }
@@ -355,7 +503,7 @@ impl fmt::Debug for RetryAttempt<'_> {
 /// Failures that an application classifier may consider for managed retry.
 #[non_exhaustive]
 #[derive(Clone, Copy)]
-pub enum RetryFailure<'a> {
+pub enum RetryFailure {
     /// Native connection establishment failed.
     Connect,
     /// Another native transport operation failed.
@@ -364,12 +512,12 @@ pub enum RetryFailure<'a> {
     RejectedStatus {
         /// Rejected final status.
         status: StatusCode,
-        /// Sanitized final response headers.
-        headers: SanitizedHeaders<'a>,
+        /// Standard server delay parsed once by core, when valid.
+        server_delay: Option<Duration>,
     },
 }
 
-impl RetryFailure<'_> {
+impl RetryFailure {
     /// Returns the managed failure stage represented by this classifier input.
     #[must_use]
     pub const fn stage(self) -> FailureStage {
@@ -386,20 +534,23 @@ impl RetryFailure<'_> {
         match self {
             Self::Connect => DispatchKnowledge::NotDispatched,
             Self::Transport => DispatchKnowledge::PossiblyDispatched,
-            Self::RejectedStatus { .. } => DispatchKnowledge::ResponseReceived,
+            Self::RejectedStatus { .. } => DispatchKnowledge::ResponseObserved,
         }
     }
 }
 
-impl fmt::Debug for RetryFailure<'_> {
+impl fmt::Debug for RetryFailure {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Connect => formatter.write_str("Connect"),
             Self::Transport => formatter.write_str("Transport"),
-            Self::RejectedStatus { status, headers } => formatter
+            Self::RejectedStatus {
+                status,
+                server_delay,
+            } => formatter
                 .debug_struct("RejectedStatus")
                 .field("status", status)
-                .field("header_count", &headers.len())
+                .field("server_delay", server_delay)
                 .finish(),
         }
     }

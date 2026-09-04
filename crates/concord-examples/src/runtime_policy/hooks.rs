@@ -1,4 +1,4 @@
-//! Safe lifecycle hooks installed on one immutable client snapshot.
+//! Read-only lifecycle observation installed on one immutable client snapshot.
 //!
 //! Required features: none. Mode: construction-only. Documentation owners:
 //! `docs/execution_policy.md` and `docs/extensions.md`. Proving test:
@@ -9,19 +9,15 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use concord::api;
-use concord::error::GateError;
-use concord::observation::{
-    BeforeSend, BoxFuture, CompletionEvent, CompletionObserver, DebugLevel, RequestGate,
-    ResponseGate, ResponseHeadEvent,
-};
+use concord::observation::{DebugLevel, OperationEvent, OperationObserver};
 
 api! {
     client ObservedApi {
-        timeout off;
+        timeout 30s;
         base "http://observed.example.test/";
 
 
-    GET health() -> () using NoContent;
+    GET health() -> () via Empty;
 }}
 
 /// A bounded counter-only observer suitable for one client snapshot.
@@ -41,44 +37,32 @@ impl CountingHooks {
     }
 }
 
-impl RequestGate for CountingHooks {
-    fn before_send<'a>(&'a self, _event: BeforeSend<'a>) -> BoxFuture<'a, Result<(), GateError>> {
-        Box::pin(async move {
-            self.attempts.fetch_add(1, Ordering::Relaxed);
-            Ok(())
-        })
-    }
-}
-
-impl ResponseGate for CountingHooks {
-    fn before_response_handling<'a>(
-        &'a self,
-        _event: ResponseHeadEvent<'a>,
-    ) -> BoxFuture<'a, Result<(), GateError>> {
-        Box::pin(async move {
-            self.responses.fetch_add(1, Ordering::Relaxed);
-            Ok(())
-        })
-    }
-}
-
-impl CompletionObserver for CountingHooks {
-    fn on_complete(&self, _event: CompletionEvent<'_>) {
-        self.completions.fetch_add(1, Ordering::Relaxed);
+impl OperationObserver for CountingHooks {
+    fn observe(&self, event: OperationEvent<'_>) {
+        match event {
+            OperationEvent::AttemptStarted(_) => {
+                self.attempts.fetch_add(1, Ordering::Relaxed);
+            }
+            OperationEvent::ResponseHeadObserved(_) => {
+                self.responses.fetch_add(1, Ordering::Relaxed);
+            }
+            OperationEvent::OperationFinished(_) | OperationEvent::PaginationFinished(_) => {
+                self.completions.fetch_add(1, Ordering::Relaxed);
+            }
+            _ => {}
+        }
     }
 }
 // ANCHOR_END: hooks_implementation
 
-/// Installs shared hooks and body-free structural debug events.
+/// Installs shared observation and body-free structural debug events.
 // ANCHOR: hooks_client
 pub fn construct() -> Result<ObservedApi, concord::ClientBuildError> {
     let observation = Arc::new(CountingHooks::default());
     ObservedApi::builder()
         .configure_runtime(move |runtime| {
             runtime
-                .request_gate(observation.clone())
-                .response_gate(observation.clone())
-                .completion_observer(observation)
+                .operation_observer(observation)
                 .debug(DebugLevel::Basic)
         })
         .build()

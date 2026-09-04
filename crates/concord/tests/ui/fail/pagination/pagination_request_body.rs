@@ -6,25 +6,38 @@ mod support;
 
 pub struct Controller {}
 
-impl<Page> concord::pagination::PaginationController<Page> for Controller {
-    fn next(
+impl<Page> concord::pagination::PaginationController<Page> for Controller
+where
+    Page: Send + 'static,
+{
+    type Item = ();
+
+    const DESCRIPTION: concord::pagination::PaginationDescription =
+        concord::pagination::PaginationDescription::NONE;
+
+    fn advance(
         self,
-        _page: &Page,
-    ) -> Result<Option<Self>, concord::pagination::PaginationError> {
-        Ok(None)
+        _page: concord::pagination::PageResponse<Page>,
+        _limits: concord::pagination::PageDecisionLimits,
+    ) -> Result<
+        concord::pagination::PageStep<Self, Self::Item>,
+        concord::pagination::PaginationError,
+    > {
+        Ok(concord::pagination::PageStep::Done { items: Vec::new() })
     }
 }
 
 api! {
     client ManagedPageBodyApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
     POST read(
-        body body: RequestBody using RequestBody,
-    ) -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::Controller {}
+        body body: RequestBody via RequestBody,
+    ) -> Vec<u8> via crate::support::Json {
+        effect safe;
+        paginate via crate::Controller {}
     }
 }}
 

@@ -1,63 +1,103 @@
-error[E0609]: no field `body` on type `RateLimitRequest<'_>`
+error[E0609]: no field `observed_url` on type `RateLimitRequest<'_>`
  --> tests/ui/fail/rate_limit_context_exclusions.rs:4:21
   |
-4 |     let _ = request.body;
-  |                     ^^^^ unknown field
+4 |     let _ = request.observed_url;
+  |                     ^^^^^^^^^^^^ unknown field
   |
-  = note: available fields are: `endpoint`, `method`, `observed_url`, `host`, `page_index` ... and 2 others
+  = note: available fields are: `endpoint`, `method`, `logical_origin`, `page_index`, `attempt`, `plan`
 
-error[E0609]: no field `credentials` on type `RateLimitRequest<'_>`
+error[E0609]: no field `host` on type `RateLimitRequest<'_>`
  --> tests/ui/fail/rate_limit_context_exclusions.rs:5:21
   |
-5 |     let _ = request.credentials;
-  |                     ^^^^^^^^^^^ unknown field
+5 |     let _ = request.host;
+  |                     ^^^^ unknown field
   |
-  = note: available fields are: `endpoint`, `method`, `observed_url`, `host`, `page_index` ... and 2 others
+  = note: available fields are: `endpoint`, `method`, `logical_origin`, `page_index`, `attempt`, `plan`
 
-error[E0609]: no field `headers` on type `RateLimitRequest<'_>`
+error[E0609]: no field `path` on type `RateLimitRequest<'_>`
  --> tests/ui/fail/rate_limit_context_exclusions.rs:6:21
   |
-6 |     let _ = request.headers;
-  |                     ^^^^^^^ unknown field
+6 |     let _ = request.path;
+  |                     ^^^^ unknown field
   |
-  = note: available fields are: `endpoint`, `method`, `observed_url`, `host`, `page_index` ... and 2 others
+  = note: available fields are: `endpoint`, `method`, `logical_origin`, `page_index`, `attempt`, `plan`
 
-error[E0609]: no field `native_url` on type `RateLimitRequest<'_>`
+error[E0609]: no field `query` on type `RateLimitRequest<'_>`
  --> tests/ui/fail/rate_limit_context_exclusions.rs:7:21
   |
-7 |     let _ = request.native_url;
-  |                     ^^^^^^^^^^ unknown field
+7 |     let _ = request.query;
+  |                     ^^^^^ unknown field
   |
-  = note: available fields are: `endpoint`, `method`, `observed_url`, `host`, `page_index` ... and 2 others
+  = note: available fields are: `endpoint`, `method`, `logical_origin`, `page_index`, `attempt`, `plan`
 
-error[E0609]: no field `native_request` on type `RateLimitRequest<'_>`
+error[E0609]: no field `body` on type `RateLimitRequest<'_>`
  --> tests/ui/fail/rate_limit_context_exclusions.rs:8:21
   |
-8 |     let _ = request.native_request;
-  |                     ^^^^^^^^^^^^^^ unknown field
+8 |     let _ = request.body;
+  |                     ^^^^ unknown field
   |
-  = note: available fields are: `endpoint`, `method`, `observed_url`, `host`, `page_index` ... and 2 others
+  = note: available fields are: `endpoint`, `method`, `logical_origin`, `page_index`, `attempt`, `plan`
+
+error[E0609]: no field `credentials` on type `RateLimitRequest<'_>`
+ --> tests/ui/fail/rate_limit_context_exclusions.rs:9:21
+  |
+9 |     let _ = request.credentials;
+  |                     ^^^^^^^^^^^ unknown field
+  |
+  = note: available fields are: `endpoint`, `method`, `logical_origin`, `page_index`, `attempt`, `plan`
+
+error[E0609]: no field `headers` on type `RateLimitRequest<'_>`
+  --> tests/ui/fail/rate_limit_context_exclusions.rs:10:21
+   |
+10 |     let _ = request.headers;
+   |                     ^^^^^^^ unknown field
+   |
+   = note: available fields are: `endpoint`, `method`, `logical_origin`, `page_index`, `attempt`, `plan`
+
+error[E0609]: no field `native_url` on type `RateLimitRequest<'_>`
+  --> tests/ui/fail/rate_limit_context_exclusions.rs:11:21
+   |
+11 |     let _ = request.native_url;
+   |                     ^^^^^^^^^^ unknown field
+   |
+   = note: available fields are: `endpoint`, `method`, `logical_origin`, `page_index`, `attempt`, `plan`
+
+error[E0609]: no field `native_request` on type `RateLimitRequest<'_>`
+  --> tests/ui/fail/rate_limit_context_exclusions.rs:12:21
+   |
+12 |     let _ = request.native_request;
+   |                     ^^^^^^^^^^^^^^ unknown field
+   |
+   = note: available fields are: `endpoint`, `method`, `logical_origin`, `page_index`, `attempt`, `plan`
 
 error[E0609]: no field `body` on type `RateLimitResponse<'_>`
-  --> tests/ui/fail/rate_limit_context_exclusions.rs:12:22
+  --> tests/ui/fail/rate_limit_context_exclusions.rs:16:22
    |
-12 |     let _ = response.body;
+16 |     let _ = response.body;
    |                      ^^^^ unknown field
    |
-   = note: available fields are: `request`, `status`, `headers`, `cooldown_cap`
+   = note: available fields are: `request`, `status`, `server_delay`, `cooldown_cap`
 
 error[E0609]: no field `credentials` on type `RateLimitResponse<'_>`
-  --> tests/ui/fail/rate_limit_context_exclusions.rs:13:22
+  --> tests/ui/fail/rate_limit_context_exclusions.rs:17:22
    |
-13 |     let _ = response.credentials;
+17 |     let _ = response.credentials;
    |                      ^^^^^^^^^^^ unknown field
    |
-   = note: available fields are: `request`, `status`, `headers`, `cooldown_cap`
+   = note: available fields are: `request`, `status`, `server_delay`, `cooldown_cap`
+
+error[E0609]: no field `headers` on type `RateLimitResponse<'_>`
+  --> tests/ui/fail/rate_limit_context_exclusions.rs:18:22
+   |
+18 |     let _ = response.headers;
+   |                      ^^^^^^^ unknown field
+   |
+   = note: available fields are: `request`, `status`, `server_delay`, `cooldown_cap`
 
 error[E0609]: no field `native_response` on type `RateLimitResponse<'_>`
-  --> tests/ui/fail/rate_limit_context_exclusions.rs:14:22
+  --> tests/ui/fail/rate_limit_context_exclusions.rs:19:22
    |
-14 |     let _ = response.native_response;
+19 |     let _ = response.native_response;
    |                      ^^^^^^^^^^^^^^^ unknown field
    |
-   = note: available fields are: `request`, `status`, `headers`, `cooldown_cap`
+   = note: available fields are: `request`, `status`, `server_delay`, `cooldown_cap`

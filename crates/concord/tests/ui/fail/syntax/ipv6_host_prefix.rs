@@ -1,10 +1,10 @@
 concord::api! {
     client Ipv6HostApi {
-        timeout off;
+        timeout 30s;
         base "http://[2001:db8::1]:8080/";
 
 
-    GET read() -> concord::Bytes using concord::Bytes {
+    GET read() -> concord::Bytes via concord::Bytes {
         subdomain replace ["api"];
     }
 }}

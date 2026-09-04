@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use super::{EndpointSpec, HeadBuilder, PreparedHead, Request, RequestMeta};
@@ -28,7 +27,7 @@ pub(crate) struct PreparationFailure {
     pub(crate) core: ClientCore,
     pub(crate) operation_id: OperationId,
     pub(crate) meta: RequestMeta,
-    pub(crate) observed_url: Arc<str>,
+    pub(crate) target: crate::hooks::RequestTarget,
     pub(crate) debug: DebugLevel,
     pub(crate) elapsed: Duration,
     pub(crate) error: ApiError,
@@ -53,10 +52,10 @@ where
         endpoint,
         options,
     } = request;
-    let started = tokio::time::Instant::now();
+    let started = OperationDeadline::now();
     let meta = endpoint.request_meta();
     let operation_id = core.allocate_operation_id(meta.endpoint_id(), meta.method())?;
-    let safe_base_url = core.safe_base_url();
+    let base_target = crate::hooks::RequestTarget::from_url(core.base_url(), 0);
     let debug = options.resolve_debug(core.default_debug());
     let timeout = options
         .resolve_timeout(meta.resolve_inherited_timeout(core.default_runtime_endpoint_timeout()));
@@ -72,7 +71,7 @@ where
                 core,
                 operation_id,
                 meta,
-                safe_base_url,
+                base_target,
                 debug,
                 started,
                 error,
@@ -85,7 +84,7 @@ where
             core,
             operation_id,
             meta,
-            safe_base_url,
+            base_target,
             debug,
             started,
             error,
@@ -106,7 +105,7 @@ where
                 core,
                 operation_id,
                 meta,
-                safe_base_url,
+                base_target,
                 debug,
                 started,
                 error,
@@ -118,7 +117,7 @@ where
             core,
             operation_id,
             meta,
-            Arc::from(head.observed_url()),
+            head.request_target(),
             debug,
             started,
             error,
@@ -140,7 +139,7 @@ where
                 core,
                 operation_id,
                 meta.clone(),
-                Arc::from(head.observed_url()),
+                head.request_target(),
                 debug,
                 started,
                 ApiError::classified(meta.endpoint_id().clone(), meta.method().clone(), category),
@@ -152,7 +151,7 @@ where
             core,
             operation_id,
             meta,
-            Arc::from(head.observed_url()),
+            head.request_target(),
             debug,
             started,
             error,
@@ -164,7 +163,7 @@ where
             core,
             operation_id,
             meta,
-            Arc::from(head.observed_url()),
+            head.request_target(),
             debug,
             started,
             error,
@@ -247,7 +246,7 @@ where
         RequestContentType::Exact(value) => (Some(value), true),
         RequestContentType::Generated => (None, true),
     };
-    let accept = <E::Response as crate::response::ResponseSpec>::accept();
+    let accept = <E::Response as crate::response::ResponseRepresentation<E::Output>>::accept();
     head.apply_media_headers(accept, content_type, owns_content_type)?;
     head.validate_auth()?;
     ensure_matching_meta(meta, head)?;
@@ -263,7 +262,7 @@ fn failure(
     core: ClientCore,
     operation_id: OperationId,
     meta: RequestMeta,
-    observed_url: Arc<str>,
+    target: crate::hooks::RequestTarget,
     debug: DebugLevel,
     started: tokio::time::Instant,
     error: ApiError,
@@ -272,9 +271,9 @@ fn failure(
         core,
         operation_id,
         meta,
-        observed_url,
+        target,
         debug,
-        elapsed: tokio::time::Instant::now().saturating_duration_since(started),
+        elapsed: OperationDeadline::now().saturating_duration_since(started),
         error,
     }
 }

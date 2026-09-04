@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use concord::api;
-use concord::body::StreamBody;
+use concord::body::RequestStream;
 use concord::codec::{
     BytesMut, CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext,
 };
@@ -17,8 +17,10 @@ use concord::endpoint::{EndpointId, RuntimeEndpoint};
 use concord::http::{Method, SafeProxy, StatusCode};
 use concord::pagination::PaginatedRequest;
 use concord::rate_limit::NoopRateLimiter;
-use concord::records::{BufferedRecords, RecordDecoder, RecordError};
-use concord::response::ResponseHead;
+use concord::records::{
+    RecordDecoder, RecordError, decode_complete_records, validate_record_decoder,
+};
+use concord::response::{Buffered, ResponseBodyError, ResponseHead, ResponseRepresentation};
 use concord::retry::{RetryDecision, RetryFailure, RetryPolicy};
 use concord::{Bytes, PageLimit, SecretString};
 use concord_perf::overhead_cli::{
@@ -90,9 +92,27 @@ impl RecordDecoder for BenchRecords {
     }
 }
 
+pub struct BenchRecordRepresentation;
+
+impl ResponseRepresentation<Vec<Bytes>> for BenchRecordRepresentation {
+    type Driver = Buffered;
+
+    fn accept() -> Option<&'static str> {
+        BenchRecords::accept()
+    }
+
+    fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
+        validate_record_decoder::<BenchRecords>(head)
+    }
+
+    fn from_body(body: Bytes, head: &ResponseHead<'_>) -> Result<Vec<Bytes>, ResponseBodyError> {
+        decode_complete_records::<BenchRecords>(body, head)
+    }
+}
+
 api! {
     client BenchApi {
-        timeout off;
+        timeout 30s;
         base "http://benchmark.example.test/";
         credentials {
             secret api_secret;
@@ -102,43 +122,43 @@ api! {
 
     scope records(collection: String) {
         path ["records", records.collection];
-        GET show(id: String) -> Bytes using Bytes {
+        GET show(id: String) -> Bytes via Binary {
             path [endpoint.id];
             auth off;
         }
     }
-    GET bounded() -> Bytes using Bytes {
+    GET bounded() -> Bytes via Binary {
         auth off;
     }
-    GET protected() -> Bytes using Bytes {
+    GET protected() -> Bytes via Binary {
         auth { bearer application_key; }
     }
-    GET limited() -> Bytes using Bytes {
+    GET limited() -> Bytes via Binary {
         auth off;
-        rate_limit { allow 1000000 per 1s; }
+        rate_limit { id "concord.concord_overhead.1"; key [origin]; cost 1;  allow 1000000 per 1s; }
     }
-    GET pages(offset: u64, limit: std::num::NonZeroU32) -> Vec<u8> using crate::PageCodec {
+    GET pages(offset: u64, limit: std::num::NonZeroU32) -> Vec<u8> via crate::PageCodec {
         query { "offset" = endpoint.offset; "limit" = endpoint.limit; }
         auth off;
-        paginate with concord::pagination::OffsetPagination {
+        paginate via concord::pagination::OffsetPagination {
             offset -> endpoint.offset;
             page_size -> endpoint.limit;
         }
     }
-    POST codec(body body: String using crate::BenchCodec) -> String using crate::BenchCodec {
+    POST codec(body body: String via crate::BenchCodec) -> String via crate::BenchCodec {
         auth off;
     }
-    GET streamed() -> ::concord::response::ByteStream using Stream<OctetStream> {
+    GET streamed() -> ::concord::response::ByteStream via Binary {
         auth off;
     }
-    GET buffered_records() -> Vec<Bytes> using BufferedRecords<crate::BenchRecords> {
+    GET buffered_records() -> Vec<Bytes> via crate::BenchRecordRepresentation {
         auth off;
     }
 }}
 
 api! {
     client CredentialBenchApi {
-        timeout off;
+        timeout 30s;
         base "https://localhost/";
         credentials {
             secret api_secret;
@@ -146,7 +166,7 @@ api! {
         }
 
 
-    GET credential_ready() -> Bytes using Bytes {
+    GET credential_ready() -> Bytes via Binary {
         auth { bearer application_key; }
     }
 }}
@@ -436,7 +456,8 @@ fn runtime_endpoint_execution_overhead(
         .collect::<Result<Vec<_>, _>>()?;
     let started = Instant::now();
     for endpoint in endpoints {
-        black_box(runtime.block_on(client.request(endpoint).into_future())?);
+        let request = endpoint.try_bind(&client)?;
+        black_box(runtime.block_on(request.into_future())?);
     }
     report(
         audit,
@@ -628,7 +649,7 @@ fn stream_wrapping(iterations: usize, audit: &mut CategoryAudit) {
     let started = Instant::now();
     for _ in 0..iterations {
         let stream =
-            StreamBody::from_bytes(Bytes::from_static(b"stream benchmark")).exact_length(16);
+            RequestStream::from_bytes(Bytes::from_static(b"stream benchmark")).exact_length(16);
         black_box(stream);
     }
     report(audit, "stream wrapping", iterations, started);
@@ -641,8 +662,8 @@ fn generic_specification_selection(iterations: usize, audit: &mut CategoryAudit)
             EndpointId::new("bench_api.runtime").expect("valid benchmark endpoint ID"),
             Method::POST,
         )
-        .body_spec::<BenchCodec>("benchmark generic body".to_owned())
-        .response::<BenchCodec>()
+        .body_spec::<BenchCodec, _>("benchmark generic body".to_owned())
+        .response::<BenchCodec, String>()
         .build()
         .expect("generic benchmark endpoint");
         black_box(endpoint);

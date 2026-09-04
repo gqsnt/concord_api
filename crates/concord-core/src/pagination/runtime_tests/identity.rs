@@ -1,7 +1,7 @@
 use super::*;
 
 #[tokio::test]
-async fn selected_limiter_receives_actual_page_hosts_while_automatic_surfaces_stay_redacted() {
+async fn selected_limiter_receives_explicit_page_origins_while_observers_stay_value_free() {
     const INITIAL: &str = "page-host-initial-sentinel-73190584";
     const SECOND: &str = "page-host-second-sentinel-10827319";
     const THIRD: &str = "page-host-third-sentinel-46205731";
@@ -39,9 +39,9 @@ async fn selected_limiter_receives_actual_page_hosts_while_automatic_surfaces_st
         "http://pagination-runtime.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
         RuntimeConfigBuilder::new()
-            .request_gate(hooks.clone())
-            .response_gate(hooks.clone())
-            .completion_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
             .rate_limiter(configured_limiter)
             .debug(DebugLevel::Headers),
         &executor,
@@ -84,6 +84,8 @@ async fn selected_limiter_receives_actual_page_hosts_while_automatic_surfaces_st
     );
     let initial_host = format!("{INITIAL}.pagination-runtime.example.test");
     let second_host = format!("{SECOND}.pagination-runtime.example.test");
+    let initial_origin = format!("http://{initial_host}:80");
+    let second_origin = format!("http://{second_host}:80");
     let canonical = |value: &str| {
         crate::rate_limit::encode_canonical(
             &value.to_owned(),
@@ -92,26 +94,25 @@ async fn selected_limiter_receives_actual_page_hosts_while_automatic_surfaces_st
         .expect("canonical test value")
         .into_vec()
     };
-    assert_eq!(acquisitions[0].2.as_deref(), Some(initial_host.as_str()));
-    assert_eq!(acquisitions[1].2.as_deref(), Some(second_host.as_str()));
-    assert_ne!(acquisitions[0].2, acquisitions[1].2);
+    assert_eq!(acquisitions[0].1.as_deref(), Some(initial_origin.as_str()));
+    assert_eq!(acquisitions[1].1.as_deref(), Some(second_origin.as_str()));
+    assert_ne!(acquisitions[0].1, acquisitions[1].1);
     assert_eq!(
-        acquisitions[0].3,
+        acquisitions[0].2,
         [
-            ("host".to_owned(), canonical(&initial_host)),
+            ("origin".to_owned(), canonical(&initial_origin)),
             ("endpoint.host".to_owned(), canonical(INITIAL)),
         ]
     );
     assert_eq!(
-        acquisitions[1].3,
+        acquisitions[1].2,
         [
-            ("host".to_owned(), canonical(&second_host)),
+            ("origin".to_owned(), canonical(&second_origin)),
             ("endpoint.host".to_owned(), canonical(SECOND)),
         ]
     );
 
     let mut automatic = Vec::new();
-    automatic.extend(acquisitions.iter().map(|context| context.1.clone()));
     automatic.extend(
         hooks
             .before
@@ -172,9 +173,9 @@ fn rate_key_core(
         "https://pagination-runtime.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
         RuntimeConfigBuilder::new()
-            .request_gate(hooks.clone())
-            .response_gate(hooks.clone())
-            .completion_observer(hooks)
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks)
             .rate_limiter(limiter)
             .debug(DebugLevel::Headers),
         executor,
@@ -262,12 +263,9 @@ async fn pagination_rate_key_limit_uses_actual_value_and_cuts_off_protected_work
     );
     assert_eq!(accepted_hooks.before.lock().expect("before").len(), 1);
     assert_eq!(accepted_hooks.response.lock().expect("response").len(), 1);
-    assert!(
-        accepted_hooks
-            .completion
-            .lock()
-            .expect("completion")
-            .is_empty()
+    assert_eq!(
+        accepted_hooks.completion.lock().expect("completion").len(),
+        1
     );
     let accepted_hook_safe = {
         let before = accepted_hooks.before.lock().expect("accepted before");

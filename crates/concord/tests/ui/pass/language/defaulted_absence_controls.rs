@@ -7,7 +7,7 @@ const DEFAULT_TAGS: Vec<&str> = Vec::new();
 
 api! {
     client DefaultedAbsenceApi {
-        timeout off;
+        timeout 30s;
         values {
             client_label?: &'static str = crate::DEFAULT_CLIENT_LABEL;
         }
@@ -20,14 +20,14 @@ api! {
         GET read(
             endpoint_label?: &'static str = crate::DEFAULT_ENDPOINT_LABEL,
             tags?: Vec<&'static str> = crate::DEFAULT_TAGS,
-        ) -> Bytes using Bytes;
+        ) -> Bytes via Binary;
     }
 }}
 
 fn main() {
     let client = DefaultedAbsenceApi::builder()
         .set_client_label(Some("client-override"))
-        .clear_client_label()
+        .omit_client_label()
         .reset_client_label()
         .build()
         .unwrap();
@@ -35,29 +35,29 @@ fn main() {
     let _ = client
         .records()
         .set_scope_label(Some("scope-override"))
-        .clear_scope_label()
+        .omit_scope_label()
         .reset_scope_label();
 
     let _ = DefaultedAbsenceApi::unbound()
         .records()
         .set_scope_label(Some("scope-override"))
-        .clear_scope_label()
+        .omit_scope_label()
         .reset_scope_label()
         .read()
         .set_endpoint_label(Some("endpoint-override"))
-        .clear_endpoint_label()
+        .omit_endpoint_label()
         .reset_endpoint_label()
         .set_tags(Some(vec!["first", "second"]))
-        .clear_tags()
+        .omit_tags()
         .reset_tags();
 
     let _: defaulted_absence_api::records::ReadRequest = client
         .records()
         .read()
         .set_endpoint_label(Some("endpoint-override"))
-        .clear_endpoint_label()
+        .omit_endpoint_label()
         .reset_endpoint_label()
         .set_tags(Some(vec!["first", "second"]))
-        .clear_tags()
+        .omit_tags()
         .reset_tags();
 }

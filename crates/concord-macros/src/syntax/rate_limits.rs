@@ -34,16 +34,22 @@ pub(super) fn parse_rate_limits(
                 "v1 `rule NAME ... by [...]` syntax was removed; write `NAME(formals...) { key [...]; allow N per D; }`",
             ));
         }
+        if !body.peek(keyword::policy) {
+            return Err(
+                body.error("a reusable rate policy is declared `policy NAME(formals...) { ... }`")
+            );
+        }
+        body.parse::<keyword::policy>()?;
         let name: Ident = body
             .parse()
-            .map_err(|_| body.error("a rate-limit profile requires a name"))?;
-        validate_snake_source_identifier(&name, "rate-limit profile")?;
+            .map_err(|_| body.error("a rate policy requires a name"))?;
+        validate_snake_source_identifier(&name, "rate policy")?;
         let canonical_name = canonical_ident(&name);
         if let Some(first) = names.insert(canonical_name.clone(), name.span()) {
             let mut error = name.span().error(format!(
                 "rate-limit profile `{canonical_name}` is defined more than once"
             ));
-            error.combine(first.error("the first profile using this name is here"));
+            error.combine(first.error("the first profile via this name is here"));
             return Err(error);
         }
         let formals_body;
@@ -54,9 +60,14 @@ pub(super) fn parse_rate_limits(
             let formal = formals_body.call(Ident::parse_any)?;
             validate_snake_source_identifier(&formal, "rate-limit formal")?;
             let canonical = canonical_ident(&formal);
-            if matches!(canonical.as_str(), "host" | "endpoint") {
+            if canonical == "host" {
+                return Err(formal
+                    .span()
+                    .error("rate-key `host` was replaced by normalized logical `origin` in v2.1"));
+            }
+            if matches!(canonical.as_str(), "origin" | "endpoint") {
                 return Err(formal.span().error(
-                    "`host` and `endpoint` are built-in key dimensions and cannot be profile formals",
+                    "`origin` and `endpoint` are built-in key dimensions and cannot be policy formals",
                 ));
             }
             if !formals.insert(canonical.clone()) {
@@ -258,7 +269,7 @@ fn parse_inline_rate_limit(
             bracketed!(dimension_body in body);
             if dimension_body.is_empty() {
                 return Err(marker.span().error(
-                    "omit `key` for a declaration-global bucket; `key [...]` requires at least one dimension",
+                    "a v2.1 rate policy requires a non-empty canonical `key [...]` schema",
                 ));
             }
             let mut parsed = Vec::new();
@@ -343,10 +354,23 @@ fn parse_inline_rate_limit(
     }
     if windows.is_empty() {
         return Err(attachment_span.error(
-            "an anonymous rate-limit attachment requires at least one positive window; add `allow 100 per 1m;`",
+            "an inline rate policy requires at least one positive window; add `allow 100 per 1m;`",
         ));
     }
-    let cost_value = cost.as_ref().map_or(1, |cost| cost.value);
+    if id.is_none() {
+        return Err(attachment_span
+            .error("an inline rate policy requires a stable `id \"domain.policy\";` clause"));
+    }
+    let Some(dimensions) = dimensions else {
+        return Err(attachment_span.error(
+            "an inline rate policy requires an explicit non-empty `key [origin, endpoint, ...];` schema",
+        ));
+    };
+    let Some(cost) = cost else {
+        return Err(attachment_span
+            .error("an inline rate policy requires an explicit positive `cost N;` clause"));
+    };
+    let cost_value = cost.value;
     if let Some(window) = windows.iter().find(|window| cost_value > window.capacity) {
         return Err(window
             .duration
@@ -355,9 +379,9 @@ fn parse_inline_rate_limit(
     }
     Ok(RateLimitDecl {
         id,
-        dimensions: dimensions.unwrap_or_default(),
+        dimensions,
         cost: cost_value,
-        cost_span: cost.map(|cost| cost.key_span),
+        cost_span: Some(cost.key_span),
         windows,
     })
 }
@@ -420,7 +444,7 @@ fn parse_rate_limit_definition(
             bracketed!(dimension_body in body);
             if dimension_body.is_empty() {
                 return Err(marker.span().error(
-                    "omit `key` for a definition-global bucket; `key [...]` requires at least one dimension",
+                    "a v2.1 rate policy requires a non-empty canonical `key [...]` schema",
                 ));
             }
             let mut parsed = Vec::new();
@@ -508,16 +532,30 @@ fn parse_rate_limit_definition(
     }
     if windows.is_empty() {
         return Err(name.span().error(
-            "a rate-limit profile requires at least one positive window; add `allow 100 per 1m;`",
+            "a reusable rate policy requires at least one positive window; add `allow 100 per 1m;`",
         ));
     }
-    let cost_value = cost.as_ref().map_or(1, |cost| cost.value);
+    if id.is_none() {
+        return Err(name
+            .span()
+            .error("a reusable rate policy requires a stable `id \"domain.policy\";` clause"));
+    }
+    let Some(dimensions) = dimensions else {
+        return Err(name.span().error(
+            "a reusable rate policy requires an explicit non-empty `key [origin, endpoint, ...];` schema",
+        ));
+    };
+    let Some(cost) = cost else {
+        return Err(name
+            .span()
+            .error("a reusable rate policy requires an explicit positive `cost N;` clause"));
+    };
+    let cost_value = cost.value;
     if let Some(window) = windows.iter().find(|window| cost_value > window.capacity) {
         return Err(window
             .capacity_span
             .error("rate-limit cost must not exceed any window capacity"));
     }
-    let dimensions = dimensions.unwrap_or_default();
     for formal in formals {
         if !dimensions.iter().any(|dimension| {
             matches!(dimension, RateLimitDefinitionDimensionDecl::Formal { name } if canonical_ident(name) == *formal)
@@ -533,7 +571,7 @@ fn parse_rate_limit_definition(
         id,
         dimensions,
         cost: cost_value,
-        cost_span: cost.map(|cost| cost.key_span),
+        cost_span: Some(cost.key_span),
         windows,
     })
 }
@@ -548,7 +586,7 @@ fn parse_definition_dimension(
             .map_err(|_| input.error("invalid reusable rate-limit dimension"))?
             .span();
         return Err(span.error(
-            "reusable `key` dimensions accept only `host`, `endpoint`, or declared bare formal names",
+            "reusable `key` dimensions accept only `origin`, `endpoint`, or declared bare formal names",
         ));
     }
     if input.peek(keyword::fmt) {
@@ -562,11 +600,16 @@ fn parse_definition_dimension(
             "reusable rate-limit keys use canonical direct dimensions and do not accept `concat`",
         ));
     }
-    if input.peek(keyword::host) {
-        let marker: keyword::host = input.parse()?;
-        return Ok(RateLimitDefinitionDimensionDecl::Host {
+    if input.peek(keyword::origin) {
+        let marker: keyword::origin = input.parse()?;
+        return Ok(RateLimitDefinitionDimensionDecl::Origin {
             span: marker.span(),
         });
+    }
+    if input.peek(keyword::host) {
+        return Err(
+            input.error("rate-key `host` was replaced by normalized logical `origin` in v2.1")
+        );
     }
     if input.peek(keyword::endpoint) && {
         let fork = input.fork();
@@ -580,11 +623,11 @@ fn parse_definition_dimension(
     }
     let name = input.call(Ident::parse_any).map_err(|_| {
         input.error(
-            "a reusable rate-limit dimension must be `host`, `endpoint`, or a bare formal name",
+            "a reusable rate-limit dimension must be `origin`, `endpoint`, or a bare formal name",
         )
     })?;
     let canonical_name = canonical_ident(&name);
-    if matches!(canonical_name.as_str(), "host" | "endpoint") {
+    if matches!(canonical_name.as_str(), "origin" | "endpoint") {
         return Err(name.span().error(format!(
             "reusable rate-limit formal `{canonical_name}` is reserved; use built-in dimension `{canonical_name}` without `r#`"
         )));
@@ -629,7 +672,7 @@ fn validate_rate_limit_id(id: &LitStr) -> syn::Result<()> {
         });
     if !valid {
         return Err(id.span().error(format!(
-            "a generated rate-limit ID must be 1-{MAX_RATE_LIMIT_ID_BYTES} ASCII bytes in dot-separated segments; each segment begins and ends with a lowercase letter or digit and may also contain `_` or `-`"
+            "a stable rate-policy ID must be 1-{MAX_RATE_LIMIT_ID_BYTES} ASCII bytes in dot-separated segments; each segment begins and ends with a lowercase letter or digit and may also contain `_` or `-`"
         )));
     }
     Ok(())
@@ -653,11 +696,16 @@ fn parse_rate_limit_dimension(input: ParseStream<'_>) -> syn::Result<RateLimitDi
         return Err(input
             .error("rate-limit keys use canonical direct dimensions and do not accept `concat`"));
     }
-    if input.peek(keyword::host) {
-        let marker: keyword::host = input.parse()?;
-        return Ok(RateLimitDimensionDecl::Host {
+    if input.peek(keyword::origin) {
+        let marker: keyword::origin = input.parse()?;
+        return Ok(RateLimitDimensionDecl::Origin {
             span: marker.span(),
         });
+    }
+    if input.peek(keyword::host) {
+        return Err(
+            input.error("rate-key `host` was replaced by normalized logical `origin` in v2.1")
+        );
     }
     if input.peek(keyword::endpoint) && {
         let fork = input.fork();
@@ -672,13 +720,13 @@ fn parse_rate_limit_dimension(input: ParseStream<'_>) -> syn::Result<RateLimitDi
 
     let namespace = input.call(Ident::parse_any).map_err(|_| {
         input.error(
-            "a rate-limit dimension must be `host`, `endpoint`, or one direct total owner reference",
+            "a rate-limit dimension must be `origin`, `endpoint`, or one direct total owner reference",
         )
     })?;
     let namespace_name = canonical_ident(&namespace);
     if !input.peek(Token![.]) {
         return Err(namespace.span().error(format!(
-            "unsupported rate-limit dimension `{namespace_name}`; use `host`, `endpoint`, or an owner-qualified value"
+            "unsupported rate-limit dimension `{namespace_name}`; use `origin`, `endpoint`, or an owner-qualified value"
         )));
     }
     input.parse::<Token![.]>()?;
@@ -805,27 +853,27 @@ mod tests {
     fn parses_reusable_definitions_and_source_ordered_named_uses() {
         let source = super::super::parse(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 rate_limit service_reads();
                 rate_limits {
-                    account_reads(account) {
+                    policy account_reads(account) {
                         id "service.account.read";
-                        key [host, endpoint, account];
+                        key [origin, endpoint, account];
                         cost 1;
                         allow 100 per 1m;
                         allow 1_000 per 1h;
                     }
-                    service_reads() {
+                    policy service_reads() { id "concord.rate_limits.2"; key [origin]; cost 1;
                         allow 10_000 per 1m;
                     }
                 }
 
             scope accounts(account: String) {
                 rate_limit account_reads(account = accounts.account) { cost 2; }
-                rate_limit { allow 5 per 1s; }
+                rate_limit { id "concord.rate_limits.3"; key [origin]; cost 1;  allow 5 per 1s; }
                 rate_limit service_reads();
-                GET read() -> Bytes using Bytes;
+                GET read() -> Bytes via Binary;
             }
         }})
         .expect("reusable rate-limit syntax");
@@ -843,7 +891,7 @@ mod tests {
                 .iter()
                 .map(RateLimitDefinitionDimensionDecl::public_name)
                 .collect::<Vec<_>>(),
-            ["host", "endpoint", "account"]
+            ["origin", "endpoint", "account"]
         );
         assert_eq!(source.client.attachment_site.rate_limits.len(), 1);
         let SourceChild::Scope(scope) = &source.client.children[0] else {
@@ -879,22 +927,22 @@ mod tests {
     fn reusable_definition_and_binding_diagnostics_are_focused() {
         let invalid_rule_name = parse_error(quote! {
             client Api {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 rate_limits {
-                    NotSnakeCase() { allow 1 per 1s; }
+                    policy NotSnakeCase() { id "concord.rate_limits.4"; key [origin]; cost 1;  allow 1 per 1s; }
                 }
             }
         });
-        assert!(invalid_rule_name.contains("rate-limit profile source identifier"));
+        assert!(invalid_rule_name.contains("rate policy source identifier"));
 
         let duplicate_definition = parse_error(quote! {
             client Api {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 rate_limits {
-                    shared() { allow 1 per 1s; }
-                    shared() { allow 1 per 1s; }
+                    policy shared() { id "concord.rate_limits.5"; key [origin]; cost 1;  allow 1 per 1s; }
+                    policy shared() { id "concord.rate_limits.6"; key [origin]; cost 1;  allow 1 per 1s; }
                 }
             }
         });
@@ -902,10 +950,10 @@ mod tests {
 
         let duplicate_formal = parse_error(quote! {
             client Api {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 rate_limits {
-                    shared(account) { key [account, account]; allow 1 per 1s; }
+                    policy shared(account) { id "concord.rate_limits.7"; cost 1;  key [account, account]; allow 1 per 1s; }
                 }
             }
         });
@@ -913,18 +961,37 @@ mod tests {
 
         let captured_value = parse_error(quote! {
             client Api {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 rate_limits {
-                    shared() { key [scope.account]; allow 1 per 1s; }
+                    policy shared() { id "concord.rate_limits.8"; cost 1;  key [scope.account]; allow 1 per 1s; }
                 }
             }
         });
         assert!(captured_value.contains("cannot capture lexical values"));
 
+        let literal_dimension = parse_error(quote! {
+            client Api {
+                timeout 30s;
+                base "https://example.test";
+                rate_limits {
+                    policy shared() {
+                        id "concord.rate_limits.literal";
+                        key ["tenant"];
+                        cost 1;
+                        allow 1 per 1s;
+                    }
+                }
+            }
+        });
+        assert!(literal_dimension.contains(
+            "reusable `key` dimensions accept only `origin`, `endpoint`, or declared bare formal names"
+        ));
+        assert!(!literal_dimension.contains("only `host`"));
+
         let duplicate_binding = parse_error(quote! {
             client Api {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 rate_limit shared(account = client.first, account = client.second);
             }
@@ -933,7 +1000,7 @@ mod tests {
 
         let invalid_value = parse_error(quote! {
             client Api {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 rate_limit shared(account = "literal");
             }
@@ -945,10 +1012,10 @@ mod tests {
             .collect::<Vec<_>>();
         let too_many_dimensions = parse_error(quote! {
             client Api {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 rate_limits {
-                    shared(#(#dimensions), *) {
+                    policy shared(#(#dimensions), *) {
                         key [#(#dimensions),*];
                         allow 1 per 1s;
                     }
@@ -963,10 +1030,10 @@ mod tests {
         ] {
             let error = parse_error(quote! {
                 client Api {
-                    timeout off;
+                    timeout 30s;
                     base "https://example.test";
                     rate_limits {
-                        shared() {
+                        policy shared() { id "concord.rate_limits.9"; key [origin];
                             cost #cost;
                             allow 1 per 1s;
                         }
@@ -978,10 +1045,10 @@ mod tests {
 
         let excessive_cost = parse_error(quote! {
             client Api {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 rate_limits {
-                    shared() {
+                    policy shared() { id "concord.rate_limits.10"; key [origin];
                         cost 2;
                         allow 1 per 1s;
                     }
@@ -993,13 +1060,13 @@ mod tests {
 
     #[test]
     fn raw_builtin_names_are_rejected_as_reusable_formals() {
-        for formal in [quote!(r#host), quote!(r#endpoint)] {
+        for formal in [quote!(r#origin), quote!(r#endpoint)] {
             let error = parse_error(quote! {
                 client Api {
-                    timeout off;
+                    timeout 30s;
                     base "https://example.test";
                     rate_limits {
-                        shared(#formal) {
+                        policy shared(#formal) { id "concord.rate_limits.11"; cost 1;
                             key [#formal];
                             allow 1 per 1s;
                         }
@@ -1009,7 +1076,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "`host` and `endpoint` are built-in key dimensions and cannot be profile formals"
+                    "`origin` and `endpoint` are built-in key dimensions and cannot be policy formals"
                 )
             );
         }
@@ -1020,10 +1087,10 @@ mod tests {
         let exact = format_ident!("{}", "a".repeat(MAX_RATE_LIMIT_KEY_PART_NAME_BYTES));
         super::super::parse(quote! {
             client Api {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 rate_limits {
-                    shared(#exact) { key [#exact]; allow 1 per 1s; }
+                    policy shared(#exact) { id "concord.rate_limits.12"; cost 1;  key [#exact]; allow 1 per 1s; }
                 }
             }
         })
@@ -1032,10 +1099,10 @@ mod tests {
         let excess = format_ident!("{}", "a".repeat(MAX_RATE_LIMIT_KEY_PART_NAME_BYTES + 1));
         let error = parse_error(quote! {
             client Api {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 rate_limits {
-                    shared(#excess) { key [#excess]; allow 1 per 1s; }
+                    policy shared(#excess) { id "concord.rate_limits.13"; cost 1;  key [#excess]; allow 1 per 1s; }
                 }
             }
         });
@@ -1046,12 +1113,12 @@ mod tests {
     fn parses_ordered_finite_windows_and_optional_cost() {
         let source = super::super::parse(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
-                rate_limit { allow 100 per 1m; allow 5 per 1s; }
+                rate_limit { id "concord.rate_limits.14"; key [origin]; cost 1;  allow 100 per 1m; allow 5 per 1s; }
 
-            GET read() -> Bytes using Bytes {
-                rate_limit { cost 2; allow 2 per 250ms; }
+            GET read() -> Bytes via Binary {
+                rate_limit { id "concord.rate_limits.15"; key [origin];  cost 2; allow 2 per 250ms; }
             }
         }})
         .expect("rate-limit syntax");
@@ -1072,16 +1139,16 @@ mod tests {
     fn parses_explicit_id_by_and_cost_in_any_pre_window_order() {
         let source = super::super::parse(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 rate_limit {
                     cost 2;
                     id "riot.application";
-                    key [host];
+                    key [origin];
                     allow 2 per 1s;
                 }
 
-            GET read() -> Bytes using Bytes {
+            GET read() -> Bytes via Binary {
                 rate_limit {
                     key [endpoint];
                     id "riot.endpoint";
@@ -1131,7 +1198,7 @@ mod tests {
                 .expect_err("invalid generated rate-limit ID");
             assert_eq!(
                 error.to_string(),
-                "a generated rate-limit ID must be 1-256 ASCII bytes in dot-separated segments; each segment begins and ends with a lowercase letter or digit and may also contain `_` or `-`"
+                "a stable rate-policy ID must be 1-256 ASCII bytes in dot-separated segments; each segment begins and ends with a lowercase letter or digit and may also contain `_` or `-`"
             );
         }
 
@@ -1146,9 +1213,9 @@ mod tests {
     fn rejects_duplicate_and_late_explicit_id_clauses() {
         let duplicate = parse_error(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
-                rate_limit {
+                rate_limit { key [origin]; cost 1;
                     id "riot.first";
                     id "riot.second";
                     allow 1 per 1s;
@@ -1159,9 +1226,9 @@ mod tests {
 
         let late = parse_error(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
-                rate_limit {
+                rate_limit { key [origin]; cost 1;
                     allow 1 per 1s;
                     id "riot.late";
                 }
@@ -1174,10 +1241,10 @@ mod tests {
     fn parses_by_before_cost() {
         let source = super::super::parse(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
-                rate_limit {
-                    key [host, endpoint, client.tenant];
+                rate_limit { id "concord.rate_limits.20";
+                    key [origin, endpoint, client.tenant];
                     cost 2;
                     allow 2 per 1s;
                 }
@@ -1191,7 +1258,7 @@ mod tests {
                 .iter()
                 .map(RateLimitDimensionDecl::public_name)
                 .collect::<Vec<_>>(),
-            ["host", "endpoint", "client.tenant"]
+            ["origin", "endpoint", "client.tenant"]
         );
         assert_eq!(rule.cost, 2);
     }
@@ -1200,9 +1267,9 @@ mod tests {
     fn parses_cost_before_by() {
         let source = super::super::parse(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
-                rate_limit {
+                rate_limit { id "concord.rate_limits.21";
                     cost 2;
                     key [regional.region, endpoint.account];
                     allow 2 per 1s;
@@ -1223,43 +1290,44 @@ mod tests {
     }
 
     #[test]
-    fn parses_global_rule_without_by() {
+    fn parses_explicit_origin_key() {
         let source = super::super::parse(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
-                rate_limit { allow 1 per 1s; }
+                rate_limit { id "concord.rate_limits.22"; key [origin]; cost 1;  allow 1 per 1s; }
             }
         })
-        .expect("declaration-global rule");
+        .expect("origin-keyed policy");
 
-        assert!(
+        assert!(matches!(
             inline_rate_limit(&source.client.attachment_site)
                 .dimensions
-                .is_empty()
-        );
+                .as_slice(),
+            [RateLimitDimensionDecl::Origin { .. }]
+        ));
     }
 
     #[test]
     fn rejects_empty_by() {
         let error = parse_error(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
-                rate_limit { key []; allow 1 per 1s; }
+                rate_limit { id "concord.rate_limits.23"; cost 1;  key []; allow 1 per 1s; }
             }
         });
 
-        assert!(error.contains("omit `key` for a declaration-global bucket"));
+        assert!(error.contains("requires a non-empty canonical `key [...]` schema"));
     }
 
     #[test]
     fn rejects_duplicate_by_clause() {
         let error = parse_error(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
-                rate_limit { key [host]; key [endpoint]; allow 1 per 1s; }
+                rate_limit { id "concord.rate_limits.24"; cost 1;  key [origin]; key [endpoint]; allow 1 per 1s; }
             }
         });
 
@@ -1270,9 +1338,9 @@ mod tests {
     fn rejects_duplicate_dimension() {
         let error = parse_error(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
-                rate_limit { key [client.tenant, client.tenant]; allow 1 per 1s; }
+                rate_limit { id "concord.rate_limits.25"; cost 1;  key [client.tenant, client.tenant]; allow 1 per 1s; }
             }
         });
 
@@ -1283,9 +1351,9 @@ mod tests {
     fn rejects_by_after_window() {
         let error = parse_error(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
-                rate_limit { allow 1 per 1s; key [host]; }
+                rate_limit { id "concord.rate_limits.26"; cost 1;  allow 1 per 1s; key [origin]; }
             }
         });
 
@@ -1296,9 +1364,9 @@ mod tests {
     fn rejects_cost_after_window() {
         let error = parse_error(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
-                rate_limit { allow 1 per 1s; cost 1; }
+                rate_limit { id "concord.rate_limits.27"; key [origin];  allow 1 per 1s; cost 1; }
             }
         });
 
@@ -1309,9 +1377,9 @@ mod tests {
     fn rejects_unknown_bare_dimension() {
         let error = parse_error(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
-                rate_limit { key [path]; allow 1 per 1s; }
+                rate_limit { id "concord.rate_limits.28"; cost 1;  key [path]; allow 1 per 1s; }
             }
         });
 
@@ -1322,9 +1390,9 @@ mod tests {
     fn rejects_unknown_namespace() {
         let error = parse_error(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
-                rate_limit { key [secret.token]; allow 1 per 1s; }
+                rate_limit { id "concord.rate_limits.29"; cost 1;  key [secret.token]; allow 1 per 1s; }
             }
         });
 
@@ -1345,9 +1413,9 @@ mod tests {
         ] {
             let error = parse_error(quote! {
                 client RateApi {
-                    timeout off;
+                    timeout 30s;
                     base "https://example.test";
-                    rate_limit { key [#dimension]; allow 1 per 1s; }
+                    rate_limit { id "concord.rate_limits.30"; cost 1;  key [#dimension]; allow 1 per 1s; }
                 }
             });
             assert!(error.contains(expected), "unexpected diagnostic: {error}");
@@ -1362,9 +1430,9 @@ mod tests {
         });
         let error = parse_error(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
-                rate_limit { key [#(#dimensions),*]; allow 1 per 1s; }
+                rate_limit { id "concord.rate_limits.31"; cost 1;  key [#(#dimensions),*]; allow 1 per 1s; }
             }
         });
 
@@ -1379,9 +1447,9 @@ mod tests {
         let windows = (0..=MAX_RATE_LIMIT_WINDOWS_PER_POLICY).map(|_| quote! { allow 1 per 1s; });
         let error = super::super::parse(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
-                rate_limit { #(#windows)* }
+                rate_limit { id "concord.rate_limits.32"; key [origin]; cost 1;  #(#windows)* }
             }
         })
         .err()

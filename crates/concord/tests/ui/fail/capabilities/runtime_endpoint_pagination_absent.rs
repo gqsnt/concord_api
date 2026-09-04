@@ -4,11 +4,11 @@ use concord::http::Method;
 
 api! {
     client RuntimePaginationApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET ordinary() -> Bytes using Bytes;
+    GET ordinary() -> Bytes via Binary;
 }}
 
 fn main() {
@@ -17,5 +17,6 @@ fn main() {
         .accepted_bytes()
         .build()
         .unwrap();
-    let _ = client.request(endpoint).paginate(1_u32);
+    let request = endpoint.try_bind(&client).unwrap();
+    let _ = request.paginate(concord::PageLimit::Prefix(1));
 }

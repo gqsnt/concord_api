@@ -1,49 +1,99 @@
-# Rate limiting
+# Rate limits
 
-The declaration defines stable quota semantics; a selected runtime limiter
-implements admission, waiting, rejection, and coordination.
+Concord separates provider quota semantics from application-selected enforcement topology.
 
-## Profiles and attachments
+## Declare a reusable policy
 
-Profiles are client-owned and name every formal. They cannot capture client,
-scope, or endpoint values. An attachment binds each formal exactly once and may
-override cost. Anonymous attachments declare one policy inline.
+This is a partial client-owned policy registry clause. The surrounding
+compiled contract supplies the client and referenced values:
 
-`id` is stable policy identity. `key` is an ordered dimension schema. `cost`
-defaults to 1, must be positive, and cannot exceed any window capacity. Every
-policy has at least one positive `allow capacity per duration` window.
+```concord-pseudocode
+rate_limits {
+    policy tenant_reads(tenant) {
+        id "catalog.tenant.read";
+        key [origin, endpoint, tenant];
+        cost 1;
+        allow 120 per 1m;
+        allow 5_000 per 1h;
+    }
+}
+```
 
-Policies add across client and nested scopes/endpoints. A descendant cannot turn
-off inherited quota semantics. Duplicate effective use of one ID is rejected;
-reuse elsewhere requires compatible ordered dimensions and windows.
+Attach it:
 
-## Canonical keys
+```concord
+rate_limit tenant_reads(tenant = client.tenant);
+```
 
-Built-in dimensions are final logical `host` and stable `endpoint` ID. Other
-dimensions are direct total owner references or bound profile formals. Outer
-optional slots and pagination-mutated values are rejected, as are secrets,
-credentials, concatenation, and display formatting.
+Anonymous policies use the same explicit ID/key/cost/windows inline.
 
-`RateLimitKeyValue` writes bounded deterministic bytes with type and length
-framing. First-party primitives and structural `Option`/`Vec` encodings keep
-variants and boundaries distinct. A required `Option<T>` payload may therefore
-encode `None` as real domain identity; a Concord-optional slot cannot make policy
-presence data-dependent.
+## Ownership
 
-Canonical values are supplied only to the limiter. They do not appear in plans,
-errors, gates, completion, descriptions, or Rustdoc.
+DSL owns:
 
-## Enforcement
+- stable policy ID;
+- formal dimension schema and bindings;
+- cost;
+- conjunctive windows;
+- additive attachment.
 
-Any generated client with an effective rate policy requires explicit limiter
-selection. There is no implicit allow-all implementation and no production
-bypass method. Tests can select the explicit test limiter from test support.
+Application/limiter owns:
+
+- local versus distributed implementation;
+- clock/state storage;
+- wait/reject;
+- fail-open/closed/fallback;
+- cleanup and operational evidence.
+
+A declaration does not imply distributed enforcement.
+
+## Canonical key
+
+Use a bounded `RateKeyPart`, not `Display` or ordinary `RequestAtom`.
+
+Key encoding includes policy/dimension identities and length-framed components. Equal semantic values must produce equal canonical bytes.
+
+Built-ins:
+
+- `origin`: normalized logical scheme, lowercase ASCII host, effective port, never proxy route;
+- `endpoint`: explicit stable endpoint ID;
+- explicit domain dimensions.
+
+Reject:
+
+- secrets/credentials/private values;
+- Concord-optional values;
+- repeated/dynamic dimensions;
+- page-live pagination values;
+- unordered collections or collections without an explicit canonical scalar adapter.
+
+## Policy validation
+
+Require:
+
+- globally unique stable policy IDs;
+- one positive cost;
+- at least one positive finite window;
+- cost no greater than any capacity;
+- all formal bindings exactly once;
+- bounded dimensions/key bytes/windows;
+- duplicate effective attachment of one policy ID rejected;
+- endpoint built-in dimension only when the endpoint has an explicit stable ID.
+
+All windows in a policy are conjunctive.
+
+## Additive inheritance
+
+Client, outer scope, inner scope, and endpoint policy attachments compose additively. A descendant cannot disable an ancestor provider constraint.
+
+## Explicit limiter selection
+
+A generated client with effective policies must choose explicitly:
 
 <!-- concord-source: crates/concord-examples/src/rate_limiting/lexical.rs#configured_rate_limiter -->
 ```rust
 pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
-    let limiter =
-        LocalRateLimiter::new().observer(Arc::new(super::observer::DelegatingRetryAfterObserver));
+    let limiter = LocalRateLimiter::new();
     let client = RateLimitApi::builder()
         .set_tenant("example-tenant".to_owned())
         .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(limiter)))
@@ -56,13 +106,70 @@ pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
 }
 ```
 
-Admission occurs once per actual network attempt, including policy retry and
-authentication recovery, inside the operation's aggregate deadline. Private
-credential placement follows admission. Response-head limiter observation may
-update future cooldown state but cannot replace the current response.
+Do not silently install a process-local limiter because a Cargo feature is enabled.
 
-Client clones share their selected limiter and budgets. Independent builds
-share quota state only if the application supplies the same limiter handle.
+## Whole-plan admission
 
-See the exact [rate grammar](spec.md#rate-limits) and
-[runtime admission model](runtime.md#rate-admission).
+For one visible attempt, core supplies the complete effective conjunctive policy
+plan to the limiter. A returned `RateLimitPermit` represents admission of that
+whole plan. The bundled process-local limiter evaluates and reserves every
+policy/window atomically: a wait or rejection causes no partial local
+reservation, and its state lock is released before waiting.
+
+An external/distributed implementation owns and documents whether failed
+multi-policy evaluation is atomic or conservatively debits an earlier
+reservation. Concord cannot promise or perform rollback across authority it
+does not own.
+
+Every policy retry, auth-recovery replay, and page visible attempt reacquires the complete plan. Protocol-proven physical transport recovery does not.
+
+## Response feedback
+
+```text
+trait RateLimiter {
+    async fn acquire(
+        &self,
+        request: RateLimitRequest<'_>,
+    ) -> Result<RateLimitPermit, RateLimitError>;
+
+    fn observe(&self, feedback: RateLimitResponse<'_>);
+}
+```
+
+Only admission can fail the current attempt. Response feedback is synchronous, prompt, bounded, and non-result-determining.
+
+`RateLimitRequest` contains endpoint and method, page/visible-attempt identity,
+the complete canonical plan, and normalized logical origin only when that plan
+uses the `origin` dimension. It contains no complete URL, path/query values, or
+request headers.
+
+Feedback adds only status, the standard server delay parsed once by core, and
+the configured cooldown cap. It contains no response header map and offers no
+vendor-header iteration. It may:
+
+- update cooldown/not-before state for future acquisitions;
+- mark the limiter degraded;
+- emit bounded diagnostics.
+
+It must not hide or replace the current endpoint response. A distributed implementation that needs async storage owns a bounded handoff and applies its fail-open/closed policy on future `acquire` calls.
+
+Provider-specific feedback requires a future finite purpose-specific contract;
+it is not obtained through arbitrary header access.
+
+## Local limiter extra
+
+The first-party local limiter documents:
+
+- process-local scope;
+- bucket/window algorithm;
+- fairness and wakeup behavior;
+- state/cardinality bounds and eviction;
+- deterministic clock dependency;
+- cooldown semantics;
+- sharing across client clones and independent builds.
+
+It must never be presented as distributed quota enforcement.
+
+## Observation and security
+
+Plans/descriptions expose policy ID, schema, cost, windows, bindings, and provenance—not resolved raw keys. Errors/events expose policy identity and wait/reject category, not key values.

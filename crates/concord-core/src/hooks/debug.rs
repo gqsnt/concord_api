@@ -1,7 +1,7 @@
 use std::fmt;
 
 use super::{
-    BeforeSend, CompletionEvent, DebugLevel, PaginationCompletionEvent, ResponseHeadEvent,
+    AttemptStarted, DebugLevel, OperationFinished, PaginationFinished, ResponseHeadObserved,
 };
 
 /// Private body-free presentation dispatcher for built-in debug output.
@@ -29,41 +29,40 @@ impl DebugDispatcher {
         self
     }
 
-    pub(crate) fn request_ready(&self, event: &BeforeSend<'_>) {
+    pub(crate) fn request_ready(&self, event: &AttemptStarted<'_>) {
         match self.level {
             DebugLevel::None => {}
             DebugLevel::Basic => self.emit(format_args!(
-                "request-ready endpoint={} method={} url={} page={} attempt={} policy-retry={} authentication-recovery={}",
+                "request-ready endpoint={} method={} target={:?} page={} attempt={} policy-retry={} authentication-recovery={}",
                 event.endpoint,
                 event.method,
-                event.observed_url,
+                event.target,
                 event.page_index,
                 event.attempt.index,
                 event.attempt.policy_retry_index,
                 event.attempt.authentication_recovery
             )),
             DebugLevel::Headers => self.emit(format_args!(
-                "request-ready endpoint={} method={} url={} page={} attempt={} policy-retry={} authentication-recovery={} headers={:?}",
+                "request-ready endpoint={} method={} target={:?} page={} attempt={} policy-retry={} authentication-recovery={}",
                 event.endpoint,
                 event.method,
-                event.observed_url,
+                event.target,
                 event.page_index,
                 event.attempt.index,
                 event.attempt.policy_retry_index,
-                event.attempt.authentication_recovery,
-                event.headers
+                event.attempt.authentication_recovery
             )),
         }
     }
 
-    pub(crate) fn response_head(&self, event: &ResponseHeadEvent<'_>) {
+    pub(crate) fn response_head(&self, event: &ResponseHeadObserved<'_>) {
         match self.level {
             DebugLevel::None => {}
             DebugLevel::Basic => self.emit(format_args!(
-                "response-head endpoint={} method={} url={} status={} page={} attempt={} policy-retry={} authentication-recovery={}",
+                "response-head endpoint={} method={} target={:?} status={} page={} attempt={} policy-retry={} authentication-recovery={}",
                 event.endpoint,
                 event.method,
-                event.observed_url,
+                event.target,
                 event.status,
                 event.page_index,
                 event.attempt.index,
@@ -71,27 +70,28 @@ impl DebugDispatcher {
                 event.attempt.authentication_recovery
             )),
             DebugLevel::Headers => self.emit(format_args!(
-                "response-head endpoint={} method={} url={} status={} page={} attempt={} policy-retry={} authentication-recovery={} headers={:?}",
+                "response-head endpoint={} method={} target={:?} status={} page={} attempt={} policy-retry={} authentication-recovery={} content-length={:?} server-delay={:?}",
                 event.endpoint,
                 event.method,
-                event.observed_url,
+                event.target,
                 event.status,
                 event.page_index,
                 event.attempt.index,
                 event.attempt.policy_retry_index,
                 event.attempt.authentication_recovery,
-                event.headers
+                event.content_length,
+                event.server_delay
             )),
         }
     }
 
-    pub(crate) fn completion(&self, event: &CompletionEvent<'_>) {
+    pub(crate) fn completion(&self, event: &OperationFinished<'_>) {
         if self.level != DebugLevel::None {
             self.emit(format_args!(
-                "completion endpoint={} method={} url={} page={} attempts={} policy-retries={} recovered-authentication={} status={:?} outcome={:?} elapsed={:?}",
+                "completion endpoint={} method={} target={:?} page={} attempts={} policy-retries={} recovered-authentication={} status={:?} outcome={:?} elapsed={:?}",
                 event.endpoint,
                 event.method,
-                event.observed_url,
+                event.target,
                 event.page_index,
                 event.attempts_started,
                 event.policy_retries,
@@ -103,7 +103,7 @@ impl DebugDispatcher {
         }
     }
 
-    pub(crate) fn pagination_completion(&self, event: &PaginationCompletionEvent<'_>) {
+    pub(crate) fn pagination_completion(&self, event: &PaginationFinished<'_>) {
         if self.level != DebugLevel::None {
             self.emit(format_args!(
                 "pagination-completion endpoint={} method={} pages={} items={} attempts={} policy-retries={} recovered-authentication={} status={:?} outcome={:?} elapsed={:?}",
@@ -140,61 +140,55 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use http::header::{AUTHORIZATION, HeaderValue};
-    use http::{HeaderMap, Method, StatusCode};
+    use http::{Method, StatusCode};
 
     use super::*;
-    use crate::hooks::{AttemptInfo, BodyKind, CompletionOutcome};
+    use crate::hooks::{AttemptInfo, BodyKind, CompletionOutcome, RequestTarget};
     use crate::operation::OperationId;
-    use crate::redaction::SanitizedHeaders;
-
     const SECRET: &str = "debug-secret-sentinel-7d4cb6";
 
     fn operation_id() -> OperationId {
         OperationId::allocate().expect("test operation ID")
     }
 
-    fn headers() -> HeaderMap {
-        let mut headers = HeaderMap::new();
-        headers.insert(AUTHORIZATION, HeaderValue::from_static(SECRET));
-        headers.insert("x-visible", HeaderValue::from_static("visible"));
-        headers
-    }
-
     #[test]
-    fn levels_are_body_free_and_sensitive_headers_are_redacted() {
+    fn levels_are_body_free_and_request_values_are_absent() {
         let method = Method::GET;
-        let headers = headers();
         let id = operation_id();
-        let before = BeforeSend {
+        let target = RequestTarget::from_url(
+            &url::Url::parse("https://debug.example.test/health?first=one&second=two")
+                .expect("debug target"),
+            2,
+        );
+        let before = AttemptStarted {
             operation_id: id,
             parent_operation_id: None,
             endpoint: "DebugApi::health::bytes",
             method: &method,
-            observed_url: "https://debug.example.test/health",
+            target,
             page_index: 0,
             attempt: AttemptInfo::INITIAL,
-            headers: SanitizedHeaders::new(&headers),
             body_kind: BodyKind::Empty,
             known_body_length: Some(0),
         };
-        let response = ResponseHeadEvent {
+        let response = ResponseHeadObserved {
             operation_id: id,
             parent_operation_id: None,
             endpoint: before.endpoint,
             method: &method,
-            observed_url: before.observed_url,
+            target,
             page_index: 0,
             attempt: AttemptInfo::INITIAL,
             status: StatusCode::OK,
-            headers: SanitizedHeaders::new(&headers),
+            content_length: Some(7),
+            server_delay: None,
         };
-        let completion = CompletionEvent {
+        let completion = OperationFinished {
             operation_id: id,
             parent_operation_id: None,
             endpoint: before.endpoint,
             method: &method,
-            observed_url: before.observed_url,
+            target,
             page_index: 0,
             attempts_started: 1,
             policy_retries: 0,
@@ -225,8 +219,9 @@ mod tests {
                 assert!(joined.contains("recovered-authentication=false"));
             }
             if level == DebugLevel::Headers {
-                assert!(joined.contains("Redacted"));
-                assert!(joined.contains("visible"));
+                assert!(joined.contains("query_occurrence_count: 2"));
+                assert!(joined.contains("public_header_occurrence_count: 2"));
+                assert!(joined.contains("content-length=Some(7)"));
             }
         }
     }

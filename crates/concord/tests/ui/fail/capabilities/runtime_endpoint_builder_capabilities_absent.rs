@@ -6,5 +6,5 @@ fn main() {
     let _ = builder.path("/raw/fragment");
 
     let builder = RuntimeEndpoint::builder(EndpointId::new("runtime.page").unwrap(), Method::GET);
-    let _ = builder.paginate(1_u32);
+    let _ = builder.paginate(concord::PageLimit::Prefix(1));
 }

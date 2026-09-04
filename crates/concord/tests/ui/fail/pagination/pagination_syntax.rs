@@ -7,45 +7,45 @@ use support::Json;
 
 api! {
     client MissingBlock {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read(offset: u64) -> Vec<u8> using crate::support::Json<Vec<u8>> {
+    GET read(offset: u64) -> Vec<u8> via crate::support::Json {
         paginate crate::Controller
     }
 }}
 
 api! {
     client OldAssignment {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read(offset: u64) -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::Controller { state = endpoint.offset }
+    GET read(offset: u64) -> Vec<u8> via crate::support::Json {
+        paginate via crate::Controller { state = endpoint.offset }
     }
 }}
 
 api! {
     client OldCustomFactory {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read() -> Vec<u8> using crate::support::Json<Vec<u8>> {
+    GET read() -> Vec<u8> via crate::support::Json {
         paginate custom crate::factory();
     }
 }}
 
 api! {
     client DuplicateField {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read(offset: u64, other: u64) -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::Controller {
+    GET read(offset: u64, other: u64) -> Vec<u8> via crate::support::Json {
+        paginate via crate::Controller {
             state -> endpoint.offset;
             state -> endpoint.other;
         }
@@ -54,12 +54,12 @@ api! {
 
 api! {
     client DuplicateBindingDestination {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read(offset: u64) -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::Controller {
+    GET read(offset: u64) -> Vec<u8> via crate::support::Json {
+        paginate via crate::Controller {
             state -> endpoint.offset;
             other -> endpoint.offset;
         }
@@ -68,147 +68,147 @@ api! {
 
 api! {
     client InvalidBindingNamespaces {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
         values {
             offset: u64;
         }
 
 
-    GET read(offset: u64) -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::Controller { state -> client.offset; }
+    GET read(offset: u64) -> Vec<u8> via crate::support::Json {
+        paginate via crate::Controller { state -> client.offset; }
     }
 }}
 
 api! {
     client SecretBinding {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read(offset: u64) -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::Controller { state -> secret.offset; }
+    GET read(offset: u64) -> Vec<u8> via crate::support::Json {
+        paginate via crate::Controller { state -> secret.offset; }
     }
 }}
 
 api! {
     client CredentialBinding {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read(offset: u64) -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::Controller { state -> credential.offset; }
+    GET read(offset: u64) -> Vec<u8> via crate::support::Json {
+        paginate via crate::Controller { state -> credential.offset; }
     }
 }}
 
 api! {
     client IndirectBinding {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read(offset: u64) -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::Controller { state -> endpoint.offset.value; }
+    GET read(offset: u64) -> Vec<u8> via crate::support::Json {
+        paginate via crate::Controller { state -> endpoint.offset.value; }
     }
 }}
 
 api! {
     client ShorthandField {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read() -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::Controller { state }
+    GET read() -> Vec<u8> via crate::support::Json {
+        paginate via crate::Controller { state }
     }
 }}
 
 api! {
     client RestConstruction {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read() -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::Controller { .. }
+    GET read() -> Vec<u8> via crate::support::Json {
+        paginate via crate::Controller { .. }
     }
 }}
 
 api! {
     client CallInitializer {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read() -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::Controller { state = crate::make(); }
+    GET read() -> Vec<u8> via crate::support::Json {
+        paginate via crate::Controller { state = crate::make(); }
     }
 }}
 
 api! {
     client MethodInitializer {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read(value: String) -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::Controller { state = endpoint.value.clone(); }
+    GET read(value: String) -> Vec<u8> via crate::support::Json {
+        paginate via crate::Controller { state = endpoint.value.clone(); }
     }
 }}
 
 api! {
     client ClosureInitializer {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read() -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::Controller { state = || 1; }
+    GET read() -> Vec<u8> via crate::support::Json {
+        paginate via crate::Controller { state = || 1; }
     }
 }}
 
 api! {
     client AsyncInitializer {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read() -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::Controller { state = async { 1 }; }
+    GET read() -> Vec<u8> via crate::support::Json {
+        paginate via crate::Controller { state = async { 1 }; }
     }
 }}
 
 api! {
     client BlockInitializer {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read() -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::Controller { state = { 1 }; }
+    GET read() -> Vec<u8> via crate::support::Json {
+        paginate via crate::Controller { state = { 1 }; }
     }
 }}
 
 api! {
     client FormatInitializer {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read() -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::Controller { state = format_args!("value"); }
+    GET read() -> Vec<u8> via crate::support::Json {
+        paginate via crate::Controller { state = format_args!("value"); }
     }
 }}
 
 api! {
     client TraitDefaultInitializer {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read() -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::Controller { state = default; }
+    GET read() -> Vec<u8> via crate::support::Json {
+        paginate via crate::Controller { state = default; }
     }
 }}
 

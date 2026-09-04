@@ -1,4 +1,4 @@
-//! Lexical rate plans plus downstream limiter and observer implementations.
+//! Lexical rate plans plus downstream limiter implementations.
 //!
 //! Required feature: `rate-limit`. Mode: construction and
 //! deterministic local execution. Documentation owner: `docs/rate_limits.md`.
@@ -6,5 +6,4 @@
 
 pub mod custom_limiter;
 pub mod lexical;
-pub mod observer;
 pub mod partitioning;

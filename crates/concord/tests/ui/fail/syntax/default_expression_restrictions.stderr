@@ -29,7 +29,7 @@ error: defaults accept only string, char, boolean, signed numeric literals, or a
    |                              ^
 
 error: a request body parameter cannot have a default
-  --> tests/ui/fail/syntax/default_expression_restrictions.rs:59:47
+  --> tests/ui/fail/syntax/default_expression_restrictions.rs:59:46
    |
-59 |     POST send(body payload: Bytes using Bytes = default) -> Bytes using Bytes;
-   |                                               ^
+59 |     POST send(body payload: Bytes via Binary = default) -> Bytes via Binary;
+   |                                              ^

@@ -1,14 +1,14 @@
 #![recursion_limit = "1024"]
 
-use concord::{NoContent, api};
+use concord::{Empty, api};
 
 api! {
     client HeadComponentBoundary {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
 
 
-    GET fetch() -> () using NoContent {
+    GET fetch() -> () via Empty {
         path [
             "p000", "p001", "p002", "p003", "p004", "p005", "p006", "p007", "p008", "p009", "p010", "p011", "p012", "p013", "p014", "p015",
             "p016", "p017", "p018", "p019", "p020", "p021", "p022", "p023", "p024", "p025", "p026", "p027", "p028", "p029", "p030", "p031",

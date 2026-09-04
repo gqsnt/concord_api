@@ -2,20 +2,18 @@ use std::num::{NonZeroU32, NonZeroUsize};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::hooks::{
-    CompletionObserver, DebugLevel, RequestGate, ResponseGate, default_completion_observer,
-    default_request_gate, default_response_gate,
-};
+use crate::hooks::{DebugLevel, OperationObserver, default_operation_observer};
 use crate::rate_limit::{MAX_RATE_LIMIT_KEY_BYTES, RateLimiter};
 use crate::retry::RetryPolicy;
 use crate::runtime::defaults::{
-    DEFAULT_AUTH_FAILURE_COOLDOWN_SECONDS, DEFAULT_PAGINATION_IDENTITY_BYTES,
-    DEFAULT_PAGINATION_MAX_ITEMS, DEFAULT_PAGINATION_MAX_PAGES,
+    DEFAULT_AUTH_FAILURE_COOLDOWN_SECONDS, DEFAULT_OPERATION_TIMEOUT_SECONDS,
+    DEFAULT_PAGINATION_IDENTITY_BYTES, DEFAULT_PAGINATION_MAX_ITEMS, DEFAULT_PAGINATION_MAX_PAGES,
     DEFAULT_PAGINATION_TOTAL_RESPONSE_BYTES, DEFAULT_PROVIDER_REQUEST_BYTES,
     DEFAULT_PROVIDER_RESPONSE_BYTES, DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS,
     DEFAULT_REQUEST_BODY_BYTES, DEFAULT_RESPONSE_BODY_BYTES, DEFAULT_STATUS_BODY_BYTES,
     DEFAULT_STREAM_RESPONSE_BYTES,
 };
+use crate::runtime::{WallClock, default_wall_clock};
 
 /// Private immutable finite runtime configuration.
 pub(crate) struct RuntimeConfig {
@@ -35,9 +33,8 @@ pub(crate) struct RuntimeConfig {
     pub(crate) rate_limit_key_limit: usize,
     pub(crate) rate_limiter: Arc<dyn RateLimiter>,
     pub(crate) retry_policy: Option<RetryPolicy>,
-    pub(crate) request_gate: Arc<dyn RequestGate>,
-    pub(crate) response_gate: Arc<dyn ResponseGate>,
-    pub(crate) completion_observer: Arc<dyn CompletionObserver>,
+    pub(crate) operation_observer: Arc<dyn OperationObserver>,
+    pub(crate) wall_clock: Arc<dyn WallClock>,
     pub(crate) debug: DebugLevel,
 }
 
@@ -59,7 +56,9 @@ impl RuntimeConfigBuilder {
         let rate_limit_key_limit = rate_limiter.preparation_key_limit();
         Self {
             config: RuntimeConfig {
-                runtime_endpoint_timeout: None,
+                runtime_endpoint_timeout: Some(Duration::from_secs(
+                    DEFAULT_OPERATION_TIMEOUT_SECONDS,
+                )),
                 request_body_limit: nonzero_usize(DEFAULT_REQUEST_BODY_BYTES),
                 response_body_limit: nonzero_usize(DEFAULT_RESPONSE_BODY_BYTES),
                 stream_response_limit: nonzero_usize(DEFAULT_STREAM_RESPONSE_BYTES),
@@ -80,9 +79,8 @@ impl RuntimeConfigBuilder {
                 rate_limit_key_limit,
                 rate_limiter,
                 retry_policy: None,
-                request_gate: default_request_gate(),
-                response_gate: default_response_gate(),
-                completion_observer: default_completion_observer(),
+                operation_observer: default_operation_observer(),
+                wall_clock: default_wall_clock(),
                 debug: DebugLevel::None,
             },
             limiter_selection: LimiterSelection::Fallback,
@@ -92,20 +90,10 @@ impl RuntimeConfigBuilder {
     /// Sets the default Concord operation timeout inherited by runtime endpoints.
     ///
     /// Generated endpoints retain their effective declaration timeout; request-local
-    /// timeout selection can still replace or disable either default.
+    /// timeout selection can replace and reset to that retained effective value.
     #[must_use]
     pub fn runtime_endpoint_timeout(mut self, duration: Duration) -> Self {
         self.config.runtime_endpoint_timeout = Some(duration);
-        self
-    }
-
-    /// Disables the default operation timeout inherited by runtime endpoints.
-    ///
-    /// Generated declaration timeouts and request-local timeout selections are
-    /// unchanged.
-    #[must_use]
-    pub fn disable_runtime_endpoint_timeout(mut self) -> Self {
-        self.config.runtime_endpoint_timeout = None;
         self
     }
 
@@ -182,24 +170,16 @@ impl RuntimeConfigBuilder {
         self
     }
 
-    /// Replaces the immutable pre-dispatch decision gate used by the built client.
+    /// Replaces the synchronous read-only observer used by the built client.
     #[must_use]
-    pub fn request_gate(mut self, gate: Arc<dyn RequestGate>) -> Self {
-        self.config.request_gate = gate;
+    pub fn operation_observer(mut self, observer: Arc<dyn OperationObserver>) -> Self {
+        self.config.operation_observer = observer;
         self
     }
 
-    /// Replaces the immutable response-head decision gate used by the built client.
-    #[must_use]
-    pub fn response_gate(mut self, gate: Arc<dyn ResponseGate>) -> Self {
-        self.config.response_gate = gate;
-        self
-    }
-
-    /// Replaces the synchronous fixed-outcome observer used by the built client.
-    #[must_use]
-    pub fn completion_observer(mut self, observer: Arc<dyn CompletionObserver>) -> Self {
-        self.config.completion_observer = observer;
+    #[cfg(test)]
+    pub(crate) fn wall_clock(mut self, wall_clock: Arc<dyn WallClock>) -> Self {
+        self.config.wall_clock = wall_clock;
         self
     }
 
@@ -300,15 +280,18 @@ mod tests {
     use super::*;
 
     struct FirstObserver;
-    impl CompletionObserver for FirstObserver {}
+    impl OperationObserver for FirstObserver {}
 
     struct SecondObserver;
-    impl CompletionObserver for SecondObserver {}
+    impl OperationObserver for SecondObserver {}
 
     #[test]
     fn defaults_are_exact_positive_finite_values() {
         let config = RuntimeConfigBuilder::new().resolve();
-        assert_eq!(config.runtime_endpoint_timeout, None);
+        assert_eq!(
+            config.runtime_endpoint_timeout,
+            Some(Duration::from_secs(DEFAULT_OPERATION_TIMEOUT_SECONDS))
+        );
         assert_eq!(config.request_body_limit.get(), DEFAULT_REQUEST_BODY_BYTES);
         assert_eq!(
             config.response_body_limit.get(),
@@ -459,7 +442,7 @@ mod tests {
             .pagination_max_items(one)
             .pagination_total_response_body_limit(one)
             .pagination_identity_limit(one)
-            .completion_observer(Arc::new(crate::hooks::NoopCompletionObserver))
+            .operation_observer(Arc::new(crate::hooks::NoopOperationObserver))
             .debug(DebugLevel::Headers)
             .auth_failure_cooldown_cap(Duration::ZERO)
             .rate_limit_cooldown_cap(Duration::ZERO)
@@ -500,7 +483,7 @@ mod tests {
     }
 
     #[test]
-    fn runtime_endpoint_timeout_replacement_and_disablement_are_ordered() {
+    fn runtime_endpoint_timeout_replacement_is_ordered() {
         let configured = RuntimeConfigBuilder::new()
             .runtime_endpoint_timeout(Duration::from_secs(11))
             .runtime_endpoint_timeout(Duration::from_secs(13))
@@ -509,27 +492,21 @@ mod tests {
             configured.runtime_endpoint_timeout,
             Some(Duration::from_secs(13))
         );
-
-        let disabled = RuntimeConfigBuilder::new()
-            .runtime_endpoint_timeout(Duration::from_secs(17))
-            .disable_runtime_endpoint_timeout()
-            .resolve();
-        assert_eq!(disabled.runtime_endpoint_timeout, None);
     }
 
     #[test]
     fn observer_and_debug_setters_replace_immutable_builder_selection() {
-        let first: Arc<dyn CompletionObserver> = Arc::new(FirstObserver);
-        let second: Arc<dyn CompletionObserver> = Arc::new(SecondObserver);
+        let first: Arc<dyn OperationObserver> = Arc::new(FirstObserver);
+        let second: Arc<dyn OperationObserver> = Arc::new(SecondObserver);
         let config = RuntimeConfigBuilder::new()
-            .completion_observer(Arc::clone(&first))
+            .operation_observer(Arc::clone(&first))
             .debug(DebugLevel::Basic)
-            .completion_observer(Arc::clone(&second))
+            .operation_observer(Arc::clone(&second))
             .debug(DebugLevel::Headers)
             .resolve();
 
-        assert!(!Arc::ptr_eq(&config.completion_observer, &first));
-        assert!(Arc::ptr_eq(&config.completion_observer, &second));
+        assert!(!Arc::ptr_eq(&config.operation_observer, &first));
+        assert!(Arc::ptr_eq(&config.operation_observer, &second));
         assert_eq!(config.debug, DebugLevel::Headers);
     }
 

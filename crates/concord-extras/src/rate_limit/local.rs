@@ -7,17 +7,28 @@ use std::time::Duration;
 
 use concord_core::contracts::{BoxFuture, RateLimitErrorKind};
 use concord_core::rate_limit::{
-    Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_BYTES,
-    RateLimitError, RateLimitObserver, RateLimitPermit, RateLimitPlan, RateLimitPolicy,
-    RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimitWindow, RateLimiter,
+    DEFAULT_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_BYTES, RateLimitError, RateLimitPermit,
+    RateLimitPlan, RateLimitPolicy, RateLimitRequest, RateLimitResponse, RateLimitWindow,
+    RateLimiter,
 };
-
-use super::RetryAfterObserver;
+use http::StatusCode;
 
 const DEFAULT_QUOTA_CAPACITY: usize = 4_096;
 const DEFAULT_COOLDOWN_CAPACITY: usize = 4_096;
 const DEFAULT_IDLE_TTL: Duration = Duration::from_secs(15 * 60);
 const NANOS_PER_SECOND: u128 = 1_000_000_000;
+
+enum CooldownScope {
+    CurrentBuckets,
+    LogicalOrigin,
+    #[cfg(test)]
+    Client,
+}
+
+struct Cooldown {
+    duration: Duration,
+    scope: CooldownScope,
+}
 
 /// A bounded process-local, limiter-object-local token-bucket limiter.
 ///
@@ -30,6 +41,10 @@ const NANOS_PER_SECOND: u128 = 1_000_000_000;
 /// custom limiter when distributed or exact remote-policy enforcement is
 /// required.
 ///
+/// Each successful acquisition reserves the complete conjunctive plan
+/// atomically. A plan that must wait or fails validation/capacity consumes no
+/// partial quota reservation, and the state lock is released before waiting.
+///
 /// Internal quota and cooldown state is not exposed:
 ///
 /// ```compile_fail
@@ -40,7 +55,6 @@ const NANOS_PER_SECOND: u128 = 1_000_000_000;
 /// ```
 pub struct LocalRateLimiter {
     config: LocalLimiterConfig,
-    observer: Arc<dyn RateLimitObserver>,
     state: Mutex<LocalLimiterState>,
     internal_failed: AtomicBool,
     #[cfg(test)]
@@ -72,22 +86,11 @@ impl LocalRateLimiter {
                 idle_ttl: DEFAULT_IDLE_TTL,
                 key_limit: DEFAULT_RATE_LIMIT_KEY_BYTES,
             },
-            observer: Arc::new(RetryAfterObserver),
             state: Mutex::new(LocalLimiterState::new()),
             internal_failed: AtomicBool::new(false),
             #[cfg(test)]
             acquisition_calls: AtomicUsize::new(0),
         }
-    }
-
-    /// Replaces the built-in [`RetryAfterObserver`].
-    ///
-    /// The custom observer must delegate to it when built-in `Retry-After`
-    /// behavior should be retained.
-    #[must_use]
-    pub fn observer(mut self, observer: Arc<dyn RateLimitObserver>) -> Self {
-        self.observer = observer;
-        self
     }
 
     /// Sets the positive finite quota-entry capacity.
@@ -104,7 +107,7 @@ impl LocalRateLimiter {
 
     /// Sets the positive finite keyed cooldown-entry capacity.
     ///
-    /// A new host or bucket cooldown that does not fit returns
+    /// A new logical-origin or bucket cooldown that does not fit returns
     /// [`RateLimitErrorKind::StateCapacity`] without evicting an unexpired
     /// cooldown.
     pub fn cooldown_capacity(mut self, entries: usize) -> Result<Self, RateLimitError> {
@@ -169,7 +172,7 @@ impl LocalRateLimiter {
                             state.prune_quota(now, self.config.idle_ttl, &contributions)?;
                             state.evaluate(
                                 now,
-                                request.host,
+                                request.logical_origin,
                                 &rule_keys,
                                 &contributions,
                                 self.config.quota_capacity,
@@ -202,38 +205,32 @@ impl LocalRateLimiter {
         let RateLimitResponse {
             request,
             status,
-            headers,
+            server_delay,
             cooldown_cap,
         } = response;
         let RateLimitRequest {
-            endpoint,
-            method,
-            observed_url,
-            host,
-            page_index,
-            attempt,
+            logical_origin,
             plan,
+            ..
         } = request;
-        let response_head = RateLimitResponseHead {
-            endpoint,
-            method,
-            observed_url,
-            host,
-            page_index,
-            attempt,
-            plan,
-            status,
-            headers,
-        };
-        let Some(cooldown) = self.observer.observe(&response_head) else {
+        if status != StatusCode::TOO_MANY_REQUESTS {
+            return Ok(());
+        }
+        let Some(duration) = server_delay.filter(|delay| !delay.is_zero()) else {
             return Ok(());
         };
-        self.apply_cooldown(host, plan, cooldown, cooldown_cap)
+        let scope = if plan.is_empty() {
+            CooldownScope::LogicalOrigin
+        } else {
+            CooldownScope::CurrentBuckets
+        };
+        let cooldown = Cooldown { duration, scope };
+        self.apply_cooldown(logical_origin, plan, cooldown, cooldown_cap)
     }
 
     fn apply_cooldown(
         &self,
-        host: Option<&str>,
+        logical_origin: Option<&str>,
         plan: &RateLimitPlan,
         cooldown: Cooldown,
         cap: Duration,
@@ -256,19 +253,20 @@ impl LocalRateLimiter {
         };
         state.prune_expired_cooldowns(now);
         let result = match cooldown.scope {
+            #[cfg(test)]
             CooldownScope::Client => {
                 state.extend_client_cooldown(expiration);
                 Ok(())
             }
-            CooldownScope::Host => state.extend_cooldowns(
-                host.map(|host| CooldownKey::Host(host.to_owned())),
+            CooldownScope::LogicalOrigin => state.extend_cooldowns(
+                logical_origin.map(|origin| CooldownKey::LogicalOrigin(origin.to_owned())),
                 expiration,
                 self.config.cooldown_capacity,
             ),
             CooldownScope::CurrentBuckets => {
                 if plan.is_empty() {
                     state.extend_cooldowns(
-                        host.map(|host| CooldownKey::Host(host.to_owned())),
+                        logical_origin.map(|origin| CooldownKey::LogicalOrigin(origin.to_owned())),
                         expiration,
                         self.config.cooldown_capacity,
                     )
@@ -311,11 +309,10 @@ impl RateLimiter for LocalRateLimiter {
         self.acquire_loop(request)
     }
 
-    fn observe<'a>(
-        &'a self,
-        response: RateLimitResponse<'a>,
-    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
-        Box::pin(async move { self.observe_response(response) })
+    fn observe(&self, response: RateLimitResponse<'_>) {
+        // Observation never changes the current endpoint result. Any failure is
+        // retained by `observe_response` and reported by a future acquisition.
+        let _ = self.observe_response(response);
     }
 }
 
@@ -422,7 +419,7 @@ impl BucketKey {
 
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
 enum CooldownKey {
-    Host(String),
+    LogicalOrigin(String),
     Bucket(PolicyKey),
 }
 
@@ -478,12 +475,12 @@ impl LocalLimiterState {
     fn evaluate(
         &mut self,
         now: tokio::time::Instant,
-        host: Option<&str>,
+        logical_origin: Option<&str>,
         rule_keys: &PolicyKeys,
         contributions: &Contributions,
         quota_capacity: usize,
     ) -> Result<Evaluation, RateLimitError> {
-        let cooldown_wait = self.cooldown_wait(now, host, rule_keys);
+        let cooldown_wait = self.cooldown_wait(now, logical_origin, rule_keys);
         if !cooldown_wait.is_zero() {
             return Ok(Evaluation::Wait(cooldown_wait));
         }
@@ -527,14 +524,14 @@ impl LocalLimiterState {
     fn cooldown_wait(
         &self,
         now: tokio::time::Instant,
-        host: Option<&str>,
+        logical_origin: Option<&str>,
         rule_keys: &PolicyKeys,
     ) -> Duration {
         let mut wait = self.client_cooldown.map_or(Duration::ZERO, |expiration| {
             expiration.saturating_duration_since(now)
         });
-        if let Some(host) = host {
-            let key = CooldownKey::Host(host.to_owned());
+        if let Some(logical_origin) = logical_origin {
+            let key = CooldownKey::LogicalOrigin(logical_origin.to_owned());
             wait = wait.max(self.cooldown_duration(now, &key));
         }
         for rule_key in &rule_keys.0 {
@@ -588,6 +585,7 @@ impl LocalLimiterState {
         Ok(())
     }
 
+    #[cfg(test)]
     fn extend_client_cooldown(&mut self, expiration: tokio::time::Instant) {
         self.client_cooldown = Some(
             self.client_cooldown

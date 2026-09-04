@@ -4,10 +4,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use concord_core::contracts::{
-    BoxFuture, Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, NoopRateLimiter,
-    RateLimitError, RateLimitErrorKind, RateLimitId, RateLimitKey, RateLimitObserver,
-    RateLimitPermit, RateLimitPlan, RateLimitPolicy, RateLimitRequest, RateLimitResponse,
-    RateLimitResponseHead, RateLimitWindow, RateLimiter, RuntimeConfigBuilder,
+    BoxFuture, DEFAULT_RATE_LIMIT_KEY_BYTES, NoopRateLimiter, RateLimitError, RateLimitErrorKind,
+    RateLimitId, RateLimitKey, RateLimitPermit, RateLimitPlan, RateLimitPolicy, RateLimitRequest,
+    RateLimitResponse, RateLimitWindow, RateLimiter, RuntimeConfigBuilder,
 };
 
 struct CustomLimiter;
@@ -37,8 +36,7 @@ impl RateLimiter for CustomLimiter {
         let _ = (
             request.endpoint,
             request.method,
-            request.observed_url,
-            request.host,
+            request.logical_origin,
             request.page_index,
             request.attempt.index,
             request.attempt.policy_retry_index,
@@ -49,62 +47,18 @@ impl RateLimiter for CustomLimiter {
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
-    fn observe<'a>(
-        &'a self,
-        response: RateLimitResponse<'a>,
-    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
+    fn observe(&self, response: RateLimitResponse<'_>) {
         let _ = (
             response.request.endpoint,
             response.request.method,
-            response.request.observed_url,
-            response.request.host,
+            response.request.logical_origin,
             response.request.page_index,
             response.request.attempt,
             response.request.plan.policies(),
             response.status,
-            response.headers,
+            response.server_delay,
             response.cooldown_cap,
         );
-        Box::pin(async { Ok(()) })
-    }
-}
-
-struct CustomObserver;
-
-impl RateLimitObserver for CustomObserver {
-    fn observe(&self, response: &RateLimitResponseHead<'_>) -> Option<Cooldown> {
-        for rule in response.plan.policies() {
-            let _ = (
-                rule.id().as_str(),
-                rule.key()
-                    .parts()
-                    .iter()
-                    .map(|part| (part.name(), part.value()))
-                    .collect::<Vec<_>>(),
-                rule.cost(),
-                rule.windows()
-                    .iter()
-                    .map(|window| (window.capacity(), window.duration()))
-                    .collect::<Vec<_>>(),
-            );
-        }
-        let _ = (
-            response.endpoint,
-            response.method,
-            response.observed_url,
-            response.host,
-            response.page_index,
-            response.attempt.index,
-            response.attempt.policy_retry_index,
-            response.attempt.authentication_recovery,
-            response.plan.policies(),
-            response.status,
-            &response.headers,
-        );
-        Some(Cooldown {
-            duration: Duration::from_secs(1),
-            scope: CooldownScope::CurrentBuckets,
-        })
     }
 }
 
@@ -115,19 +69,13 @@ fn configure_limiter(
     builder.rate_limiter(limiter)
 }
 
-fn observe_without_replacement<'a>(
-    limiter: &'a dyn RateLimiter,
-    response: RateLimitResponse<'a>,
-) -> BoxFuture<'a, Result<(), RateLimitError>> {
+fn observe_without_replacement(limiter: &dyn RateLimiter, response: RateLimitResponse<'_>) {
     limiter.observe(response)
 }
 
 #[test]
 fn custom_observation_contract_returns_safe_completion() {
-    let _: for<'a> fn(
-        &'a dyn RateLimiter,
-        RateLimitResponse<'a>,
-    ) -> BoxFuture<'a, Result<(), RateLimitError>> = observe_without_replacement;
+    let _: for<'a> fn(&'a dyn RateLimiter, RateLimitResponse<'a>) = observe_without_replacement;
 }
 
 #[test]
@@ -138,7 +86,6 @@ fn extensions_construct_opaque_permits_and_typed_key_safe_errors() {
         RateLimitErrorKind::InvalidKey,
         RateLimitErrorKind::StateCapacity,
         RateLimitErrorKind::Acquire,
-        RateLimitErrorKind::Observe,
         RateLimitErrorKind::Internal,
     ] {
         let error = RateLimitError::new(kind);
@@ -160,7 +107,6 @@ fn custom_extensions_compile_with_body_free_plan_inspection() {
         limiter.preparation_key_limit(),
         DEFAULT_RATE_LIMIT_KEY_BYTES
     );
-    let _: Arc<dyn RateLimitObserver> = Arc::new(CustomObserver);
 }
 
 #[test]
@@ -213,5 +159,4 @@ fn exact_rate_limit_contract_constructors_accessors_and_traits_compile() {
         configure_limiter;
     let _: Arc<dyn RateLimiter> = Arc::new(CustomLimiter);
     let _: Arc<dyn RateLimiter> = Arc::new(NoopRateLimiter::new());
-    let _: Arc<dyn RateLimitObserver> = Arc::new(CustomObserver);
 }

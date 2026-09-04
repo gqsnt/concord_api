@@ -1,9 +1,9 @@
 use std::num::NonZeroU32;
 
-use http::{HeaderMap, Method, StatusCode};
+use http::{Method, StatusCode};
 
 use super::*;
-use concord_core::contracts::{AttemptInfo, SanitizedHeaders};
+use concord_core::contracts::AttemptInfo;
 use concord_core::rate_limit::{
     MAX_RATE_LIMIT_POLICIES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_POLICY, RateLimitId, RateLimitKey,
     RateLimitPolicy, RateLimitWindow,
@@ -45,21 +45,22 @@ fn rate_error<T>(result: Result<T, RateLimitError>, message: &str) -> RateLimitE
     }
 }
 
-async fn acquire(limiter: &LocalRateLimiter, plan: &RateLimitPlan, host: Option<&str>) {
-    try_acquire(limiter, plan, host).await.expect("acquire");
+async fn acquire(limiter: &LocalRateLimiter, plan: &RateLimitPlan, logical_origin: Option<&str>) {
+    try_acquire(limiter, plan, logical_origin)
+        .await
+        .expect("acquire");
 }
 
 async fn try_acquire(
     limiter: &LocalRateLimiter,
     plan: &RateLimitPlan,
-    host: Option<&str>,
+    logical_origin: Option<&str>,
 ) -> Result<RateLimitPermit, RateLimitError> {
     limiter
         .acquire(RateLimitRequest {
             endpoint: "RateApi::get",
             method: &Method::GET,
-            observed_url: "https://example.test/get",
-            host,
+            logical_origin,
             page_index: 0,
             attempt: initial_attempt(),
             plan,
@@ -70,15 +71,14 @@ async fn try_acquire(
 fn spawn_acquire(
     limiter: Arc<LocalRateLimiter>,
     plan: Arc<RateLimitPlan>,
-    host: Option<&'static str>,
+    logical_origin: Option<&'static str>,
 ) -> tokio::task::JoinHandle<Result<RateLimitPermit, RateLimitError>> {
     tokio::spawn(async move {
         limiter
             .acquire(RateLimitRequest {
                 endpoint: "RateApi::get",
                 method: &Method::GET,
-                observed_url: "https://example.test/get",
-                host,
+                logical_origin,
                 page_index: 0,
                 attempt: initial_attempt(),
                 plan: &plan,
@@ -87,94 +87,51 @@ fn spawn_acquire(
     })
 }
 
-#[derive(Clone, Copy)]
-enum FixedScope {
-    Buckets,
-    Host,
-    Client,
-}
-
-struct FixedObserver {
-    duration: Duration,
-    scope: FixedScope,
-}
-
-struct NoCooldownObserver;
-
-impl RateLimitObserver for NoCooldownObserver {
-    fn observe(&self, _response: &RateLimitResponseHead<'_>) -> Option<Cooldown> {
-        None
-    }
-}
-
-impl RateLimitObserver for FixedObserver {
-    fn observe(&self, _response: &RateLimitResponseHead<'_>) -> Option<Cooldown> {
-        let scope = match self.scope {
-            FixedScope::Buckets => CooldownScope::CurrentBuckets,
-            FixedScope::Host => CooldownScope::Host,
-            FixedScope::Client => CooldownScope::Client,
-        };
-        Some(Cooldown {
-            duration: self.duration,
-            scope,
-        })
-    }
-}
-
 async fn observe(
     limiter: &Arc<LocalRateLimiter>,
     plan: &RateLimitPlan,
-    host: Option<&str>,
+    logical_origin: Option<&str>,
     status: StatusCode,
     cap: Duration,
 ) {
     let limiter_object: Arc<dyn RateLimiter> = limiter.clone();
-    let headers = HeaderMap::new();
-    limiter_object
-        .observe(RateLimitResponse {
-            request: RateLimitRequest {
-                endpoint: "RateApi::get",
-                method: &Method::GET,
-                observed_url: "https://example.test/get",
-                host,
-                page_index: 0,
-                attempt: initial_attempt(),
-                plan,
-            },
-            status,
-            headers: SanitizedHeaders::new(&headers),
-            cooldown_cap: cap,
-        })
-        .await
-        .expect("local limiter observes response");
+    limiter_object.observe(RateLimitResponse {
+        request: RateLimitRequest {
+            endpoint: "RateApi::get",
+            method: &Method::GET,
+            logical_origin,
+            page_index: 0,
+            attempt: initial_attempt(),
+            plan,
+        },
+        status,
+        server_delay: Some(Duration::from_secs(10)),
+        cooldown_cap: cap,
+    });
 }
 
-async fn observe_headers(
+async fn observe_feedback(
     limiter: &Arc<LocalRateLimiter>,
     plan: &RateLimitPlan,
-    host: Option<&str>,
+    logical_origin: Option<&str>,
     status: StatusCode,
-    headers: &HeaderMap,
+    server_delay: Option<Duration>,
     cap: Duration,
 ) {
     let limiter_object: Arc<dyn RateLimiter> = limiter.clone();
-    limiter_object
-        .observe(RateLimitResponse {
-            request: RateLimitRequest {
-                endpoint: "RateApi::get",
-                method: &Method::GET,
-                observed_url: "https://example.test/get",
-                host,
-                page_index: 0,
-                attempt: initial_attempt(),
-                plan,
-            },
-            status,
-            headers: SanitizedHeaders::new(headers),
-            cooldown_cap: cap,
-        })
-        .await
-        .expect("local limiter observes response headers");
+    limiter_object.observe(RateLimitResponse {
+        request: RateLimitRequest {
+            endpoint: "RateApi::get",
+            method: &Method::GET,
+            logical_origin,
+            page_index: 0,
+            attempt: initial_attempt(),
+            plan,
+        },
+        status,
+        server_delay,
+        cooldown_cap: cap,
+    });
 }
 
 #[test]
@@ -418,7 +375,7 @@ async fn multiple_rules_and_windows_wait_for_the_complete_maximum() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn unavailable_rule_causes_no_partial_reservation_or_lock_across_wait() {
+async fn whole_plan_wait_causes_no_partial_reservation_or_lock_across_wait() {
     let limiter = Arc::new(LocalRateLimiter::new());
     let unavailable = Arc::new(plan(vec![policy(
         "slow",
@@ -532,8 +489,7 @@ async fn duplicate_equivalent_contributions_cannot_undercount() {
     let request = limiter.acquire(RateLimitRequest {
         endpoint: "RateApi::get",
         method: &Method::GET,
-        observed_url: "https://example.test/get",
-        host: Some("example.test"),
+        logical_origin: Some("https://example.test"),
         page_index: 0,
         attempt: initial_attempt(),
         plan: &plan,
@@ -565,8 +521,7 @@ async fn equivalent_contributions_above_capacity_fail_before_state_insertion() {
             .acquire(RateLimitRequest {
                 endpoint: "RateApi::get",
                 method: &Method::GET,
-                observed_url: "https://example.test/get",
-                host: Some("example.test"),
+                logical_origin: Some("https://example.test"),
                 page_index: 0,
                 attempt: initial_attempt(),
                 plan: &plan,
@@ -851,10 +806,7 @@ async fn quota_insert_is_transactional() {
 
 #[tokio::test(start_paused = true)]
 async fn current_bucket_cooldown_uses_resolved_by_key() {
-    let limiter = Arc::new(LocalRateLimiter::new().observer(Arc::new(FixedObserver {
-        duration: Duration::from_secs(10),
-        scope: FixedScope::Buckets,
-    })));
+    let limiter = Arc::new(LocalRateLimiter::new());
     let first = Arc::new(plan(vec![policy(
         "first",
         "one",
@@ -923,18 +875,18 @@ async fn host_cooldown_remains_host_scoped() {
         1,
         &[(100, Duration::from_secs(1))],
     )]));
-    let host_limiter = Arc::new(LocalRateLimiter::new().observer(Arc::new(FixedObserver {
-        duration: Duration::from_secs(10),
-        scope: FixedScope::Host,
-    })));
-    observe(
-        &host_limiter,
-        &plan,
-        Some("blocked.test"),
-        StatusCode::OK,
-        Duration::from_secs(60),
-    )
-    .await;
+    let host_limiter = Arc::new(LocalRateLimiter::new());
+    host_limiter
+        .apply_cooldown(
+            Some("blocked.test"),
+            &plan,
+            Cooldown {
+                duration: Duration::from_secs(10),
+                scope: CooldownScope::LogicalOrigin,
+            },
+            Duration::from_secs(60),
+        )
+        .expect("host cooldown");
     let blocked = spawn_acquire(
         Arc::clone(&host_limiter),
         Arc::clone(&plan),
@@ -961,18 +913,18 @@ async fn client_cooldown_remains_limiter_scoped() {
         1,
         &[(100, Duration::from_secs(1))],
     )]));
-    let client_limiter = Arc::new(LocalRateLimiter::new().observer(Arc::new(FixedObserver {
-        duration: Duration::from_secs(10),
-        scope: FixedScope::Client,
-    })));
-    observe(
-        &client_limiter,
-        &plan,
-        Some("first.test"),
-        StatusCode::OK,
-        Duration::from_secs(60),
-    )
-    .await;
+    let client_limiter = Arc::new(LocalRateLimiter::new());
+    client_limiter
+        .apply_cooldown(
+            Some("first.test"),
+            &plan,
+            Cooldown {
+                duration: Duration::from_secs(10),
+                scope: CooldownScope::Client,
+            },
+            Duration::from_secs(60),
+        )
+        .expect("client cooldown");
     let client_blocked = spawn_acquire(
         Arc::clone(&client_limiter),
         Arc::clone(&plan),
@@ -987,18 +939,17 @@ async fn client_cooldown_remains_limiter_scoped() {
 #[tokio::test(start_paused = true)]
 async fn cooldown_is_clamped_extended_never_shortened_and_zero_is_noop() {
     let plan = Arc::new(RateLimitPlan::empty());
-    let long = Arc::new(LocalRateLimiter::new().observer(Arc::new(FixedObserver {
-        duration: Duration::from_secs(20),
-        scope: FixedScope::Client,
-    })));
-    observe(
-        &long,
-        &plan,
+    let long = Arc::new(LocalRateLimiter::new());
+    long.apply_cooldown(
         Some("example.test"),
-        StatusCode::OK,
+        &plan,
+        Cooldown {
+            duration: Duration::from_secs(20),
+            scope: CooldownScope::Client,
+        },
         Duration::from_secs(10),
     )
-    .await;
+    .expect("initial client cooldown");
     tokio::time::advance(Duration::from_secs(2)).await;
     long.apply_cooldown(
         Some("example.test"),
@@ -1075,18 +1026,14 @@ async fn active_cooldown_is_not_evicted() {
     let limiter = Arc::new(
         LocalRateLimiter::new()
             .cooldown_capacity(1)
-            .expect("cooldown capacity")
-            .observer(Arc::new(FixedObserver {
-                duration: Duration::from_secs(10),
-                scope: FixedScope::Host,
-            })),
+            .expect("cooldown capacity"),
     );
     let plan = Arc::new(RateLimitPlan::empty());
     observe(
         &limiter,
         &plan,
         Some("first.test"),
-        StatusCode::OK,
+        StatusCode::TOO_MANY_REQUESTS,
         Duration::from_secs(60),
     )
     .await;
@@ -1096,7 +1043,7 @@ async fn active_cooldown_is_not_evicted() {
             &plan,
             Cooldown {
                 duration: Duration::from_secs(10),
-                scope: CooldownScope::Host,
+                scope: CooldownScope::LogicalOrigin,
             },
             Duration::from_secs(60),
         )
@@ -1121,19 +1068,15 @@ async fn expired_cooldown_is_pruned() {
     let limiter = Arc::new(
         LocalRateLimiter::new()
             .cooldown_capacity(1)
-            .expect("cooldown capacity")
-            .observer(Arc::new(FixedObserver {
-                duration: Duration::from_secs(5),
-                scope: FixedScope::Host,
-            })),
+            .expect("cooldown capacity"),
     );
     let plan = Arc::new(RateLimitPlan::empty());
     observe(
         &limiter,
         &plan,
         Some("first.test"),
-        StatusCode::OK,
-        Duration::from_secs(60),
+        StatusCode::TOO_MANY_REQUESTS,
+        Duration::from_secs(5),
     )
     .await;
     tokio::time::advance(Duration::from_secs(5)).await;
@@ -1141,8 +1084,8 @@ async fn expired_cooldown_is_pruned() {
         &limiter,
         &plan,
         Some("second.test"),
-        StatusCode::OK,
-        Duration::from_secs(60),
+        StatusCode::TOO_MANY_REQUESTS,
+        Duration::from_secs(5),
     )
     .await;
 
@@ -1168,7 +1111,7 @@ async fn cooldown_capacity_failure_is_recoverable() {
     let plan = RateLimitPlan::empty();
     let cooldown = || Cooldown {
         duration: Duration::from_secs(5),
-        scope: CooldownScope::Host,
+        scope: CooldownScope::LogicalOrigin,
     };
 
     limiter
@@ -1215,7 +1158,7 @@ async fn existing_cooldown_remains_after_capacity_failure() {
             &plan,
             Cooldown {
                 duration: Duration::from_secs(10),
-                scope: CooldownScope::Host,
+                scope: CooldownScope::LogicalOrigin,
             },
             Duration::from_secs(60),
         )
@@ -1236,7 +1179,7 @@ async fn existing_cooldown_remains_after_capacity_failure() {
             &plan,
             Cooldown {
                 duration: Duration::from_secs(20),
-                scope: CooldownScope::Host,
+                scope: CooldownScope::LogicalOrigin,
             },
             Duration::from_secs(60),
         )
@@ -1267,17 +1210,12 @@ async fn existing_cooldown_remains_after_capacity_failure() {
 async fn default_retry_after_cooldown_is_future_only_host_fallback_and_runtime_capped() {
     let limiter = Arc::new(LocalRateLimiter::new());
     let plan = Arc::new(RateLimitPlan::empty());
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        http::header::RETRY_AFTER,
-        http::HeaderValue::from_static(" 20 "),
-    );
-    observe_headers(
+    observe_feedback(
         &limiter,
         &plan,
         Some("limited.test"),
         StatusCode::TOO_MANY_REQUESTS,
-        &headers,
+        Some(Duration::from_secs(20)),
         Duration::from_secs(5),
     )
     .await;
@@ -1301,31 +1239,23 @@ async fn default_retry_after_cooldown_is_future_only_host_fallback_and_runtime_c
         .expect("blocked task")
         .expect("runtime-capped cooldown");
 
-    headers.insert(
-        http::header::RETRY_AFTER,
-        http::HeaderValue::from_static("malformed"),
-    );
-    observe_headers(
+    observe_feedback(
         &limiter,
         &plan,
         Some("malformed.test"),
         StatusCode::TOO_MANY_REQUESTS,
-        &headers,
+        None,
         Duration::from_secs(5),
     )
     .await;
     acquire(&limiter, &plan, Some("malformed.test")).await;
 
-    headers.insert(
-        http::header::RETRY_AFTER,
-        http::HeaderValue::from_static("18446744073709551615"),
-    );
-    observe_headers(
+    observe_feedback(
         &limiter,
         &plan,
         Some("excessive.test"),
         StatusCode::TOO_MANY_REQUESTS,
-        &headers,
+        Some(Duration::MAX),
         Duration::from_secs(5),
     )
     .await;
@@ -1341,28 +1271,6 @@ async fn default_retry_after_cooldown_is_future_only_host_fallback_and_runtime_c
         .await
         .expect("excessive task")
         .expect("excessive delta is safely runtime-capped");
-}
-
-#[tokio::test(start_paused = true)]
-async fn configured_observer_replaces_rather_than_composes_with_default() {
-    let limiter = Arc::new(LocalRateLimiter::new().observer(Arc::new(NoCooldownObserver)));
-    let plan = RateLimitPlan::empty();
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        http::header::RETRY_AFTER,
-        http::HeaderValue::from_static("60"),
-    );
-    observe_headers(
-        &limiter,
-        &plan,
-        Some("example.test"),
-        StatusCode::TOO_MANY_REQUESTS,
-        &headers,
-        Duration::from_secs(60),
-    )
-    .await;
-    acquire(&limiter, &plan, Some("example.test")).await;
-    assert!(limiter.state.lock().expect("state").cooldowns.is_empty());
 }
 
 #[tokio::test]
@@ -1388,8 +1296,7 @@ async fn zero_key_limit_accepts_global_and_rejects_nonempty_without_text() {
             .acquire(RateLimitRequest {
                 endpoint: "RateApi::get",
                 method: &Method::GET,
-                observed_url: "https://example.test/get",
-                host: Some("example.test"),
+                logical_origin: Some("https://example.test"),
                 page_index: 0,
                 attempt: initial_attempt(),
                 plan: &keyed,
@@ -1430,8 +1337,7 @@ async fn local_limiter_rejects_first_excess_without_sensitive_output() {
             .acquire(RateLimitRequest {
                 endpoint: "RateApi::get",
                 method: &Method::GET,
-                observed_url: "https://example.test/get",
-                host: Some("example.test"),
+                logical_origin: Some("https://example.test"),
                 page_index: 0,
                 attempt: initial_attempt(),
                 plan: &keyed,
@@ -1454,10 +1360,7 @@ async fn local_limiter_rejects_first_excess_without_sensitive_output() {
 
 #[test]
 fn poisoned_state_fails_future_acquisition_closed() {
-    let limiter = Arc::new(LocalRateLimiter::new().observer(Arc::new(FixedObserver {
-        duration: Duration::from_secs(1),
-        scope: FixedScope::Client,
-    })));
+    let limiter = Arc::new(LocalRateLimiter::new());
     let poison = Arc::clone(&limiter);
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
         let _guard = poison.state.lock().expect("initial lock");
@@ -1465,32 +1368,25 @@ fn poisoned_state_fails_future_acquisition_closed() {
     }));
     let runtime = tokio::runtime::Runtime::new().expect("runtime");
     let empty = RateLimitPlan::empty();
-    let headers = HeaderMap::new();
-    let observation_error = rate_error(
-        runtime.block_on(limiter.observe(RateLimitResponse {
-            request: RateLimitRequest {
-                endpoint: "RateApi::get",
-                method: &Method::GET,
-                observed_url: "https://example.test/get",
-                host: Some("example.test"),
-                page_index: 0,
-                attempt: initial_attempt(),
-                plan: &empty,
-            },
-            status: StatusCode::OK,
-            headers: SanitizedHeaders::new(&headers),
-            cooldown_cap: Duration::from_secs(60),
-        })),
-        "poisoned state observation unexpectedly succeeded",
-    );
-    assert_eq!(observation_error.kind(), RateLimitErrorKind::Internal);
+    limiter.observe(RateLimitResponse {
+        request: RateLimitRequest {
+            endpoint: "RateApi::get",
+            method: &Method::GET,
+            logical_origin: None,
+            page_index: 0,
+            attempt: initial_attempt(),
+            plan: &empty,
+        },
+        status: StatusCode::TOO_MANY_REQUESTS,
+        server_delay: Some(Duration::from_secs(1)),
+        cooldown_cap: Duration::from_secs(60),
+    });
     assert!(limiter.internal_failed.load(AtomicOrdering::Acquire));
     let error = rate_error(
         runtime.block_on(limiter.acquire(RateLimitRequest {
             endpoint: "RateApi::get",
             method: &Method::GET,
-            observed_url: "https://example.test/get",
-            host: Some("example.test"),
+            logical_origin: None,
             page_index: 0,
             attempt: initial_attempt(),
             plan: &empty,

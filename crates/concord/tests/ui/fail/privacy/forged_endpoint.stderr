@@ -9,34 +9,44 @@ help: the trait `Sealed` is not implemented for `ForgedEndpoint`
    |
 15 | struct ForgedEndpoint;
    | ^^^^^^^^^^^^^^^^^^^^^
-help: the following other types implement trait `Sealed`
+help: the trait `Sealed` is implemented for `Ping`
   --> tests/ui/fail/privacy/forged_endpoint.rs:3:1
    |
  3 | / api! {
  4 | |     client SealedApi {
- 5 | |         timeout off;
+ 5 | |         timeout 30s;
  6 | |         base "https://sealed.example.test";
 ...  |
 13 | | }}
-   | |  ^
-   | |  |
-   | |__`Ping`
-   |    `RuntimeEndpoint<R>`
+   | |__^
 note: required by a bound in `sealed_api::Endpoint`
   --> tests/ui/fail/privacy/forged_endpoint.rs:3:1
    |
  3 | / api! {
  4 | |     client SealedApi {
- 5 | |         timeout off;
+ 5 | |         timeout 30s;
  6 | |         base "https://sealed.example.test";
 ...  |
 13 | | }}
    | |__^ required by this bound in `Endpoint`
    = note: `Endpoint` is a "sealed trait", because to implement it you also need to implement `sealed_api::__concord_endpoint_seal::Sealed`, which is not accessible; this is usually done to force you to use one of the provided types that already implement it
-   = help: the following types implement the trait:
-             concord::endpoint::RuntimeEndpoint<R>
+   = help: the following type implements the trait:
              sealed_api::health::Ping
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0046]: not all trait items implemented, missing: `Output`
+  --> tests/ui/fail/privacy/forged_endpoint.rs:17:1
+   |
+ 3 | / api! {
+ 4 | |     client SealedApi {
+ 5 | |         timeout 30s;
+ 6 | |         base "https://sealed.example.test";
+...  |
+13 | | }}
+   | |__- `Output` from trait
+...
+17 |   impl sealed_api::Endpoint for ForgedEndpoint {
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `Output` in implementation
 
 error[E0277]: the trait bound `ForgedEndpoint: Sealed` is not satisfied
   --> tests/ui/fail/privacy/forged_endpoint.rs:17:31
@@ -49,31 +59,27 @@ help: the trait `Sealed` is not implemented for `ForgedEndpoint`
    |
 15 | struct ForgedEndpoint;
    | ^^^^^^^^^^^^^^^^^^^^^
-help: the following other types implement trait `Sealed`
+help: the trait `Sealed` is implemented for `Ping`
   --> tests/ui/fail/privacy/forged_endpoint.rs:3:1
    |
  3 | / api! {
  4 | |     client SealedApi {
- 5 | |         timeout off;
+ 5 | |         timeout 30s;
  6 | |         base "https://sealed.example.test";
 ...  |
 13 | | }}
-   | |  ^
-   | |  |
-   | |__`Ping`
-   |    `RuntimeEndpoint<R>`
+   | |__^
 note: required by a bound in `sealed_api::Endpoint`
   --> tests/ui/fail/privacy/forged_endpoint.rs:3:1
    |
  3 | / api! {
  4 | |     client SealedApi {
- 5 | |         timeout off;
+ 5 | |         timeout 30s;
  6 | |         base "https://sealed.example.test";
 ...  |
 13 | | }}
    | |__^ required by this bound in `Endpoint`
    = note: `Endpoint` is a "sealed trait", because to implement it you also need to implement `sealed_api::__concord_endpoint_seal::Sealed`, which is not accessible; this is usually done to force you to use one of the provided types that already implement it
-   = help: the following types implement the trait:
-             concord::endpoint::RuntimeEndpoint<R>
+   = help: the following type implements the trait:
              sealed_api::health::Ping
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

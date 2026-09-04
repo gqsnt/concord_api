@@ -12,3 +12,7 @@
 *.ps1 text eol=lf
 Cargo.lock text eol=lf
 justfile text eol=lf
+
+# Retired external process kits remain in Git history but not source handoffs.
+dev_doc/history/CONCORD_V2_1_RELEASE_READINESS_REMEDIATION_PLAN.md export-ignore
+dev_doc/history/concord_v2_1_second_release_readiness_audit.md export-ignore

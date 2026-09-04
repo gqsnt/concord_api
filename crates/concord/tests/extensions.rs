@@ -9,5 +9,3 @@ pub(crate) use extensions::contracts::{
     ExtensionDiscardSpec, ExtensionPageCodec, ExtensionProvider, ExtensionRequestSpec,
     ExtensionStreamingSpec,
 };
-#[cfg(feature = "records")]
-pub(crate) use extensions::contracts::{ExtensionRecordDecoder, NoProgressRecordDecoder};

@@ -12,11 +12,11 @@ use concord::http::SafeProxy;
 // ANCHOR: production_recipe
 api! {
     client ProductionApi {
-        timeout off;
+        timeout 30s;
         base "https://api.example.test/";
 
 
-    GET health() -> () using NoContent {
+    GET health() -> () via Empty {
         timeout 10s;
     }
 }}

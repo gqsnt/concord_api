@@ -1,23 +1,23 @@
-error: unsupported rate-limit dimension `method`; use `host`, `endpoint`, or an owner-qualified value
- --> tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.rs:7:27
+error: unsupported rate-limit dimension `method`; use `origin`, `endpoint`, or an owner-qualified value
+ --> tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.rs:7:91
   |
-7 |         rate_limit { key [method]; allow 1 per 1s; }
-  |                           ^^^^^^
+7 |         rate_limit { id "concord.rate_limit_unsupported_bare_dimensions.1"; cost 1;  key [method]; allow 1 per 1s; }
+  |                                                                                           ^^^^^^
 
-error: unsupported rate-limit dimension `path`; use `host`, `endpoint`, or an owner-qualified value
-  --> tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.rs:15:27
+error: unsupported rate-limit dimension `path`; use `origin`, `endpoint`, or an owner-qualified value
+  --> tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.rs:15:91
    |
-15 |         rate_limit { key [path]; allow 1 per 1s; }
-   |                           ^^^^
+15 |         rate_limit { id "concord.rate_limit_unsupported_bare_dimensions.2"; cost 1;  key [path]; allow 1 per 1s; }
+   |                                                                                           ^^^^
 
-error: unsupported rate-limit dimension `query`; use `host`, `endpoint`, or an owner-qualified value
-  --> tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.rs:23:27
+error: unsupported rate-limit dimension `query`; use `origin`, `endpoint`, or an owner-qualified value
+  --> tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.rs:23:91
    |
-23 |         rate_limit { key [query]; allow 1 per 1s; }
-   |                           ^^^^^
+23 |         rate_limit { id "concord.rate_limit_unsupported_bare_dimensions.3"; cost 1;  key [query]; allow 1 per 1s; }
+   |                                                                                           ^^^^^
 
-error: unsupported rate-limit dimension `observed_url`; use `host`, `endpoint`, or an owner-qualified value
-  --> tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.rs:31:27
+error: unsupported rate-limit dimension `observed_url`; use `origin`, `endpoint`, or an owner-qualified value
+  --> tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.rs:31:91
    |
-31 |         rate_limit { key [observed_url]; allow 1 per 1s; }
-   |                           ^^^^^^^^^^^^
+31 |         rate_limit { id "concord.rate_limit_unsupported_bare_dimensions.4"; cost 1;  key [observed_url]; allow 1 per 1s; }
+   |                                                                                           ^^^^^^^^^^^^

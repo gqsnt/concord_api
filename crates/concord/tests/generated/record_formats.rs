@@ -9,15 +9,15 @@ use concord::http::{Method, SafeProxy};
 use concord::records::Csv;
 #[cfg(feature = "ndjson")]
 use concord::records::NdJson;
-use concord::records::{RecordDecoder, RecordError, RecordErrorKind, RecordStream, Records};
-use concord::response::{Buffered, PageResponseSpec, ResponseSpec};
+use concord::records::{ItemStream, RecordError, RecordErrorKind};
+use concord::response::{Buffered, PageResponseRepresentation, ResponseRepresentation};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 use futures_core::Stream;
 use serde::Deserialize;
 
-async fn collect<D>(mut stream: RecordStream<D>) -> Result<Vec<D::Record>, RecordError>
+async fn collect<T>(mut stream: ItemStream<T>) -> Result<Vec<T>, RecordError>
 where
-    D: RecordDecoder,
+    T: Send + 'static,
 {
     let mut records = Vec::new();
     while let Some(record) =
@@ -28,9 +28,9 @@ where
     Ok(records)
 }
 
-async fn stream_error<D>(mut stream: RecordStream<D>) -> RecordError
+async fn stream_error<T>(mut stream: ItemStream<T>) -> RecordError
 where
-    D: RecordDecoder,
+    T: Send + 'static,
 {
     while let Some(record) =
         std::future::poll_fn(|context| Pin::new(&mut stream).poll_next(context)).await
@@ -64,20 +64,20 @@ pub struct Row {
 #[cfg(feature = "csv")]
 api! {
     client CsvResponseApi {
-        timeout off;
+        timeout 30s;
         base "http://csv-response.example.test/v1/";
 
 
-    GET csv_rows() -> Vec<Row> using Csv<Row> { expose accepted_bytes; }
-    GET csv_stream() -> ::concord::records::RecordStream<Csv<Row>> using Records<Csv<Row>>;
+    GET csv_rows() -> Vec<Row> via Csv { expose accepted_bytes; }
+    GET csv_stream() -> ItemStream<Row> via Csv;
 
-    GET csv_pages(offset: u64, limit: std::num::NonZeroU32) -> Vec<Row> using Csv<Row> {
+    GET csv_pages(offset: u64, limit: std::num::NonZeroU32) -> Vec<Row> via Csv {
         path ["pages"];
         query {
             "offset" = endpoint.offset;
             "limit" = endpoint.limit;
         }
-        paginate with crate::support::OffsetController {
+        paginate via crate::support::OffsetController {
             offset -> endpoint.offset;
             page_size -> endpoint.limit;
         }
@@ -95,16 +95,17 @@ fn csv_client(server: &ScriptedServer) -> CsvResponseApi {
 
 #[cfg(feature = "csv")]
 #[test]
-fn csv_is_both_a_complete_page_spec_and_a_record_decoder() {
+fn csv_supports_complete_pages_and_lazy_semantic_items() {
     fn assert_complete<S>()
     where
-        S: ResponseSpec<Output = Vec<Row>, Mode = Buffered> + PageResponseSpec,
+        S: ResponseRepresentation<Vec<Row>, Driver = Buffered>
+            + PageResponseRepresentation<Vec<Row>>,
     {
     }
-    fn assert_decoder<D: RecordDecoder<Record = Row>>() {}
+    fn assert_stream<S: ResponseRepresentation<ItemStream<Row>>>() {}
 
-    assert_complete::<Csv<Row>>();
-    assert_decoder::<Csv<Row>>();
+    assert_complete::<Csv>();
+    assert_stream::<Csv>();
 }
 
 #[cfg(feature = "csv")]
@@ -183,11 +184,15 @@ async fn direct_streamed_runtime_raw_and_paginated_csv_have_one_engine_semantics
         EndpointId::try_from("runtime.csv_rows").expect("runtime CSV endpoint ID"),
         Method::GET,
     )
-    .response::<Csv<Row>>()
+    .response::<Csv, Vec<Row>>()
     .build()
     .expect("runtime CSV response");
     assert_eq!(
-        client.request(runtime).await.expect("runtime CSV"),
+        runtime
+            .try_bind(&client)
+            .expect("runtime CSV binding")
+            .await
+            .expect("runtime CSV"),
         [Row {
             name: "runtime".to_owned(),
             count: 9
@@ -203,7 +208,7 @@ async fn direct_streamed_runtime_raw_and_paginated_csv_have_one_engine_semantics
 
     let pages = client
         .csv_pages(0, NonZeroU32::new(2).expect("positive CSV page size"))
-        .paginate(4_u32)
+        .paginate(concord::PageLimit::Prefix(4))
         .await
         .expect("paginated CSV");
     assert_eq!(
@@ -327,20 +332,20 @@ pub struct Event {
 #[cfg(feature = "ndjson")]
 api! {
     client NdJsonResponseApi {
-        timeout off;
+        timeout 30s;
         base "http://ndjson-response.example.test/v1/";
 
 
-    GET ndjson_events() -> Vec<Event> using NdJson<Event> { expose accepted_bytes; }
-    GET ndjson_stream() -> ::concord::records::RecordStream<NdJson<Event>> using Records<NdJson<Event>>;
+    GET ndjson_events() -> Vec<Event> via NdJson { expose accepted_bytes; }
+    GET ndjson_stream() -> ItemStream<Event> via NdJson;
 
-    GET ndjson_pages(offset: u64, limit: std::num::NonZeroU32) -> Vec<Event> using NdJson<Event> {
+    GET ndjson_pages(offset: u64, limit: std::num::NonZeroU32) -> Vec<Event> via NdJson {
         path ["pages"];
         query {
             "offset" = endpoint.offset;
             "limit" = endpoint.limit;
         }
-        paginate with crate::support::OffsetController {
+        paginate via crate::support::OffsetController {
             offset -> endpoint.offset;
             page_size -> endpoint.limit;
         }
@@ -358,16 +363,17 @@ fn ndjson_client(server: &ScriptedServer) -> NdJsonResponseApi {
 
 #[cfg(feature = "ndjson")]
 #[test]
-fn ndjson_is_both_a_complete_page_spec_and_a_record_decoder() {
+fn ndjson_supports_complete_pages_and_lazy_semantic_items() {
     fn assert_complete<S>()
     where
-        S: ResponseSpec<Output = Vec<Event>, Mode = Buffered> + PageResponseSpec,
+        S: ResponseRepresentation<Vec<Event>, Driver = Buffered>
+            + PageResponseRepresentation<Vec<Event>>,
     {
     }
-    fn assert_decoder<D: RecordDecoder<Record = Event>>() {}
+    fn assert_stream<S: ResponseRepresentation<ItemStream<Event>>>() {}
 
-    assert_complete::<NdJson<Event>>();
-    assert_decoder::<NdJson<Event>>();
+    assert_complete::<NdJson>();
+    assert_stream::<NdJson>();
 }
 
 #[cfg(feature = "ndjson")]
@@ -442,11 +448,15 @@ async fn direct_streamed_runtime_raw_and_paginated_ndjson_have_one_engine_semant
         EndpointId::try_from("runtime.ndjson_events").expect("runtime NDJSON endpoint ID"),
         Method::GET,
     )
-    .response::<NdJson<Event>>()
+    .response::<NdJson, Vec<Event>>()
     .build()
     .expect("runtime NDJSON response");
     assert_eq!(
-        client.request(runtime).await.expect("runtime NDJSON"),
+        runtime
+            .try_bind(&client)
+            .expect("runtime NDJSON binding")
+            .await
+            .expect("runtime NDJSON"),
         [Event { id: 9 }]
     );
 
@@ -459,7 +469,7 @@ async fn direct_streamed_runtime_raw_and_paginated_ndjson_have_one_engine_semant
 
     let pages = client
         .ndjson_pages(0, NonZeroU32::new(2).expect("positive NDJSON page size"))
-        .paginate(4_u32)
+        .paginate(concord::PageLimit::Prefix(4))
         .await
         .expect("paginated NDJSON");
     assert_eq!(

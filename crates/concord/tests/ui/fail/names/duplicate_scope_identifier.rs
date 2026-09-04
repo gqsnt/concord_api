@@ -2,12 +2,12 @@ use concord::api;
 
 api! {
     client ReferenceApi {
-        timeout off;
+        timeout 30s;
         base "https://reference.example.test";
 
         scope regional(id: String) {
             scope regional(code: String) {
-                GET item() -> Bytes using Bytes;
+                GET item() -> Bytes via Binary;
             }
         }
     }

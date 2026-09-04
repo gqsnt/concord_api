@@ -5,18 +5,18 @@ pub struct Displayless;
 
 api! {
     client Api {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
         values {
             client_value: crate::Displayless;
         }
-        rate_limit { allow 10 per 1s; }
+        rate_limit { id "concord.rate_limit_no_display.1"; key [origin]; cost 1;  allow 10 per 1s; }
 
 
     scope regions(region: crate::Displayless) {
-        rate_limit { allow 5 per 1s; }
-        GET read(item: crate::Displayless) -> Bytes using Bytes {
-            rate_limit { allow 1 per 1s; }
+        rate_limit { id "concord.rate_limit_no_display.2"; key [origin]; cost 1;  allow 5 per 1s; }
+        GET read(item: crate::Displayless) -> Bytes via Binary {
+            rate_limit { id "concord.rate_limit_no_display.3"; key [origin]; cost 1;  allow 1 per 1s; }
         }
     }
 }}

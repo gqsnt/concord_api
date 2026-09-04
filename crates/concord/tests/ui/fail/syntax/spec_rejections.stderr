@@ -94,14 +94,14 @@ error: this public header name is reserved by transport, authentication, cookies
 140 |             "Authorization" = "public";
     |             ^^^^^^^^^^^^^^^
 
-error: an anonymous rate-limit attachment requires at least one positive window; add `allow 100 per 1m;`
+error: an inline rate policy requires at least one positive window; add `allow 100 per 1m;`
    --> tests/ui/fail/syntax/spec_rejections.rs:149:9
     |
-149 |         rate_limit {}
+149 |         rate_limit { id "concord.spec_rejections.1"; key [origin]; cost 1; }
     |         ^^^^^^^^^^
 
-error: a rate-limit profile requires at least one positive window; add `allow 100 per 1m;`
-   --> tests/ui/fail/syntax/spec_rejections.rs:158:13
+error: a reusable rate policy requires at least one positive window; add `allow 100 per 1m;`
+   --> tests/ui/fail/syntax/spec_rejections.rs:158:20
     |
-158 |             empty() {}
-    |             ^^^^^
+158 |             policy empty() { id "concord.spec_rejections.2"; key [origin]; cost 1; }
+    |                    ^^^^^

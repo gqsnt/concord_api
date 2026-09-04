@@ -92,7 +92,7 @@ pub(super) fn parse_parameters(
                 .find(|attribute| attribute.path().is_ident("body"))
                 .expect("found body attribute")
                 .span()
-                .error("v1 `#[body] name: Spec` syntax was removed; write `body name: Input using Spec`"));
+                .error("v1 `#[body] name: Spec` syntax was removed; write `body name: Input via Representation`"));
         }
 
         if input.peek(keyword::body) {
@@ -102,17 +102,24 @@ pub(super) fn parse_parameters(
             input.parse::<keyword::body>()?;
             let name: Ident = input.parse()?;
             let canonical = insert_parameter_name(&mut names, &name, owner)?;
-            if input.peek(Token![?]) {
-                return Err(input.error(format!(
-                    "request body `{canonical}` cannot use Concord optionality; put `Option<_>` in its explicit input type"
-                )));
-            }
+            let presence = if input.peek(Token![?]) {
+                input.parse::<Token![?]>()?;
+                ValuePresence::Optional
+            } else {
+                ValuePresence::Required
+            };
             input.parse::<Token![:]>()?;
             let input_type: Type = input.parse()?;
-            input.parse::<keyword::using>().map_err(|_| {
-                input.error("a request body must be declared as `body name: Input using Spec`")
-            })?;
-            let spec_type: Type = input.parse()?;
+            let spec_type = if input.peek(keyword::via) {
+                input.parse::<keyword::via>()?;
+                Some(input.parse()?)
+            } else if input.peek(keyword::using) {
+                return Err(input.error(
+                    "v2.1 replaced body `using Representation` with inline `via Representation`",
+                ));
+            } else {
+                None
+            };
             let (docs, has_default, redacted) = parse_value_attributes(attributes, "request body")?;
             if has_default || redacted {
                 return Err(name.span().error(
@@ -135,6 +142,7 @@ pub(super) fn parse_parameters(
                 name,
                 input_type,
                 spec_type,
+                presence,
                 docs,
                 position,
             });
@@ -241,15 +249,19 @@ fn parse_value_attributes(
         }
         let (flag, label) = if attribute.path().is_ident("default") {
             (&mut default, "default")
+        } else if attribute.path().is_ident("sensitive") {
+            (&mut redact, "sensitive")
         } else if attribute.path().is_ident("redact") {
-            (&mut redact, "redact")
+            return Err(attribute
+                .span()
+                .error("v2.1 renamed `#[redact]` to `#[sensitive]`"));
         } else if attribute.path().is_ident("deprecated") {
             return Err(attribute.span().error(
                 "value-level deprecation is not supported; deprecate the owning client, scope, or endpoint",
             ));
         } else {
             return Err(attribute.span().error(format!(
-                "unsupported attribute on {owner}; ordinary values support docs, `#[default]`, and `#[redact]`"
+                "unsupported attribute on {owner}; ordinary values support docs, `#[default]`, and `#[sensitive]`"
             )));
         };
         if !matches!(attribute.meta, Meta::Path(_)) {
@@ -358,20 +370,20 @@ mod tests {
         let source = super::super::parse(quote! {
             client ValuesApi {
                 base "https://example.test";
-                timeout off;
+                timeout 30s;
                 values {
                     required: Option<u32>;
                     optional?: Option<u32>;
                     #[default]
                     defaulted: bool;
-                    #[redact]
+                    #[sensitive]
                     private_public: String;
                 }
                 POST upload(
                     first: String,
-                    body payload: Input using Body,
+                    body payload: Input via Body,
                     later?: bool,
-                ) -> Output using Response;
+                ) -> Output via Response;
             }
         })
         .expect("v2 values syntax");

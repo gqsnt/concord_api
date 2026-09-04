@@ -1,5 +1,5 @@
-error: omit `key` for a declaration-global bucket; `key [...]` requires at least one dimension
- --> tests/ui/fail/rate_limits/rate_limit_empty_by.rs:7:22
+error: a v2.1 rate policy requires a non-empty canonical `key [...]` schema
+ --> tests/ui/fail/rate_limits/rate_limit_empty_by.rs:7:67
   |
-7 |         rate_limit { key []; allow 1 per 1s; }
-  |                      ^^^
+7 |         rate_limit { id "concord.rate_limit_empty_by.1"; cost 1;  key []; allow 1 per 1s; }
+  |                                                                   ^^^

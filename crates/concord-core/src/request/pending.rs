@@ -40,15 +40,8 @@ impl<E> Request<E> {
     }
 
     #[must_use]
-    /// Disables the generated operation deadline for this request.
-    pub fn disable_timeout(mut self) -> Self {
-        self.options = self.options.with_timeout(TimeoutOverride::Disabled);
-        self
-    }
-
-    #[must_use]
-    /// Restores the endpoint's inherited deadline selection.
-    pub fn inherit_timeout(mut self) -> Self {
+    /// Resets the request to its retained effective endpoint deadline.
+    pub fn reset_timeout(mut self) -> Self {
         self.options = self.options.with_timeout(TimeoutOverride::Inherit);
         self
     }
@@ -78,7 +71,8 @@ where
 impl<E> Request<E>
 where
     E: EndpointSpec,
-    <E::Response as crate::response::ResponseSpec>::Mode: crate::response::AcceptedBytesMode,
+    <E::Response as crate::response::ResponseRepresentation<E::Output>>::Driver:
+        crate::response::AcceptedBytesDriver,
 {
     /// Test-only construction for the capability wrapper used by generated
     /// endpoint request types.

@@ -2,11 +2,11 @@ use concord::{Bytes, api};
 
 api! {
     client FunctionPointerApi {
-        timeout off;
+        timeout 30s;
         base "http://example.test";
 
 
-    GET process(callback: fn(u32) -> bool) -> Bytes using Bytes;
+    GET process(callback: fn(u32) -> bool) -> Bytes via Binary;
 }}
 
 fn accepts_nonzero(value: u32) -> bool {

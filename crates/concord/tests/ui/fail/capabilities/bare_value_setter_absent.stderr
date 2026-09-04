@@ -7,7 +7,7 @@ error[E0061]: this method takes 1 argument but 0 arguments were supplied
 note: method defined here
   --> tests/ui/fail/capabilities/bare_value_setter_absent.rs:10:9
    |
-10 |     GET read(verbose: Option<bool>) -> Bytes using Bytes;
+10 |     GET read(verbose: Option<bool>) -> Bytes via Binary;
    |         ^^^^ ---------------------
 help: provide the argument
    |
@@ -19,10 +19,10 @@ error[E0599]: no method named `verbose` found for struct `ReadRequest` in the cu
    |
  4 | / api! {
  5 | |     client SetterApi {
- 6 | |         timeout off;
+ 6 | |         timeout 30s;
  7 | |         base "http://setter.example.test";
 ...  |
-10 | |     GET read(verbose: Option<bool>) -> Bytes using Bytes;
+10 | |     GET read(verbose: Option<bool>) -> Bytes via Binary;
 11 | | }}
    | |__- method `verbose` not found for this struct
 ...

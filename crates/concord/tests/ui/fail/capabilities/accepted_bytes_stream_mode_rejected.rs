@@ -1,12 +1,12 @@
 use concord::api;
-use concord::body::Stream;
+use concord::Binary;
 
 api! {
     client StreamApi {
-        timeout off;
+        timeout 30s;
         base "http://stream.example.test/";
 
-        GET download() -> concord::response::ByteStream using Stream {
+        GET download() -> concord::response::ByteStream via Binary {
             expose accepted_bytes;
         }
     }

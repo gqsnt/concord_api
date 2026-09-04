@@ -1,10 +1,13 @@
+#[cfg(test)]
 use std::marker::PhantomData;
 
 use bytes::Bytes;
 
+#[cfg(test)]
 use crate::response::{
-    Buffered, PageResponseSpec, ResponseBodyError, ResponseHead, ResponseMode, ResponseSpec,
+    Buffered, PageResponseRepresentation, ResponseDriver, ResponseRepresentation,
 };
+use crate::response::{ResponseBodyError, ResponseHead};
 
 use super::driver::{RecordDriver, RecordStep};
 use super::error::response_error;
@@ -18,33 +21,56 @@ use super::{RecordDecoder, RecordError};
 /// result is all records in source order or one error; a partial vector is
 /// never returned.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct BufferedRecords<D>(PhantomData<fn() -> D>);
+#[cfg(test)]
+pub(crate) struct BufferedRecords<D>(PhantomData<fn() -> D>);
 
-impl<D> ResponseSpec for BufferedRecords<D>
+#[cfg(test)]
+impl<D> ResponseRepresentation<Vec<D::Record>> for BufferedRecords<D>
 where
     D: RecordDecoder,
 {
-    type Output = Vec<D::Record>;
-    type Mode = Buffered;
+    type Driver = Buffered;
 
     fn accept() -> Option<&'static str> {
         D::accept()
     }
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
-        D::validate(head).map_err(response_error)
+        validate_record_decoder::<D>(head)
     }
 
     fn from_body(
-        body: <Self::Mode as ResponseMode>::Body,
+        body: <Self::Driver as ResponseDriver>::Body,
         head: &ResponseHead<'_>,
-    ) -> Result<Self::Output, ResponseBodyError> {
-        let decoder = D::start(head).map_err(response_error)?;
-        collect_records(body, decoder).map_err(response_error)
+    ) -> Result<Vec<D::Record>, ResponseBodyError> {
+        decode_complete_records::<D>(body, head)
     }
 }
 
-impl<D> PageResponseSpec for BufferedRecords<D> where D: RecordDecoder {}
+#[cfg(test)]
+impl<D> PageResponseRepresentation<Vec<D::Record>> for BufferedRecords<D> where D: RecordDecoder {}
+
+/// Validates one bounded record decoder without exposing native response authority.
+#[doc(hidden)]
+pub fn validate_record_decoder<D>(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError>
+where
+    D: RecordDecoder,
+{
+    D::validate(head).map_err(response_error)
+}
+
+/// Decodes a completely acquired bounded body with one semantic record decoder.
+#[doc(hidden)]
+pub fn decode_complete_records<D>(
+    body: Bytes,
+    head: &ResponseHead<'_>,
+) -> Result<Vec<D::Record>, ResponseBodyError>
+where
+    D: RecordDecoder,
+{
+    let decoder = D::start(head).map_err(response_error)?;
+    collect_records(body, decoder).map_err(response_error)
+}
 
 pub(super) fn collect_records<D>(body: Bytes, decoder: D) -> Result<Vec<D::Record>, RecordError>
 where

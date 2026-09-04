@@ -2,9 +2,9 @@ use concord::api;
 
 api! {
     client Empty {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
-        rate_limit {
+        rate_limit { key [origin]; cost 1;
             id "";
             allow 1 per 1s;
         }
@@ -13,9 +13,9 @@ api! {
 
 api! {
     client InvalidSegments {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
-        rate_limit {
+        rate_limit { key [origin]; cost 1;
             id "Service..quota-";
             allow 1 per 1s;
         }
@@ -24,9 +24,9 @@ api! {
 
 api! {
     client Oversized {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
-        rate_limit {
+        rate_limit { key [origin]; cost 1;
             id "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
             allow 1 per 1s;
         }

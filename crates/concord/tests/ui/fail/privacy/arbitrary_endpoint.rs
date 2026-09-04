@@ -2,13 +2,13 @@ use concord::api;
 
 api! {
     client TypedApi {
-        timeout off;
+        timeout 30s;
         base "https://typed.example.test";
 
 
     scope health() {
         path ["health"];
-        GET ping() -> () using NoContent;
+        GET ping() -> () via Empty;
     }
 }}
 

@@ -1,79 +1,177 @@
-# Modeling APIs in Concord v2
+# Modeling APIs in Concord v2.1
 
-Start from domain ownership, then add wire placement and runtime capabilities.
+Concord should make the domain tree primary while keeping every consequential wire, security, effect, and resource fact inspectable.
 
-## Choose the tree
+## Start from persona tasks
 
-Put stable build-time inputs on the client, reusable selected context on a
-named scope, and operation input on the endpoint. Use nested scopes only when
-their values or attachments genuinely apply to descendants. One invocation
-contains one complete client tree.
+Before declaring a large API, write representative tasks:
 
-Required non-defaulted scope/endpoint values become positional arguments in
-source order. Optional/defaulted values become consuming controls on the owning
-snapshot. If an endpoint accumulates too many required values, introduce a
-meaningful domain input type rather than an adaptive generated parameter bag.
+- build a client for one deployment/security context;
+- select one stable domain context;
+- call a common endpoint;
+- configure an optional/defaulted value;
+- handle one expected domain outcome and one uncertain failure;
+- inspect a request without executing it;
+- add one exceptional binary/record endpoint;
+- add pagination without changing caller understanding of one page;
+- identify every endpoint affected by a parent change.
 
-## Model presence explicitly
+## Choose stable owners
 
-Do not use a type path to communicate omission. Write `value?: T` for an outer
-omission slot and keep `value: Option<T>` when `None` itself is a required domain
-decision. Use `#[default]` for the payload's `Default` and `= CONST` for a stable
-declaration value.
+### Client
 
-Place repetition where it belongs. A `Vec<Tag>` remains one payload; a query
-statement using `each endpoint.tags` turns that payload into repeated pairs.
+Owns facts stable for the complete contract/security context:
 
-## Keep ownership visible
+- fixed logical base;
+- root finite timeout;
+- public client values;
+- credential source graph;
+- reusable rate-policy definitions;
+- common request/response representations;
+- root public/private patches.
 
-Use the exact owner in expressions. A client value remains `client.tenant` even
-inside nested scopes. A scope value uses its declared identifier, such as
-`regional.region`. Endpoint inputs use `endpoint.id`. Duplicate scope identifiers
-in one ancestor chain are forbidden so references never become contextual.
+### Scope
 
-## Design wire patches locally
+Owns one selected domain context and shared subtree behavior:
 
-Choose assignment when a descendant owns the effective query/header field;
-choose query append when inherited multiplicity must remain. Use replace/off
-only when the descendant intentionally resets that attachment family. Remember
-that absent optional assignment removes inherited values, while absent append
-does nothing.
+- required/optional/defaulted context values;
+- subdomain/path and public patches;
+- auth/rate/timeout deltas;
+- common representation for a coherent subtree;
+- child scopes/endpoints.
 
-Keep media ownership with specifications: request specs own `Content-Type`,
-response specs own default `Accept`, and endpoint `accept` syntax is the only
-override.
+A scope is not a file-system folder. It should represent selected context, shared contract, or meaningful domain grouping.
 
-## Choose durable identity
+### Endpoint
 
-Give externally coordinated endpoints and rate policies explicit stable IDs.
-Derived IDs are deterministic but rename-sensitive. Do not reuse one rate ID for
-different dimension schemas or windows.
+Owns one operation:
 
-Rate profile formals make dependency visible at attachment sites. Profiles do
-not capture lexical values. Rate dimensions should represent stable quota
-identity, never cursors, secrets, credentials, or optional policy presence.
+- exact required inputs and body;
+- exact awaited output;
+- local representation exception;
+- stable endpoint ID;
+- local route/query/header changes;
+- accepted status;
+- effect class;
+- local auth/rate/timeout changes;
+- pagination and lower-level terminal capabilities.
 
-## Separate semantic and mechanical permission
+## Representation defaults
 
-Endpoint `repeatability idempotent` permits a resend only after every runtime
-gate agrees. Body replayability says bytes can be reconstructed; it does not say
-the operation is semantically repeatable. Declare both honestly.
+The snippets in this section are deliberately partial owner/endpoint fragments;
+the surrounding `api!` declaration and domain types are omitted.
 
-Pagination live bindings grant mutation authority only over named endpoint
-slots. Stable controller fields copy state without granting authority. Prefer
-the smallest set of live bindings a controller needs.
+Use defaults when a representation is stable across a coherent owner:
 
-## Review generated experience
+```concord-pseudocode
+client Api {
+    request Json;
+    response Json;
 
-Before accepting a contract, read it as each persona:
+    GET item(id: Id) -> Item;
+    POST create(body input: Create) -> Item;
+}
+```
 
-1. Can a caller predict constructor arguments and exact control signatures?
-2. Can a reviewer reconstruct effective route, auth, rate, timeout, and
-   repeatability with origins?
-3. Can an operator distinguish public/redacted/private data and correlate
-   operation, attempt, page, and policy IDs?
-4. Does every fluent name match what retries, recovery, pagination, and
-   cancellation really guarantee?
+Use an inline exception when only one body or result differs:
 
-Use `Client::contract()` and semantic snapshots in review. See
-[generated clients](generated_client.md) and [planning](planning_and_observation.md).
+```concord-pseudocode
+POST login(body input: Login via Form) -> Token;
+GET download(id: Id) -> ByteStream via Binary;
+```
+
+Fence heterogeneous branches:
+
+```concord-pseudocode
+scope assets() {
+    request explicit;
+    response explicit;
+
+    GET metadata(id: Id) -> Metadata via Json;
+    GET bytes(id: Id) -> ByteStream via Binary;
+}
+```
+
+`explicit` means descendants must choose a representation locally. It does not mean raw, disabled, empty, or unbounded.
+
+## Value design
+
+Use the written Rust type for domain meaning and the DSL markers for Concord semantics:
+
+```concord-pseudocode
+mode: Option<Mode>        // required domain decision
+mode?: Mode               // optional slot
+mode?: Option<Mode>       // optional slot around an optional payload
+#[default]
+page_size: PageSize       // retained default
+```
+
+Do not select `Option<T>` or `Vec<T>` merely to trigger wire behavior.
+
+## Public atom design
+
+A domain type used in URL/query/header shaping should either own one canonical protocol atom through `RequestAtom` or use an explicit placement adapter:
+
+```concord-pseudocode
+path [endpoint.id via Base32Id];
+query { "at" = endpoint.time via Rfc3339; }
+```
+
+Use a scalar adapter for one joined collection and `each` for repeated occurrences:
+
+```concord-pseudocode
+"fields" = endpoint.fields via CommaSeparated;
+append "tag" = each endpoint.tags via TagSlug;
+```
+
+## Status and effect
+
+Keep them explicit when non-default:
+
+```concord-pseudocode
+status [200, 201];
+effect idempotent;
+```
+
+`safe`, `idempotent`, and `non_idempotent` describe the requested remote effect. A body being replayable or an idempotency header existing does not infer the class.
+
+Ordinary pagination requires `safe`, not merely `idempotent`, because pagination automates several remote operations under one all-or-error terminal.
+
+## Authentication
+
+Authentication is a private source/slot/placement/recovery model, not a header shortcut. Declare credential sources once, attach purpose-specific placements, and attribute at most one recoverable challenge.
+
+An unavailable credential for a declared placement fails before dispatch. It is never silently omitted.
+
+## Rate limits
+
+Declare provider quota semantics in the contract and select enforcement in the application. Policies are additive; a child cannot disable an ancestor provider limit. Use explicit stable IDs and canonical key parts.
+
+## Pagination
+
+The endpoint returns one complete page. The following partial fragment assumes
+the surrounding client defines its response representation and the shown
+domain/controller types. The controller owns item extraction and continuation:
+
+```concord-pseudocode
+GET items(cursor?: Cursor) -> ItemPage {
+    effect safe;
+    paginate via CursorPages {
+        cursor -> endpoint.cursor;
+    }
+}
+```
+
+The controller may see only the decoded page plus the bounded response headers it declared. Cross-origin continuation is rejected.
+
+## Review a parent change
+
+Any change to a parent representation, query/header/auth/rate patch, timeout, or sensitivity can affect many leaves. Review the expanded semantic diff rather than only the textual edit.
+
+A parent default is justified only when:
+
+- it belongs to a coherent subtree;
+- exceptions remain local;
+- the effective owner is shown beside each endpoint in generated docs;
+- moving an endpoint reports every effective change;
+- an `explicit` fence can stop valid-but-wrong inheritance.

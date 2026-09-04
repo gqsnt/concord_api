@@ -1,20 +1,15 @@
 use concord_core::contracts::{
     Bytes, CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext,
-    MediaType,
 };
 
-struct VendorMedia;
-
-impl MediaType for VendorMedia {
-    const MEDIA_TYPE: &'static str = "application/vnd.example.record";
-}
+const VENDOR_MEDIA: &str = "application/vnd.example.record";
 
 struct VendorCodec;
 
 impl EncodeBody for VendorCodec {
     type Input = String;
 
-    const CONTENT_TYPE: Option<&'static str> = Some(VendorMedia::MEDIA_TYPE);
+    const CONTENT_TYPE: Option<&'static str> = Some(VENDOR_MEDIA);
 
     fn encode(input: Self::Input, context: EncodeContext<'_>) -> Result<Bytes, CodecError> {
         assert_eq!(context.endpoint, "DownstreamApi::records::create");
@@ -27,10 +22,10 @@ impl EncodeBody for VendorCodec {
 impl DecodeBody for VendorCodec {
     type Output = String;
 
-    const ACCEPT: Option<&'static str> = Some(VendorMedia::MEDIA_TYPE);
+    const ACCEPT: Option<&'static str> = Some(VENDOR_MEDIA);
 
     fn validate_content_type(content_type: Option<&str>) -> Result<(), CodecError> {
-        if content_type == Some(VendorMedia::MEDIA_TYPE) {
+        if content_type == Some(VENDOR_MEDIA) {
             Ok(())
         } else {
             Err(CodecError::new(CodecErrorKind::Decode))
@@ -41,7 +36,7 @@ impl DecodeBody for VendorCodec {
         assert_eq!(context.endpoint, "DownstreamApi::records::create");
         assert_eq!(context.method, http::Method::POST);
         assert_eq!(context.status, http::StatusCode::CREATED);
-        assert_eq!(context.content_type, Some(VendorMedia::MEDIA_TYPE));
+        assert_eq!(context.content_type, Some(VENDOR_MEDIA));
         String::from_utf8(body.to_vec()).map_err(|error| {
             drop(error);
             CodecError::new(CodecErrorKind::Decode)
@@ -61,15 +56,14 @@ fn downstream_buffered_codecs_need_only_the_contract_surface() {
         },
     )
     .expect("custom request encode");
-    VendorCodec::validate_content_type(Some(VendorMedia::MEDIA_TYPE))
-        .expect("custom response media");
+    VendorCodec::validate_content_type(Some(VENDOR_MEDIA)).expect("custom response media");
     let value = VendorCodec::decode(
         bytes,
         DecodeContext {
             endpoint: "DownstreamApi::records::create",
             method: &method,
             status: http::StatusCode::CREATED,
-            content_type: Some(VendorMedia::MEDIA_TYPE),
+            content_type: Some(VENDOR_MEDIA),
         },
     )
     .expect("custom response decode");

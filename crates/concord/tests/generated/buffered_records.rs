@@ -4,14 +4,17 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use concord::ApiResponse;
 use concord::api;
-use concord::codec::BytesMut;
+use concord::codec::{Bytes, BytesMut};
 use concord::endpoint::{AcceptedBytesRequest, EndpointId, RuntimeEndpoint};
 use concord::error::ErrorCategory;
 use concord::http::{Method, SafeProxy};
 use concord::pagination::PaginatedRequest;
-use concord::prelude::BufferedRecords;
-use concord::records::{RecordDecoder, RecordError, RecordErrorKind};
-use concord::response::{PageResponseSpec, ResponseSpec};
+use concord::records::{
+    RecordDecoder, RecordError, RecordErrorKind, decode_complete_records, validate_record_decoder,
+};
+use concord::response::{
+    Buffered, PageResponseRepresentation, ResponseBodyError, ResponseHead, ResponseRepresentation,
+};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 
 static VALIDATE_CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -76,21 +79,41 @@ fn parse_record(bytes: &[u8]) -> Result<u32, RecordError> {
         .ok_or_else(|| RecordError::new(RecordErrorKind::Decode))
 }
 
+pub struct MyRecords;
+
+impl ResponseRepresentation<Vec<u32>> for MyRecords {
+    type Driver = Buffered;
+
+    fn accept() -> Option<&'static str> {
+        MyDecoder::accept()
+    }
+
+    fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
+        validate_record_decoder::<MyDecoder>(head)
+    }
+
+    fn from_body(body: Bytes, head: &ResponseHead<'_>) -> Result<Vec<u32>, ResponseBodyError> {
+        decode_complete_records::<MyDecoder>(body, head)
+    }
+}
+
+impl PageResponseRepresentation<Vec<u32>> for MyRecords {}
+
 api! {
     client BufferedRecordApi {
-        timeout off;
+        timeout 30s;
         base "http://buffered-record.example.test/v1/";
 
 
-    GET buffered_custom() -> Vec<u32> using BufferedRecords<MyDecoder> { expose accepted_bytes; }
+    GET buffered_custom() -> Vec<u32> via crate::generated::buffered_records::MyRecords { expose accepted_bytes; }
 
-    GET pages(offset: u64, limit: std::num::NonZeroU32) -> Vec<u32> using BufferedRecords<MyDecoder> {
+    GET pages(offset: u64, limit: std::num::NonZeroU32) -> Vec<u32> via crate::generated::buffered_records::MyRecords {
         path ["pages"];
         query {
             "offset" = endpoint.offset;
             "limit" = endpoint.limit;
         }
-        paginate with crate::support::OffsetController {
+        paginate via crate::support::OffsetController {
             offset -> endpoint.offset;
             page_size -> endpoint.limit;
         }
@@ -111,14 +134,15 @@ fn generated_buffered_record_terminals_have_buffered_and_page_capabilities() {
     let _: AcceptedBytesRequest<_> = client.buffered_custom().accepted_bytes();
     let _: PaginatedRequest<_> = client
         .pages(0, NonZeroU32::new(2).expect("positive page size"))
-        .paginate(4_u32);
+        .paginate(concord::PageLimit::Prefix(4));
 
     fn assert_spec<S>()
     where
-        S: ResponseSpec<Output = Vec<u32>, Mode = concord::response::Buffered> + PageResponseSpec,
+        S: ResponseRepresentation<Vec<u32>, Driver = concord::response::Buffered>
+            + PageResponseRepresentation<Vec<u32>>,
     {
     }
-    assert_spec::<BufferedRecords<MyDecoder>>();
+    assert_spec::<MyRecords>();
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -175,11 +199,12 @@ async fn generated_runtime_raw_and_paginated_buffered_records_share_the_public_a
         EndpointId::try_from("runtime.buffered_records").expect("runtime endpoint ID"),
         Method::GET,
     )
-    .response::<BufferedRecords<MyDecoder>>()
+    .response::<MyRecords, Vec<u32>>()
     .build()
     .expect("runtime buffered-record endpoint");
-    let runtime = client
-        .request(endpoint)
+    let runtime = endpoint
+        .try_bind(&client)
+        .expect("runtime buffered-record binding")
         .await
         .expect("runtime buffered records");
     assert_eq!(runtime, [4, 5]);
@@ -188,7 +213,7 @@ async fn generated_runtime_raw_and_paginated_buffered_records_share_the_public_a
 
     let pages = client
         .pages(0, NonZeroU32::new(2).expect("positive page size"))
-        .paginate(4_u32)
+        .paginate(concord::PageLimit::Prefix(4))
         .await
         .expect("paginated buffered records");
     assert_eq!(pages, [6, 7, 8]);

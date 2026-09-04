@@ -1,5 +1,5 @@
 #[test]
-fn v2_language_surface_and_diagnostics() {
+fn current_language_surface_and_diagnostics() {
     let cases = trybuild::TestCases::new();
     cases.pass("tests/ui/pass/construction/*.rs");
     cases.pass("tests/ui/pass/language/*.rs");
@@ -9,6 +9,7 @@ fn v2_language_surface_and_diagnostics() {
     cases.compile_fail("tests/ui/fail/rate_limits/*.rs");
     for path in [
         "tests/ui/fail/pagination/non_paginated_no_paginate.rs",
+        "tests/ui/fail/pagination/numeric_page_limit_absent.rs",
         "tests/ui/fail/pagination/pagination_bounds.rs",
         "tests/ui/fail/pagination/pagination_non_clone_input.rs",
         "tests/ui/fail/pagination/pagination_syntax.rs",
@@ -20,7 +21,7 @@ fn v2_language_surface_and_diagnostics() {
     #[cfg(feature = "json")]
     for path in [
         "tests/ui/fail/pagination/pagination_modes.rs",
-        "tests/ui/fail/pagination/pagination_non_repeatable_codec.rs",
+        "tests/ui/fail/pagination/pagination_non_page_request_representation.rs",
         "tests/ui/fail/pagination/pagination_request_body.rs",
         "tests/ui/fail/pagination/pagination_stream_body.rs",
     ] {
@@ -34,6 +35,7 @@ fn v2_language_surface_and_diagnostics() {
         "tests/ui/fail/capabilities/bare_endpoint_value_setter_absent.rs",
         "tests/ui/fail/capabilities/bare_scope_value_setter_absent.rs",
         "tests/ui/fail/capabilities/bare_value_setter_absent.rs",
+        "tests/ui/fail/capabilities/clear_optional_control_absent.rs",
         "tests/ui/fail/capabilities/flat_endpoint_constructor_absent.rs",
         "tests/ui/fail/capabilities/ancestor_control_on_endpoint_absent.rs",
         "tests/ui/fail/capabilities/any_media_is_not_media_type.rs",
@@ -41,6 +43,8 @@ fn v2_language_surface_and_diagnostics() {
         "tests/ui/fail/capabilities/runtime_endpoint_builder_capabilities_absent.rs",
         "tests/ui/fail/capabilities/runtime_endpoint_accepted_bytes_terminal_absent.rs",
         "tests/ui/fail/capabilities/runtime_endpoint_pagination_absent.rs",
+        "tests/ui/fail/capabilities/runtime_accept_override_absent.rs",
+        "tests/ui/fail/capabilities/with_optional_control_absent.rs",
         "tests/ui/fail/capabilities/accepted_bytes_stream_mode_rejected.rs",
         "tests/ui/fail/capabilities/storage_terminal_source_only.rs",
         "tests/ui/fail/capabilities/vector_public_header.rs",
@@ -48,6 +52,10 @@ fn v2_language_surface_and_diagnostics() {
     ] {
         cases.compile_fail(path);
     }
+    #[cfg(not(feature = "records"))]
+    cases.compile_fail("tests/ui/fail/capabilities/generated_accept_override_absent.rs");
+    #[cfg(feature = "records")]
+    cases.compile_fail("tests/ui/fail/capabilities/generated_accept_override_absent_records.rs");
     #[cfg(feature = "csv")]
     cases.compile_fail("tests/ui/fail/capabilities/csv_policy_traits_sealed.rs");
     #[cfg(feature = "json")]

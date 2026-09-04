@@ -2,8 +2,8 @@
 //!
 //! Implement [`EncodeBody`] or [`DecodeBody`] for an ordinary complete
 //! buffered codec. Blanket implementations provide
-//! [`crate::body::RequestBodySpec`] or
-//! [`crate::response::ResponseSpec`]. Implement those full lifecycle
+//! [`crate::body::RequestRepresentation`] or
+//! [`crate::response::ResponseRepresentation`]. Implement those full lifecycle
 //! specifications directly only when structural preparation or sealed-mode
 //! response conversion is required.
 
@@ -13,33 +13,14 @@ use std::fmt;
 use bytes::Bytes;
 use http::{Method, StatusCode};
 
-/// Declares the one exact media type used by [`crate::body::Stream<M>`].
+/// Built-in binary request and response representation.
 ///
-/// The marker is shared across concurrent operations and has no runtime callback or sensitive
-/// input. Its constant must be non-sensitive and valid for every use; implementations must not
-/// rely on mutable global state. Request content-type ownership and response acceptance remain
-/// direction-specific responsibilities of the selected body and response specifications.
-pub trait MediaType: Send + Sync + 'static {
-    /// Valid HTTP media type owned by the marker.
-    const MEDIA_TYPE: &'static str;
-}
-
-/// Marker selecting no request or response media assertion.
-///
-/// This marker intentionally does not implement [`MediaType`]. Bare
-/// [`Stream`](crate::body::Stream) request bodies therefore insert no
-/// `Content-Type`, and bare stream responses insert no `Accept` or validate
-/// `Content-Type`.
+/// `Binary` supports complete [`bytes::Bytes`] and `Vec<u8>` values, lazy
+/// [`crate::response::ByteStream`] responses, and
+/// [`crate::body::RequestStream<Bytes>`] request bodies. It owns the
+/// `application/octet-stream` media type in both directions.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct AnyMedia;
-
-/// Built-in `application/octet-stream` media marker.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct OctetStream;
-
-impl MediaType for OctetStream {
-    const MEDIA_TYPE: &'static str = "application/octet-stream";
-}
+pub struct Binary;
 
 /// Safe request metadata supplied to a request encoder.
 pub struct EncodeContext<'a> {
@@ -54,7 +35,7 @@ pub struct EncodeContext<'a> {
 /// Encodes one application input into a complete buffered request body.
 ///
 /// Encoding is synchronous, runs at most once for a pending execution, and
-/// begins only after `before_send` approves the request. Input may be
+/// begins only after the visible attempt starts. Input may be
 /// sensitive. Implementors are trusted application extensions: they must
 /// bound their own CPU, memory, retries, maps, queues, spawned tasks, metric
 /// cardinality, logging, storage, and external I/O. Calls for independent
@@ -232,7 +213,6 @@ mod tests {
 
     #[test]
     fn media_markers_have_the_normative_values() {
-        assert_eq!(OctetStream::MEDIA_TYPE, "application/octet-stream");
         assert_eq!(Text::CONTENT_TYPE, Some("text/plain; charset=utf-8"));
         assert_eq!(Text::ACCEPT, Some("text/plain"));
     }

@@ -97,18 +97,20 @@ pub(crate) struct Endpoint {
     pub(crate) local_attachments: Vec<AttachmentIr>,
     pub(crate) output: Type,
     pub(crate) response_spec: Type,
+    pub(crate) response_representation_origin: String,
     pub(crate) pagination: Option<Pagination>,
     pub(crate) dsl_path: Vec<Ident>,
-    pub(crate) repeatability: Repeatability,
-    pub(crate) repeatability_explicit: bool,
-    pub(crate) accept: Option<ResolvedAccept>,
+    pub(crate) accepted_status: AcceptedStatus,
+    pub(crate) status_explicit: bool,
+    pub(crate) effect: Effect,
+    pub(crate) effect_explicit: bool,
     pub(crate) expose_accepted_bytes: bool,
 }
 
-#[derive(Clone)]
-pub(crate) enum ResolvedAccept {
-    Value(ResolvedExpr),
-    Off,
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum AcceptedStatus {
+    Success,
+    Codes(Vec<u16>),
 }
 
 #[derive(Clone, Default)]
@@ -121,8 +123,18 @@ pub(crate) struct DeclarationMetadata {
 pub(crate) struct RequestBody {
     pub(crate) name: Ident,
     pub(crate) input_type: Type,
+    pub(crate) effective_input_type: Type,
     pub(crate) spec_type: Type,
+    pub(crate) presence: ValuePresence,
+    pub(crate) representation_origin: String,
     pub(crate) docs: Vec<String>,
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct RepresentationState {
+    pub(crate) representation: Option<Box<Type>>,
+    pub(crate) origin: Option<String>,
+    pub(crate) fenced: bool,
 }
 
 #[derive(Clone)]
@@ -140,9 +152,16 @@ pub(crate) struct EndpointSurface {
     pub(crate) module_path: Vec<Ident>,
     pub(crate) required_arguments: Vec<RequiredArgument>,
     pub(crate) setters: Vec<EndpointSetter>,
+    pub(crate) body_setter: Option<BodySetter>,
     pub(crate) terminals: RequestTerminals,
     pub(crate) clone_eligibility: CloneEligibility,
     pub(crate) docs_identity: String,
+}
+
+#[derive(Clone)]
+pub(crate) struct BodySetter {
+    pub(crate) setter: Ident,
+    pub(crate) omit: Ident,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -155,8 +174,7 @@ pub(crate) enum RequiredArgument {
 pub(crate) struct EndpointSetter {
     pub(crate) parameter: usize,
     pub(crate) setter: Ident,
-    pub(crate) with: Option<Ident>,
-    pub(crate) clear: Option<Ident>,
+    pub(crate) omit: Option<Ident>,
     pub(crate) reset: Option<Ident>,
 }
 
@@ -275,10 +293,6 @@ impl Value {
         &self.effective_type
     }
 
-    pub(crate) fn with_argument_type(&self) -> &Type {
-        &self.payload_type
-    }
-
     pub(crate) fn client_builder_storage_type(&self) -> &Type {
         &self.effective_type
     }
@@ -332,13 +346,16 @@ pub(crate) enum ResolvedMethod {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Repeatability {
+pub(crate) enum Effect {
+    Safe,
     Idempotent,
-    Never,
+    NonIdempotent,
 }
 
 #[derive(Clone, Default)]
 pub(crate) struct NormalizedConfig {
+    pub(crate) request_representation: RepresentationState,
+    pub(crate) response_representation: RepresentationState,
     pub(crate) host: Vec<ResolvedExpr>,
     pub(crate) host_origins: Vec<String>,
     pub(crate) host_span: Option<Span>,
@@ -354,6 +371,8 @@ pub(crate) struct NormalizedConfig {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum AttachmentFamily {
+    RequestRepresentation,
+    ResponseRepresentation,
     Subdomain,
     Path,
     Query,
@@ -361,7 +380,6 @@ pub(crate) enum AttachmentFamily {
     Authentication,
     Timeout,
     RateLimit,
-    Accept,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -372,6 +390,7 @@ pub(crate) enum AttachmentOperation {
     Remove,
     Off,
     Set,
+    WhenPresent,
 }
 
 #[derive(Clone)]
@@ -396,7 +415,7 @@ pub(crate) struct NormalizedRateLimitPolicy {
 
 #[derive(Clone)]
 pub(crate) enum NormalizedRateLimitDimension {
-    Host {
+    Origin {
         span: Span,
     },
     Endpoint {
@@ -460,6 +479,8 @@ pub(crate) struct NormalizedHeader {
     pub(crate) name: LitStr,
     pub(crate) canonical_name: String,
     pub(crate) value: ResolvedExpr,
+    pub(crate) cardinality: QueryCardinality,
+    pub(crate) operation: AttachmentOperation,
     pub(crate) origin: String,
 }
 
@@ -469,8 +490,17 @@ pub(crate) struct NormalizedHeader {
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum ResolvedExpr {
     String(LitStr),
-    Integer(LitInt),
+    Character(LitChar),
+    Boolean(LitBool),
+    Integer {
+        negative: bool,
+        literal: LitInt,
+    },
     Value(ResolvedValue),
+    Adapted {
+        value: Box<ResolvedExpr>,
+        adapter: Type,
+    },
     Concat(Vec<ResolvedExpr>),
 }
 

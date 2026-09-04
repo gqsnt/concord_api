@@ -26,6 +26,10 @@ struct EndpointDocModel {
     authentication: Vec<EndpointDocAuthPlacement>,
     rate_limits: Vec<EndpointDocRateLimit>,
     timeout: EndpointDocTimeout,
+    accepted_status: AcceptedStatus,
+    status_explicit: bool,
+    effect: Effect,
+    effect_explicit: bool,
     terminals: EndpointDocTerminals,
     contract_id: String,
     explicit_contract_id: bool,
@@ -74,8 +78,7 @@ enum EndpointDocInputKind {
 struct EndpointDocSetter {
     name: String,
     setter: String,
-    with: Option<String>,
-    clear: Option<String>,
+    omit: Option<String>,
     reset: Option<String>,
     type_name: String,
 }
@@ -85,12 +88,15 @@ struct EndpointDocBody {
     argument: String,
     specification: String,
     input_type: String,
+    optional: bool,
+    representation_origin: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct EndpointDocResponse {
     specification: String,
     output_type: String,
+    representation_origin: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -102,7 +108,6 @@ struct EndpointDocAuthPlacement {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct EndpointDocRateLimit {
     id: String,
-    explicit_id: bool,
     origin: String,
     dimensions: Vec<String>,
     cost: u32,
@@ -118,7 +123,6 @@ struct EndpointDocRateLimitWindow {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum EndpointDocTimeout {
     Inherited(Duration),
-    Disabled,
     Overridden(Duration),
 }
 
@@ -140,10 +144,13 @@ fn projected_endpoint_docs(
         .local_attachments
         .iter()
         .any(|attachment| attachment.family == AttachmentFamily::Timeout);
-    let timeout = match (local_timeout, endpoint.config.timeout) {
-        (true, Some(duration)) => EndpointDocTimeout::Overridden(duration),
-        (true, None) | (false, None) => EndpointDocTimeout::Disabled,
-        (false, Some(duration)) => EndpointDocTimeout::Inherited(duration),
+    let duration = endpoint
+        .config
+        .timeout
+        .expect("semantic inheritance retains one finite endpoint timeout");
+    let timeout = match local_timeout {
+        true => EndpointDocTimeout::Overridden(duration),
+        false => EndpointDocTimeout::Inherited(duration),
     };
     let surface = &endpoint.surface;
     let mut endpoint_type_path = canonical_ident(&client.surface.support_name);
@@ -161,6 +168,8 @@ fn projected_endpoint_docs(
         argument: canonical_ident(&body.name),
         input_type: type_name(&body.input_type),
         specification: type_name(&body.spec_type),
+        optional: matches!(body.presence, ValuePresence::Optional),
+        representation_origin: body.representation_origin.clone(),
     });
     let required_endpoint_inputs = surface
         .required_arguments
@@ -178,7 +187,7 @@ fn projected_endpoint_docs(
             }
         })
         .collect();
-    let endpoint_setters = surface
+    let mut endpoint_setters = surface
         .setters
         .iter()
         .map(|setter| {
@@ -186,13 +195,21 @@ fn projected_endpoint_docs(
             EndpointDocSetter {
                 name: canonical_ident(&value.name),
                 setter: canonical_ident(&setter.setter),
-                with: setter.with.as_ref().map(canonical_ident),
-                clear: setter.clear.as_ref().map(canonical_ident),
+                omit: setter.omit.as_ref().map(canonical_ident),
                 reset: setter.reset.as_ref().map(canonical_ident),
                 type_name: type_name(&value.effective_type),
             }
         })
-        .collect();
+        .collect::<Vec<_>>();
+    if let (Some(setter), Some(body)) = (&surface.body_setter, &endpoint.body) {
+        endpoint_setters.push(EndpointDocSetter {
+            name: canonical_ident(&body.name),
+            setter: canonical_ident(&setter.setter),
+            omit: Some(canonical_ident(&setter.omit)),
+            reset: None,
+            type_name: type_name(&body.effective_input_type),
+        });
+    }
     let scope_inputs = scopes
         .iter()
         .flat_map(|scope| {
@@ -264,13 +281,12 @@ fn projected_endpoint_docs(
         .iter()
         .map(|rule| EndpointDocRateLimit {
             id: rule.id.clone(),
-            explicit_id: rule.explicit_id,
             origin: rule.origin.clone(),
             dimensions: rule
                 .dimensions
                 .iter()
                 .map(|dimension| match dimension {
-                    NormalizedRateLimitDimension::Host { .. } => "host".to_owned(),
+                    NormalizedRateLimitDimension::Origin { .. } => "origin".to_owned(),
                     NormalizedRateLimitDimension::Endpoint { .. } => "endpoint".to_owned(),
                     NormalizedRateLimitDimension::Value { public_name, .. } => public_name.clone(),
                 })
@@ -319,10 +335,15 @@ fn projected_endpoint_docs(
         response: EndpointDocResponse {
             output_type: type_name(&endpoint.output),
             specification: type_name(&endpoint.response_spec),
+            representation_origin: endpoint.response_representation_origin.clone(),
         },
         authentication,
         rate_limits,
         timeout,
+        accepted_status: endpoint.accepted_status.clone(),
+        status_explicit: endpoint.status_explicit,
+        effect: endpoint.effect,
+        effect_explicit: endpoint.effect_explicit,
         terminals: EndpointDocTerminals {
             direct_await: true,
             response: surface.terminals.response,
@@ -348,7 +369,16 @@ fn route_atom(
 ) -> EndpointDocRouteAtom {
     match value {
         ResolvedExpr::String(value) => EndpointDocRouteAtom::Literal(value.value()),
-        ResolvedExpr::Integer(value) => EndpointDocRouteAtom::Literal(value.to_string()),
+        ResolvedExpr::Character(value) => EndpointDocRouteAtom::Literal(value.value().to_string()),
+        ResolvedExpr::Boolean(value) => EndpointDocRouteAtom::Literal(value.value.to_string()),
+        ResolvedExpr::Integer { negative, literal } => EndpointDocRouteAtom::Literal(format!(
+            "{}{}",
+            if *negative { "-" } else { "" },
+            literal.base10_digits()
+        )),
+        ResolvedExpr::Adapted { value, .. } => {
+            route_atom(value, client_values, scopes, endpoint_values)
+        }
         ResolvedExpr::Value(value) => match value.reference {
             ValueReference::Client(index) => EndpointDocRouteAtom::Value {
                 namespace: EndpointDocNamespace::Client,
@@ -550,8 +580,7 @@ pub(super) fn request_wrapper_doc(
         .collect::<Vec<_>>();
     controls.extend([
         "`.timeout(...)`".to_owned(),
-        "`.disable_timeout()`".to_owned(),
-        "`.inherit_timeout()`".to_owned(),
+        "`.reset_timeout()`".to_owned(),
     ]);
 
     let mut terminals = Vec::new();
@@ -667,7 +696,7 @@ fn render_request_control(setter: &EndpointDocSetter) -> String {
 }
 
 fn setter_capability_name(setter: &EndpointDocSetter) -> &'static str {
-    match (setter.clear.is_some(), setter.reset.is_some()) {
+    match (setter.omit.is_some(), setter.reset.is_some()) {
         (true, true) => "absence-capable and has a declaration default",
         (true, false) => "absence-capable",
         (false, true) => "has a declaration default",
@@ -682,11 +711,8 @@ fn render_value_controls(setter: &EndpointDocSetter, separator: &str) -> String 
         setter.setter
     );
     controls.push(set);
-    if let Some(with) = &setter.with {
-        controls.push(format!("select a present payload with `.{with}(...)`"));
-    }
-    if let Some(clear) = &setter.clear {
-        controls.push(format!("select absence with `.{clear}()`"));
+    if let Some(omit) = &setter.omit {
+        controls.push(format!("select absence with `.{omit}()`"));
     }
     if let Some(reset) = &setter.reset {
         controls.push(format!("restore the retained default with `.{reset}()`"));
@@ -701,12 +727,16 @@ fn render_request(docs: &EndpointDocModel) -> String {
         || "Body: none.".to_owned(),
         |body| {
             let mut rendered = format!(
-                "Body argument: `endpoint.{}`. Specification: `{}`. Input type: `{}`.",
-                body.argument, body.specification, body.input_type
+                "Body argument: `endpoint.{}`{}; representation `{}` from {}; input type `{}`.",
+                body.argument,
+                if body.optional { " (optional)" } else { "" },
+                body.specification,
+                body.representation_origin,
+                body.input_type
             );
             if docs.terminals.pagination {
                 rendered.push_str(
-                    " Pagination requires `PageRequestBodySpec`: every page clones the original \
+                    " Pagination requires `PageRequestRepresentation`: every page clones the original \
                      page-stable input and prepares a fresh managed body.",
                 );
             }
@@ -733,11 +763,7 @@ fn render_request(docs: &EndpointDocModel) -> String {
             docs.rate_limits
                 .iter()
                 .map(|rule| {
-                    let identity = if rule.explicit_id {
-                        "explicit stable policy ID"
-                    } else {
-                        "derived deterministic policy ID"
-                    };
+                    let identity = "explicit stable policy ID";
                     let windows = rule
                         .windows
                         .iter()
@@ -746,15 +772,12 @@ fn render_request(docs: &EndpointDocModel) -> String {
                         })
                         .collect::<Vec<_>>()
                         .join(", ");
-                    let dimensions = if rule.dimensions.is_empty() {
-                        "declaration-global".to_owned()
-                    } else {
-                        rule.dimensions
-                            .iter()
-                            .map(|dimension| format!("`{dimension}`"))
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    };
+                    let dimensions = rule
+                        .dimensions
+                        .iter()
+                        .map(|dimension| format!("`{dimension}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     format!(
                         "- {} ({identity} `{}`)\n  - Bucketed by: {dimensions}\n  - Cost: {}\n  - Windows: {windows}",
                         rule.origin, rule.id, rule.cost,
@@ -766,14 +789,11 @@ fn render_request(docs: &EndpointDocModel) -> String {
     };
     let timeout = match docs.timeout {
         EndpointDocTimeout::Inherited(duration) => format!(
-            "Timeout: inherited {}. Request controls can override, disable, or restore it.",
+            "Timeout: inherited {}. Request controls can override or reset it.",
             human_duration(duration)
         ),
-        EndpointDocTimeout::Disabled => {
-            "Timeout: disabled. Request controls can set or restore it.".to_owned()
-        }
         EndpointDocTimeout::Overridden(duration) => format!(
-            "Timeout: endpoint override {}. Request controls can override, disable, or restore it.",
+            "Timeout: endpoint override {}. Request controls can override or reset it.",
             human_duration(duration)
         ),
     };
@@ -781,9 +801,32 @@ fn render_request(docs: &EndpointDocModel) -> String {
 }
 
 fn render_response(docs: &EndpointDocModel) -> String {
+    let status = match &docs.accepted_status {
+        AcceptedStatus::Success => "final `200..=299`".to_owned(),
+        AcceptedStatus::Codes(codes) => codes
+            .iter()
+            .map(u16::to_string)
+            .collect::<Vec<_>>()
+            .join(", "),
+    };
+    let status_origin = if docs.status_explicit {
+        "explicit"
+    } else {
+        "method-independent default"
+    };
+    let effect = match docs.effect {
+        Effect::Safe => "safe",
+        Effect::Idempotent => "idempotent",
+        Effect::NonIdempotent => "non_idempotent",
+    };
+    let effect_origin = if docs.effect_explicit {
+        "explicit"
+    } else {
+        "inferred from the HTTP method"
+    };
     format!(
-        "Specification: `{}`.\n\nOutput type: `{}`.\n\nThe response specification selects buffered, streaming, or discard acquisition. The named request documents the terminals actually available for this build.",
-        docs.response.specification, docs.response.output_type
+        "Representation: `{}` (from {}).\n\nOutput type: `{}`.\n\nAccepted status: {status} ({status_origin}).\n\nEffect: `{effect}` ({effect_origin}).\n\nThe response representation selects buffered, streaming, or discard acquisition. Status and effect remain endpoint-owned. The named request documents the terminals actually available for this build.",
+        docs.response.specification, docs.response.representation_origin, docs.response.output_type
     )
 }
 
@@ -989,7 +1032,7 @@ mod tests {
     fn riot_host_api() -> Api {
         semantic::test_support::resolve_tokens(quote! {
             client RiotApi {
-                timeout off;
+                timeout 30s;
                 base "https://riotgames.com/";
                 values {
                     platform: String;
@@ -999,12 +1042,12 @@ mod tests {
             scope platform() {
                 subdomain [client.platform, "api"];
                 path ["lol", "league", "v4"];
-                GET challenger() -> Bytes using Bytes;
+                GET challenger() -> Bytes via Binary;
             }
             scope regional() {
                 subdomain [client.regional, "api"];
                 path ["riot", "account", "v1"];
-                GET account() -> Bytes using Bytes;
+                GET account() -> Bytes via Binary;
             }
         }})
     }
@@ -1014,8 +1057,8 @@ mod tests {
         let docs = emitted_endpoint_docs(
             quote! {
                 client HostApi {
-                    timeout off; base "https://example.test:8443/root";
-                GET read() -> Bytes using Bytes {
+                    timeout 30s; base "https://example.test:8443/root";
+                GET read() -> Bytes via Binary {
                     subdomain ["api"];
                     path ["items"];
                 }
@@ -1033,8 +1076,8 @@ mod tests {
         let ipv4 = emitted_endpoint_docs(
             quote! {
                 client Ipv4Api {
-                    timeout off; base "http://127.0.0.1:8080/root";
-                GET read() -> Bytes using Bytes;
+                    timeout 30s; base "http://127.0.0.1:8080/root";
+                GET read() -> Bytes via Binary;
             }},
             "read",
         );
@@ -1044,8 +1087,8 @@ mod tests {
         let ipv6 = emitted_endpoint_docs(
             quote! {
                 client Ipv6Api {
-                    timeout off; base "http://[2001:db8::1]:8080/root";
-                GET read() -> Bytes using Bytes;
+                    timeout 30s; base "http://[2001:db8::1]:8080/root";
+                GET read() -> Bytes via Binary;
             }},
             "read",
         );
@@ -1058,18 +1101,18 @@ mod tests {
         for declaration in [
             quote! {
                 client Ipv4Api {
-                    timeout off;
+                    timeout 30s;
                     base "http://127.0.0.1:8080/";
                     subdomain ["api"];
 
-                GET read() -> Bytes using Bytes;
+                GET read() -> Bytes via Binary;
             }},
             quote! {
                 client Ipv6Api {
-                    timeout off;
+                    timeout 30s;
                     base "http://[2001:db8::1]:8080/";
 
-                GET read() -> Bytes using Bytes {
+                GET read() -> Bytes via Binary {
                     subdomain ["api"];
                 }
             }},
@@ -1090,11 +1133,11 @@ mod tests {
         let docs = emitted_endpoint_docs(
             quote! {
                 client HostApi {
-                    timeout off;
+                    timeout 30s;
                     base "https://example.test";
                     values { locale: String; }
 
-                GET localized() -> Bytes using Bytes {
+                GET localized() -> Bytes via Binary {
                     subdomain [client.locale];
                 }
             }},
@@ -1109,9 +1152,9 @@ mod tests {
         let docs = emitted_endpoint_docs(
             quote! {
                 client HostApi {
-                    timeout off; base "https://example.test";
+                    timeout 30s; base "https://example.test";
                 scope platform(platform: String) {
-                    GET scoped() -> Bytes using Bytes {
+                    GET scoped() -> Bytes via Binary {
                         subdomain [platform.platform];
                     }
                 }
@@ -1127,8 +1170,8 @@ mod tests {
         let docs = emitted_endpoint_docs(
             quote! {
                 client HostApi {
-                    timeout off; base "https://example.test";
-                GET formatted(value: String) -> Bytes using Bytes {
+                    timeout 30s; base "https://example.test";
+                GET formatted(value: String) -> Bytes via Binary {
                     subdomain [concat["edge-", endpoint.value]];
                 }
             }},
@@ -1143,12 +1186,12 @@ mod tests {
         let docs = emitted_endpoint_docs(
             quote! {
                 client HostApi {
-                    timeout off;
+                    timeout 30s;
                     base "https://example.test";
                     subdomain ["gateway"];
 
                 scope inherited() {
-                    GET read() -> Bytes using Bytes;
+                    GET read() -> Bytes via Binary;
                 }
             }},
             "read",
@@ -1162,13 +1205,13 @@ mod tests {
         let docs = emitted_endpoint_docs(
             quote! {
                 client HostApi {
-                    timeout off;
+                    timeout 30s;
                     base "https://example.test/root";
                     subdomain ["gateway"];
 
                 scope base_host() {
                     subdomain off;
-                    GET read() -> Bytes using Bytes;
+                    GET read() -> Bytes via Binary;
                 }
             }},
             "read",
@@ -1183,14 +1226,14 @@ mod tests {
     fn sibling_scopes_have_distinct_hosts() {
         let api = semantic::test_support::resolve_tokens(quote! {
             client HostApi {
-                timeout off; base "https://example.test";
+                timeout 30s; base "https://example.test";
             scope platform() {
                 subdomain ["platform"];
-                GET platform_status() -> Bytes using Bytes;
+                GET platform_status() -> Bytes via Binary;
             }
             scope regional() {
                 subdomain ["regional"];
-                GET regional_status() -> Bytes using Bytes;
+                GET regional_status() -> Bytes via Binary;
             }
         }});
         let platform = endpoint_type_docs(&api, "platform_status");
@@ -1234,12 +1277,12 @@ mod tests {
                 path ["cdn", version.version];
                 scope data() {
                     path ["data", client.locale];
-                    GET realm(region: String, compact?: bool) -> Value using Json<Value> {
+                    GET realm(region: String, compact?: bool) -> Value via Json {
                         path [concat[endpoint.region, ".json"]];
                         query { "compact" = endpoint.compact; }
                         headers { "X-View" = "public"; }
                         timeout 250ms;
-                        rate_limit {
+                        rate_limit { id "concord.docs.1"; cost 1;
                             key [endpoint, endpoint.region];
                             allow 10 per 1500ms;
                         }
@@ -1290,16 +1333,16 @@ mod tests {
     fn key_values_do_not_appear_in_generated_docs() {
         let api = semantic::test_support::resolve_tokens(quote! {
             client RateDocsApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 values { tenant: String; }
-                rate_limit { allow 100 per 1m; }
+                rate_limit { id "concord.docs.2"; key [origin]; cost 1;  allow 100 per 1m; }
 
             scope accounts(account: String) {
-                GET read(resource: String) -> Bytes using Bytes {
-                    rate_limit {
+                GET read(resource: String) -> Bytes via Binary {
+                    rate_limit { cost 1;
                         id "service.account.read";
-                        key [host, endpoint, client.tenant, accounts.account, endpoint.resource];
+                        key [origin, endpoint, client.tenant, accounts.account, endpoint.resource];
                         allow 10 per 1s;
                     }
                 }
@@ -1308,11 +1351,11 @@ mod tests {
         let docs = endpoint_type_docs(&api, "read");
 
         assert!(docs.contains("applicable policies are listed in inherited order"));
-        assert!(docs.contains("Bucketed by: declaration-global"));
+        assert!(docs.contains("Bucketed by: `origin`"));
         assert!(docs.contains(
-            "Bucketed by: `host`, `endpoint`, `client.tenant`, `accounts.account`, `endpoint.resource`"
+            "Bucketed by: `origin`, `endpoint`, `client.tenant`, `accounts.account`, `endpoint.resource`"
         ));
-        assert!(docs.contains("derived deterministic policy ID"));
+        assert!(docs.contains("explicit stable policy ID `concord.docs.2`"));
         assert!(docs.contains("explicit stable policy ID `service.account.read`"));
     }
 
@@ -1320,38 +1363,34 @@ mod tests {
     fn named_rule_docs_report_definition_attachment_and_logical_dimensions() {
         let api = semantic::test_support::resolve_tokens(quote! {
             client RateDocsApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 rate_limits {
-                    account_reads(account) {
-                        key [host, account];
+                    policy account_reads(account) { id "concord.docs.4"; cost 1;
+                        key [origin, account];
                         allow 10 per 1m;
                     }
                 }
 
             scope accounts(account: String) {
                 rate_limit account_reads(account = accounts.account) { cost 2; }
-                GET read() -> Bytes using Bytes;
+                GET read() -> Bytes via Binary;
             }
         }});
         let docs = endpoint_type_docs(&api, "read");
 
         assert!(docs.contains("rate-limit profile `account_reads` attached at scope accounts"));
-        assert!(
-            docs.contains(
-                "derived deterministic policy ID `rate_docs_api.rate_limit.account_reads`"
-            )
-        );
-        assert!(docs.contains("Bucketed by: `host`, `account`"));
+        assert!(docs.contains("explicit stable policy ID `concord.docs.4`"));
+        assert!(docs.contains("Bucketed by: `origin`, `account`"));
         assert!(docs.contains("Cost: 2"));
-        assert!(!docs.contains("Bucketed by: `host`, `accounts.account`"));
+        assert!(!docs.contains("Bucketed by: `origin`, `accounts.account`"));
     }
 
     #[test]
     fn value_controls_describe_optional_and_defaulted_semantics_exactly() {
         let api = semantic::test_support::resolve_tokens(quote! {
             client ControlDocsApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
 
             GET read(
@@ -1360,11 +1399,11 @@ mod tests {
                 limit: u32,
                 label?: Option<String> = None,
                 values?: Option<Vec<String>> = None,
-            ) -> Bytes using Bytes;
+            ) -> Bytes via Binary;
         }});
         let endpoint_docs = endpoint_type_docs(&api, "read");
         assert!(endpoint_docs.contains(
-            "absence-capable; replace the exact effective value with `.set_cursor(...)`, select a present payload with `.with_cursor(...)`, select absence with `.clear_cursor()`"
+            "absence-capable; replace the exact effective value with `.set_cursor(...)`, select absence with `.omit_cursor()`"
         ));
         assert!(endpoint_docs.contains(
             "has a declaration default; replace the exact effective value with `.set_limit(...)`, restore the retained default with `.reset_limit()`"
@@ -1373,25 +1412,25 @@ mod tests {
             endpoint_docs.contains("`#[default]` invokes application-owned `Default::default()`")
         );
         assert!(endpoint_docs.contains(
-            "`endpoint.label: :: std :: option :: Option < Option < String > >` — absence-capable and has a declaration default; replace the exact effective value with `.set_label(...)`, select a present payload with `.with_label(...)`, select absence with `.clear_label()`, restore the retained default with `.reset_label()`"
+            "`endpoint.label: :: std :: option :: Option < Option < String > >` — absence-capable and has a declaration default; replace the exact effective value with `.set_label(...)`, select absence with `.omit_label()`, restore the retained default with `.reset_label()`"
         ));
         assert!(endpoint_docs.contains(
-            "`endpoint.values: :: std :: option :: Option < Option < Vec < String > > >` — absence-capable and has a declaration default; replace the exact effective value with `.set_values(...)`, select a present payload with `.with_values(...)`, select absence with `.clear_values()`, restore the retained default with `.reset_values()`"
+            "`endpoint.values: :: std :: option :: Option < Option < Vec < String > > >` — absence-capable and has a declaration default; replace the exact effective value with `.set_values(...)`, select absence with `.omit_values()`, restore the retained default with `.reset_values()`"
         ));
         assert!(!endpoint_docs.contains("Some(value)"));
 
         let request_docs = endpoint_request_docs(&api, "read");
         assert!(request_docs.contains(
-            "replace the exact effective value with `.set_cursor(...)`; select a present payload with `.with_cursor(...)`; select absence with `.clear_cursor()`"
+            "replace the exact effective value with `.set_cursor(...)`; select absence with `.omit_cursor()`"
         ));
         assert!(request_docs.contains(
             "replace the exact effective value with `.set_limit(...)`; restore the retained default with `.reset_limit()`"
         ));
         assert!(request_docs.contains(
-            "replace the exact effective value with `.set_label(...)`; select a present payload with `.with_label(...)`; select absence with `.clear_label()`; restore the retained default with `.reset_label()`"
+            "replace the exact effective value with `.set_label(...)`; select absence with `.omit_label()`; restore the retained default with `.reset_label()`"
         ));
         assert!(request_docs.contains(
-            "replace the exact effective value with `.set_values(...)`; select a present payload with `.with_values(...)`; select absence with `.clear_values()`; restore the retained default with `.reset_values()`"
+            "replace the exact effective value with `.set_values(...)`; select absence with `.omit_values()`; restore the retained default with `.reset_values()`"
         ));
         assert!(!request_docs.contains("Some(value)"));
     }
@@ -1417,21 +1456,22 @@ mod tests {
                 timeout 20s;
 
             POST submit(
-                body body: Input using Json<Input>,
+                body body: Input via Json,
                 optional?: bool,
-            ) -> Output using Json<Output> {
+            ) -> Output via Json {
                 auth { bearer bearer; }
                 expose accepted_bytes;
             }
-            GET stream() -> ::concord::response::ByteStream using Stream<OctetStream>;
-            GET discard() -> () using NoContent {
-                timeout off;
+            GET stream() -> ::concord::response::ByteStream via Binary;
+            GET discard() -> () via Empty {
+                timeout 30s;
             }
             POST pages(
                 cursor?: String,
-                body filter: Filter using Json<Filter>,
-            ) -> Page using Json<Page> {
-                paginate with crate::Controller {
+                body filter: Filter via Json,
+            ) -> Page via Json {
+                effect safe;
+                paginate via crate::Controller {
                     cursor -> endpoint.cursor;
                 }
             }
@@ -1444,7 +1484,7 @@ mod tests {
 
         let endpoint = endpoint_type_docs(&api, "submit");
         assert!(endpoint.contains("Body argument: `endpoint.body`"));
-        assert!(endpoint.contains("Specification: `Json < Input >`"));
+        assert!(endpoint.contains("representation `Json`"));
         assert!(endpoint.contains("Authentication: Bearer authorization"));
         assert!(endpoint.contains("Timeout: inherited 20s"));
 
@@ -1455,15 +1495,15 @@ mod tests {
         assert!(!request.contains("`.paginate(...)`"));
 
         let stream_docs = endpoint_type_docs(&api, "stream");
-        assert!(stream_docs.contains("Specification: `Stream < OctetStream >`"));
+        assert!(stream_docs.contains("Representation: `Binary`"));
         assert!(stream_docs.contains("Body: none."));
         assert!(stream_docs.contains("Authentication: none."));
 
-        assert!(endpoint_type_docs(&api, "discard").contains("Specification: `NoContent`"));
-        assert!(endpoint_type_docs(&api, "discard").contains("Timeout: disabled"));
+        assert!(endpoint_type_docs(&api, "discard").contains("Representation: `Empty`"));
+        assert!(endpoint_type_docs(&api, "discard").contains("Timeout: endpoint override 30s"));
 
         assert!(endpoint_request_docs(&api, "pages").contains("`.paginate(...)`"));
-        assert!(endpoint_type_docs(&api, "pages").contains("`PageRequestBodySpec`"));
+        assert!(endpoint_type_docs(&api, "pages").contains("`PageRequestRepresentation`"));
         assert!(endpoint_type_docs(&api, "pages").contains("page-stable input"));
     }
 

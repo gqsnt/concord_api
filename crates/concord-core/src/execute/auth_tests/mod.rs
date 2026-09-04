@@ -20,23 +20,23 @@ use crate::auth::{
 };
 use crate::body::{
     BodyError, BodyFactory, EmptyBody, RequestBody, RequestBodyContext, RequestBodyMetadata,
-    RequestBodySpec, Stream as StreamSpec, StreamBody,
+    RequestRepresentation, RequestStream,
 };
 #[cfg(feature = "multipart")]
 use crate::body::{MultipartBody, MultipartPart};
 use crate::client::ClientCore;
-use crate::codec::{CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext, OctetStream};
+use crate::codec::{Binary, CodecError, DecodeBody, DecodeContext, EncodeBody, EncodeContext};
 use crate::endpoint::EndpointId;
 use crate::error::{ApiError, AuthErrorKind, ErrorCategory};
 use crate::hooks::{
-    AttemptInfo, BeforeSend, BoxFuture, CompletionEvent, CompletionObserver, CompletionOutcome,
-    DebugLevel, PaginationCompletionEvent, RequestGate, ResponseGate, ResponseHeadEvent,
+    AttemptInfo, BoxFuture, CompletionOutcome, DebugLevel, OperationEvent, OperationObserver,
 };
 use crate::http::HttpConfigBuilder;
 use crate::http::provider::{ProviderBody, ProviderRequest};
 use crate::operation::OperationId;
 use crate::pagination::{
-    PageLimit, PaginatedEndpoint, PaginatedRequest, PaginationController, PaginationError,
+    PageDecisionLimits, PageLimit, PageResponse, PageStep, PaginatedEndpoint, PaginatedRequest,
+    PaginationController, PaginationDescription, PaginationError,
 };
 use crate::rate_limit::{
     RateLimitError, RateLimitId, RateLimitKey, RateLimitPermit, RateLimitPolicy, RateLimitRequest,
@@ -45,7 +45,9 @@ use crate::rate_limit::{
 use crate::request::{
     EndpointSpec, HeadBuilder, PreparedHead, Request, RequestMeta, RuntimeEndpoint,
 };
-use crate::response::{Buffered, ResponseBodyError, ResponseHead, ResponseSpec};
+use crate::response::{
+    Buffered, ByteStream, ResponseBodyError, ResponseHead, ResponseRepresentation,
+};
 use crate::runtime::RuntimeConfigBuilder;
 
 const ENDPOINT: &str = "authentication_api.protected";
@@ -150,7 +152,9 @@ impl DecodeBody for AuthenticationPageCodec {
 }
 
 impl EndpointSpec for PaginatedProtectedEndpoint {
+    type Input = ();
     type Body = EmptyBody;
+    type Output = Vec<u8>;
     type Response = AuthenticationPageCodec;
 
     fn request_meta(&self) -> RequestMeta {
@@ -188,17 +192,28 @@ struct TwoAuthenticationPages {
 }
 
 impl PaginationController<Vec<u8>> for TwoAuthenticationPages {
-    fn next(self, _page: &Vec<u8>) -> Result<Option<Self>, PaginationError> {
+    type Item = u8;
+
+    const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
+
+    fn advance(
+        self,
+        page: PageResponse<Vec<u8>>,
+        _limits: PageDecisionLimits,
+    ) -> Result<PageStep<Self, Self::Item>, PaginationError> {
+        let items = page.into_page();
         if self.page == 0 {
-            Ok(Some(Self { page: 1 }))
+            Ok(PageStep::Continue {
+                items,
+                next: Self { page: 1 },
+            })
         } else {
-            Ok(None)
+            Ok(PageStep::Done { items })
         }
     }
 }
 
 impl PaginatedEndpoint for PaginatedProtectedEndpoint {
-    type Item = u8;
     type Controller = TwoAuthenticationPages;
 
     fn initial_controller(&self) -> Result<Self::Controller, PaginationError> {
@@ -219,8 +234,10 @@ struct BasicEndpoint {
 }
 
 impl EndpointSpec for BasicEndpoint {
+    type Input = RequestBody;
     type Body = RequestBody;
-    type Response = Bytes;
+    type Output = Bytes;
+    type Response = Binary;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::GET, Some(Duration::from_secs(30)))
@@ -250,8 +267,10 @@ struct HeaderEndpoint {
 }
 
 impl EndpointSpec for HeaderEndpoint {
+    type Input = RequestBody;
     type Body = RequestBody;
-    type Response = Bytes;
+    type Output = Bytes;
+    type Response = Binary;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::GET, Some(Duration::from_secs(30)))
@@ -282,8 +301,10 @@ impl EndpointSpec for HeaderEndpoint {
 }
 
 impl EndpointSpec for ProtectedStreamEndpoint {
+    type Input = RequestBody;
     type Body = RequestBody;
-    type Response = StreamSpec<OctetStream>;
+    type Output = ByteStream;
+    type Response = Binary;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::GET, Some(Duration::from_secs(30)))
@@ -317,8 +338,10 @@ struct MultiAuthEndpoint {
 }
 
 impl EndpointSpec for MultiAuthEndpoint {
+    type Input = RequestBody;
     type Body = RequestBody;
-    type Response = Bytes;
+    type Output = Bytes;
+    type Response = Binary;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::POST, Some(Duration::from_secs(30)))
@@ -362,8 +385,10 @@ struct DynamicCollisionEndpoint {
 }
 
 impl EndpointSpec for DynamicCollisionEndpoint {
+    type Input = RequestBody;
     type Body = RequestBody;
-    type Response = Bytes;
+    type Output = Bytes;
+    type Response = Binary;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::POST, Some(Duration::from_secs(30)))
@@ -484,8 +509,10 @@ struct LimiterWaitExpiryEndpoint {
 }
 
 impl EndpointSpec for LimiterWaitExpiryEndpoint {
+    type Input = RequestBody;
     type Body = RequestBody;
-    type Response = Bytes;
+    type Output = Bytes;
+    type Response = Binary;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::POST, Some(Duration::from_secs(30)))
@@ -552,8 +579,10 @@ impl SecretCredential for CountedExposureToken {
 }
 
 impl EndpointSpec for ExposureEndpoint {
+    type Input = RequestBody;
     type Body = RequestBody;
-    type Response = Bytes;
+    type Output = Bytes;
+    type Response = Binary;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::GET, Some(Duration::from_secs(30)))
@@ -578,8 +607,10 @@ impl EndpointSpec for ExposureEndpoint {
 }
 
 impl EndpointSpec for FinalizationExpiryEndpoint {
+    type Input = RequestBody;
     type Body = RequestBody;
-    type Response = Bytes;
+    type Output = Bytes;
+    type Response = Binary;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::POST, Some(Duration::from_secs(30)))
@@ -609,15 +640,17 @@ impl EndpointSpec for FinalizationExpiryEndpoint {
 }
 
 impl EndpointSpec for ProtectedEndpoint {
+    type Input = RequestBody;
     type Body = RequestBody;
-    type Response = Bytes;
+    type Output = Bytes;
+    type Response = Binary;
 
     fn request_meta(&self) -> RequestMeta {
-        RequestMeta::new_with_repeatability(
+        RequestMeta::new_with_effect(
             ENDPOINT,
             Method::POST,
             Some(Duration::from_secs(30)),
-            crate::endpoint::Repeatability::Idempotent,
+            crate::endpoint::Effect::Idempotent,
         )
     }
 
@@ -658,7 +691,7 @@ struct HookRecord {
     parent_operation_id: Option<OperationId>,
     page_index: u32,
     attempt: AttemptInfo,
-    observed_url: String,
+    target: crate::hooks::RequestTarget,
     known_body_length: Option<u64>,
 }
 
@@ -696,119 +729,83 @@ struct AuthHooks {
     response: Mutex<Vec<AuthResponseRecord>>,
     completion: Mutex<Vec<AuthCompletionRecord>>,
     pagination: Mutex<Vec<AuthPaginationRecord>>,
-    observed_ready_during_response_hook: AtomicBool,
+    observed_ready_during_response_observer: AtomicBool,
     observed_selector: Mutex<Option<Arc<SlotSelector<AccessToken>>>>,
     ready_during_response: Mutex<Vec<bool>>,
-    replace_on_first_response: AtomicBool,
-    veto_recovery: AtomicBool,
 }
 
 impl AuthHooks {
     fn observe(&self, selector: Arc<SlotSelector<AccessToken>>) {
         *self.observed_selector.lock().expect("selector lock") = Some(selector);
     }
-
-    fn replace_on_first_response(&self) {
-        self.replace_on_first_response.store(true, Ordering::SeqCst);
-    }
-
-    fn veto_recovery(&self) {
-        self.veto_recovery.store(true, Ordering::SeqCst);
-    }
 }
 
-impl RequestGate for AuthHooks {
-    fn before_send<'a>(
-        &'a self,
-        context: BeforeSend<'a>,
-    ) -> BoxFuture<'a, Result<(), crate::error::GateError>> {
-        self.before
-            .lock()
-            .expect("before records")
-            .push(HookRecord {
-                operation_id: context.operation_id,
-                parent_operation_id: context.parent_operation_id,
-                page_index: context.page_index,
-                attempt: context.attempt,
-                observed_url: context.observed_url.to_owned(),
-                known_body_length: context.known_body_length,
-            });
-        let veto =
-            context.attempt.authentication_recovery && self.veto_recovery.load(Ordering::SeqCst);
-        Box::pin(async move {
-            if veto {
-                Err(crate::error::GateError::new("recovery veto"))
-            } else {
-                Ok(())
+impl OperationObserver for AuthHooks {
+    fn observe(&self, event: OperationEvent<'_>) {
+        match event {
+            OperationEvent::AttemptStarted(context) => {
+                self.before
+                    .lock()
+                    .expect("before records")
+                    .push(HookRecord {
+                        operation_id: context.operation_id,
+                        parent_operation_id: context.parent_operation_id,
+                        page_index: context.page_index,
+                        attempt: context.attempt,
+                        target: context.target,
+                        known_body_length: context.known_body_length,
+                    });
             }
-        })
-    }
-}
-
-impl ResponseGate for AuthHooks {
-    fn before_response_handling<'a>(
-        &'a self,
-        context: ResponseHeadEvent<'a>,
-    ) -> BoxFuture<'a, Result<(), crate::error::GateError>> {
-        self.response.lock().expect("response records").push((
-            context.operation_id,
-            context.attempt,
-            context.status,
-            context.parent_operation_id,
-            context.page_index,
-        ));
-        let selector = self
-            .observed_selector
-            .lock()
-            .expect("selector lock")
-            .as_ref()
-            .cloned();
-        let ready = selector.as_ref().is_some_and(|selector| selector.is_set());
-        self.ready_during_response
-            .lock()
-            .expect("response readiness")
-            .push(ready);
-        if ready {
-            self.observed_ready_during_response_hook
-                .store(true, Ordering::SeqCst);
+            OperationEvent::ResponseHeadObserved(context) => {
+                self.response.lock().expect("response records").push((
+                    context.operation_id,
+                    context.attempt,
+                    context.status,
+                    context.parent_operation_id,
+                    context.page_index,
+                ));
+                let selector = self
+                    .observed_selector
+                    .lock()
+                    .expect("selector lock")
+                    .as_ref()
+                    .cloned();
+                let ready = selector.as_ref().is_some_and(|selector| selector.is_set());
+                self.ready_during_response
+                    .lock()
+                    .expect("response readiness")
+                    .push(ready);
+                if ready {
+                    self.observed_ready_during_response_observer
+                        .store(true, Ordering::SeqCst);
+                }
+            }
+            OperationEvent::OperationFinished(context) => {
+                self.completion.lock().expect("completion records").push((
+                    context.operation_id,
+                    context.recovered_authentication,
+                    context.final_status,
+                    context.parent_operation_id,
+                    context.page_index,
+                    context.outcome,
+                    context.attempts_started,
+                    context.policy_retries,
+                ));
+            }
+            OperationEvent::PaginationFinished(context) => {
+                self.pagination.lock().expect("pagination records").push((
+                    context.operation_id,
+                    context.pages_completed,
+                    context.items_collected,
+                    context.recovered_authentication,
+                    context.final_status,
+                    context.outcome,
+                    context.attempts_started,
+                    context.policy_retries,
+                ));
+            }
+            _ => {}
         }
-        if !context.attempt.authentication_recovery
-            && self.replace_on_first_response.swap(false, Ordering::SeqCst)
-        {
-            selector
-                .expect("replacement selector")
-                .set(access_token(NEWER))
-                .expect("response-hook replacement");
-        }
-        Box::pin(async { Ok(()) })
-    }
-}
-
-impl CompletionObserver for AuthHooks {
-    fn on_complete(&self, context: CompletionEvent<'_>) {
-        self.completion.lock().expect("completion records").push((
-            context.operation_id,
-            context.recovered_authentication,
-            context.final_status,
-            context.parent_operation_id,
-            context.page_index,
-            context.outcome,
-            context.attempts_started,
-            context.policy_retries,
-        ));
-    }
-
-    fn on_pagination_complete(&self, context: PaginationCompletionEvent<'_>) {
-        self.pagination.lock().expect("pagination records").push((
-            context.operation_id,
-            context.pages_completed,
-            context.items_collected,
-            context.recovered_authentication,
-            context.final_status,
-            context.outcome,
-            context.attempts_started,
-            context.policy_retries,
-        ));
     }
 }
 
@@ -898,8 +895,10 @@ struct OversizedMaterialEndpoint {
 }
 
 impl EndpointSpec for OversizedMaterialEndpoint {
+    type Input = RequestBody;
     type Body = RequestBody;
-    type Response = Bytes;
+    type Output = Bytes;
+    type Response = Binary;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::GET, Some(Duration::from_secs(30)))
@@ -1056,10 +1055,7 @@ impl RateLimiter for AuthRateLimiter {
         })
     }
 
-    fn observe<'a>(
-        &'a self,
-        _response: RateLimitResponse<'a>,
-    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
+    fn observe(&self, _response: RateLimitResponse<'_>) {
         self.observations.fetch_add(1, Ordering::SeqCst);
         if let Some((selector, records)) = &self.observed_selector {
             records
@@ -1067,7 +1063,6 @@ impl RateLimiter for AuthRateLimiter {
                 .expect("limiter observation records")
                 .push(selector.is_set());
         }
-        Box::pin(async { Ok(()) })
     }
 }
 
@@ -1172,16 +1167,18 @@ struct ReplayFactory {
 }
 
 impl BodyFactory for ReplayFactory {
-    fn create(&self) -> Result<StreamBody, BodyError> {
+    fn create(&self) -> Result<RequestStream, BodyError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        Ok(StreamBody::from_bytes(Bytes::from_static(b"factory-body")))
+        Ok(RequestStream::from_bytes(Bytes::from_static(
+            b"factory-body",
+        )))
     }
 }
 
 struct FailingFactory;
 
 impl BodyFactory for FailingFactory {
-    fn create(&self) -> Result<StreamBody, BodyError> {
+    fn create(&self) -> Result<RequestStream, BodyError> {
         Err(BodyError::new(crate::body::BodyErrorKind::Factory))
     }
 }
@@ -1191,10 +1188,12 @@ struct FailOnSecondFactory {
 }
 
 impl BodyFactory for FailOnSecondFactory {
-    fn create(&self) -> Result<StreamBody, BodyError> {
+    fn create(&self) -> Result<RequestStream, BodyError> {
         let call = self.calls.fetch_add(1, Ordering::SeqCst);
         if call == 0 {
-            Ok(StreamBody::from_bytes(Bytes::from_static(b"initial-body")))
+            Ok(RequestStream::from_bytes(Bytes::from_static(
+                b"initial-body",
+            )))
         } else {
             Err(BodyError::new(crate::body::BodyErrorKind::Factory))
         }
@@ -1218,9 +1217,9 @@ fn core_with_runtime(
         "https://protected.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
         runtime
-            .request_gate(hooks.clone())
-            .response_gate(hooks.clone())
-            .completion_observer(hooks)
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks)
             .debug(DebugLevel::Headers),
         executor,
     )

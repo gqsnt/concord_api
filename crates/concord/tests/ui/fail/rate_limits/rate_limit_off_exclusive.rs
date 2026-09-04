@@ -2,12 +2,12 @@ use concord::api;
 
 api! {
     client Api {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
         rate_limit off;
 
 
-    GET read() -> Bytes using Bytes;
+    GET read() -> Bytes via Binary;
 }}
 
 fn main() {}

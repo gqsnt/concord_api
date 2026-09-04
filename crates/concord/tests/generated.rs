@@ -10,6 +10,7 @@ mod generated {
     pub(crate) mod rate_limits;
     #[cfg(any(feature = "csv", feature = "ndjson"))]
     pub(crate) mod record_formats;
+    pub(crate) mod representation_inheritance;
     #[cfg(feature = "multipart")]
     pub(crate) mod shaping;
     mod surface;

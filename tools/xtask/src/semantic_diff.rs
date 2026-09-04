@@ -37,6 +37,7 @@ mod tests {
             .join("\n");
         let expected = fs::read_to_string(root.join("fixtures/semantic_diff/expected.txt"))
             .expect("expected fixture");
-        assert_eq!(format!("{actual}\n"), expected);
+        let expected = expected.lines().collect::<Vec<_>>().join("\n");
+        assert_eq!(actual, expected);
     }
 }

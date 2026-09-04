@@ -29,7 +29,7 @@ pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> Tok
         client.base.value()
     );
     let builder_doc = format!(
-        "Builder for [`{client_name}`].\n\n# Inputs\n\n{value_summary} {credential_summary}\n\n# Value controls\n\n`set_*` replaces the exact effective type. Concord-optional values also expose `with_*` and `clear_*`; defaulted values expose `reset_*`. A builder reset discards the override so the next successful `build` evaluates the declaration default once.\n\n# Defaults\n\nBase URL: `{}`. {timeout_summary} {rate_summary} `#[default]` invokes application-owned `Default::default()` for the written payload type; explicit stable initializers are evaluated at the same owner boundary. Concord performs no managed I/O during construction.\n\n# Configuration\n\nUse `retry` for a Concord-managed retry policy, `configure_http` for transport policy, and `configure_runtime` for gates, completion observation, finite limits, limiter selection, and runtime policy. Transformations apply immediately in call order.",
+        "Builder for [`{client_name}`].\n\n# Inputs\n\n{value_summary} {credential_summary}\n\n# Value controls\n\n`set_*` replaces the exact effective type. Concord-optional values expose `omit_*`; defaulted values expose `reset_*`. A builder reset discards the override so the next successful `build` evaluates the declaration default once.\n\n# Defaults\n\nBase URL: `{}`. {timeout_summary} {rate_summary} `#[default]` invokes application-owned `Default::default()` for the written payload type; explicit stable initializers are evaluated at the same owner boundary. Concord performs no managed I/O during construction.\n\n# Configuration\n\nUse `retry` for a Concord-managed retry policy, `configure_http` for transport policy, and `configure_runtime` for gates, completion observation, finite limits, limiter selection, and runtime policy. Transformations apply immediately in call order.",
         client.base.value()
     );
     let support_doc = format!(
@@ -249,6 +249,8 @@ pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> Tok
             pub trait Endpoint: __concord_endpoint_seal::Sealed + ::std::marker::Sized {
                 /// Named inert request produced when this endpoint is bound to its client.
                 type Request;
+                /// Exact value produced by ordinary `.await`.
+                type Output: ::std::marker::Send + 'static;
                 /// Response specification selected by this endpoint declaration.
                 type Response;
 
@@ -265,58 +267,9 @@ pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> Tok
                     &self,
                     client: &super::#client_name,
                 ) -> ::std::result::Result<
-                    #facade_path::endpoint::CredentialFreeRequestPlan,
+                    #facade_path::endpoint::RequestPlan,
                     #facade_path::ApiError,
                 >;
-            }
-
-            #[doc(hidden)]
-            impl<R> __concord_endpoint_seal::Sealed
-                for #facade_path::endpoint::RuntimeEndpoint<R>
-            where
-                R: #facade_path::response::ResponseSpec,
-            {}
-
-            #[doc(hidden)]
-            impl<R> Endpoint for #facade_path::endpoint::RuntimeEndpoint<R>
-            where
-                R: #facade_path::response::ResponseSpec,
-            {
-                type Request = #facade_path::endpoint::Request<Self>;
-                type Response = R;
-
-                fn description(
-                    &self,
-                ) -> &#facade_path::endpoint::EndpointDescription {
-                    self.description()
-                }
-
-                fn __concord_bind(self, client: &super::#client_name) -> Self::Request {
-                    __concord_generated::__core::__private::request(
-                        &client.__concord_core,
-                        self,
-                    )
-                }
-
-                fn __concord_plan(
-                    &self,
-                    client: &super::#client_name,
-                ) -> ::std::result::Result<
-                    #facade_path::endpoint::CredentialFreeRequestPlan,
-                    #facade_path::ApiError,
-                > {
-                    __concord_generated::__core::__private::credential_free_request_plan(
-                        &client.__concord_core,
-                        self.description(),
-                        <R as #facade_path::response::ResponseSpec>::accept(),
-                        |builder| {
-                            <Self as __concord_generated::__core::__private::EndpointSpec>::prepare_head(
-                                self,
-                                builder,
-                            )
-                        },
-                    )
-                }
             }
 
             #credentials_module
@@ -363,13 +316,59 @@ pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> Tok
                     &self,
                     endpoint: &E,
                 ) -> ::std::result::Result<
-                    #facade_path::endpoint::CredentialFreeRequestPlan,
+                    #facade_path::endpoint::RequestPlan,
                     #facade_path::ApiError,
                 >
                 where
                     E: Endpoint,
                 {
                     <E as Endpoint>::__concord_plan(endpoint, self)
+                }
+            }
+
+            #[doc(hidden)]
+            impl<R, Output> #facade_path::endpoint::RuntimeEndpointBinding<R, Output>
+                for super::#client_name
+            where
+                R: #facade_path::response::ResponseRepresentation<Output>,
+                Output: ::std::marker::Send + 'static,
+            {
+                type BoundEndpoint = #facade_path::endpoint::RuntimeEndpoint<R, Output>;
+
+                fn try_bind_runtime_endpoint(
+                    &self,
+                    endpoint: #facade_path::endpoint::RuntimeEndpoint<R, Output>,
+                ) -> ::std::result::Result<
+                    #facade_path::endpoint::Request<Self::BoundEndpoint>,
+                    #facade_path::ApiError,
+                > {
+                    <Self as #facade_path::endpoint::RuntimeEndpointBinding<R, Output>>
+                        ::plan_runtime_endpoint(self, &endpoint)?;
+                    ::std::result::Result::Ok(
+                        __concord_generated::__core::__private::request(
+                            &self.__concord_core,
+                            endpoint,
+                        ),
+                    )
+                }
+
+                fn plan_runtime_endpoint(
+                    &self,
+                    endpoint: &#facade_path::endpoint::RuntimeEndpoint<R, Output>,
+                ) -> ::std::result::Result<
+                    #facade_path::endpoint::RequestPlan,
+                    #facade_path::ApiError,
+                > {
+                    __concord_generated::__core::__private::plan_unbound_request(
+                        &self.__concord_core,
+                        endpoint.description(),
+                        <R as #facade_path::response::ResponseRepresentation<Output>>::accept(),
+                        |builder| {
+                            <#facade_path::endpoint::RuntimeEndpoint<R, Output>
+                                as __concord_generated::__core::__private::EndpointSpec
+                            >::prepare_head(endpoint, builder)
+                        },
+                    )
                 }
             }
 
@@ -622,16 +621,15 @@ fn generate_contract_description(
         Child::Endpoint(endpoint) => Some(endpoint_description_clone(endpoint, &[])),
         Child::Scope(_) => None,
     });
-    let timeout = client.config.timeout.map_or_else(
-        || quote!(#facade_path::endpoint::TimeoutSelection::Disabled),
-        |duration| {
-            let seconds = duration.as_secs();
-            let nanos = duration.subsec_nanos();
-            quote!(#facade_path::endpoint::TimeoutSelection::Explicit(
-                ::std::time::Duration::new(#seconds, #nanos)
-            ))
-        },
-    );
+    let duration = client
+        .config
+        .timeout
+        .expect("semantic validation retains one finite client timeout");
+    let seconds = duration.as_secs();
+    let nanos = duration.subsec_nanos();
+    let timeout = quote!(#facade_path::endpoint::TimeoutSelection::Explicit(
+        ::std::time::Duration::new(#seconds, #nanos)
+    ));
     let base = &client.base;
     let tokens = quote! {
         static #static_name: ::std::sync::LazyLock<#facade_path::endpoint::ContractDescription> =
@@ -741,29 +739,16 @@ pub(super) fn generate_builder_value_methods(index: usize, value: &Value) -> Tok
     let field = builder_value_field(index, value);
     let setter_type = value.setter_argument_type();
     let selected_value = quote!(__concord_generated::__core::__private::Override::Set(value));
-    let with = value.accepts_absence().then(|| {
-        let method = helper_ident("with", &value.name);
-        let payload_type = value.with_argument_type();
-        quote! {
-            #[must_use]
-            pub fn #method(mut self, value: #payload_type) -> Self {
-                self.#field = __concord_generated::__core::__private::Override::Set(
-                    ::std::option::Option::Some(value),
-                );
-                self
-            }
-        }
-    });
-    let clear = value.accepts_absence().then(|| {
-        let clear = helper_ident("clear", &value.name);
-        let clear_doc = format!(
+    let omit = value.accepts_absence().then(|| {
+        let omit = helper_ident("omit", &value.name);
+        let omit_doc = format!(
             "Explicitly selects absence for the absence-capable client value `{}`.",
             canonical_ident(&value.name)
         );
         quote! {
-            #[doc = #clear_doc]
+            #[doc = #omit_doc]
             #[must_use]
-            pub fn #clear(mut self) -> Self {
+            pub fn #omit(mut self) -> Self {
                 self.#field = __concord_generated::__core::__private::Override::Set(
                     ::std::option::Option::None,
                 );
@@ -798,8 +783,7 @@ pub(super) fn generate_builder_value_methods(index: usize, value: &Value) -> Tok
             self
         }
 
-        #with
-        #clear
+        #omit
         #reset
     }
 }

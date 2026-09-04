@@ -3,16 +3,16 @@
 //! Required features: none. Mode: construction-only. Documentation owner:
 //! `docs/retry.md`.
 
-use concord::api;
 use concord::retry::{RetryDecision, RetryFailure, RetryPolicy};
+use concord::{Bytes, api};
 
 api! {
     client RetryApi {
-        timeout off;
+        timeout 30s;
         base "http://retry.example.test/";
 
 
-    GET health() -> Bytes using Bytes;
+    GET health() -> Bytes via Binary;
 }}
 
 /// Builds a finite policy for transient connection, transport, and selected

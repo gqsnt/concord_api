@@ -47,6 +47,7 @@ pub enum ChallengePolicy {
 }
 
 /// One opaque typed authentication placement.
+#[derive(Clone)]
 pub struct Auth {
     kind: PlacementKind,
     credential: Arc<dyn ErasedCredential>,
@@ -342,7 +343,7 @@ fn basic_material(value: &BasicCredential) -> Result<NativeMaterial<'_>, AuthErr
     })
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct AuthPlan {
     placements: Vec<Auth>,
 }
@@ -392,6 +393,10 @@ impl AuthPlan {
 
     pub(crate) fn placement_count(&self) -> usize {
         self.placements.len()
+    }
+
+    pub(crate) fn cloned_placements(&self) -> impl Iterator<Item = Auth> + '_ {
+        self.placements.iter().cloned()
     }
 
     pub(crate) fn validate_public(

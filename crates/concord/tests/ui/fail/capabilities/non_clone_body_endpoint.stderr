@@ -1,35 +1,18 @@
-error[E0599]: the method `clone` exists for struct `Upload`, but its trait bounds were not satisfied
-  --> tests/ui/fail/capabilities/non_clone_body_endpoint.rs:17:22
+error[E0599]: no method named `clone` found for struct `Upload` in the current scope
+  --> tests/ui/fail/capabilities/non_clone_body_endpoint.rs:16:22
    |
- 6 | / api! {
- 7 | |     client UploadApi {
- 8 | |         timeout off;
- 9 | |         base "http://upload.example.test/";
+ 5 | / api! {
+ 6 | |     client UploadApi {
+ 7 | |         timeout 30s;
+ 8 | |         base "http://upload.example.test/";
 ...  |
-12 | |     POST upload(body body: ::concord::body::StreamBody using Stream<OctetStream>) -> Bytes using Bytes;
-13 | | }}
-   | |__- method `clone` not found for this struct because it doesn't satisfy `Upload: Clone`
+11 | |     POST upload(body body: ::concord::body::RequestStream via Binary) -> Bytes via Binary;
+12 | | }}
+   | |__- method `clone` not found for this struct
 ...
-17 |       let _ = endpoint.clone();
-   |                        ^^^^^ method cannot be called on `Upload` due to unsatisfied trait bounds
+16 |       let _ = endpoint.clone();
+   |                        ^^^^^ method not found in `Upload`
    |
-  ::: $WORKSPACE/crates/concord-core/src/body/stream.rs
-   |
-   |   pub struct StreamBody {
-   |   --------------------- doesn't satisfy `StreamBody: Clone`
-   |
-note: trait bound `StreamBody: Clone` was not satisfied
-  --> tests/ui/fail/capabilities/non_clone_body_endpoint.rs:6:1
-   |
- 6 | / api! {
- 7 | |     client UploadApi {
- 8 | |         timeout off;
- 9 | |         base "http://upload.example.test/";
-...  |
-12 | |     POST upload(body body: ::concord::body::StreamBody using Stream<OctetStream>) -> Bytes using Bytes;
-13 | | }}
-   | |__^
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following trait defines an item `clone`, perhaps you need to implement it:
            candidate #1: `Clone`
-   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

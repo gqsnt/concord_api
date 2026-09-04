@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::fmt::Display;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
@@ -9,9 +8,12 @@ use http::{HeaderMap, HeaderName, HeaderValue, Method};
 use url::{Host, Url};
 
 use super::RequestOptions;
+use crate::atom::{
+    AtomEncoder, AtomError, BoundedAtomWriter, OrderedValues, RequestAtom, encode_atom,
+    encode_atom_with,
+};
 use crate::auth::{Auth, AuthPlan};
-use crate::construction::format_bounded;
-use crate::endpoint::{EndpointDescription, EndpointId, Repeatability, TimeoutSelection};
+use crate::endpoint::{AcceptedStatus, Effect, EndpointDescription, EndpointId, TimeoutSelection};
 use crate::error::{ApiError, ConfigurationErrorKind};
 use crate::hooks::DebugLevel;
 use crate::limits::{
@@ -19,7 +21,7 @@ use crate::limits::{
     MAX_REQUEST_HEADER_COUNT, MAX_REQUEST_URL_BYTES,
 };
 use crate::rate_limit::{
-    RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyValue, RateLimitPlan, RateLimitPolicy,
+    RateKeyPart, RateLimitError, RateLimitId, RateLimitKey, RateLimitPlan, RateLimitPolicy,
 };
 use crate::redaction::render_observed_url;
 
@@ -30,7 +32,8 @@ pub struct RequestMeta {
     endpoint: EndpointId,
     method: Method,
     timeout: TimeoutSelection,
-    repeatability: Repeatability,
+    accepted_status: AcceptedStatus,
+    effect: Effect,
 }
 
 impl RequestMeta {
@@ -41,26 +44,49 @@ impl RequestMeta {
         method: Method,
         inherited_timeout: Option<Duration>,
     ) -> Self {
-        let repeatability = Repeatability::for_method(&method);
-        Self::new_with_repeatability(endpoint, method, inherited_timeout, repeatability)
+        let effect = Effect::for_method(&method);
+        Self::new_with_contract(
+            endpoint,
+            method,
+            inherited_timeout,
+            AcceptedStatus::Success,
+            effect,
+        )
     }
 
     #[doc(hidden)]
     #[must_use]
-    pub fn new_with_repeatability(
+    pub fn new_with_effect(
         endpoint: &'static str,
         method: Method,
         inherited_timeout: Option<Duration>,
-        repeatability: Repeatability,
+        effect: Effect,
+    ) -> Self {
+        Self::new_with_contract(
+            endpoint,
+            method,
+            inherited_timeout,
+            AcceptedStatus::Success,
+            effect,
+        )
+    }
+
+    #[doc(hidden)]
+    #[must_use]
+    pub fn new_with_contract(
+        endpoint: &'static str,
+        method: Method,
+        inherited_timeout: Option<Duration>,
+        accepted_status: AcceptedStatus,
+        effect: Effect,
     ) -> Self {
         Self {
             endpoint: EndpointId::from_static(endpoint),
             method,
-            timeout: match inherited_timeout {
-                Some(duration) => TimeoutSelection::Explicit(duration),
-                None => TimeoutSelection::Disabled,
-            },
-            repeatability,
+            timeout: inherited_timeout
+                .map_or(TimeoutSelection::InheritClient, TimeoutSelection::Explicit),
+            accepted_status,
+            effect,
         }
     }
 
@@ -71,7 +97,8 @@ impl RequestMeta {
             endpoint: description.endpoint_id().clone(),
             method: description.method().clone(),
             timeout: description.timeout(),
-            repeatability: description.repeatability(),
+            accepted_status: description.accepted_status().clone(),
+            effect: description.effect(),
         }
     }
 
@@ -96,8 +123,19 @@ impl RequestMeta {
     }
 
     #[doc(hidden)]
-    pub const fn repeatability(&self) -> Repeatability {
-        self.repeatability
+    pub const fn effect(&self) -> Effect {
+        self.effect
+    }
+
+    #[doc(hidden)]
+    pub const fn accepted_status(&self) -> &AcceptedStatus {
+        &self.accepted_status
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_accepted_status(mut self, accepted_status: AcceptedStatus) -> Self {
+        self.accepted_status = accepted_status;
+        self
     }
 
     pub(crate) const fn resolve_inherited_timeout(
@@ -133,6 +171,78 @@ impl RequestHeadBudget {
             return Err(RequestHeadLimitError::Components);
         }
         self.components = next;
+        Ok(())
+    }
+
+    fn remove_components(&mut self, count: usize) -> Result<(), RequestHeadLimitError> {
+        self.components = self
+            .components
+            .checked_sub(count)
+            .ok_or(RequestHeadLimitError::Arithmetic)?;
+        Ok(())
+    }
+
+    fn remove_headers(
+        &mut self,
+        name: &HeaderName,
+        values: impl Iterator<Item = HeaderValue>,
+    ) -> Result<(), RequestHeadLimitError> {
+        let mut count = 0_usize;
+        let mut bytes = 0_usize;
+        for value in values {
+            count = count
+                .checked_add(1)
+                .ok_or(RequestHeadLimitError::Arithmetic)?;
+            bytes = bytes
+                .checked_add(name.as_str().len())
+                .and_then(|total| total.checked_add(value.as_bytes().len()))
+                .ok_or(RequestHeadLimitError::Arithmetic)?;
+        }
+        self.components = self
+            .components
+            .checked_sub(count)
+            .ok_or(RequestHeadLimitError::Arithmetic)?;
+        self.header_count = self
+            .header_count
+            .checked_sub(count)
+            .ok_or(RequestHeadLimitError::Arithmetic)?;
+        self.header_bytes = self
+            .header_bytes
+            .checked_sub(bytes)
+            .ok_or(RequestHeadLimitError::Arithmetic)?;
+        Ok(())
+    }
+
+    fn try_append_header(
+        &mut self,
+        name: &HeaderName,
+        value: &HeaderValue,
+    ) -> Result<(), RequestHeadLimitError> {
+        let next_components = self
+            .components
+            .checked_add(1)
+            .ok_or(RequestHeadLimitError::Arithmetic)?;
+        let next_count = self
+            .header_count
+            .checked_add(1)
+            .ok_or(RequestHeadLimitError::Arithmetic)?;
+        let next_bytes = self
+            .header_bytes
+            .checked_add(name.as_str().len())
+            .and_then(|total| total.checked_add(value.as_bytes().len()))
+            .ok_or(RequestHeadLimitError::Arithmetic)?;
+        if next_components > MAX_REQUEST_HEAD_COMPONENTS {
+            return Err(RequestHeadLimitError::Components);
+        }
+        if next_count > MAX_REQUEST_HEADER_COUNT {
+            return Err(RequestHeadLimitError::HeaderCount);
+        }
+        if next_bytes > MAX_REQUEST_HEADER_BYTES {
+            return Err(RequestHeadLimitError::HeaderBytes);
+        }
+        self.components = next_components;
+        self.header_count = next_count;
+        self.header_bytes = next_bytes;
         Ok(())
     }
 
@@ -248,9 +358,6 @@ pub struct HeadBuilder {
     appended_segment: bool,
     auth: Arc<AuthPlan>,
     rate_limit_policies: Vec<RateLimitPolicy>,
-    prepared_rate_limit_plan: Option<Arc<RateLimitPlan>>,
-    accept_override: Option<Option<HeaderValue>>,
-    accept_redacted: bool,
     budget: RequestHeadBudget,
 }
 
@@ -283,9 +390,6 @@ impl HeadBuilder {
             appended_segment: false,
             auth: Arc::new(AuthPlan::default()),
             rate_limit_policies: Vec::new(),
-            prepared_rate_limit_plan: None,
-            accept_override: None,
-            accept_redacted: false,
             budget: RequestHeadBudget::new(),
         }
     }
@@ -342,7 +446,7 @@ impl HeadBuilder {
     where
         I: IntoIterator<Item = (N, V)>,
         N: AsRef<str>,
-        V: RateLimitKeyValue,
+        V: RateKeyPart,
         W: IntoIterator<Item = (u32, Duration)>,
     {
         let policy = (|| -> Result<RateLimitPolicy, RateLimitError> {
@@ -413,20 +517,39 @@ impl HeadBuilder {
         )
     }
 
-    pub(crate) fn use_prepared_auth_plan(&mut self, auth: Arc<AuthPlan>) -> Result<(), ApiError> {
-        debug_assert!(self.auth.is_empty());
-        let mut budget = self.budget;
-        budget
-            .try_add_components(auth.placement_count())
+    pub(crate) fn clear_auth(&mut self) -> Result<(), ApiError> {
+        let placements = self.auth.placement_count();
+        self.budget
+            .remove_components(placements)
             .map_err(|_| invalid_auth(self.meta.endpoint_id(), self.meta.method()))?;
-        self.auth = auth;
-        self.budget = budget;
+        self.auth = Arc::new(AuthPlan::default());
         Ok(())
     }
 
-    pub(crate) fn use_prepared_rate_limit_plan(&mut self, plan: Arc<RateLimitPlan>) {
-        debug_assert!(self.rate_limit_policies.is_empty());
-        self.prepared_rate_limit_plan = Some(plan);
+    pub(crate) fn append_prepared_auth_plan(&mut self, auth: &AuthPlan) -> Result<(), ApiError> {
+        for placement in auth.cloned_placements() {
+            self.push_auth(placement)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn append_prepared_rate_limit_plan(
+        &mut self,
+        plan: &RateLimitPlan,
+    ) -> Result<(), ApiError> {
+        for policy in plan.policies().iter().cloned() {
+            RateLimitPlan::push_validated_policy(&mut self.rate_limit_policies, policy).map_err(
+                |error| {
+                    drop(error);
+                    ApiError::configuration(
+                        self.meta.endpoint_id().clone(),
+                        self.meta.method().clone(),
+                        ConfigurationErrorKind::InvalidRateLimit,
+                    )
+                },
+            )?;
+        }
+        Ok(())
     }
 
     /// Adds one macro-validated static host-prefix label.
@@ -439,30 +562,64 @@ impl HeadBuilder {
     #[doc(hidden)]
     pub fn push_host_value<T>(&mut self, value: &T) -> Result<(), ApiError>
     where
-        T: Display + ?Sized,
+        T: RequestAtom + ?Sized,
     {
-        let value = format_bounded(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+        let value = encode_atom(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
             .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
         self.push_host_label(&value)
+    }
+
+    /// Adapts, validates, and adds one dynamic host-prefix label.
+    #[doc(hidden)]
+    pub fn push_host_value_with<A, T>(&mut self, value: &T) -> Result<(), ApiError>
+    where
+        A: AtomEncoder<T>,
+        T: ?Sized,
+    {
+        let value = encode_atom_with::<A, T>(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+        self.push_host_label(&value)
+    }
+
+    /// Encodes one possibly concatenated host atom in a single bounded pass.
+    #[doc(hidden)]
+    pub fn push_host_atoms<F>(&mut self, redacted: bool, encode: F) -> Result<(), ApiError>
+    where
+        F: FnOnce(&mut BoundedAtomWriter<'_>) -> Result<(), AtomError>,
+    {
+        let value = encode_atoms(encode)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+        if redacted {
+            self.push_host_label_with_safe(&value, "x")
+        } else {
+            self.push_host_label(&value)
+        }
     }
 
     /// Formats and adds one pagination-sensitive dynamic host-prefix label.
     #[doc(hidden)]
     pub fn push_pagination_host_value<T>(&mut self, value: &T) -> Result<(), ApiError>
     where
-        T: Display + ?Sized,
+        T: RequestAtom + ?Sized,
     {
-        let value = format_bounded(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+        let value = encode_atom(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
             .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
         self.push_host_label_with_safe(&value, "x")
     }
 
-    /// Returns the final logical host for custom rate-key construction.
+    /// Returns the normalized logical origin for custom rate-key construction.
     #[doc(hidden)]
-    pub fn rate_limit_host(&self) -> &str {
-        self.logical_url
-            .host_str()
-            .expect("logical URLs retain a host")
+    pub fn rate_limit_origin(&self) -> String {
+        let host = match self.logical_url.host().expect("logical URLs retain a host") {
+            Host::Domain(domain) => domain.to_ascii_lowercase(),
+            Host::Ipv4(address) => address.to_string(),
+            Host::Ipv6(address) => format!("[{address}]"),
+        };
+        let port = self
+            .logical_url
+            .port_or_known_default()
+            .expect("generated logical URLs use HTTP or HTTPS");
+        format!("{}://{host}:{port}", self.logical_url.scheme())
     }
 
     fn push_host_label(&mut self, label: &str) -> Result<(), ApiError> {
@@ -515,20 +672,47 @@ impl HeadBuilder {
     #[doc(hidden)]
     pub fn push_value<T>(&mut self, value: &T) -> Result<(), ApiError>
     where
-        T: Display + ?Sized,
+        T: RequestAtom + ?Sized,
     {
-        let segment = format_bounded(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+        let segment = encode_atom(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
             .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
         self.push_segment(&segment)
+    }
+
+    /// Adapts and appends one dynamic value as exactly one path segment.
+    #[doc(hidden)]
+    pub fn push_value_with<A, T>(&mut self, value: &T) -> Result<(), ApiError>
+    where
+        A: AtomEncoder<T>,
+        T: ?Sized,
+    {
+        let segment = encode_atom_with::<A, T>(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+        self.push_segment(&segment)
+    }
+
+    /// Encodes one possibly concatenated path atom in a single bounded pass.
+    #[doc(hidden)]
+    pub fn push_path_atoms<F>(&mut self, redacted: bool, encode: F) -> Result<(), ApiError>
+    where
+        F: FnOnce(&mut BoundedAtomWriter<'_>) -> Result<(), AtomError>,
+    {
+        let value = encode_atoms(encode)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+        if redacted {
+            self.push_segment_with_safe(&value, "<redacted>")
+        } else {
+            self.push_segment(&value)
+        }
     }
 
     /// Formats and appends one pagination-sensitive dynamic path segment.
     #[doc(hidden)]
     pub fn push_pagination_value<T>(&mut self, value: &T) -> Result<(), ApiError>
     where
-        T: Display + ?Sized,
+        T: RequestAtom + ?Sized,
     {
-        let segment = format_bounded(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+        let segment = encode_atom(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
             .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
         self.push_segment_with_safe(&segment, "<redacted>")
     }
@@ -567,33 +751,154 @@ impl HeadBuilder {
     }
 
     /// Appends one already-formatted, validated value as exactly one encoded path segment.
-    pub(crate) fn push_prepared_segment(&mut self, segment: &str) -> Result<(), ApiError> {
-        self.push_segment(segment)
+    pub(crate) fn push_prepared_segment(
+        &mut self,
+        segment: &str,
+        sensitive: bool,
+    ) -> Result<(), ApiError> {
+        if sensitive {
+            self.push_segment_with_safe(segment, "<redacted>")
+        } else {
+            self.push_segment(segment)
+        }
     }
 
     /// Appends one public query pair after formatting its value.
     #[doc(hidden)]
     pub fn push_query_value<T>(&mut self, key: &str, value: &T) -> Result<(), ApiError>
     where
-        T: Display + ?Sized,
+        T: RequestAtom + ?Sized,
     {
-        let value = format_bounded(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+        let value = encode_atom(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
             .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
 
+        self.push_query_atom(key, &value, false)
+    }
+
+    /// Appends one explicitly adapted public query pair.
+    #[doc(hidden)]
+    pub fn push_query_value_with<A, T>(&mut self, key: &str, value: &T) -> Result<(), ApiError>
+    where
+        A: AtomEncoder<T>,
+        T: ?Sized,
+    {
+        let value = encode_atom_with::<A, T>(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+        self.push_query_atom(key, &value, false)
+    }
+
+    /// Encodes one possibly concatenated query atom in a single bounded pass.
+    #[doc(hidden)]
+    pub fn push_query_atoms<F>(
+        &mut self,
+        key: &str,
+        redacted: bool,
+        encode: F,
+    ) -> Result<(), ApiError>
+    where
+        F: FnOnce(&mut BoundedAtomWriter<'_>) -> Result<(), AtomError>,
+    {
+        let value = encode_atoms(encode)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+        self.push_query_atom(key, &value, redacted)
+    }
+
+    /// Appends an explicitly ordered sequence as repeated query occurrences.
+    #[doc(hidden)]
+    pub fn push_query_each<V>(
+        &mut self,
+        key: &str,
+        values: &V,
+        redacted: bool,
+    ) -> Result<(), ApiError>
+    where
+        V: OrderedValues + ?Sized,
+        V::Item: RequestAtom,
+    {
+        for value in values.ordered_values() {
+            let value = encode_atom(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+                .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+            self.push_query_atom(key, &value, redacted)?;
+        }
+        Ok(())
+    }
+
+    /// Appends an adapted ordered sequence as repeated query occurrences.
+    #[doc(hidden)]
+    pub fn push_query_each_with<A, V>(
+        &mut self,
+        key: &str,
+        values: &V,
+        redacted: bool,
+    ) -> Result<(), ApiError>
+    where
+        V: OrderedValues + ?Sized,
+        A: AtomEncoder<V::Item>,
+    {
+        for value in values.ordered_values() {
+            let value = encode_atom_with::<A, V::Item>(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+                .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+            self.push_query_atom(key, &value, redacted)?;
+        }
+        Ok(())
+    }
+
+    fn push_query_atom(&mut self, key: &str, value: &str, redacted: bool) -> Result<(), ApiError> {
         let mut budget = self.budget;
         budget
             .try_add_components(1)
             .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
         let mut logical_url = self.logical_url.clone();
-        logical_url.query_pairs_mut().append_pair(key, &value);
+        logical_url.query_pairs_mut().append_pair(key, value);
         let mut safe_logical_url = self.safe_logical_url.clone();
-        safe_logical_url.query_pairs_mut().append_pair(key, &value);
+        safe_logical_url
+            .query_pairs_mut()
+            .append_pair(key, if redacted { "<redacted>" } else { value });
         validate_url_pair(&logical_url, &safe_logical_url)
             .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
 
         self.logical_url = logical_url;
         self.safe_logical_url = safe_logical_url;
         self.budget = budget;
+        Ok(())
+    }
+
+    /// Removes every generated public query occurrence with this exact key.
+    #[doc(hidden)]
+    pub fn remove_query_values(&mut self, key: &str) -> Result<(), ApiError> {
+        let removed = self
+            .logical_url
+            .query_pairs()
+            .filter(|(candidate, _)| candidate == key)
+            .count();
+        if removed == 0 {
+            return Ok(());
+        }
+        remove_query_key(&mut self.logical_url, key);
+        remove_query_key(&mut self.safe_logical_url, key);
+        self.budget
+            .remove_components(removed)
+            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))
+    }
+
+    pub(crate) fn push_prepared_query_value(
+        &mut self,
+        key: &str,
+        value: &str,
+        sensitive: bool,
+    ) -> Result<(), ApiError> {
+        self.push_query_atom(key, value, sensitive)
+    }
+
+    pub(crate) fn clear_query_values(&mut self) -> Result<(), ApiError> {
+        let keys = self
+            .logical_url
+            .query_pairs()
+            .map(|(key, _)| key.into_owned())
+            .collect::<HashSet<_>>();
+        for key in keys {
+            self.remove_query_values(&key)?;
+        }
         Ok(())
     }
 
@@ -601,51 +906,244 @@ impl HeadBuilder {
     #[doc(hidden)]
     pub fn push_pagination_query_value<T>(&mut self, key: &str, value: &T) -> Result<(), ApiError>
     where
-        T: Display + ?Sized,
+        T: RequestAtom + ?Sized,
     {
-        let value = format_bounded(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+        let value = encode_atom(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
             .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
-
-        let mut budget = self.budget;
-        budget
-            .try_add_components(1)
-            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
-        let mut logical_url = self.logical_url.clone();
-        logical_url.query_pairs_mut().append_pair(key, &value);
-        let mut safe_logical_url = self.safe_logical_url.clone();
-        safe_logical_url
-            .query_pairs_mut()
-            .append_pair(key, "<redacted>");
-        validate_url_pair(&logical_url, &safe_logical_url)
-            .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
-
-        self.logical_url = logical_url;
-        self.safe_logical_url = safe_logical_url;
-        self.budget = budget;
-        Ok(())
+        self.push_query_atom(key, &value, true)
     }
 
     /// Inserts or replaces one validated public header.
     #[doc(hidden)]
     pub fn insert_header_value<T>(&mut self, name: &str, value: &T) -> Result<(), ApiError>
     where
-        T: Display + ?Sized,
+        T: RequestAtom + ?Sized,
     {
         let name = HeaderName::from_bytes(name.as_bytes())
             .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
-        let value = format_bounded(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+        let value = encode_atom(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
             .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
         let value = validate_public_header(&name, &value)
             .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
         self.insert_public_header(name, value)
     }
 
-    pub(crate) fn insert_prepared_header(
+    /// Inserts or replaces one explicitly adapted public header.
+    #[doc(hidden)]
+    pub fn insert_header_value_with<A, T>(&mut self, name: &str, value: &T) -> Result<(), ApiError>
+    where
+        A: AtomEncoder<T>,
+        T: ?Sized,
+    {
+        let name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        let value = encode_atom_with::<A, T>(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        let value = validate_public_header(&name, &value)
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        self.insert_public_header(name, value)
+    }
+
+    /// Encodes one possibly concatenated public header atom in one bounded pass.
+    #[doc(hidden)]
+    pub fn insert_header_atoms<F>(
+        &mut self,
+        name: &str,
+        redacted: bool,
+        encode: F,
+    ) -> Result<(), ApiError>
+    where
+        F: FnOnce(&mut BoundedAtomWriter<'_>) -> Result<(), AtomError>,
+    {
+        let name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        let value = encode_atoms(encode)
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        let value = validate_public_header(&name, &value)
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        self.insert_public_header(name.clone(), value)?;
+        if redacted {
+            self.pagination_sensitive_headers.insert(name);
+        }
+        Ok(())
+    }
+
+    /// Encodes and appends one public header occurrence in one bounded pass.
+    #[doc(hidden)]
+    pub fn append_header_atoms<F>(
+        &mut self,
+        name: &str,
+        redacted: bool,
+        encode: F,
+    ) -> Result<(), ApiError>
+    where
+        F: FnOnce(&mut BoundedAtomWriter<'_>) -> Result<(), AtomError>,
+    {
+        let name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        let value = encode_atoms(encode)
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        let value = validate_public_header(&name, &value)
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        let mut budget = self.budget;
+        budget
+            .try_append_header(&name, &value)
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        self.public_headers.append(name.clone(), value);
+        if redacted {
+            self.pagination_sensitive_headers.insert(name);
+        }
+        self.budget = budget;
+        Ok(())
+    }
+
+    /// Inserts an ordered sequence as repeated public header occurrences.
+    #[doc(hidden)]
+    pub fn insert_header_each<V>(
+        &mut self,
+        name: &str,
+        values: &V,
+        redacted: bool,
+    ) -> Result<(), ApiError>
+    where
+        V: OrderedValues + ?Sized,
+        V::Item: RequestAtom,
+    {
+        self.remove_header_values(name)?;
+        for value in values.ordered_values() {
+            let value = encode_atom(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+                .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+            self.append_header_atom(name, &value, redacted)?;
+        }
+        Ok(())
+    }
+
+    /// Inserts an adapted ordered sequence as repeated public headers.
+    #[doc(hidden)]
+    pub fn insert_header_each_with<A, V>(
+        &mut self,
+        name: &str,
+        values: &V,
+        redacted: bool,
+    ) -> Result<(), ApiError>
+    where
+        V: OrderedValues + ?Sized,
+        A: AtomEncoder<V::Item>,
+    {
+        self.remove_header_values(name)?;
+        self.append_header_each_with::<A, V>(name, values, redacted)
+    }
+
+    /// Appends an ordered sequence as repeated public headers.
+    #[doc(hidden)]
+    pub fn append_header_each<V>(
+        &mut self,
+        name: &str,
+        values: &V,
+        redacted: bool,
+    ) -> Result<(), ApiError>
+    where
+        V: OrderedValues + ?Sized,
+        V::Item: RequestAtom,
+    {
+        for value in values.ordered_values() {
+            let value = encode_atom(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+                .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+            self.append_header_atom(name, &value, redacted)?;
+        }
+        Ok(())
+    }
+
+    /// Appends an adapted ordered sequence as repeated public headers.
+    #[doc(hidden)]
+    pub fn append_header_each_with<A, V>(
+        &mut self,
+        name: &str,
+        values: &V,
+        redacted: bool,
+    ) -> Result<(), ApiError>
+    where
+        V: OrderedValues + ?Sized,
+        A: AtomEncoder<V::Item>,
+    {
+        for value in values.ordered_values() {
+            let value = encode_atom_with::<A, V::Item>(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+                .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+            self.append_header_atom(name, &value, redacted)?;
+        }
+        Ok(())
+    }
+
+    fn append_header_atom(
+        &mut self,
+        name: &str,
+        value: &str,
+        redacted: bool,
+    ) -> Result<(), ApiError> {
+        let name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        let value = validate_public_header(&name, value)
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        let mut budget = self.budget;
+        budget
+            .try_append_header(&name, &value)
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        self.public_headers.append(name.clone(), value);
+        if redacted {
+            self.pagination_sensitive_headers.insert(name);
+        }
+        self.budget = budget;
+        Ok(())
+    }
+
+    /// Removes every generated public header occurrence under case-insensitive identity.
+    #[doc(hidden)]
+    pub fn remove_header_values(&mut self, name: &str) -> Result<(), ApiError> {
+        let name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        let values = self
+            .public_headers
+            .get_all(&name)
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        if values.is_empty() {
+            return Ok(());
+        }
+        let mut budget = self.budget;
+        budget
+            .remove_headers(&name, values.into_iter())
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        self.public_headers.remove(&name);
+        self.pagination_sensitive_headers.remove(&name);
+        self.budget = budget;
+        Ok(())
+    }
+
+    pub(crate) fn clear_header_values(&mut self) -> Result<(), ApiError> {
+        let names = self.public_headers.keys().cloned().collect::<Vec<_>>();
+        for name in names {
+            self.remove_header_values(name.as_str())?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn append_prepared_header(
         &mut self,
         name: HeaderName,
         value: HeaderValue,
+        sensitive: bool,
     ) -> Result<(), ApiError> {
-        self.insert_public_header(name, value)
+        let mut budget = self.budget;
+        budget
+            .try_append_header(&name, &value)
+            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
+        if sensitive {
+            self.pagination_sensitive_headers.insert(name.clone());
+        }
+        self.public_headers.append(name, value);
+        self.budget = budget;
+        Ok(())
     }
 
     /// Inserts one pagination-sensitive validated public header.
@@ -656,14 +1154,14 @@ impl HeadBuilder {
         value: &T,
     ) -> Result<(), ApiError>
     where
-        T: Display + ?Sized,
+        T: RequestAtom + ?Sized,
     {
         let name = HeaderName::from_bytes(name.as_bytes())
             .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
         if reserved_public_header(&name) {
             return Err(invalid_header(self.meta.endpoint_id(), self.meta.method()));
         }
-        let value = format_bounded(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
+        let value = encode_atom(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
             .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
         let value = HeaderValue::from_str(&value)
             .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
@@ -686,52 +1184,6 @@ impl HeadBuilder {
         Ok(())
     }
 
-    /// Replaces the response-specification default `Accept` value through the
-    /// response-owned endpoint syntax.
-    #[doc(hidden)]
-    pub fn set_accept_value<T>(&mut self, value: &T) -> Result<(), ApiError>
-    where
-        T: Display + ?Sized,
-    {
-        self.set_accept_value_with_observation(value, false)
-    }
-
-    /// Replaces `Accept` while marking its observed header value redacted.
-    #[doc(hidden)]
-    pub fn set_redacted_accept_value<T>(&mut self, value: &T) -> Result<(), ApiError>
-    where
-        T: Display + ?Sized,
-    {
-        self.set_accept_value_with_observation(value, true)
-    }
-
-    fn set_accept_value_with_observation<T>(
-        &mut self,
-        value: &T,
-        redacted: bool,
-    ) -> Result<(), ApiError>
-    where
-        T: Display + ?Sized,
-    {
-        let value = format_bounded(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
-            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
-        crate::response::validate_accept(&value)
-            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
-        let value = HeaderValue::from_str(&value)
-            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
-        self.accept_override = Some(Some(value));
-        self.accept_redacted = redacted;
-        Ok(())
-    }
-
-    /// Suppresses both the response specification's default `Accept` and any
-    /// inherited selection.
-    #[doc(hidden)]
-    pub fn suppress_accept(&mut self) {
-        self.accept_override = Some(None);
-        self.accept_redacted = false;
-    }
-
     /// Finishes one immutable body-free public head.
     #[doc(hidden)]
     pub fn finish(self) -> Result<PreparedHead, ApiError> {
@@ -745,22 +1197,31 @@ impl HeadBuilder {
             return Err(invalid_route(self.meta.endpoint_id(), self.meta.method()));
         }
         let observed_url: Arc<str> = observed_url.into();
+        let rate_limit_logical_origin = self
+            .rate_limit_policies
+            .iter()
+            .any(|policy| {
+                policy
+                    .key()
+                    .parts()
+                    .iter()
+                    .any(|part| part.name() == "origin")
+            })
+            .then(|| Arc::from(self.rate_limit_origin()));
+        let rate_limit_plan = Arc::new(RateLimitPlan::from_validated_policies(
+            self.rate_limit_policies,
+        ));
         Ok(PreparedHead {
             meta: self.meta,
             logical_url: self.logical_url,
             observed_url,
+            rate_limit_logical_origin,
             public_headers: self.public_headers,
             pagination_sensitive_headers: self.pagination_sensitive_headers,
             timeout: self.timeout,
             debug: self.debug,
             auth: self.auth,
-            rate_limit_plan: self.prepared_rate_limit_plan.unwrap_or_else(|| {
-                Arc::new(RateLimitPlan::from_validated_policies(
-                    self.rate_limit_policies,
-                ))
-            }),
-            accept_override: self.accept_override,
-            accept_redacted: self.accept_redacted,
+            rate_limit_plan,
             budget: self.budget,
         })
     }
@@ -772,14 +1233,13 @@ pub struct PreparedHead {
     meta: RequestMeta,
     logical_url: Url,
     observed_url: Arc<str>,
+    rate_limit_logical_origin: Option<Arc<str>>,
     public_headers: HeaderMap,
     pagination_sensitive_headers: HashSet<HeaderName>,
     timeout: Option<Duration>,
     debug: DebugLevel,
     auth: Arc<AuthPlan>,
     rate_limit_plan: Arc<RateLimitPlan>,
-    accept_override: Option<Option<HeaderValue>>,
-    accept_redacted: bool,
     budget: RequestHeadBudget,
 }
 
@@ -809,25 +1269,19 @@ impl PreparedHead {
 
         let mut headers = self.public_headers.clone();
         let mut budget = self.budget;
-        let selected_accept = match &self.accept_override {
-            Some(value) => value.clone(),
-            None => accept
-                .map(|value| {
-                    crate::response::validate_accept(value)
-                        .map_err(|_| invalid_header(self.meta.endpoint_id(), self.method()))?;
-                    HeaderValue::from_str(value)
-                        .map_err(|_| invalid_header(self.meta.endpoint_id(), self.method()))
-                })
-                .transpose()?,
-        };
+        let selected_accept = accept
+            .map(|value| {
+                crate::response::validate_accept(value)
+                    .map_err(|_| invalid_header(self.meta.endpoint_id(), self.method()))?;
+                HeaderValue::from_str(value)
+                    .map_err(|_| invalid_header(self.meta.endpoint_id(), self.method()))
+            })
+            .transpose()?;
         if let Some(value) = selected_accept {
             budget
                 .try_insert_header(&headers, &ACCEPT, &value)
                 .map_err(|_| invalid_header(self.meta.endpoint_id(), self.method()))?;
             headers.insert(ACCEPT, value);
-            if self.accept_redacted {
-                self.pagination_sensitive_headers.insert(ACCEPT);
-            }
         }
         if let Some(content_type) = content_type {
             budget
@@ -850,8 +1304,12 @@ impl PreparedHead {
         self.meta.method()
     }
 
-    pub(crate) const fn repeatability(&self) -> Repeatability {
-        self.meta.repeatability()
+    pub(crate) const fn effect(&self) -> Effect {
+        self.meta.effect()
+    }
+
+    pub(crate) const fn accepted_status(&self) -> &AcceptedStatus {
+        self.meta.accepted_status()
     }
 
     #[doc(hidden)]
@@ -879,19 +1337,16 @@ impl PreparedHead {
         &self.public_headers
     }
 
-    pub(crate) fn sanitized_public_headers(&self) -> crate::redaction::SanitizedHeaders<'_> {
-        crate::redaction::SanitizedHeaders::with_sensitive(
-            &self.public_headers,
-            &self.pagination_sensitive_headers,
-        )
+    pub(crate) fn request_target(&self) -> crate::hooks::RequestTarget {
+        crate::hooks::RequestTarget::from_url(&self.logical_url, self.public_headers.len())
     }
 
     pub(crate) const fn pagination_sensitive_headers(&self) -> &HashSet<HeaderName> {
         &self.pagination_sensitive_headers
     }
 
-    pub(crate) fn rate_limit_host(&self) -> Option<&str> {
-        self.logical_url.host_str()
+    pub(crate) fn rate_limit_logical_origin(&self) -> Option<&str> {
+        self.rate_limit_logical_origin.as_deref()
     }
 
     #[doc(hidden)]
@@ -933,6 +1388,33 @@ impl PreparedHead {
                     ConfigurationErrorKind::InvalidRateLimit,
                 )
             })
+    }
+}
+
+fn encode_atoms<F>(encode: F) -> Result<String, AtomError>
+where
+    F: FnOnce(&mut BoundedAtomWriter<'_>) -> Result<(), AtomError>,
+{
+    let mut output = String::new();
+    encode(&mut BoundedAtomWriter::new(
+        &mut output,
+        MAX_FORMATTED_PUBLIC_VALUE_BYTES,
+    ))?;
+    Ok(output)
+}
+
+fn remove_query_key(url: &mut Url, key: &str) {
+    let retained = url
+        .query_pairs()
+        .filter(|(candidate, _)| candidate != key)
+        .map(|(name, value)| (name.into_owned(), value.into_owned()))
+        .collect::<Vec<_>>();
+    url.set_query(None);
+    if !retained.is_empty() {
+        let mut pairs = url.query_pairs_mut();
+        for (name, value) in retained {
+            pairs.append_pair(&name, &value);
+        }
     }
 }
 
@@ -1097,7 +1579,15 @@ mod tests {
         }
     }
 
-    impl RateLimitKeyValue for FirstExcessDisplay {
+    impl RequestAtom for FirstExcessDisplay {
+        fn write_atom(&self, output: &mut BoundedAtomWriter<'_>) -> Result<(), AtomError> {
+            let boundary = "x".repeat(MAX_FORMATTED_PUBLIC_VALUE_BYTES);
+            output.push_str(&boundary)?;
+            output.push_str(FORMAT_SENTINEL)
+        }
+    }
+
+    impl RateKeyPart for FirstExcessDisplay {
         fn write_canonical(
             &self,
             out: &mut crate::rate_limit::CanonicalKeyWriter,
@@ -1164,7 +1654,7 @@ mod tests {
         }
     }
 
-    impl RateLimitKeyValue for GuardedRateText {
+    impl RateKeyPart for GuardedRateText {
         fn write_canonical(
             &self,
             out: &mut crate::rate_limit::CanonicalKeyWriter,
@@ -1509,7 +1999,7 @@ mod tests {
     #[test]
     fn runtime_and_generated_head_limits_match() {
         use crate::request::{EndpointSpec, RuntimeEndpoint};
-        use crate::response::NoContent;
+        use crate::response::Empty;
 
         let public_components = MAX_REQUEST_HEAD_COMPONENTS - 1;
         let mut runtime =
@@ -1517,7 +2007,7 @@ mod tests {
         for _ in 0..public_components {
             runtime = runtime.path("x");
         }
-        let runtime: RuntimeEndpoint<NoContent> = runtime
+        let runtime: RuntimeEndpoint<Empty> = runtime
             .build()
             .expect("runtime boundary after method charge");
         let base = Url::parse("https://example.test/").expect("base URL");
@@ -1839,17 +2329,20 @@ mod tests {
     }
 
     #[test]
-    fn pagination_host_is_actual_for_rate_limiting_and_redacted_for_safe_surfaces() {
+    fn pagination_origin_is_actual_for_rate_keys_and_redacted_for_safe_surfaces() {
         const SENTINEL: &str = "page-host-sentinel-7319";
         let expected_host = format!("{SENTINEL}.example.test");
         let mut builder = builder("https://example.test/v1/");
         builder
             .push_pagination_host_value(&SENTINEL)
             .expect("pagination host label");
-        assert_eq!(builder.rate_limit_host(), expected_host);
+        assert_eq!(
+            builder.rate_limit_origin(),
+            format!("https://{expected_host}:443")
+        );
 
         let head = builder.finish().expect("bounded pagination host head");
-        assert_eq!(head.rate_limit_host(), Some(expected_host.as_str()));
+        assert_eq!(head.rate_limit_logical_origin(), None);
         assert_eq!(
             Url::parse(head.observed_url())
                 .expect("safe URL")

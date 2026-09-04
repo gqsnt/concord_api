@@ -23,7 +23,7 @@ note: associated function defined here
    |
  3 | / api! {
  4 | |     client DevelopmentProofApi {
- 5 | |         timeout off;
+ 5 | |         timeout 30s;
  6 | |         base "http://development-proof.example.test/";
 ...  |
 15 | | }}

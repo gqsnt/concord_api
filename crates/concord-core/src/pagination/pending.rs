@@ -1,11 +1,11 @@
 use std::future::IntoFuture;
 use std::num::NonZeroU32;
 
-use crate::body::{PageRequestBodySpec, RequestBodySpec};
+use crate::body::PageRequestRepresentation;
 use crate::error::ApiError;
 use crate::hooks::BoxFuture;
 use crate::request::Request;
-use crate::response::{PageResponseSpec, ResponseSpec};
+use crate::response::PageResponseRepresentation;
 
 use super::{PaginationController, PaginationError};
 
@@ -18,12 +18,6 @@ pub enum PageLimit {
     /// Require natural completion within this many pages and fail without a
     /// partial aggregate when continuation remains at the limit.
     CompleteWithin(NonZeroU32),
-}
-
-impl From<u32> for PageLimit {
-    fn from(value: u32) -> Self {
-        Self::Prefix(value)
-    }
 }
 
 /// An opaque directly awaitable sequential pagination operation.
@@ -51,16 +45,13 @@ impl<E> PaginatedRequest<E> {
 #[doc(hidden)]
 pub trait PaginatedEndpoint: crate::request::EndpointSpec + Clone + Sized
 where
-    Self::Body: PageRequestBodySpec,
-    <Self::Body as RequestBodySpec>::Input: Clone,
-    Self::Response: PageResponseSpec,
-    <Self::Response as ResponseSpec>::Output: IntoIterator<Item = Self::Item> + Send + 'static,
+    Self::Input: Clone,
+    Self::Body: PageRequestRepresentation<Self::Input>,
+    Self::Response: PageResponseRepresentation<Self::Output>,
+    Self::Output: Send + 'static,
 {
-    /// One collected item from the decoded page's ordinary `IntoIterator`.
-    type Item: Send + 'static;
-
     /// Request-local typed pagination controller.
-    type Controller: PaginationController<<Self::Response as ResponseSpec>::Output>;
+    type Controller: PaginationController<Self::Output>;
 
     /// Constructs the complete initial controller exactly once.
     fn initial_controller(&self) -> Result<Self::Controller, PaginationError>;
@@ -76,12 +67,12 @@ where
 impl<E> IntoFuture for PaginatedRequest<E>
 where
     E: PaginatedEndpoint,
-    E::Body: PageRequestBodySpec,
-    <E::Body as RequestBodySpec>::Input: Clone,
-    E::Response: PageResponseSpec,
-    <E::Response as ResponseSpec>::Output: IntoIterator<Item = E::Item> + Send + 'static,
+    E::Input: Clone,
+    E::Body: PageRequestRepresentation<E::Input>,
+    E::Response: PageResponseRepresentation<E::Output>,
+    E::Output: Send + 'static,
 {
-    type Output = Result<Vec<E::Item>, ApiError>;
+    type Output = Result<Vec<<E::Controller as PaginationController<E::Output>>::Item>, ApiError>;
     type IntoFuture = BoxFuture<'static, Self::Output>;
 
     fn into_future(self) -> Self::IntoFuture {

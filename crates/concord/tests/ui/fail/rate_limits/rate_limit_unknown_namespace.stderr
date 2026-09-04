@@ -1,5 +1,5 @@
 error: unknown value owner `other`; use `client`, `endpoint`, or an exact visible scope identifier
- --> tests/ui/fail/rate_limits/rate_limit_unknown_namespace.rs:7:27
+ --> tests/ui/fail/rate_limits/rate_limit_unknown_namespace.rs:7:81
   |
-7 |         rate_limit { key [other.tenant]; allow 1 per 1s; }
-  |                           ^^^^^
+7 |         rate_limit { id "concord.rate_limit_unknown_namespace.1"; cost 1;  key [other.tenant]; allow 1 per 1s; }
+  |                                                                                 ^^^^^

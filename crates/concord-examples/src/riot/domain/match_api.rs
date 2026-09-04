@@ -10,6 +10,8 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use concord::{AtomError, BoundedAtomWriter, RequestAtom};
+
 #[derive(Clone, Copy, Debug)]
 pub enum RiotGame {
     LeagueOfLegends,
@@ -19,6 +21,15 @@ pub enum RiotGame {
 impl fmt::Display for RiotGame {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
+            Self::LeagueOfLegends => "lol",
+            Self::TeamfightTactics => "tft",
+        })
+    }
+}
+
+impl RequestAtom for RiotGame {
+    fn write_atom(&self, output: &mut BoundedAtomWriter<'_>) -> Result<(), AtomError> {
+        output.push_str(match self {
             Self::LeagueOfLegends => "lol",
             Self::TeamfightTactics => "tft",
         })
@@ -36,6 +47,17 @@ pub enum MatchType {
 impl fmt::Display for MatchType {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
+            Self::Ranked => "ranked",
+            Self::Normal => "normal",
+            Self::Tourney => "tourney",
+            Self::Tutorial => "tutorial",
+        })
+    }
+}
+
+impl RequestAtom for MatchType {
+    fn write_atom(&self, output: &mut BoundedAtomWriter<'_>) -> Result<(), AtomError> {
+        output.push_str(match self {
             Self::Ranked => "ranked",
             Self::Normal => "normal",
             Self::Tourney => "tourney",

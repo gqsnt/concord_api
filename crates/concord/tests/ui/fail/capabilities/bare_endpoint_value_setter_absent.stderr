@@ -3,10 +3,10 @@ error[E0599]: no method named `label` found for struct `endpoint_setter_api::Rea
    |
  4 | / api! {
  5 | |     client EndpointSetterApi {
- 6 | |         timeout off;
+ 6 | |         timeout 30s;
  7 | |         base "http://endpoint-setter.example.test";
 ...  |
-10 | |     GET read(label: Option<String>) -> Bytes using Bytes;
+10 | |     GET read(label: Option<String>) -> Bytes via Binary;
 11 | | }}
    | |__- method `label` not found for this struct
 ...

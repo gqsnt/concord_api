@@ -16,12 +16,8 @@ pub(super) fn host_statements(
             }
             _ => {
                 let sensitive = resolved_expr_requires_redaction(value, &pagination_values);
-                let value = display_argument(value, client, scopes, endpoint);
-                if sensitive {
-                    quote!(__concord_builder.push_pagination_host_value(#value)?;)
-                } else {
-                    quote!(__concord_builder.push_host_value(#value)?;)
-                }
+                let encode = atom_closure(value, client, scopes, endpoint);
+                quote!(__concord_builder.push_host_atoms(#sensitive, #encode)?;)
             }
         })
         .collect::<Vec<_>>();
@@ -54,7 +50,13 @@ pub(super) fn resolved_expr_requires_redaction(
         ResolvedExpr::Concat(parts) => parts
             .iter()
             .any(|part| resolved_expr_requires_redaction(part, pagination_values)),
-        ResolvedExpr::String(_) | ResolvedExpr::Integer(_) => false,
+        ResolvedExpr::Adapted { value, .. } => {
+            resolved_expr_requires_redaction(value, pagination_values)
+        }
+        ResolvedExpr::String(_)
+        | ResolvedExpr::Character(_)
+        | ResolvedExpr::Boolean(_)
+        | ResolvedExpr::Integer { .. } => false,
     }
 }
 
@@ -72,12 +74,8 @@ pub(super) fn path_statements(
             ResolvedExpr::String(literal) => quote!(__concord_builder.push_static(#literal)?;),
             _ => {
                 let sensitive = resolved_expr_requires_redaction(value, &pagination_values);
-                let value = display_argument(value, client, scopes, endpoint);
-                if sensitive {
-                    quote!(__concord_builder.push_pagination_value(#value)?;)
-                } else {
-                    quote!(__concord_builder.push_value(#value)?;)
-                }
+                let encode = atom_closure(value, client, scopes, endpoint);
+                quote!(__concord_builder.push_path_atoms(#sensitive, #encode)?;)
             }
         })
         .collect::<Vec<_>>();
@@ -97,38 +95,71 @@ pub(super) fn query_statements(
         .map(|entry| {
             let key = &entry.key;
             let sensitive = resolved_expr_requires_redaction(&entry.value, &pagination_values);
-            let push = if sensitive {
-                quote!(__concord_builder.push_pagination_query_value)
-            } else {
-                quote!(__concord_builder.push_query_value)
-            };
-            if let ResolvedExpr::Value(value) = &entry.value {
+            if let Some((value, adapter)) = value_and_adapter(&entry.value) {
                 let access = resolved_value_access(value.reference, client, scopes, endpoint);
-                match (entry.cardinality, value.presence) {
-                    (QueryCardinality::One, ValuePresence::Required) => {
-                        quote!(#push(#key, #access)?;)
+                let remove = matches!(entry.operation, AttachmentOperation::WhenPresent)
+                    .then(|| quote!(__concord_builder.remove_query_values(#key)?;));
+                match (entry.cardinality, value.presence, adapter) {
+                    (QueryCardinality::One, ValuePresence::Required, None) => {
+                        let encode = bound_atom_closure(&access, None);
+                        quote! {
+                            #remove
+                            __concord_builder.push_query_atoms(#key, #sensitive, #encode)?;
+                        }
                     }
-                    (QueryCardinality::One, ValuePresence::Optional) => quote! {
+                    (QueryCardinality::One, ValuePresence::Required, Some(adapter)) => {
+                        let encode = bound_atom_closure(&access, Some(adapter));
+                        quote! {
+                            #remove
+                            __concord_builder.push_query_atoms(#key, #sensitive, #encode)?;
+                        }
+                    }
+                    (QueryCardinality::One, ValuePresence::Optional, adapter) => {
+                        let encode = bound_atom_closure(&quote!(value), adapter);
+                        quote! {
                         if let ::std::option::Option::Some(value) = #access.as_ref() {
-                            #push(#key, value)?;
+                            #remove
+                            __concord_builder.push_query_atoms(#key, #sensitive, #encode)?;
                         }
-                    },
-                    (QueryCardinality::Each, ValuePresence::Required) => quote! {
-                        for value in #access {
-                            #push(#key, value)?;
                         }
+                    }
+                    (QueryCardinality::Each, ValuePresence::Required, None) => quote! {
+                        #remove
+                        __concord_builder.push_query_each(#key, #access, #sensitive)?;
                     },
-                    (QueryCardinality::Each, ValuePresence::Optional) => quote! {
+                    (QueryCardinality::Each, ValuePresence::Required, Some(adapter)) => quote! {
+                        #remove
+                        __concord_builder.push_query_each_with::<#adapter, _>(
+                            #key,
+                            #access,
+                            #sensitive,
+                        )?;
+                    },
+                    (QueryCardinality::Each, ValuePresence::Optional, None) => quote! {
                         if let ::std::option::Option::Some(values) = #access.as_ref() {
-                            for value in values {
-                                #push(#key, value)?;
-                            }
+                            #remove
+                            __concord_builder.push_query_each(#key, values, #sensitive)?;
+                        }
+                    },
+                    (QueryCardinality::Each, ValuePresence::Optional, Some(adapter)) => quote! {
+                        if let ::std::option::Option::Some(values) = #access.as_ref() {
+                            #remove
+                            __concord_builder.push_query_each_with::<#adapter, _>(
+                                #key,
+                                values,
+                                #sensitive,
+                            )?;
                         }
                     },
                 }
             } else {
-                let value = display_argument(&entry.value, client, scopes, endpoint);
-                quote!(#push(#key, #value)?;)
+                let remove = matches!(entry.operation, AttachmentOperation::WhenPresent)
+                    .then(|| quote!(__concord_builder.remove_query_values(#key)?;));
+                let encode = atom_closure(&entry.value, client, scopes, endpoint);
+                quote! {
+                    #remove
+                    __concord_builder.push_query_atoms(#key, #sensitive, #encode)?;
+                }
             }
         })
         .collect::<Vec<_>>();
@@ -148,52 +179,307 @@ pub(super) fn header_statements(
         .map(|entry| {
             let name = &entry.name;
             let sensitive = resolved_expr_requires_redaction(&entry.value, &pagination_values);
-            let insert = if sensitive {
-                quote!(__concord_builder.insert_pagination_header_value)
-            } else {
-                quote!(__concord_builder.insert_header_value)
-            };
-            if let ResolvedExpr::Value(value) = &entry.value {
+            let append = matches!(entry.operation, AttachmentOperation::Append);
+            let remove_when_present = matches!(entry.operation, AttachmentOperation::WhenPresent)
+                .then(|| quote!(__concord_builder.remove_header_values(#name)?;));
+            if let Some((value, adapter)) = value_and_adapter(&entry.value) {
                 let access = resolved_value_access(value.reference, client, scopes, endpoint);
-                match value.presence {
-                    ValuePresence::Optional => quote! {
+                match (entry.cardinality, value.presence, adapter, append) {
+                    (QueryCardinality::One, ValuePresence::Optional, adapter, append) => {
+                        let encode = bound_atom_closure(&quote!(value), adapter);
+                        let emit = if append {
+                            quote!(__concord_builder.append_header_atoms(#name, #sensitive, #encode)?;)
+                        } else {
+                            quote!(__concord_builder.insert_header_atoms(#name, #sensitive, #encode)?;)
+                        };
+                        quote! {
                         if let ::std::option::Option::Some(value) = #access.as_ref() {
-                            #insert(#name, value)?;
+                            #remove_when_present
+                            #emit
+                        }
+                        }
+                    }
+                    (QueryCardinality::One, ValuePresence::Required, adapter, append) => {
+                        let encode = bound_atom_closure(&access, adapter);
+                        let emit = if append {
+                            quote!(__concord_builder.append_header_atoms(#name, #sensitive, #encode)?;)
+                        } else {
+                            quote!(__concord_builder.insert_header_atoms(#name, #sensitive, #encode)?;)
+                        };
+                        quote! { #remove_when_present #emit }
+                    }
+                    (QueryCardinality::Each, ValuePresence::Required, None, false) => quote! {
+                        #remove_when_present
+                        __concord_builder.insert_header_each(#name, #access, #sensitive)?;
+                    },
+                    (QueryCardinality::Each, ValuePresence::Required, Some(adapter), false) => quote! {
+                        #remove_when_present
+                        __concord_builder.insert_header_each_with::<#adapter, _>(
+                            #name, #access, #sensitive,
+                        )?;
+                    },
+                    (QueryCardinality::Each, ValuePresence::Required, None, true) => quote! {
+                        __concord_builder.append_header_each(#name, #access, #sensitive)?;
+                    },
+                    (QueryCardinality::Each, ValuePresence::Required, Some(adapter), true) => quote! {
+                        __concord_builder.append_header_each_with::<#adapter, _>(
+                            #name, #access, #sensitive,
+                        )?;
+                    },
+                    (QueryCardinality::Each, ValuePresence::Optional, None, false) => quote! {
+                        if let ::std::option::Option::Some(values) = #access.as_ref() {
+                            #remove_when_present
+                            __concord_builder.insert_header_each(#name, values, #sensitive)?;
                         }
                     },
-                    ValuePresence::Required => {
-                        quote!(#insert(#name, #access)?;)
-                    }
+                    (QueryCardinality::Each, ValuePresence::Optional, Some(adapter), false) => quote! {
+                        if let ::std::option::Option::Some(values) = #access.as_ref() {
+                            #remove_when_present
+                            __concord_builder.insert_header_each_with::<#adapter, _>(
+                                #name, values, #sensitive,
+                            )?;
+                        }
+                    },
+                    (QueryCardinality::Each, ValuePresence::Optional, None, true) => quote! {
+                        if let ::std::option::Option::Some(values) = #access.as_ref() {
+                            __concord_builder.append_header_each(#name, values, #sensitive)?;
+                        }
+                    },
+                    (QueryCardinality::Each, ValuePresence::Optional, Some(adapter), true) => quote! {
+                        if let ::std::option::Option::Some(values) = #access.as_ref() {
+                            __concord_builder.append_header_each_with::<#adapter, _>(
+                                #name, values, #sensitive,
+                            )?;
+                        }
+                    },
                 }
             } else {
-                let value = display_argument(&entry.value, client, scopes, endpoint);
-                quote!(#insert(#name, #value)?;)
+                let encode = atom_closure(&entry.value, client, scopes, endpoint);
+                if append {
+                    quote!(__concord_builder.append_header_atoms(#name, #sensitive, #encode)?;)
+                } else {
+                    quote! {
+                        #remove_when_present
+                        __concord_builder.insert_header_atoms(#name, #sensitive, #encode)?;
+                    }
+                }
             }
         })
         .collect::<Vec<_>>();
     quote!(#(#statements)*)
 }
 
-pub(super) fn accept_statements(
+pub(super) struct RuntimeScopeHeadStatements {
+    pub(super) host: TokenStream,
+    pub(super) path: TokenStream,
+    pub(super) query: TokenStream,
+    pub(super) headers: TokenStream,
+    pub(super) auth: TokenStream,
+    pub(super) rate_limits: TokenStream,
+}
+
+pub(super) fn runtime_scope_head_statements(
     client: &Client,
     scopes: &[&Scope],
-    endpoint: &Endpoint,
-) -> TokenStream {
-    let Some(accept) = &endpoint.accept else {
-        return quote!();
-    };
-    match accept {
-        ResolvedAccept::Off => quote!(__concord_builder.suppress_accept();),
-        ResolvedAccept::Value(expression) => {
-            let pagination_values = pagination_continuation_values(endpoint);
-            let redacted = resolved_expr_requires_redaction(expression, &pagination_values);
-            let value = display_argument(expression, client, scopes, endpoint);
-            if redacted {
-                quote!(__concord_builder.set_redacted_accept_value(#value)?;)
-            } else {
-                quote!(__concord_builder.set_accept_value(#value)?;)
+    facade_path: &TokenStream,
+    identity_path: &TokenStream,
+    runtime_endpoint_id: &Ident,
+) -> RuntimeScopeHeadStatements {
+    let scope = scopes.last().expect("runtime scope binding has an owner");
+    let config = &scope.config;
+    let host = config.host.iter().map(|value| match value {
+        ResolvedExpr::String(literal) => {
+            quote!(__concord_builder.push_host_static(#literal)?;)
+        }
+        _ => {
+            let sensitive = resolved_expr_requires_redaction(value, &[]);
+            let encode = runtime_scope_atom_closure(value, client, scopes);
+            quote!(__concord_builder.push_host_atoms(#sensitive, #encode)?;)
+        }
+    });
+    let path = config.path.iter().map(|value| match value {
+        ResolvedExpr::String(literal) => quote!(__concord_builder.push_static(#literal)?;),
+        _ => {
+            let sensitive = resolved_expr_requires_redaction(value, &[]);
+            let encode = runtime_scope_atom_closure(value, client, scopes);
+            quote!(__concord_builder.push_path_atoms(#sensitive, #encode)?;)
+        }
+    });
+    let query = config.query.iter().map(|entry| {
+        let key = &entry.key;
+        let sensitive = resolved_expr_requires_redaction(&entry.value, &[]);
+        let replace = matches!(entry.operation, AttachmentOperation::Replace)
+            .then(|| quote!(__concord_builder.remove_query_values(#key)?;));
+        let clear_on_absence = matches!(entry.operation, AttachmentOperation::Replace)
+            .then(|| quote!(__concord_builder.remove_query_values(#key)?;));
+        let remove_when_present = matches!(entry.operation, AttachmentOperation::WhenPresent)
+            .then(|| quote!(__concord_builder.remove_query_values(#key)?;));
+        if let Some((value, adapter)) = value_and_adapter(&entry.value) {
+            let access = runtime_scope_value_access(value.reference, client, scopes);
+            match (entry.cardinality, value.presence, adapter) {
+                (QueryCardinality::One, ValuePresence::Required, adapter) => {
+                    let encode = bound_atom_closure(&access, adapter);
+                    quote! {
+                        #replace
+                        #remove_when_present
+                        __concord_builder.push_query_atoms(#key, #sensitive, #encode)?;
+                    }
+                }
+                (QueryCardinality::One, ValuePresence::Optional, adapter) => {
+                    let encode = bound_atom_closure(&quote!(value), adapter);
+                    quote! {
+                        if let ::std::option::Option::Some(value) = #access.as_ref() {
+                            #replace
+                            #remove_when_present
+                            __concord_builder.push_query_atoms(#key, #sensitive, #encode)?;
+                        } else {
+                            #clear_on_absence
+                        }
+                    }
+                }
+                (QueryCardinality::Each, ValuePresence::Required, None) => quote! {
+                    #replace
+                    #remove_when_present
+                    __concord_builder.push_query_each(#key, #access, #sensitive)?;
+                },
+                (QueryCardinality::Each, ValuePresence::Required, Some(adapter)) => quote! {
+                    #replace
+                    #remove_when_present
+                    __concord_builder.push_query_each_with::<#adapter, _>(
+                        #key, #access, #sensitive,
+                    )?;
+                },
+                (QueryCardinality::Each, ValuePresence::Optional, None) => quote! {
+                    if let ::std::option::Option::Some(values) = #access.as_ref() {
+                        #replace
+                        #remove_when_present
+                        __concord_builder.push_query_each(#key, values, #sensitive)?;
+                    }
+                },
+                (QueryCardinality::Each, ValuePresence::Optional, Some(adapter)) => quote! {
+                    if let ::std::option::Option::Some(values) = #access.as_ref() {
+                        #replace
+                        #remove_when_present
+                        __concord_builder.push_query_each_with::<#adapter, _>(
+                            #key, values, #sensitive,
+                        )?;
+                    }
+                },
+            }
+        } else {
+            let encode = runtime_scope_atom_closure(&entry.value, client, scopes);
+            quote! {
+                #replace
+                #remove_when_present
+                __concord_builder.push_query_atoms(#key, #sensitive, #encode)?;
             }
         }
+    });
+    let headers = config.headers.iter().map(|entry| {
+        let name = &entry.name;
+        let sensitive = resolved_expr_requires_redaction(&entry.value, &[]);
+        let append = matches!(entry.operation, AttachmentOperation::Append);
+        let remove_when_present = matches!(entry.operation, AttachmentOperation::WhenPresent)
+            .then(|| quote!(__concord_builder.remove_header_values(#name)?;));
+        if let Some((value, adapter)) = value_and_adapter(&entry.value) {
+            let access = runtime_scope_value_access(value.reference, client, scopes);
+            match (entry.cardinality, value.presence, adapter, append) {
+                (QueryCardinality::One, ValuePresence::Optional, adapter, append) => {
+                    let encode = bound_atom_closure(&quote!(value), adapter);
+                    let emit = if append {
+                        quote!(__concord_builder.append_header_atoms(#name, #sensitive, #encode)?;)
+                    } else {
+                        quote!(__concord_builder.insert_header_atoms(#name, #sensitive, #encode)?;)
+                    };
+                    quote! {
+                        if let ::std::option::Option::Some(value) = #access.as_ref() {
+                            #remove_when_present
+                            #emit
+                        }
+                    }
+                }
+                (QueryCardinality::One, ValuePresence::Required, adapter, append) => {
+                    let encode = bound_atom_closure(&access, adapter);
+                    let emit = if append {
+                        quote!(__concord_builder.append_header_atoms(#name, #sensitive, #encode)?;)
+                    } else {
+                        quote!(__concord_builder.insert_header_atoms(#name, #sensitive, #encode)?;)
+                    };
+                    quote! { #remove_when_present #emit }
+                }
+                (QueryCardinality::Each, ValuePresence::Required, None, false) => quote! {
+                    #remove_when_present
+                    __concord_builder.insert_header_each(#name, #access, #sensitive)?;
+                },
+                (QueryCardinality::Each, ValuePresence::Required, Some(adapter), false) => quote! {
+                    #remove_when_present
+                    __concord_builder.insert_header_each_with::<#adapter, _>(
+                        #name, #access, #sensitive,
+                    )?;
+                },
+                (QueryCardinality::Each, ValuePresence::Required, None, true) => quote! {
+                    __concord_builder.append_header_each(#name, #access, #sensitive)?;
+                },
+                (QueryCardinality::Each, ValuePresence::Required, Some(adapter), true) => quote! {
+                    __concord_builder.append_header_each_with::<#adapter, _>(
+                        #name, #access, #sensitive,
+                    )?;
+                },
+                (QueryCardinality::Each, ValuePresence::Optional, None, false) => quote! {
+                    if let ::std::option::Option::Some(values) = #access.as_ref() {
+                        #remove_when_present
+                        __concord_builder.insert_header_each(#name, values, #sensitive)?;
+                    }
+                },
+                (QueryCardinality::Each, ValuePresence::Optional, Some(adapter), false) => quote! {
+                    if let ::std::option::Option::Some(values) = #access.as_ref() {
+                        #remove_when_present
+                        __concord_builder.insert_header_each_with::<#adapter, _>(
+                            #name, values, #sensitive,
+                        )?;
+                    }
+                },
+                (QueryCardinality::Each, ValuePresence::Optional, None, true) => quote! {
+                    if let ::std::option::Option::Some(values) = #access.as_ref() {
+                        __concord_builder.append_header_each(#name, values, #sensitive)?;
+                    }
+                },
+                (QueryCardinality::Each, ValuePresence::Optional, Some(adapter), true) => quote! {
+                    if let ::std::option::Option::Some(values) = #access.as_ref() {
+                        __concord_builder.append_header_each_with::<#adapter, _>(
+                            #name, values, #sensitive,
+                        )?;
+                    }
+                },
+            }
+        } else {
+            let encode = runtime_scope_atom_closure(&entry.value, client, scopes);
+            if append {
+                quote!(__concord_builder.append_header_atoms(#name, #sensitive, #encode)?;)
+            } else {
+                quote! {
+                    #remove_when_present
+                    __concord_builder.insert_header_atoms(#name, #sensitive, #encode)?;
+                }
+            }
+        }
+    });
+    let auth = auth_config_statements(client, config, facade_path);
+    let rate_limits = runtime_scope_rate_limit_statements(
+        client,
+        scopes,
+        config,
+        facade_path,
+        identity_path,
+        runtime_endpoint_id,
+    );
+    RuntimeScopeHeadStatements {
+        host: quote!(#(#host)*),
+        path: quote!(#(#path)*),
+        query: quote!(#(#query)*),
+        headers: quote!(#(#headers)*),
+        auth,
+        rate_limits,
     }
 }
 
@@ -202,11 +488,18 @@ pub(super) fn auth_statements(
     endpoint: &Endpoint,
     facade_path: &TokenStream,
 ) -> TokenStream {
-    if endpoint.config.auth.is_empty() {
+    auth_config_statements(client, &endpoint.config, facade_path)
+}
+
+fn auth_config_statements(
+    client: &Client,
+    config: &NormalizedConfig,
+    facade_path: &TokenStream,
+) -> TokenStream {
+    if config.auth.is_empty() {
         return quote!();
     }
-    let statements = endpoint
-        .config
+    let statements = config
         .auth
         .iter()
         .map(|placement| {
@@ -333,17 +626,17 @@ pub(super) fn rate_limit_statements(
                 };
             }
 
-            let host_binding = Ident::new(
-                &format!("__concord_rate_limit_host_{ordinal}"),
+            let origin_binding = Ident::new(
+                &format!("__concord_rate_limit_origin_{ordinal}"),
                 Span::mixed_site(),
             );
-            let capture_host = rule
+            let capture_origin = rule
                 .dimensions
                 .iter()
-                .any(|dimension| matches!(dimension, NormalizedRateLimitDimension::Host { .. }))
+                .any(|dimension| matches!(dimension, NormalizedRateLimitDimension::Origin { .. }))
                 .then(|| {
                     quote! {
-                        let #host_binding = __concord_builder.rate_limit_host().to_owned();
+                        let #origin_binding = __concord_builder.rate_limit_origin();
                     }
                 });
             let contract_id =
@@ -352,12 +645,12 @@ pub(super) fn rate_limit_statements(
                 .dimensions
                 .iter()
                 .map(|dimension| match dimension {
-                    NormalizedRateLimitDimension::Host { .. } => {
-                        quote!(("host", &#host_binding as &dyn #facade_path::rate_limit::RateLimitKeyValue))
+                    NormalizedRateLimitDimension::Origin { .. } => {
+                        quote!(("origin", &#origin_binding as &dyn #facade_path::rate_limit::RateKeyPart))
                     }
                     NormalizedRateLimitDimension::Endpoint { span } => {
                         quote_spanned!(*span=>
-                            ("endpoint", &#contract_id as &dyn #facade_path::rate_limit::RateLimitKeyValue)
+                            ("endpoint", &#contract_id as &dyn #facade_path::rate_limit::RateKeyPart)
                         )
                     }
                     NormalizedRateLimitDimension::Value {
@@ -368,13 +661,13 @@ pub(super) fn rate_limit_statements(
                         let name = syn::LitStr::new(public_name, *span);
                         let access = resolved_value_access(*reference, client, scopes, endpoint);
                         quote_spanned!(*span=>
-                            (#name, #access as &dyn #facade_path::rate_limit::RateLimitKeyValue)
+                            (#name, #access as &dyn #facade_path::rate_limit::RateKeyPart)
                         )
                     }
                 })
                 .collect::<Vec<_>>();
             quote! {
-                #capture_host
+                #capture_origin
                 __concord_builder.push_rate_limit_policy(
                     #identity_path::#identity,
                     [#(#parts,)*],
@@ -384,6 +677,94 @@ pub(super) fn rate_limit_statements(
             }
         })
         .collect::<Vec<_>>();
+    quote!(#(#statements)*)
+}
+
+fn runtime_scope_rate_limit_statements(
+    client: &Client,
+    scopes: &[&Scope],
+    config: &NormalizedConfig,
+    facade_path: &TokenStream,
+    identity_path: &TokenStream,
+    runtime_endpoint_id: &Ident,
+) -> TokenStream {
+    let rate_limit_ids = rate_limit_identity_ids(client);
+    let statements = config
+        .rate_limits
+        .iter()
+        .enumerate()
+        .map(|(ordinal, rule)| {
+            let identity =
+                rate_limit_identity_const(&rate_limit_ids, &rule.id, &client.name.to_string());
+            let cost = rule.cost;
+            let windows = rule
+                .windows
+                .iter()
+                .map(|window| {
+                    let capacity = window.capacity;
+                    let seconds = window.duration.as_secs();
+                    let nanos = window.duration.subsec_nanos();
+                    quote!((
+                        #capacity,
+                        ::std::time::Duration::new(#seconds, #nanos),
+                    ))
+                })
+                .collect::<Vec<_>>();
+            if rule.dimensions.is_empty() {
+                return quote! {
+                    __concord_builder.push_generated_rate_limit_policy(
+                        #identity_path::#identity,
+                        #cost,
+                        [#(#windows,)*],
+                    )?;
+                };
+            }
+            let origin_binding = Ident::new(
+                &format!("__concord_runtime_rate_limit_origin_{ordinal}"),
+                Span::mixed_site(),
+            );
+            let capture_origin = rule
+                .dimensions
+                .iter()
+                .any(|dimension| matches!(dimension, NormalizedRateLimitDimension::Origin { .. }))
+                .then(|| quote!(let #origin_binding = __concord_builder.rate_limit_origin();));
+            let parts = rule
+                .dimensions
+                .iter()
+                .map(|dimension| match dimension {
+                    NormalizedRateLimitDimension::Origin { .. } => quote!(
+                        ("origin", &#origin_binding as &dyn #facade_path::rate_limit::RateKeyPart)
+                    ),
+                    NormalizedRateLimitDimension::Endpoint { span } => quote_spanned!(*span=>
+                        (
+                            "endpoint",
+                            &#runtime_endpoint_id
+                                as &dyn #facade_path::rate_limit::RateKeyPart,
+                        )
+                    ),
+                    NormalizedRateLimitDimension::Value {
+                        public_name,
+                        reference,
+                        span,
+                    } => {
+                        let name = syn::LitStr::new(public_name, *span);
+                        let access = runtime_scope_value_access(*reference, client, scopes);
+                        quote_spanned!(*span=>
+                            (#name, #access as &dyn #facade_path::rate_limit::RateKeyPart)
+                        )
+                    }
+                })
+                .collect::<Vec<_>>();
+            quote! {
+                #capture_origin
+                __concord_builder.push_rate_limit_policy(
+                    #identity_path::#identity,
+                    [#(#parts,)*],
+                    #cost,
+                    [#(#windows,)*],
+                )?;
+            }
+        });
     quote!(#(#statements)*)
 }
 
@@ -442,7 +823,182 @@ pub(super) fn rate_limit_identity_const_for_ordinal(ordinal: usize, client_name:
     )
 }
 
-pub(super) fn display_argument(
+fn value_and_adapter(expression: &ResolvedExpr) -> Option<(&ResolvedValue, Option<&Type>)> {
+    match expression {
+        ResolvedExpr::Value(value) => Some((value, None)),
+        ResolvedExpr::Adapted { value, adapter } => match value.as_ref() {
+            ResolvedExpr::Value(value) => Some((value, Some(adapter))),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn atom_closure(
+    expression: &ResolvedExpr,
+    client: &Client,
+    scopes: &[&Scope],
+    endpoint: &Endpoint,
+) -> TokenStream {
+    let statements = atom_write_statements(expression, client, scopes, endpoint);
+    quote! {
+        |__concord_atom| {
+            #statements
+            ::std::result::Result::Ok(())
+        }
+    }
+}
+
+fn runtime_scope_atom_closure(
+    expression: &ResolvedExpr,
+    client: &Client,
+    scopes: &[&Scope],
+) -> TokenStream {
+    let statements = runtime_scope_atom_write_statements(expression, client, scopes);
+    quote! {
+        |__concord_atom| {
+            #statements
+            ::std::result::Result::Ok(())
+        }
+    }
+}
+
+fn runtime_scope_atom_write_statements(
+    expression: &ResolvedExpr,
+    client: &Client,
+    scopes: &[&Scope],
+) -> TokenStream {
+    match expression {
+        ResolvedExpr::String(value) => quote!(__concord_atom.write(&#value)?;),
+        ResolvedExpr::Character(value) => quote!(__concord_atom.write(&#value)?;),
+        ResolvedExpr::Boolean(value) => quote!(__concord_atom.write(&#value)?;),
+        ResolvedExpr::Integer {
+            negative: false,
+            literal,
+        } => quote!(__concord_atom.write(&#literal)?;),
+        ResolvedExpr::Integer {
+            negative: true,
+            literal,
+        } => quote!(__concord_atom.write(&(-#literal))?;),
+        ResolvedExpr::Value(value) => {
+            let value = runtime_scope_value_access(value.reference, client, scopes);
+            quote!(__concord_atom.write(#value)?;)
+        }
+        ResolvedExpr::Adapted { value, adapter } => {
+            let value = runtime_scope_atom_argument(value, client, scopes);
+            quote!(__concord_atom.write_with::<#adapter, _>(#value)?;)
+        }
+        ResolvedExpr::Concat(values) => {
+            let statements = values
+                .iter()
+                .map(|value| runtime_scope_atom_write_statements(value, client, scopes));
+            quote!(#(#statements)*)
+        }
+    }
+}
+
+fn runtime_scope_atom_argument(
+    expression: &ResolvedExpr,
+    client: &Client,
+    scopes: &[&Scope],
+) -> TokenStream {
+    match expression {
+        ResolvedExpr::String(value) => quote!(&#value),
+        ResolvedExpr::Character(value) => quote!(&#value),
+        ResolvedExpr::Boolean(value) => quote!(&#value),
+        ResolvedExpr::Integer {
+            negative: false,
+            literal,
+        } => quote!(&#literal),
+        ResolvedExpr::Integer {
+            negative: true,
+            literal,
+        } => quote!(&(-#literal)),
+        ResolvedExpr::Value(value) => runtime_scope_value_access(value.reference, client, scopes),
+        ResolvedExpr::Adapted { .. } | ResolvedExpr::Concat(_) => {
+            unreachable!("adapters accept one unadapted scalar atom")
+        }
+    }
+}
+
+fn runtime_scope_value_access(
+    reference: ValueReference,
+    client: &Client,
+    scopes: &[&Scope],
+) -> TokenStream {
+    match reference {
+        ValueReference::Client(index) => {
+            let value = &client.values[index];
+            let field = client_value_field(index, value);
+            quote!((&__concord_client_values.#field))
+        }
+        ValueReference::Scope {
+            scope_id,
+            parameter,
+        } => {
+            let scope = scopes
+                .iter()
+                .find(|scope| scope.id == scope_id)
+                .expect("resolved scope identity appears in the runtime owner chain");
+            let field = scope_value_field(scope_id, parameter, &scope.parameters[parameter]);
+            quote!((&*__concord_scope.#field))
+        }
+        ValueReference::Endpoint(_) => {
+            unreachable!("scope-owned configuration cannot reference an endpoint value")
+        }
+    }
+}
+
+fn bound_atom_closure(value: &TokenStream, adapter: Option<&Type>) -> TokenStream {
+    let write = if let Some(adapter) = adapter {
+        quote!(__concord_atom.write_with::<#adapter, _>(#value)?;)
+    } else {
+        quote!(__concord_atom.write(#value)?;)
+    };
+    quote! {
+        |__concord_atom| {
+            #write
+            ::std::result::Result::Ok(())
+        }
+    }
+}
+
+fn atom_write_statements(
+    expression: &ResolvedExpr,
+    client: &Client,
+    scopes: &[&Scope],
+    endpoint: &Endpoint,
+) -> TokenStream {
+    match expression {
+        ResolvedExpr::String(value) => quote!(__concord_atom.write(&#value)?;),
+        ResolvedExpr::Character(value) => quote!(__concord_atom.write(&#value)?;),
+        ResolvedExpr::Boolean(value) => quote!(__concord_atom.write(&#value)?;),
+        ResolvedExpr::Integer {
+            negative: false,
+            literal,
+        } => quote!(__concord_atom.write(&#literal)?;),
+        ResolvedExpr::Integer {
+            negative: true,
+            literal,
+        } => quote!(__concord_atom.write(&(-#literal))?;),
+        ResolvedExpr::Value(value) => {
+            let value = resolved_value_access(value.reference, client, scopes, endpoint);
+            quote!(__concord_atom.write(#value)?;)
+        }
+        ResolvedExpr::Adapted { value, adapter } => {
+            let value = atom_argument(value, client, scopes, endpoint);
+            quote!(__concord_atom.write_with::<#adapter, _>(#value)?;)
+        }
+        ResolvedExpr::Concat(values) => {
+            let statements = values
+                .iter()
+                .map(|value| atom_write_statements(value, client, scopes, endpoint));
+            quote!(#(#statements)*)
+        }
+    }
+}
+
+fn atom_argument(
     expression: &ResolvedExpr,
     client: &Client,
     scopes: &[&Scope],
@@ -450,32 +1006,21 @@ pub(super) fn display_argument(
 ) -> TokenStream {
     match expression {
         ResolvedExpr::String(value) => quote!(&#value),
-        ResolvedExpr::Integer(value) => quote!(&#value),
+        ResolvedExpr::Character(value) => quote!(&#value),
+        ResolvedExpr::Boolean(value) => quote!(&#value),
+        ResolvedExpr::Integer {
+            negative: false,
+            literal,
+        } => quote!(&#literal),
+        ResolvedExpr::Integer {
+            negative: true,
+            literal,
+        } => quote!(&(-#literal)),
         ResolvedExpr::Value(value) => {
             resolved_value_access(value.reference, client, scopes, endpoint)
         }
-        ResolvedExpr::Concat(values) => {
-            let mut arguments = Vec::new();
-            collect_format_arguments(values, client, scopes, endpoint, &mut arguments);
-            let template = "{}".repeat(arguments.len());
-            quote!(&::std::format_args!(#template, #(#arguments),*))
-        }
-    }
-}
-
-fn collect_format_arguments(
-    expressions: &[ResolvedExpr],
-    client: &Client,
-    scopes: &[&Scope],
-    endpoint: &Endpoint,
-    output: &mut Vec<TokenStream>,
-) {
-    for expression in expressions {
-        match expression {
-            ResolvedExpr::Concat(nested) => {
-                collect_format_arguments(nested, client, scopes, endpoint, output);
-            }
-            _ => output.push(display_argument(expression, client, scopes, endpoint)),
+        ResolvedExpr::Adapted { .. } | ResolvedExpr::Concat(_) => {
+            unreachable!("adapters accept one unadapted scalar atom")
         }
     }
 }
@@ -554,19 +1099,6 @@ pub(super) fn endpoint_constructor_binding(index: usize, value: &Value) -> Ident
     private_ident("endpoint_input", index, &value.name)
 }
 
-pub(super) fn body_constructor(
-    body: Option<&Type>,
-    binding: Option<&Ident>,
-    _generated_core: &TokenStream,
-    _facade_path: &TokenStream,
-) -> TokenStream {
-    match (body, binding) {
-        (Some(_), Some(binding)) => quote!(#binding),
-        (None, None) => quote!(()),
-        _ => unreachable!("body and binding are modeled together"),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use quote::quote;
@@ -580,39 +1112,39 @@ mod tests {
         let endpoint = test_support::endpoint(&api);
         let output = path_statements(&api.client, &[], endpoint).to_string();
 
-        assert!(output.contains("push_value"));
+        assert!(output.contains("push_path_atoms"));
         assert!(output.contains("__concord_client_values"));
     }
 
     #[test]
-    fn nested_formats_emit_one_lazy_argument_tree_without_a_string_intermediate() {
+    fn nested_concats_emit_one_bounded_atom_writer_without_formatting() {
         let api = crate::semantic::test_support::resolve_tokens(quote! {
             client FormatApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
 
-            GET read(first: String, second: String) -> Bytes using Bytes {
+            GET read(first: String, second: String) -> Bytes via Binary {
                 path [concat["prefix-", concat[endpoint.first, "-", endpoint.second]]];
             }
         }});
         let endpoint = crate::semantic::test_support::endpoint(&api.client.children, "read");
         let output = path_statements(&api.client, &[], endpoint).to_string();
 
-        assert_eq!(output.matches("format_args").count(), 1);
+        assert_eq!(output.matches("push_path_atoms").count(), 1);
+        assert_eq!(output.matches("__concord_atom . write").count(), 4);
+        assert!(!output.contains("format_args"));
         assert!(!output.contains("String :: new"));
-        assert!(!output.contains("write_fmt"));
-        assert!(!output.contains("formatting into a String is infallible"));
     }
 
     #[test]
-    fn global_rule_uses_generated_global_fast_path() {
+    fn origin_key_uses_the_canonical_policy_path() {
         let api = crate::semantic::test_support::resolve_tokens(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
-                rate_limit { allow 1 per 1s; }
+                rate_limit { id "concord.shaping.1"; key [origin]; cost 1;  allow 1 per 1s; }
 
-            GET read() -> Bytes using Bytes;
+            GET read() -> Bytes via Binary;
         }});
         let endpoint = crate::semantic::test_support::endpoint(&api.client.children, "read");
         let output = rate_limit_statements(
@@ -624,24 +1156,24 @@ mod tests {
         )
         .to_string();
 
-        assert!(output.contains("push_generated_rate_limit_policy"));
-        assert!(!output.contains("push_rate_limit_policy"));
-        assert!(!output.contains("rate_limit_host"));
+        assert!(!output.contains("push_generated_rate_limit_policy"));
+        assert!(output.contains("push_rate_limit_policy"));
+        assert!(output.contains("rate_limit_origin"));
     }
 
     fn keyed_rule_output() -> String {
         let api = crate::semantic::test_support::resolve_tokens(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 values { tenant: String; }
 
             scope regional(region: String) {
                 subdomain [regional.region, "api"];
-                GET read(account: String) -> Bytes using Bytes {
+                GET read(account: String) -> Bytes via Binary {
                     id "stable.rate.read";
-                    rate_limit {
-                        key [host, endpoint, client.tenant, regional.region, endpoint.account];
+                    rate_limit { id "concord.shaping.2"; cost 1;
+                        key [origin, endpoint, client.tenant, regional.region, endpoint.account];
                         allow 1 per 1s;
                     }
                 }
@@ -668,9 +1200,9 @@ mod tests {
     }
 
     #[test]
-    fn host_dimension_uses_final_logical_host() {
+    fn origin_dimension_uses_normalized_logical_origin() {
         let output = keyed_rule_output();
-        assert!(output.contains("rate_limit_host"));
+        assert!(output.contains("rate_limit_origin"));
         assert!(output.contains("push_rate_limit_policy"));
     }
 
@@ -703,10 +1235,10 @@ mod tests {
     fn named_rule_emits_logical_formal_name_with_bound_lexical_access() {
         let api = crate::semantic::test_support::resolve_tokens(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 rate_limits {
-                    account_reads(account) {
+                    policy account_reads(account) { id "concord.shaping.3"; cost 1;
                         key [account];
                         allow 10 per 1m;
                     }
@@ -714,7 +1246,7 @@ mod tests {
 
             scope accounts(account: String) {
                 rate_limit account_reads(account = accounts.account);
-                GET read() -> Bytes using Bytes;
+                GET read() -> Bytes via Binary;
             }
         }});
         let scope = api
@@ -746,7 +1278,7 @@ mod tests {
     fn composite_dimension_order_is_preserved() {
         let output = keyed_rule_output();
         let ordered = [
-            "\"host\"",
+            "\"origin\"",
             "\"endpoint\"",
             "\"client.tenant\"",
             "\"regional.region\"",
@@ -757,6 +1289,6 @@ mod tests {
             ordered.windows(2).all(|pair| pair[0] < pair[1]),
             "generated dimensions lost declaration order: {output}"
         );
-        assert!(output.contains("as & dyn :: concord :: rate_limit :: RateLimitKeyValue"));
+        assert!(output.contains("as & dyn :: concord :: rate_limit :: RateKeyPart"));
     }
 }

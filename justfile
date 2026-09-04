@@ -51,7 +51,7 @@ fixtures:
     cargo run  -p concord-xtask -- fixtures
 
 docs:
-    pwsh -NoLogo -NoProfile -File scripts/check_docs_examples.ps1
+    cargo run --locked -p concord-xtask -- docs-check --locked
     cargo test --workspace --doc --all-features
     cargo rustdoc -p concord-core --no-default-features  -- -D warnings
     cargo rustdoc -p concord-extras --no-default-features  -- -D warnings
@@ -68,7 +68,16 @@ docs:
     cargo rustdoc -p concord-extras --all-features  -- -D warnings
 
 docs-check:
-    pwsh -NoLogo -NoProfile -File scripts/check_docs_examples.ps1
+    cargo run --locked -p concord-xtask -- docs-check --locked
+
+release-audit:
+    cargo run --locked -p concord-xtask -- release-audit --locked
+
+source-export:
+    cargo run --locked -p concord-xtask -- source-export --locked
+
+package:
+    pwsh -NoLogo -NoProfile -File scripts/verify_packaged_downstream.ps1
 
 deny:
     cargo deny check
@@ -83,4 +92,4 @@ analyzer:
 bench:
     cargo bench -p concord-perf --bench concord_overhead --no-run
 
-verify: fmt check lint test ui msrv fixtures docs deny workflow analyzer bench
+verify: fmt check lint test ui msrv fixtures docs package deny workflow analyzer bench source-export release-audit

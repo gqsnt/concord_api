@@ -1,5 +1,5 @@
 error: duplicate rate-limit dimension `client.tenant`
- --> tests/ui/fail/rate_limits/rate_limit_duplicate_dimension.rs:8:42
+ --> tests/ui/fail/rate_limits/rate_limit_duplicate_dimension.rs:8:98
   |
-8 |         rate_limit { key [client.tenant, client.tenant]; allow 1 per 1s; }
-  |                                          ^^^^^^
+8 |         rate_limit { id "concord.rate_limit_duplicate_dimension.1"; cost 1;  key [client.tenant, client.tenant]; allow 1 per 1s; }
+  |                                                                                                  ^^^^^^

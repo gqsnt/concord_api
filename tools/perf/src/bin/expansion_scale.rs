@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::Instant;
 
-const DEFAULT_COUNTS: &[usize] = &[1, 10, 100, 1_000];
+const DEFAULT_COUNTS: &[usize] = &[1, 10, 100, 500, 1_000];
 
 fn main() -> ExitCode {
     match run() {
@@ -24,21 +24,32 @@ fn run() -> Result<(), String> {
     let fixture = root.join("target/perf/expansion-scale/fixture");
     let target = root.join("target/perf/expansion-scale/build");
     fs::create_dir_all(fixture.join("src")).map_err(|error| error.to_string())?;
+    let retired_library_target = fixture.join("src/lib.rs");
+    if retired_library_target.exists() {
+        fs::remove_file(&retired_library_target).map_err(|error| {
+            format!(
+                "could not remove obsolete generated fixture {}: {error}",
+                retired_library_target.display()
+            )
+        })?;
+    }
     fs::write(fixture.join("Cargo.toml"), fixture_manifest(&root))
         .map_err(|error| error.to_string())?;
 
-    println!("| endpoints | lines | characters | fragments | declaration-shaped | expand ms |");
-    println!("|---:|---:|---:|---:|---:|---:|");
+    println!(
+        "| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | binary bytes | description bytes |"
+    );
+    println!("|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
     for count in counts {
-        fs::write(fixture.join("src/lib.rs"), fixture_source(count))
+        fs::write(fixture.join("src/main.rs"), fixture_source(count))
             .map_err(|error| error.to_string())?;
         let started = Instant::now();
-        let output = Command::new("cargo")
+        let output = cargo_expand(&root)
             .args([
-                "expand",
                 "--manifest-path",
                 &fixture.join("Cargo.toml").to_string_lossy(),
-                "--lib",
+                "--bin",
+                "concord-expansion-scale",
             ])
             .env("CARGO_TARGET_DIR", &target)
             .env("NO_COLOR", "1")
@@ -53,8 +64,49 @@ fn run() -> Result<(), String> {
         }
         let expansion = String::from_utf8(output.stdout)
             .map_err(|error| format!("cargo-expand emitted non-UTF-8 output: {error}"))?;
+        let expand_ms = started.elapsed().as_millis();
+        let build_started = Instant::now();
+        let build = Command::new("cargo")
+            .args([
+                "build",
+                "--manifest-path",
+                &fixture.join("Cargo.toml").to_string_lossy(),
+            ])
+            .env("CARGO_TARGET_DIR", &target)
+            .env("NO_COLOR", "1")
+            .output()
+            .map_err(|error| format!("could not build scale fixture: {error}"))?;
+        if !build.status.success() {
+            return Err(format!(
+                "fixture build failed for {count} endpoints with {}\n{}",
+                build.status,
+                String::from_utf8_lossy(&build.stderr)
+            ));
+        }
+        let build_ms = build_started.elapsed().as_millis();
+        let binary = target.join(format!(
+            "debug/concord-expansion-scale{}",
+            env::consts::EXE_SUFFIX
+        ));
+        let binary_bytes = fs::metadata(&binary)
+            .map_err(|error| format!("could not inspect {}: {error}", binary.display()))?
+            .len();
+        let description = Command::new(&binary)
+            .output()
+            .map_err(|error| format!("could not run scale fixture: {error}"))?;
+        if !description.status.success() {
+            return Err(format!(
+                "scale fixture failed for {count} endpoints with {}",
+                description.status
+            ));
+        }
+        let description_bytes = String::from_utf8(description.stdout)
+            .map_err(|error| format!("scale fixture emitted non-UTF-8 output: {error}"))?
+            .trim()
+            .parse::<usize>()
+            .map_err(|error| format!("invalid description size: {error}"))?;
         println!(
-            "| {count} | {} | {} | {} | {} | {} |",
+            "| {count} | {} | {} | {} | {} | {} | {expand_ms} | {build_ms} | {binary_bytes} | {description_bytes} |",
             expansion.lines().count(),
             expansion.chars().count(),
             expansion.split_whitespace().count(),
@@ -62,10 +114,29 @@ fn run() -> Result<(), String> {
                 .lines()
                 .filter(|line| declaration_shaped(line.trim_start()))
                 .count(),
-            started.elapsed().as_millis(),
+            expansion
+                .lines()
+                .filter(|line| function_shaped(line.trim_start()))
+                .count(),
         );
     }
     Ok(())
+}
+
+fn cargo_expand(root: &Path) -> Command {
+    let local = root.join(format!(
+        "target/tools/cargo-expand/bin/cargo-expand{}",
+        env::consts::EXE_SUFFIX
+    ));
+    if local.is_file() {
+        let mut command = Command::new(local);
+        command.arg("expand");
+        command
+    } else {
+        let mut command = Command::new("cargo");
+        command.arg("expand");
+        command
+    }
 }
 
 fn endpoint_counts() -> Result<Vec<usize>, String> {
@@ -128,15 +199,15 @@ fn fixture_source(count: usize) -> String {
     let mut source = String::from(
         r#"#![recursion_limit = "4096"]
 
-use concord::{Bytes, api};
+use concord::{Bytes, api, endpoint::contract_tool_snapshot};
 
 api! {
     client ScaleApi {
         base "https://scale.example.test";
-        timeout off;
+        timeout 30s;
         rate_limits {
-            shared_reads() {
-                key [host, endpoint];
+            policy shared_reads() { id "concord.expansion_scale.1"; cost 1;
+                key [origin, endpoint];
                 allow 1_000_000 per 1s;
             }
         }
@@ -145,11 +216,21 @@ api! {
     );
     for index in 0..count {
         source.push_str(&format!(
-            "        GET endpoint_{index:04}(value: u64) -> Bytes using Bytes {{\n            path [endpoint.value];\n            rate_limit shared_reads();\n        }}\n"
+            "        GET endpoint_{index:04}(value: u64) -> Bytes via Binary {{\n            path [endpoint.value];\n            rate_limit shared_reads();\n        }}\n"
         ));
     }
-    source.push_str("    }\n}\n");
+    source.push_str(
+        "    }\n}\n\nfn main() {\n    println!(\"{}\", contract_tool_snapshot(ScaleApi::contract()).len());\n}\n",
+    );
     source
+}
+
+fn function_shaped(line: &str) -> bool {
+    let line = line
+        .strip_prefix("pub ")
+        .or_else(|| line.strip_prefix("pub(crate) "))
+        .unwrap_or(line);
+    line.starts_with("fn ") || line.starts_with("async fn ")
 }
 
 fn declaration_shaped(line: &str) -> bool {
@@ -174,10 +255,11 @@ mod tests {
         assert_eq!(source.matches("shared_reads()").count(), 4);
         assert_eq!(source.matches("rate_limit shared_reads();").count(), 3);
         assert_eq!(source.matches("GET endpoint_").count(), 3);
+        assert!(source.contains("contract_tool_snapshot(ScaleApi::contract())"));
     }
 
     #[test]
-    fn default_scale_points_cover_four_orders_of_endpoint_count() {
-        assert_eq!(DEFAULT_COUNTS, [1, 10, 100, 1_000]);
+    fn default_scale_points_cover_required_endpoint_counts() {
+        assert_eq!(DEFAULT_COUNTS, [1, 10, 100, 500, 1_000]);
     }
 }

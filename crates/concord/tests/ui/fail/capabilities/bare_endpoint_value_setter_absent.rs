@@ -3,11 +3,11 @@ use concord::api;
 
 api! {
     client EndpointSetterApi {
-        timeout off;
+        timeout 30s;
         base "http://endpoint-setter.example.test";
 
 
-    GET read(label: Option<String>) -> Bytes using Bytes;
+    GET read(label: Option<String>) -> Bytes via Binary;
 }}
 
 fn main() {

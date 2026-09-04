@@ -3,7 +3,7 @@ use concord::api;
 
 api! {
     client Api {
-        timeout off;
+        timeout 30s;
         base "http://example.test";
         credentials {
             secret token;

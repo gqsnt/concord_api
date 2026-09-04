@@ -1,160 +1,39 @@
 use super::*;
 
 #[tokio::test]
-async fn vetoed_buffered_request_does_not_invoke_its_encoder() {
+async fn buffered_request_is_prepared_once_when_attempt_observation_panics() {
     let executor = DeterministicExecutor::new();
+    let mut headers = http::HeaderMap::new();
+    headers.insert(
+        http::header::CONTENT_TYPE,
+        http::HeaderValue::from_static("application/x-concord-probe"),
+    );
+    executor
+        .application()
+        .queue_response(ScriptedResponse::success(Bytes::from_static(b"ok")).headers(headers))
+        .expect("observer panic response");
     let mut probe = ProbeHooks::new();
-    probe.veto = AtomicBool::new(true);
+    probe.panic_on_attempt = AtomicBool::new(true);
     let hooks = Arc::new(probe);
     let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
     let encoder_calls = Arc::new(AtomicUsize::new(0));
-    let error = codec_request::<ProbeEncoder, ProbeDecoder>(
+    let _output = codec_request::<ProbeEncoder, ProbeDecoder>(
         core,
-        probe_input(b"veto-body-secret-78f4", &encoder_calls),
+        probe_input(b"observer-body-secret-78f4", &encoder_calls),
     )
     .await
-    .expect_err("hook veto");
-    assert_eq!(error.category(), ErrorCategory::PolicyRejected);
-    assert_eq!(encoder_calls.load(Ordering::SeqCst), 0);
-    assert_eq!(executor.application().request_count().expect("count"), 0);
+    .expect("observer panic cannot veto");
+    assert_eq!(encoder_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(executor.application().request_count().expect("count"), 1);
     assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 1);
     assert!(matches!(
         hooks.records().first(),
         Some(LifecycleRecord::Before {
             body_kind: crate::hooks::BodyKind::Buffered,
-            known_body_length: None,
+            known_body_length: Some(25),
             ..
         })
     ));
-    for formatted in [error.to_string(), format!("{error:?}")] {
-        assert!(!formatted.contains("veto-body-secret-78f4"));
-    }
-}
-
-#[tokio::test]
-async fn request_stream_and_factory_remain_lazy_through_hook_veto() {
-    let stream_executor = DeterministicExecutor::new();
-    let mut stream_probe = ProbeHooks::new();
-    stream_probe.veto = AtomicBool::new(true);
-    let stream_hooks = Arc::new(stream_probe);
-    let stream_core = development_core(
-        &stream_executor,
-        Arc::clone(&stream_hooks),
-        RuntimeConfigBuilder::new(),
-    );
-    let stream_polls = Arc::new(AtomicUsize::new(0));
-    let stream = StreamBody::from_stream(BodyPollProbe::new(
-        [ProbeFrame::Data(b"lazy-stream-secret-a8ef")],
-        &stream_polls,
-    ))
-    .exact_length(23);
-    assert_eq!(stream_polls.load(Ordering::SeqCst), 0);
-    let request = body_request(stream_core, RequestBody::stream(stream));
-    assert_eq!(stream_polls.load(Ordering::SeqCst), 0);
-    let error = request.await.expect_err("stream hook veto");
-    assert_eq!(error.category(), ErrorCategory::PolicyRejected);
-    assert_eq!(stream_polls.load(Ordering::SeqCst), 0);
-    assert_eq!(stream_executor.application().request_count().unwrap(), 0);
-    assert!(matches!(
-        stream_hooks.records().first(),
-        Some(LifecycleRecord::Before {
-            body_kind: crate::hooks::BodyKind::Stream,
-            known_body_length: Some(23),
-            ..
-        })
-    ));
-
-    let factory_executor = DeterministicExecutor::new();
-    let mut factory_probe = ProbeHooks::new();
-    factory_probe.veto = AtomicBool::new(true);
-    let factory_hooks = Arc::new(factory_probe);
-    let factory_core = development_core(
-        &factory_executor,
-        Arc::clone(&factory_hooks),
-        RuntimeConfigBuilder::new(),
-    );
-    let content_type_calls = Arc::new(AtomicUsize::new(0));
-    let create_calls = Arc::new(AtomicUsize::new(0));
-    let factory_polls = Arc::new(AtomicUsize::new(0));
-    let request = body_request(
-        factory_core,
-        RequestBody::factory(ProbeBodyFactory {
-            content_type_calls: Arc::clone(&content_type_calls),
-            create_calls: Arc::clone(&create_calls),
-            polls: Arc::clone(&factory_polls),
-            fail: false,
-        }),
-    );
-    assert_eq!(content_type_calls.load(Ordering::SeqCst), 1);
-    assert_eq!(create_calls.load(Ordering::SeqCst), 0);
-    assert_eq!(factory_polls.load(Ordering::SeqCst), 0);
-    let error = request.await.expect_err("factory hook veto");
-    assert_eq!(error.category(), ErrorCategory::PolicyRejected);
-    assert_eq!(content_type_calls.load(Ordering::SeqCst), 1);
-    assert_eq!(create_calls.load(Ordering::SeqCst), 0);
-    assert_eq!(factory_polls.load(Ordering::SeqCst), 0);
-    assert_eq!(factory_executor.application().request_count().unwrap(), 0);
-}
-
-#[cfg(feature = "multipart")]
-#[tokio::test]
-async fn multipart_stream_and_factory_remain_lazy_through_hook_veto() {
-    let direct_executor = DeterministicExecutor::new();
-    let mut direct_probe = ProbeHooks::new();
-    direct_probe.veto = AtomicBool::new(true);
-    let direct_hooks = Arc::new(direct_probe);
-    let direct_core = development_core(
-        &direct_executor,
-        Arc::clone(&direct_hooks),
-        RuntimeConfigBuilder::new(),
-    );
-    let polls = Arc::new(AtomicUsize::new(0));
-    let stream = StreamBody::from_stream(BodyPollProbe::new(
-        [ProbeFrame::Data(b"multipart-lazy-stream-secret")],
-        &polls,
-    ))
-    .exact_length(28);
-    let body = RequestBody::multipart(
-        MultipartBody::new()
-            .part("stream-field", MultipartPart::stream(stream))
-            .expect("multipart stream part"),
-    );
-    assert_eq!(polls.load(Ordering::SeqCst), 0);
-    let error = body_request(direct_core, body)
-        .await
-        .expect_err("multipart hook veto");
-    assert_eq!(error.category(), ErrorCategory::PolicyRejected);
-    assert_eq!(polls.load(Ordering::SeqCst), 0);
-    assert_eq!(direct_executor.application().request_count().unwrap(), 0);
-    assert!(matches!(
-        direct_hooks.records().first(),
-        Some(LifecycleRecord::Before {
-            body_kind: crate::hooks::BodyKind::Multipart,
-            ..
-        })
-    ));
-
-    let factory_executor = DeterministicExecutor::new();
-    let mut factory_probe = ProbeHooks::new();
-    factory_probe.veto = AtomicBool::new(true);
-    let factory_hooks = Arc::new(factory_probe);
-    let factory_core = development_core(
-        &factory_executor,
-        Arc::clone(&factory_hooks),
-        RuntimeConfigBuilder::new(),
-    );
-    let create_calls = Arc::new(AtomicUsize::new(0));
-    let body = RequestBody::multipart_factory(ProbeMultipartFactory {
-        create_calls: Arc::clone(&create_calls),
-        fail: false,
-    });
-    assert_eq!(create_calls.load(Ordering::SeqCst), 0);
-    let error = body_request(factory_core, body)
-        .await
-        .expect_err("multipart factory hook veto");
-    assert_eq!(error.category(), ErrorCategory::PolicyRejected);
-    assert_eq!(create_calls.load(Ordering::SeqCst), 0);
-    assert_eq!(factory_executor.application().request_count().unwrap(), 0);
 }
 
 #[cfg(feature = "multipart")]
@@ -221,7 +100,7 @@ async fn multipart_stream_failure_is_sanitized_and_request_body_primary() {
     let hooks = Arc::new(ProbeHooks::new());
     let core = development_core(&executor, hooks, RuntimeConfigBuilder::new());
     let polls = Arc::new(AtomicUsize::new(0));
-    let stream = StreamBody::from_stream(BodyPollProbe::new(
+    let stream = RequestStream::from_stream(BodyPollProbe::new(
         [ProbeFrame::Failure("multipart-producer-error-secret-9b31")],
         &polls,
     ));
@@ -261,7 +140,7 @@ async fn managed_request_stream_enforces_exact_length_and_aggregate_limit() {
         )
         .expect("stream success script");
     let success_polls = Arc::new(AtomicUsize::new(0));
-    let success_body = StreamBody::from_stream(BodyPollProbe::new(
+    let success_body = RequestStream::from_stream(BodyPollProbe::new(
         [ProbeFrame::Data(b"ab"), ProbeFrame::Data(b"cde")],
         &success_polls,
     ))
@@ -287,7 +166,7 @@ async fn managed_request_stream_enforces_exact_length_and_aggregate_limit() {
             .request_body_limit(NonZeroUsize::new(4).expect("positive limit")),
     );
     let preflight_polls = Arc::new(AtomicUsize::new(0));
-    let preflight_body = StreamBody::from_stream(BodyPollProbe::new(
+    let preflight_body = RequestStream::from_stream(BodyPollProbe::new(
         [ProbeFrame::Data(b"never-polled")],
         &preflight_polls,
     ))
@@ -300,11 +179,11 @@ async fn managed_request_stream_enforces_exact_length_and_aggregate_limit() {
     assert_eq!(preflight_executor.application().request_count().unwrap(), 0);
     assert!(preflight_hooks.records().iter().all(|record| !matches!(
         record,
-        LifecycleRecord::Before { .. } | LifecycleRecord::Response(..)
+        LifecycleRecord::Before { .. } | LifecycleRecord::Response(_)
     )));
 
     async fn managed_failure(
-        body: StreamBody,
+        body: RequestStream,
         polls: &Arc<AtomicUsize>,
         expected_polls: usize,
         limit: usize,
@@ -328,7 +207,7 @@ async fn managed_request_stream_enforces_exact_length_and_aggregate_limit() {
 
     let underflow_polls = Arc::new(AtomicUsize::new(0));
     managed_failure(
-        StreamBody::from_stream(BodyPollProbe::new(
+        RequestStream::from_stream(BodyPollProbe::new(
             [ProbeFrame::Data(b"abc")],
             &underflow_polls,
         ))
@@ -341,7 +220,7 @@ async fn managed_request_stream_enforces_exact_length_and_aggregate_limit() {
 
     let exact_overflow_polls = Arc::new(AtomicUsize::new(0));
     managed_failure(
-        StreamBody::from_stream(BodyPollProbe::new(
+        RequestStream::from_stream(BodyPollProbe::new(
             [ProbeFrame::Data(b"abc"), ProbeFrame::Data(b"de")],
             &exact_overflow_polls,
         ))
@@ -354,7 +233,7 @@ async fn managed_request_stream_enforces_exact_length_and_aggregate_limit() {
 
     let limit_overflow_polls = Arc::new(AtomicUsize::new(0));
     managed_failure(
-        StreamBody::from_stream(BodyPollProbe::new(
+        RequestStream::from_stream(BodyPollProbe::new(
             [ProbeFrame::Data(b"abc"), ProbeFrame::Data(b"de")],
             &limit_overflow_polls,
         )),
@@ -371,7 +250,7 @@ async fn producer_failure_is_request_body_primary_and_body_free() {
     let hooks = Arc::new(ProbeHooks::new());
     let core = development_core(&executor, hooks, RuntimeConfigBuilder::new());
     let polls = Arc::new(AtomicUsize::new(0));
-    let body = StreamBody::from_stream(BodyPollProbe::new(
+    let body = RequestStream::from_stream(BodyPollProbe::new(
         [
             ProbeFrame::Data(b"accepted-prefix-secret-029b"),
             ProbeFrame::Failure("producer-authored-secret-80d1"),
@@ -481,7 +360,9 @@ async fn bytes_reader_and_file_stream_constructors_use_the_same_native_path() {
     assert_eq!(
         body_request(
             core.clone(),
-            RequestBody::stream(StreamBody::from_bytes(Bytes::from_static(b"bytes-source"))),
+            RequestBody::stream(RequestStream::from_bytes(Bytes::from_static(
+                b"bytes-source"
+            ))),
         )
         .await
         .expect("bytes stream"),
@@ -491,7 +372,7 @@ async fn bytes_reader_and_file_stream_constructors_use_the_same_native_path() {
         body_request(
             core.clone(),
             RequestBody::stream(
-                StreamBody::from_reader(std::io::Cursor::new(b"reader-source".to_vec()))
+                RequestStream::from_reader(std::io::Cursor::new(b"reader-source".to_vec()))
                     .exact_length(13),
             ),
         )
@@ -508,7 +389,7 @@ async fn bytes_reader_and_file_stream_constructors_use_the_same_native_path() {
     tokio::fs::write(&file_path, b"file-source")
         .await
         .expect("write stream fixture");
-    let file_body = StreamBody::from_file(&file_path)
+    let file_body = RequestStream::from_file(&file_path)
         .await
         .expect("open stream fixture");
     let file_result = body_request(core, RequestBody::stream(file_body)).await;

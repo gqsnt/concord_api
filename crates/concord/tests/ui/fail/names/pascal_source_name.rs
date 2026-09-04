@@ -4,11 +4,11 @@ use concord::{Bytes, api};
 
 api! {
     client PascalSourceApi {
-        timeout off;
+        timeout 30s;
         base "http://names.example.test/";
 
 
-    GET HTTPStatus() -> Bytes using Bytes;
+    GET HTTPStatus() -> Bytes via Binary;
 }}
 
 fn main() {}

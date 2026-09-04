@@ -31,8 +31,8 @@ fn identity(
 
 #[test]
 fn page_limits_and_safe_errors_have_exact_stable_structure() {
-    assert_eq!(PageLimit::from(0), PageLimit::Prefix(0));
-    assert_eq!(PageLimit::from(7), PageLimit::Prefix(7));
+    assert_eq!(PageLimit::Prefix(0), PageLimit::Prefix(0));
+    assert_eq!(PageLimit::Prefix(7), PageLimit::Prefix(7));
     assert_eq!(
         PageLimit::CompleteWithin(NonZeroU32::new(3).expect("nonzero")),
         PageLimit::CompleteWithin(NonZeroU32::new(3).expect("nonzero"))

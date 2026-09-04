@@ -209,7 +209,12 @@ pub(super) fn validate_effective_auth(config: &NormalizedConfig) -> syn::Result<
 fn resolved_expr_is_guaranteed_present(value: &ResolvedExpr) -> bool {
     match value {
         ResolvedExpr::Value(value) => matches!(value.presence, ValuePresence::Required),
-        ResolvedExpr::String(_) | ResolvedExpr::Integer(_) | ResolvedExpr::Concat(_) => true,
+        ResolvedExpr::Adapted { value, .. } => resolved_expr_is_guaranteed_present(value),
+        ResolvedExpr::String(_)
+        | ResolvedExpr::Character(_)
+        | ResolvedExpr::Boolean(_)
+        | ResolvedExpr::Integer { .. }
+        | ResolvedExpr::Concat(_) => true,
     }
 }
 
@@ -232,13 +237,7 @@ pub(super) fn validate_credential_names(
         if value.accepts_absence() {
             insert_name(
                 &mut builder,
-                format!("with_{}", canonical_ident(&value.name)),
-                value.name.span(),
-                "generated client builder method",
-            )?;
-            insert_name(
-                &mut builder,
-                format!("clear_{}", canonical_ident(&value.name)),
+                format!("omit_{}", canonical_ident(&value.name)),
                 value.name.span(),
                 "generated client builder method",
             )?;
@@ -404,7 +403,7 @@ mod tests {
     fn normalizes_generic_credential_sources_and_effective_auth() {
         let api = test_support::resolve_tokens(quote! {
             client AuthApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 credentials {
                     secret token;
@@ -412,7 +411,7 @@ mod tests {
                 }
                 auth { bearer bearer; }
 
-            GET read() -> Bytes using Bytes;
+            GET read() -> Bytes via Binary;
         }});
         let endpoint = test_support::endpoint(&api.client.children, "read");
 
@@ -433,13 +432,13 @@ mod tests {
     fn unused_secret_is_rejected() {
         let error = resolve(quote! {
             client AuthApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 credentials {
                     secret unused;
                 }
 
-            GET read() -> Bytes using Bytes;
+            GET read() -> Bytes via Binary;
         }})
         .err()
         .expect("unused secret");
@@ -454,7 +453,7 @@ mod tests {
     fn all_builtin_secret_uses_count_as_used() {
         resolve(quote! {
             client AuthApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 credentials {
                     secret api_key;
@@ -466,7 +465,7 @@ mod tests {
                     credential basic = basic(secret.username, secret.password);
                 }
 
-            GET read() -> Bytes using Bytes;
+            GET read() -> Bytes via Binary;
         }})
         .expect("all built-in credential sources consume their declared secrets");
     }
@@ -475,7 +474,7 @@ mod tests {
     fn basic_username_and_password_each_count_as_used() {
         resolve(quote! {
             client AuthApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 credentials {
                     secret username;
@@ -483,7 +482,7 @@ mod tests {
                     credential basic = basic(secret.username, secret.password);
                 }
 
-            GET read() -> Bytes using Bytes;
+            GET read() -> Bytes via Binary;
         }})
         .expect("both Basic components consume their declared secrets");
     }
@@ -492,7 +491,7 @@ mod tests {
     fn one_secret_used_by_multiple_credentials_is_valid() {
         resolve(quote! {
             client AuthApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 credentials {
                     secret shared;
@@ -500,7 +499,7 @@ mod tests {
                     credential second = api_key(secret.shared);
                 }
 
-            GET read() -> Bytes using Bytes;
+            GET read() -> Bytes via Binary;
         }})
         .expect("one declared secret may be shared by credentials");
     }
@@ -509,7 +508,7 @@ mod tests {
     fn multiple_unused_secrets_report_deterministically() {
         let error = resolve(quote! {
             client AuthApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 credentials {
                     secret first;
@@ -518,7 +517,7 @@ mod tests {
                     credential bearer = bearer(secret.used);
                 }
 
-            GET read() -> Bytes using Bytes;
+            GET read() -> Bytes via Binary;
         }})
         .err()
         .expect("multiple unused secrets");

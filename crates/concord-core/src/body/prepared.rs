@@ -11,7 +11,7 @@ use futures_core::Stream;
 use http::HeaderValue;
 
 use super::spec::{LengthHint, RequestBodyMetadata, RequestContentType};
-use super::{BodyError, BodyErrorKind, StreamBody};
+use super::{BodyError, BodyErrorKind, RequestStream};
 #[cfg(feature = "multipart")]
 use super::{MultipartBody, MultipartFactory};
 use crate::limits::{MAX_EMPTY_REQUEST_CHUNKS, MAX_EMPTY_REQUEST_CHUNKS_PER_POLL};
@@ -42,7 +42,7 @@ pub(crate) enum Replayability {
 /// `content_type` is captured once when [`RequestBody::factory`] constructs the
 /// managed value and must be deterministic and side-effect-light. Metadata
 /// computation does not call the factory. `create` is called only after
-/// `before_send` approves the attempt. Reqwest-internal retries cannot call
+/// the visible-attempt observation has run. Reqwest-internal retries cannot call
 /// this trait. Calls for
 /// independent operations may overlap. Bodies and factory state may be
 /// sensitive; implementations own their logging and storage and must bound CPU,
@@ -51,7 +51,7 @@ pub(crate) enum Replayability {
 /// operation deadline is checked after return, cancellation prevents later work
 /// only, and Concord does not automatically bound custom factory state.
 /// Every returned stream subsequently crosses the same core-owned empty-chunk,
-/// byte-limit, and exact-length boundary as a direct [`StreamBody`].
+/// byte-limit, and exact-length boundary as a direct [`RequestStream`].
 pub trait BodyFactory: Send + Sync + 'static {
     /// Returns the stable content type for every body produced by this factory.
     fn content_type(&self) -> Option<HeaderValue> {
@@ -59,7 +59,7 @@ pub trait BodyFactory: Send + Sync + 'static {
     }
 
     /// Creates one fresh request stream for the current Concord attempt.
-    fn create(&self) -> Result<StreamBody, BodyError>;
+    fn create(&self) -> Result<RequestStream, BodyError>;
 }
 
 /// Opaque explicit request body used by the shared body architecture.
@@ -75,7 +75,7 @@ pub struct RequestBody {
 enum RequestBodyValue {
     Empty,
     Bytes(Bytes),
-    Stream(Mutex<Option<StreamBody>>),
+    Stream(Mutex<Option<RequestStream>>),
     Factory {
         factory: Arc<dyn BodyFactory>,
         default_content_type: Result<Option<HeaderValue>, BodyErrorKind>,
@@ -107,7 +107,7 @@ impl RequestBody {
 
     /// Creates a one-shot body from a lazy, empty-chunk-bounded stream.
     #[must_use]
-    pub fn stream(value: StreamBody) -> Self {
+    pub fn stream(value: RequestStream) -> Self {
         Self {
             value: RequestBodyValue::Stream(Mutex::new(Some(value))),
             content_type: None,
@@ -332,7 +332,10 @@ impl RequestBody {
     }
 }
 
-fn validate_stream_limit(body: &StreamBody, limit: NonZeroUsize) -> Result<Option<u64>, BodyError> {
+fn validate_stream_limit(
+    body: &RequestStream,
+    limit: NonZeroUsize,
+) -> Result<Option<u64>, BodyError> {
     body.validate_metadata()?;
     let limit = u64::try_from(limit.get()).unwrap_or(u64::MAX);
     if body
@@ -389,12 +392,12 @@ pub(crate) enum PreparedBody {
     Empty,
     ReusableBytes(Bytes),
     OneShotStream {
-        body: Option<StreamBody>,
+        body: Option<RequestStream>,
         exact_length: Option<u64>,
     },
     StreamFactory {
         factory: Arc<dyn BodyFactory>,
-        current: Option<StreamBody>,
+        current: Option<RequestStream>,
         exact_length: Option<u64>,
     },
     #[cfg(feature = "multipart")]
@@ -585,7 +588,7 @@ impl BodyFailureState {
 }
 
 pub(super) fn stream_native(
-    body: StreamBody,
+    body: RequestStream,
     exact_length: Option<u64>,
     limit: NonZeroUsize,
 ) -> NativeBody {

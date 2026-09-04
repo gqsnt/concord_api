@@ -1,8 +1,8 @@
-use concord_core::contracts::{ResponseAcquisition, ResponseMode};
+use concord_core::contracts::{ResponseAcquisition, ResponseDriver};
 
 struct NativeOrUnboundedMode;
 
-impl ResponseMode for NativeOrUnboundedMode {
+impl ResponseDriver for NativeOrUnboundedMode {
     type Body = ();
     const ACQUISITION: ResponseAcquisition = ResponseAcquisition::Buffered;
 }

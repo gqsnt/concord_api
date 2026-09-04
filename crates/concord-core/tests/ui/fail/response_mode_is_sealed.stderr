@@ -1,8 +1,8 @@
 error[E0277]: the trait bound `NativeOrUnboundedMode: concord_core::response::spec::private::Sealed` is not satisfied
- --> tests/ui/fail/response_mode_is_sealed.rs:5:23
+ --> tests/ui/fail/response_mode_is_sealed.rs:5:25
   |
-5 | impl ResponseMode for NativeOrUnboundedMode {
-  |                       ^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+5 | impl ResponseDriver for NativeOrUnboundedMode {
+  |                         ^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
   |
 help: the trait `concord_core::response::spec::private::Sealed` is not implemented for `NativeOrUnboundedMode`
  --> tests/ui/fail/response_mode_is_sealed.rs:3:1
@@ -18,15 +18,15 @@ help: the following other types implement trait `concord_core::response::spec::p
   | impl private::Sealed for Streaming {
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::contracts::Streaming`
 ...
-  | impl private::Sealed for Discard {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::contracts::Discard`
-note: required by a bound in `ResponseMode`
+  | impl private::Sealed for DiscardDriver {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `DiscardDriver`
+note: required by a bound in `ResponseDriver`
  --> src/response/spec.rs
   |
-  | pub trait ResponseMode: private::Sealed + Send + Sync + 'static {
-  |                         ^^^^^^^^^^^^^^^ required by this bound in `ResponseMode`
-  = note: `ResponseMode` is a "sealed trait", because to implement it you also need to implement `concord_core::response::spec::private::Sealed`, which is not accessible; this is usually done to force you to use one of the provided types that already implement it
+  | pub trait ResponseDriver: private::Sealed + Send + Sync + 'static {
+  |                           ^^^^^^^^^^^^^^^ required by this bound in `ResponseDriver`
+  = note: `ResponseDriver` is a "sealed trait", because to implement it you also need to implement `concord_core::response::spec::private::Sealed`, which is not accessible; this is usually done to force you to use one of the provided types that already implement it
   = help: the following types implement the trait:
             concord_core::contracts::Buffered
             concord_core::contracts::Streaming
-            concord_core::contracts::Discard
+            concord_core::contracts::DiscardDriver

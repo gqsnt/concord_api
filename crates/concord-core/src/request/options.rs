@@ -8,7 +8,6 @@ use crate::hooks::DebugLevel;
 pub enum TimeoutOverride {
     Inherit,
     Explicit(Duration),
-    Disabled,
 }
 
 /// Generated-private request-local generic options.
@@ -43,7 +42,6 @@ impl RequestOptions {
         match self.timeout {
             TimeoutOverride::Inherit => inherited,
             TimeoutOverride::Explicit(duration) => Some(duration),
-            TimeoutOverride::Disabled => None,
         }
     }
 

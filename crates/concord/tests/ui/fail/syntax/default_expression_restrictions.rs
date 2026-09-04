@@ -2,7 +2,7 @@ use concord::api;
 
 api! {
     client CallDefault {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
         values {
             value: String = String::new();
@@ -12,7 +12,7 @@ api! {
 
 api! {
     client MethodDefault {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
         values {
             value: String = crate::TEXT.to_owned();
@@ -22,7 +22,7 @@ api! {
 
 api! {
     client MacroDefault {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
         values {
             value: Vec<u8> = vec![];
@@ -32,7 +32,7 @@ api! {
 
 api! {
     client BlockDefault {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
         values {
             value: u8 = { 0 };
@@ -42,7 +42,7 @@ api! {
 
 api! {
     client CollectionDefault {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
         values {
             value: Vec<u8> = [0];
@@ -52,11 +52,11 @@ api! {
 
 api! {
     client BodyDefault {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    POST send(body payload: Bytes using Bytes = default) -> Bytes using Bytes;
+    POST send(body payload: Bytes via Binary = default) -> Bytes via Binary;
 }}
 
 const TEXT: &str = "text";

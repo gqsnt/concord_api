@@ -1,5 +1,5 @@
-error: `host` and `endpoint` are built-in key dimensions and cannot be profile formals
- --> tests/ui/fail/rate_limits/rate_limit_raw_host_formal.rs:8:20
+error: rate-key `host` was replaced by normalized logical `origin` in v2.1
+ --> tests/ui/fail/rate_limits/rate_limit_raw_host_formal.rs:8:27
   |
-8 |             shared(r#host) {
-  |                    ^^^^^^
+8 |             policy shared(r#host) { id "concord.rate_limit_raw_host_formal.1"; cost 1;
+  |                           ^^^^^^

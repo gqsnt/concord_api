@@ -11,14 +11,20 @@ use crate::semantic::surface::canonical_ident;
 
 pub(super) fn parse_pagination(input: ParseStream<'_>) -> syn::Result<PaginationDecl> {
     input.parse::<keyword::paginate>()?;
-    if !input.peek(keyword::with) {
+    if input.peek(keyword::with) {
+        let old: keyword::with = input.parse()?;
+        return Err(old
+            .span
+            .error("v2.1 replaced pagination keyword `with` with `via`"));
+    }
+    if !input.peek(keyword::via) {
         return Err(input.error(
-            "v1 pagination syntax was removed; write `paginate with Controller { field -> endpoint.slot; stable = value; }`",
+            "v1 pagination syntax was removed; pagination requires `paginate via Controller { field -> endpoint.slot; stable = value; }`",
         ));
     }
-    input.parse::<keyword::with>()?;
+    input.parse::<keyword::via>()?;
     let controller: Type = input.parse().map_err(|_| {
-        input.error("`paginate with` requires one Rust controller type and a binding block")
+        input.error("`paginate via` requires one Rust controller type and a binding block")
     })?;
     let body;
     braced!(body in input);

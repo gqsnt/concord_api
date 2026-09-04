@@ -13,23 +13,23 @@ use proc_macro2::Span;
 use syn::Ident;
 
 use self::model::{
-    Api, AttachmentFamily, AttachmentIr, AttachmentOperation, Child, Client, ContractId,
-    Credential, DeclarationMetadata, Endpoint, NormalizedConfig, Repeatability, RequestBody,
-    ResolvedAccept, ResolvedMethod, Scope, Value,
+    AcceptedStatus, Api, Child, Client, ContractId, Credential, DeclarationMetadata, Effect,
+    Endpoint, NormalizedAuth, NormalizedConfig, RequestBody, ResolvedChallengePolicy,
+    ResolvedMethod, Scope, Value,
 };
 use self::surface::{
     canonical_ident, client_surface, endpoint_surface, finalize_endpoint_surfaces, scope_surface,
     to_snake_case, validate_surface_modules,
 };
 use crate::syntax::ast::{
-    AcceptOperation, DeclarationAttributes, MethodKind as SourceMethod, RepeatabilityDecl,
-    SourceApi, SourceChild, SourceEndpoint, SourceScope,
+    DeclarationAttributes, EffectDecl, MethodKind as SourceMethod, SourceApi, SourceChild,
+    SourceEndpoint, SourceScope, StatusDecl,
 };
 use auth::{
     convert_credentials, resolve_endpoint_credentials, validate_credential_cycles,
     validate_credential_names,
 };
-use inheritance::{ExpressionUse, local_attachment_ir};
+use inheritance::local_attachment_ir;
 use pagination::{pagination_bound_values, validate_pagination_binding_destinations};
 use rate_limits::{
     RateLimitDefinition, RateLimitResolutionContext, resolve_rate_limit_definitions,
@@ -95,14 +95,12 @@ pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
             next_scope_id: 0,
             next_endpoint_id: 0,
         };
-        let client_id = contract_path(&client_name, &[]);
         let config = resolver.normalize_attachment_site(
             &source_client.attachment_site,
             &NormalizedConfig::default(),
             &[],
             None,
             &RateLimitResolutionContext {
-                id_path: &client_id,
                 lexical_origin: "client",
             },
         )?;
@@ -205,7 +203,6 @@ impl Resolver<'_> {
         });
         let mut path = scope_path.to_vec();
         path.push(source.name.clone());
-        let id_path = contract_path(self.client_name, &path);
         let lexical_origin = format!(
             "scope {}",
             path.iter()
@@ -220,7 +217,6 @@ impl Resolver<'_> {
             &frames,
             None,
             &RateLimitResolutionContext {
-                id_path: &id_path,
                 lexical_origin: &lexical_origin,
             },
         )?;
@@ -288,26 +284,13 @@ impl Resolver<'_> {
                 .collect::<Vec<_>>()
                 .join("::")
         );
-        let mut local_attachments = local_attachment_ir(&source.attachment_site, &lexical_origin);
-        if let Some(accept) = &source.accept {
-            local_attachments.push(AttachmentIr {
-                family: AttachmentFamily::Accept,
-                operation: match &accept.value {
-                    AcceptOperation::Off => AttachmentOperation::Off,
-                    AcceptOperation::Value(_) => AttachmentOperation::Set,
-                },
-                origin: lexical_origin.clone(),
-                target: None,
-                item_count: usize::from(matches!(&accept.value, AcceptOperation::Value(_))),
-            });
-        }
+        let local_attachments = local_attachment_ir(&source.attachment_site, &lexical_origin);
         let config = self.normalize_attachment_site(
             &source.attachment_site,
             parent,
             visible_scopes,
             Some(&parameters),
             &RateLimitResolutionContext {
-                id_path: &contract_id.value,
                 lexical_origin: &lexical_origin,
             },
         )?;
@@ -315,44 +298,121 @@ impl Resolver<'_> {
         validate_pagination_binding_destinations(&pagination_values)?;
         head_limits::validate_static_head(self.base, &config, source.name.span())?;
         let body_position = source.body.as_ref().map(|body| body.position);
-        let body = source.body.map(|body| RequestBody {
-            name: body.name,
-            input_type: body.input_type,
-            spec_type: body.spec_type,
-            docs: body.docs.into_iter().map(|doc| doc.value()).collect(),
-        });
-        let method = resolve_method(source.method);
-        let output = source.output;
-        let response_spec = source.response_spec;
-        let repeatability_explicit = source.repeatability.is_some();
-        let repeatability = source.repeatability.map_or_else(
-            || method_default_repeatability(&method),
-            |clause| match clause.value {
-                RepeatabilityDecl::Idempotent => Repeatability::Idempotent,
-                RepeatabilityDecl::Never => Repeatability::Never,
-            },
-        );
-        let expose_accepted_bytes = source.expose_accepted_bytes.is_some();
-        let accept = source
-            .accept
-            .map(|clause| match clause.value {
-                AcceptOperation::Off => Ok(ResolvedAccept::Off),
-                AcceptOperation::Value(value) => self
-                    .resolve_expr(
-                        &value,
-                        visible_scopes,
-                        Some(&parameters),
-                        ExpressionUse::Single,
-                    )
-                    .map(ResolvedAccept::Value),
+        let body_presence = source.body.as_ref().map(|body| body.presence);
+        let body_name = source.body.as_ref().map(|body| body.name.clone());
+        let body = source
+            .body
+            .map(|body| -> syn::Result<RequestBody> {
+                let (spec_type, representation_origin) = body.spec_type.map_or_else(
+                    || {
+                        config
+                            .request_representation
+                            .representation
+                            .clone()
+                            .map(|representation| {
+                                (
+                                    *representation,
+                                    config
+                                        .request_representation
+                                        .origin
+                                        .clone()
+                                        .unwrap_or_else(|| "inherited request default".to_owned()),
+                                )
+                            })
+                            .ok_or_else(|| {
+                                body.name.span().error(
+                                    "request body has no effective representation; add `request Representation;` to a client/scope or inline `via Representation`",
+                                )
+                            })
+                    },
+                    |representation| Ok((representation, format!("{lexical_origin} inline body"))),
+                )?;
+                let input_type = body.input_type;
+                let effective_input_type = if matches!(
+                    body.presence,
+                    crate::syntax::ast::ValuePresence::Optional
+                )
+                {
+                    syn::parse_quote!(::std::option::Option<#input_type>)
+                } else {
+                    input_type.clone()
+                };
+                Ok(RequestBody {
+                    name: body.name,
+                    input_type,
+                    effective_input_type,
+                    spec_type,
+                    presence: match body.presence {
+                        crate::syntax::ast::ValuePresence::Required => model::ValuePresence::Required,
+                        crate::syntax::ast::ValuePresence::Optional => model::ValuePresence::Optional,
+                    },
+                    representation_origin,
+                    docs: body.docs.into_iter().map(|doc| doc.value()).collect(),
+                })
             })
             .transpose()?;
+        let method = resolve_method(source.method);
+        let output = source.output;
+        let (response_spec, response_representation_origin) = source.response_spec.map_or_else(
+            || {
+                config
+                    .response_representation
+                    .representation
+                    .clone()
+                    .map(|representation| {
+                        (
+                            *representation,
+                            config
+                                .response_representation
+                                .origin
+                                .clone()
+                                .unwrap_or_else(|| "inherited response default".to_owned()),
+                        )
+                    })
+                    .ok_or_else(|| {
+                        source.name.span().error(
+                            "endpoint result has no effective representation; add `response Representation;` to a client/scope or inline `via Representation`",
+                        )
+                    })
+            },
+            |representation| Ok((representation, format!("{lexical_origin} inline result"))),
+        )?;
+        let effect_explicit = source.effect.is_some();
+        let effect = source.effect.map_or_else(
+            || method_default_effect(&method),
+            |clause| match clause.value {
+                EffectDecl::Safe => Effect::Safe,
+                EffectDecl::Idempotent => Effect::Idempotent,
+                EffectDecl::NonIdempotent => Effect::NonIdempotent,
+            },
+        );
+        let status_explicit = source.status.is_some();
+        let status_span = source.status.as_ref().map(|clause| clause.key_span);
+        let accepted_status = source
+            .status
+            .map_or(AcceptedStatus::Success, |clause| match clause.value {
+                StatusDecl::Success => AcceptedStatus::Success,
+                StatusDecl::Codes(codes) => AcceptedStatus::Codes(codes),
+            });
+        if pagination.is_some() && effect != Effect::Safe {
+            return Err(source
+                .name
+                .span()
+                .error("ordinary pagination requires endpoint effect `safe`"));
+        }
+        if let Some(span) = status_span {
+            validate_status_challenge_separation(&accepted_status, &config.auth, span)?;
+        }
+        let expose_accepted_bytes = source.expose_accepted_bytes.is_some();
         let surface = endpoint_surface(
             self.client_name,
             scope_path,
             &source.name,
             &parameters,
-            body_position,
+            body_position
+                .zip(body_presence)
+                .zip(body_name.as_ref())
+                .map(|((position, presence), name)| (position, presence, name)),
             pagination.is_some(),
             expose_accepted_bytes,
         );
@@ -369,13 +429,38 @@ impl Resolver<'_> {
             local_attachments,
             output,
             response_spec,
+            response_representation_origin,
             pagination,
             dsl_path,
-            repeatability,
-            repeatability_explicit,
-            accept,
+            accepted_status,
+            status_explicit,
+            effect,
+            effect_explicit,
             expose_accepted_bytes,
         })
+    }
+}
+
+fn validate_status_challenge_separation(
+    status: &AcceptedStatus,
+    auth: &[NormalizedAuth],
+    span: Span,
+) -> syn::Result<()> {
+    let accepts = |code| match status {
+        AcceptedStatus::Success => false,
+        AcceptedStatus::Codes(codes) => codes.binary_search(&code).is_ok(),
+    };
+    let conflicts = auth.iter().any(|placement| match placement.challenge {
+        ResolvedChallengePolicy::Never => false,
+        ResolvedChallengePolicy::Unauthorized => accepts(401),
+        ResolvedChallengePolicy::UnauthorizedOrForbidden => accepts(401) || accepts(403),
+    });
+    if conflicts {
+        Err(span.error(
+            "an accepted endpoint status cannot also be an effective authentication challenge",
+        ))
+    } else {
+        Ok(())
     }
 }
 
@@ -392,16 +477,12 @@ fn resolve_method(source: SourceMethod) -> ResolvedMethod {
     }
 }
 
-fn method_default_repeatability(method: &ResolvedMethod) -> Repeatability {
+fn method_default_effect(method: &ResolvedMethod) -> Effect {
     match method {
-        ResolvedMethod::Get
-        | ResolvedMethod::Put
-        | ResolvedMethod::Delete
-        | ResolvedMethod::Head
-        | ResolvedMethod::Options => Repeatability::Idempotent,
-        ResolvedMethod::Custom(method) if method.value() == "TRACE" => Repeatability::Idempotent,
+        ResolvedMethod::Get | ResolvedMethod::Head | ResolvedMethod::Options => Effect::Safe,
+        ResolvedMethod::Put | ResolvedMethod::Delete => Effect::Idempotent,
         ResolvedMethod::Post | ResolvedMethod::Patch | ResolvedMethod::Custom(_) => {
-            Repeatability::Never
+            Effect::NonIdempotent
         }
     }
 }
@@ -435,7 +516,7 @@ fn validate_contract_ids(children: &[Child]) -> syn::Result<()> {
                             endpoint.contract_id.value
                         ));
                         error.combine(
-                            first.error("the first endpoint using this contract ID is here"),
+                            first.error("the first endpoint via this contract ID is here"),
                         );
                         return Err(error);
                     }

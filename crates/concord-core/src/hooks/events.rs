@@ -4,7 +4,56 @@ use http::{Method, StatusCode};
 
 use crate::body::BodyKind;
 use crate::operation::OperationId;
-use crate::redaction::SanitizedHeaders;
+
+/// Bounded value-free structure of one logical request target.
+///
+/// Exact path segments, query names and values, header names and values, and
+/// the complete URL are deliberately absent. Callers that explicitly need
+/// credential-free public metadata can use `RequestPlan` or `ApiResponse`
+/// accessors instead and must protect application-sensitive public values.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RequestTarget {
+    path_segment_count: usize,
+    query_occurrence_count: usize,
+    public_header_occurrence_count: usize,
+}
+
+impl RequestTarget {
+    pub(crate) fn from_url(url: &url::Url, public_header_occurrence_count: usize) -> Self {
+        let path_segment_count = url.path_segments().map_or(0, |segments| {
+            segments.filter(|segment| !segment.is_empty()).count()
+        });
+        let query_occurrence_count = url.query().map_or(0, |query| {
+            query
+                .split('&')
+                .filter(|occurrence| !occurrence.is_empty())
+                .count()
+        });
+        Self {
+            path_segment_count,
+            query_occurrence_count,
+            public_header_occurrence_count,
+        }
+    }
+
+    /// Returns the number of nonempty encoded path-segment occurrences.
+    #[must_use]
+    pub const fn path_segment_count(self) -> usize {
+        self.path_segment_count
+    }
+
+    /// Returns the number of encoded query occurrences.
+    #[must_use]
+    pub const fn query_occurrence_count(self) -> usize {
+        self.query_occurrence_count
+    }
+
+    /// Returns the number of public request-header occurrences.
+    #[must_use]
+    pub const fn public_header_occurrence_count(self) -> usize {
+        self.public_header_occurrence_count
+    }
+}
 
 /// Safe structural identity of one visible managed attempt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -27,7 +76,7 @@ impl AttemptInfo {
 
 /// Sanitized metadata supplied before expensive request work begins.
 #[derive(Debug)]
-pub struct BeforeSend<'a> {
+pub struct AttemptStarted<'a> {
     /// Identity of this request or page operation.
     pub operation_id: OperationId,
     /// Aggregate pagination identity for a page operation.
@@ -36,15 +85,12 @@ pub struct BeforeSend<'a> {
     pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
-    /// Credential-sanitized logical URL. Public values may still contain
-    /// operational identifiers or personally identifiable information.
-    pub observed_url: &'a str,
+    /// Value-free bounded request-target structure.
+    pub target: RequestTarget,
     /// Zero-based page index; direct requests use zero.
     pub page_index: u32,
     /// Structural identity of this visible managed attempt.
     pub attempt: AttemptInfo,
-    /// Sanitized public request headers.
-    pub headers: SanitizedHeaders<'a>,
     /// Structural request-body category.
     pub body_kind: BodyKind,
     /// Known request-body length when available before materialization.
@@ -53,7 +99,7 @@ pub struct BeforeSend<'a> {
 
 /// Sanitized metadata supplied for every received final response head.
 #[derive(Debug)]
-pub struct ResponseHeadEvent<'a> {
+pub struct ResponseHeadObserved<'a> {
     /// Identity of this request or page operation.
     pub operation_id: OperationId,
     /// Aggregate pagination identity for a page operation.
@@ -62,22 +108,27 @@ pub struct ResponseHeadEvent<'a> {
     pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
-    /// Credential-sanitized logical URL. Public values may still contain
-    /// operational identifiers or personally identifiable information.
-    pub observed_url: &'a str,
+    /// Value-free bounded request-target structure.
+    pub target: RequestTarget,
     /// Zero-based page index; direct requests use zero.
     pub page_index: u32,
     /// Structural identity of the attempt that produced this head.
     pub attempt: AttemptInfo,
     /// Final status for this Concord attempt.
     pub status: StatusCode,
-    /// Sanitized actual response headers.
-    pub headers: SanitizedHeaders<'a>,
+    /// Valid bounded content length parsed by core, when present.
+    pub content_length: Option<u64>,
+    /// Standard server delay parsed once by core, when valid.
+    pub server_delay: Option<Duration>,
 }
 
-/// Outside-deadline observation of one already-fixed request or page result.
+/// Inline observation of one already-fixed request or page result.
+///
+/// Observer time contributes to caller latency. Because this callback begins
+/// after semantic result fixation, it can delay delivery beyond the nominal
+/// deadline but cannot change the already-fixed result.
 #[derive(Debug)]
-pub struct CompletionEvent<'a> {
+pub struct OperationFinished<'a> {
     /// Identity of this request or page operation.
     pub operation_id: OperationId,
     /// Aggregate pagination identity for a page operation.
@@ -86,9 +137,8 @@ pub struct CompletionEvent<'a> {
     pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
-    /// Credential-sanitized logical URL. Public values may still contain
-    /// operational identifiers or personally identifiable information.
-    pub observed_url: &'a str,
+    /// Value-free bounded request-target structure.
+    pub target: RequestTarget,
     /// Zero-based page index; direct requests use zero.
     pub page_index: u32,
     /// Number of visible attempts whose before-send stage began.
@@ -105,9 +155,13 @@ pub struct CompletionEvent<'a> {
     pub outcome: CompletionOutcome,
 }
 
-/// Outside-deadline observation of one already-fixed pagination result.
+/// Inline observation of one already-fixed pagination result.
+///
+/// Observer time contributes to caller latency. Because this callback begins
+/// after semantic result fixation, it can delay delivery beyond the nominal
+/// aggregate deadline but cannot change the already-fixed result.
 #[derive(Debug)]
-pub struct PaginationCompletionEvent<'a> {
+pub struct PaginationFinished<'a> {
     /// Identity of the aggregate pagination operation.
     pub operation_id: OperationId,
     /// Stable generated endpoint identity.
@@ -132,6 +186,51 @@ pub struct PaginationCompletionEvent<'a> {
     pub outcome: CompletionOutcome,
 }
 
+/// Public kind of a lazy response lifecycle.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StreamKind {
+    /// A media-independent stream of byte chunks.
+    Bytes,
+    /// A decoded stream of semantic records.
+    Items,
+}
+
+/// Terminal state of a caller-driven lazy response lifecycle.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StreamOutcome {
+    /// The caller polled the stream through its natural end.
+    Completed,
+    /// Polling yielded a terminal transport, limit, framing, or decode failure.
+    Failed,
+    /// The stream was dropped before a terminal poll result was observed.
+    Dropped,
+}
+
+/// Correlated terminal evidence for one acquired lazy response stream.
+///
+/// Stream consumption occurs after the request result is fixed and outside the
+/// operation deadline. This event therefore reports only bounded structural
+/// counts and cannot retroactively change that result.
+#[derive(Debug)]
+pub struct StreamFinished<'a> {
+    /// Identity of the request operation that acquired the stream.
+    pub operation_id: OperationId,
+    /// Aggregate pagination identity, when applicable.
+    pub parent_operation_id: Option<OperationId>,
+    /// Stable generated or runtime endpoint identity.
+    pub endpoint: &'a str,
+    /// Application HTTP method.
+    pub method: &'a Method,
+    /// Whether the caller received bytes or semantic items.
+    pub kind: StreamKind,
+    /// How the caller-driven lifecycle terminated.
+    pub outcome: StreamOutcome,
+    /// Number of non-error chunks or items yielded to the caller.
+    pub units_yielded: u64,
+    /// Bytes yielded for a byte stream; semantic item streams report `None`.
+    pub bytes_yielded: Option<u64>,
+}
+
 /// Safe structural category of an already-fixed operation result.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -154,8 +253,6 @@ pub enum CompletionOutcome {
     AuthenticationRejected,
     /// Rate-limit preparation or acquisition failed.
     RateLimit,
-    /// A result-determining application gate rejected the operation.
-    PolicyRejected,
     /// The operation deadline expired.
     Timeout,
     /// Native connection establishment failed.
@@ -188,7 +285,6 @@ impl CompletionOutcome {
             ErrorCategory::AuthenticationProvider => Self::AuthenticationProvider,
             ErrorCategory::AuthenticationRejected => Self::AuthenticationRejected,
             ErrorCategory::RateLimit => Self::RateLimit,
-            ErrorCategory::PolicyRejected => Self::PolicyRejected,
             ErrorCategory::Timeout => Self::Timeout,
             ErrorCategory::Connect => Self::Connect,
             ErrorCategory::Transport => Self::Transport,
@@ -200,4 +296,26 @@ impl CompletionOutcome {
             ErrorCategory::Internal => Self::Internal,
         }
     }
+}
+
+/// One bounded, sanitized lifecycle event emitted by the managed runtime.
+///
+/// The event contains no request or response body, credential material,
+/// private authentication placement, raw rate key, or native HTTP object.
+#[non_exhaustive]
+#[derive(Debug)]
+pub enum OperationEvent<'a> {
+    /// A visible managed attempt is about to begin protected work.
+    AttemptStarted(AttemptStarted<'a>),
+    /// A final response head has been received for a visible attempt.
+    ResponseHeadObserved(ResponseHeadObserved<'a>),
+    /// One direct request or pagination page reached its fixed result.
+    OperationFinished(OperationFinished<'a>),
+    /// One aggregate pagination operation reached its fixed result.
+    PaginationFinished(PaginationFinished<'a>),
+    /// One caller-driven lazy response lifecycle terminated.
+    StreamFinished(StreamFinished<'a>),
+    /// Reserved for forward-compatible lifecycle evidence.
+    #[doc(hidden)]
+    __NonExhaustive,
 }

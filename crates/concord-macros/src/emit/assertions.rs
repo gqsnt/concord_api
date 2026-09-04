@@ -51,22 +51,26 @@ pub(super) fn generate_specification_assertions(
                 let body_spec = quote!(#specification_module::#body_name);
                 let input = quote!(#specification_module::#body_input_name);
                 quote! {
-                    const _: fn(
-                        <#body_spec as #facade_path::body::RequestBodySpec>::Input
-                    ) -> #input = |value| value;
-                    const _: fn(#input) ->
-                        <#body_spec as #facade_path::body::RequestBodySpec>::Input =
-                        |value| value;
+                    const _: fn() = || {
+                        fn __concord_assert_request_representation<R, Input>()
+                        where
+                            R: #facade_path::body::RequestRepresentation<Input>,
+                            Input: ::std::marker::Send + 'static,
+                        {}
+                        let _ = __concord_assert_request_representation::<#body_spec, #input>;
+                    };
                 }
             });
             quote! {
                 #body
-                const _: fn(
-                    <#response as #facade_path::response::ResponseSpec>::Output
-                ) -> #output = |value| value;
-                const _: fn(#output) ->
-                    <#response as #facade_path::response::ResponseSpec>::Output =
-                    |value| value;
+                const _: fn() = || {
+                    fn __concord_assert_response_representation<R, Output>()
+                    where
+                        R: #facade_path::response::ResponseRepresentation<Output>,
+                        Output: ::std::marker::Send + 'static,
+                    {}
+                    let _ = __concord_assert_response_representation::<#response, #output>;
+                };
             }
         }
         Child::Scope(scope) => {
@@ -76,11 +80,11 @@ pub(super) fn generate_specification_assertions(
     quote!(#(#assertions)*)
 }
 
-fn body_input_name(endpoint: &Endpoint) -> Ident {
+pub(super) fn body_input_name(endpoint: &Endpoint) -> Ident {
     Ident::new(&format!("BodyInput{}", endpoint.id), Span::mixed_site())
 }
 
-fn response_output_name(endpoint: &Endpoint) -> Ident {
+pub(super) fn response_output_name(endpoint: &Endpoint) -> Ident {
     Ident::new(
         &format!("ResponseOutput{}", endpoint.id),
         Span::mixed_site(),
@@ -104,9 +108,39 @@ pub(super) fn body_specification_name(endpoint: &Endpoint) -> Ident {
     )
 }
 
+pub(super) fn effective_body_representation(
+    endpoint: &Endpoint,
+    declared: TokenStream,
+    facade_path: &TokenStream,
+) -> TokenStream {
+    endpoint.body.as_ref().map_or_else(
+        || quote!(#facade_path::__private::EmptyBody),
+        |body| {
+            if matches!(body.presence, ValuePresence::Optional) {
+                quote!(#facade_path::__private::OptionalRequestRepresentation<#declared>)
+            } else {
+                declared
+            }
+        },
+    )
+}
+
+pub(super) fn effective_body_input(endpoint: &Endpoint, declared: TokenStream) -> TokenStream {
+    endpoint.body.as_ref().map_or_else(
+        || quote!(()),
+        |body| {
+            if matches!(body.presence, ValuePresence::Optional) {
+                quote!(::std::option::Option<#declared>)
+            } else {
+                declared
+            }
+        },
+    )
+}
+
 pub(super) fn response_specification_name(endpoint: &Endpoint) -> Ident {
     Ident::new(
-        &format!("ResponseSpecification{}", endpoint.id),
+        &format!("ResponseRepresentation{}", endpoint.id),
         Span::mixed_site(),
     )
 }
@@ -138,22 +172,20 @@ pub(super) fn endpoint_where_clause(
             } = dimension
             {
                 let ty = resolved_value_payload_type(*reference, client, scopes, endpoint);
-                bounds
-                    .push(quote_spanned!(*span=> #ty: #facade_path::rate_limit::RateLimitKeyValue));
+                bounds.push(quote_spanned!(*span=> #ty: #facade_path::rate_limit::RateKeyPart));
             }
         }
     }
-    let mut display_types = Vec::new();
-    collect_config_display_types(
+    let mut atom_bounds = Vec::new();
+    collect_config_atom_bounds(
         &endpoint.config,
         client,
         scopes,
         endpoint,
-        &mut display_types,
+        facade_path,
+        &mut atom_bounds,
     );
-    for ty in display_types {
-        bounds.push(quote!(#ty: ::std::fmt::Display));
-    }
+    bounds.extend(atom_bounds);
     for placement in &endpoint.config.auth {
         if matches!(placement.kind, ResolvedAuthPlacement::Authorization(_)) {
             let credential = &client.credentials[placement.credential];
@@ -165,40 +197,72 @@ pub(super) fn endpoint_where_clause(
         }
     }
     let specification_module = specification_module_name(client);
-    let body = endpoint.body.as_ref().map_or_else(
+    let declared_body = endpoint.body.as_ref().map_or_else(
         || quote!(#facade_path::__private::EmptyBody),
         |_| {
             let body_specification = body_specification_name(endpoint);
             quote!(#invocation_path::#specification_module::#body_specification)
         },
     );
+    let declared_body_input = endpoint.body.as_ref().map_or_else(
+        || quote!(()),
+        |_| {
+            let input = body_input_name(endpoint);
+            quote!(#invocation_path::#specification_module::#input)
+        },
+    );
+    let body = effective_body_representation(endpoint, declared_body, facade_path);
+    let body_input = effective_body_input(endpoint, declared_body_input);
     if include_execution {
         if endpoint.pagination.is_some() {
-            bounds.push(quote!(#body: #facade_path::body::PageRequestBodySpec));
+            if endpoint.body.is_some() {
+                let declared = body_specification_name(endpoint);
+                let input = body_input_name(endpoint);
+                bounds.push(quote!(
+                    #invocation_path::#specification_module::#declared:
+                        #facade_path::body::PageRequestRepresentation<
+                            #invocation_path::#specification_module::#input
+                        >
+                ));
+            } else {
+                bounds.push(
+                    quote!(#body: #facade_path::body::PageRequestRepresentation<#body_input>),
+                );
+            }
         } else {
-            bounds.push(quote!(#body: #facade_path::body::RequestBodySpec));
+            if endpoint.body.is_some() {
+                let declared = body_specification_name(endpoint);
+                let input = body_input_name(endpoint);
+                bounds.push(quote!(
+                    #invocation_path::#specification_module::#declared:
+                        #facade_path::body::RequestRepresentation<
+                            #invocation_path::#specification_module::#input
+                        >
+                ));
+            } else {
+                bounds.push(quote!(#body: #facade_path::body::RequestRepresentation<#body_input>));
+            }
         }
     }
     let response_specification = response_specification_name(endpoint);
     let response = quote!(#invocation_path::#specification_module::#response_specification);
+    let response_output = response_output_name(endpoint);
+    let output = quote!(#invocation_path::#specification_module::#response_output);
     if include_execution {
-        bounds.push(quote!(#response: #facade_path::response::ResponseSpec));
+        bounds.push(quote!(#response: #facade_path::response::ResponseRepresentation<#output>));
         if endpoint.expose_accepted_bytes {
             bounds.push(quote!(
-                <#response as #facade_path::response::ResponseSpec>::Mode:
-                    #facade_path::response::AcceptedBytesMode
+                <#response as #facade_path::response::ResponseRepresentation<#output>>::Driver:
+                    #facade_path::response::AcceptedBytesDriver
             ));
         }
         if let Some(pagination) = &endpoint.pagination {
-            let page = quote!(<#response as #facade_path::response::ResponseSpec>::Output);
+            let page = quote!(#output);
             let controller =
                 pagination_controller_type(&pagination.controller, invocation_path, false);
-            bounds.push(quote!(#response: #facade_path::response::PageResponseSpec));
-            bounds.push(quote!(#page: ::std::iter::IntoIterator));
-            bounds.push(quote! {
-                <#page as ::std::iter::IntoIterator>::Item:
-                    ::std::marker::Send + 'static
-            });
+            bounds
+                .push(quote!(#response: #facade_path::response::PageResponseRepresentation<#page>));
+            bounds.push(quote!(#page: ::std::marker::Send + 'static));
             bounds.push(quote! {
                 #controller: #facade_path::pagination::PaginationController<#page>
             });
@@ -213,46 +277,108 @@ pub(super) fn endpoint_where_clause(
     }
 }
 
-fn collect_config_display_types(
+fn collect_config_atom_bounds(
     config: &NormalizedConfig,
     client: &Client,
     scopes: &[&Scope],
     endpoint: &Endpoint,
-    output: &mut Vec<Type>,
+    facade_path: &TokenStream,
+    output: &mut Vec<TokenStream>,
 ) {
     for expression in config.host.iter().chain(config.path.iter()) {
-        collect_expression_display_types(expression, client, scopes, endpoint, false, output);
+        collect_expression_atom_bounds(
+            expression,
+            QueryCardinality::One,
+            client,
+            scopes,
+            endpoint,
+            facade_path,
+            output,
+        );
     }
     for entry in &config.query {
-        if matches!(entry.cardinality, QueryCardinality::One) {
-            collect_expression_display_types(&entry.value, client, scopes, endpoint, false, output);
-        }
+        collect_expression_atom_bounds(
+            &entry.value,
+            entry.cardinality,
+            client,
+            scopes,
+            endpoint,
+            facade_path,
+            output,
+        );
     }
     for entry in &config.headers {
-        collect_expression_display_types(&entry.value, client, scopes, endpoint, true, output);
+        collect_expression_atom_bounds(
+            &entry.value,
+            entry.cardinality,
+            client,
+            scopes,
+            endpoint,
+            facade_path,
+            output,
+        );
     }
 }
 
-fn collect_expression_display_types(
+fn collect_expression_atom_bounds(
     expression: &ResolvedExpr,
+    cardinality: QueryCardinality,
     client: &Client,
     scopes: &[&Scope],
     endpoint: &Endpoint,
-    _collection_aware: bool,
-    output: &mut Vec<Type>,
+    facade_path: &TokenStream,
+    output: &mut Vec<TokenStream>,
 ) {
     match expression {
         ResolvedExpr::Value(value) => {
-            output.push(
-                resolved_value_payload_type(value.reference, client, scopes, endpoint).clone(),
-            );
+            let ty = resolved_value_payload_type(value.reference, client, scopes, endpoint);
+            match cardinality {
+                QueryCardinality::One => {
+                    output.push(quote!(#ty: #facade_path::RequestAtom));
+                }
+                QueryCardinality::Each => {
+                    output.push(quote!(#ty: #facade_path::OrderedValues));
+                    output.push(quote!(
+                        <#ty as #facade_path::OrderedValues>::Item: #facade_path::RequestAtom
+                    ));
+                }
+            }
+        }
+        ResolvedExpr::Adapted { value, adapter } => {
+            if let ResolvedExpr::Value(value) = value.as_ref() {
+                let ty = resolved_value_payload_type(value.reference, client, scopes, endpoint);
+                match cardinality {
+                    QueryCardinality::One => {
+                        output.push(quote!(#adapter: #facade_path::AtomEncoder<#ty>));
+                    }
+                    QueryCardinality::Each => {
+                        output.push(quote!(#ty: #facade_path::OrderedValues));
+                        output.push(quote!(
+                            #adapter: #facade_path::AtomEncoder<
+                                <#ty as #facade_path::OrderedValues>::Item
+                            >
+                        ));
+                    }
+                }
+            }
         }
         ResolvedExpr::Concat(values) => {
             for value in values {
-                collect_expression_display_types(value, client, scopes, endpoint, false, output);
+                collect_expression_atom_bounds(
+                    value,
+                    QueryCardinality::One,
+                    client,
+                    scopes,
+                    endpoint,
+                    facade_path,
+                    output,
+                );
             }
         }
-        ResolvedExpr::String(_) | ResolvedExpr::Integer(_) => {}
+        ResolvedExpr::String(_)
+        | ResolvedExpr::Character(_)
+        | ResolvedExpr::Boolean(_)
+        | ResolvedExpr::Integer { .. } => {}
     }
 }
 
@@ -300,23 +426,24 @@ mod tests {
         .to_string();
 
         assert!(output.contains("pub type"));
-        assert!(output.contains("ResponseSpecification"));
-        assert!(bounds.contains("RequestBodySpec"));
-        assert!(bounds.contains("ResponseSpec"));
+        assert!(output.contains("ResponseRepresentation"));
+        assert!(bounds.contains("RequestRepresentation"));
+        assert!(bounds.contains("ResponseRepresentation"));
     }
 
     #[test]
-    fn paginated_body_emits_the_trusted_repeatability_obligation() {
+    fn paginated_body_emits_the_trusted_effect_obligation() {
         let api = crate::semantic::test_support::resolve_tokens(quote! {
             client SearchApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
 
             POST search(
                 offset: u64,
-                body filter: crate::SearchInput using crate::SearchCodec,
-            ) -> Vec<u8> using crate::PageCodec {
-                paginate with crate::Controller {
+                body filter: crate::SearchInput via crate::SearchCodec,
+            ) -> Vec<u8> via crate::PageCodec {
+                effect safe;
+                paginate via crate::Controller {
                     offset -> endpoint.offset;
                 }
             }
@@ -332,15 +459,15 @@ mod tests {
         )
         .to_string();
 
-        assert!(bounds.contains("PageRequestBodySpec"));
-        assert!(!bounds.contains("SearchCodec : :: concord :: body :: RequestBodySpec"));
+        assert!(bounds.contains("PageRequestRepresentation"));
+        assert!(!bounds.contains("SearchCodec : :: concord :: body :: RequestRepresentation"));
     }
 
     #[test]
     fn only_referenced_dimension_types_require_canonical_rate_keys() {
         let api = crate::semantic::test_support::resolve_tokens(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 values {
                     tenant: crate::TenantKey;
@@ -350,8 +477,8 @@ mod tests {
             GET read(
                 resource: crate::ResourceKey,
                 unrelated: crate::EndpointWithoutDisplay,
-            ) -> Bytes using Bytes {
-                rate_limit {
+            ) -> Bytes via Binary {
+                rate_limit { id "concord.assertions.1"; cost 1;
                     key [client.tenant, endpoint.resource];
                     allow 1 per 1s;
                 }
@@ -368,19 +495,11 @@ mod tests {
         )
         .to_string();
 
+        assert!(bounds.contains("crate :: TenantKey : :: concord :: rate_limit :: RateKeyPart"));
+        assert!(bounds.contains("crate :: ResourceKey : :: concord :: rate_limit :: RateKeyPart"));
+        assert!(!bounds.contains("ClientWithoutDisplay : :: concord :: rate_limit :: RateKeyPart"));
         assert!(
-            bounds.contains("crate :: TenantKey : :: concord :: rate_limit :: RateLimitKeyValue")
-        );
-        assert!(
-            bounds.contains("crate :: ResourceKey : :: concord :: rate_limit :: RateLimitKeyValue")
-        );
-        assert!(
-            !bounds
-                .contains("ClientWithoutDisplay : :: concord :: rate_limit :: RateLimitKeyValue")
-        );
-        assert!(
-            !bounds
-                .contains("EndpointWithoutDisplay : :: concord :: rate_limit :: RateLimitKeyValue")
+            !bounds.contains("EndpointWithoutDisplay : :: concord :: rate_limit :: RateKeyPart")
         );
         assert!(!bounds.contains("std :: fmt :: Display"));
     }
@@ -389,11 +508,11 @@ mod tests {
     fn named_binding_types_receive_only_the_canonical_key_obligation() {
         let api = crate::semantic::test_support::resolve_tokens(quote! {
             client RateApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 values { unrelated: crate::ClientWithoutDisplay; }
                 rate_limits {
-                    account_reads(account) {
+                    policy account_reads(account) { id "concord.assertions.2"; cost 1;
                         key [account];
                         allow 1 per 1s;
                     }
@@ -402,7 +521,7 @@ mod tests {
             GET read(
                 resource: crate::ResourceKey,
                 unrelated: crate::EndpointWithoutDisplay,
-            ) -> Bytes using Bytes {
+            ) -> Bytes via Binary {
                 rate_limit account_reads(account = endpoint.resource);
             }
         }});
@@ -417,16 +536,10 @@ mod tests {
         )
         .to_string();
 
+        assert!(bounds.contains("crate :: ResourceKey : :: concord :: rate_limit :: RateKeyPart"));
+        assert!(!bounds.contains("ClientWithoutDisplay : :: concord :: rate_limit :: RateKeyPart"));
         assert!(
-            bounds.contains("crate :: ResourceKey : :: concord :: rate_limit :: RateLimitKeyValue")
-        );
-        assert!(
-            !bounds
-                .contains("ClientWithoutDisplay : :: concord :: rate_limit :: RateLimitKeyValue")
-        );
-        assert!(
-            !bounds
-                .contains("EndpointWithoutDisplay : :: concord :: rate_limit :: RateLimitKeyValue")
+            !bounds.contains("EndpointWithoutDisplay : :: concord :: rate_limit :: RateKeyPart")
         );
         assert!(!bounds.contains("std :: fmt :: Display"));
         assert!(!bounds.contains("Clone"));

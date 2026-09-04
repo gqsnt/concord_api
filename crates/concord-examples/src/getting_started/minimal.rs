@@ -11,11 +11,11 @@ use concord::api;
 
 api! {
     client MinimalApi {
-        timeout off;
+        timeout 30s;
         base "http://minimal.example.test/v1/";
 
 
-    GET health() -> () using NoContent {
+    GET health() -> () via Empty {
         path ["health"];
     }
 }}

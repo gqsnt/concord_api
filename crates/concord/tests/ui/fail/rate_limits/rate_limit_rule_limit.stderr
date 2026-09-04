@@ -1,5 +1,5 @@
-error: a rate-limit policy ID permits at most 256 UTF-8 bytes
-   --> tests/ui/fail/rate_limits/rate_limit_rule_limit.rs:122:5
+error: an effective rate-limit plan permits at most 64 policies
+   --> tests/ui/fail/rate_limits/rate_limit_rule_limit.rs:136:9
     |
-122 |     rate_limit { allow 1 per 1s; }
-    |     ^^^^^^^^^^
+136 |         rate_limit { id "concord.rate_limit_rule_limit.65"; key [origin]; cost 1;  allow 1 per 1s; }
+    |         ^^^^^^^^^^

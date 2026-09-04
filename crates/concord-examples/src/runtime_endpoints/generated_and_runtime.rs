@@ -14,11 +14,11 @@ use concord::http::{HeaderName, Method};
 // ANCHOR: runtime_endpoint_client
 api! {
     client PreparedApi {
-        timeout off;
+        timeout 30s;
         base "http://prepared.example.test/";
 
 
-    GET generated() -> () using NoContent;
+    GET generated() -> () via Empty;
 }}
 // ANCHOR_END: runtime_endpoint_client
 
@@ -35,9 +35,9 @@ pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
         .body_codec::<crate::request_response::specifications::ExampleCodec>(
             "request body".to_owned(),
         )
-        .response::<crate::request_response::specifications::ExampleCodec>()
+        .response::<crate::request_response::specifications::ExampleCodec, String>()
         .build()?;
-    let _: Request<_> = client.request(endpoint);
+    let _: Request<_> = endpoint.try_bind(&client)?;
     Ok(())
 }
 // ANCHOR_END: runtime_endpoint

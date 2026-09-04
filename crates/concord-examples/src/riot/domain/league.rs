@@ -10,6 +10,8 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use concord::{AtomError, BoundedAtomWriter, RequestAtom};
+
 #[derive(Clone, Copy, Debug)]
 pub enum LeagueQueue {
     RankedSolo5x5,
@@ -19,6 +21,15 @@ pub enum LeagueQueue {
 impl fmt::Display for LeagueQueue {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
+            Self::RankedSolo5x5 => "RANKED_SOLO_5x5",
+            Self::RankedFlexSr => "RANKED_FLEX_SR",
+        })
+    }
+}
+
+impl RequestAtom for LeagueQueue {
+    fn write_atom(&self, output: &mut BoundedAtomWriter<'_>) -> Result<(), AtomError> {
+        output.push_str(match self {
             Self::RankedSolo5x5 => "RANKED_SOLO_5x5",
             Self::RankedFlexSr => "RANKED_FLEX_SR",
         })
@@ -50,6 +61,20 @@ impl fmt::Display for LeagueTier {
     }
 }
 
+impl RequestAtom for LeagueTier {
+    fn write_atom(&self, output: &mut BoundedAtomWriter<'_>) -> Result<(), AtomError> {
+        output.push_str(match self {
+            Self::Iron => "IRON",
+            Self::Bronze => "BRONZE",
+            Self::Silver => "SILVER",
+            Self::Gold => "GOLD",
+            Self::Platinum => "PLATINUM",
+            Self::Emerald => "EMERALD",
+            Self::Diamond => "DIAMOND",
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum LeagueDivision {
     I,
@@ -61,6 +86,17 @@ pub enum LeagueDivision {
 impl fmt::Display for LeagueDivision {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
+            Self::I => "I",
+            Self::Ii => "II",
+            Self::Iii => "III",
+            Self::Iv => "IV",
+        })
+    }
+}
+
+impl RequestAtom for LeagueDivision {
+    fn write_atom(&self, output: &mut BoundedAtomWriter<'_>) -> Result<(), AtomError> {
+        output.push_str(match self {
             Self::I => "I",
             Self::Ii => "II",
             Self::Iii => "III",
@@ -86,6 +122,23 @@ pub enum ChallengeLevel {
 impl fmt::Display for ChallengeLevel {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
+            Self::None => "NONE",
+            Self::Iron => "IRON",
+            Self::Bronze => "BRONZE",
+            Self::Silver => "SILVER",
+            Self::Gold => "GOLD",
+            Self::Platinum => "PLATINUM",
+            Self::Diamond => "DIAMOND",
+            Self::Master => "MASTER",
+            Self::Grandmaster => "GRANDMASTER",
+            Self::Challenger => "CHALLENGER",
+        })
+    }
+}
+
+impl RequestAtom for ChallengeLevel {
+    fn write_atom(&self, output: &mut BoundedAtomWriter<'_>) -> Result<(), AtomError> {
+        output.push_str(match self {
             Self::None => "NONE",
             Self::Iron => "IRON",
             Self::Bronze => "BRONZE",

@@ -4,11 +4,11 @@ use concord::{Bytes, api};
 
 api! {
     client DuplicateClauseApi {
-        timeout off;
+        timeout 30s;
         base "http://duplicate.example.test/";
 
 
-    GET read() -> Bytes using Bytes {
+    GET read() -> Bytes via Binary {
         timeout 1s;
         path ["read"];
         timeout 2s;

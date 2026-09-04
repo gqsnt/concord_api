@@ -3,10 +3,10 @@ error[E0599]: no method named `label` found for struct `BuilderSetterApiBuilder`
    |
  4 | / api! {
  5 | |     client BuilderSetterApi {
- 6 | |         timeout off;
+ 6 | |         timeout 30s;
  7 | |         values {
 ...  |
-13 | |     GET read() -> Bytes using Bytes;
+13 | |     GET read() -> Bytes via Binary;
 14 | | }}
    | |__- method `label` not found for this struct
 ...

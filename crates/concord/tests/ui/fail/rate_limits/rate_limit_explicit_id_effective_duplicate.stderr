@@ -4,7 +4,7 @@ error: an effective rate-limit plan contains a duplicate policy ID
 15 |             id "service.shared";
    |                ^^^^^^^^^^^^^^^^
 
-error: the first effective policy using this ID is here
+error: the first effective policy via this ID is here
  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_effective_duplicate.rs:8:16
   |
 8 |             id "service.shared";

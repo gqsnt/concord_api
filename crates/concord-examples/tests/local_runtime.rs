@@ -206,11 +206,13 @@ async fn actual_specification_example_runs_generated_and_runtime_endpoints_local
         Method::POST,
     )
     .path("runtime")
-    .body_spec::<ExampleRequestSpec>(Bytes::from_static(b"runtime request"))
-    .response::<ExampleBufferedSpec>()
+    .body_spec::<ExampleRequestSpec, _>(Bytes::from_static(b"runtime request"))
+    .response::<ExampleBufferedSpec, usize>()
     .build()
     .expect("runtime endpoint");
-    let request: Request<_> = client.request(endpoint);
+    let request: Request<_> = endpoint
+        .try_bind(&client)
+        .expect("runtime endpoint binds to client");
     let runtime = request.await.expect("runtime specification request");
     assert_eq!(runtime, b"runtime".len());
 
@@ -386,7 +388,7 @@ async fn local_state_capacity_is_recoverable_without_evicting_an_existing_bucket
 }
 
 #[cfg(feature = "rate-limit")]
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn independently_built_clients_can_share_one_local_limiter_object() {
     use std::sync::Arc;
 
@@ -435,15 +437,15 @@ async fn independently_built_clients_can_share_one_local_limiter_object() {
 mod record_boundaries {
     use std::pin::Pin;
 
-    use concord::records::{RecordDecoder, RecordError, RecordStream};
+    use concord::records::{ItemStream, RecordError};
     use concord_examples::request_response::records::RecordsApi;
     use futures_core::Stream;
 
     use super::{ResponseScript, ScriptedServer, proxy};
 
-    async fn collect<D>(mut stream: RecordStream<D>) -> Result<Vec<D::Record>, RecordError>
+    async fn collect<T>(mut stream: ItemStream<T>) -> Result<Vec<T>, RecordError>
     where
-        D: RecordDecoder,
+        T: Send + 'static,
     {
         let mut values = Vec::new();
         while let Some(value) =

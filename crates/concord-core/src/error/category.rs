@@ -16,8 +16,6 @@ pub enum ErrorCategory {
     AuthenticationRejected,
     /// Client-side rate-limit processing failed.
     RateLimit,
-    /// An application decision gate rejected the operation.
-    PolicyRejected,
     /// A request timed out.
     Timeout,
     /// A connection could not be established.
@@ -44,7 +42,7 @@ pub enum ErrorCategory {
 pub enum FailureStage {
     /// Inert values or a prepared operation could not be constructed.
     Preparation,
-    /// A managed gate or local prerequisite failed before native dispatch.
+    /// A local prerequisite failed before native dispatch.
     BeforeDispatch,
     /// Native dispatch began and no response head established a narrower fact.
     DuringDispatchOrUnknown,
@@ -65,7 +63,7 @@ pub enum DispatchKnowledge {
     /// Dispatch began or the transport cannot prove that it did not.
     PossiblyDispatched,
     /// A response head was received.
-    ResponseReceived,
+    ResponseObserved,
 }
 
 /// Stable authentication failure classification.
@@ -106,8 +104,6 @@ pub enum RateLimitErrorKind {
     StateCapacity,
     /// Rate-limit authority could not be acquired.
     Acquire,
-    /// A received response head could not be observed.
-    Observe,
     /// Rate limiting failed an internal invariant.
     Internal,
 }
@@ -120,6 +116,14 @@ pub enum PaginationErrorKind {
     InvalidLimit,
     /// A pagination controller failed.
     Controller,
+    /// A controller declared invalid or excessive static metadata interests.
+    InvalidControllerDescription,
+    /// Declared page metadata exceeded its bounded retained-byte ceiling.
+    PageMetadataCeilingExceeded,
+    /// A declared continuation header was malformed or incomplete.
+    InvalidContinuation,
+    /// A continuation attempted to leave the fixed logical origin.
+    CrossOriginContinuation,
     /// Pagination arithmetic overflowed.
     Overflow,
     /// Pagination prepared a request already seen in the operation.
@@ -128,6 +132,8 @@ pub enum PaginationErrorKind {
     CompletionLimitExceeded,
     /// The configured maximum page count was exceeded.
     PageCeilingExceeded,
+    /// The hard aggregate visible-attempt ceiling was exhausted.
+    AttemptCeilingExceeded,
     /// The configured maximum collected-item count was exceeded.
     CollectedItemCeilingExceeded,
     /// The configured aggregate accepted pagination-response byte limit was exceeded.

@@ -1,16 +1,16 @@
-error: v1 pagination syntax was removed; write `paginate with Controller { field -> endpoint.slot; stable = value; }`
+error: v1 pagination syntax was removed; pagination requires `paginate via Controller { field -> endpoint.slot; stable = value; }`
   --> tests/ui/fail/pagination/pagination_syntax.rs:15:18
    |
 15 |         paginate crate::Controller
    |                  ^^^^^
 
 error: expected `;`
-  --> tests/ui/fail/pagination/pagination_syntax.rs:26:67
+  --> tests/ui/fail/pagination/pagination_syntax.rs:26:66
    |
-26 |         paginate with crate::Controller { state = endpoint.offset }
-   |                                                                   ^
+26 |         paginate via crate::Controller { state = endpoint.offset }
+   |                                                                  ^
 
-error: v1 pagination syntax was removed; write `paginate with Controller { field -> endpoint.slot; stable = value; }`
+error: v1 pagination syntax was removed; pagination requires `paginate via Controller { field -> endpoint.slot; stable = value; }`
   --> tests/ui/fail/pagination/pagination_syntax.rs:37:18
    |
 37 |         paginate custom crate::factory();
@@ -29,79 +29,79 @@ error: duplicate live pagination destination `endpoint.offset`
    |                               ^^^^^^
 
 error: a live pagination binding may update only an endpoint-owned slot (`field -> endpoint.name`)
-  --> tests/ui/fail/pagination/pagination_syntax.rs:79:52
+  --> tests/ui/fail/pagination/pagination_syntax.rs:79:51
    |
-79 |         paginate with crate::Controller { state -> client.offset; }
-   |                                                    ^^^^^^
+79 |         paginate via crate::Controller { state -> client.offset; }
+   |                                                   ^^^^^^
 
 error: a live pagination binding may update only an endpoint-owned slot (`field -> endpoint.name`)
-  --> tests/ui/fail/pagination/pagination_syntax.rs:90:52
+  --> tests/ui/fail/pagination/pagination_syntax.rs:90:51
    |
-90 |         paginate with crate::Controller { state -> secret.offset; }
-   |                                                    ^^^^^^
+90 |         paginate via crate::Controller { state -> secret.offset; }
+   |                                                   ^^^^^^
 
 error: a live pagination binding may update only an endpoint-owned slot (`field -> endpoint.name`)
-   --> tests/ui/fail/pagination/pagination_syntax.rs:101:52
+   --> tests/ui/fail/pagination/pagination_syntax.rs:101:51
     |
-101 |         paginate with crate::Controller { state -> credential.offset; }
-    |                                                    ^^^^^^^^^^
+101 |         paginate via crate::Controller { state -> credential.offset; }
+    |                                                   ^^^^^^^^^^
 
 error: a live pagination destination must be one direct `endpoint.NAME` reference
-   --> tests/ui/fail/pagination/pagination_syntax.rs:112:67
+   --> tests/ui/fail/pagination/pagination_syntax.rs:112:66
     |
-112 |         paginate with crate::Controller { state -> endpoint.offset.value; }
-    |                                                                   ^
+112 |         paginate via crate::Controller { state -> endpoint.offset.value; }
+    |                                                                  ^
 
 error: unexpected end of input, pagination fields require `-> endpoint.slot` or `= stable_initializer`
-   --> tests/ui/fail/pagination/pagination_syntax.rs:123:49
+   --> tests/ui/fail/pagination/pagination_syntax.rs:123:48
     |
-123 |         paginate with crate::Controller { state }
-    |                                                 ^
+123 |         paginate via crate::Controller { state }
+    |                                                ^
 
 error: a pagination controller field begins with its field name
-   --> tests/ui/fail/pagination/pagination_syntax.rs:134:43
+   --> tests/ui/fail/pagination/pagination_syntax.rs:134:42
     |
-134 |         paginate with crate::Controller { .. }
-    |                                           ^
+134 |         paginate via crate::Controller { .. }
+    |                                          ^
 
 error: pagination initializers accept only direct total owner references, supported literals, or Rust const/static paths
-   --> tests/ui/fail/pagination/pagination_syntax.rs:145:62
+   --> tests/ui/fail/pagination/pagination_syntax.rs:145:61
     |
-145 |         paginate with crate::Controller { state = crate::make(); }
-    |                                                              ^
+145 |         paginate via crate::Controller { state = crate::make(); }
+    |                                                             ^
 
 error: pagination stable references must be one direct owner/value reference
-   --> tests/ui/fail/pagination/pagination_syntax.rs:156:65
+   --> tests/ui/fail/pagination/pagination_syntax.rs:156:64
     |
-156 |         paginate with crate::Controller { state = endpoint.value.clone(); }
-    |                                                                 ^
+156 |         paginate via crate::Controller { state = endpoint.value.clone(); }
+    |                                                                ^
 
 error: pagination initializers accept only direct total owner references, supported literals, or Rust const/static paths
-   --> tests/ui/fail/pagination/pagination_syntax.rs:167:51
+   --> tests/ui/fail/pagination/pagination_syntax.rs:167:50
     |
-167 |         paginate with crate::Controller { state = || 1; }
-    |                                                   ^
+167 |         paginate via crate::Controller { state = || 1; }
+    |                                                  ^
 
 error: pagination initializers accept only direct total owner references, supported literals, or Rust const/static paths
-   --> tests/ui/fail/pagination/pagination_syntax.rs:178:51
+   --> tests/ui/fail/pagination/pagination_syntax.rs:178:50
     |
-178 |         paginate with crate::Controller { state = async { 1 }; }
-    |                                                   ^^^^^
+178 |         paginate via crate::Controller { state = async { 1 }; }
+    |                                                  ^^^^^
 
 error: pagination initializers accept only direct total owner references, supported literals, or Rust const/static paths
-   --> tests/ui/fail/pagination/pagination_syntax.rs:189:51
+   --> tests/ui/fail/pagination/pagination_syntax.rs:189:50
     |
-189 |         paginate with crate::Controller { state = { 1 }; }
-    |                                                   ^
+189 |         paginate via crate::Controller { state = { 1 }; }
+    |                                                  ^
 
 error: pagination initializers accept only direct total owner references, supported literals, or Rust const/static paths
-   --> tests/ui/fail/pagination/pagination_syntax.rs:200:62
+   --> tests/ui/fail/pagination/pagination_syntax.rs:200:61
     |
-200 |         paginate with crate::Controller { state = format_args!("value"); }
-    |                                                              ^
+200 |         paginate via crate::Controller { state = format_args!("value"); }
+    |                                                             ^
 
 error: `default` is not a pagination initializer; use a stable literal, const/static path, or visible total owner reference
-   --> tests/ui/fail/pagination/pagination_syntax.rs:211:51
+   --> tests/ui/fail/pagination/pagination_syntax.rs:211:50
     |
-211 |         paginate with crate::Controller { state = default; }
-    |                                                   ^^^^^^^
+211 |         paginate via crate::Controller { state = default; }
+    |                                                  ^^^^^^^

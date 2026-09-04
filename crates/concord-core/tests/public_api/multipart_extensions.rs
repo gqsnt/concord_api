@@ -2,7 +2,7 @@
 
 use concord_core::contracts::{
     BodyError, BodyKind, Bytes, MultipartBody, MultipartFactory, MultipartPart, RequestBody,
-    StreamBody,
+    RequestStream,
 };
 
 struct DownstreamMultipartFactory;
@@ -23,7 +23,7 @@ fn downstream_multipart_contract_uses_only_contract_imports() {
     fn assert_send<T: Send>(_: &T) {}
     fn assert_sync<T: Sync>(_: &T) {}
 
-    let streamed = MultipartPart::stream(StreamBody::from_bytes(Bytes::from_static(b"stream")))
+    let streamed = MultipartPart::stream(RequestStream::from_bytes(Bytes::from_static(b"stream")))
         .file_name("public-name.bin")
         .expect("valid filename")
         .content_type("application/octet-stream")

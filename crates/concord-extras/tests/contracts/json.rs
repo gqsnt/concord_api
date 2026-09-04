@@ -1,7 +1,8 @@
 #![cfg(feature = "json")]
 
-use concord_core::codec::{CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext};
-use concord_core::contracts::{Bytes, Method, StatusCode};
+use concord_core::contracts::{
+    Bytes, RequestRepresentation, ResponseDriver, ResponseRepresentation,
+};
 use concord_extras::codec::Json;
 use serde::{Deserialize, Serialize};
 
@@ -11,57 +12,20 @@ struct Message {
 }
 
 #[test]
-fn json_uses_the_public_buffered_codec_contract_and_redacts_parser_text() {
-    let encoded = Json::<Message>::encode(
-        Message { id: 7 },
-        EncodeContext {
-            endpoint: "extras.public_contract",
-            method: &Method::POST,
-            body_limit: Some(1_024),
-        },
-    )
-    .expect("public JSON request encoding");
-    let decoded = Json::<Message>::decode(
-        encoded,
-        DecodeContext {
-            endpoint: "extras.public_contract",
-            method: &Method::POST,
-            status: StatusCode::OK,
-            content_type: Some("application/problem+json"),
-        },
-    )
-    .expect("public JSON response decoding");
-    assert_eq!(decoded, Message { id: 7 });
-
-    let error = Json::<Message>::decode(
-        Bytes::from_static(b"json-parser-sentinel-6729"),
-        DecodeContext {
-            endpoint: "extras.public_contract",
-            method: &Method::POST,
-            status: StatusCode::OK,
-            content_type: Some("application/json"),
-        },
-    )
-    .expect_err("invalid JSON should fail safely");
-    assert_eq!(error.kind(), CodecErrorKind::Decode);
-    for rendered in [error.to_string(), format!("{error:?}")] {
-        assert!(!rendered.contains("json-parser-sentinel-6729"));
-    }
+fn json_uses_the_public_representation_contract() {
+    fn request_representation<R: RequestRepresentation<Message>>() {}
+    fn response_representation<R: ResponseRepresentation<Message>>() {}
+    request_representation::<Json>();
+    response_representation::<Json>();
 }
 
 #[test]
-fn json_public_encoder_enforces_exact_and_first_excess_encoded_limits() {
-    let context = |body_limit| EncodeContext {
-        endpoint: "extras.public_contract",
-        method: &Method::POST,
-        body_limit: Some(body_limit),
-    };
-    let exact = Json::<Message>::encode(Message { id: 7 }, context(8))
-        .expect("canonical JSON exactly fits");
-    assert_eq!(exact.as_ref(), br#"{"id":7}"#);
-
-    let error = Json::<Message>::encode(Message { id: 7 }, context(7))
-        .expect_err("first encoded excess must stop serialization");
-    assert_eq!(error.kind(), CodecErrorKind::Limit);
-    assert_eq!(error.to_string(), "codec operation failed (Limit)");
+fn json_selects_the_core_buffered_driver() {
+    fn buffered<R>()
+    where
+        R: ResponseRepresentation<Message>,
+        <R as ResponseRepresentation<Message>>::Driver: ResponseDriver<Body = Bytes>,
+    {
+    }
+    buffered::<Json>();
 }

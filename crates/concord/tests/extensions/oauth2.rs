@@ -22,22 +22,22 @@ type OAuthAlias = OAuth2ClientCredentials;
 
 api! {
     client OAuthRuntimeApi {
-        timeout off;
+        timeout 30s;
         base "https://application.invalid/";
         credentials {
             credential oauth = custom OAuthAlias;
         }
 
 
-    GET protected() -> Bytes using Bytes {
-        auth { bearer oauth recover on unauthorized; }
-        rate_limit { allow 1 per 1s; }
+    GET protected() -> Bytes via Binary {
+        auth { bearer oauth challenge unauthorized; }
+        rate_limit { id "concord.oauth2.1"; key [origin]; cost 1;  allow 1 per 1s; }
     }
 }}
 
 api! {
     client ProviderPathApi {
-        timeout off;
+        timeout 30s;
         base "https://provider-paths.invalid/";
         credentials {
             credential aliased = custom OAuthAlias;

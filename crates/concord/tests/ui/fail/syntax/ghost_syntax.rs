@@ -2,7 +2,7 @@ use concord::api;
 
 api! {
     client FlatSecretApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         secret token;
     }
@@ -10,7 +10,7 @@ api! {
 
 api! {
     client FlatCredentialApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         credential token = bearer(secret.token);
     }
@@ -18,7 +18,7 @@ api! {
 
 api! {
     client DefaultBlockApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         default { timeout 1s; }
     }
@@ -26,7 +26,7 @@ api! {
 
 api! {
     client DefaultsBlockApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         defaults { timeout 1s; }
     }
@@ -34,7 +34,7 @@ api! {
 
 api! {
     client PoliciesBlockApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         policies { }
     }
@@ -42,7 +42,7 @@ api! {
 
 api! {
     client BehaviorsBlockApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         behaviors { }
     }
@@ -50,7 +50,7 @@ api! {
 
 api! {
     client BehaviorApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         behavior finite;
     }
@@ -58,7 +58,7 @@ api! {
 
 api! {
     client PrefixApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         prefix ["v1"];
     }
@@ -66,7 +66,7 @@ api! {
 
 api! {
     client ParamsApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         params { "id" = client.id; }
     }
@@ -74,7 +74,7 @@ api! {
 
 api! {
     client ProfileApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         profile standard { }
     }
@@ -82,7 +82,7 @@ api! {
 
 api! {
     client AccessTokenApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         access_token token: String;
     }
@@ -90,7 +90,7 @@ api! {
 
 api! {
     client CertificateApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         auth { certificate; }
     }
@@ -98,7 +98,7 @@ api! {
 
 api! {
     client AuthCombinatorApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         auth { any; }
     }
@@ -106,7 +106,7 @@ api! {
 
 api! {
     client AllAuthCombinatorApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         auth { all; }
     }
@@ -114,7 +114,7 @@ api! {
 
 api! {
     client OneOfAuthCombinatorApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         auth { one_of; }
     }
@@ -122,7 +122,7 @@ api! {
 
 api! {
     client OptionalAuthCombinatorApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         auth { optional; }
     }
@@ -130,11 +130,11 @@ api! {
 
 api! {
     client InterpolationApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
 
 
-    GET read(id: String) -> Bytes using Bytes {
+    GET read(id: String) -> Bytes via Binary {
         path [["items-", endpoint.id]];
     }
 }}

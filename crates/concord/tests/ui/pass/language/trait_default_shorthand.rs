@@ -10,7 +10,7 @@ impl Default for CustomDefault {
 
 api! {
     client DefaultShorthandApi {
-        timeout off;
+        timeout 30s;
         base "http://example.test";
         values {
             #[default]
@@ -25,7 +25,7 @@ api! {
 
 
     scope group(#[default] scope_value: crate::CustomDefault) {
-        GET read(#[default] endpoint_value: crate::CustomDefault) -> Bytes using Bytes;
+        GET read(#[default] endpoint_value: crate::CustomDefault) -> Bytes via Binary;
     }
 }}
 
@@ -34,7 +34,7 @@ fn main() {
         .set_scalar(1)
         .reset_scalar()
         .set_optional(Some("selected".to_owned()))
-        .clear_optional()
+        .omit_optional()
         .reset_optional()
         .set_vector(vec!["selected".to_owned()])
         .reset_vector()

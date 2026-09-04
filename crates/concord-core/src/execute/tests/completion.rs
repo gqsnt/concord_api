@@ -23,7 +23,7 @@ async fn ordering_crosses_preparation_hooks_debug_transport_response_and_complet
     transport_gate.wait_until_reached().await;
     let before_transport = trace.lock().expect("trace lock").clone();
     assert_eq!(before_transport[0], "head preparation");
-    assert_eq!(before_transport[1], "before_send");
+    assert_eq!(before_transport[1], "attempt_started");
     assert!(before_transport[2].starts_with("request-ready"));
     assert_eq!(executor.application().request_count().expect("count"), 0);
 
@@ -34,31 +34,38 @@ async fn ordering_crosses_preparation_hooks_debug_transport_response_and_complet
     );
     let trace = trace.lock().expect("trace lock");
     assert!(trace[3].starts_with("response-head"));
-    assert_eq!(trace[4], "on_response_head");
+    assert_eq!(trace[4], "response_head_observed");
     assert!(trace[5].starts_with("completion"));
-    assert_eq!(trace[6], "on_complete");
+    assert_eq!(trace[6], "operation_finished");
     assert_eq!(trace.len(), 7);
     assert_eq!(executor.application().request_count().expect("count"), 1);
 }
 
 #[tokio::test]
-async fn before_send_veto_prevents_native_execution_and_later_response_phases() {
+async fn observer_panic_is_contained_and_cannot_change_success() {
     let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_response(ScriptedResponse::success(Bytes::from_static(b"observed")))
+        .expect("observer panic response");
     let mut probe = ProbeHooks::new();
-    probe.veto = AtomicBool::new(true);
+    probe.panic_on_attempt = AtomicBool::new(true);
     let hooks = Arc::new(probe);
     let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
-    let error = bytes_request(core).await.expect_err("hook veto");
-    assert_eq!(error.category(), ErrorCategory::PolicyRejected);
-    assert_eq!(executor.application().request_count().expect("count"), 0);
+    assert_eq!(
+        bytes_request(core).await.expect("fixed success"),
+        b"observed"[..]
+    );
+    assert_eq!(executor.application().request_count().expect("count"), 1);
     let records = hooks.records();
     assert!(matches!(
         records.as_slice(),
         [
             LifecycleRecord::Before { .. },
+            LifecycleRecord::Response(StatusCode::OK),
             LifecycleRecord::Complete {
-                outcome: CompletionOutcome::PolicyRejected,
-                status: None,
+                outcome: CompletionOutcome::Success,
+                status: Some(StatusCode::OK),
                 ..
             }
         ]
@@ -67,7 +74,7 @@ async fn before_send_veto_prevents_native_execution_and_later_response_phases() 
 }
 
 #[tokio::test]
-async fn completion_observes_fixed_limiter_failure() {
+async fn completion_observes_result_after_nonfallible_limiter_feedback() {
     let executor = DeterministicExecutor::new();
     let body_polls = Arc::new(AtomicUsize::new(0));
     executor
@@ -79,7 +86,6 @@ async fn completion_observes_fixed_limiter_failure() {
         .expect("limiter-failure response");
     let hooks = Arc::new(ProbeHooks::new());
     let limiter = Arc::new(ProbeRateLimiter {
-        observe_fail: true,
         response_body_polls: Some(Arc::clone(&body_polls)),
         ..ProbeRateLimiter::new()
     });
@@ -88,26 +94,23 @@ async fn completion_observes_fixed_limiter_failure() {
         Arc::clone(&hooks),
         RuntimeConfigBuilder::new().rate_limiter(limiter.clone()),
     );
-    let error = bytes_request(core)
+    let output = bytes_request(core)
         .await
-        .expect_err("fixed limiter failure");
+        .expect("successful current result");
+    assert_eq!(output, Bytes::from_static(b"withheld"));
     assert_eq!(limiter.observations.load(Ordering::SeqCst), 1);
-    assert_eq!(body_polls.load(Ordering::SeqCst), 0);
+    assert!(body_polls.load(Ordering::SeqCst) >= 1);
     assert!(matches!(
         hooks.records().as_slice(),
         [
             LifecycleRecord::Before { .. },
+            LifecycleRecord::Response(StatusCode::OK),
             LifecycleRecord::Complete {
-                outcome: CompletionOutcome::RateLimit,
+                outcome: CompletionOutcome::Success,
                 status: Some(StatusCode::OK),
                 ..
             }
         ]
     ));
-    assert_eq!(error.category(), ErrorCategory::RateLimit);
-    assert_eq!(
-        error.rate_limit_kind(),
-        Some(crate::error::RateLimitErrorKind::Observe)
-    );
     assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 1);
 }

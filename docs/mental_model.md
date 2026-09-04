@@ -1,82 +1,104 @@
-# Mental model
+# Concord v2.1 mental model
 
-Think of a Concord contract as five linked projections of one semantic tree.
+## One contract, several views
+
+A Concord declaration is compiled once into task-specific views:
 
 ```text
-declaration tree
-  -> generated Rust navigation and request controls
-  -> unbound intent tree
-  -> static descriptions and semantic snapshots
-  -> bounded managed execution and evidence
+source tree
+  = generated navigation tree
+  = unbound navigation tree
+  = contract-description tree
+  = documentation tree
 ```
 
-## Tree and owners
+The views differ in authority, not meaning.
 
-Each `api!` invocation owns one client. Scopes and endpoints live inside it and
-nested scopes live inside their lexical parent. A value is owned by the client,
-one exact named scope, or an endpoint. Public expressions make that ownership
-visible with `client.name`, `regional.name`, or `endpoint.name`.
+## Static contract state
 
-The same containment appears in generated modules, direct methods,
-`Client::unbound()`, and `ContractDescription`. A scope is an immutable selected
-domain context, not a cosmetic namespace.
+- client/scope/endpoint tree;
+- exact Rust value declarations;
+- presence, initializer, sensitivity, and owners;
+- representation defaults, scope fences, and local overrides;
+- route/query/header/auth/rate patches;
+- status and effect;
+- body/response/pagination capabilities;
+- stable IDs and provenance.
 
-## Values are independent facts
+## Built-client state
 
-A value has an opaque payload type, required/optional presence, optional
-initializer, observation class, and owner. These facts do not leak into each
-other. In particular:
+- client-owned values and retained defaults;
+- fixed logical origin;
+- transport/runtime configuration;
+- shared retry budget and selected limiter;
+- versioned credential slots;
+- read-only observer and diagnostic policy;
+- security-context identity.
 
-- `x: Option<T>` is a required domain payload;
-- `x?: T` adds `Option<T>` owned by Concord;
-- `Vec<T>` is not repeated until a placement says `each`;
-- `#[redact]` changes observation, not the real request value.
+Clones share these handles according to documented semantics. Independent builds are separate security contexts unless the application explicitly supplies shared services.
 
-Defaults are evaluated once when their narrowest client/scope/endpoint snapshot
-is created and are retained for reset and every later attempt/page.
+## Inert selected state
 
-## Attachments are explicit algebras
+A scope, endpoint intent, or request snapshot contains immutable selected values and local controls. Construction, cloning, description, and planning do not perform HTTP, provider, limiter, body preparation, retry, or observation work.
 
-Subdomain and path support inherit, ordinary composition, replace, and off.
-Query is an ordered multimap patch with assignment, append, remove, replace,
-and off. Headers use case-insensitive assignment/removal without generic append.
-Authentication placements add, replace, or turn off. Rate policies only add.
+## Logical operation
 
-The macro resolves these operations with source origins before emission. A
-request does not dynamically rediscover inheritance.
+Polling a terminal creates one operation identity and absolute deadline. A direct operation may contain visible attempts. A pagination terminal contains page operations, each of which may contain visible attempts.
 
-## Public and private
+```text
+operation
+  ├─ visible attempt
+  │    └─ optional transport-private physical recovery
+  ├─ policy retry
+  ├─ auth-recovery replay
+  └─ fixed outcome
+```
 
-Public route/head shaping produces both the real public wire representation and
-a redaction-aware observed representation. A plan borrows the inert request and
-stops there. During execution, credentials are resolved privately, rate
-admission occurs, and only then are credentials placed on a native attempt.
+## Effect class
 
-Secrets and credentials never become “redacted public values”; they are absent
-from public structures. A redacted ordinary value remains real for wire shaping,
-canonical rate keys, and internal pagination identity, while observations see a
-fixed marker.
+- `safe`: requested semantics are read-like; may paginate and may retry when other gates allow;
+- `idempotent`: requested mutation can be repeated with the same intended effect; may retry but ordinary pagination is unavailable;
+- `non_idempotent`: ambiguous-dispatch policy retry is prohibited.
 
-## Terminals and effects
+Effect is endpoint meaning. Body replayability is a separate mechanical fact.
 
-A request is inert until a terminal future is polled. Await returns the declared
-output. `.response()` adds accepted metadata. Pagination, accepted bytes, and
-credential storage exist only for endpoints that declare and prove them.
+## Public and private information
 
-One terminal creates one operation deadline. Pagination passes it through every
-page, retry, recovery, limiter wait, acquisition, conversion, and controller
-step.
+```text
+ordinary public protocol data
+sensitive public protocol data
+body/content data
+private credential data
+operator-only bounded diagnostics
+```
 
-## Runtime authority
+Sensitive public data still reaches the server and may affect internal correctness identities. It is redacted from automatic plans, errors, observation, and debug output. Credential material never enters public shaping or general observation.
 
-Retry classification advises; core repeatability, dispatch stage, replayability,
-budget, attempt, and deadline gates decide. Request/response gates may reject at
-named phases. Completion observers receive an already-fixed bounded outcome and
-cannot change it.
+## Representations and delivery
 
-Runtime endpoints plug into this same model. They may choose public shape,
-specifications, auth, repeatability, and rate policies through bounded builders,
-but never receive native request mutation authority.
+Request and response representations describe wire/media conversion. Exact endpoint types describe caller values and lifecycles.
 
-See the [architecture decision](v2_architecture.md) for projection laws and the
-[design invariants](design_invariants.md) for maintainer obligations.
+```concord-pseudocode
+response Json;
+GET item() -> Item;                 // complete value
+
+response NdJson;
+GET snapshot() -> Vec<Event>;       // complete collection
+GET watch() -> ItemStream<Event>;   // lazy semantic stream
+
+response Binary;
+GET download() -> ByteStream;       // lazy bytes
+```
+
+## Pagination
+
+Pagination is an explicit safe aggregate. The controller receives one complete accepted page plus a bounded declared metadata view, then returns aggregate items and either completion or the next controller state. It never receives a native response or arbitrary request mutation.
+
+## Plans and descriptions
+
+- contract description: static value-free declaration;
+- effective endpoint description: inherited normalized contract and provenance;
+- request plan: bound credential-free public request projection;
+- operation evidence: runtime identities, stages, waits, and outcomes.
+
+Do not use one concept for all four.

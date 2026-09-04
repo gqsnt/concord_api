@@ -2,7 +2,7 @@ use concord::api;
 
 api! {
     client RemovedRetryApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         retry reqwest_default;
     }

@@ -1,13 +1,13 @@
-error[E0599]: no method named `with_language` found for struct `Item` in the current scope
+error[E0599]: no method named `set_language` found for struct `Item` in the current scope
   --> tests/ui/fail/capabilities/ancestor_control_on_endpoint_absent.rs:18:22
    |
  3 | / api! {
  4 | |     client TreeControlApi {
- 5 | |         timeout off;
+ 5 | |         timeout 30s;
  6 | |         base "https://tree-controls.example.test";
 ...  |
 12 | | }
-   | |_- method `with_language` not found for this struct
+   | |_- method `set_language` not found for this struct
 ...
-18 |       let _ = endpoint.with_language("fr".to_owned());
-   |                        ^^^^^^^^^^^^^ method not found in `Item`
+18 |       let _ = endpoint.set_language(Some("fr".to_owned()));
+   |                        ^^^^^^^^^^^^ method not found in `Item`

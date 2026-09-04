@@ -238,6 +238,10 @@ impl ValueDescription {
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum AttachmentFamily {
+    /// Inherited request-body representation selection or fence.
+    RequestRepresentation,
+    /// Inherited response representation selection or fence.
+    ResponseRepresentation,
     /// Generated subdomain labels.
     Subdomain,
     /// Generated path segments.
@@ -252,8 +256,6 @@ pub enum AttachmentFamily {
     Timeout,
     /// Additive rate policies.
     RateLimit,
-    /// Endpoint-owned response negotiation.
-    Accept,
 }
 
 /// The semantic patch operation represented by one attachment record.
@@ -272,6 +274,8 @@ pub enum AttachmentOperation {
     Off,
     /// Select one finite duration.
     Set,
+    /// Replace only when the authored Concord-optional source is present.
+    WhenPresent,
 }
 
 /// Whether an attachment record describes source-local intent or effective state.
@@ -362,6 +366,7 @@ pub struct BodyDescription {
     argument: &'static str,
     input_type: &'static str,
     specification_type: &'static str,
+    representation_origin: &'static str,
     docs: Box<[&'static str]>,
 }
 
@@ -373,12 +378,14 @@ impl BodyDescription {
         argument: &'static str,
         input_type: &'static str,
         specification_type: &'static str,
+        representation_origin: &'static str,
         docs: Vec<&'static str>,
     ) -> Self {
         Self {
             argument,
             input_type,
             specification_type,
+            representation_origin,
             docs: docs.into_boxed_slice(),
         }
     }
@@ -401,6 +408,12 @@ impl BodyDescription {
         self.specification_type
     }
 
+    /// Returns the lexical source of the effective request representation.
+    #[must_use]
+    pub const fn representation_origin(&self) -> &'static str {
+        self.representation_origin
+    }
+
     /// Returns body-parameter documentation.
     #[must_use]
     pub fn docs(&self) -> &[&'static str] {
@@ -414,6 +427,8 @@ impl BodyDescription {
 pub struct ResponseDescription {
     output_type: &'static str,
     specification_type: &'static str,
+    representation_origin: &'static str,
+    negotiation_media_type: Option<&'static str>,
     acquisition_class: ContractFactClass,
 }
 
@@ -421,10 +436,17 @@ impl ResponseDescription {
     /// Constructs generated response signature metadata.
     #[doc(hidden)]
     #[must_use]
-    pub const fn generated(output_type: &'static str, specification_type: &'static str) -> Self {
+    pub const fn generated(
+        output_type: &'static str,
+        specification_type: &'static str,
+        representation_origin: &'static str,
+        negotiation_media_type: Option<&'static str>,
+    ) -> Self {
         Self {
             output_type,
             specification_type,
+            representation_origin,
+            negotiation_media_type,
             acquisition_class: ContractFactClass::TraitCapability,
         }
     }
@@ -439,6 +461,18 @@ impl ResponseDescription {
     #[must_use]
     pub const fn specification_type(&self) -> &'static str {
         self.specification_type
+    }
+
+    /// Returns the lexical source of the effective response representation.
+    #[must_use]
+    pub const fn representation_origin(&self) -> &'static str {
+        self.representation_origin
+    }
+
+    /// Returns representation-owned response negotiation metadata.
+    #[must_use]
+    pub const fn negotiation_media_type(&self) -> Option<&'static str> {
+        self.negotiation_media_type
     }
 
     /// Returns how acquisition precision is obtained.
@@ -864,13 +898,13 @@ impl PaginationFieldDescription {
 /// Pagination structure without controller state or request values.
 #[non_exhaustive]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PaginationDescription {
+pub struct PaginationContractDescription {
     controller_type: &'static str,
     fields: Box<[PaginationFieldDescription]>,
     bounds_class: ContractFactClass,
 }
 
-impl PaginationDescription {
+impl PaginationContractDescription {
     /// Constructs generated pagination metadata.
     #[doc(hidden)]
     #[must_use]
@@ -916,7 +950,7 @@ pub struct EndpointContractDescription {
     response: ResponseDescription,
     authentication: Box<[AuthenticationDescription]>,
     rate_policies: Box<[RatePolicyDescription]>,
-    pagination: Option<PaginationDescription>,
+    pagination: Option<PaginationContractDescription>,
     explicit_endpoint_id: bool,
 }
 
@@ -937,7 +971,7 @@ impl EndpointContractDescription {
         response: ResponseDescription,
         authentication: Vec<AuthenticationDescription>,
         rate_policies: Vec<RatePolicyDescription>,
-        pagination: Option<PaginationDescription>,
+        pagination: Option<PaginationContractDescription>,
         explicit_endpoint_id: bool,
     ) -> Self {
         Self {
@@ -1004,7 +1038,7 @@ impl EndpointContractDescription {
 
     /// Returns pagination structure when declared.
     #[must_use]
-    pub const fn pagination(&self) -> Option<&PaginationDescription> {
+    pub const fn pagination(&self) -> Option<&PaginationContractDescription> {
         self.pagination.as_ref()
     }
 
@@ -1238,7 +1272,7 @@ pub enum SemanticChangeClass {
     Wire,
     /// Authentication or credential authority changed.
     SecurityOrAuthentication,
-    /// Repeatability, timeout, deadline, or other managed runtime policy changed.
+    /// Effect, timeout, deadline, or other managed runtime policy changed.
     RuntimePolicy,
     /// Generated terminal or response acquisition capability changed.
     Capability,
@@ -1257,7 +1291,7 @@ impl SemanticChangeClass {
             Self::ValueOrDomain => "value/domain meaning change",
             Self::Wire => "wire route/query/header change",
             Self::SecurityOrAuthentication => "security/auth change",
-            Self::RuntimePolicy => "runtime-policy/repeatability/deadline change",
+            Self::RuntimePolicy => "runtime-policy/effect/deadline change",
             Self::Capability => "capability/terminal change",
             Self::IdentityOrRateSchema => "identity/rate-schema change",
             Self::Documentation => "documentation-only change",
@@ -1344,7 +1378,7 @@ pub fn contract_tool_snapshot(contract: &ContractDescription) -> String {
 /// Classifies two tool-private semantic snapshots.
 ///
 /// Both inputs must have been produced by [`contract_tool_snapshot`] or an
-/// xtask fixture using the same line-tag and length-framing convention.
+/// xtask fixture via the same line-tag and length-framing convention.
 #[doc(hidden)]
 #[must_use]
 pub fn diff_contract_tool_snapshots(before: &str, after: &str) -> Vec<SemanticChangeClass> {
@@ -1418,8 +1452,10 @@ fn endpoints_snapshot(output: &mut String, endpoints: &[EndpointDescription]) {
                 "endpoint",
                 endpoint.source_path(),
                 &format!("{:?}", endpoint.timeout()),
-                &format!("{:?}", endpoint.repeatability()),
-                &format!("{:?}", endpoint.repeatability_source()),
+                &format!("{:?}", endpoint.accepted_status()),
+                &format!("{:?}", endpoint.status_source()),
+                &format!("{:?}", endpoint.effect()),
+                &format!("{:?}", endpoint.effect_source()),
             ],
         );
         let capabilities = endpoint.capabilities();
@@ -1437,6 +1473,15 @@ fn endpoints_snapshot(output: &mut String, endpoints: &[EndpointDescription]) {
         let Some(details) = endpoint.contract() else {
             continue;
         };
+        record(
+            output,
+            "WIRE",
+            &[
+                "response-negotiation",
+                endpoint.source_path(),
+                details.response.negotiation_media_type.unwrap_or(""),
+            ],
+        );
         declaration_snapshot(output, &details.declaration);
         record(
             output,
@@ -1445,6 +1490,7 @@ fn endpoints_snapshot(output: &mut String, endpoints: &[EndpointDescription]) {
                 "response",
                 details.response.output_type,
                 details.response.specification_type,
+                details.response.representation_origin,
             ],
         );
         if let Some(body) = &details.body {
@@ -1456,6 +1502,7 @@ fn endpoints_snapshot(output: &mut String, endpoints: &[EndpointDescription]) {
                     body.argument,
                     body.input_type,
                     body.specification_type,
+                    body.representation_origin,
                 ],
             );
         }
@@ -1569,11 +1616,12 @@ fn attachments_snapshot(output: &mut String, attachments: &[AttachmentDescriptio
             AttachmentFamily::Authentication => "SECURITY",
             AttachmentFamily::Timeout => "RUNTIME",
             AttachmentFamily::RateLimit => "IDENTITY",
-            AttachmentFamily::Subdomain
+            AttachmentFamily::RequestRepresentation
+            | AttachmentFamily::ResponseRepresentation
+            | AttachmentFamily::Subdomain
             | AttachmentFamily::Path
             | AttachmentFamily::Query
-            | AttachmentFamily::Headers
-            | AttachmentFamily::Accept => "WIRE",
+            | AttachmentFamily::Headers => "WIRE",
         };
         record(
             output,

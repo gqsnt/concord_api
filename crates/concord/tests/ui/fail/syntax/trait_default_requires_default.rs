@@ -4,7 +4,7 @@ pub struct NoDefault;
 
 api! {
     client MissingDefaultApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
         values {
             #[default]

@@ -4,12 +4,8 @@ use std::time::Duration;
 
 use concord::codec::{CodecError, EncodeBody, EncodeContext};
 use concord::endpoint::{EndpointId, RuntimeEndpoint};
-use concord::error::GateError;
 use concord::http::{Method, SafeProxy};
-use concord::observation::{
-    AttemptInfo, BeforeSend, BoxFuture, CompletionEvent, CompletionObserver, RequestGate,
-    ResponseGate, ResponseHeadEvent,
-};
+use concord::observation::{AttemptInfo, OperationEvent, OperationObserver};
 use concord::retry::{RetryDecision, RetryFailure, RetryPolicy};
 use concord::{Bytes, api};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
@@ -34,7 +30,7 @@ impl EncodeBody for CountingBody {
 
 api! {
     client RuntimeApi {
-        timeout off;
+        timeout 30s;
         base "http://runtime.example.test/";
 
 
@@ -44,13 +40,13 @@ api! {
             id: String,
             verbose?: bool,
             limit: u32 = 25,
-            body body: crate::runtime::deterministic::BodyInput using crate::CountingBody,
-        ) -> Bytes using Bytes {
+            body body: crate::runtime::deterministic::BodyInput via crate::CountingBody,
+        ) -> Bytes via Binary {
             id "runtime.resources.submit";
             path [endpoint.id];
             query { "verbose" = endpoint.verbose; }
             headers { "X-Limit" = endpoint.limit; }
-            repeatability idempotent;
+            effect idempotent;
         }
     }
 }}
@@ -65,42 +61,37 @@ struct LifecycleCounts {
     completion_totals: Mutex<Vec<(u32, u32, bool)>>,
 }
 
-impl RequestGate for LifecycleCounts {
-    fn before_send<'a>(&'a self, context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), GateError>> {
-        self.before.fetch_add(1, Ordering::SeqCst);
-        self.endpoints
-            .lock()
-            .expect("endpoint capture")
-            .push(context.endpoint.to_owned());
-        self.attempts
-            .lock()
-            .expect("attempt capture")
-            .push(context.attempt);
-        Box::pin(async { Ok(()) })
-    }
-}
-
-impl ResponseGate for LifecycleCounts {
-    fn before_response_handling<'a>(
-        &'a self,
-        _context: ResponseHeadEvent<'a>,
-    ) -> BoxFuture<'a, Result<(), GateError>> {
-        self.response.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async { Ok(()) })
-    }
-}
-
-impl CompletionObserver for LifecycleCounts {
-    fn on_complete(&self, context: CompletionEvent<'_>) {
-        self.complete.fetch_add(1, Ordering::SeqCst);
-        self.completion_totals
-            .lock()
-            .expect("completion totals")
-            .push((
-                context.attempts_started,
-                context.policy_retries,
-                context.recovered_authentication,
-            ));
+impl OperationObserver for LifecycleCounts {
+    fn observe(&self, event: OperationEvent<'_>) {
+        match event {
+            OperationEvent::AttemptStarted(context) => {
+                self.before.fetch_add(1, Ordering::SeqCst);
+                self.endpoints
+                    .lock()
+                    .expect("endpoint capture")
+                    .push(context.endpoint.to_owned());
+                self.attempts
+                    .lock()
+                    .expect("attempt capture")
+                    .push(context.attempt);
+            }
+            OperationEvent::ResponseHeadObserved(_) => {
+                self.response.fetch_add(1, Ordering::SeqCst);
+            }
+            OperationEvent::OperationFinished(context) => {
+                self.complete.fetch_add(1, Ordering::SeqCst);
+                self.completion_totals
+                    .lock()
+                    .expect("completion totals")
+                    .push((
+                        context.attempts_started,
+                        context.policy_retries,
+                        context.recovered_authentication,
+                    ));
+            }
+            OperationEvent::PaginationFinished(_) => {}
+            _ => {}
+        }
     }
 }
 
@@ -122,9 +113,9 @@ async fn direct_and_explicit_named_wrappers_preserve_inertness_and_lifecycle_equ
         .configure_http(move |http| http.proxy(proxy))
         .configure_runtime(move |runtime| {
             runtime
-                .request_gate(observation.clone())
-                .response_gate(observation.clone())
-                .completion_observer(observation)
+                .operation_observer(observation.clone())
+                .operation_observer(observation.clone())
+                .operation_observer(observation)
         })
         .build()
         .expect("runtime client");
@@ -139,7 +130,7 @@ async fn direct_and_explicit_named_wrappers_preserve_inertness_and_lifecycle_equ
                 encodes: Arc::clone(&encodes),
             },
         )
-        .with_verbose(true)
+        .set_verbose(Some(true))
         .set_limit(50)
         .timeout(Duration::from_secs(5));
     let endpoint = RuntimeApi::unbound()
@@ -151,7 +142,7 @@ async fn direct_and_explicit_named_wrappers_preserve_inertness_and_lifecycle_equ
                 encodes: Arc::clone(&encodes),
             },
         )
-        .with_verbose(true)
+        .set_verbose(Some(true))
         .set_limit(50);
     let explicit = client.request(endpoint).timeout(Duration::from_secs(5));
 
@@ -231,9 +222,9 @@ async fn generated_retry_method_has_direct_explicit_and_runtime_endpoint_parity(
         .retry(policy)
         .configure_runtime(move |runtime| {
             runtime
-                .request_gate(observation.clone())
-                .response_gate(observation.clone())
-                .completion_observer(observation)
+                .operation_observer(observation.clone())
+                .operation_observer(observation.clone())
+                .operation_observer(observation)
         })
         .build()
         .expect("retry runtime client");
@@ -271,11 +262,12 @@ async fn generated_retry_method_has_direct_explicit_and_runtime_endpoint_parity(
         Method::GET,
     )
     .path("runtime-retry")
-    .response::<Bytes>()
+    .response::<concord::Binary, Bytes>()
     .build()
     .expect("runtime retry endpoint");
-    let runtime = client
-        .request(runtime_endpoint)
+    let runtime = runtime_endpoint
+        .try_bind(&client)
+        .expect("runtime endpoint binds to client")
         .response()
         .await
         .expect("runtime endpoint managed retry succeeds");

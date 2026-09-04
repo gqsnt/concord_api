@@ -1,11 +1,14 @@
 #![forbid(unsafe_code)]
 
 mod command;
+mod docs_check;
 mod fixtures;
 mod migration;
 mod msrv;
 mod policy;
+mod release_audit;
 mod semantic_diff;
+mod source_export;
 
 use std::env;
 use std::path::{Path, PathBuf};
@@ -42,6 +45,18 @@ fn run() -> Result<(), String> {
             let write = parse_options(&arguments[1..], true)?;
             migration::run(&root, write)
         }
+        Some("docs-check") => {
+            parse_options(&arguments[1..], false)?;
+            docs_check::run(&root)
+        }
+        Some("release-audit") => {
+            parse_options(&arguments[1..], false)?;
+            release_audit::run(&root)
+        }
+        Some("source-export") => {
+            parse_options(&arguments[1..], false)?;
+            source_export::run(&root)
+        }
         Some("semantic-diff") => {
             if arguments.len() != 3 {
                 return Err(usage());
@@ -75,7 +90,7 @@ fn workspace_root() -> Result<PathBuf, String> {
 }
 
 fn usage() -> String {
-    "usage: cargo run -p concord-xtask -- <fixtures [--locked] | migration-audit [--locked] [--write] | semantic-diff BEFORE AFTER | msrv-ui [--locked] | policy [--locked]>".to_owned()
+    "usage: cargo run -p concord-xtask -- <docs-check [--locked] | fixtures [--locked] | migration-audit [--locked] [--write] | release-audit [--locked] | source-export [--locked] | semantic-diff BEFORE AFTER | msrv-ui [--locked] | policy [--locked]>".to_owned()
 }
 
 #[cfg(test)]

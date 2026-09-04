@@ -14,18 +14,21 @@ use concord_test_support::script::{
 use http::{Method, StatusCode};
 
 use super::execute::paginate_with;
-use super::{PageLimit, PaginatedEndpoint, PaginationController, PaginationError};
+use super::{
+    PageDecisionLimits, PageLimit, PageResponse, PageStep, PaginatedEndpoint, PaginationController,
+    PaginationDescription, PaginationError,
+};
 #[cfg(feature = "default-tls")]
 use crate::auth::{
     AccessToken, Auth, CredentialProvider, CredentialRef, CredentialRequest, SlotSelector,
 };
-use crate::body::{EmptyBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec};
+use crate::body::{EmptyBody, RequestBodyContext, RequestBodyMetadata, RequestRepresentation};
 use crate::client::ClientCore;
 use crate::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};
-use crate::error::{ApiError, ErrorCategory, GateError, PaginationErrorKind, RateLimitErrorKind};
+use crate::endpoint::AcceptedStatus;
+use crate::error::{ApiError, ErrorCategory, PaginationErrorKind, RateLimitErrorKind};
 use crate::hooks::{
-    AttemptInfo, BeforeSend, BoxFuture, CompletionEvent, CompletionObserver, CompletionOutcome,
-    DebugLevel, PaginationCompletionEvent, RequestGate, ResponseGate, ResponseHeadEvent,
+    AttemptInfo, BoxFuture, CompletionOutcome, DebugLevel, OperationEvent, OperationObserver,
 };
 use crate::http::HttpConfigBuilder;
 use crate::operation::OperationId;
@@ -34,8 +37,8 @@ use crate::rate_limit::{
 };
 use crate::request::{EndpointSpec, HeadBuilder, PreparedHead, Request, RequestMeta};
 use crate::response::{
-    Buffered, PageResponseSpec, ResponseBodyError, ResponseBodyErrorKind, ResponseHead,
-    ResponseSpec,
+    Buffered, PageResponseRepresentation, ResponseBodyError, ResponseBodyErrorKind, ResponseHead,
+    ResponseRepresentation,
 };
 use crate::retry::{RetryDecision, RetryFailure, RetryPolicy};
 use crate::runtime::RuntimeConfigBuilder;
@@ -99,20 +102,15 @@ fn decode_test_page(body: Bytes) -> Result<TestPage, CodecError> {
 
 struct AcceptedPageSpec;
 
-impl ResponseSpec for AcceptedPageSpec {
-    type Output = TestPage;
-    type Mode = Buffered;
+impl ResponseRepresentation<TestPage> for AcceptedPageSpec {
+    type Driver = Buffered;
 
-    fn accepts_status(status: StatusCode) -> bool {
-        status == StatusCode::NOT_FOUND
-    }
-
-    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
+    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<TestPage, ResponseBodyError> {
         decode_test_page(body).map_err(|_| ResponseBodyError::new(ResponseBodyErrorKind::Decode))
     }
 }
 
-impl PageResponseSpec for AcceptedPageSpec {}
+impl PageResponseRepresentation<TestPage> for AcceptedPageSpec {}
 
 #[derive(Clone)]
 struct PageEndpoint {
@@ -156,7 +154,9 @@ impl PageEndpoint {
 }
 
 impl EndpointSpec for PageEndpoint {
+    type Input = ();
     type Body = EmptyBody;
+    type Output = TestPage;
     type Response = PageCodec;
 
     fn request_meta(&self) -> RequestMeta {
@@ -182,7 +182,6 @@ impl EndpointSpec for PageEndpoint {
 }
 
 impl PaginatedEndpoint for PageEndpoint {
-    type Item = String;
     type Controller = CursorController;
 
     fn initial_controller(&self) -> Result<Self::Controller, PaginationError> {
@@ -215,11 +214,15 @@ impl PaginatedEndpoint for PageEndpoint {
 struct AcceptedPageEndpoint(PageEndpoint);
 
 impl EndpointSpec for AcceptedPageEndpoint {
+    type Input = ();
     type Body = EmptyBody;
+    type Output = TestPage;
     type Response = AcceptedPageSpec;
 
     fn request_meta(&self) -> RequestMeta {
-        self.0.request_meta()
+        self.0.request_meta().with_accepted_status(
+            AcceptedStatus::codes([StatusCode::NOT_FOUND]).expect("nonempty test status set"),
+        )
     }
 
     fn prepare_head(&self, builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
@@ -237,7 +240,6 @@ impl EndpointSpec for AcceptedPageEndpoint {
 }
 
 impl PaginatedEndpoint for AcceptedPageEndpoint {
-    type Item = String;
     type Controller = CursorController;
 
     fn initial_controller(&self) -> Result<Self::Controller, PaginationError> {
@@ -258,7 +260,9 @@ struct HostRateEndpoint {
 }
 
 impl EndpointSpec for HostRateEndpoint {
+    type Input = ();
     type Body = EmptyBody;
+    type Output = TestPage;
     type Response = PageCodec;
 
     fn request_meta(&self) -> RequestMeta {
@@ -275,11 +279,11 @@ impl EndpointSpec for HostRateEndpoint {
         builder.push_query_value("stable", &"public")?;
         builder.push_pagination_query_value("cursor", &self.host)?;
         builder.insert_pagination_header_value("x-page-cursor", &self.host)?;
-        let rate_limit_host = builder.rate_limit_host().to_owned();
+        let rate_limit_origin = builder.rate_limit_origin();
         builder.push_rate_limit_policy(
             "PaginationRuntimeApi::rate_limit::host_page_key",
             [
-                ("host", rate_limit_host.as_str()),
+                ("origin", rate_limit_origin.as_str()),
                 ("endpoint.host", self.host.as_str()),
             ],
             1,
@@ -299,7 +303,6 @@ impl EndpointSpec for HostRateEndpoint {
 }
 
 impl PaginatedEndpoint for HostRateEndpoint {
-    type Item = String;
     type Controller = CursorController;
 
     fn initial_controller(&self) -> Result<Self::Controller, PaginationError> {
@@ -324,7 +327,9 @@ struct RateKeyEndpoint {
 
 #[cfg(feature = "default-tls")]
 impl EndpointSpec for RateKeyEndpoint {
+    type Input = ();
     type Body = EmptyBody;
+    type Output = TestPage;
     type Response = PageCodec;
 
     fn request_meta(&self) -> RequestMeta {
@@ -362,7 +367,6 @@ impl EndpointSpec for RateKeyEndpoint {
 
 #[cfg(feature = "default-tls")]
 impl PaginatedEndpoint for RateKeyEndpoint {
-    type Item = String;
     type Controller = CursorController;
 
     fn initial_controller(&self) -> Result<Self::Controller, PaginationError> {
@@ -455,6 +459,10 @@ impl CursorController {
 }
 
 impl PaginationController<TestPage> for CursorController {
+    type Item = String;
+
+    const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
+
     fn validate(&self) -> Result<(), PaginationError> {
         self.validate_calls.fetch_add(1, Ordering::SeqCst);
         if self.fail_validate {
@@ -463,24 +471,41 @@ impl PaginationController<TestPage> for CursorController {
         Ok(())
     }
 
-    fn next(self, page: &TestPage) -> Result<Option<Self>, PaginationError> {
+    fn advance(
+        self,
+        page: PageResponse<TestPage>,
+        limits: PageDecisionLimits,
+    ) -> Result<PageStep<Self, Self::Item>, PaginationError> {
         self.next_calls.fetch_add(1, Ordering::SeqCst);
+        let next_state = page.page().next.clone();
+        let items = page.into_page().items;
+        if items.len() > limits.remaining_items() {
+            return Err(PaginationError::new(
+                PaginationErrorKind::CollectedItemCeilingExceeded,
+            ));
+        }
+        if self
+            .short_page_size
+            .is_some_and(|size| items.len() < size.get())
+        {
+            return Ok(PageStep::Done { items });
+        }
         if self.fail_next {
             return Err(PaginationError::new(PaginationErrorKind::Controller));
         }
-        Ok(page.next.as_ref().map(|state| Self {
-            state: state.clone(),
+        let next = next_state.map(|state| Self {
+            state,
             validate_calls: Arc::clone(&self.validate_calls),
             next_calls: Arc::clone(&self.next_calls),
             fail_validate: false,
             fail_next: false,
             short_page_size: self.short_page_size,
             _not_sync: Cell::new(()),
-        }))
-    }
-
-    fn short_page_size(&self) -> Option<NonZeroUsize> {
-        self.short_page_size
+        });
+        Ok(match next {
+            Some(next) => PageStep::Continue { items, next },
+            None => PageStep::Done { items },
+        })
     }
 }
 
@@ -528,70 +553,63 @@ struct PaginationProbe {
     aggregate: Mutex<Vec<AggregateRecord>>,
 }
 
-impl RequestGate for PaginationProbe {
-    fn before_send<'a>(
-        &'a self,
-        context: BeforeSend<'a>,
-    ) -> BoxFuture<'a, Result<(), crate::error::GateError>> {
-        self.before.lock().expect("before lock").push(BeforeRecord {
-            operation_id: context.operation_id,
-            parent_operation_id: context.parent_operation_id,
-            page_index: context.page_index,
-            attempt: context.attempt,
-            safe: format!("{} {:?}", context.observed_url, context.headers),
-        });
-        Box::pin(async { Ok(()) })
-    }
-}
-
-impl ResponseGate for PaginationProbe {
-    fn before_response_handling<'a>(
-        &'a self,
-        context: ResponseHeadEvent<'a>,
-    ) -> BoxFuture<'a, Result<(), GateError>> {
-        self.response.lock().expect("response lock").push((
-            context.operation_id,
-            context.parent_operation_id,
-            context.page_index,
-            context.attempt,
-            context.status,
-            format!("{} {:?}", context.observed_url, context.headers),
-        ));
-        Box::pin(async { Ok(()) })
-    }
-}
-
-impl CompletionObserver for PaginationProbe {
-    fn on_complete(&self, context: CompletionEvent<'_>) {
-        self.completion
-            .lock()
-            .expect("completion lock")
-            .push(CompletionRecord {
-                safe: context.observed_url.to_owned(),
-            });
-    }
-
-    fn on_pagination_complete(&self, context: PaginationCompletionEvent<'_>) {
-        self.aggregate
-            .lock()
-            .expect("aggregate lock")
-            .push(AggregateRecord {
-                operation_id: context.operation_id,
-                pages_completed: context.pages_completed,
-                items_collected: context.items_collected,
-                recovered_authentication: context.recovered_authentication,
-                final_status: context.final_status,
-                outcome: context.outcome,
-                attempts_started: context.attempts_started,
-                policy_retries: context.policy_retries,
-                elapsed: context.elapsed,
-            });
+impl OperationObserver for PaginationProbe {
+    fn observe(&self, event: OperationEvent<'_>) {
+        match event {
+            OperationEvent::AttemptStarted(context) => {
+                self.before.lock().expect("before lock").push(BeforeRecord {
+                    operation_id: context.operation_id,
+                    parent_operation_id: context.parent_operation_id,
+                    page_index: context.page_index,
+                    attempt: context.attempt,
+                    safe: format!("{:?}", context.target),
+                });
+            }
+            OperationEvent::ResponseHeadObserved(context) => {
+                self.response.lock().expect("response lock").push((
+                    context.operation_id,
+                    context.parent_operation_id,
+                    context.page_index,
+                    context.attempt,
+                    context.status,
+                    format!(
+                        "{:?} content_length={:?} server_delay={:?}",
+                        context.target, context.content_length, context.server_delay
+                    ),
+                ));
+            }
+            OperationEvent::OperationFinished(context) => {
+                self.completion
+                    .lock()
+                    .expect("completion lock")
+                    .push(CompletionRecord {
+                        safe: format!("{:?}", context.target),
+                    });
+            }
+            OperationEvent::PaginationFinished(context) => {
+                self.aggregate
+                    .lock()
+                    .expect("aggregate lock")
+                    .push(AggregateRecord {
+                        operation_id: context.operation_id,
+                        pages_completed: context.pages_completed,
+                        items_collected: context.items_collected,
+                        recovered_authentication: context.recovered_authentication,
+                        final_status: context.final_status,
+                        outcome: context.outcome,
+                        attempts_started: context.attempts_started,
+                        policy_retries: context.policy_retries,
+                        elapsed: context.elapsed,
+                    });
+            }
+            _ => {}
+        }
     }
 }
 
 #[derive(Default)]
 struct LimiterProbe {
-    acquisitions: Mutex<Vec<(u32, String)>>,
+    acquisitions: Mutex<Vec<(u32, Option<String>)>>,
     observations: Mutex<Vec<(u32, StatusCode)>>,
 }
 
@@ -600,22 +618,18 @@ impl RateLimiter for LimiterProbe {
         &'a self,
         request: RateLimitRequest<'a>,
     ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
-        self.acquisitions
-            .lock()
-            .expect("acquisition lock")
-            .push((request.page_index, request.observed_url.to_owned()));
+        self.acquisitions.lock().expect("acquisition lock").push((
+            request.page_index,
+            request.logical_origin.map(str::to_owned),
+        ));
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
-    fn observe<'a>(
-        &'a self,
-        response: RateLimitResponse<'a>,
-    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
+    fn observe(&self, response: RateLimitResponse<'_>) {
         self.observations
             .lock()
             .expect("observation lock")
             .push((response.request.page_index, response.status));
-        Box::pin(async { Ok(()) })
     }
 }
 
@@ -624,20 +638,19 @@ struct RejectingLimiter {
     acquisitions: AtomicUsize,
 }
 
-type HostLimiterContext = (u32, String, Option<String>, Vec<(String, Vec<u8>)>);
+type OriginLimiterContext = (u32, Option<String>, Vec<(String, Vec<u8>)>);
 
 #[derive(Default)]
 struct HostLimiterProbe {
-    acquisitions: Mutex<Vec<HostLimiterContext>>,
-    observations: Mutex<Vec<HostLimiterContext>>,
+    acquisitions: Mutex<Vec<OriginLimiterContext>>,
+    observations: Mutex<Vec<OriginLimiterContext>>,
 }
 
 impl HostLimiterProbe {
-    fn capture(request: &RateLimitRequest<'_>) -> HostLimiterContext {
+    fn capture(request: &RateLimitRequest<'_>) -> OriginLimiterContext {
         (
             request.page_index,
-            request.observed_url.to_owned(),
-            request.host.map(str::to_owned),
+            request.logical_origin.map(str::to_owned),
             request
                 .plan
                 .policies()
@@ -661,15 +674,11 @@ impl RateLimiter for HostLimiterProbe {
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
-    fn observe<'a>(
-        &'a self,
-        response: RateLimitResponse<'a>,
-    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
+    fn observe(&self, response: RateLimitResponse<'_>) {
         self.observations
             .lock()
             .expect("host limiter observations")
             .push(Self::capture(&response.request));
-        Box::pin(async { Ok(()) })
     }
 }
 
@@ -716,9 +725,9 @@ fn core(
         HttpConfigBuilder::new().http1_only(),
         configure(
             RuntimeConfigBuilder::new()
-                .request_gate(hooks.clone())
-                .response_gate(hooks.clone())
-                .completion_observer(hooks)
+                .operation_observer(hooks.clone())
+                .operation_observer(hooks.clone())
+                .operation_observer(hooks)
                 .rate_limiter(limiter),
         ),
         executor,

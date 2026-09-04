@@ -1,6 +1,13 @@
 use std::future::Future;
 use std::time::Duration;
 
+#[cfg(test)]
+std::thread_local! {
+    static TEST_CLOCK_OFFSET: std::cell::Cell<Duration> = const {
+        std::cell::Cell::new(Duration::ZERO)
+    };
+}
+
 /// One monotonic operation budget established at first poll.
 #[derive(Clone, Copy)]
 pub(crate) struct OperationDeadline {
@@ -9,6 +16,21 @@ pub(crate) struct OperationDeadline {
 }
 
 impl OperationDeadline {
+    pub(crate) fn now() -> tokio::time::Instant {
+        let now = tokio::time::Instant::now();
+        #[cfg(test)]
+        {
+            TEST_CLOCK_OFFSET.with(|offset| {
+                now.checked_add(offset.get())
+                    .expect("test operation-clock offset must fit")
+            })
+        }
+        #[cfg(not(test))]
+        {
+            now
+        }
+    }
+
     pub(crate) fn new(
         started: tokio::time::Instant,
         timeout: Option<Duration>,
@@ -25,7 +47,7 @@ impl OperationDeadline {
 
     pub(crate) fn remaining(self) -> Option<Duration> {
         self.expires
-            .map(|expires| expires.saturating_duration_since(tokio::time::Instant::now()))
+            .map(|expires| expires.saturating_duration_since(Self::now()))
     }
 
     pub(crate) fn elapsed_at(self, fixed_at: tokio::time::Instant) -> Duration {
@@ -34,7 +56,7 @@ impl OperationDeadline {
 
     pub(crate) fn check(self) -> Result<(), DeadlineElapsed> {
         match self.expires {
-            Some(expires) if tokio::time::Instant::now() >= expires => Err(DeadlineElapsed),
+            Some(expires) if Self::now() >= expires => Err(DeadlineElapsed),
             _ => Ok(()),
         }
     }
@@ -52,6 +74,35 @@ impl OperationDeadline {
         };
         self.check()?;
         Ok(output)
+    }
+}
+
+#[cfg(test)]
+pub(crate) struct TestClockGuard;
+
+#[cfg(test)]
+impl TestClockGuard {
+    pub(crate) fn reset() -> Self {
+        TEST_CLOCK_OFFSET.with(|offset| offset.set(Duration::ZERO));
+        Self
+    }
+
+    pub(crate) fn advance(duration: Duration) {
+        TEST_CLOCK_OFFSET.with(|offset| {
+            offset.set(
+                offset
+                    .get()
+                    .checked_add(duration)
+                    .expect("test operation-clock offset must fit"),
+            );
+        });
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestClockGuard {
+    fn drop(&mut self) {
+        TEST_CLOCK_OFFSET.with(|offset| offset.set(Duration::ZERO));
     }
 }
 

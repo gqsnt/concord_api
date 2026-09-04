@@ -1,5 +1,5 @@
 error: one effective request head permits at most 256 public headers
   --> tests/ui/fail/syntax/request_header_count_limit.rs:11:9
    |
-11 |     GET fetch() -> () using concord::NoContent {
+11 |     GET fetch() -> () via concord::Empty {
    |         ^^^^^

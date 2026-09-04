@@ -2,7 +2,7 @@ use concord::api;
 
 api! {
     client AuthPlacementFirstExcess {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
         credentials {
             secret key_value;
@@ -10,7 +10,7 @@ api! {
         }
 
 
-    GET read() -> () using concord::NoContent {
+    GET read() -> () via concord::Empty {
         auth { query "auth-00" = key; }
         auth { query "auth-01" = key; }
         auth { query "auth-02" = key; }

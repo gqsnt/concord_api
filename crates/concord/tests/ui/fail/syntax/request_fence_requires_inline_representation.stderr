@@ -1,0 +1,5 @@
+error: request body has no effective representation; add `request Representation;` to a client/scope or inline `via Representation`
+  --> tests/ui/fail/syntax/request_fence_requires_inline_representation.rs:12:31
+   |
+12 |             POST missing(body input: String) -> String;
+   |                               ^^^^^

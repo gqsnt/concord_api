@@ -2,20 +2,20 @@ use concord::{Bytes, api};
 
 api! {
     client FirstApi {
-        timeout off;
+        timeout 30s;
         base "http://first.example.test/";
 
 
-    GET read() -> Bytes using Bytes;
+    GET read() -> Bytes via Binary;
 }}
 
 api! {
     client SecondApi {
-        timeout off;
+        timeout 30s;
         base "http://second.example.test/";
 
 
-    GET read() -> Bytes using Bytes;
+    GET read() -> Bytes via Binary;
 }}
 
 fn main() {

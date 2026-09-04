@@ -3,8 +3,7 @@ use http::header::CONTENT_TYPE;
 use http::{HeaderMap, Method, StatusCode, Version};
 use url::Url;
 
-use crate::body::Stream;
-use crate::codec::{AnyMedia, DecodeBody, DecodeContext, MediaType};
+use crate::codec::{Binary, DecodeBody, DecodeContext};
 use crate::endpoint::ResponseAcquisition;
 use crate::hooks::{BoxFuture, CompletionOutcome};
 
@@ -15,22 +14,22 @@ pub(crate) mod private {
     use crate::error::ApiError;
     use crate::hooks::{BoxFuture, CompletionOutcome};
 
-    use super::{ResponseInput, ResponseMode};
+    use super::{ResponseDriver, ResponseInput};
 
     pub trait Sealed: Send + Sync + 'static {
         const COMPLETION_OUTCOME: CompletionOutcome;
 
         fn preflight(input: &ResponseInput) -> Result<(), ApiError>;
 
-        fn acquired_body_bytes(body: &<Self as ResponseMode>::Body) -> usize
+        fn acquired_body_bytes(body: &<Self as ResponseDriver>::Body) -> usize
         where
-            Self: ResponseMode;
+            Self: ResponseDriver;
 
         fn acquire(
             input: ResponseInput,
-        ) -> BoxFuture<'static, Result<<Self as ResponseMode>::Body, ApiError>>
+        ) -> BoxFuture<'static, Result<<Self as ResponseDriver>::Body, ApiError>>
         where
-            Self: ResponseMode;
+            Self: ResponseDriver;
     }
 }
 
@@ -47,16 +46,16 @@ pub struct Streaming;
 
 /// Accepted response-body discard without polling the native body.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Discard;
+pub struct DiscardDriver;
 
 /// A core-owned accepted-response acquisition mode.
 ///
 /// Applications may select one of Concord's public marker types but cannot
 /// implement another mode or obtain a native or unbounded response body.
-pub trait ResponseMode: private::Sealed + Send + Sync + 'static {
+pub trait ResponseDriver: private::Sealed + Send + Sync + 'static {
     /// Semantic body value delivered after core-owned acquisition.
     ///
-    /// This associated type is the input to [`ResponseSpec::from_body`];
+    /// This associated type is the input to [`ResponseRepresentation::from_body`];
     /// it is not a public `ResponseBody` trait or a native transport response.
     type Body: Send + 'static;
 
@@ -65,17 +64,17 @@ pub trait ResponseMode: private::Sealed + Send + Sync + 'static {
     const ACQUISITION: ResponseAcquisition;
 }
 
-impl ResponseMode for Buffered {
+impl ResponseDriver for Buffered {
     type Body = Bytes;
     const ACQUISITION: ResponseAcquisition = ResponseAcquisition::Buffered;
 }
 
-impl ResponseMode for Streaming {
+impl ResponseDriver for Streaming {
     type Body = ByteStream;
     const ACQUISITION: ResponseAcquisition = ResponseAcquisition::Streaming;
 }
 
-impl ResponseMode for Discard {
+impl ResponseDriver for DiscardDriver {
     type Body = ();
     const ACQUISITION: ResponseAcquisition = ResponseAcquisition::Discard;
 }
@@ -87,13 +86,13 @@ impl private::Sealed for Buffered {
         super::handler::preflight_buffered(input)
     }
 
-    fn acquired_body_bytes(body: &<Self as ResponseMode>::Body) -> usize {
+    fn acquired_body_bytes(body: &<Self as ResponseDriver>::Body) -> usize {
         body.len()
     }
 
     fn acquire(
         input: ResponseInput,
-    ) -> BoxFuture<'static, Result<<Self as ResponseMode>::Body, crate::error::ApiError>> {
+    ) -> BoxFuture<'static, Result<<Self as ResponseDriver>::Body, crate::error::ApiError>> {
         Box::pin(super::handler::acquire_buffered(input))
     }
 }
@@ -105,31 +104,31 @@ impl private::Sealed for Streaming {
         super::handler::preflight_streaming(input)
     }
 
-    fn acquired_body_bytes(_body: &<Self as ResponseMode>::Body) -> usize {
+    fn acquired_body_bytes(_body: &<Self as ResponseDriver>::Body) -> usize {
         0
     }
 
     fn acquire(
         input: ResponseInput,
-    ) -> BoxFuture<'static, Result<<Self as ResponseMode>::Body, crate::error::ApiError>> {
+    ) -> BoxFuture<'static, Result<<Self as ResponseDriver>::Body, crate::error::ApiError>> {
         Box::pin(super::handler::acquire_streaming(input))
     }
 }
 
-impl private::Sealed for Discard {
+impl private::Sealed for DiscardDriver {
     const COMPLETION_OUTCOME: CompletionOutcome = CompletionOutcome::Success;
 
     fn preflight(input: &ResponseInput) -> Result<(), crate::error::ApiError> {
         super::handler::preflight_discard(input)
     }
 
-    fn acquired_body_bytes(_body: &<Self as ResponseMode>::Body) -> usize {
+    fn acquired_body_bytes(_body: &<Self as ResponseDriver>::Body) -> usize {
         0
     }
 
     fn acquire(
         input: ResponseInput,
-    ) -> BoxFuture<'static, Result<<Self as ResponseMode>::Body, crate::error::ApiError>> {
+    ) -> BoxFuture<'static, Result<<Self as ResponseDriver>::Body, crate::error::ApiError>> {
         Box::pin(super::handler::acquire_discard(input))
     }
 }
@@ -137,14 +136,14 @@ impl private::Sealed for Discard {
 /// Sealed response-acquisition capability accepted by
 /// endpoint-declared accepted-byte terminals.
 ///
-/// Concord implements this trait only for [`Buffered`] and [`Discard`].
-/// Applications cannot implement new response modes because [`ResponseMode`]
+/// Concord implements this trait only for [`Buffered`] and [`DiscardDriver`].
+/// Applications cannot implement new response modes because [`ResponseDriver`]
 /// is itself sealed.
-pub trait AcceptedBytesMode: ResponseMode {}
+pub trait AcceptedBytesDriver: ResponseDriver {}
 
-impl AcceptedBytesMode for Buffered {}
+impl AcceptedBytesDriver for Buffered {}
 
-impl AcceptedBytesMode for Discard {}
+impl AcceptedBytesDriver for DiscardDriver {}
 
 /// Borrowed accepted response-head facts supplied to a response extension.
 ///
@@ -175,14 +174,11 @@ pub struct ResponseHead<'a> {
     pub metadata: &'a ExecutionMeta,
 }
 
-/// Selects status acceptance and converts one core-owned acquisition mode into an
-/// application output.
+/// Converts one core-owned acquisition mode into an application output.
 ///
-/// Concord first performs limiter and hook observation and authoritative
-/// authentication challenge handling. It then calls `accepts_status`, whose
-/// default accepts 2xx, and checks the operation deadline immediately after the
-/// synchronous callback returns. A rejected status stays on the bounded status
-/// error path.
+/// Concord first performs limiter observation, authoritative authentication
+/// challenge handling, and endpoint-owned status acceptance. A rejected status
+/// stays on the bounded status error path and never enters this extension.
 ///
 /// For an accepted status, Concord performs the selected mode's known-length
 /// preflight. `validate` runs next, before the first body poll. Concord alone
@@ -206,25 +202,16 @@ pub struct ResponseHead<'a> {
 /// the output value produced by `from_body`. Every core-owned body-polling mode
 /// suppresses empty transport chunks and applies the same finite response-wide
 /// empty-chunk ceiling before extension conversion.
-pub trait ResponseSpec: Send + Sync + 'static {
-    /// Accepted semantic output.
-    type Output: Send + 'static;
+pub trait ResponseRepresentation<Output>: Send + Sync + 'static
+where
+    Output: Send + 'static,
+{
     /// Core-owned acquisition mode selected by this specification.
-    type Mode: ResponseMode;
+    type Driver: ResponseDriver;
 
     /// Default validated `Accept` value inserted only when the request has none.
     fn accept() -> Option<&'static str> {
         None
-    }
-
-    /// Returns whether this specification accepts the received status.
-    ///
-    /// Authentication challenge handling remains authoritative and runs before
-    /// this callback. The default preserves the ordinary 2xx-only contract.
-    /// This synchronous callback is trusted application work; Concord checks
-    /// the operation deadline immediately after it returns.
-    fn accepts_status(status: StatusCode) -> bool {
-        status.is_success()
     }
 
     /// Validates the accepted response head before the first body poll.
@@ -234,47 +221,43 @@ pub trait ResponseSpec: Send + Sync + 'static {
 
     /// Converts the fully acquired mode body into the semantic output.
     fn from_body(
-        body: <Self::Mode as ResponseMode>::Body,
+        body: <Self::Driver as ResponseDriver>::Body,
         head: &ResponseHead<'_>,
-    ) -> Result<Self::Output, ResponseBodyError>;
+    ) -> Result<Output, ResponseBodyError>;
 }
 
-pub(crate) trait ResponseSelection<R>
+pub(crate) trait ResponseSelection<R, DeclaredOutput>
 where
-    R: ResponseSpec,
+    R: ResponseRepresentation<DeclaredOutput>,
+    DeclaredOutput: Send + 'static,
 {
     type Output: Send + 'static;
-    type Mode: ResponseMode;
-
-    fn accepts_status(status: StatusCode) -> bool;
+    type Driver: ResponseDriver;
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError>;
 
     fn from_body(
-        body: <Self::Mode as ResponseMode>::Body,
+        body: <Self::Driver as ResponseDriver>::Body,
         head: &ResponseHead<'_>,
     ) -> Result<Self::Output, ResponseBodyError>;
 }
 
 pub(crate) struct DeclaredResponse<R>(std::marker::PhantomData<fn() -> R>);
 
-impl<R> ResponseSelection<R> for DeclaredResponse<R>
+impl<R, Output> ResponseSelection<R, Output> for DeclaredResponse<R>
 where
-    R: ResponseSpec,
+    R: ResponseRepresentation<Output>,
+    Output: Send + 'static,
 {
-    type Output = R::Output;
-    type Mode = R::Mode;
-
-    fn accepts_status(status: StatusCode) -> bool {
-        R::accepts_status(status)
-    }
+    type Output = Output;
+    type Driver = R::Driver;
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         R::validate(head)
     }
 
     fn from_body(
-        body: <Self::Mode as ResponseMode>::Body,
+        body: <Self::Driver as ResponseDriver>::Body,
         head: &ResponseHead<'_>,
     ) -> Result<Self::Output, ResponseBodyError> {
         R::from_body(body, head)
@@ -283,35 +266,31 @@ where
 
 pub(crate) struct AcceptedBytesSelection<R>(std::marker::PhantomData<fn() -> R>);
 
-impl<R> ResponseSelection<R> for AcceptedBytesSelection<R>
+impl<R, Output> ResponseSelection<R, Output> for AcceptedBytesSelection<R>
 where
-    R: ResponseSpec,
+    R: ResponseRepresentation<Output>,
+    Output: Send + 'static,
 {
     type Output = Bytes;
-    type Mode = Buffered;
-
-    fn accepts_status(status: StatusCode) -> bool {
-        R::accepts_status(status)
-    }
+    type Driver = Buffered;
 
     fn validate(_head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         Ok(())
     }
 
     fn from_body(
-        body: <Self::Mode as ResponseMode>::Body,
+        body: <Self::Driver as ResponseDriver>::Body,
         _head: &ResponseHead<'_>,
     ) -> Result<Self::Output, ResponseBodyError> {
         Ok(body)
     }
 }
 
-impl<C> ResponseSpec for C
+impl<C> ResponseRepresentation<C::Output> for C
 where
     C: DecodeBody,
 {
-    type Output = C::Output;
-    type Mode = Buffered;
+    type Driver = Buffered;
 
     fn accept() -> Option<&'static str> {
         C::ACCEPT
@@ -327,9 +306,9 @@ where
     }
 
     fn from_body(
-        body: <Self::Mode as ResponseMode>::Body,
+        body: <Self::Driver as ResponseDriver>::Body,
         head: &ResponseHead<'_>,
-    ) -> Result<Self::Output, ResponseBodyError> {
+    ) -> Result<C::Output, ResponseBodyError> {
         let content_type = head
             .headers
             .get(CONTENT_TYPE)
@@ -347,103 +326,142 @@ where
     }
 }
 
-impl ResponseSpec for Bytes {
-    type Output = Bytes;
-    type Mode = Buffered;
+impl ResponseRepresentation<Bytes> for Binary {
+    type Driver = Buffered;
+
+    fn accept() -> Option<&'static str> {
+        Some("application/octet-stream")
+    }
+
+    fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
+        validate_exact_media(head, "application/octet-stream")
+    }
 
     fn from_body(
-        body: <Self::Mode as ResponseMode>::Body,
+        body: <Self::Driver as ResponseDriver>::Body,
         _head: &ResponseHead<'_>,
-    ) -> Result<Self::Output, ResponseBodyError> {
+    ) -> Result<Bytes, ResponseBodyError> {
         Ok(body)
     }
 }
 
-/// An accepted response whose body is discarded without polling.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct NoContent;
+impl ResponseRepresentation<Vec<u8>> for Binary {
+    type Driver = Buffered;
 
-impl ResponseSpec for NoContent {
-    type Output = ();
-    type Mode = Discard;
+    fn accept() -> Option<&'static str> {
+        Some("application/octet-stream")
+    }
+
+    fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
+        validate_exact_media(head, "application/octet-stream")
+    }
 
     fn from_body(
-        (): <Self::Mode as ResponseMode>::Body,
+        body: <Self::Driver as ResponseDriver>::Body,
         _head: &ResponseHead<'_>,
-    ) -> Result<Self::Output, ResponseBodyError> {
+    ) -> Result<Vec<u8>, ResponseBodyError> {
+        Ok(body.to_vec())
+    }
+}
+
+/// An accepted response that must contain zero decoded body bytes.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Empty;
+
+impl ResponseRepresentation<()> for Empty {
+    type Driver = Buffered;
+
+    fn from_body(
+        body: <Self::Driver as ResponseDriver>::Body,
+        _head: &ResponseHead<'_>,
+    ) -> Result<(), ResponseBodyError> {
+        if body.is_empty() {
+            Ok(())
+        } else {
+            Err(ResponseBodyError::new(ResponseBodyErrorKind::Decode))
+        }
+    }
+}
+
+/// An accepted response whose bounded body is ignored.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Discard;
+
+impl ResponseRepresentation<()> for Discard {
+    type Driver = DiscardDriver;
+
+    fn from_body(
+        (): <Self::Driver as ResponseDriver>::Body,
+        _head: &ResponseHead<'_>,
+    ) -> Result<(), ResponseBodyError> {
         Ok(())
     }
 }
 
-impl ResponseSpec for Stream<AnyMedia> {
-    type Output = ByteStream;
-    type Mode = Streaming;
+impl ResponseRepresentation<ByteStream> for Binary {
+    type Driver = Streaming;
+
+    fn accept() -> Option<&'static str> {
+        Some("application/octet-stream")
+    }
+
+    fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
+        validate_exact_media(head, "application/octet-stream")
+    }
 
     fn from_body(
-        body: <Self::Mode as ResponseMode>::Body,
+        body: <Self::Driver as ResponseDriver>::Body,
         _head: &ResponseHead<'_>,
-    ) -> Result<Self::Output, ResponseBodyError> {
+    ) -> Result<ByteStream, ResponseBodyError> {
         Ok(body)
     }
 }
 
-impl<M> ResponseSpec for Stream<M>
-where
-    M: MediaType,
-{
-    type Output = ByteStream;
-    type Mode = Streaming;
-
-    fn accept() -> Option<&'static str> {
-        Some(M::MEDIA_TYPE)
-    }
-
-    fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
-        let required = parse_exact_media_type(M::MEDIA_TYPE)?;
-        let actual = head
-            .headers
-            .get(CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<mime::Mime>().ok());
-        if actual.is_some_and(|actual| exact_media_matches(&required, &actual)) {
-            Ok(())
-        } else {
-            Err(ResponseBodyError::new(
-                ResponseBodyErrorKind::InvalidMediaType,
-            ))
-        }
-    }
-
-    fn from_body(
-        body: <Self::Mode as ResponseMode>::Body,
-        _head: &ResponseHead<'_>,
-    ) -> Result<Self::Output, ResponseBodyError> {
-        Ok(body)
+fn validate_exact_media(
+    head: &ResponseHead<'_>,
+    expected: &'static str,
+) -> Result<(), ResponseBodyError> {
+    let required = parse_exact_media_type(expected)?;
+    let Some(actual) = head.headers.get(CONTENT_TYPE) else {
+        return Ok(());
+    };
+    let actual = actual
+        .to_str()
+        .ok()
+        .and_then(|value| value.parse::<mime::Mime>().ok());
+    if actual.is_some_and(|actual| exact_media_matches(&required, &actual)) {
+        Ok(())
+    } else {
+        Err(ResponseBodyError::new(
+            ResponseBodyErrorKind::InvalidMediaType,
+        ))
     }
 }
 
 /// Explicit capability for buffered response specifications that can be
 /// consumed by generated pagination.
 ///
-/// Downstream buffered specifications opt in explicitly. Complete codecs whose
-/// output implements [`IntoIterator`] receive the capability automatically.
+/// Downstream buffered specifications opt in explicitly. Complete codecs
+/// receive the capability without any collection-shape inference; the selected
+/// pagination controller owns item extraction.
 /// Bytes, discard, byte streams, and record streams do not acquire it merely by
-/// implementing [`ResponseSpec`].
-pub trait PageResponseSpec: ResponseSpec<Mode = Buffered> {}
-
-impl<C> PageResponseSpec for C
+/// implementing [`ResponseRepresentation`].
+pub trait PageResponseRepresentation<Output>:
+    ResponseRepresentation<Output, Driver = Buffered>
 where
-    C: DecodeBody,
-    C::Output: IntoIterator,
+    Output: Send + 'static,
 {
 }
 
-pub(crate) fn completion_outcome<R, S>() -> CompletionOutcome
+impl<C> PageResponseRepresentation<C::Output> for C where C: DecodeBody {}
+
+pub(crate) fn completion_outcome<R, Output, S>() -> CompletionOutcome
 where
-    R: ResponseSpec,
-    S: ResponseSelection<R>,
+    R: ResponseRepresentation<Output>,
+    Output: Send + 'static,
+    S: ResponseSelection<R, Output>,
 {
-    <S::Mode as private::Sealed>::COMPLETION_OUTCOME
+    <S::Driver as private::Sealed>::COMPLETION_OUTCOME
 }
 
 pub(crate) fn validate_accept(value: &str) -> Result<(), ResponseBodyError> {
@@ -510,8 +528,6 @@ fn exact_media_matches(required: &mime::Mime, actual: &mime::Mime) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::endpoint::EndpointId;
-    use http::HeaderValue;
 
     #[test]
     fn accept_validation_supports_lists_parameters_and_quoted_commas() {
@@ -556,36 +572,5 @@ mod tests {
         assert!(exact_media_matches(&required, &with_extra));
         assert!(!exact_media_matches(&required, &wrong_parameter));
         assert!(parse_exact_media_type("application/*").is_err());
-    }
-
-    #[test]
-    fn media_unconstrained_stream_has_no_accept_or_content_type_validation() {
-        assert_eq!(<Stream as ResponseSpec>::accept(), None);
-
-        let endpoint = EndpointId::from_static("stream.any_media");
-        let method = Method::GET;
-        let url = Url::parse("http://stream.example.test/").expect("test URL");
-        let metadata = ExecutionMeta::new(endpoint, method.clone(), 0, 1, 0, false);
-        for content_type in [None, Some("not a media type"), Some("text/plain")] {
-            let mut headers = HeaderMap::new();
-            if let Some(content_type) = content_type {
-                headers.insert(
-                    CONTENT_TYPE,
-                    HeaderValue::from_str(content_type).expect("valid header value"),
-                );
-            }
-            let head = ResponseHead {
-                endpoint: "stream.any_media",
-                method: &method,
-                url: &url,
-                status: StatusCode::OK,
-                version: Version::HTTP_11,
-                headers: &headers,
-                content_length: None,
-                metadata: &metadata,
-            };
-            <Stream as ResponseSpec>::validate(&head)
-                .expect("bare stream makes no media assertion");
-        }
     }
 }

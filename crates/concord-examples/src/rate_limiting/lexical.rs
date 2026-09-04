@@ -6,23 +6,23 @@
 
 use std::sync::Arc;
 
-use concord::api;
 use concord::rate_limit::LocalRateLimiter;
+use concord::{Bytes, api};
 
 // ANCHOR: rate_limit_contract
 api! {
     client RateLimitApi {
-        timeout off;
+        timeout 30s;
         base "http://rate-limit.example.test/";
         values {
             tenant: String;
         }
-        rate_limit {
+        rate_limit { key [origin]; cost 1;
             id "example.application";
             allow 500 per 10s;
         }
         rate_limits {
-            account_reads(account) {
+            policy account_reads(account) {
                 id "example.account.read";
                 key [account];
                 cost 1;
@@ -35,13 +35,13 @@ api! {
     scope region(region: String) {
         subdomain replace [region.region, "api"];
         rate_limit account_reads(account = region.region);
-        rate_limit {
-            key [host];
+        rate_limit { id "concord.lexical.3"; cost 1;
+            key [origin];
             allow 200 per 1m;
         }
 
-        GET item(item: String) -> Bytes using Bytes {
-            rate_limit {
+        GET item(item: String) -> Bytes via Binary {
+            rate_limit { id "concord.lexical.4";
                 key [endpoint.item];
                 cost 2;
                 allow 100 per 1m;
@@ -49,19 +49,18 @@ api! {
         }
     }
 
-    GET lookup(account: String) -> Bytes using Bytes {
+    GET lookup(account: String) -> Bytes via Binary {
         rate_limit account_reads(account = endpoint.account) { cost 2; }
     }
 
-    GET public() -> Bytes using Bytes;
+    GET public() -> Bytes via Binary;
 }}
 // ANCHOR_END: rate_limit_contract
 
 /// Installs the first-party limiter explicitly and constructs both plan shapes.
 // ANCHOR: configured_rate_limiter
 pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
-    let limiter =
-        LocalRateLimiter::new().observer(Arc::new(super::observer::DelegatingRetryAfterObserver));
+    let limiter = LocalRateLimiter::new();
     let client = RateLimitApi::builder()
         .set_tenant("example-tenant".to_owned())
         .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(limiter)))

@@ -10,15 +10,15 @@ use concord::auth::OAuth2ClientCredentials;
 // ANCHOR: oauth_refresh_recipe
 api! {
     client OAuthRecordsApi {
-        timeout off;
+        timeout 30s;
         base "https://records.example.test/";
         credentials {
             credential access = custom OAuth2ClientCredentials;
         }
 
 
-    GET records() -> () using NoContent {
-        auth { bearer access recover on unauthorized; }
+    GET records() -> () via Empty {
+        auth { bearer access challenge unauthorized; }
     }
 }}
 

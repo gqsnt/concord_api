@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::Duration;
 
-use http::Method;
+use http::{Method, StatusCode};
 
 use crate::contract::{EndpointContractDescription, SharedEndpointContractDescription};
 use crate::error::{ConfigurationError, ConfigurationErrorKind};
@@ -164,8 +164,6 @@ pub enum TimeoutSelection {
     InheritClient,
     /// Use one explicit finite operation duration.
     Explicit(Duration),
-    /// Run without a Concord operation deadline.
-    Disabled,
 }
 
 impl TimeoutSelection {
@@ -173,7 +171,6 @@ impl TimeoutSelection {
         match self {
             Self::InheritClient => client,
             Self::Explicit(duration) => Some(duration),
-            Self::Disabled => None,
         }
     }
 }
@@ -201,36 +198,101 @@ pub enum ResponseAcquisition {
     Discard,
 }
 
-/// Whether managed policy is permitted to resend an operation after dispatch
-/// may have begun.
+/// The endpoint's declared application effect class.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Repeatability {
-    /// A resend is permitted only when every mechanical and policy gate also
-    /// admits it.
+pub enum Effect {
+    /// The operation is read-only and may be used for ordinary pagination.
+    Safe,
+    /// Repetition may change representation state but has the same intended
+    /// application effect as one execution.
     Idempotent,
-    /// A policy-driven resend is forbidden once dispatch may have begun.
-    Never,
+    /// Repetition may apply an additional application effect.
+    NonIdempotent,
 }
 
-impl Repeatability {
-    /// Returns the conservative method-derived v2 default.
+impl Effect {
+    /// Returns the conservative method-derived v2.1 default.
     #[must_use]
     pub fn for_method(method: &Method) -> Self {
         match method.as_str() {
-            "GET" | "HEAD" | "PUT" | "DELETE" | "OPTIONS" | "TRACE" => Self::Idempotent,
-            _ => Self::Never,
+            "GET" | "HEAD" | "OPTIONS" => Self::Safe,
+            "PUT" | "DELETE" => Self::Idempotent,
+            _ => Self::NonIdempotent,
         }
     }
 }
 
-/// Provenance of the resolved repeatability declaration.
+/// Provenance of the resolved effect declaration.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum RepeatabilitySource {
+pub enum EffectSource {
     /// Derived from the exact HTTP method.
     MethodDefault,
     /// Written explicitly on the endpoint declaration or runtime endpoint.
+    Explicit,
+}
+
+/// The endpoint-owned finite set of final response statuses accepted as an
+/// ordinary result.
+///
+/// Authentication challenge attribution is evaluated before this set. Status
+/// policy never belongs to a response representation.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum AcceptedStatus {
+    /// Accept every final status in `200..=299`.
+    #[default]
+    Success,
+    /// Accept one canonical sorted finite set.
+    Codes(Arc<[StatusCode]>),
+}
+
+impl AcceptedStatus {
+    /// The default final-success policy.
+    #[must_use]
+    pub const fn success() -> Self {
+        Self::Success
+    }
+
+    /// Validates and canonicalizes an explicit nonempty finite status set.
+    pub fn codes(codes: impl IntoIterator<Item = StatusCode>) -> Result<Self, ConfigurationError> {
+        let mut codes = codes.into_iter().collect::<Vec<_>>();
+        codes.sort_unstable();
+        codes.dedup();
+        if codes.is_empty() {
+            return Err(ConfigurationError::new(
+                ConfigurationErrorKind::InvalidValue,
+            ));
+        }
+        Ok(Self::Codes(codes.into()))
+    }
+
+    /// Returns whether a final response status is accepted.
+    #[must_use]
+    pub fn contains(&self, status: StatusCode) -> bool {
+        match self {
+            Self::Success => status.is_success(),
+            Self::Codes(codes) => codes.binary_search(&status).is_ok(),
+        }
+    }
+
+    /// Returns explicit canonical codes, or `None` for the success range.
+    #[must_use]
+    pub fn explicit_codes(&self) -> Option<&[StatusCode]> {
+        match self {
+            Self::Success => None,
+            Self::Codes(codes) => Some(codes),
+        }
+    }
+}
+
+/// Provenance of the endpoint's status policy.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum StatusSource {
+    /// The endpoint omitted `status`; final 2xx was inferred.
+    DefaultSuccess,
+    /// The endpoint wrote a `status` clause or a runtime caller selected one.
     Explicit,
 }
 
@@ -332,12 +394,30 @@ pub struct EndpointDescription {
     response_acquisition: ResponseAcquisition,
     capabilities: EndpointCapabilities,
     timeout: TimeoutSelection,
-    repeatability: Repeatability,
-    repeatability_source: RepeatabilitySource,
+    accepted_status: AcceptedStatus,
+    status_source: StatusSource,
+    effect: Effect,
+    effect_source: EffectSource,
     contract: Option<SharedEndpointContractDescription>,
 }
 
 impl EndpointDescription {
+    pub(crate) fn with_runtime_owner(
+        &self,
+        timeout: Option<Duration>,
+        authentication: bool,
+        rate_limits: bool,
+    ) -> Self {
+        let mut selected = self.clone();
+        if matches!(selected.timeout, TimeoutSelection::InheritClient) {
+            selected.timeout =
+                timeout.map_or(TimeoutSelection::InheritClient, TimeoutSelection::Explicit);
+        }
+        selected.capabilities.authentication |= authentication;
+        selected.capabilities.rate_limits |= rate_limits;
+        selected
+    }
+
     #[doc(hidden)]
     #[must_use]
     #[allow(
@@ -354,8 +434,10 @@ impl EndpointDescription {
         response_acquisition: ResponseAcquisition,
         capabilities: EndpointCapabilities,
         timeout: TimeoutSelection,
-        repeatability: Repeatability,
-        repeatability_source: RepeatabilitySource,
+        accepted_status: AcceptedStatus,
+        status_source: StatusSource,
+        effect: Effect,
+        effect_source: EffectSource,
         contract: EndpointContractDescription,
     ) -> Self {
         Self {
@@ -368,8 +450,10 @@ impl EndpointDescription {
             response_acquisition,
             capabilities,
             timeout,
-            repeatability,
-            repeatability_source,
+            accepted_status,
+            status_source,
+            effect,
+            effect_source,
             contract: Some(Arc::new(contract)),
         }
     }
@@ -388,8 +472,10 @@ impl EndpointDescription {
         response_acquisition: ResponseAcquisition,
         capabilities: EndpointCapabilities,
         timeout: TimeoutSelection,
-        repeatability: Repeatability,
-        repeatability_source: RepeatabilitySource,
+        accepted_status: AcceptedStatus,
+        status_source: StatusSource,
+        effect: Effect,
+        effect_source: EffectSource,
     ) -> Self {
         Self {
             id,
@@ -401,8 +487,10 @@ impl EndpointDescription {
             response_acquisition,
             capabilities,
             timeout,
-            repeatability,
-            repeatability_source,
+            accepted_status,
+            status_source,
+            effect,
+            effect_source,
             contract: None,
         }
     }
@@ -468,16 +556,28 @@ impl EndpointDescription {
         self.timeout
     }
 
-    /// Returns the resolved semantic resend permission.
+    /// Returns the endpoint-owned accepted final status policy.
     #[must_use]
-    pub const fn repeatability(&self) -> Repeatability {
-        self.repeatability
+    pub const fn accepted_status(&self) -> &AcceptedStatus {
+        &self.accepted_status
     }
 
-    /// Returns whether repeatability was explicit or method-derived.
+    /// Returns whether status policy was explicit or defaulted.
     #[must_use]
-    pub const fn repeatability_source(&self) -> RepeatabilitySource {
-        self.repeatability_source
+    pub const fn status_source(&self) -> StatusSource {
+        self.status_source
+    }
+
+    /// Returns the resolved semantic resend permission.
+    #[must_use]
+    pub const fn effect(&self) -> Effect {
+        self.effect
+    }
+
+    /// Returns whether effect was explicit or method-derived.
+    #[must_use]
+    pub const fn effect_source(&self) -> EffectSource {
+        self.effect_source
     }
 
     /// Returns detailed generated contract facts when this description belongs
@@ -502,8 +602,10 @@ impl fmt::Debug for EndpointDescription {
             .field("response_acquisition", &self.response_acquisition)
             .field("capabilities", &self.capabilities)
             .field("timeout", &self.timeout)
-            .field("repeatability", &self.repeatability)
-            .field("repeatability_source", &self.repeatability_source)
+            .field("accepted_status", &self.accepted_status)
+            .field("status_source", &self.status_source)
+            .field("effect", &self.effect)
+            .field("effect_source", &self.effect_source)
             .field("contract", &self.contract)
             .finish()
     }
@@ -515,23 +617,23 @@ impl fmt::Debug for EndpointDescription {
 /// rate-limit keys, encoded body bytes, or response values. Public URL values
 /// may still contain operational identifiers or personally identifiable
 /// information.
-pub struct CredentialFreeRequestPlan {
+pub struct RequestPlan {
     description: EndpointDescription,
     observed_url: Arc<str>,
     public_headers: SanitizedHeaderMap,
     resolved_timeout: Option<Duration>,
     page_index: u32,
-    rate_limit_rule_count: usize,
+    rate_limit_policy_count: usize,
 }
 
-impl CredentialFreeRequestPlan {
+impl RequestPlan {
     pub(crate) fn new(
         description: EndpointDescription,
         observed_url: Arc<str>,
         public_headers: SanitizedHeaderMap,
         resolved_timeout: Option<Duration>,
         page_index: u32,
-        rate_limit_rule_count: usize,
+        rate_limit_policy_count: usize,
     ) -> Self {
         Self {
             description,
@@ -539,11 +641,11 @@ impl CredentialFreeRequestPlan {
             public_headers,
             resolved_timeout,
             page_index,
-            rate_limit_rule_count,
+            rate_limit_policy_count,
         }
     }
 
-    /// Returns the endpoint's safe contract description.
+    /// Returns the endpoint's static contract description.
     #[must_use]
     pub const fn description(&self) -> &EndpointDescription {
         &self.description
@@ -571,7 +673,11 @@ impl CredentialFreeRequestPlan {
         &self.observed_url
     }
 
-    /// Returns owned sanitized public headers.
+    /// Returns owned sanitized public headers as explicit caller authority.
+    ///
+    /// Non-credential public values can still contain personally or
+    /// operationally sensitive application data. They are omitted from this
+    /// plan's `Debug` implementation and automatic observation.
     #[must_use]
     pub const fn public_headers(&self) -> &SanitizedHeaderMap {
         &self.public_headers
@@ -623,8 +729,8 @@ impl CredentialFreeRequestPlan {
     /// Returns the number of declared effective rate-limit policies without
     /// exposing their resolved keys.
     #[must_use]
-    pub const fn rate_limit_rule_count(&self) -> usize {
-        self.rate_limit_rule_count
+    pub const fn rate_limit_policy_count(&self) -> usize {
+        self.rate_limit_policy_count
     }
 
     /// Returns false because planning deliberately never invokes body metadata
@@ -635,16 +741,16 @@ impl CredentialFreeRequestPlan {
     }
 }
 
-impl fmt::Debug for CredentialFreeRequestPlan {
+impl fmt::Debug for RequestPlan {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("CredentialFreeRequestPlan")
+            .debug_struct("RequestPlan")
             .field("description", &self.description)
-            .field("observed_url", &self.observed_url)
-            .field("public_headers", &self.public_headers)
+            .field("observed_url", &"<explicit accessor only>")
+            .field("public_header_count", &self.public_headers.len())
             .field("resolved_timeout", &self.resolved_timeout)
             .field("page_index", &self.page_index)
-            .field("rate_limit_rule_count", &self.rate_limit_rule_count)
+            .field("rate_limit_policy_count", &self.rate_limit_policy_count)
             .field("dynamic_body_metadata_available", &false)
             .finish()
     }

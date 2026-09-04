@@ -23,13 +23,13 @@ pub use prepared::{BodyFactory, BodyKind, RequestBody};
 #[cfg(feature = "multipart")]
 pub use spec::Multipart;
 pub use spec::{
-    LengthHint, PageRequestBodySpec, RequestBodyContext, RequestBodyMetadata, RequestBodySpec,
-    RequestContentType, Stream,
+    LengthHint, PageRequestRepresentation, RequestBodyContext, RequestBodyMetadata,
+    RequestContentType, RequestRepresentation,
 };
-pub use stream::StreamBody;
+pub use stream::RequestStream;
 
 #[doc(hidden)]
-pub use spec::{EmptyBody, PreparedBodySpec, PreparedRequestBody};
+pub use spec::{EmptyBody, OptionalRequestRepresentation, PreparedBodySpec, PreparedRequestBody};
 
 #[cfg(feature = "multipart")]
 pub(crate) use prepared::wrap_multipart_native_body;

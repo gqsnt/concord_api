@@ -1,82 +1,123 @@
 #![allow(dead_code)]
 
-use std::marker::PhantomData;
-use std::num::{NonZeroU32, NonZeroU64, NonZeroUsize};
+use std::num::{NonZeroU32, NonZeroU64};
 
-use concord::codec::{
-    Bytes, CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext,
+use concord::body::{
+    BodyError, BodyErrorKind, BodyKind, LengthHint, PageRequestRepresentation, RequestBody,
+    RequestBodyContext, RequestBodyMetadata, RequestContentType, RequestRepresentation,
 };
-use concord::pagination::{PaginationController, PaginationError, PaginationErrorKind};
+use concord::http::HeaderValue;
+use concord::pagination::{
+    PageDecisionLimits, PageResponse, PageStep, PaginationController, PaginationDescription,
+    PaginationError, PaginationErrorKind,
+};
+use concord::response::{
+    Buffered, PageResponseRepresentation, ResponseBodyError, ResponseBodyErrorKind, ResponseDriver,
+    ResponseHead, ResponseRepresentation,
+};
 
 /// Test-local codec deliberately named `Json` to prove spelling is not macro semantics.
-pub struct Json<T>(PhantomData<fn() -> T>);
+pub struct Json;
 
-impl<T> EncodeBody for Json<T>
+impl<T> RequestRepresentation<T> for Json
 where
-    T: serde::Serialize + Send + Sync + 'static,
+    T: serde::Serialize + Send + 'static,
 {
-    type Input = T;
+    fn metadata(
+        _input: &T,
+        _context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        Ok(RequestBodyMetadata {
+            length: LengthHint::Unknown,
+            content_type: RequestContentType::Exact(HeaderValue::from_static("application/json")),
+            kind: BodyKind::Buffered,
+        })
+    }
 
-    const CONTENT_TYPE: Option<&'static str> = Some("application/json");
-
-    fn encode(input: Self::Input, _context: EncodeContext<'_>) -> Result<Bytes, CodecError> {
-        serde_json::to_vec(&input)
-            .map(Bytes::from)
-            .map_err(|error| {
-                drop(error);
-                CodecError::new(CodecErrorKind::Encode)
-            })
+    fn prepare(input: T, _context: RequestBodyContext<'_>) -> Result<RequestBody, BodyError> {
+        let bytes = serde_json::to_vec(&input).map_err(|error| {
+            drop(error);
+            BodyError::new(BodyErrorKind::Producer)
+        })?;
+        RequestBody::bytes(bytes.into()).content_type("application/json")
     }
 }
 
-impl<T> DecodeBody for Json<T>
+impl<T> PageRequestRepresentation<T> for Json where T: Clone + serde::Serialize + Send + 'static {}
+
+impl<T> ResponseRepresentation<T> for Json
 where
-    T: serde::de::DeserializeOwned + Send + Sync + 'static,
+    T: serde::de::DeserializeOwned + Send + 'static,
 {
-    type Output = T;
+    type Driver = Buffered;
 
-    const ACCEPT: Option<&'static str> = Some("application/json");
+    fn accept() -> Option<&'static str> {
+        Some("application/json")
+    }
 
-    fn validate_content_type(content_type: Option<&str>) -> Result<(), CodecError> {
-        if content_type
+    fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
+        if head
+            .headers
+            .get("content-type")
+            .and_then(|value| value.to_str().ok())
             .and_then(|value| value.split(';').next())
             .is_some_and(|value| value.trim().eq_ignore_ascii_case("application/json"))
         {
             Ok(())
         } else {
-            Err(CodecError::new(CodecErrorKind::Decode))
+            Err(ResponseBodyError::new(
+                ResponseBodyErrorKind::InvalidMediaType,
+            ))
         }
     }
 
-    fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
+    fn from_body(
+        body: <Self::Driver as ResponseDriver>::Body,
+        _head: &ResponseHead<'_>,
+    ) -> Result<T, ResponseBodyError> {
         serde_json::from_slice(&body).map_err(|error| {
             drop(error);
-            CodecError::new(CodecErrorKind::Decode)
+            ResponseBodyError::new(ResponseBodyErrorKind::Decode)
         })
     }
 }
+
+impl<T> PageResponseRepresentation<T> for Json where T: serde::de::DeserializeOwned + Send + 'static {}
 
 pub struct OffsetController {
     pub offset: u64,
     pub page_size: NonZeroU32,
 }
 
-impl<Page> PaginationController<Page> for OffsetController {
-    fn next(self, _page: &Page) -> Result<Option<Self>, PaginationError> {
+impl<Page> PaginationController<Page> for OffsetController
+where
+    Page: IntoIterator + Send + 'static,
+    Page::Item: Send + 'static,
+{
+    type Item = Page::Item;
+
+    const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
+
+    fn advance(
+        self,
+        response: PageResponse<Page>,
+        limits: PageDecisionLimits,
+    ) -> Result<PageStep<Self, Self::Item>, PaginationError> {
+        let items = collect_page_items(response.into_page(), limits)?;
+        if items.len() < self.page_size.get() as usize {
+            return Ok(PageStep::Done { items });
+        }
         let offset = self
             .offset
             .checked_add(u64::from(self.page_size.get()))
             .ok_or_else(|| PaginationError::new(PaginationErrorKind::Overflow))?;
-        Ok(Some(Self {
-            offset,
-            page_size: self.page_size,
-        }))
-    }
-
-    fn short_page_size(&self) -> Option<NonZeroUsize> {
-        NonZeroUsize::new(
-            usize::try_from(self.page_size.get()).expect("u32 page sizes fit supported targets"),
-        )
+        Ok(PageStep::Continue {
+            items,
+            next: Self {
+                offset,
+                page_size: self.page_size,
+            },
+        })
     }
 }
 
@@ -85,24 +126,37 @@ pub struct PageController {
     pub page_size: NonZeroU32,
 }
 
-impl<Page> PaginationController<Page> for PageController {
-    fn next(self, _page: &Page) -> Result<Option<Self>, PaginationError> {
+impl<Page> PaginationController<Page> for PageController
+where
+    Page: IntoIterator + Send + 'static,
+    Page::Item: Send + 'static,
+{
+    type Item = Page::Item;
+
+    const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
+
+    fn advance(
+        self,
+        response: PageResponse<Page>,
+        limits: PageDecisionLimits,
+    ) -> Result<PageStep<Self, Self::Item>, PaginationError> {
+        let items = collect_page_items(response.into_page(), limits)?;
+        if items.len() < self.page_size.get() as usize {
+            return Ok(PageStep::Done { items });
+        }
         let page = self
             .page
             .get()
             .checked_add(1)
             .and_then(NonZeroU64::new)
             .ok_or_else(|| PaginationError::new(PaginationErrorKind::Overflow))?;
-        Ok(Some(Self {
-            page,
-            page_size: self.page_size,
-        }))
-    }
-
-    fn short_page_size(&self) -> Option<NonZeroUsize> {
-        NonZeroUsize::new(
-            usize::try_from(self.page_size.get()).expect("u32 page sizes fit supported targets"),
-        )
+        Ok(PageStep::Continue {
+            items,
+            next: Self {
+                page,
+                page_size: self.page_size,
+            },
+        })
     }
 }
 
@@ -116,12 +170,45 @@ pub struct CursorController<C> {
 
 impl<Page, C> PaginationController<Page> for CursorController<C>
 where
-    Page: NextCursor<C>,
+    Page: NextCursor<C> + IntoIterator + Send + 'static,
+    Page::Item: Send + 'static,
     C: Clone + Send + 'static,
 {
-    fn next(self, page: &Page) -> Result<Option<Self>, PaginationError> {
-        Ok(page.next_cursor().cloned().map(|cursor| Self {
+    type Item = Page::Item;
+
+    const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
+
+    fn advance(
+        self,
+        page: PageResponse<Page>,
+        limits: PageDecisionLimits,
+    ) -> Result<PageStep<Self, Self::Item>, PaginationError> {
+        let next = page.page().next_cursor().cloned().map(|cursor| Self {
             cursor: Some(cursor),
-        }))
+        });
+        let items = collect_page_items(page.into_page(), limits)?;
+        Ok(match next {
+            Some(next) => PageStep::Continue { items, next },
+            None => PageStep::Done { items },
+        })
     }
+}
+
+fn collect_page_items<Page>(
+    page: Page,
+    limits: PageDecisionLimits,
+) -> Result<Vec<Page::Item>, PaginationError>
+where
+    Page: IntoIterator,
+{
+    let mut items = Vec::new();
+    for item in page {
+        if items.len() == limits.remaining_items() {
+            return Err(PaginationError::new(
+                PaginationErrorKind::CollectedItemCeilingExceeded,
+            ));
+        }
+        items.push(item);
+    }
+    Ok(items)
 }

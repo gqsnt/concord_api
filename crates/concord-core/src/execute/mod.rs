@@ -6,34 +6,39 @@ use http::{Method, StatusCode};
 
 use crate::auth::PreparedAuthPlan;
 use crate::body::{
-    Replayability, RequestBodyContext, RequestBodyMetadata, RequestBodySpec, validate_produced_body,
+    Replayability, RequestBodyContext, RequestBodyMetadata, RequestRepresentation,
+    validate_produced_body,
 };
 use crate::client::ClientCore;
 use crate::endpoint::EndpointId;
 use crate::error::{ApiError, ErrorCategory};
 use crate::hooks::{
-    AttemptInfo, BeforeSend, BoxFuture, CompletionEvent, CompletionOutcome, DebugLevel,
-    ResponseHeadEvent,
+    AttemptInfo, AttemptStarted, BoxFuture, CompletionOutcome, DebugLevel, OperationEvent,
+    OperationFinished, ResponseHeadObserved,
 };
 use crate::operation::{OperationDeadline, OperationId};
 use crate::rate_limit::{RateLimitRequest, RateLimitResponse};
-use crate::redaction::SanitizedHeaders;
 use crate::request::{
     AcceptedBytesRequest, EndpointSpec, OperationPreparation, PreparationFailure,
     PreparedOperation, PreparedPaginationPage, Request, ResponseRequest, prepare_operation,
 };
 use crate::response::{
     AcceptedBytesSelection, ApiResponse, DeclaredResponse, ExecutionMeta, ResponseHead,
-    ResponseInput, ResponseSelection, ResponseSpec, completion_outcome, execute_response,
+    ResponseInput, ResponseRepresentation, ResponseSelection, completion_outcome, execute_response,
 };
-use crate::retry::{RetryAttempt, RetryDecision, RetryFailure, RetryPolicy};
+use crate::retry::{
+    RetryAttempt, RetryDecision, RetryFailure, RetryPolicy, ServerDelayHint, parse_server_delay,
+};
+
+/// Hard aggregate visible-attempt ceiling shared by direct and paginated operations.
+pub const MAX_VISIBLE_ATTEMPTS_PER_OPERATION: u32 = 4_096;
 
 #[doc(hidden)]
 impl<E> IntoFuture for Request<E>
 where
     E: EndpointSpec,
 {
-    type Output = Result<<E::Response as ResponseSpec>::Output, ApiError>;
+    type Output = Result<E::Output, ApiError>;
     type IntoFuture = BoxFuture<'static, Self::Output>;
 
     fn into_future(self) -> Self::IntoFuture {
@@ -46,7 +51,7 @@ impl<E> IntoFuture for ResponseRequest<E>
 where
     E: EndpointSpec,
 {
-    type Output = Result<ApiResponse<<E::Response as ResponseSpec>::Output>, ApiError>;
+    type Output = Result<ApiResponse<E::Output>, ApiError>;
     type IntoFuture = BoxFuture<'static, Self::Output>;
 
     fn into_future(self) -> Self::IntoFuture {
@@ -58,7 +63,8 @@ where
 impl<E> IntoFuture for AcceptedBytesRequest<E>
 where
     E: EndpointSpec,
-    <E::Response as ResponseSpec>::Mode: crate::response::AcceptedBytesMode,
+    <E::Response as ResponseRepresentation<E::Output>>::Driver:
+        crate::response::AcceptedBytesDriver,
 {
     type Output = Result<ApiResponse<bytes::Bytes>, ApiError>;
     type IntoFuture = BoxFuture<'static, Self::Output>;
@@ -70,9 +76,7 @@ where
     }
 }
 
-async fn execute_request<E>(
-    request: Request<E>,
-) -> Result<ApiResponse<<E::Response as ResponseSpec>::Output>, ApiError>
+async fn execute_request<E>(request: Request<E>) -> Result<ApiResponse<E::Output>, ApiError>
 where
     E: EndpointSpec,
 {
@@ -82,7 +86,7 @@ where
 async fn execute_request_as<E, S>(request: Request<E>) -> Result<ApiResponse<S::Output>, ApiError>
 where
     E: EndpointSpec,
-    S: ResponseSelection<E::Response>,
+    S: ResponseSelection<E::Response, E::Output>,
 {
     let prepared = match prepare_operation(request).await? {
         OperationPreparation::Ready(prepared) => prepared,
@@ -90,9 +94,13 @@ where
             return complete_preparation_failure(failure).await;
         }
     };
-    execute_prepared_operation::<E, S>(prepared, ExecutionContext::DIRECT)
-        .await
-        .result
+    execute_prepared_operation::<E, S>(
+        prepared,
+        ExecutionContext::DIRECT,
+        MAX_VISIBLE_ATTEMPTS_PER_OPERATION,
+    )
+    .await
+    .result
 }
 
 #[derive(Clone, Copy)]
@@ -116,6 +124,7 @@ impl ExecutionContext {
 }
 
 pub(crate) struct ExecutedPage<T> {
+    pub(crate) operation_id: OperationId,
     pub(crate) result: Result<ApiResponse<T>, ApiError>,
     pub(crate) response_body_bytes: usize,
     pub(crate) final_status: Option<StatusCode>,
@@ -129,7 +138,8 @@ pub(crate) async fn execute_pagination_page<E>(
     parent_operation_id: OperationId,
     page_index: u32,
     deadline: OperationDeadline,
-) -> Result<ExecutedPage<<E::Response as ResponseSpec>::Output>, ApiError>
+    attempt_ceiling: u32,
+) -> Result<ExecutedPage<E::Output>, ApiError>
 where
     E: EndpointSpec,
 {
@@ -153,6 +163,7 @@ where
                 body_metadata,
             },
             context,
+            attempt_ceiling,
         )
         .await,
     )
@@ -161,10 +172,11 @@ where
 async fn execute_prepared_operation<E, S>(
     prepared: PreparedOperation<E>,
     context: ExecutionContext,
+    attempt_ceiling: u32,
 ) -> ExecutedPage<S::Output>
 where
     E: EndpointSpec,
-    S: ResponseSelection<E::Response>,
+    S: ResponseSelection<E::Response, E::Output>,
 {
     let PreparedOperation {
         core,
@@ -183,20 +195,9 @@ where
 
     let result = async {
         let mut attempt_info = AttemptInfo::INITIAL;
-        run_before_send(
-            &core,
-            operation_id,
-            context,
-            deadline,
-            &head,
-            &body_metadata,
-            attempt_info,
-        )
-        .await?;
-
         check_deadline(deadline, head.endpoint_id(), head.method())?;
         let input = endpoint.into_body();
-        let body = <E::Body as RequestBodySpec>::prepare(
+        let body = <E::Body as RequestRepresentation<E::Input>>::prepare(
             input,
             RequestBodyContext {
                 endpoint: head.endpoint(),
@@ -216,6 +217,16 @@ where
         debug_assert_eq!(prepared_body.kind(), body_metadata.kind);
         let known_body_length = prepared_body.known_length();
         let materialized_metadata = body_metadata.clone().with_known_length(known_body_length);
+
+        observe_attempt_started(
+            &core,
+            operation_id,
+            context,
+            deadline,
+            &head,
+            &materialized_metadata,
+            attempt_info,
+        )?;
 
         let mut prepared_auth = run_auth(
             &core,
@@ -261,14 +272,22 @@ where
                         )?;
                         if decision == RetryDecision::Retry
                             && admit_policy_retry(
-                                retry_policy.as_ref(),
-                                &head,
-                                &prepared_body,
+                                PolicyRetryAdmission {
+                                    policy: retry_policy.as_ref(),
+                                    operation_id,
+                                    context,
+                                    deadline,
+                                    head: &head,
+                                    body_replayability: prepared_body.replayability(),
+                                    attempt_ceiling,
+                                    dispatch_knowledge: failure.dispatch_knowledge(),
+                                    server_delay: None,
+                                },
                                 &mut attempt_info,
                                 &mut attempts_started,
                                 &mut policy_retries,
-                                failure.dispatch_knowledge(),
-                            )?
+                            )
+                            .await?
                         {
                             prepared_auth = prepare_policy_retry(
                                 &core,
@@ -292,6 +311,7 @@ where
             if let Some(challenge_index) = attempt.applied_auth.challenge_index(status) {
                 let reusable = prepared_body.replayability() != Replayability::OneShot;
                 let can_recover = !authentication_recovery_used
+                    && attempts_started < attempt_ceiling
                     && reusable
                     && attempt
                         .applied_auth
@@ -308,6 +328,7 @@ where
                             head.endpoint_id().clone(),
                             head.method().clone(),
                             attempt.response,
+                            attempt.server_delay.map(ServerDelayHint::delay),
                             deadline.expires_at(),
                         )
                         .await;
@@ -326,7 +347,7 @@ where
                     authentication_recovery: true,
                 };
                 attempts_started = next_attempts_started;
-                if let Err(error) = run_before_send(
+                if let Err(error) = observe_attempt_started(
                     &core,
                     operation_id,
                     context,
@@ -334,9 +355,7 @@ where
                     &head,
                     &body_metadata,
                     attempt_info,
-                )
-                .await
-                {
+                ) {
                     let _ = attempt
                         .applied_auth
                         .apply_terminal_challenge(challenge_index);
@@ -390,15 +409,14 @@ where
                 continue;
             }
 
-            let accepted = S::accepts_status(status);
-            check_deadline(deadline, head.endpoint_id(), head.method())?;
+            let accepted = head.accepted_status().contains(status);
             if accepted {
                 break attempt.response;
             }
 
             let failure = RetryFailure::RejectedStatus {
                 status,
-                headers: SanitizedHeaders::new(attempt.response.headers()),
+                server_delay: attempt.server_delay.map(ServerDelayHint::delay),
             };
             let retry_decision = classify_retry(
                 retry_policy.as_ref(),
@@ -411,14 +429,22 @@ where
             )?;
             if retry_decision == RetryDecision::Retry
                 && admit_policy_retry(
-                    retry_policy.as_ref(),
-                    &head,
-                    &prepared_body,
+                    PolicyRetryAdmission {
+                        policy: retry_policy.as_ref(),
+                        operation_id,
+                        context,
+                        deadline,
+                        head: &head,
+                        body_replayability: prepared_body.replayability(),
+                        attempt_ceiling,
+                        dispatch_knowledge: failure.dispatch_knowledge(),
+                        server_delay: attempt.server_delay,
+                    },
                     &mut attempt_info,
                     &mut attempts_started,
                     &mut policy_retries,
-                    failure.dispatch_knowledge(),
-                )?
+                )
+                .await?
             {
                 // A rejected response selected for retry is dropped without
                 // polling its body.
@@ -443,6 +469,7 @@ where
                     head.endpoint_id().clone(),
                     head.method().clone(),
                     attempt.response,
+                    attempt.server_delay.map(ServerDelayHint::delay),
                     deadline.expires_at(),
                 )
                 .await;
@@ -471,7 +498,7 @@ where
             content_length,
             metadata: &metadata,
         };
-        let (output, response_body_bytes) = execute_response::<E::Response, S>(
+        let (output, response_body_bytes) = execute_response::<E::Response, E::Output, S>(
             ResponseInput {
                 response,
                 limit: core.response_body_limit(),
@@ -479,6 +506,13 @@ where
                 deadline,
                 endpoint: head.endpoint_id().clone(),
                 method: head.method().clone(),
+                stream_observation: Some(crate::response::StreamObservation::new(
+                    core.operation_observer().clone(),
+                    operation_id,
+                    context.parent_operation_id,
+                    head.endpoint_id().clone(),
+                    head.method().clone(),
+                )),
             },
             &response_head,
         )
@@ -497,7 +531,7 @@ where
     }
     .await;
 
-    let fixed_at = tokio::time::Instant::now();
+    let fixed_at = OperationDeadline::now();
     let elapsed = deadline.elapsed_at(fixed_at);
     let result = deliver_completion(
         &core,
@@ -505,11 +539,11 @@ where
         context,
         head.endpoint(),
         head.method(),
-        head.observed_url(),
+        head.request_target(),
         head.debug(),
         elapsed,
         final_status,
-        completion_outcome::<E::Response, S>(),
+        completion_outcome::<E::Response, E::Output, S>(),
         attempts_started,
         policy_retries,
         recovered_authentication,
@@ -521,6 +555,7 @@ where
         Err(error) => (Err(error), 0),
     };
     ExecutedPage {
+        operation_id,
         result,
         response_body_bytes,
         final_status,
@@ -537,7 +572,7 @@ fn classify_retry(
     context: ExecutionContext,
     attempt: AttemptInfo,
     policy_retries: u32,
-    failure: RetryFailure<'_>,
+    failure: RetryFailure,
 ) -> Result<RetryDecision, ApiError> {
     let Some(policy) = policy else {
         return Ok(RetryDecision::Stop);
@@ -556,15 +591,35 @@ fn classify_retry(
     Ok(decision)
 }
 
-fn admit_policy_retry(
-    policy: Option<&RetryPolicy>,
-    head: &crate::request::PreparedHead,
-    prepared_body: &crate::request::PreparedBody,
+struct PolicyRetryAdmission<'a> {
+    policy: Option<&'a RetryPolicy>,
+    operation_id: OperationId,
+    context: ExecutionContext,
+    deadline: OperationDeadline,
+    head: &'a crate::request::PreparedHead,
+    body_replayability: Replayability,
+    attempt_ceiling: u32,
+    dispatch_knowledge: crate::error::DispatchKnowledge,
+    server_delay: Option<ServerDelayHint>,
+}
+
+async fn admit_policy_retry(
+    admission: PolicyRetryAdmission<'_>,
     attempt: &mut AttemptInfo,
     attempts_started: &mut u32,
     policy_retries: &mut u32,
-    dispatch_knowledge: crate::error::DispatchKnowledge,
 ) -> Result<bool, ApiError> {
+    let PolicyRetryAdmission {
+        policy,
+        operation_id,
+        context,
+        deadline,
+        head,
+        body_replayability,
+        attempt_ceiling,
+        dispatch_knowledge,
+        server_delay,
+    } = admission;
     let Some(policy) = policy else {
         return Ok(false);
     };
@@ -572,7 +627,7 @@ fn admit_policy_retry(
     // Retry authority is intentionally ordered: semantic resend permission,
     // the per-operation maximum, body replayability, then shared budget
     // admission.
-    if head.repeatability() == crate::endpoint::Repeatability::Never
+    if head.effect() == crate::endpoint::Effect::NonIdempotent
         && dispatch_knowledge != crate::error::DispatchKnowledge::NotDispatched
     {
         return Ok(false);
@@ -580,7 +635,7 @@ fn admit_policy_retry(
     if *policy_retries >= policy.max_retries_per_operation() {
         return Ok(false);
     }
-    if prepared_body.replayability() == Replayability::OneShot {
+    if body_replayability == Replayability::OneShot {
         return Ok(false);
     }
 
@@ -590,6 +645,31 @@ fn admit_policy_retry(
     let next_attempts_started = attempts_started
         .checked_add(1)
         .ok_or_else(|| internal_error(head.endpoint_id(), head.method()))?;
+    if next_attempts_started > attempt_ceiling {
+        return Ok(false);
+    }
+
+    let entropy = operation_id.retry_entropy(next_policy_retries, context.page_index);
+    let Some(delay) = policy.retry_delay(
+        next_policy_retries,
+        entropy,
+        server_delay.map(ServerDelayHint::delay),
+    ) else {
+        return Ok(false);
+    };
+    if deadline
+        .remaining()
+        .is_some_and(|remaining| delay >= remaining)
+    {
+        return Ok(false);
+    }
+    if !delay.is_zero() {
+        deadline
+            .run(tokio::time::sleep(delay))
+            .await
+            .map_err(|_| timeout_error(head.endpoint_id(), head.method()))?;
+    }
+    check_deadline(deadline, head.endpoint_id(), head.method())?;
     if !policy.reserve_retry(head.logical_url()) {
         return Ok(false);
     }
@@ -618,7 +698,7 @@ async fn prepare_policy_retry(
     prepared_body: &mut crate::request::PreparedBody,
     attempt: AttemptInfo,
 ) -> Result<PreparedAuthPlan, ApiError> {
-    run_before_send(
+    observe_attempt_started(
         core,
         operation_id,
         context,
@@ -626,8 +706,7 @@ async fn prepare_policy_retry(
         head,
         body_metadata,
         attempt,
-    )
-    .await?;
+    )?;
     prepared_body
         .reconstruct_for_next_attempt(core.request_body_limit())
         .map_err(|error| {
@@ -656,7 +735,7 @@ async fn complete_preparation_failure<E>(
         core,
         operation_id,
         meta,
-        observed_url,
+        target,
         debug,
         elapsed,
         error,
@@ -667,7 +746,7 @@ async fn complete_preparation_failure<E>(
         ExecutionContext::DIRECT,
         meta.endpoint(),
         meta.method(),
-        &observed_url,
+        target,
         debug,
         elapsed,
         None,
@@ -680,7 +759,7 @@ async fn complete_preparation_failure<E>(
     .await
 }
 
-async fn run_before_send(
+fn observe_attempt_started(
     core: &ClientCore,
     operation_id: OperationId,
     context: ExecutionContext,
@@ -690,69 +769,45 @@ async fn run_before_send(
     attempt: AttemptInfo,
 ) -> Result<(), ApiError> {
     check_deadline(deadline, head.endpoint_id(), head.method())?;
-    let future = core.request_gate().before_send(before_send_event(
-        operation_id,
-        context,
-        head,
-        body_metadata,
-        attempt,
-    ));
+    let event = attempt_started_event(operation_id, context, head, body_metadata, attempt);
+    crate::hooks::observe(
+        core.operation_observer().as_ref(),
+        OperationEvent::AttemptStarted(event),
+    );
     check_deadline(deadline, head.endpoint_id(), head.method())?;
-    match deadline.run(future).await {
-        Err(_) => Err(timeout_error(head.endpoint_id(), head.method())),
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(error)) => {
-            drop(error);
-            Err(ApiError::classified(
-                head.endpoint_id().clone(),
-                head.method().clone(),
-                ErrorCategory::PolicyRejected,
-            ))
-        }
-    }
+    Ok(())
 }
 
-async fn run_response_head_gate(
+fn observe_response_head(
     core: &ClientCore,
     deadline: OperationDeadline,
     endpoint_id: &EndpointId,
-    event: ResponseHeadEvent<'_>,
+    event: ResponseHeadObserved<'_>,
 ) -> Result<(), ApiError> {
     check_deadline(deadline, endpoint_id, event.method)?;
-    let endpoint_id = endpoint_id.clone();
-    let method = event.method;
-    let future = core.response_gate().before_response_handling(event);
-    check_deadline(deadline, &endpoint_id, method)?;
-    match deadline.run(future).await {
-        Err(_) => Err(timeout_error(&endpoint_id, method)),
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(error)) => {
-            drop(error);
-            Err(ApiError::classified(
-                endpoint_id,
-                method.clone(),
-                ErrorCategory::PolicyRejected,
-            ))
-        }
-    }
+    let method = event.method.clone();
+    crate::hooks::observe(
+        core.operation_observer().as_ref(),
+        OperationEvent::ResponseHeadObserved(event),
+    );
+    check_deadline(deadline, endpoint_id, &method)
 }
 
-fn before_send_event<'a>(
+fn attempt_started_event<'a>(
     operation_id: OperationId,
     context: ExecutionContext,
     head: &'a crate::request::PreparedHead,
     body_metadata: &RequestBodyMetadata,
     attempt: AttemptInfo,
-) -> BeforeSend<'a> {
-    BeforeSend {
+) -> AttemptStarted<'a> {
+    AttemptStarted {
         operation_id,
         parent_operation_id: context.parent_operation_id,
         endpoint: head.endpoint(),
         method: head.method(),
-        observed_url: head.observed_url(),
+        target: head.request_target(),
         page_index: context.page_index,
         attempt,
-        headers: head.sanitized_public_headers(),
         body_kind: body_metadata.kind,
         known_body_length: body_metadata.known_length(),
     }
@@ -768,7 +823,7 @@ async fn deliver_completion<T>(
     context: ExecutionContext,
     endpoint: &str,
     method: &Method,
-    observed_url: &str,
+    target: crate::hooks::RequestTarget,
     debug: DebugLevel,
     elapsed: std::time::Duration,
     final_status: Option<StatusCode>,
@@ -789,12 +844,12 @@ async fn deliver_completion<T>(
         Ok(_) => success_outcome,
         Err(error) => CompletionOutcome::from_error_category(error.category()),
     };
-    let event = CompletionEvent {
+    let event = OperationFinished {
         operation_id,
         parent_operation_id: context.parent_operation_id,
         endpoint,
         method,
-        observed_url,
+        target,
         page_index: context.page_index,
         attempts_started,
         policy_retries,
@@ -804,17 +859,17 @@ async fn deliver_completion<T>(
         outcome,
     };
     core.debug_dispatcher(debug).completion(&event);
-    if context.parent_operation_id.is_none() {
-        let observer_started = std::time::Instant::now();
-        core.completion_observer().on_complete(event);
-        let _observer_elapsed = observer_started.elapsed();
-    }
+    crate::hooks::observe(
+        core.operation_observer().as_ref(),
+        OperationEvent::OperationFinished(event),
+    );
     result
 }
 
 struct AttemptResponse {
     response: crate::http::application::ApplicationResponse,
     applied_auth: PreparedAuthPlan,
+    server_delay: Option<ServerDelayHint>,
 }
 
 #[allow(
@@ -833,15 +888,6 @@ async fn send_attempt(
     final_status: &mut Option<StatusCode>,
     context: ExecutionContext,
 ) -> Result<AttemptResponse, ApiError> {
-    acquire_rate_limit_authority(core, context, attempt, deadline, head).await?;
-    let (applied_auth, finalized_auth) = run_auth(
-        core,
-        deadline,
-        head,
-        prepared_auth.finalize(core.provider_http(Some(deadline))),
-    )
-    .await?;
-
     let native_body = prepared_body
         .prepare_native(core.request_body_limit())
         .map_err(|error| {
@@ -852,6 +898,15 @@ async fn send_attempt(
                 ErrorCategory::RequestBody,
             )
         })?;
+    check_deadline(deadline, head.endpoint_id(), head.method())?;
+    acquire_rate_limit_authority(core, context, attempt, deadline, head).await?;
+    let (applied_auth, finalized_auth) = run_auth(
+        core,
+        deadline,
+        head,
+        prepared_auth.finalize(core.provider_http(Some(deadline))),
+    )
+    .await?;
     let mut request = core.application_http().build_request(
         head.endpoint_id(),
         head.method(),
@@ -859,7 +914,7 @@ async fn send_attempt(
         head.public_headers(),
         native_body,
     )?;
-    let request_event = before_send_event(operation_id, context, head, body_metadata, attempt);
+    let request_event = attempt_started_event(operation_id, context, head, body_metadata, attempt);
     core.debug_dispatcher(head.debug())
         .request_ready(&request_event);
     check_deadline(deadline, head.endpoint_id(), head.method())?;
@@ -886,34 +941,30 @@ async fn send_attempt(
         .map_err(|_| dispatched_timeout_error(head.endpoint_id(), head.method()))??;
 
     let status = response.status();
+    let response_wall_time = core.response_wall_time();
+    let server_delay = parse_server_delay(response.headers(), response_wall_time);
     *final_status = Some(status);
-    let response_event = ResponseHeadEvent {
+    let response_event = ResponseHeadObserved {
         operation_id,
         parent_operation_id: context.parent_operation_id,
         endpoint: head.endpoint(),
         method: head.method(),
-        observed_url: head.observed_url(),
+        target: head.request_target(),
         page_index: context.page_index,
         attempt,
         status,
-        headers: SanitizedHeaders::new(response.headers()),
+        content_length: parsed_content_length(response.headers()),
+        server_delay: server_delay.map(ServerDelayHint::delay),
     };
     core.debug_dispatcher(head.debug())
         .response_head(&response_event);
-    observe_rate_limit_response(
-        core,
-        context,
-        attempt,
-        deadline,
-        head,
-        status,
-        response.headers(),
-    )
-    .await?;
-    run_response_head_gate(core, deadline, head.endpoint_id(), response_event).await?;
+    observe_rate_limit_response(core, context, attempt, head, status, server_delay);
+    check_deadline(deadline, head.endpoint_id(), head.method())?;
+    observe_response_head(core, deadline, head.endpoint_id(), response_event)?;
     Ok(AttemptResponse {
         response,
         applied_auth,
+        server_delay,
     })
 }
 
@@ -958,8 +1009,7 @@ async fn acquire_rate_limit_authority(
     let request = RateLimitRequest {
         endpoint: head.endpoint(),
         method: head.method(),
-        observed_url: head.observed_url(),
-        host: head.rate_limit_host(),
+        logical_origin: head.rate_limit_logical_origin(),
         page_index: context.page_index,
         attempt,
         plan: head.rate_limit_plan(),
@@ -976,39 +1026,38 @@ async fn acquire_rate_limit_authority(
         })
 }
 
-async fn observe_rate_limit_response(
+fn observe_rate_limit_response(
     core: &ClientCore,
     context: ExecutionContext,
     attempt: AttemptInfo,
-    deadline: OperationDeadline,
     head: &crate::request::PreparedHead,
     status: StatusCode,
-    headers: &http::HeaderMap,
-) -> Result<(), ApiError> {
-    check_deadline(deadline, head.endpoint_id(), head.method())?;
+    server_delay: Option<ServerDelayHint>,
+) {
     let response = RateLimitResponse {
         request: RateLimitRequest {
             endpoint: head.endpoint(),
             method: head.method(),
-            observed_url: head.observed_url(),
-            host: head.rate_limit_host(),
+            logical_origin: head.rate_limit_logical_origin(),
             page_index: context.page_index,
             attempt,
             plan: head.rate_limit_plan(),
         },
         status,
-        headers: SanitizedHeaders::new(headers),
+        server_delay: server_delay.map(ServerDelayHint::delay),
         cooldown_cap: core.rate_limit_cooldown_cap(),
     };
-    let future = core.rate_limiter().observe(response);
-    check_deadline(deadline, head.endpoint_id(), head.method())?;
-    deadline
-        .run(future)
-        .await
-        .map_err(|_| timeout_error(head.endpoint_id(), head.method()))?
-        .map_err(|error| {
-            ApiError::rate_limit(head.endpoint_id().clone(), head.method().clone(), error)
-        })
+    core.rate_limiter().observe(response);
+}
+
+fn parsed_content_length(headers: &http::HeaderMap) -> Option<u64> {
+    let value = headers.get(http::header::CONTENT_LENGTH)?.to_str().ok()?;
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    value.bytes().try_fold(0_u64, |length, byte| {
+        length.checked_mul(10)?.checked_add(u64::from(byte - b'0'))
+    })
 }
 
 fn check_deadline(

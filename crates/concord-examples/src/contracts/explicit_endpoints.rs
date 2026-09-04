@@ -11,7 +11,7 @@ use super::full_dsl::{ReferenceApi, reference_api};
 pub fn construct(client: &ReferenceApi) -> reference_api::regions::FetchRequest {
     let endpoint = ReferenceApi::unbound()
         .regions("eu-west".to_owned())
-        .with_language("fr".to_owned())
+        .set_language(Some("fr".to_owned()))
         .fetch("42".to_owned(), vec!["stable".to_owned()]);
     client.request(endpoint)
 }

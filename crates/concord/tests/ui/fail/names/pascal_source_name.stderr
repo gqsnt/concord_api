@@ -1,5 +1,5 @@
 error: endpoint source identifier `HTTPStatus` must be snake_case; use `http_status`
   --> tests/ui/fail/names/pascal_source_name.rs:11:9
    |
-11 |     GET HTTPStatus() -> Bytes using Bytes;
+11 |     GET HTTPStatus() -> Bytes via Binary;
    |         ^^^^^^^^^^

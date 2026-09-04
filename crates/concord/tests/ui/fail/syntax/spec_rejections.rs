@@ -2,28 +2,28 @@ use concord::api;
 
 api! {
     client BaseUserInfoApi {
-        timeout off;
+        timeout 30s;
         base "https://user@example.test/";
     }
 }
 
 api! {
     client BaseQueryApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/?page=1";
     }
 }
 
 api! {
     client BaseFragmentApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/#fragment";
     }
 }
 
 api! {
     client EmptyPathApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         path [""];
     }
@@ -31,7 +31,7 @@ api! {
 
 api! {
     client DotPathApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         path ["."];
     }
@@ -39,7 +39,7 @@ api! {
 
 api! {
     client DotDotPathApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         path [".."];
     }
@@ -47,7 +47,7 @@ api! {
 
 api! {
     client SlashPathApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         path ["/"];
     }
@@ -55,7 +55,7 @@ api! {
 
 api! {
     client BackslashPathApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         path ["\\"];
     }
@@ -63,7 +63,7 @@ api! {
 
 api! {
     client InvalidHostApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         subdomain replace ["bad_label"];
     }
@@ -71,7 +71,7 @@ api! {
 
 api! {
     client SecretExpressionApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         credentials {
             secret token;
@@ -79,7 +79,7 @@ api! {
         }
 
 
-    GET read() -> () using NoContent {
+    GET read() -> () via Empty {
         path [secret.token];
         auth { header "X-Token" = token; }
     }
@@ -87,18 +87,18 @@ api! {
 
 api! {
     client ArbitraryExpressionApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
 
 
-    GET read() -> () using NoContent {
+    GET read() -> () via Empty {
         path [make_path()];
     }
 }}
 
 api! {
     client DuplicateAuthHeaderApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         credentials {
             secret first;
@@ -108,7 +108,7 @@ api! {
         }
 
 
-    GET read() -> () using NoContent {
+    GET read() -> () via Empty {
         auth { header "X-Key" = first; }
         auth { header "x-key" = second; }
     }
@@ -116,7 +116,7 @@ api! {
 
 api! {
     client DuplicateAuthorizationApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         credentials {
             secret first;
@@ -126,7 +126,7 @@ api! {
         }
 
 
-    GET read() -> () using NoContent {
+    GET read() -> () via Empty {
         auth { bearer first; }
         auth { bearer second; }
     }
@@ -134,7 +134,7 @@ api! {
 
 api! {
     client ReservedPublicHeaderApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         headers {
             "Authorization" = "public";
@@ -144,18 +144,18 @@ api! {
 
 api! {
     client EmptyInlineRateLimitApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
-        rate_limit {}
+        rate_limit { id "concord.spec_rejections.1"; key [origin]; cost 1; }
     }
 }
 
 api! {
     client EmptyRateLimitProfileApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         rate_limits {
-            empty() {}
+            policy empty() { id "concord.spec_rejections.2"; key [origin]; cost 1; }
         }
         rate_limit empty();
     }

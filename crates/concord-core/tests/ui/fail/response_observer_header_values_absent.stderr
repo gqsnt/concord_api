@@ -1,0 +1,39 @@
+error[E0609]: no field `observed_url` on type `concord_core::contracts::AttemptStarted<'_>`
+ --> tests/ui/fail/response_observer_header_values_absent.rs:9:33
+  |
+9 |                 let _ = request.observed_url;
+  |                                 ^^^^^^^^^^^^ unknown field
+  |
+  = note: available fields are: `operation_id`, `parent_operation_id`, `endpoint`, `method`, `target` ... and 4 others
+
+error[E0609]: no field `headers` on type `concord_core::contracts::AttemptStarted<'_>`
+  --> tests/ui/fail/response_observer_header_values_absent.rs:10:33
+   |
+10 |                 let _ = request.headers;
+   |                                 ^^^^^^^ unknown field
+   |
+   = note: available fields are: `operation_id`, `parent_operation_id`, `endpoint`, `method`, `target` ... and 4 others
+
+error[E0609]: no field `observed_url` on type `concord_core::contracts::ResponseHeadObserved<'_>`
+  --> tests/ui/fail/response_observer_header_values_absent.rs:13:34
+   |
+13 |                 let _ = response.observed_url;
+   |                                  ^^^^^^^^^^^^ unknown field
+   |
+   = note: available fields are: `operation_id`, `parent_operation_id`, `endpoint`, `method`, `target` ... and 5 others
+
+error[E0609]: no field `headers` on type `concord_core::contracts::ResponseHeadObserved<'_>`
+  --> tests/ui/fail/response_observer_header_values_absent.rs:14:34
+   |
+14 |                 let _ = response.headers;
+   |                                  ^^^^^^^ unknown field
+   |
+   = note: available fields are: `operation_id`, `parent_operation_id`, `endpoint`, `method`, `target` ... and 5 others
+
+error[E0609]: no field `observed_url` on type `concord_core::contracts::OperationFinished<'_>`
+  --> tests/ui/fail/response_observer_header_values_absent.rs:17:36
+   |
+17 |                 let _ = completion.observed_url;
+   |                                    ^^^^^^^^^^^^ unknown field
+   |
+   = note: available fields are: `operation_id`, `parent_operation_id`, `endpoint`, `method`, `target` ... and 7 others

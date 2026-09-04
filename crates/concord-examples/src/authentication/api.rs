@@ -11,7 +11,7 @@ use concord::auth::OAuth2ClientCredentials;
 // ANCHOR: authentication_contract
 api! {
     client AuthenticationApi {
-        timeout off;
+        timeout 30s;
         base "https://localhost/authentication-example/";
         // ANCHOR: credential_declarations
         credentials {
@@ -30,19 +30,19 @@ api! {
 
 
     // ANCHOR: static_authentication_endpoints
-    GET login() -> crate::authentication::extensions::ExampleToken using crate::authentication::extensions::ExampleTokenCodec;
-    GET api_key() -> () using NoContent { auth { header "X-Api-Key" = application_key; } }
-    GET token_authorization() -> () using NoContent {
+    GET login() -> crate::authentication::extensions::ExampleToken via crate::authentication::extensions::ExampleTokenCodec;
+    GET api_key() -> () via Empty { auth { header "X-Api-Key" = application_key; } }
+    GET token_authorization() -> () via Empty {
         auth { authorization "Token" = application_key; }
     }
-    GET bearer() -> () using NoContent { auth { bearer static_bearer; } }
-    GET basic() -> () using NoContent { auth { basic login; } }
+    GET bearer() -> () via Empty { auth { bearer static_bearer; } }
+    GET basic() -> () via Empty { auth { basic login; } }
     // ANCHOR_END: static_authentication_endpoints
 
     // ANCHOR: provider_authentication_endpoints
-    GET o_auth() -> () using NoContent { auth { bearer oauth recover on unauthorized; } }
-    GET endpoint_backed() -> () using NoContent { auth { query "session" = acquired; } }
-    GET provider_backed() -> () using NoContent { auth { bearer custom; } }
+    GET o_auth() -> () via Empty { auth { bearer oauth challenge unauthorized; } }
+    GET endpoint_backed() -> () via Empty { auth { query "session" = acquired; } }
+    GET provider_backed() -> () via Empty { auth { bearer custom; } }
     // ANCHOR_END: provider_authentication_endpoints
 }}
 // ANCHOR_END: authentication_contract

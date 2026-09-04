@@ -3,6 +3,8 @@
 //! Keep exact numeric defaults here. The documentation checker links against
 //! the values reexported through the hidden integration surface.
 
+/// Default finite operation deadline inherited by runtime endpoints, in seconds.
+pub const DEFAULT_OPERATION_TIMEOUT_SECONDS: u64 = 30;
 /// Default aggregate request-body byte ceiling.
 pub const DEFAULT_REQUEST_BODY_BYTES: usize = 16_777_216;
 /// Default buffered accepted-response byte ceiling.

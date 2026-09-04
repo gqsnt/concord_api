@@ -1,105 +1,92 @@
 # Documentation contract
 
-This file defines documentation audiences, ownership, validation, and change
-rules.
+## Truth rules
 
-## Document classes
+1. Documentation describes implemented behavior in the branch where it lives.
+2. Selected target behavior not yet implemented is marked explicitly and should remain in the implementation kit or feature branch, not active release docs.
+3. `docs/design_invariants.md`, `docs/spec.md`, and `docs/execution_policy.md` are the highest normative in-repository documents.
+4. Generated Rustdoc, static descriptions, semantic diff, and hand-written docs consume the same vocabulary and semantic graph.
+5. Every full canonical API declaration shown as recommended usage is
+   source-anchored to compiled code.
+6. Every normative Rust usage fence is source-anchored to compiled code.
+7. `concord-pseudocode` is the explicit machine-visible label for partial
+   grammar fragments, alternatives, deliberately incomplete excerpts, and
+   explanatory state tables only. Surrounding prose names the omitted context.
+8. A claim that depends on Rust coherence, performance, user cognition, or operation remains provisional until its gate passes.
+9. No doc calls a plan “safe,” a local limiter “distributed,” a timeout “operation-wide,” or a response “complete” unless the exact guarantee is implemented.
+10. Secrets, body values, sensitive public values, and raw rate keys never appear in example diagnostic output.
+11. `dev_doc/release_gate_status.md` is the only lifecycle/gate owner. Historical
+   plans, audits, and exact-SHA evidence must identify their limited scope.
 
-| Class | Purpose | Normative? |
-|---|---|---|
-| tutorial | leads a reader through a working sequence | no |
-| guide | recommends how to model, use, or extend Concord | no |
-| explanation | reconstructs concepts and design causality | no |
-| reference | defines exact public grammar or runtime contract | yes where named below |
-| maintainer record | explains implementation, proof, or historical judgment | internal |
+## Vocabulary
 
-## Normative owners
-
-- `docs/spec.md` owns DSL grammar, merge rules, structural validation, and diagnostics.
-- `docs/runtime.md` owns execution order, attempts, deadlines, response modes,
-  pagination runtime, cancellation, observation, and runtime configuration.
-- `docs/design_invariants.md` owns cross-cutting implementation and extension
-  invariants.
-- Topic guides explain concepts end to end but must link to the normative owner
-  instead of creating incompatible rules.
-- `dev_doc/finalization_decisions.md` owns historical finalization judgments.
-
-## Canonical index
-
-`docs/README.md` is the canonical inventory for user-facing Markdown under
-`docs/`. Every other top-level `docs/*.md` page must be linked exactly once from
-that index.
-
-The root `README.md` is a product entry point and links to the documentation
-index rather than reproducing its full inventory.
-
-## Examples
-
-Every fenced Concord DSL block under the root README or `docs/` must either:
-
-1. match normalized source in `crates/concord-examples/src/docs_spec.rs`; or
-2. carry a `concord-source` marker referencing a compiled source anchor.
-
-Prominent generated-usage Rust blocks carry the same marker and must match one
-compiled source anchor. Unmarked Rust fragments are explanatory and must not be
-presented as complete copy-paste programs.
-
-Marker format:
+Use consistently:
 
 ```text
-<!-- concord-source: crates/concord-examples/src/path.rs#anchor_name -->
+client contract
+scope snapshot
+endpoint contract / endpoint intent
+bound request
+logical operation
+pagination aggregate
+page operation
+visible attempt
+transport-private physical recovery
+request/response representation
+effect: safe | idempotent | non_idempotent
+body replayability
+credential source / slot / material / placement / challenge / recovery
+rate policy / limiter
+RequestPlan
+static/effective description
+OperationObserver
+ByteStream / ItemStream<T> / RequestStream<T>
 ```
 
-Anchors use:
+Avoid old canonical vocabulary outside migration history:
 
 ```text
-// ANCHOR: anchor_name
-...
-// ANCHOR_END: anchor_name
+vars, ep, generic scope reference, host, fmt
+ResponseBodySpec, response_bytes, SafeRequestPlan
+timeout off, broad hook, repeatability never/idempotent as complete effect
 ```
 
-## Link and inventory validation
+## Generated Rustdoc order
 
-`scripts/check_docs_examples.ps1` validates:
+For each endpoint:
 
-- closed Markdown fences;
-- DSL fence language and compiled source;
-- marked Rust/DSL source anchors;
-- local relative Markdown links and their `#fragment` targets;
-- canonical docs inventory coverage;
-- absence of references to removed user-documentation files.
+1. author domain documentation/deprecation;
+2. exact generated call and output;
+3. required and configurable values/control methods;
+4. effective request/response representation and provenance;
+5. method/logical route/query/header summary with sensitivity markers;
+6. accepted status and effect;
+7. body replay/page capability and response lifecycle;
+8. auth/challenge structure;
+9. timeout/retry/rate behavior;
+10. pagination and terminal capabilities;
+11. stable IDs, error/cancellation/unknown-outcome guidance.
 
-### Source-anchor guarantees
+The common caller should understand the first screen without seeing bridge generics or decoder drivers.
 
-An anchor reference is untrusted metadata and must resolve to compiled source.
-The checker rejects absolute paths, `..` traversal, non-`.rs` files, and any
-path outside these roots:
+## Source anchors
 
-- `crates/concord-examples/src`
-- `crates/concord-examples/tests`
+Use compile-checked example anchors for README, quick start, overview, value
+matrix, representation, auth, retry, pagination, runtime endpoints, and the
+Riot walkthrough. `cargo run --locked -p concord-xtask -- docs-check --locked`
+is the single canonical checker used by `just docs`, local release
+verification, and the GitHub Actions documentation job. Its machine-maintained
+canonical-source list prevents the front-door declarations from reverting to
+unchecked pseudocode. The PowerShell entry point is only a thin wrapper around
+the Rust command.
 
-Both roots are compiled by `concord-examples` Cargo targets, so an anchored
-example cannot drift from code that builds. Adding a root requires a documented
-reason and a compiled target.
+## Documentation completion
 
-Anchor integrity is validated per source file. Duplicate anchor names, an
-`ANCHOR_END` with no opening, an unclosed anchor, overlapping regions, and a
-region selecting no source lines are all failures. Proper nesting is supported
-so a single fixture can serve both a whole-contract and a single-endpoint
-quotation; nested markers never appear in rendered documentation.
+Before release:
 
-Errors name the documentation file, the anchor, the source path, and the exact
-reason, using repository-relative paths and never source contents.
-
-## Change rules
-
-A public syntax, generated API, runtime behavior, or invariant change updates
-its normative owner first. Guides and examples then update to explain the
-change.
-
-A guide-only clarification must not create a new rule absent from the normative
-reference. Historical records are amended with a supersession note rather than
-rewritten to pretend the earlier decision never existed.
-
-Documentation examples are code. Their source anchors, tests, and links are
-reviewed with the same care as public API code.
+- all active examples use one syntax;
+- every public item has docs under `-D warnings`;
+- no old public name appears outside migration/rejected-history context;
+- effective docs show representation/status/effect origins;
+- links and source anchors pass;
+- user-task protocol uses the same documentation a release user sees.

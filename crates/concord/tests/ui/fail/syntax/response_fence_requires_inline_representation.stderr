@@ -1,0 +1,5 @@
+error: endpoint result has no effective representation; add `response Representation;` to a client/scope or inline `via Representation`
+  --> tests/ui/fail/syntax/response_fence_requires_inline_representation.rs:11:17
+   |
+11 |             GET missing() -> String;
+   |                 ^^^^^^^

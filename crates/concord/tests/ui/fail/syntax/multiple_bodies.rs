@@ -4,11 +4,11 @@ use concord::{Bytes, Text, api};
 
 api! {
     client MultipleBodiesApi {
-        timeout off;
+        timeout 30s;
         base "http://body.example.test/";
 
 
-    POST submit(body first: String using Text, body second: Bytes using Bytes) -> Bytes using Bytes;
+    POST submit(body first: String via Text, body second: Bytes via Binary) -> Bytes via Binary;
 }}
 
 fn main() {}

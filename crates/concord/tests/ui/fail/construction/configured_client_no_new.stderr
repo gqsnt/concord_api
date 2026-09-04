@@ -3,10 +3,10 @@ error[E0599]: no associated function or constant named `new` found for struct `C
    |
  3 | / api! {
  4 | |     client ConfiguredApi {
- 5 | |         timeout off;
+ 5 | |         timeout 30s;
  6 | |         base "http://configured.example.test/";
 ...  |
-16 | |     GET read() -> () using NoContent;
+16 | |     GET read() -> () via Empty;
 17 | | }}
    | |__- associated function or constant `new` not found for this struct
 ...

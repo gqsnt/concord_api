@@ -1,4 +1,4 @@
-error: unsupported client entry; expected a child scope, HTTP endpoint, or `base`, `values`, `credentials`, `rate_limits`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit` clause
+error: unsupported client entry; expected a child scope, HTTP endpoint, or `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit` clause
  --> tests/ui/fail/syntax/second_client.rs:9:5
   |
 9 |     client SecondApi {

@@ -9,19 +9,24 @@ use std::num::NonZeroUsize;
 use std::pin::Pin;
 
 use concord::api;
-use concord::codec::BytesMut;
+use concord::codec::{Bytes, BytesMut};
 use concord::records::{
-    BufferedRecords, Csv, HasHeader, NdJson, RecordDecoder, RecordError, RecordErrorKind, Records,
-    SemicolonDelimiter,
+    Csv, HasHeader, ItemStream, NdJson, RecordDecoder, RecordError, RecordErrorKind,
+    SemicolonDelimiter, decode_complete_records, validate_record_decoder,
 };
-use concord::response::ResponseHead;
+use concord::response::{
+    Buffered, ResponseBodyError, ResponseDriver, ResponseHead, ResponseRepresentation, Streaming,
+};
 use futures_core::Stream as _;
 
 /// Header-bearing, semicolon-delimited CSV used by the configured endpoint.
-pub type ConfCsv<T> = Csv<T, HasHeader, SemicolonDelimiter>;
+pub type ConfCsv = Csv<HasHeader, SemicolonDelimiter>;
 
 // ANCHOR: record_decoder_extension
 pub struct PipeRecords;
+
+/// Representation marker hiding the pipe decoder from endpoint outputs.
+pub struct PipeDelimited;
 
 impl RecordDecoder for PipeRecords {
     type Record = String;
@@ -68,21 +73,52 @@ impl RecordDecoder for PipeRecords {
 }
 // ANCHOR_END: record_decoder_extension
 
+impl ResponseRepresentation<Vec<String>> for PipeDelimited {
+    type Driver = Buffered;
+
+    fn accept() -> Option<&'static str> {
+        PipeRecords::accept()
+    }
+
+    fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
+        validate_record_decoder::<PipeRecords>(head)
+    }
+
+    fn from_body(body: Bytes, head: &ResponseHead<'_>) -> Result<Vec<String>, ResponseBodyError> {
+        decode_complete_records::<PipeRecords>(body, head)
+    }
+}
+
+impl ResponseRepresentation<ItemStream<String>> for PipeDelimited {
+    type Driver = Streaming;
+
+    fn accept() -> Option<&'static str> {
+        PipeRecords::accept()
+    }
+
+    fn from_body(
+        body: <Self::Driver as ResponseDriver>::Body,
+        head: &ResponseHead<'_>,
+    ) -> Result<ItemStream<String>, ResponseBodyError> {
+        ItemStream::decode_with::<PipeRecords>(body, head)
+    }
+}
+
 // ANCHOR: records_contract
 api! {
     client RecordsApi {
-        timeout off;
+        timeout 30s;
         base "http://records.example.test/";
 
 
-    GET custom() -> concord::records::RecordStream<crate::request_response::records::PipeRecords> using Records<crate::request_response::records::PipeRecords>;
-    GET buffered_custom() -> Vec<String> using BufferedRecords<crate::request_response::records::PipeRecords>;
-    GET csv_rows() -> Vec<(String, u32)> using Csv<(String, u32)>;
-    GET csv_stream() -> concord::records::RecordStream<Csv<(String, u32)>> using Records<Csv<(String, u32)>>;
-    GET configured_csv_rows() -> Vec<(String, u32)> using crate::request_response::records::ConfCsv<(String, u32)>;
-    GET configured_csv_stream() -> concord::records::RecordStream<crate::request_response::records::ConfCsv<(String, u32)>> using Records<crate::request_response::records::ConfCsv<(String, u32)>>;
-    GET nd_json_values() -> Vec<u32> using NdJson<u32>;
-    GET nd_json_stream() -> concord::records::RecordStream<NdJson<u32>> using Records<NdJson<u32>>;
+    GET custom() -> ItemStream<String> via crate::request_response::records::PipeDelimited;
+    GET buffered_custom() -> Vec<String> via crate::request_response::records::PipeDelimited;
+    GET csv_rows() -> Vec<(String, u32)> via Csv;
+    GET csv_stream() -> ItemStream<(String, u32)> via Csv;
+    GET configured_csv_rows() -> Vec<(String, u32)> via crate::request_response::records::ConfCsv;
+    GET configured_csv_stream() -> ItemStream<(String, u32)> via crate::request_response::records::ConfCsv;
+    GET nd_json_values() -> Vec<u32> via NdJson;
+    GET nd_json_stream() -> ItemStream<u32> via NdJson;
 }}
 // ANCHOR_END: records_contract
 

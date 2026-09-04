@@ -1,13 +1,13 @@
 error[E0053]: method `metadata` has an incompatible type for trait
-  --> tests/ui/fail/request_spec_metadata_signature.rs:11:10
-   |
-11 |     ) -> Result<String, BodyError> {
-   |          ^^^^^^^^^^^^^^^^^^^^^^^^^ expected `RequestBodyMetadata`, found `String`
-   |
-   = note: expected signature `fn(&String, RequestBodyContext<'_>) -> Result<RequestBodyMetadata, BodyError>`
-              found signature `fn(&String, RequestBodyContext<'_>) -> Result<String, BodyError>`
+ --> tests/ui/fail/request_spec_metadata_signature.rs:9:10
+  |
+9 |     ) -> Result<String, BodyError> {
+  |          ^^^^^^^^^^^^^^^^^^^^^^^^^ expected `RequestBodyMetadata`, found `String`
+  |
+  = note: expected signature `fn(&String, RequestBodyContext<'_>) -> Result<RequestBodyMetadata, BodyError>`
+             found signature `fn(&String, RequestBodyContext<'_>) -> Result<String, BodyError>`
 help: change the output type to match the trait
-   |
-11 -     ) -> Result<String, BodyError> {
-11 +     ) -> Result<RequestBodyMetadata, BodyError> {
-   |
+  |
+9 -     ) -> Result<String, BodyError> {
+9 +     ) -> Result<RequestBodyMetadata, BodyError> {
+  |

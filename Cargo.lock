@@ -9,6 +9,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "aho-corasick"
+version = "1.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c982642fa9e8606056828ee9a8505737230110bb1099153c79efe865c59d12ba"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "alloc-no-stdlib"
 version = "2.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -22,6 +31,12 @@ checksum = "0e76a019e91224d279006ff972f1e984179a6e9feb050adba6ce8274aef23195"
 dependencies = [
  "alloc-no-stdlib",
 ]
+
+[[package]]
+name = "allocation-counter"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "beb9e990c0a33699f1984d85a6abead615ccc72dd8130bf3e15dcabe2ca149c9"
 
 [[package]]
 name = "async-compression"
@@ -170,7 +185,7 @@ checksum = "cc14f565cf027a105f7a44ccf9e5b424348421a1d8952a8fc9d499d313107789"
 
 [[package]]
 name = "concord"
-version = "2.0.0"
+version = "2.1.0-beta.1"
 dependencies = [
  "concord-core",
  "concord-extras",
@@ -185,7 +200,7 @@ dependencies = [
 
 [[package]]
 name = "concord-core"
-version = "2.0.0"
+version = "2.1.0-beta.1"
 dependencies = [
  "bytes",
  "concord-test-support",
@@ -205,7 +220,7 @@ dependencies = [
 
 [[package]]
 name = "concord-examples"
-version = "2.0.0"
+version = "2.1.0-beta.1"
 dependencies = [
  "concord",
  "concord-test-support",
@@ -217,13 +232,12 @@ dependencies = [
 
 [[package]]
 name = "concord-extras"
-version = "2.0.0"
+version = "2.1.0-beta.1"
 dependencies = [
  "bytes",
  "concord-core",
  "csv",
  "http",
- "httpdate",
  "mime",
  "serde",
  "serde_json",
@@ -233,7 +247,7 @@ dependencies = [
 
 [[package]]
 name = "concord-macros"
-version = "2.0.0"
+version = "2.1.0-beta.1"
 dependencies = [
  "http",
  "proc-macro2",
@@ -244,16 +258,20 @@ dependencies = [
 
 [[package]]
 name = "concord-perf"
-version = "2.0.0"
+version = "2.1.0-beta.1"
 dependencies = [
+ "allocation-counter",
  "concord",
  "concord-test-support",
+ "csv-core",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 
 [[package]]
 name = "concord-test-support"
-version = "2.0.0"
+version = "2.1.0-beta.1"
 dependencies = [
  "base64 0.23.0",
  "bytes",
@@ -264,11 +282,12 @@ dependencies = [
 
 [[package]]
 name = "concord-xtask"
-version = "2.0.0"
+version = "2.1.0-beta.1"
 dependencies = [
  "cargo_metadata",
  "concord-core",
  "concord-extras",
+ "regex",
  "serde_json",
 ]
 
@@ -879,6 +898,35 @@ checksum = "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001"
 dependencies = [
  "proc-macro2",
 ]
+
+[[package]]
+name = "regex"
+version = "1.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f020237b6c8eed93db2e2cb53c00c60a8e1bc73da7d073199a1180401450218d"
+dependencies = [
+ "aho-corasick",
+ "memchr",
+ "regex-automata",
+ "regex-syntax",
+]
+
+[[package]]
+name = "regex-automata"
+version = "0.4.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad8553b9b26413251cbf30e620595c7a41b3887f03da04579c0e6b0d6a06b4b2"
+dependencies = [
+ "aho-corasick",
+ "memchr",
+ "regex-syntax",
+]
+
+[[package]]
+name = "regex-syntax"
+version = "0.8.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "reqwest"
