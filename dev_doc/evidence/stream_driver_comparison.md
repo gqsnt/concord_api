@@ -73,3 +73,12 @@ TLS, scheduling, or application work. Absolute throughput is therefore not an
 end-to-end service prediction. The committed probe, allocation assertions,
 budget assertions, size probes, and runtime lifecycle tests make the decision
 repeatable and fail visibly if the selected strategy later crosses a budget.
+
+## Release-candidate reproduction
+
+The unchanged probe was rerun at `9470e24`. Boxed/fastest paired medians were
+0.993, 0.996, and 1.000 for the three byte sizes and 0.995/0.978 for
+NDJSON/CSV. Allocation counts remained static `(0,0)`, enum `(0,0)`, boxed
+`(1,0)` for construction/polling, and every lifecycle remained
+`pending,item,pending,error,end` with one observed early drop. The selected
+boxed strategy therefore remained inside every precommitted budget.

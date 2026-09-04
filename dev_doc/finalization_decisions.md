@@ -12,6 +12,7 @@ The following decisions must be resolved from prototype evidence before release 
 | observer events | attempt started, response head, operation finished, pagination finished, stream finished | Gates 5 and 9 passed mechanically; operator task review unavailable | retain minimum read-only set for prototype; no mutation authority |
 | optional static secret | permit `secret x?` | auth construction task and security tests | keep or replace with explicit profiles; never silently omit placement |
 | contract metadata size | static/effective runtime-accessible descriptions | Gate 10 machine evidence passed through 1,000 endpoints; independent human first-screen review unavailable | retain for the RC; stable freeze remains blocked with the rest of Gate 10 |
+| project license | no license grant exists in repository or observed history | `cargo deny` rejects all four public packages; package archives otherwise pass downstream checks | project owner must select and supply the license; do not invent a grant or self-waive the check |
 | aggregate body reuse | deferred | pagination/body benchmark | do not add unless explicit capability earns measured value |
 | release version | 2.1.0 | all gates | bump only when active repository is one coherent target and migration path exists |
 

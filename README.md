@@ -80,4 +80,7 @@ The complete maintained gate is:
 just verify
 ```
 
-The workspace targets Rust 1.86 and keeps every package private (`publish = false`) during the prototype phase.
+The workspace targets Rust 1.86. The four public crate manifests are locally
+packageable so their archives can be tested outside workspace paths; no crate
+is published by this repository workflow. Stable release remains blocked by
+the release-gate status, including an owner-selected project license.

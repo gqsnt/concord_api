@@ -1,6 +1,6 @@
 # Anonymized generated-documentation review results
 
-- Candidate commit: pending final machine-verification commit
+- Candidate commit for the ready review packet: `9470e24`
 - Human reviewers completed: **0**
 - Required: **at least 1 relevant reviewer other than the primary implementer**
 - Status: **not run; external reviewer access unavailable in this environment**

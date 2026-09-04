@@ -1,6 +1,6 @@
 # Anonymized results
 
-- Candidate commit: pending
+- Candidate commit for the ready study packet: `9470e24`
 - Facilitator: pending (do not record personal identity in this repository)
 - Human participants completed: **0**
 - Required minimum: **3 unfamiliar Rust developers**

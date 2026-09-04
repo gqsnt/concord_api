@@ -1,7 +1,7 @@
 # Large-contract, compile, and documentation evidence
 
 - **Recorded:** 2026-09-04
-- **Candidate measurements:** commits `f94c5de`, `62a4b35` (the latter includes two test-only clean-worktree repairs)
+- **Candidate measurements:** commits `f94c5de`, `62a4b35`; release-candidate reproduction at `9470e24`
 - **Baseline:** v2.0 commit `f7464c5`
 - **Host:** Windows x86-64
 - **Toolchain:** Cargo/Rust/rust-analyzer 1.97.1 (`8bab26f4f`, 2026-07-14)
@@ -82,6 +82,13 @@ linear. The 1,000-endpoint point is large but bounded and completed without a
 diagnostic or superlinear cliff. Expansion line count is retained as one
 dimension, not treated as the cost conclusion.
 
+The release-candidate reproduction at `9470e24` used the same warm fixture and
+reported expand/build times of 0.378/0.852 s, 0.431/1.101 s, 0.740/2.942 s,
+2.242/11.965 s, and 4.357/24.192 s for 1/10/100/500/1,000 endpoints. Counts,
+binary sizes, and description sizes were identical. The harness now discovers
+the workspace-local `target/tools/cargo-expand` executable directly; it still
+falls back to an ordinary installed Cargo subcommand.
+
 ## rust-analyzer
 
 `rust-analyzer analysis-stats . --run-all-ide-things` exited 0 in 101.263 s
@@ -96,6 +103,23 @@ feature-gated items; there were no error diagnostics. The installed batch CLI
 does not expose a stable completion/hover latency command, and no LSP benchmark
 harness is maintained here. Interactive completion/hover latency is therefore
 explicitly unmeasured rather than inferred from `analysis-stats`.
+
+At `9470e24`, the clean detached worktree reran `just analyzer`: analysis
+completed in 48.37 s according to rust-analyzer's internal timer, with 3,115 MB
+reported for its peak phase, 112,591 workspace lines, 25,878 declarations, and
+18,639 bodies. `rust-analyzer diagnostics .` exited 0 with only the same
+expected inactive-code weak warnings.
+
+## Clean aggregate boundary
+
+In the clean detached candidate worktree at `9470e24`, `just verify` passed
+format, all check/feature shapes, policy, Clippy, 879 default tests, 904
+all-feature tests, 189 macro tests, all three UI modes, Rust 1.86 checks, MSRV
+semantic UI, fixtures, source-anchored docs, doctests, and the complete
+warning-denied Rustdoc matrix. It then stopped at `cargo deny`: the repository
+has no project license grant. Workflow, analyzer, and benchmark compilation
+passed when run separately after that stop. This is a reproducible external
+release decision, not a machine-evidence pass or waiver.
 
 ## Documentation and review boundary
 
