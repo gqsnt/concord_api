@@ -8,21 +8,67 @@ $metadata = & cargo metadata --manifest-path (Join-Path $root 'Cargo.toml') --no
 if ($LASTEXITCODE -ne 0) {
     throw 'cargo metadata failed'
 }
-$version = ($metadata.packages | Where-Object { $_.name -eq 'concord' }).version
-if ([string]::IsNullOrWhiteSpace($version)) {
-    throw 'could not determine the Concord package version'
+function PackageAt([string]$RelativeManifest) {
+    $manifest = (Resolve-Path -LiteralPath (Join-Path $root $RelativeManifest)).Path
+    $package = $metadata.packages | Where-Object {
+        [System.IO.Path]::GetFullPath($_.manifest_path) -eq $manifest
+    }
+    if ($null -eq $package -or @($package).Count -ne 1) {
+        throw "could not identify the package at $RelativeManifest"
+    }
+    return $package
 }
 
-$packages = @('concord-core', 'concord-macros', 'concord-extras', 'concord')
+$corePackage = PackageAt 'crates/concord-core/Cargo.toml'
+$macrosPackage = PackageAt 'crates/concord-macros/Cargo.toml'
+$extrasPackage = PackageAt 'crates/concord-extras/Cargo.toml'
+$facadePackage = PackageAt 'crates/concord/Cargo.toml'
+$version = $facadePackage.version
+$publicPackages = @($corePackage, $macrosPackage, $extrasPackage, $facadePackage)
+if ($publicPackages.Where({ $_.version -ne $version }).Count -ne 0) {
+    throw 'public package versions are not exact and uniform'
+}
+$facadeLibraries = @($facadePackage.targets | Where-Object { $_.kind -contains 'lib' })
+if ($facadeLibraries.Count -ne 1 -or $facadeLibraries[0].name -ne 'concord') {
+    throw 'the public facade must retain the Rust library target name concord'
+}
+
+$coreName = $corePackage.name
+$macrosName = $macrosPackage.name
+$extrasName = $extrasPackage.name
+$facadeName = $facadePackage.name
+$packages = @($coreName, $macrosName, $extrasName, $facadeName)
 $coreSource = (Join-Path $root 'crates/concord-core').Replace('\', '/')
 $macrosSource = (Join-Path $root 'crates/concord-macros').Replace('\', '/')
 $extrasSource = (Join-Path $root 'crates/concord-extras').Replace('\', '/')
 $packagePatches = @(
-    "patch.crates-io.concord-core.path='$coreSource'",
-    "patch.crates-io.concord-macros.path='$macrosSource'",
-    "patch.crates-io.concord-extras.path='$extrasSource'"
+    "patch.crates-io.$coreName.path='$coreSource'",
+    "patch.crates-io.$macrosName.path='$macrosSource'",
+    "patch.crates-io.$extrasName.path='$extrasSource'"
 )
 foreach ($packageName in $packages) {
+    $listArguments = @(
+        'package', '--manifest-path', (Join-Path $root 'Cargo.toml'),
+        '-p', $packageName, '--list', '--locked'
+    )
+    foreach ($patch in $packagePatches) {
+        $listArguments += @('--config', $patch)
+    }
+    $packageList = @(& cargo @listArguments)
+    if ($LASTEXITCODE -ne 0) {
+        throw "cargo package --list failed for $packageName"
+    }
+    if ($packageList -notcontains 'Cargo.toml' -or $packageList -notcontains 'src/lib.rs') {
+        throw "package $packageName is missing its manifest or library root"
+    }
+    $forbiddenEntries = @($packageList | Where-Object {
+        $_ -match '(^|/)(dev_doc|concord_v2_1|raw_benchmarks)(/|$)' -or
+        $_ -match '(^|/)PROMPT[^/]*$'
+    })
+    if ($forbiddenEntries.Count -ne 0) {
+        throw "package $packageName contains process artifacts: $($forbiddenEntries -join ', ')"
+    }
+
     $packageArguments = @(
         'package', '--manifest-path', (Join-Path $root 'Cargo.toml'),
         '-p', $packageName, '--no-verify', '--locked'
@@ -36,7 +82,7 @@ foreach ($packageName in $packages) {
     }
 }
 
-$runRoot = Join-Path $root "target/package-verification/$([Guid]::NewGuid().ToString('N'))"
+$runRoot = Join-Path ([System.IO.Path]::GetTempPath()) "concord-package-verification/$([Guid]::NewGuid().ToString('N'))"
 $unpackedRoot = Join-Path $runRoot 'unpacked'
 $downstreamRoot = Join-Path $runRoot 'downstream'
 [System.IO.Directory]::CreateDirectory($unpackedRoot) | Out-Null
@@ -57,10 +103,64 @@ function CargoPath([string]$Path) {
     return $Path.Replace('\', '/')
 }
 
-$corePath = CargoPath (Join-Path $unpackedRoot "concord-core-$version")
-$macrosPath = CargoPath (Join-Path $unpackedRoot "concord-macros-$version")
-$extrasPath = CargoPath (Join-Path $unpackedRoot "concord-extras-$version")
-$concordPath = CargoPath (Join-Path $unpackedRoot "concord-$version")
+$corePath = CargoPath (Join-Path $unpackedRoot "$coreName-$version")
+$macrosPath = CargoPath (Join-Path $unpackedRoot "$macrosName-$version")
+$extrasPath = CargoPath (Join-Path $unpackedRoot "$extrasName-$version")
+$concordPath = CargoPath (Join-Path $unpackedRoot "$facadeName-$version")
+$extractedPatches = @(
+    "patch.crates-io.$coreName.path='$corePath'",
+    "patch.crates-io.$macrosName.path='$macrosPath'",
+    "patch.crates-io.$extrasName.path='$extrasPath'",
+    "patch.crates-io.$facadeName.path='$concordPath'"
+)
+
+foreach ($packageName in $packages) {
+    $packagePath = CargoPath (Join-Path $unpackedRoot "$packageName-$version")
+    $packageManifest = Join-Path $packagePath 'Cargo.toml'
+    $packageMetadataArguments = @(
+        'metadata', '--manifest-path', $packageManifest,
+        '--no-deps', '--format-version', '1'
+    )
+    foreach ($patch in $extractedPatches) {
+        $packageMetadataArguments += @('--config', $patch)
+    }
+    $packageMetadata = & cargo @packageMetadataArguments | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) {
+        throw "extracted cargo metadata failed for $packageName"
+    }
+    $ownPackage = $packageMetadata.packages | Where-Object { $_.name -eq $packageName }
+    $workspacePathDependencies = @($ownPackage.dependencies | Where-Object {
+        $null -ne $_.path
+    })
+    if ($workspacePathDependencies.Count -ne 0) {
+        throw "normalized archive for $packageName retains path dependencies"
+    }
+}
+
+foreach ($documentedPath in @($extrasPath, $concordPath)) {
+    $documentedManifest = Join-Path $documentedPath 'Cargo.toml'
+    $generateArguments = @('generate-lockfile', '--manifest-path', $documentedManifest)
+    foreach ($patch in $extractedPatches) {
+        $generateArguments += @('--config', $patch)
+    }
+    & cargo @generateArguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "packaged lockfile generation failed for $documentedPath"
+    }
+    $rustdocArguments = @(
+        'rustdoc', '--manifest-path', $documentedManifest,
+        '--all-features', '--locked'
+    )
+    foreach ($patch in $extractedPatches) {
+        $rustdocArguments += @('--config', $patch)
+    }
+    $rustdocArguments += @('--', '-D', 'warnings')
+    & cargo @rustdocArguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "warning-denied packaged Rustdoc failed for $documentedPath"
+    }
+}
+
 $manifest = @"
 [package]
 name = "concord-packaged-downstream"
@@ -71,14 +171,14 @@ publish = false
 [workspace]
 
 [dependencies]
-concord = { version = "=$version", default-features = false, features = ["json", "records"] }
+concord = { package = "$facadeName", version = "=$version", default-features = false, features = ["json", "records"] }
 serde_json = "1"
 
 [patch.crates-io]
-concord = { path = "$concordPath" }
-concord-core = { path = "$corePath" }
-concord-extras = { path = "$extrasPath" }
-concord-macros = { path = "$macrosPath" }
+"$facadeName" = { path = "$concordPath" }
+"$coreName" = { path = "$corePath" }
+"$extrasName" = { path = "$extrasPath" }
+"$macrosName" = { path = "$macrosPath" }
 "@
 [System.IO.File]::WriteAllText((Join-Path $downstreamRoot 'Cargo.toml'), $manifest)
 
@@ -108,6 +208,20 @@ fn main() {
 & cargo generate-lockfile --manifest-path (Join-Path $downstreamRoot 'Cargo.toml')
 if ($LASTEXITCODE -ne 0) {
     throw 'downstream lockfile generation failed'
+}
+$downstreamMetadata = & cargo metadata --manifest-path (Join-Path $downstreamRoot 'Cargo.toml') --format-version 1 | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) {
+    throw 'downstream cargo metadata failed'
+}
+foreach ($packageName in $packages) {
+    $resolved = @($downstreamMetadata.packages | Where-Object { $_.name -eq $packageName })
+    if ($resolved.Count -ne 1 -or $null -ne $resolved[0].source) {
+        throw "downstream did not resolve exactly one extracted $packageName archive"
+    }
+    $resolvedManifest = [System.IO.Path]::GetFullPath($resolved[0].manifest_path)
+    if (-not $resolvedManifest.StartsWith([System.IO.Path]::GetFullPath($unpackedRoot))) {
+        throw "downstream $packageName resolved outside the extracted archive root"
+    }
 }
 & cargo check --manifest-path (Join-Path $downstreamRoot 'Cargo.toml') --locked
 if ($LASTEXITCODE -ne 0) {

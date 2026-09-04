@@ -73,6 +73,9 @@ docs-check:
 release-audit:
     cargo run --locked -p concord-xtask -- release-audit --locked
 
+package:
+    pwsh -NoLogo -NoProfile -File scripts/verify_packaged_downstream.ps1
+
 deny:
     cargo deny check
 
@@ -86,4 +89,4 @@ analyzer:
 bench:
     cargo bench -p concord-perf --bench concord_overhead --no-run
 
-verify: fmt check lint test ui msrv fixtures docs deny workflow analyzer bench
+verify: fmt check lint test ui msrv fixtures docs package deny workflow analyzer bench release-audit

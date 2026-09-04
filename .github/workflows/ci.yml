@@ -91,6 +91,9 @@ jobs:
       - run: cargo rustdoc -p concord --all-features --locked -- -D warnings
       - run: cargo rustdoc -p concord-core --all-features --locked -- -D warnings
       - run: cargo rustdoc -p concord-extras --all-features --locked -- -D warnings
+      - name: Package archives, extracted Rustdoc, and downstream use
+        shell: pwsh
+        run: ./scripts/verify_packaged_downstream.ps1
 
   ui:
     name: Stable compiler contracts
