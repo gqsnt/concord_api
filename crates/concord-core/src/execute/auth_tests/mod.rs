@@ -691,7 +691,7 @@ struct HookRecord {
     parent_operation_id: Option<OperationId>,
     page_index: u32,
     attempt: AttemptInfo,
-    observed_url: String,
+    target: crate::hooks::RequestTarget,
     known_body_length: Option<u64>,
 }
 
@@ -752,7 +752,7 @@ impl OperationObserver for AuthHooks {
                         parent_operation_id: context.parent_operation_id,
                         page_index: context.page_index,
                         attempt: context.attempt,
-                        observed_url: context.observed_url.to_owned(),
+                        target: context.target,
                         known_body_length: context.known_body_length,
                     });
             }

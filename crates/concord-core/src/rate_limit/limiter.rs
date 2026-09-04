@@ -17,11 +17,12 @@ pub struct RateLimitRequest<'a> {
     pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
-    /// Credential-sanitized logical URL. Public values may still contain
-    /// operational identifiers or personally identifiable information.
-    pub observed_url: &'a str,
-    /// Final logical host when one exists.
-    pub host: Option<&'a str>,
+    /// Normalized logical origin only when the effective plan explicitly uses
+    /// the built-in `origin` dimension.
+    ///
+    /// The value can contain operational identifiers and must be protected in
+    /// custom limiter storage and logs. It is absent for every other plan.
+    pub logical_origin: Option<&'a str>,
     /// Zero-based page index; direct endpoint execution uses zero.
     pub page_index: u32,
     /// Structural identity of this visible managed attempt.
@@ -46,7 +47,8 @@ pub struct RateLimitResponse<'a> {
 ///
 /// Calls may overlap. Implementations own the boundedness of CPU, memory,
 /// retries, maps, queues, spawned tasks, metric cardinality, and external I/O,
-/// and must treat resolved plan keys and logical hosts as potentially sensitive.
+/// and must treat resolved plan keys and an explicitly requested logical origin
+/// as potentially sensitive.
 /// Custom implementations are responsible for protecting those values in their
 /// own logs and storage. Acquisition is current-attempt authority and runs under
 /// the remaining operation deadline. Response observation is synchronous,
@@ -70,8 +72,14 @@ pub trait RateLimiter: Send + Sync + 'static {
 
     /// Acquires admission for exactly one visible Concord attempt.
     ///
-    /// The returned [`RateLimitPermit`] is a proof of admission, not a
-    /// concurrency lease retained until request completion.
+    /// The returned [`RateLimitPermit`] is proof that the implementation
+    /// admitted the complete conjunctive [`RateLimitPlan`], not a concurrency
+    /// lease retained until request completion. The bundled process-local
+    /// limiter evaluates and reserves all policies atomically. External or
+    /// distributed implementations must document whether a rejected
+    /// multi-policy evaluation is atomic or conservatively retains an earlier
+    /// reservation; core cannot promise rollback for authority it does not
+    /// own.
     fn acquire<'a>(
         &'a self,
         request: RateLimitRequest<'a>,
@@ -151,8 +159,7 @@ mod tests {
             .acquire(RateLimitRequest {
                 endpoint: "RateApi::get",
                 method: &method,
-                observed_url: "https://example.test/get",
-                host: Some("example.test"),
+                logical_origin: None,
                 page_index: 0,
                 attempt: AttemptInfo::INITIAL,
                 plan: &empty,
@@ -163,8 +170,7 @@ mod tests {
             .acquire(RateLimitRequest {
                 endpoint: "RateApi::get",
                 method: &method,
-                observed_url: "https://example.test/get",
-                host: Some("example.test"),
+                logical_origin: None,
                 page_index: 0,
                 attempt: AttemptInfo::INITIAL,
                 plan: &empty,

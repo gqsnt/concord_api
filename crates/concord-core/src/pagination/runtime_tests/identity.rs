@@ -1,7 +1,7 @@
 use super::*;
 
 #[tokio::test]
-async fn selected_limiter_receives_actual_page_hosts_while_automatic_surfaces_stay_redacted() {
+async fn selected_limiter_receives_explicit_page_origins_while_observers_stay_value_free() {
     const INITIAL: &str = "page-host-initial-sentinel-73190584";
     const SECOND: &str = "page-host-second-sentinel-10827319";
     const THIRD: &str = "page-host-third-sentinel-46205731";
@@ -94,18 +94,18 @@ async fn selected_limiter_receives_actual_page_hosts_while_automatic_surfaces_st
         .expect("canonical test value")
         .into_vec()
     };
-    assert_eq!(acquisitions[0].2.as_deref(), Some(initial_host.as_str()));
-    assert_eq!(acquisitions[1].2.as_deref(), Some(second_host.as_str()));
-    assert_ne!(acquisitions[0].2, acquisitions[1].2);
+    assert_eq!(acquisitions[0].1.as_deref(), Some(initial_origin.as_str()));
+    assert_eq!(acquisitions[1].1.as_deref(), Some(second_origin.as_str()));
+    assert_ne!(acquisitions[0].1, acquisitions[1].1);
     assert_eq!(
-        acquisitions[0].3,
+        acquisitions[0].2,
         [
             ("origin".to_owned(), canonical(&initial_origin)),
             ("endpoint.host".to_owned(), canonical(INITIAL)),
         ]
     );
     assert_eq!(
-        acquisitions[1].3,
+        acquisitions[1].2,
         [
             ("origin".to_owned(), canonical(&second_origin)),
             ("endpoint.host".to_owned(), canonical(SECOND)),
@@ -113,7 +113,6 @@ async fn selected_limiter_receives_actual_page_hosts_while_automatic_surfaces_st
     );
 
     let mut automatic = Vec::new();
-    automatic.extend(acquisitions.iter().map(|context| context.1.clone()));
     automatic.extend(
         hooks
             .before

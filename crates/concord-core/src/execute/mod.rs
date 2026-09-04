@@ -539,7 +539,7 @@ where
         context,
         head.endpoint(),
         head.method(),
-        head.observed_url(),
+        head.request_target(),
         head.debug(),
         elapsed,
         final_status,
@@ -735,7 +735,7 @@ async fn complete_preparation_failure<E>(
         core,
         operation_id,
         meta,
-        observed_url,
+        target,
         debug,
         elapsed,
         error,
@@ -746,7 +746,7 @@ async fn complete_preparation_failure<E>(
         ExecutionContext::DIRECT,
         meta.endpoint(),
         meta.method(),
-        &observed_url,
+        target,
         debug,
         elapsed,
         None,
@@ -805,10 +805,9 @@ fn attempt_started_event<'a>(
         parent_operation_id: context.parent_operation_id,
         endpoint: head.endpoint(),
         method: head.method(),
-        observed_url: head.observed_url(),
+        target: head.request_target(),
         page_index: context.page_index,
         attempt,
-        headers: head.sanitized_public_headers(),
         body_kind: body_metadata.kind,
         known_body_length: body_metadata.known_length(),
     }
@@ -824,7 +823,7 @@ async fn deliver_completion<T>(
     context: ExecutionContext,
     endpoint: &str,
     method: &Method,
-    observed_url: &str,
+    target: crate::hooks::RequestTarget,
     debug: DebugLevel,
     elapsed: std::time::Duration,
     final_status: Option<StatusCode>,
@@ -850,7 +849,7 @@ async fn deliver_completion<T>(
         parent_operation_id: context.parent_operation_id,
         endpoint,
         method,
-        observed_url,
+        target,
         page_index: context.page_index,
         attempts_started,
         policy_retries,
@@ -942,14 +941,15 @@ async fn send_attempt(
         .map_err(|_| dispatched_timeout_error(head.endpoint_id(), head.method()))??;
 
     let status = response.status();
-    let server_delay = parse_server_delay(response.headers(), std::time::SystemTime::now());
+    let response_wall_time = core.response_wall_time();
+    let server_delay = parse_server_delay(response.headers(), response_wall_time);
     *final_status = Some(status);
     let response_event = ResponseHeadObserved {
         operation_id,
         parent_operation_id: context.parent_operation_id,
         endpoint: head.endpoint(),
         method: head.method(),
-        observed_url: head.observed_url(),
+        target: head.request_target(),
         page_index: context.page_index,
         attempt,
         status,
@@ -1009,8 +1009,7 @@ async fn acquire_rate_limit_authority(
     let request = RateLimitRequest {
         endpoint: head.endpoint(),
         method: head.method(),
-        observed_url: head.observed_url(),
-        host: head.rate_limit_host(),
+        logical_origin: head.rate_limit_logical_origin(),
         page_index: context.page_index,
         attempt,
         plan: head.rate_limit_plan(),
@@ -1039,8 +1038,7 @@ fn observe_rate_limit_response(
         request: RateLimitRequest {
             endpoint: head.endpoint(),
             method: head.method(),
-            observed_url: head.observed_url(),
-            host: head.rate_limit_host(),
+            logical_origin: head.rate_limit_logical_origin(),
             page_index: context.page_index,
             attempt,
             plan: head.rate_limit_plan(),

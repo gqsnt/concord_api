@@ -33,25 +33,24 @@ impl DebugDispatcher {
         match self.level {
             DebugLevel::None => {}
             DebugLevel::Basic => self.emit(format_args!(
-                "request-ready endpoint={} method={} url={} page={} attempt={} policy-retry={} authentication-recovery={}",
+                "request-ready endpoint={} method={} target={:?} page={} attempt={} policy-retry={} authentication-recovery={}",
                 event.endpoint,
                 event.method,
-                event.observed_url,
+                event.target,
                 event.page_index,
                 event.attempt.index,
                 event.attempt.policy_retry_index,
                 event.attempt.authentication_recovery
             )),
             DebugLevel::Headers => self.emit(format_args!(
-                "request-ready endpoint={} method={} url={} page={} attempt={} policy-retry={} authentication-recovery={} headers={:?}",
+                "request-ready endpoint={} method={} target={:?} page={} attempt={} policy-retry={} authentication-recovery={}",
                 event.endpoint,
                 event.method,
-                event.observed_url,
+                event.target,
                 event.page_index,
                 event.attempt.index,
                 event.attempt.policy_retry_index,
-                event.attempt.authentication_recovery,
-                event.headers
+                event.attempt.authentication_recovery
             )),
         }
     }
@@ -60,10 +59,10 @@ impl DebugDispatcher {
         match self.level {
             DebugLevel::None => {}
             DebugLevel::Basic => self.emit(format_args!(
-                "response-head endpoint={} method={} url={} status={} page={} attempt={} policy-retry={} authentication-recovery={}",
+                "response-head endpoint={} method={} target={:?} status={} page={} attempt={} policy-retry={} authentication-recovery={}",
                 event.endpoint,
                 event.method,
-                event.observed_url,
+                event.target,
                 event.status,
                 event.page_index,
                 event.attempt.index,
@@ -71,10 +70,10 @@ impl DebugDispatcher {
                 event.attempt.authentication_recovery
             )),
             DebugLevel::Headers => self.emit(format_args!(
-                "response-head endpoint={} method={} url={} status={} page={} attempt={} policy-retry={} authentication-recovery={} content-length={:?} server-delay={:?}",
+                "response-head endpoint={} method={} target={:?} status={} page={} attempt={} policy-retry={} authentication-recovery={} content-length={:?} server-delay={:?}",
                 event.endpoint,
                 event.method,
-                event.observed_url,
+                event.target,
                 event.status,
                 event.page_index,
                 event.attempt.index,
@@ -89,10 +88,10 @@ impl DebugDispatcher {
     pub(crate) fn completion(&self, event: &OperationFinished<'_>) {
         if self.level != DebugLevel::None {
             self.emit(format_args!(
-                "completion endpoint={} method={} url={} page={} attempts={} policy-retries={} recovered-authentication={} status={:?} outcome={:?} elapsed={:?}",
+                "completion endpoint={} method={} target={:?} page={} attempts={} policy-retries={} recovered-authentication={} status={:?} outcome={:?} elapsed={:?}",
                 event.endpoint,
                 event.method,
-                event.observed_url,
+                event.target,
                 event.page_index,
                 event.attempts_started,
                 event.policy_retries,
@@ -141,41 +140,34 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use http::header::{AUTHORIZATION, HeaderValue};
-    use http::{HeaderMap, Method, StatusCode};
+    use http::{Method, StatusCode};
 
     use super::*;
-    use crate::hooks::{AttemptInfo, BodyKind, CompletionOutcome};
+    use crate::hooks::{AttemptInfo, BodyKind, CompletionOutcome, RequestTarget};
     use crate::operation::OperationId;
-    use crate::redaction::SanitizedHeaders;
-
     const SECRET: &str = "debug-secret-sentinel-7d4cb6";
 
     fn operation_id() -> OperationId {
         OperationId::allocate().expect("test operation ID")
     }
 
-    fn headers() -> HeaderMap {
-        let mut headers = HeaderMap::new();
-        headers.insert(AUTHORIZATION, HeaderValue::from_static(SECRET));
-        headers.insert("x-visible", HeaderValue::from_static("visible"));
-        headers
-    }
-
     #[test]
-    fn levels_are_body_free_and_sensitive_headers_are_redacted() {
+    fn levels_are_body_free_and_request_values_are_absent() {
         let method = Method::GET;
-        let headers = headers();
         let id = operation_id();
+        let target = RequestTarget::from_url(
+            &url::Url::parse("https://debug.example.test/health?first=one&second=two")
+                .expect("debug target"),
+            2,
+        );
         let before = AttemptStarted {
             operation_id: id,
             parent_operation_id: None,
             endpoint: "DebugApi::health::bytes",
             method: &method,
-            observed_url: "https://debug.example.test/health",
+            target,
             page_index: 0,
             attempt: AttemptInfo::INITIAL,
-            headers: SanitizedHeaders::new(&headers),
             body_kind: BodyKind::Empty,
             known_body_length: Some(0),
         };
@@ -184,7 +176,7 @@ mod tests {
             parent_operation_id: None,
             endpoint: before.endpoint,
             method: &method,
-            observed_url: before.observed_url,
+            target,
             page_index: 0,
             attempt: AttemptInfo::INITIAL,
             status: StatusCode::OK,
@@ -196,7 +188,7 @@ mod tests {
             parent_operation_id: None,
             endpoint: before.endpoint,
             method: &method,
-            observed_url: before.observed_url,
+            target,
             page_index: 0,
             attempts_started: 1,
             policy_retries: 0,
@@ -227,8 +219,8 @@ mod tests {
                 assert!(joined.contains("recovered-authentication=false"));
             }
             if level == DebugLevel::Headers {
-                assert!(joined.contains("Redacted"));
-                assert!(joined.contains("visible"));
+                assert!(joined.contains("query_occurrence_count: 2"));
+                assert!(joined.contains("public_header_occurrence_count: 2"));
                 assert!(joined.contains("content-length=Some(7)"));
             }
         }

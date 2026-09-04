@@ -562,7 +562,7 @@ impl OperationObserver for PaginationProbe {
                     parent_operation_id: context.parent_operation_id,
                     page_index: context.page_index,
                     attempt: context.attempt,
-                    safe: format!("{} {:?}", context.observed_url, context.headers),
+                    safe: format!("{:?}", context.target),
                 });
             }
             OperationEvent::ResponseHeadObserved(context) => {
@@ -573,8 +573,8 @@ impl OperationObserver for PaginationProbe {
                     context.attempt,
                     context.status,
                     format!(
-                        "{} content_length={:?} server_delay={:?}",
-                        context.observed_url, context.content_length, context.server_delay
+                        "{:?} content_length={:?} server_delay={:?}",
+                        context.target, context.content_length, context.server_delay
                     ),
                 ));
             }
@@ -583,7 +583,7 @@ impl OperationObserver for PaginationProbe {
                     .lock()
                     .expect("completion lock")
                     .push(CompletionRecord {
-                        safe: context.observed_url.to_owned(),
+                        safe: format!("{:?}", context.target),
                     });
             }
             OperationEvent::PaginationFinished(context) => {
@@ -609,7 +609,7 @@ impl OperationObserver for PaginationProbe {
 
 #[derive(Default)]
 struct LimiterProbe {
-    acquisitions: Mutex<Vec<(u32, String)>>,
+    acquisitions: Mutex<Vec<(u32, Option<String>)>>,
     observations: Mutex<Vec<(u32, StatusCode)>>,
 }
 
@@ -618,10 +618,10 @@ impl RateLimiter for LimiterProbe {
         &'a self,
         request: RateLimitRequest<'a>,
     ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
-        self.acquisitions
-            .lock()
-            .expect("acquisition lock")
-            .push((request.page_index, request.observed_url.to_owned()));
+        self.acquisitions.lock().expect("acquisition lock").push((
+            request.page_index,
+            request.logical_origin.map(str::to_owned),
+        ));
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
@@ -638,20 +638,19 @@ struct RejectingLimiter {
     acquisitions: AtomicUsize,
 }
 
-type HostLimiterContext = (u32, String, Option<String>, Vec<(String, Vec<u8>)>);
+type OriginLimiterContext = (u32, Option<String>, Vec<(String, Vec<u8>)>);
 
 #[derive(Default)]
 struct HostLimiterProbe {
-    acquisitions: Mutex<Vec<HostLimiterContext>>,
-    observations: Mutex<Vec<HostLimiterContext>>,
+    acquisitions: Mutex<Vec<OriginLimiterContext>>,
+    observations: Mutex<Vec<OriginLimiterContext>>,
 }
 
 impl HostLimiterProbe {
-    fn capture(request: &RateLimitRequest<'_>) -> HostLimiterContext {
+    fn capture(request: &RateLimitRequest<'_>) -> OriginLimiterContext {
         (
             request.page_index,
-            request.observed_url.to_owned(),
-            request.host.map(str::to_owned),
+            request.logical_origin.map(str::to_owned),
             request
                 .plan
                 .policies()

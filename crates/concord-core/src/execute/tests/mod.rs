@@ -1195,8 +1195,7 @@ struct StreamRecord {
 struct LimiterRequestRecord {
     endpoint: String,
     method: Method,
-    observed_url: String,
-    host: Option<String>,
+    logical_origin: Option<String>,
     page_index: u32,
     rule_ids: Vec<String>,
     key_values: Vec<Vec<u8>>,
@@ -1204,7 +1203,6 @@ struct LimiterRequestRecord {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct LimiterResponseRecord {
-    observed_url: String,
     status: StatusCode,
     server_delay: Option<Duration>,
 }
@@ -1312,8 +1310,8 @@ impl RateLimiter for AutomaticSurfaceLimiter {
             .lock()
             .expect("automatic limiter entries")
             .push(format!(
-                "acquire endpoint={} method={} url={} page={} keys={keys:?}",
-                request.endpoint, request.method, request.observed_url, request.page_index
+                "acquire endpoint={} method={} origin={:?} page={} keys={keys:?}",
+                request.endpoint, request.method, request.logical_origin, request.page_index
             ));
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
@@ -1324,10 +1322,10 @@ impl RateLimiter for AutomaticSurfaceLimiter {
             .lock()
             .expect("automatic limiter entries")
             .push(format!(
-                "observe endpoint={} method={} url={} page={} status={} server-delay={:?}",
+                "observe endpoint={} method={} origin={:?} page={} status={} server-delay={:?}",
                 response.request.endpoint,
                 response.request.method,
-                response.request.observed_url,
+                response.request.logical_origin,
                 response.request.page_index,
                 response.status,
                 response.server_delay,
@@ -1383,8 +1381,7 @@ impl RateLimiter for ProbeRateLimiter {
             .push(LimiterRequestRecord {
                 endpoint: request.endpoint.to_owned(),
                 method: request.method.clone(),
-                observed_url: request.observed_url.to_owned(),
-                host: request.host.map(str::to_owned),
+                logical_origin: request.logical_origin.map(str::to_owned),
                 page_index: request.page_index,
                 rule_ids: request
                     .plan
@@ -1425,7 +1422,6 @@ impl RateLimiter for ProbeRateLimiter {
             .lock()
             .expect("limiter responses")
             .push(LimiterResponseRecord {
-                observed_url: response.request.observed_url.to_owned(),
                 status: response.status,
                 server_delay: response.server_delay,
             });

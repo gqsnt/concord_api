@@ -687,6 +687,11 @@ impl ApplicationHttp {
         disposition: StatusDisposition,
         deadline: Option<tokio::time::Instant>,
     ) -> StatusCapture {
+        let retry_after = crate::error::status::parse_retry_after(
+            response.headers(),
+            self.retry_after_cap,
+            crate::runtime::system_wall_time(),
+        );
         collect_terminal_status(
             endpoint,
             method,
@@ -694,7 +699,7 @@ impl ApplicationHttp {
             disposition,
             self.status_body_limit,
             self.retry_after_cap,
-            None,
+            retry_after,
             deadline,
             ResponseChunkProgress::default(),
         )
@@ -744,7 +749,7 @@ impl ApplicationHttp {
             StatusDisposition::Terminal,
             self.status_body_limit,
             self.retry_after_cap,
-            Some(retry_after),
+            retry_after,
             deadline,
             progress,
         )

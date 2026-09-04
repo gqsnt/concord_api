@@ -13,6 +13,7 @@ use crate::runtime::defaults::{
     DEFAULT_REQUEST_BODY_BYTES, DEFAULT_RESPONSE_BODY_BYTES, DEFAULT_STATUS_BODY_BYTES,
     DEFAULT_STREAM_RESPONSE_BYTES,
 };
+use crate::runtime::{WallClock, default_wall_clock};
 
 /// Private immutable finite runtime configuration.
 pub(crate) struct RuntimeConfig {
@@ -33,6 +34,7 @@ pub(crate) struct RuntimeConfig {
     pub(crate) rate_limiter: Arc<dyn RateLimiter>,
     pub(crate) retry_policy: Option<RetryPolicy>,
     pub(crate) operation_observer: Arc<dyn OperationObserver>,
+    pub(crate) wall_clock: Arc<dyn WallClock>,
     pub(crate) debug: DebugLevel,
 }
 
@@ -78,6 +80,7 @@ impl RuntimeConfigBuilder {
                 rate_limiter,
                 retry_policy: None,
                 operation_observer: default_operation_observer(),
+                wall_clock: default_wall_clock(),
                 debug: DebugLevel::None,
             },
             limiter_selection: LimiterSelection::Fallback,
@@ -171,6 +174,12 @@ impl RuntimeConfigBuilder {
     #[must_use]
     pub fn operation_observer(mut self, observer: Arc<dyn OperationObserver>) -> Self {
         self.config.operation_observer = observer;
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn wall_clock(mut self, wall_clock: Arc<dyn WallClock>) -> Self {
+        self.config.wall_clock = wall_clock;
         self
     }
 

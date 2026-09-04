@@ -189,9 +189,8 @@ async fn page_lifecycle_is_sequential_correlated_and_limited_once_per_page() {
             .lock()
             .expect("acquisition lock")
             .iter()
-            .map(|(page, safe)| {
-                assert!(!safe.contains(FIRST_CURSOR));
-                assert!(!safe.contains(SECOND_CURSOR));
+            .map(|(page, origin)| {
+                assert!(origin.is_none());
                 *page
             })
             .collect::<Vec<_>>(),

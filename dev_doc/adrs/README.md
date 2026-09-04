@@ -14,5 +14,6 @@
 | 0010 | optional initial static secret | deferred for v2.1 |
 | 0011 | separate byte and item stream carriers | selected; comparative evidence passed |
 | 0012 | exact optional controls without convenience aliases | selected; human comprehension pending |
+| 0013 | contained observer panics with a private bounded diagnostic | selected; public reporting deferred |
 
 Update statuses only when the linked release gate supplies evidence. Supersede an ADR rather than editing history invisibly after a consequential reversal.

@@ -36,8 +36,7 @@ impl RateLimiter for CustomLimiter {
         let _ = (
             request.endpoint,
             request.method,
-            request.observed_url,
-            request.host,
+            request.logical_origin,
             request.page_index,
             request.attempt.index,
             request.attempt.policy_retry_index,
@@ -52,8 +51,7 @@ impl RateLimiter for CustomLimiter {
         let _ = (
             response.request.endpoint,
             response.request.method,
-            response.request.observed_url,
-            response.request.host,
+            response.request.logical_origin,
             response.request.page_index,
             response.request.attempt,
             response.request.plan.policies(),

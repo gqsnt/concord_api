@@ -1,9 +1,13 @@
 use std::error::Error;
 use std::fmt;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
+#[cfg(test)]
+use std::time::SystemTime;
 
 use bytes::Bytes;
-use http::header::{CONTENT_TYPE, RETRY_AFTER};
+use http::header::CONTENT_TYPE;
+#[cfg(test)]
+use http::header::RETRY_AFTER;
 use http::{HeaderMap, Method, StatusCode};
 
 use crate::codec::{DecodeBody, DecodeContext};
@@ -232,7 +236,11 @@ impl HttpResponseFailure {
         body: StatusBody,
         retry_after_cap: Duration,
     ) -> Self {
-        let retry_after = parse_retry_after(&headers, retry_after_cap, SystemTime::now());
+        let retry_after = parse_retry_after(
+            &headers,
+            retry_after_cap,
+            crate::runtime::system_wall_time(),
+        );
         Self::new_with_retry_after(
             endpoint,
             method,
@@ -397,6 +405,7 @@ impl fmt::Debug for HttpResponseFailure {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn parse_retry_after(
     headers: &HeaderMap,
     cap: Duration,

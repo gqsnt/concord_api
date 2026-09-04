@@ -148,7 +148,13 @@ impl<T> ApiResponse<T> {
     }
 
     #[must_use]
-    /// Returns the actual accepted response headers.
+    /// Returns the actual accepted response headers as explicit caller
+    /// authority.
+    ///
+    /// Header names and values can contain credentials, personal information,
+    /// or operationally sensitive application data. They are omitted from
+    /// `Debug` and automatic observation; callers own any later logging and
+    /// storage.
     pub const fn headers(&self) -> &HeaderMap {
         &self.headers
     }

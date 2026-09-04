@@ -17,7 +17,8 @@ fn one_per_minute() -> RateLimitPlan {
         .expect("valid finite window");
     let policy = RateLimitPolicy::new(
         RateLimitId::new("public-contract").expect("valid ID"),
-        RateLimitKey::global(),
+        RateLimitKey::from_canonical_values([("origin", "https://example.test")])
+            .expect("bounded origin key"),
         NonZeroU32::MIN,
         [window],
     )
@@ -31,12 +32,11 @@ async fn downstream_local_limiter_uses_public_contracts_and_core_cooldown_cap() 
     assert_eq!(limiter.preparation_key_limit(), 1_024);
     assert_eq!(one_per_minute().policies().len(), 1);
 
-    let plan = RateLimitPlan::empty();
+    let plan = one_per_minute();
     let request = || RateLimitRequest {
         endpoint: "RateApi::limited",
         method: &Method::GET,
-        observed_url: "https://example.test/limited",
-        host: Some("example.test"),
+        logical_origin: Some("https://example.test"),
         page_index: 0,
         attempt: AttemptInfo {
             index: 0,

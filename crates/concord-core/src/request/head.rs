@@ -1197,18 +1197,31 @@ impl HeadBuilder {
             return Err(invalid_route(self.meta.endpoint_id(), self.meta.method()));
         }
         let observed_url: Arc<str> = observed_url.into();
+        let rate_limit_logical_origin = self
+            .rate_limit_policies
+            .iter()
+            .any(|policy| {
+                policy
+                    .key()
+                    .parts()
+                    .iter()
+                    .any(|part| part.name() == "origin")
+            })
+            .then(|| Arc::from(self.rate_limit_origin()));
+        let rate_limit_plan = Arc::new(RateLimitPlan::from_validated_policies(
+            self.rate_limit_policies,
+        ));
         Ok(PreparedHead {
             meta: self.meta,
             logical_url: self.logical_url,
             observed_url,
+            rate_limit_logical_origin,
             public_headers: self.public_headers,
             pagination_sensitive_headers: self.pagination_sensitive_headers,
             timeout: self.timeout,
             debug: self.debug,
             auth: self.auth,
-            rate_limit_plan: Arc::new(RateLimitPlan::from_validated_policies(
-                self.rate_limit_policies,
-            )),
+            rate_limit_plan,
             budget: self.budget,
         })
     }
@@ -1220,6 +1233,7 @@ pub struct PreparedHead {
     meta: RequestMeta,
     logical_url: Url,
     observed_url: Arc<str>,
+    rate_limit_logical_origin: Option<Arc<str>>,
     public_headers: HeaderMap,
     pagination_sensitive_headers: HashSet<HeaderName>,
     timeout: Option<Duration>,
@@ -1323,19 +1337,16 @@ impl PreparedHead {
         &self.public_headers
     }
 
-    pub(crate) fn sanitized_public_headers(&self) -> crate::redaction::SanitizedHeaders<'_> {
-        crate::redaction::SanitizedHeaders::with_sensitive(
-            &self.public_headers,
-            &self.pagination_sensitive_headers,
-        )
+    pub(crate) fn request_target(&self) -> crate::hooks::RequestTarget {
+        crate::hooks::RequestTarget::from_url(&self.logical_url, self.public_headers.len())
     }
 
     pub(crate) const fn pagination_sensitive_headers(&self) -> &HashSet<HeaderName> {
         &self.pagination_sensitive_headers
     }
 
-    pub(crate) fn rate_limit_host(&self) -> Option<&str> {
-        self.logical_url.host_str()
+    pub(crate) fn rate_limit_logical_origin(&self) -> Option<&str> {
+        self.rate_limit_logical_origin.as_deref()
     }
 
     #[doc(hidden)]
@@ -2331,7 +2342,7 @@ mod tests {
         );
 
         let head = builder.finish().expect("bounded pagination host head");
-        assert_eq!(head.rate_limit_host(), Some(expected_host.as_str()));
+        assert_eq!(head.rate_limit_logical_origin(), None);
         assert_eq!(
             Url::parse(head.observed_url())
                 .expect("safe URL")

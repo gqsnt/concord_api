@@ -38,6 +38,7 @@ impl<'a> SanitizedHeaders<'a> {
         }
     }
 
+    #[cfg(test)]
     pub(crate) const fn with_sensitive(
         headers: &'a HeaderMap,
         sensitive: &'a HashSet<HeaderName>,

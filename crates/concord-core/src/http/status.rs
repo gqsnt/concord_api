@@ -31,7 +31,7 @@ pub(super) async fn collect_terminal_status(
     disposition: StatusDisposition,
     limit: Option<NonZeroUsize>,
     retry_after_cap: Duration,
-    parsed_retry_after: Option<Option<Duration>>,
+    parsed_retry_after: Option<Duration>,
     deadline: Option<tokio::time::Instant>,
     mut progress: ResponseChunkProgress,
 ) -> StatusCapture {
@@ -41,13 +41,7 @@ pub(super) async fn collect_terminal_status(
 
     let status = response.status();
     let headers = response.headers().clone();
-    let retry_after = parsed_retry_after.unwrap_or_else(|| {
-        crate::error::status::parse_retry_after(
-            &headers,
-            retry_after_cap,
-            std::time::SystemTime::now(),
-        )
-    });
+    let retry_after = parsed_retry_after;
     let body = match limit {
         None => StatusBody::disabled(),
         Some(limit)

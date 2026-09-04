@@ -4,7 +4,55 @@ use http::{Method, StatusCode};
 
 use crate::body::BodyKind;
 use crate::operation::OperationId;
-use crate::redaction::SanitizedHeaders;
+
+/// Bounded value-free structure of one logical request target.
+///
+/// Exact path segments, query names and values, header names and values, and
+/// the complete URL are deliberately absent. Callers that explicitly need
+/// credential-free response metadata can use `ApiResponse` instead.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RequestTarget {
+    path_segment_count: usize,
+    query_occurrence_count: usize,
+    public_header_occurrence_count: usize,
+}
+
+impl RequestTarget {
+    pub(crate) fn from_url(url: &url::Url, public_header_occurrence_count: usize) -> Self {
+        let path_segment_count = url.path_segments().map_or(0, |segments| {
+            segments.filter(|segment| !segment.is_empty()).count()
+        });
+        let query_occurrence_count = url.query().map_or(0, |query| {
+            query
+                .split('&')
+                .filter(|occurrence| !occurrence.is_empty())
+                .count()
+        });
+        Self {
+            path_segment_count,
+            query_occurrence_count,
+            public_header_occurrence_count,
+        }
+    }
+
+    /// Returns the number of nonempty encoded path-segment occurrences.
+    #[must_use]
+    pub const fn path_segment_count(self) -> usize {
+        self.path_segment_count
+    }
+
+    /// Returns the number of encoded query occurrences.
+    #[must_use]
+    pub const fn query_occurrence_count(self) -> usize {
+        self.query_occurrence_count
+    }
+
+    /// Returns the number of public request-header occurrences.
+    #[must_use]
+    pub const fn public_header_occurrence_count(self) -> usize {
+        self.public_header_occurrence_count
+    }
+}
 
 /// Safe structural identity of one visible managed attempt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -36,15 +84,12 @@ pub struct AttemptStarted<'a> {
     pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
-    /// Credential-sanitized logical URL. Public values may still contain
-    /// operational identifiers or personally identifiable information.
-    pub observed_url: &'a str,
+    /// Value-free bounded request-target structure.
+    pub target: RequestTarget,
     /// Zero-based page index; direct requests use zero.
     pub page_index: u32,
     /// Structural identity of this visible managed attempt.
     pub attempt: AttemptInfo,
-    /// Sanitized public request headers.
-    pub headers: SanitizedHeaders<'a>,
     /// Structural request-body category.
     pub body_kind: BodyKind,
     /// Known request-body length when available before materialization.
@@ -62,9 +107,8 @@ pub struct ResponseHeadObserved<'a> {
     pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
-    /// Credential-sanitized logical URL. Public values may still contain
-    /// operational identifiers or personally identifiable information.
-    pub observed_url: &'a str,
+    /// Value-free bounded request-target structure.
+    pub target: RequestTarget,
     /// Zero-based page index; direct requests use zero.
     pub page_index: u32,
     /// Structural identity of the attempt that produced this head.
@@ -92,9 +136,8 @@ pub struct OperationFinished<'a> {
     pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
-    /// Credential-sanitized logical URL. Public values may still contain
-    /// operational identifiers or personally identifiable information.
-    pub observed_url: &'a str,
+    /// Value-free bounded request-target structure.
+    pub target: RequestTarget,
     /// Zero-based page index; direct requests use zero.
     pub page_index: u32,
     /// Number of visible attempts whose before-send stage began.

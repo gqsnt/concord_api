@@ -209,7 +209,7 @@ async fn custom_authorization_is_absent_from_retry_classifier_and_safe_diagnosti
             .lock()
             .expect("before hooks")
             .iter()
-            .all(|record| !record.observed_url.contains(SENTINEL))
+            .all(|record| !format!("{:?}", record.target).contains(SENTINEL))
     );
 
     let diagnostics = format!(
@@ -956,12 +956,11 @@ async fn challenge_recovery_still_observes_each_received_response_once() {
         [INITIAL_ATTEMPT, AUTHENTICATION_RECOVERY_ATTEMPT]
     );
     for record in before {
-        assert_eq!(
-            record.observed_url,
-            "https://protected.example.test/v1/protected"
-        );
-        assert!(!record.observed_url.contains(INITIAL));
-        assert!(!record.observed_url.contains(REFRESHED));
+        assert_eq!(record.target.path_segment_count(), 2);
+        assert_eq!(record.target.query_occurrence_count(), 0);
+        let rendered = format!("{:?}", record.target);
+        assert!(!rendered.contains(INITIAL));
+        assert!(!rendered.contains(REFRESHED));
     }
     let responses = hooks.response.lock().expect("response records");
     assert_eq!(responses.len(), 2);
@@ -1102,9 +1101,11 @@ async fn accepted_bytes_preserves_authentication_recovery_and_logical_native_url
         ]
     );
     assert!(before.iter().all(|record| {
-        !record.observed_url.contains(INITIAL)
-            && !record.observed_url.contains(REFRESHED)
-            && !record.observed_url.contains("access=")
+        let rendered = format!("{:?}", record.target);
+        record.target.query_occurrence_count() == 0
+            && !rendered.contains(INITIAL)
+            && !rendered.contains(REFRESHED)
+            && !rendered.contains("access=")
     }));
     drop(before);
     let completion = hooks.completion.lock().expect("completion records");
@@ -1252,11 +1253,12 @@ async fn prepared_codec_recovery_reuses_encoding_and_reenters_the_ordinary_limit
         [INITIAL_ATTEMPT, AUTHENTICATION_RECOVERY_ATTEMPT]
     );
     assert!(before.iter().all(|record| {
-        record.observed_url
-            == "https://protected.example.test/v1/prepared?session_token=%3Credacted%3E"
-            && !record.observed_url.contains(INITIAL)
-            && !record.observed_url.contains(REFRESHED)
-            && !record.observed_url.contains(PUBLIC_QUERY)
+        let rendered = format!("{:?}", record.target);
+        record.target.path_segment_count() == 2
+            && record.target.query_occurrence_count() == 1
+            && !rendered.contains(INITIAL)
+            && !rendered.contains(REFRESHED)
+            && !rendered.contains(PUBLIC_QUERY)
     }));
     drop(before);
     let completion = hooks.completion.lock().expect("prepared completion");

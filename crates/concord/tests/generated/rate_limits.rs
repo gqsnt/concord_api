@@ -418,7 +418,7 @@ fn canonical_utf8(value: &str) -> Vec<u8> {
 struct CapturingLimiter {
     acquisitions: Mutex<Vec<Vec<CapturedRule>>>,
     observations: Mutex<Vec<Vec<CapturedRule>>>,
-    hosts: Mutex<Vec<Option<String>>>,
+    logical_origins: Mutex<Vec<Option<String>>>,
 }
 
 struct GatedLimiter {
@@ -503,13 +503,16 @@ impl RateLimiter for CapturingLimiter {
         request: RateLimitRequest<'a>,
     ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
         let captured = Self::capture(request.plan);
-        let host = request.host.map(str::to_owned);
+        let logical_origin = request.logical_origin.map(str::to_owned);
         Box::pin(async move {
             self.acquisitions
                 .lock()
                 .expect("acquisition capture lock")
                 .push(captured);
-            self.hosts.lock().expect("host capture lock").push(host);
+            self.logical_origins
+                .lock()
+                .expect("logical-origin capture lock")
+                .push(logical_origin);
             Ok(RateLimitPermit::granted())
         })
     }
@@ -560,15 +563,18 @@ async fn sibling_route_families_resolve_distinct_origins_and_explicit_policy_ids
     client.platform().read().await.expect("platform request");
     client.regional().read().await.expect("regional request");
 
-    let hosts = limiter.hosts.lock().expect("route-family hosts");
+    let origins = limiter
+        .logical_origins
+        .lock()
+        .expect("route-family logical origins");
     assert_eq!(
-        hosts.as_slice(),
+        origins.as_slice(),
         [
-            Some("platform.api.route-family.example.test".to_owned()),
-            Some("regional.api.route-family.example.test".to_owned()),
+            Some("http://platform.api.route-family.example.test:80".to_owned()),
+            Some("http://regional.api.route-family.example.test:80".to_owned()),
         ]
     );
-    drop(hosts);
+    drop(origins);
 
     let acquisitions = limiter
         .acquisitions

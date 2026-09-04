@@ -137,9 +137,9 @@ pub mod error {
 pub mod observation {
     pub use concord_core::contracts::{
         AttemptInfo, AttemptStarted, BodyKind, CompletionOutcome, DebugLevel, OperationEvent,
-        OperationFinished, OperationObserver, PaginationFinished, ResponseHeadObserved,
-        SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders, StreamFinished, StreamKind,
-        StreamOutcome,
+        OperationFinished, OperationObserver, PaginationFinished, RequestTarget,
+        ResponseHeadObserved, SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders,
+        StreamFinished, StreamKind, StreamOutcome,
     };
 }
 

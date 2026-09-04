@@ -20,6 +20,8 @@ struct RetryLifecycleProbe {
     completions: Mutex<Vec<CompletionSnapshot>>,
     acquisitions: Mutex<Vec<AttemptInfo>>,
     observations: Mutex<Vec<(AttemptInfo, StatusCode)>>,
+    observer_server_delays: Mutex<Vec<Option<Duration>>>,
+    limiter_server_delays: Mutex<Vec<Option<Duration>>>,
     trace: Mutex<Vec<&'static str>>,
     fail_acquire_attempt: Option<u32>,
     response_drop_required_before_attempt: Option<(u32, Arc<AtomicUsize>)>,
@@ -50,6 +52,20 @@ impl RetryLifecycleProbe {
         self.observations
             .lock()
             .expect("observation records")
+            .clone()
+    }
+
+    fn observer_server_delays(&self) -> Vec<Option<Duration>> {
+        self.observer_server_delays
+            .lock()
+            .expect("observer server-delay records")
+            .clone()
+    }
+
+    fn limiter_server_delays(&self) -> Vec<Option<Duration>> {
+        self.limiter_server_delays
+            .lock()
+            .expect("limiter server-delay records")
             .clone()
     }
 
@@ -86,6 +102,10 @@ impl OperationObserver for RetryLifecycleProbe {
                     event.attempt,
                     event.status,
                 ));
+                self.observer_server_delays
+                    .lock()
+                    .expect("observer server-delay records")
+                    .push(event.server_delay);
             }
             OperationEvent::OperationFinished(event) => {
                 self.trace.lock().expect("retry trace").push("complete");
@@ -148,6 +168,22 @@ impl RateLimiter for RetryLifecycleProbe {
             .lock()
             .expect("observation records")
             .push((response.request.attempt, response.status));
+        self.limiter_server_delays
+            .lock()
+            .expect("limiter server-delay records")
+            .push(response.server_delay);
+    }
+}
+
+struct FixedCountingWallClock {
+    now: std::time::SystemTime,
+    captures: AtomicUsize,
+}
+
+impl crate::runtime::WallClock for FixedCountingWallClock {
+    fn now(&self) -> std::time::SystemTime {
+        self.captures.fetch_add(1, Ordering::SeqCst);
+        self.now
     }
 }
 
@@ -220,6 +256,59 @@ async fn runtime_default_has_no_managed_retry_policy() {
             .expect("remaining scripts"),
         1
     );
+}
+
+#[tokio::test]
+async fn response_wall_time_is_captured_once_and_one_server_delay_fact_reaches_all_consumers() {
+    let executor = DeterministicExecutor::new();
+    let response_time = std::time::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let expected_delay = Duration::from_secs(7);
+    let retry_at = httpdate::fmt_http_date(response_time + expected_delay);
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        http::header::RETRY_AFTER,
+        HeaderValue::try_from(retry_at).expect("HTTP-date header"),
+    );
+    executor
+        .application()
+        .queue_response(
+            ScriptedResponse::status(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
+                .headers(headers),
+        )
+        .expect("HTTP-date terminal response");
+
+    let probe = Arc::new(RetryLifecycleProbe::default());
+    let limiter: Arc<dyn RateLimiter> = probe.clone();
+    let fixed_clock = Arc::new(FixedCountingWallClock {
+        now: response_time,
+        captures: AtomicUsize::new(0),
+    });
+    let wall_clock: Arc<dyn crate::runtime::WallClock> = fixed_clock.clone();
+    let core = ClientCore::build_with_development(
+        "http://execution.example.test/v1/",
+        HttpConfigBuilder::new().http1_only(),
+        RuntimeConfigBuilder::new()
+            .operation_observer(probe.clone())
+            .rate_limiter(limiter)
+            .wall_clock(wall_clock),
+        &executor,
+    )
+    .expect("wall-clock development core");
+
+    let error = bytes_request(core)
+        .await
+        .expect_err("terminal response remains the endpoint result");
+    assert_eq!(error.category(), ErrorCategory::HttpStatus);
+    assert_eq!(
+        error
+            .http_response()
+            .expect("terminal response metadata")
+            .retry_after(),
+        Some(expected_delay)
+    );
+    assert_eq!(probe.observer_server_delays(), [Some(expected_delay)]);
+    assert_eq!(probe.limiter_server_delays(), [Some(expected_delay)]);
+    assert_eq!(fixed_clock.captures.load(Ordering::SeqCst), 1);
 }
 
 #[cfg(feature = "http2")]

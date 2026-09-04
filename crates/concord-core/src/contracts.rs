@@ -57,8 +57,8 @@ pub use crate::error::{
 pub use crate::execute::MAX_VISIBLE_ATTEMPTS_PER_OPERATION;
 pub use crate::hooks::{
     AttemptInfo, AttemptStarted, BoxFuture, CompletionOutcome, DebugLevel, OperationEvent,
-    OperationFinished, OperationObserver, PaginationFinished, ResponseHeadObserved, StreamFinished,
-    StreamKind, StreamOutcome,
+    OperationFinished, OperationObserver, PaginationFinished, RequestTarget, ResponseHeadObserved,
+    StreamFinished, StreamKind, StreamOutcome,
 };
 pub use crate::http::provider::{
     ProviderBody, ProviderBodyFactory, ProviderHttp, ProviderRequest, ProviderResponse,

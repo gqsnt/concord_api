@@ -25,7 +25,6 @@ pub struct ClientCore {
 struct ClientInner {
     credential_context: crate::auth::CredentialContext,
     base_url: Url,
-    safe_base_url: Arc<str>,
     http: ManagedHttp,
     runtime: RuntimeConfig,
     #[cfg(test)]
@@ -47,12 +46,10 @@ impl ClientCore {
         ManagedHttp::validate_fixed_base(&http, &base_url)?;
         let http = ManagedHttp::build(http, &runtime)?;
         http.application.validate_fixed_base(&base_url)?;
-        let safe_base_url = Arc::from(base_url.as_str());
         Ok(Self {
             inner: Arc::new(ClientInner {
                 credential_context: crate::auth::CredentialContext::new(),
                 base_url,
-                safe_base_url,
                 http,
                 runtime,
                 #[cfg(test)]
@@ -77,12 +74,10 @@ impl ClientCore {
         ManagedHttp::validate_fixed_base(&http, &base_url)?;
         let http = ManagedHttp::build_with_development(http, &runtime, executor)?;
         http.application.validate_fixed_base(&base_url)?;
-        let safe_base_url = Arc::from(base_url.as_str());
         Ok(Self {
             inner: Arc::new(ClientInner {
                 credential_context: crate::auth::CredentialContext::new(),
                 base_url,
-                safe_base_url,
                 http,
                 runtime,
                 debug_output: None,
@@ -97,10 +92,6 @@ impl ClientCore {
 
     pub(crate) fn credential_context(&self) -> &crate::auth::CredentialContext {
         &self.inner.credential_context
-    }
-
-    pub(crate) fn safe_base_url(&self) -> Arc<str> {
-        Arc::clone(&self.inner.safe_base_url)
     }
 
     pub(crate) fn application_http(&self) -> &ApplicationHttp {
@@ -133,6 +124,10 @@ impl ClientCore {
 
     pub(crate) fn operation_observer(&self) -> &Arc<dyn OperationObserver> {
         &self.inner.runtime.operation_observer
+    }
+
+    pub(crate) fn response_wall_time(&self) -> std::time::SystemTime {
+        self.inner.runtime.wall_clock.now()
     }
 
     pub(crate) fn default_debug(&self) -> DebugLevel {

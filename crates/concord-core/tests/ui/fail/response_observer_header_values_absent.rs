@@ -4,8 +4,19 @@ struct Probe;
 
 impl OperationObserver for Probe {
     fn observe(&self, event: OperationEvent<'_>) {
-        if let OperationEvent::ResponseHeadObserved(response) = event {
-            let _ = response.headers;
+        match event {
+            OperationEvent::AttemptStarted(request) => {
+                let _ = request.observed_url;
+                let _ = request.headers;
+            }
+            OperationEvent::ResponseHeadObserved(response) => {
+                let _ = response.observed_url;
+                let _ = response.headers;
+            }
+            OperationEvent::OperationFinished(completion) => {
+                let _ = completion.observed_url;
+            }
+            _ => {}
         }
     }
 }

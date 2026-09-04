@@ -673,7 +673,11 @@ impl RequestPlan {
         &self.observed_url
     }
 
-    /// Returns owned sanitized public headers.
+    /// Returns owned sanitized public headers as explicit caller authority.
+    ///
+    /// Non-credential public values can still contain personally or
+    /// operationally sensitive application data. They are omitted from this
+    /// plan's `Debug` implementation and automatic observation.
     #[must_use]
     pub const fn public_headers(&self) -> &SanitizedHeaderMap {
         &self.public_headers
@@ -742,8 +746,8 @@ impl fmt::Debug for RequestPlan {
         formatter
             .debug_struct("RequestPlan")
             .field("description", &self.description)
-            .field("observed_url", &self.observed_url)
-            .field("public_headers", &self.public_headers)
+            .field("observed_url", &"<explicit accessor only>")
+            .field("public_header_count", &self.public_headers.len())
             .field("resolved_timeout", &self.resolved_timeout)
             .field("page_index", &self.page_index)
             .field("rate_limit_policy_count", &self.rate_limit_policy_count)

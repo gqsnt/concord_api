@@ -69,11 +69,7 @@ async fn limiter_observes_synchronously_before_user_response_observer() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].endpoint, ENDPOINT);
     assert_eq!(records[0].method, Method::GET);
-    assert_eq!(
-        records[0].observed_url,
-        "http://execution.example.test/v1/health/bytes"
-    );
-    assert_eq!(records[0].host.as_deref(), Some("execution.example.test"));
+    assert_eq!(records[0].logical_origin, None);
     assert_eq!(records[0].page_index, 0);
     assert_eq!(records[0].rule_ids, ["ExecutionApi::rate_limit::tenant"]);
     let expected_key = crate::rate_limit::encode_canonical(
@@ -245,10 +241,6 @@ async fn limiter_observation_uses_typed_feedback_without_headers() {
     assert!(!format!("{response:?}").contains(PUBLIC_VALUE));
     let responses = limiter.response_records();
     assert_eq!(responses.len(), 1);
-    assert_eq!(
-        responses[0].observed_url,
-        "http://execution.example.test/v1/health/bytes"
-    );
     assert_eq!(responses[0].status, StatusCode::OK);
     assert_eq!(responses[0].server_delay, None);
     let rendered = format!("{responses:?}");

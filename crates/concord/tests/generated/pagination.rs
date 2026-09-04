@@ -805,7 +805,7 @@ struct PaginationHooks {
 
 type GeneratedAggregateRecord = (u32, usize, bool, Option<u16>);
 type GeneratedRateKeyPart = (String, Vec<u8>);
-type GeneratedLimiterContext = (u32, String, Option<String>, Vec<GeneratedRateKeyPart>);
+type GeneratedLimiterContext = (u32, Option<String>, Vec<GeneratedRateKeyPart>);
 
 #[derive(Default)]
 struct PaginationLimiterProbe {
@@ -874,8 +874,7 @@ impl RateLimiter for PaginationLimiterProbe {
             .collect();
         self.contexts.lock().expect("limiter contexts").push((
             request.page_index,
-            request.observed_url.to_owned(),
-            request.host.map(str::to_owned),
+            request.logical_origin.map(str::to_owned),
             parts,
         ));
         Box::pin(async { Ok(RateLimitPermit::granted()) })
@@ -895,8 +894,7 @@ impl RateLimiter for PaginationLimiterProbe {
             .expect("limiter observations")
             .push((
                 request.page_index,
-                request.observed_url.to_owned(),
-                request.host.map(str::to_owned),
+                request.logical_origin.map(str::to_owned),
                 parts,
             ));
     }
@@ -909,19 +907,19 @@ impl OperationObserver for PaginationHooks {
                 self.before
                     .lock()
                     .expect("before lock")
-                    .push(format!("{} {:?}", context.observed_url, context.headers));
+                    .push(format!("{:?}", context.target));
             }
             OperationEvent::ResponseHeadObserved(context) => {
                 self.response.lock().expect("response lock").push(format!(
-                    "{} content_length={:?} server_delay={:?}",
-                    context.observed_url, context.content_length, context.server_delay
+                    "{:?} content_length={:?} server_delay={:?}",
+                    context.target, context.content_length, context.server_delay
                 ));
             }
             OperationEvent::OperationFinished(context) => {
                 self.completion
                     .lock()
                     .expect("completion lock")
-                    .push(context.observed_url.to_owned());
+                    .push(format!("{:?}", context.target));
             }
             OperationEvent::PaginationFinished(context) => {
                 self.aggregate.lock().expect("aggregate lock").push((
@@ -1297,7 +1295,7 @@ async fn cursor_and_custom_empty_pages_follow_controller_authority_and_redact_co
     );
     for safe in hooks.before.lock().expect("before capture").iter() {
         assert!(!safe.contains("custom-cursor-sentinel-6d91"));
-        assert!(safe.contains("region-header-sentinel-b17"));
+        assert!(!safe.contains("region-header-sentinel-b17"));
     }
     assert_eq!(
         hooks
@@ -1499,7 +1497,11 @@ async fn explicit_endpoint_nested_scope_alias_and_repeated_helpers_have_parity()
     assert_eq!(nested_safe.len(), 3);
     assert!(nested_safe.iter().all(|safe| !safe.contains("region-a")));
     assert!(nested_safe.iter().all(|safe| !safe.contains("region-b")));
-    assert!(nested_safe[0].contains("repository-b"));
+    assert!(
+        nested_safe
+            .iter()
+            .all(|safe| !safe.contains("repository-b"))
+    );
 
     let collision_client = CollisionPaginationApi::new().expect("collision client");
     let _: concord::pagination::PaginatedRequest<_> = collision_client
@@ -1519,7 +1521,7 @@ async fn explicit_endpoint_nested_scope_alias_and_repeated_helpers_have_parity()
 }
 
 #[tokio::test]
-async fn generated_pagination_reuses_lexical_global_rate_plan_and_actual_hosts() {
+async fn generated_pagination_omits_dynamic_origins_absent_that_rate_dimension() {
     const INITIAL: &str = "7319058410827319461";
     const NEXT: &str = "7319058410827319463";
     let server = ScriptedServer::start([
@@ -1564,17 +1566,16 @@ async fn generated_pagination_reuses_lexical_global_rate_plan_and_actual_hosts()
         contexts.iter().map(|context| context.0).collect::<Vec<_>>(),
         [0, 1]
     );
-    let first_host = format!("{INITIAL}.pagination-rate.example.test");
-    let next_host = format!("{NEXT}.pagination-rate.example.test");
-    assert_eq!(contexts[0].2.as_deref(), Some(first_host.as_str()));
-    assert_eq!(contexts[1].2.as_deref(), Some(next_host.as_str()));
-    assert_ne!(contexts[0].2, contexts[1].2);
-    assert_eq!(contexts[0].3.len(), 1);
-    assert_eq!(contexts[0].3, contexts[1].3);
-    assert_eq!(contexts[0].3[0].0, "endpoint");
-    for (_, observed_url, _, parts) in contexts.iter() {
-        let rendered_safe = format!("{observed_url}\n{:?}", hooks.before.lock().expect("hooks"));
-        assert!(observed_url.contains("x.pagination-rate.example.test"));
+    assert_eq!(contexts[0].1, None);
+    assert_eq!(contexts[1].1, None);
+    assert_eq!(contexts[0].2.len(), 1);
+    assert_eq!(contexts[0].2, contexts[1].2);
+    assert_eq!(contexts[0].2[0].0, "endpoint");
+    for (_, logical_origin, parts) in contexts.iter() {
+        let rendered_safe = format!(
+            "{logical_origin:?}\n{:?}",
+            hooks.before.lock().expect("hooks")
+        );
         assert!(!rendered_safe.contains(INITIAL));
         assert!(!rendered_safe.contains(NEXT));
         assert!(

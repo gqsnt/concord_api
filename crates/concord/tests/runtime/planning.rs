@@ -20,9 +20,8 @@ use concord::endpoint::RequestBodyCategory;
 use concord::endpoint::{EndpointId, ResponseAcquisition, RuntimeEndpoint, TimeoutSelection};
 use concord::error::ConfigurationErrorKind;
 use concord::http::{Method, SafeProxy};
-#[cfg(feature = "default-tls")]
 use concord::observation::SanitizedHeaderValue;
-use concord::observation::{OperationEvent, OperationObserver};
+use concord::observation::{OperationEvent, OperationObserver, RequestTarget};
 use concord::rate_limit::{
     NoopRateLimiter, RateLimitError, RateLimitPermit, RateLimitRequest, RateLimitResponse,
     RateLimiter,
@@ -37,6 +36,9 @@ const QUERY_SENTINEL: &str = "planned-query-secret-48c7";
 const HEADER_SENTINEL: &str = "planned-header-secret-95af";
 const PROVIDER_SENTINEL: &str = "planned-provider-secret-b40e";
 const BODY_SENTINEL: &[u8] = b"planned-body-secret-02d1";
+const UNKNOWN_PATH_SENTINEL: &str = "unknown-path-value-7461";
+const UNKNOWN_QUERY_SENTINEL: &str = "unknown-query-value-2c95";
+const UNKNOWN_HEADER_SENTINEL: &str = "unknown-header-value-8a30";
 
 #[derive(Default)]
 struct EffectCounts {
@@ -50,7 +52,8 @@ struct EffectCounts {
     before_send: AtomicUsize,
     response_head: AtomicUsize,
     completion: AtomicUsize,
-    heads: Mutex<Vec<(String, String, String)>>,
+    heads: Mutex<Vec<(String, RequestTarget)>>,
+    limiter_views: Mutex<Vec<String>>,
     lifecycle: Mutex<Vec<(String, &'static str)>>,
 }
 
@@ -71,6 +74,12 @@ impl EffectCounts {
             assert_eq!(count.load(Ordering::SeqCst), 0);
         }
         assert!(self.heads.lock().expect("head capture").is_empty());
+        assert!(
+            self.limiter_views
+                .lock()
+                .expect("limiter capture")
+                .is_empty()
+        );
         assert!(self.lifecycle.lock().expect("lifecycle capture").is_empty());
     }
 }
@@ -163,9 +172,31 @@ struct CountingLimiter {
 impl RateLimiter for CountingLimiter {
     fn acquire<'a>(
         &'a self,
-        _request: RateLimitRequest<'a>,
+        request: RateLimitRequest<'a>,
     ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
         self.effects.limiter_acquire.fetch_add(1, Ordering::SeqCst);
+        let mut visible = format!(
+            "endpoint={} method={} origin={:?} page={} attempt={}/{}/{}",
+            request.endpoint,
+            request.method,
+            request.logical_origin,
+            request.page_index,
+            request.attempt.index,
+            request.attempt.policy_retry_index,
+            request.attempt.authentication_recovery
+        );
+        for policy in request.plan.policies() {
+            visible.push_str(policy.id().as_str());
+            for part in policy.key().parts() {
+                visible.push_str(part.name());
+                visible.push_str(&String::from_utf8_lossy(part.value()));
+            }
+        }
+        self.effects
+            .limiter_views
+            .lock()
+            .expect("limiter capture")
+            .push(visible);
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
@@ -183,11 +214,11 @@ impl OperationObserver for CountingHooks {
         match event {
             OperationEvent::AttemptStarted(context) => {
                 self.effects.before_send.fetch_add(1, Ordering::SeqCst);
-                self.effects.heads.lock().expect("head capture").push((
-                    context.endpoint.to_owned(),
-                    context.observed_url.to_owned(),
-                    format!("{:?}", context.headers),
-                ));
+                self.effects
+                    .heads
+                    .lock()
+                    .expect("head capture")
+                    .push((context.endpoint.to_owned(), context.target));
                 self.effects
                     .lifecycle
                     .lock()
@@ -467,9 +498,9 @@ async fn runtime_endpoint_timeout_does_not_change_generated_timeout_or_lazy_exec
     let effects = Arc::new(EffectCounts::default());
     let client = configured_public_client(&server, &effects, Duration::from_secs(17));
     let endpoint = PublicPlanningApi::unbound().public_head(
-        "item".to_owned(),
-        "summary".to_owned(),
-        "visible".to_owned(),
+        UNKNOWN_PATH_SENTINEL.to_owned(),
+        UNKNOWN_QUERY_SENTINEL.to_owned(),
+        UNKNOWN_HEADER_SENTINEL.to_owned(),
         PlanningBodyInput {
             effects: Arc::clone(&effects),
         },
@@ -482,6 +513,24 @@ async fn runtime_endpoint_timeout_does_not_change_generated_timeout_or_lazy_exec
         TimeoutSelection::Explicit(Duration::from_secs(30))
     );
     assert_eq!(plan.resolved_timeout(), Some(Duration::from_secs(30)));
+    assert!(plan.observed_url().contains(UNKNOWN_PATH_SENTINEL));
+    assert!(plan.observed_url().contains(UNKNOWN_QUERY_SENTINEL));
+    assert_eq!(
+        plan.public_headers()
+            .get(&concord::http::HeaderName::from_static("x-public")),
+        Some(SanitizedHeaderValue::Text(UNKNOWN_HEADER_SENTINEL))
+    );
+    let plan_debug = format!("{plan:?}");
+    for sentinel in [
+        UNKNOWN_PATH_SENTINEL,
+        UNKNOWN_QUERY_SENTINEL,
+        UNKNOWN_HEADER_SENTINEL,
+    ] {
+        assert!(
+            !plan_debug.contains(sentinel),
+            "RequestPlan Debug exposed explicit caller metadata {sentinel}"
+        );
+    }
 
     assert_eq!(
         client
@@ -505,8 +554,49 @@ async fn runtime_endpoint_timeout_does_not_change_generated_timeout_or_lazy_exec
     let heads = effects.heads.lock().expect("head capture");
     assert_eq!(heads.len(), 1);
     assert_eq!(heads[0].0, plan.endpoint_id());
-    assert_eq!(heads[0].1, plan.observed_url());
-    assert_eq!(heads[0].2, format!("{:?}", plan.public_headers()));
+    let (_, after_scheme) = plan
+        .observed_url()
+        .split_once("://")
+        .expect("planned observed URL scheme");
+    let (_, path_and_query) = after_scheme
+        .split_once('/')
+        .expect("planned observed URL path");
+    let (path, query) = path_and_query
+        .split_once('?')
+        .map_or((path_and_query, None), |(path, query)| (path, Some(query)));
+    assert_eq!(
+        heads[0].1.path_segment_count(),
+        path.split('/')
+            .filter(|segment| !segment.is_empty())
+            .count()
+    );
+    assert_eq!(
+        heads[0].1.query_occurrence_count(),
+        query.map_or(0, |query| {
+            query
+                .split('&')
+                .filter(|occurrence| !occurrence.is_empty())
+                .count()
+        })
+    );
+    assert_eq!(
+        heads[0].1.public_header_occurrence_count(),
+        plan.public_headers().len()
+    );
+    let automatic_views = format!(
+        "{heads:?}\n{:?}",
+        effects.limiter_views.lock().expect("limiter capture")
+    );
+    for sentinel in [
+        UNKNOWN_PATH_SENTINEL,
+        UNKNOWN_QUERY_SENTINEL,
+        UNKNOWN_HEADER_SENTINEL,
+    ] {
+        assert!(
+            !automatic_views.contains(sentinel),
+            "automatic authority exposed unknown public value {sentinel}"
+        );
+    }
 }
 
 #[test]

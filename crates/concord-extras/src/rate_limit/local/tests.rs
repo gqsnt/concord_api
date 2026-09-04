@@ -45,21 +45,22 @@ fn rate_error<T>(result: Result<T, RateLimitError>, message: &str) -> RateLimitE
     }
 }
 
-async fn acquire(limiter: &LocalRateLimiter, plan: &RateLimitPlan, host: Option<&str>) {
-    try_acquire(limiter, plan, host).await.expect("acquire");
+async fn acquire(limiter: &LocalRateLimiter, plan: &RateLimitPlan, logical_origin: Option<&str>) {
+    try_acquire(limiter, plan, logical_origin)
+        .await
+        .expect("acquire");
 }
 
 async fn try_acquire(
     limiter: &LocalRateLimiter,
     plan: &RateLimitPlan,
-    host: Option<&str>,
+    logical_origin: Option<&str>,
 ) -> Result<RateLimitPermit, RateLimitError> {
     limiter
         .acquire(RateLimitRequest {
             endpoint: "RateApi::get",
             method: &Method::GET,
-            observed_url: "https://example.test/get",
-            host,
+            logical_origin,
             page_index: 0,
             attempt: initial_attempt(),
             plan,
@@ -70,15 +71,14 @@ async fn try_acquire(
 fn spawn_acquire(
     limiter: Arc<LocalRateLimiter>,
     plan: Arc<RateLimitPlan>,
-    host: Option<&'static str>,
+    logical_origin: Option<&'static str>,
 ) -> tokio::task::JoinHandle<Result<RateLimitPermit, RateLimitError>> {
     tokio::spawn(async move {
         limiter
             .acquire(RateLimitRequest {
                 endpoint: "RateApi::get",
                 method: &Method::GET,
-                observed_url: "https://example.test/get",
-                host,
+                logical_origin,
                 page_index: 0,
                 attempt: initial_attempt(),
                 plan: &plan,
@@ -90,7 +90,7 @@ fn spawn_acquire(
 async fn observe(
     limiter: &Arc<LocalRateLimiter>,
     plan: &RateLimitPlan,
-    host: Option<&str>,
+    logical_origin: Option<&str>,
     status: StatusCode,
     cap: Duration,
 ) {
@@ -99,8 +99,7 @@ async fn observe(
         request: RateLimitRequest {
             endpoint: "RateApi::get",
             method: &Method::GET,
-            observed_url: "https://example.test/get",
-            host,
+            logical_origin,
             page_index: 0,
             attempt: initial_attempt(),
             plan,
@@ -114,7 +113,7 @@ async fn observe(
 async fn observe_feedback(
     limiter: &Arc<LocalRateLimiter>,
     plan: &RateLimitPlan,
-    host: Option<&str>,
+    logical_origin: Option<&str>,
     status: StatusCode,
     server_delay: Option<Duration>,
     cap: Duration,
@@ -124,8 +123,7 @@ async fn observe_feedback(
         request: RateLimitRequest {
             endpoint: "RateApi::get",
             method: &Method::GET,
-            observed_url: "https://example.test/get",
-            host,
+            logical_origin,
             page_index: 0,
             attempt: initial_attempt(),
             plan,
@@ -377,7 +375,7 @@ async fn multiple_rules_and_windows_wait_for_the_complete_maximum() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn unavailable_rule_causes_no_partial_reservation_or_lock_across_wait() {
+async fn whole_plan_wait_causes_no_partial_reservation_or_lock_across_wait() {
     let limiter = Arc::new(LocalRateLimiter::new());
     let unavailable = Arc::new(plan(vec![policy(
         "slow",
@@ -491,8 +489,7 @@ async fn duplicate_equivalent_contributions_cannot_undercount() {
     let request = limiter.acquire(RateLimitRequest {
         endpoint: "RateApi::get",
         method: &Method::GET,
-        observed_url: "https://example.test/get",
-        host: Some("example.test"),
+        logical_origin: Some("https://example.test"),
         page_index: 0,
         attempt: initial_attempt(),
         plan: &plan,
@@ -524,8 +521,7 @@ async fn equivalent_contributions_above_capacity_fail_before_state_insertion() {
             .acquire(RateLimitRequest {
                 endpoint: "RateApi::get",
                 method: &Method::GET,
-                observed_url: "https://example.test/get",
-                host: Some("example.test"),
+                logical_origin: Some("https://example.test"),
                 page_index: 0,
                 attempt: initial_attempt(),
                 plan: &plan,
@@ -886,7 +882,7 @@ async fn host_cooldown_remains_host_scoped() {
             &plan,
             Cooldown {
                 duration: Duration::from_secs(10),
-                scope: CooldownScope::Host,
+                scope: CooldownScope::LogicalOrigin,
             },
             Duration::from_secs(60),
         )
@@ -1047,7 +1043,7 @@ async fn active_cooldown_is_not_evicted() {
             &plan,
             Cooldown {
                 duration: Duration::from_secs(10),
-                scope: CooldownScope::Host,
+                scope: CooldownScope::LogicalOrigin,
             },
             Duration::from_secs(60),
         )
@@ -1115,7 +1111,7 @@ async fn cooldown_capacity_failure_is_recoverable() {
     let plan = RateLimitPlan::empty();
     let cooldown = || Cooldown {
         duration: Duration::from_secs(5),
-        scope: CooldownScope::Host,
+        scope: CooldownScope::LogicalOrigin,
     };
 
     limiter
@@ -1162,7 +1158,7 @@ async fn existing_cooldown_remains_after_capacity_failure() {
             &plan,
             Cooldown {
                 duration: Duration::from_secs(10),
-                scope: CooldownScope::Host,
+                scope: CooldownScope::LogicalOrigin,
             },
             Duration::from_secs(60),
         )
@@ -1183,7 +1179,7 @@ async fn existing_cooldown_remains_after_capacity_failure() {
             &plan,
             Cooldown {
                 duration: Duration::from_secs(20),
-                scope: CooldownScope::Host,
+                scope: CooldownScope::LogicalOrigin,
             },
             Duration::from_secs(60),
         )
@@ -1300,8 +1296,7 @@ async fn zero_key_limit_accepts_global_and_rejects_nonempty_without_text() {
             .acquire(RateLimitRequest {
                 endpoint: "RateApi::get",
                 method: &Method::GET,
-                observed_url: "https://example.test/get",
-                host: Some("example.test"),
+                logical_origin: Some("https://example.test"),
                 page_index: 0,
                 attempt: initial_attempt(),
                 plan: &keyed,
@@ -1342,8 +1337,7 @@ async fn local_limiter_rejects_first_excess_without_sensitive_output() {
             .acquire(RateLimitRequest {
                 endpoint: "RateApi::get",
                 method: &Method::GET,
-                observed_url: "https://example.test/get",
-                host: Some("example.test"),
+                logical_origin: Some("https://example.test"),
                 page_index: 0,
                 attempt: initial_attempt(),
                 plan: &keyed,
@@ -1378,8 +1372,7 @@ fn poisoned_state_fails_future_acquisition_closed() {
         request: RateLimitRequest {
             endpoint: "RateApi::get",
             method: &Method::GET,
-            observed_url: "https://example.test/get",
-            host: Some("example.test"),
+            logical_origin: None,
             page_index: 0,
             attempt: initial_attempt(),
             plan: &empty,
@@ -1393,8 +1386,7 @@ fn poisoned_state_fails_future_acquisition_closed() {
         runtime.block_on(limiter.acquire(RateLimitRequest {
             endpoint: "RateApi::get",
             method: &Method::GET,
-            observed_url: "https://example.test/get",
-            host: Some("example.test"),
+            logical_origin: None,
             page_index: 0,
             attempt: initial_attempt(),
             plan: &empty,
