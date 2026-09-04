@@ -44,9 +44,8 @@ fn run() -> Result<(), String> {
         fs::write(fixture.join("src/main.rs"), fixture_source(count))
             .map_err(|error| error.to_string())?;
         let started = Instant::now();
-        let output = Command::new("cargo")
+        let output = cargo_expand(&root)
             .args([
-                "expand",
                 "--manifest-path",
                 &fixture.join("Cargo.toml").to_string_lossy(),
                 "--bin",
@@ -122,6 +121,22 @@ fn run() -> Result<(), String> {
         );
     }
     Ok(())
+}
+
+fn cargo_expand(root: &Path) -> Command {
+    let local = root.join(format!(
+        "target/tools/cargo-expand/bin/cargo-expand{}",
+        env::consts::EXE_SUFFIX
+    ));
+    if local.is_file() {
+        let mut command = Command::new(local);
+        command.arg("expand");
+        command
+    } else {
+        let mut command = Command::new("cargo");
+        command.arg("expand");
+        command
+    }
 }
 
 fn endpoint_counts() -> Result<Vec<usize>, String> {
