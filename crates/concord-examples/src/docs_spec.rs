@@ -1,7 +1,8 @@
 //! Compile-checked source for every fenced Concord DSL example.
 //!
-//! `scripts/check_docs_examples.ps1` requires each `concord` fence under
-//! `docs/` to match a normalized substring of this file.
+//! Rust `concord-xtask docs-check` owns the documentation contract used by
+//! local and CI verification. It requires each unanchored `concord` fence to
+//! match a normalized substring of this compiled module.
 
 use concord::{Json, api};
 use serde::Deserialize;

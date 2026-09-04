@@ -4,6 +4,9 @@ A request body is a dedicated semantic role. It is not a public atom, header map
 
 ## Declaration
 
+These endpoint fragments assume their domain types and any inherited request or
+response representations are declared by the surrounding compiled contract.
+
 With an inherited request representation:
 
 ```concord-pseudocode
@@ -19,6 +22,8 @@ POST login(body input: LoginInput via Form) -> Token;
 The body type is exactly what the caller passes. At most one body slot exists. Body defaults are forbidden.
 
 ## Optional body
+
+This partial endpoint fragment assumes an inherited request representation:
 
 ```concord-pseudocode
 PATCH patch_item(

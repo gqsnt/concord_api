@@ -1,8 +1,9 @@
 //! The complete Riot platform and regional API declaration.
 //!
 //! Required features: `json` and `rate-limit`. Mode: deterministic
-//! planning plus optional manual live execution. Documentation owner:
-//! `docs/spec.md`. Proving test: `tests/riot_contract.rs`.
+//! planning plus optional manual live execution. Documentation owners:
+//! `docs/spec.md` and `docs/riot_walkthrough.md`. Proving test:
+//! `tests/riot_contract.rs`.
 //! Rate windows and partitioning are illustrative Concord policy, not a
 //! verified statement of Riot's current service quotas.
 
@@ -18,16 +19,12 @@ api! {
     client RiotApi {
         base "https://riotgames.com/";
 
-        values {
-
-        }
-
         credentials {
             secret api_key;
             credential riot_api_key = api_key(secret.api_key);
         }
 
-        headers { "User-Agent" = "ConcordRiotExample/1.0"; }
+        headers { "User-Agent" = "ConcordRiotExample/2.1"; }
         auth { header "X-Riot-Token" = riot_api_key; }
         timeout 20s;
         request Json;

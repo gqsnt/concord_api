@@ -42,34 +42,42 @@ Sees operation, page, attempt, retry, auth recovery, stream, deadline, rate wait
 
 ## Selected language shape
 
-```concord-pseudocode
+This complete overview contract is maintained and compiled with the quick-start
+program:
+
+<!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_contract -->
+```concord
 api! {
     client CatalogApi {
-        base "https://catalog.example.test/";
-        timeout 10s;
-        request Json;
+        timeout 30s;
+        base "http://catalog.example.test/";
         response Json;
 
         values {
-            #[sensitive]
-            tenant: TenantId;
-            locale?: Locale;
+            tenant: String;
         }
 
+        path ["api"];
         query { "tenant" = client.tenant; }
 
-        scope regional(region: Region) {
-            subdomain [regional.region];
+        scope regional(region: String) {
+            subdomain replace [regional.region, "api"];
+            path ["v1", "catalog"];
 
-            GET items(tags: Vec<Tag>, category?: Category) -> ItemPage {
+            GET item_summaries(
+                category?: String,
+                offset: u64 = 0,
+                count: std::num::NonZeroU32 = DEFAULT_PAGE_SIZE,
+            ) -> Vec<ItemSummary> {
                 path ["items"];
                 query {
                     "category" = endpoint.category;
-                    append "tag" = each endpoint.tags;
+                    "offset" = endpoint.offset;
+                    "count" = endpoint.count;
                 }
-                effect safe;
-                paginate via OffsetPages {
+                paginate via concord::pagination::OffsetPagination {
                     offset -> endpoint.offset;
+                    page_size -> endpoint.count;
                 }
             }
         }

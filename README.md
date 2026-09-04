@@ -3,51 +3,74 @@
 Concord compiles one client-shaped API contract into a domain-shaped Rust API, inert plans and descriptions, and one bounded managed runtime.
 
 This checkout is the **Concord v2.1 integration candidate / beta**, version
-`2.1.0-beta.1`. Publication is disabled. It is not a release candidate or a
-stable release while any mandatory gate is open. The single current gate
-decision is [release-gate status](dev_doc/release_gate_status.md).
+`2.1.0-beta.1`. Publication is disabled. Local beta integration and stable
+publication are separate decisions; the single current disposition is the
+[release-gate status](dev_doc/release_gate_status.md).
 
-```concord-pseudocode
+Windows and Linux are supported and mandatory for integration. macOS is not a
+supported or release-gated platform for this decision.
+
+The complete declaration below is compiled in the maintained examples crate.
+
+<!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_contract -->
+```concord
 api! {
     client CatalogApi {
-        base "https://catalog.example.test/";
-        timeout 5s;
-        request Json;
+        timeout 30s;
+        base "http://catalog.example.test/";
         response Json;
 
         values {
-            #[sensitive]
             tenant: String;
         }
 
-        path ["v1"];
+        path ["api"];
         query { "tenant" = client.tenant; }
 
-        GET item(id: String) -> Item {
-            id "catalog.item.get";
-            path ["items", endpoint.id];
+        scope regional(region: String) {
+            subdomain replace [regional.region, "api"];
+            path ["v1", "catalog"];
+
+            GET item_summaries(
+                category?: String,
+                offset: u64 = 0,
+                count: std::num::NonZeroU32 = DEFAULT_PAGE_SIZE,
+            ) -> Vec<ItemSummary> {
+                path ["items"];
+                query {
+                    "category" = endpoint.category;
+                    "offset" = endpoint.offset;
+                    "count" = endpoint.count;
+                }
+                paginate via concord::pagination::OffsetPagination {
+                    offset -> endpoint.offset;
+                    page_size -> endpoint.count;
+                }
+            }
         }
     }
 }
 ```
 
-The authored tree is the caller tree. This complete example is compiled as part
-of the maintained examples crate:
+The authored tree is the caller tree. Client construction is inert:
 
-<!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_usage -->
+<!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_builder -->
 ```rust
-pub fn construct() -> Result<(), concord::ClientBuildError> {
-    let client = CatalogApi::builder()
+pub fn build_client() -> Result<CatalogApi, concord::ClientBuildError> {
+    CatalogApi::builder()
         .set_tenant("acme".to_owned())
-        .build()?;
+        .build()
+}
+```
 
-    let _: PaginatedRequest<_> = client
+One ordinary request follows the declared scope and endpoint shape:
+
+<!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_ordinary_request -->
+```rust
+pub fn ordinary_request(client: &CatalogApi) {
+    let _request = client
         .regional("eu".to_owned())
-        .item_summaries()
-        .set_category(Some("hardware".to_owned()))
-        .set_count(NonZeroU32::new(50).expect("positive page size"))
-        .paginate(PageLimit::Prefix(2));
-    Ok(())
+        .item_summaries();
 }
 ```
 

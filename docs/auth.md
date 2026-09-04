@@ -19,6 +19,9 @@ These are separate concepts and must not be collapsed into a header setter.
 
 ## Declare sources
 
+The following is a partial client-owned `credentials` clause; provider types
+and the surrounding `api!` declaration are intentionally omitted.
+
 ```concord-pseudocode
 credentials {
     secret bootstrap_key;
@@ -49,6 +52,8 @@ never implement revealing `Debug` or public `Display`.
 A declared auth placement is not optional merely because material may be unavailable. Execution fails before dispatch with a credential-unavailable category rather than silently omitting the placement.
 
 ## Attach private placement
+
+These are alternative partial attachment fragments, not one combined block:
 
 ```concord-pseudocode
 auth {

@@ -1,17 +1,20 @@
 # Riot v2.1 contract walkthrough
 
-The Riot example is the large-contract proof for v2.1. It exercises inherited JSON, regional/platform subdomains, many endpoint leaves, optional query values, stable IDs, private API-key auth, additive rate policies, pagination, and semantic-diff scale.
+The maintained Riot example is Concord's large-contract proof. It compiles a
+platform/regional tree with inherited JSON, private API-key placement,
+`subdomain replace`, optional query values, derived endpoint identities,
+explicit rate-policy IDs, and offset pagination. Quota numbers are illustrative
+test policy, not claims about Riot's current service.
 
-## Root contract
+## Compiled root preamble
 
-Target shape:
+This is an exact, deliberately partial excerpt from the compiled `RiotApi`
+declaration; the source continues with its platform and regional scopes.
 
+<!-- concord-source: crates/concord-examples/src/riot/api/riot.rs#riot_client -->
 ```concord-pseudocode
-api! {
     client RiotApi {
         base "https://riotgames.com/";
-        timeout 20s;
-        response Json;
 
         credentials {
             secret api_key;
@@ -19,67 +22,78 @@ api! {
         }
 
         headers { "User-Agent" = "ConcordRiotExample/2.1"; }
-        auth { header "X-Riot-Token" = riot_api_key challenge never; }
-
-        scope platform(platform: PlatformRoute) {
-            subdomain [platform.platform, "api"];
-            path ["lol"];
-            // endpoints...
-        }
-
-        scope regional(region: RegionalRoute) {
-            subdomain [regional.region, "api"];
-            // endpoints...
-        }
-    }
-}
+        auth { header "X-Riot-Token" = riot_api_key; }
+        timeout 20s;
+        request Json;
+        response Json;
 ```
 
-The declaration places `response Json;` at the narrowest stable owner and leaves only local representation exceptions inline.
+The inherited request and response representations are declared once at the
+client. Inline `via` clauses and explicit fences remain visible only where an
+endpoint or subtree deliberately differs.
 
-## Endpoint modeling
+## Platform and regional subdomains
 
-```concord-pseudocode
-GET top_masteries_by_puuid(
-    puuid: String,
-    count?: u32,
-) -> Vec<ChampionMasteryDto> {
-    id "riot.champion-mastery.top-by-puuid";
-    path ["champion-masteries", "by-puuid", endpoint.puuid, "top"];
-    query { "count" = endpoint.count; }
-}
+The compiled scopes use `subdomain replace`, for example
+`subdomain replace [platform.platform, "api"];`. Replacement discards inherited
+generated labels while retaining the fixed base host, so `Euw1` plans against
+`euw1.api.riotgames.com` and the Europe route plans against
+`europe.api.riotgames.com`. The Riot planning tests cover both results,
+redacted authentication, and their additive rate-policy counts.
+
+This is different from ordinary `subdomain [...]` composition. The example
+uses replacement because each route value owns the complete generated prefix
+for that branch.
+
+## A compiled representative endpoint
+
+The current pagination proof is the following complete endpoint declaration:
+
+<!-- concord-source: crates/concord-examples/src/riot/api/riot.rs#riot_match_ids_endpoint -->
+```concord
+            GET match_ids_by_puuid(
+                puuid: String,
+                start_time?: i64,
+                end_time?: i64,
+                queue?: u32,
+                match_type?: crate::riot::domain::MatchType,
+                start: u64 = 0,
+                count: std::num::NonZeroU32 = crate::riot::domain::DEFAULT_MATCH_PAGE_SIZE
+            ) -> Vec<String> {
+                path ["by-puuid", endpoint.puuid, "ids"];
+                query {
+                    "startTime" = endpoint.start_time;
+                    "endTime" = endpoint.end_time;
+                    "queue" = endpoint.queue;
+                    "type" = endpoint.match_type;
+                    "start" = endpoint.start;
+                    "count" = endpoint.count;
+                }
+                rate_limit { id "concord.riot.24"; key [origin]; cost 1;  allow 2000 per 10s; }
+                paginate via concord::pagination::OffsetPagination {
+                    offset -> endpoint.start;
+                    page_size -> endpoint.count;
+                }
+            }
 ```
 
-Review points:
+The endpoint demonstrates the selected ownership rules:
 
-- postfix `?` owns the Concord presence layer independently of the Rust payload type;
-- the result arrow is the exact awaited vector;
-- JSON is inherited and must appear in effective docs;
-- add a stable endpoint ID rather than deriving operations from source names;
-- string/enum route values need `RequestAtom` or explicit adapters.
+- postfix `?` owns Concord outer presence independently of the Rust payload;
+- `start` and `count` retain typed defaults and receive pagination updates;
+- the result arrow is the exact complete `Vec<String>` output;
+- JSON is inherited from the client and remains visible in effective
+  descriptions with its provenance;
+- the endpoint ID is derived from its source path in this unpublished beta;
+- the local anonymous rate-policy attachment has the explicit stable policy ID
+  `concord.riot.24`.
 
-## Subdomains
+The example does not currently contain explicit endpoint `id` clauses or a
+named reusable `rate_limits` policy. Its rate rules are anonymous attachments
+with explicit IDs. Those choices are documented facts, not evidence that every
+production Riot integration should use the same identity or quota structure.
 
-`subdomain` composes labels. Place stable common labels at the parent and only local labels in descendants when that better matches the actual hierarchy.
-
-Test platform and regional routes for:
-
-- normalized logical origin;
-- retained port/base path;
-- proxy independence;
-- ASCII label validation;
-- plan/redaction and rate-origin identity.
-
-## Query cardinality
-
-Audit every collection/optional query:
-
-- optional scalar: `name?: T` with assignment or `when_present` according to inheritance intent;
-- repeated collection: explicit `each`;
-- comma/list collection: explicit scalar adapter;
-- nested maps or complex filters: use a domain atom adapter or body rather than hidden serialization.
-
-Example repeated IDs:
+## Compiled caller usage
 
 <!-- concord-source: crates/concord-examples/src/riot/usage.rs#riot_paginated_request -->
 ```rust
@@ -92,52 +106,27 @@ Example repeated IDs:
         .paginate(PageLimit::Prefix(2));
 ```
 
-## Rate policy migration
+Construction is inert. `PageLimit::Prefix(2)` explicitly bounds the complete
+aggregate and avoids numeric pagination coercion.
 
-Current anonymous windows should receive explicit stable IDs and cost. Shared platform/regional quotas should become reusable policies when the dimension schema is genuinely common.
+## Authentication and evidence boundaries
 
-```concord-pseudocode
-rate_limits {
-    policy platform_reads(platform) {
-        id "riot.platform.reads";
-        key [origin, platform];
-        cost 1;
-        allow 500 per 10s;
-        allow 30_000 per 10m;
-    }
-}
-```
+The builder accepts one bounded secret and installs an explicit process-local
+limiter in the construction example. The generated endpoint surface has no
+public API-key header setter. Plans and descriptions expose authentication and
+policy structure, while tests prove the secret value is absent from plans,
+headers, and debug output.
 
-Do not claim the example numbers are current provider quotas unless verified. Keep them explicitly illustrative in docs/tests.
+The contract uses controller-owned offset pagination over a vector page. An
+envelope/cursor Riot endpoint is not part of the current compiled example and
+is not claimed as Riot evidence; generic envelope, cursor, and link-controller
+coverage lives in the maintained pagination modules and tests.
 
-The example client must choose a limiter explicitly. A local limiter is acceptable for deterministic demonstration but must be named process-local.
+## Maintained proof
 
-## Authentication
-
-Preserve one versioned slot/private placement. No endpoint receives a public API-key header setter. Plans, descriptions, errors, semantic diff, and observer events show auth structure but never material.
-
-## Pagination
-
-The Riot example should include at least one real-shaped cursor/page endpoint whose one-page output is an envelope rather than relying only on `Vec<T>` extraction. Use controller-owned items/continuation and test complete aggregate behavior.
-
-## Large-contract evidence
-
-Use Riot to measure:
-
-- authored representation-line reduction;
-- generated method count and autocomplete burden;
-- macro token/compile/rust-analyzer cost;
-- effective representation provenance in Rustdoc;
-- semantic diff expansion for parent representation, query, auth, and rate changes;
-- invalid pair diagnostic locality;
-- migration-report quality for ambiguous optional and collection payloads.
-
-## Completion criteria
-
-- no retired declaration surface or implicit optional/repetition behavior;
-- every endpoint has a stable ID or an explicit documented reason for retaining
-  derived identity in the unpublished integration candidate;
-- effective docs show inherited representation and policy origins;
-- all illustrative quota/auth statements remain clearly labeled;
-- contract compiles under no-default and required feature combinations;
-- Riot-specific runtime/planning tests and large-contract benchmarks pass.
+`crates/concord-examples/tests/riot_contract.rs` verifies platform and regional
+origin composition, additive policy counts, optional/default controls,
+pagination capability, derived endpoint identity, authentication redaction,
+and representation provenance. The construction test imports the large
+contract under its required `json`, `rate-limit`, and TLS feature combination.
+Large expansion and semantic-diff checks measure the broader projection costs.

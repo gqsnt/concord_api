@@ -4,6 +4,9 @@ Concord separates provider quota semantics from application-selected enforcement
 
 ## Declare a reusable policy
 
+This is a partial client-owned policy registry clause. The surrounding
+compiled contract supplies the client and referenced values:
+
 ```concord-pseudocode
 rate_limits {
     policy tenant_reads(tenant) {

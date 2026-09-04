@@ -17,6 +17,10 @@ Authentication challenge attribution runs before status acceptance. A status can
 
 Expected non-2xx domain outcomes remain possible:
 
+The following partial endpoint fragment assumes its domain types and
+representation implementation are defined by the surrounding compiled
+contract:
+
 ```concord-pseudocode
 GET find(id: ItemId) -> FindItem via FindItemRepresentation {
     status [200, 404];
@@ -88,7 +92,8 @@ Neither stream is `Clone` without real replay/multicast semantics.
 
 ## Built-in pair matrix
 
-The exact implementation is gated by Rust coherence and diagnostics. The intended finite first-party matrix is:
+The implemented finite first-party matrix, supported by the representation
+coherence and diagnostic suite, is:
 
 | Representation | Output | Meaning |
 |---|---|---|

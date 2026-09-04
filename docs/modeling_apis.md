@@ -58,6 +58,9 @@ Owns one operation:
 
 ## Representation defaults
 
+The snippets in this section are deliberately partial owner/endpoint fragments;
+the surrounding `api!` declaration and domain types are omitted.
+
 Use defaults when a representation is stable across a coherent owner:
 
 ```concord-pseudocode
@@ -146,7 +149,9 @@ Declare provider quota semantics in the contract and select enforcement in the a
 
 ## Pagination
 
-The endpoint returns one complete page. The controller owns item extraction and continuation:
+The endpoint returns one complete page. The following partial fragment assumes
+the surrounding client defines its response representation and the shown
+domain/controller types. The controller owns item extraction and continuation:
 
 ```concord-pseudocode
 GET items(cursor?: Cursor) -> ItemPage {

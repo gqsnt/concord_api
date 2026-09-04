@@ -4,6 +4,10 @@ Pagination is an explicit safe aggregate operation, not syntactic sugar for an u
 
 ## Declaration
 
+This is a partial endpoint fragment. Its surrounding compiled contract must
+define `PageSize`, `DEFAULT_PAGE_SIZE`, `ItemPage`, the effective response
+representation, and the `OffsetPages` controller implementation.
+
 ```concord-pseudocode
 GET item_summaries(
     offset: u64 = 0,
