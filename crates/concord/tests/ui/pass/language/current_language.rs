@@ -25,7 +25,7 @@ api! {
             last: bool,
         ) -> Bytes via Binary {
             timeout 2s;
-            id "v2.http_status.submit";
+            id "current.http_status.submit";
             headers { "X-Last" = endpoint.last; }
             path ["submit", endpoint.first];
             query { "body" = endpoint.body_value; }
@@ -37,8 +37,8 @@ const DEFAULT_TENANT: String = String::new();
 
 fn main() {
     let client = CurrentApi::new().expect("zero-input client");
-    let _: v2_api::http_status::TypeRequest = client.http_status().r#type();
-    let _: v2_api::http_status::SubmitRequest = client.http_status().submit(
+    let _: current_api::http_status::TypeRequest = client.http_status().r#type();
+    let _: current_api::http_status::SubmitRequest = client.http_status().submit(
         "first".to_owned(),
         "body".to_owned(),
         "ordinary-parameter".to_owned(),
@@ -56,5 +56,5 @@ fn main() {
         )
         .set_optional(Some(7))
         .omit_optional();
-    let _: v2_api::http_status::SubmitRequest = client.request(endpoint);
+    let _: current_api::http_status::SubmitRequest = client.request(endpoint);
 }
