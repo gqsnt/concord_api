@@ -225,4 +225,12 @@ fn contract_reflection_includes_value_free_authority_and_profile_schemas() {
     assert_eq!(profile.dimensions(), ["origin", "tenant"]);
     assert_eq!(profile.cost(), 2);
     assert_eq!(profile.windows().len(), 1);
+
+    let fetch = contract
+        .endpoints()
+        .iter()
+        .find(|endpoint| endpoint.id() == "v2.reflection.fetch")
+        .expect("reflected fetch endpoint");
+    let policy = &fetch.contract().expect("fetch contract").rate_policies()[0];
+    assert_eq!(policy.dimensions(), ["origin", "tenant"]);
 }

@@ -793,14 +793,20 @@ fn check_language_projection_agreement(
     }
 
     let rate_syntax = read(&root.join("crates/concord-macros/src/syntax/rate_limits.rs"))?;
+    let rate_descriptions = read(&root.join("crates/concord-macros/src/emit/descriptions.rs"))?;
     let rate_snapshot = read(&root.join(
         "crates/concord/tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.stderr",
     ))
     .unwrap_or_default();
     if !rate_syntax.contains("`origin`, `endpoint`, or declared bare formal names")
+        || !rate_descriptions
+            .contains("NormalizedRateLimitDimension::Origin { .. } => \"origin\".to_owned()")
         || rate_snapshot.contains("only `host`")
     {
-        errors.push("active rate diagnostic must name `origin`, not retired `host`".to_owned());
+        errors.push(
+            "active rate diagnostics and descriptions must name `origin`, not retired `host`"
+                .to_owned(),
+        );
     }
     if !spec.contains("PageLimit::")
         && !read(&root.join("docs/pagination.md"))?.contains("PageLimit::")

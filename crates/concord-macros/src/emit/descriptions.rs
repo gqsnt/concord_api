@@ -170,7 +170,7 @@ fn endpoint_contract_tokens(
         let cost = policy.cost;
         let dimensions = policy.dimensions.iter().map(|dimension| {
             let name = match dimension {
-                NormalizedRateLimitDimension::Origin { .. } => "host".to_owned(),
+                NormalizedRateLimitDimension::Origin { .. } => "origin".to_owned(),
                 NormalizedRateLimitDimension::Endpoint { .. } => "endpoint".to_owned(),
                 NormalizedRateLimitDimension::Value { public_name, .. } => public_name.clone(),
             };
