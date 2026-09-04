@@ -8,15 +8,26 @@ struct AcceptedStatusBody {
 
 struct AcceptedNotFound;
 
-impl ResponseSpec for AcceptedNotFound {
+impl TestResponseRepresentation for AcceptedNotFound {
     type Output = AcceptedStatusBody;
-    type Mode = Buffered;
 
-    fn accepts_status(status: StatusCode) -> bool {
-        status.is_success() || status == StatusCode::NOT_FOUND
+    fn accepted_status() -> AcceptedStatus {
+        AcceptedStatus::codes(
+            (200..=299)
+                .chain([404])
+                .map(|code| StatusCode::from_u16(code).expect("valid test status")),
+        )
+        .expect("nonempty test status set")
     }
+}
 
-    fn from_body(body: Bytes, head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
+impl ResponseRepresentation<AcceptedStatusBody> for AcceptedNotFound {
+    type Driver = Buffered;
+
+    fn from_body(
+        body: Bytes,
+        head: &ResponseHead<'_>,
+    ) -> Result<AcceptedStatusBody, ResponseBodyError> {
         Ok(AcceptedStatusBody {
             status: head.status,
             body,
@@ -26,18 +37,18 @@ impl ResponseSpec for AcceptedNotFound {
 
 struct AcceptedDecodeFailure;
 
-impl ResponseSpec for AcceptedDecodeFailure {
+impl TestResponseRepresentation for AcceptedDecodeFailure {
     type Output = ();
-    type Mode = Buffered;
 
-    fn accepts_status(status: StatusCode) -> bool {
-        status == StatusCode::NOT_FOUND
+    fn accepted_status() -> AcceptedStatus {
+        AcceptedStatus::codes([StatusCode::NOT_FOUND]).expect("nonempty test status set")
     }
+}
 
-    fn from_body(
-        _body: Bytes,
-        _head: &ResponseHead<'_>,
-    ) -> Result<Self::Output, ResponseBodyError> {
+impl ResponseRepresentation<()> for AcceptedDecodeFailure {
+    type Driver = Buffered;
+
+    fn from_body(_body: Bytes, _head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         Err(ResponseBodyError::new(ResponseBodyErrorKind::Decode))
     }
 }
@@ -46,13 +57,16 @@ static ACCEPTED_MEDIA_CONVERSIONS: AtomicUsize = AtomicUsize::new(0);
 
 struct AcceptedMediaFailure;
 
-impl ResponseSpec for AcceptedMediaFailure {
+impl TestResponseRepresentation for AcceptedMediaFailure {
     type Output = ();
-    type Mode = Buffered;
 
-    fn accepts_status(status: StatusCode) -> bool {
-        status == StatusCode::NOT_FOUND
+    fn accepted_status() -> AcceptedStatus {
+        AcceptedStatus::codes([StatusCode::NOT_FOUND]).expect("nonempty test status set")
     }
+}
+
+impl ResponseRepresentation<()> for AcceptedMediaFailure {
+    type Driver = Buffered;
 
     fn validate(_head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         Err(ResponseBodyError::new(
@@ -60,28 +74,9 @@ impl ResponseSpec for AcceptedMediaFailure {
         ))
     }
 
-    fn from_body(
-        _body: Bytes,
-        _head: &ResponseHead<'_>,
-    ) -> Result<Self::Output, ResponseBodyError> {
+    fn from_body(_body: Bytes, _head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         ACCEPTED_MEDIA_CONVERSIONS.fetch_add(1, Ordering::SeqCst);
         Ok(())
-    }
-}
-
-struct SlowAcceptedStatus;
-
-impl ResponseSpec for SlowAcceptedStatus {
-    type Output = Bytes;
-    type Mode = Buffered;
-
-    fn accepts_status(status: StatusCode) -> bool {
-        std::thread::sleep(Duration::from_millis(40));
-        status == StatusCode::NOT_FOUND
-    }
-
-    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
-        Ok(body)
     }
 }
 
@@ -91,32 +86,37 @@ static ORDER_ACCEPTANCE_CALLED: AtomicBool = AtomicBool::new(false);
 
 struct OrderedAcceptedStatus;
 
-impl ResponseSpec for OrderedAcceptedStatus {
+impl TestResponseRepresentation for OrderedAcceptedStatus {
     type Output = Bytes;
-    type Mode = Buffered;
 
-    fn accepts_status(status: StatusCode) -> bool {
+    fn accepted_status() -> AcceptedStatus {
+        AcceptedStatus::codes([StatusCode::NOT_FOUND]).expect("nonempty test status set")
+    }
+}
+
+impl ResponseRepresentation<Bytes> for OrderedAcceptedStatus {
+    type Driver = Buffered;
+
+    fn validate(_head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         assert!(ORDER_LIMITER_OBSERVED.load(Ordering::SeqCst));
         assert!(ORDER_HOOK_OBSERVED.load(Ordering::SeqCst));
         ORDER_ACCEPTANCE_CALLED.store(true, Ordering::SeqCst);
-        status == StatusCode::NOT_FOUND
+        Ok(())
     }
 
-    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
+    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<Bytes, ResponseBodyError> {
         Ok(body)
     }
 }
 
 struct AcceptanceOrderingHooks;
 
-impl ResponseGate for AcceptanceOrderingHooks {
-    fn before_response_handling<'a>(
-        &'a self,
-        _context: ResponseHeadEvent<'a>,
-    ) -> BoxFuture<'a, Result<(), GateError>> {
-        assert!(ORDER_LIMITER_OBSERVED.load(Ordering::SeqCst));
-        ORDER_HOOK_OBSERVED.store(true, Ordering::SeqCst);
-        Box::pin(async { Ok(()) })
+impl OperationObserver for AcceptanceOrderingHooks {
+    fn observe(&self, event: OperationEvent<'_>) {
+        if matches!(event, OperationEvent::ResponseHeadObserved(_)) {
+            assert!(ORDER_LIMITER_OBSERVED.load(Ordering::SeqCst));
+            ORDER_HOOK_OBSERVED.store(true, Ordering::SeqCst);
+        }
     }
 }
 
@@ -130,12 +130,8 @@ impl RateLimiter for AcceptanceOrderingLimiter {
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
-    fn observe<'a>(
-        &'a self,
-        _response: RateLimitResponse<'a>,
-    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
+    fn observe(&self, _response: RateLimitResponse<'_>) {
         ORDER_LIMITER_OBSERVED.store(true, Ordering::SeqCst);
-        Box::pin(async { Ok(()) })
     }
 }
 
@@ -353,7 +349,7 @@ async fn accepted_non_2xx_contract_and_decode_failures_keep_response_categories(
 }
 
 #[tokio::test]
-async fn limiter_and_response_hook_observation_precede_status_acceptance() {
+async fn limiter_and_response_observation_precede_status_acceptance() {
     ORDER_LIMITER_OBSERVED.store(false, Ordering::SeqCst);
     ORDER_HOOK_OBSERVED.store(false, Ordering::SeqCst);
     ORDER_ACCEPTANCE_CALLED.store(false, Ordering::SeqCst);
@@ -372,7 +368,7 @@ async fn limiter_and_response_hook_observation_precede_status_acceptance() {
         "http://execution.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
         RuntimeConfigBuilder::new()
-            .response_gate(Arc::new(AcceptanceOrderingHooks))
+            .operation_observer(Arc::new(AcceptanceOrderingHooks))
             .rate_limiter(Arc::new(AcceptanceOrderingLimiter)),
         &executor,
     )
@@ -383,26 +379,6 @@ async fn limiter_and_response_hook_observation_precede_status_acceptance() {
         .expect("ordered accepted response");
     assert_eq!(output, Bytes::from_static(b"accepted"));
     assert!(ORDER_ACCEPTANCE_CALLED.load(Ordering::SeqCst));
-}
-
-#[tokio::test]
-async fn deadline_is_checked_immediately_after_status_acceptance_callback() {
-    let executor = DeterministicExecutor::new();
-    executor
-        .application()
-        .queue_response(ScriptedResponse::status(
-            StatusCode::NOT_FOUND,
-            Bytes::from_static(b"must-not-be-acquired"),
-        ))
-        .expect("slow acceptance response");
-    let hooks = Arc::new(ProbeHooks::new());
-    let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
-
-    let error = response_request::<SlowAcceptedStatus>(core, Some(Duration::from_millis(5)))
-        .await
-        .expect_err("acceptance callback consumed the operation deadline");
-    assert_eq!(error.category(), ErrorCategory::Timeout);
-    assert_eq!(completion(&hooks.records()).2, Some(StatusCode::NOT_FOUND));
 }
 
 #[tokio::test]
@@ -677,7 +653,7 @@ async fn real_reqwest_stream_upload_transmits_exact_bytes_and_owned_media_type()
     let hooks = Arc::new(ProbeHooks::new());
     let core = real_core(&server, Arc::clone(&hooks), RuntimeConfigBuilder::new());
     let polls = Arc::new(AtomicUsize::new(0));
-    let stream = StreamBody::from_stream(BodyPollProbe::new(
+    let stream = RequestStream::from_stream(BodyPollProbe::new(
         [
             ProbeFrame::Data(b"real-"),
             ProbeFrame::Data(b"stream-"),
@@ -747,7 +723,7 @@ async fn real_reqwest_multipart_upload_owns_framing_and_supports_streams_and_fac
     );
 
     let polls = Arc::new(AtomicUsize::new(0));
-    let streamed = StreamBody::from_stream(BodyPollProbe::new(
+    let streamed = RequestStream::from_stream(BodyPollProbe::new(
         [
             ProbeFrame::Data(b"multipart-streamed-"),
             ProbeFrame::Data(b"value-secret-62e7"),
@@ -842,13 +818,13 @@ async fn managed_producer_failure_precedes_reqwest_transport_failure() {
         &format!("http://{address}/v1/"),
         HttpConfigBuilder::new().http1_only(),
         RuntimeConfigBuilder::new()
-            .request_gate(hooks.clone())
-            .response_gate(hooks.clone())
-            .completion_observer(hooks.clone()),
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone()),
     )
     .expect("managed producer core");
     let polls = Arc::new(AtomicUsize::new(0));
-    let body = StreamBody::from_stream(BodyPollProbe::new(
+    let body = RequestStream::from_stream(BodyPollProbe::new(
         [ProbeFrame::Failure("native-producer-secret-88be")],
         &polls,
     ))
@@ -889,7 +865,7 @@ async fn cancellation_drops_direct_and_factory_created_request_streams_without_c
     let direct_polls = Arc::new(AtomicUsize::new(0));
     let direct_dropped = Arc::new(AtomicBool::new(false));
     let direct_reached = Arc::new(tokio::sync::Notify::new());
-    let direct_body = RequestBody::stream(StreamBody::from_stream(PendingBodyStream {
+    let direct_body = RequestBody::stream(RequestStream::from_stream(PendingBodyStream {
         polls: Arc::clone(&direct_polls),
         dropped: Arc::clone(&direct_dropped),
         reached: Arc::clone(&direct_reached),
@@ -936,7 +912,7 @@ async fn cancellation_drops_direct_and_factory_created_request_streams_without_c
         Method::POST,
     )
     .path("prepared-cancellation")
-    .body(RequestBody::stream(StreamBody::from_stream(
+    .body(RequestBody::stream(RequestStream::from_stream(
         PendingBodyStream {
             polls: Arc::clone(&prepared_polls),
             dropped: Arc::clone(&prepared_dropped),
@@ -973,7 +949,7 @@ async fn cancellation_drops_direct_and_factory_created_request_streams_without_c
         let multipart_polls = Arc::new(AtomicUsize::new(0));
         let multipart_dropped = Arc::new(AtomicBool::new(false));
         let multipart_reached = Arc::new(tokio::sync::Notify::new());
-        let stream = StreamBody::from_stream(PendingBodyStream {
+        let stream = RequestStream::from_stream(PendingBodyStream {
             polls: Arc::clone(&multipart_polls),
             dropped: Arc::clone(&multipart_dropped),
             reached: Arc::clone(&multipart_reached),
@@ -1075,7 +1051,7 @@ async fn real_reqwest_bytes_collection_is_bounded_by_operation_deadline() {
 }
 
 #[tokio::test]
-async fn no_content_accepts_every_2xx_without_polling_the_body() {
+async fn empty_requires_zero_decoded_body_bytes() {
     let gate = BodyGate::closed();
     let server = ScriptedServer::start([
         ResponseScript::GatedBody {
@@ -1092,20 +1068,28 @@ async fn no_content_accepts_every_2xx_without_polling_the_body() {
         Arc::new(ProbeHooks::new()),
         RuntimeConfigBuilder::new(),
     );
-    tokio::time::timeout(Duration::from_secs(1), no_content_request(core.clone()))
-        .await
-        .expect("200 must not wait for body gate")
-        .expect("200 no-content");
+    let mut first = Box::pin(no_content_request(core.clone()).into_future());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), &mut first)
+            .await
+            .is_err(),
+        "Empty must acquire the body before it can prove that it is empty"
+    );
     gate.release();
+    assert_eq!(
+        first
+            .await
+            .expect_err("nonempty 200 violates Empty")
+            .category(),
+        ErrorCategory::ResponseDecoding
+    );
     no_content_request(core.clone())
         .await
-        .expect("204 no-content");
-    let response = no_content_request(core)
-        .response()
+        .expect("empty 204 satisfies Empty");
+    let error = no_content_request(core)
         .await
-        .expect("205 metadata");
-    assert_eq!(response.status(), StatusCode::RESET_CONTENT);
-    assert_eq!(response.value(), &());
+        .expect_err("nonempty 205 violates Empty");
+    assert_eq!(error.category(), ErrorCategory::ResponseDecoding);
 }
 
 #[tokio::test]
@@ -1245,7 +1229,7 @@ impl fmt::Debug for ProbeHooks {
                 "record_count",
                 &self.records.lock().map(|records| records.len()).ok(),
             )
-            .field("veto", &self.veto.load(Ordering::SeqCst))
+            .field("veto", &self.panic_on_attempt.load(Ordering::SeqCst))
             .field(
                 "completion_returned",
                 &self.completion_returned.load(Ordering::SeqCst),

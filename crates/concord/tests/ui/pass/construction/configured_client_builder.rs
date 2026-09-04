@@ -2,7 +2,7 @@ use concord::{SecretString, api};
 
 api! {
     client ConfiguredApi {
-        timeout off;
+        timeout 30s;
         base "http://configured.example.test/";
         values {
             tenant: String;
@@ -13,7 +13,7 @@ api! {
         }
 
 
-    GET read() -> () using NoContent {
+    GET read() -> () via Empty {
         auth { header "X-Api-Key" = application; }
     }
 }}

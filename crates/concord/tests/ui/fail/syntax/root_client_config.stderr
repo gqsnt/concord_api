@@ -1,4 +1,4 @@
-error: a v2 client must explicitly declare `timeout DURATION;` or `timeout off;`
+error: a v2.1 client must explicitly declare one positive finite `timeout DURATION;`
  --> tests/ui/fail/syntax/root_client_config.rs:4:12
   |
 4 |     client RootConfigApi {

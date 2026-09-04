@@ -6,7 +6,7 @@ use url::Url;
 use crate::endpoint::EndpointId;
 use crate::error::{ApiError, ClientBuildError, ClientBuildErrorKind};
 use crate::hooks::DebugDispatcher;
-use crate::hooks::{CompletionObserver, DebugLevel, RequestGate, ResponseGate};
+use crate::hooks::{DebugLevel, OperationObserver};
 use crate::http::HttpConfigBuilder;
 use crate::http::application::ApplicationHttp;
 use crate::http::build::ManagedHttp;
@@ -131,16 +131,8 @@ impl ClientCore {
         self.inner.runtime.retry_policy.as_ref()
     }
 
-    pub(crate) fn request_gate(&self) -> &Arc<dyn RequestGate> {
-        &self.inner.runtime.request_gate
-    }
-
-    pub(crate) fn response_gate(&self) -> &Arc<dyn ResponseGate> {
-        &self.inner.runtime.response_gate
-    }
-
-    pub(crate) fn completion_observer(&self) -> &Arc<dyn CompletionObserver> {
-        &self.inner.runtime.completion_observer
+    pub(crate) fn operation_observer(&self) -> &Arc<dyn OperationObserver> {
+        &self.inner.runtime.operation_observer
     }
 
     pub(crate) fn default_debug(&self) -> DebugLevel {
@@ -282,10 +274,10 @@ mod tests {
     use crate::http::SafeProxy;
 
     struct FirstObserver;
-    impl CompletionObserver for FirstObserver {}
+    impl OperationObserver for FirstObserver {}
 
     struct SecondObserver;
-    impl CompletionObserver for SecondObserver {}
+    impl OperationObserver for SecondObserver {}
 
     #[test]
     fn fixed_base_validation_is_structural_and_safe() {
@@ -347,8 +339,8 @@ mod tests {
         let _ = rustls::crypto::ring::default_provider().install_default();
         let first_executor = concord_test_support::executor::DeterministicExecutor::new();
         let second_executor = concord_test_support::executor::DeterministicExecutor::new();
-        let first_observer: Arc<dyn CompletionObserver> = Arc::new(FirstObserver);
-        let second_observer: Arc<dyn CompletionObserver> = Arc::new(SecondObserver);
+        let first_observer: Arc<dyn OperationObserver> = Arc::new(FirstObserver);
+        let second_observer: Arc<dyn OperationObserver> = Arc::new(SecondObserver);
         let first_limiter: Arc<dyn crate::rate_limit::RateLimiter> =
             Arc::new(NoopRateLimiter::new());
         let second_limiter: Arc<dyn crate::rate_limit::RateLimiter> =
@@ -389,7 +381,7 @@ mod tests {
                 .pagination_identity_limit(NonZeroUsize::new(41).expect("positive identity limit"))
                 .auth_failure_cooldown_cap(Duration::from_secs(43))
                 .rate_limit_cooldown_cap(Duration::from_secs(47))
-                .completion_observer(Arc::clone(&first_observer))
+                .operation_observer(Arc::clone(&first_observer))
                 .rate_limiter(Arc::clone(&first_limiter))
                 .debug(DebugLevel::Headers),
             &first_executor,
@@ -433,7 +425,7 @@ mod tests {
             Duration::from_secs(47)
         );
         assert!(Arc::ptr_eq(
-            &first.inner.runtime.completion_observer,
+            &first.inner.runtime.operation_observer,
             &first_observer
         ));
         assert!(Arc::ptr_eq(
@@ -455,7 +447,7 @@ mod tests {
         let clone = first.clone();
         assert!(first.shares_inner_with(&clone));
         assert!(Arc::ptr_eq(
-            &clone.inner.runtime.completion_observer,
+            &clone.inner.runtime.operation_observer,
             &first_observer
         ));
         assert!(Arc::ptr_eq(
@@ -477,7 +469,7 @@ mod tests {
             HttpConfigBuilder::new(),
             RuntimeConfigBuilder::new()
                 .request_body_limit(NonZeroUsize::new(53).expect("positive test limit"))
-                .completion_observer(Arc::clone(&second_observer))
+                .operation_observer(Arc::clone(&second_observer))
                 .rate_limiter(Arc::clone(&second_limiter))
                 .debug(DebugLevel::Basic),
             &second_executor,
@@ -485,7 +477,7 @@ mod tests {
         .expect("second client builds");
         assert!(!second.shares_inner_with(&first));
         assert!(!Arc::ptr_eq(
-            &second.inner.runtime.completion_observer,
+            &second.inner.runtime.operation_observer,
             &first_observer
         ));
         assert!(!Arc::ptr_eq(
@@ -518,7 +510,7 @@ mod tests {
             Duration::from_secs(47)
         );
         assert!(Arc::ptr_eq(
-            &first.inner.runtime.completion_observer,
+            &first.inner.runtime.operation_observer,
             &first_observer
         ));
         assert!(Arc::ptr_eq(

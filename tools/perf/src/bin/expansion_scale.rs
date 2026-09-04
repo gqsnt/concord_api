@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::Instant;
 
-const DEFAULT_COUNTS: &[usize] = &[1, 10, 100, 1_000];
+const DEFAULT_COUNTS: &[usize] = &[1, 10, 100, 500, 1_000];
 
 fn main() -> ExitCode {
     match run() {
@@ -133,10 +133,10 @@ use concord::{Bytes, api};
 api! {
     client ScaleApi {
         base "https://scale.example.test";
-        timeout off;
+        timeout 30s;
         rate_limits {
-            shared_reads() {
-                key [host, endpoint];
+            policy shared_reads() { id "concord.expansion_scale.1"; cost 1;
+                key [origin, endpoint];
                 allow 1_000_000 per 1s;
             }
         }
@@ -145,7 +145,7 @@ api! {
     );
     for index in 0..count {
         source.push_str(&format!(
-            "        GET endpoint_{index:04}(value: u64) -> Bytes using Bytes {{\n            path [endpoint.value];\n            rate_limit shared_reads();\n        }}\n"
+            "        GET endpoint_{index:04}(value: u64) -> Bytes via Binary {{\n            path [endpoint.value];\n            rate_limit shared_reads();\n        }}\n"
         ));
     }
     source.push_str("    }\n}\n");
@@ -177,7 +177,7 @@ mod tests {
     }
 
     #[test]
-    fn default_scale_points_cover_four_orders_of_endpoint_count() {
-        assert_eq!(DEFAULT_COUNTS, [1, 10, 100, 1_000]);
+    fn default_scale_points_cover_required_endpoint_counts() {
+        assert_eq!(DEFAULT_COUNTS, [1, 10, 100, 500, 1_000]);
     }
 }

@@ -19,13 +19,13 @@ impl Display for EndpointValue {
 
 api! {
     client MissingScopeApi {
-        timeout off;
+        timeout 30s;
         base "https://missing-scope.example.test";
 
 
     scope resources(scope_value: crate::ScopeValue) {
         path ["scopes", resources.scope_value, "resources"];
-        GET by_id(endpoint_value: crate::EndpointValue) -> () using NoContent {
+        GET by_id(endpoint_value: crate::EndpointValue) -> () via Empty {
             path [endpoint.endpoint_value];
         }
     }

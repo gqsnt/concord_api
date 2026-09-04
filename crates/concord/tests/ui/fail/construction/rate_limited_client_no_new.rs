@@ -1,17 +1,17 @@
-use concord::{NoContent, api};
+use concord::{Empty, api};
 
 api! {
     client RateLimitedApi {
         base "https://rate.example.test";
-        timeout off;
+        timeout 30s;
 
-        rate_limit {
+        rate_limit { cost 1;
             id "rate.client.read";
-            key [host, endpoint];
+            key [origin, endpoint];
             allow 10 per 1m;
         }
 
-        GET read() -> () using NoContent;
+        GET read() -> () via Empty;
     }
 }
 

@@ -11,46 +11,46 @@ use concord::http::SafeProxy;
 #[cfg(feature = "rate-limit")]
 use concord::rate_limit::LocalRateLimiter;
 use concord::rate_limit::{
-    BoxFuture, CanonicalKeyWriter, NoopRateLimiter, RateLimitError, RateLimitKeyValue,
-    RateLimitPermit, RateLimitPlan, RateLimitRequest, RateLimitResponse, RateLimiter,
+    BoxFuture, CanonicalKeyWriter, NoopRateLimiter, RateKeyPart, RateLimitError, RateLimitPermit,
+    RateLimitPlan, RateLimitRequest, RateLimitResponse, RateLimiter,
 };
 use concord::retry::{RetryDecision, RetryFailure, RetryPolicy};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 
 api! {
     client RateApi {
-        timeout off;
+        timeout 30s;
         base "http://rate-limit.example.test/";
         values {
             tenant: String;
         }
-        rate_limit {
+        rate_limit { id "concord.rate_limits.1"; key [origin]; cost 1;
             allow 500 per 10s;
             allow 30000 per 10m;
         }
 
 
     scope regions(region: String) {
-        rate_limit {
+        rate_limit { id "concord.rate_limits.2"; key [origin]; cost 1;
             allow 20 per 1s;
         }
-        GET read(item: String) -> Bytes using Bytes {
-            rate_limit {
+        GET read(item: String) -> Bytes via Binary {
+            rate_limit { id "concord.rate_limits.3"; key [origin];
                 cost 2;
                 allow 100 per 1m;
             }
         }
-        GET public() -> Bytes using Bytes;
+        GET public() -> Bytes via Binary;
     }
 }}
 
 api! {
     client EmptyRateApi {
-        timeout off;
+        timeout 30s;
         base "http://empty-rate.example.test/";
 
 
-    GET read() -> Bytes using Bytes;
+    GET read() -> Bytes via Binary;
 }}
 
 pub struct CanonicalOnly {
@@ -58,7 +58,7 @@ pub struct CanonicalOnly {
     calls: Arc<AtomicUsize>,
 }
 
-impl RateLimitKeyValue for CanonicalOnly {
+impl RateKeyPart for CanonicalOnly {
     fn write_canonical(&self, out: &mut CanonicalKeyWriter) -> Result<(), RateLimitError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         out.write_tagged_bytes("test.resource/v1", self.text.as_bytes())
@@ -69,75 +69,75 @@ pub struct NoDisplay;
 
 api! {
     client MinimalBoundsApi {
-        timeout off;
+        timeout 30s;
         base "http://minimal-rate.example.test/";
 
 
-    GET read(item: crate::NoDisplay) -> Bytes using Bytes {
-        rate_limit { allow 1 per 1s; }
+    GET read(item: crate::NoDisplay) -> Bytes via Binary {
+        rate_limit { id "concord.rate_limits.4"; key [origin]; cost 1;  allow 1 per 1s; }
     }
 }}
 
 api! {
     client IdentityRateApi {
-        timeout off;
+        timeout 30s;
         base "http://identity-rate.example.test/";
-        rate_limit { allow 100 per 1h; }
+        rate_limit { id "concord.rate_limits.5"; key [origin]; cost 1;  allow 100 per 1h; }
 
 
-    GET direct() -> Bytes using Bytes;
+    GET direct() -> Bytes via Binary;
     scope outer(region: String) {
-        rate_limit { allow 20 per 1h; }
-        GET immediate() -> Bytes using Bytes;
+        rate_limit { id "concord.rate_limits.6"; key [origin]; cost 1;  allow 20 per 1h; }
+        GET immediate() -> Bytes via Binary;
         scope inner(kind: String) {
-            rate_limit { allow 10 per 1h; }
-            GET nested() -> Bytes using Bytes {
-                rate_limit { cost 2; allow 30 per 1h; }
+            rate_limit { id "concord.rate_limits.7"; key [origin]; cost 1;  allow 10 per 1h; }
+            GET nested() -> Bytes via Binary {
+                rate_limit { id "concord.rate_limits.8"; key [origin];  cost 2; allow 30 per 1h; }
             }
         }
     }
     scope sibling(region: String) {
-        rate_limit { allow 7 per 1h; }
-        GET sibling_endpoint() -> Bytes using Bytes {
+        rate_limit { id "concord.rate_limits.9"; key [origin]; cost 1;  allow 7 per 1h; }
+        GET sibling_endpoint() -> Bytes via Binary {
             id "stable.identity.sibling";
-            rate_limit { allow 5 per 1h; }
+            rate_limit { id "concord.rate_limits.10"; key [origin]; cost 1;  allow 5 per 1h; }
         }
     }
-    GET outside() -> Bytes using Bytes;
+    GET outside() -> Bytes via Binary;
 }}
 
 api! {
     client ExplicitStableRateApi {
-        timeout off;
+        timeout 30s;
         base "http://explicit-stable-rate.example.test/";
 
 
     scope legacy_branch() {
-        rate_limit {
+        rate_limit { key [origin];
             id "service.shared.quota";
             cost 1;
             allow 2 per 1h;
         }
-        GET first() -> Bytes using Bytes;
+        GET first() -> Bytes via Binary;
     }
 
     scope renamed_branch() {
-        rate_limit {
+        rate_limit { key [origin];
             cost 2;
             id "service.shared.quota";
             allow 2 per 1h;
         }
-        GET second() -> Bytes using Bytes;
+        GET second() -> Bytes via Binary;
     }
 }}
 
 api! {
     client NamedRuleRateApi {
-        timeout off;
+        timeout 30s;
         base "http://named-rule-rate.example.test/";
 
         rate_limits {
-            account_reads(account) {
+            policy account_reads(account) { id "concord.rate_limits.13"; cost 1;
                 key [account];
                 allow 2 per 1h;
             }
@@ -147,28 +147,28 @@ api! {
     scope accounts(account: String) {
         rate_limit account_reads(account = accounts.account);
 
-        GET read() -> Bytes using Bytes;
+        GET read() -> Bytes via Binary;
     }
 
     scope profiles(account: String) {
         rate_limit account_reads(account = profiles.account);
 
-        GET inspect() -> Bytes using Bytes;
+        GET inspect() -> Bytes via Binary;
     }
 
-    GET lookup(account: String) -> Bytes using Bytes {
+    GET lookup(account: String) -> Bytes via Binary {
         rate_limit account_reads(account = endpoint.account) { cost 2; }
     }
 }}
 
 api! {
     client FirstSharedIdApi {
-        timeout off;
+        timeout 30s;
         base "http://first-shared-id.example.test/";
 
 
-    GET read() -> Bytes using Bytes {
-        rate_limit {
+    GET read() -> Bytes via Binary {
+        rate_limit { key [origin]; cost 1;
             id "service.cross_contract.quota";
             allow 1 per 1h;
         }
@@ -177,12 +177,12 @@ api! {
 
 api! {
     client SecondSharedIdApi {
-        timeout off;
+        timeout 30s;
         base "http://second-shared-id.example.test/";
 
 
-    GET renamed_read() -> Bytes using Bytes {
-        rate_limit {
+    GET renamed_read() -> Bytes via Binary {
+        rate_limit { key [origin]; cost 1;
             id "service.cross_contract.quota";
             allow 1 per 1h;
         }
@@ -191,79 +191,79 @@ api! {
 
 api! {
     client ClientBucketRateApi {
-        timeout off;
+        timeout 30s;
         base "http://client-bucket.example.test/";
-        rate_limit { allow 1 per 1h; }
+        rate_limit { id "concord.rate_limits.16"; key [origin]; cost 1;  allow 1 per 1h; }
 
 
-    GET direct() -> Bytes using Bytes;
+    GET direct() -> Bytes via Binary;
     scope descendant(value: String) {
-        GET nested() -> Bytes using Bytes;
+        GET nested() -> Bytes via Binary;
     }
 }}
 
 api! {
     client ScopeBucketRateApi {
-        timeout off;
+        timeout 30s;
         base "http://scope-bucket.example.test/";
-        rate_limit { allow 100 per 1h; }
+        rate_limit { id "concord.rate_limits.17"; key [origin]; cost 1;  allow 100 per 1h; }
 
 
     scope branch(value: String) {
-        rate_limit { allow 1 per 1h; }
-        GET immediate() -> Bytes using Bytes;
+        rate_limit { id "concord.rate_limits.18"; key [origin]; cost 1;  allow 1 per 1h; }
+        GET immediate() -> Bytes via Binary;
         scope nested(value: String) {
-            GET descendant() -> Bytes using Bytes;
+            GET descendant() -> Bytes via Binary;
         }
     }
-    GET outside() -> Bytes using Bytes;
+    GET outside() -> Bytes via Binary;
 }}
 
 api! {
     client HostBucketRateApi {
-        timeout off;
+        timeout 30s;
         base "http://host-bucket.example.test/";
 
 
     scope region(region: String) {
         subdomain replace [region.region, "api"];
-        rate_limit {
-            key [host];
+        rate_limit { id "concord.rate_limits.19"; cost 1;
+            key [origin];
             allow 100 per 1h;
         }
-        GET read() -> Bytes using Bytes;
+        GET read() -> Bytes via Binary;
     }
 }}
 
 api! {
     client ScopeValueBucketRateApi {
-        timeout off;
+        timeout 30s;
         base "http://scope-value-bucket.example.test/";
 
 
     scope account(account: String) {
-        rate_limit {
+        rate_limit { id "concord.rate_limits.20"; cost 1;
             key [account.account];
             allow 100 per 1h;
         }
-        GET read() -> Bytes using Bytes;
+        GET read() -> Bytes via Binary;
     }
 }}
 
 api! {
     client CollisionRateApi {
-        timeout off;
+        timeout 30s;
         base "http://collision-rate.example.test/";
 
 
     scope a__b(value: String) {
-        rate_limit { allow 1 per 1h; }
-        GET first() -> Bytes using Bytes;
+        rate_limit { id "concord.rate_limits.21"; key [origin]; cost 1;  allow 1 per 1h; }
+        GET first() -> Bytes via Binary;
     }
     scope a(value: String) {
         scope b(value: String) {
-            rate_limit { allow 1 per 1h; }
-            GET second() -> Bytes using Bytes;
+            rate_limit { id "concord.rate_limits.22"; key [origin]; cost 1;  allow 1 per 1h; }
+            GET second() -> Bytes via Binary;
         }
     }
 }}
@@ -283,9 +283,21 @@ impl Display for RouteHost {
     }
 }
 
+impl concord::RequestAtom for RouteHost {
+    fn write_atom(
+        &self,
+        output: &mut concord::BoundedAtomWriter<'_>,
+    ) -> Result<(), concord::AtomError> {
+        output.push_str(match self {
+            Self::Platform => "platform",
+            Self::Regional => "regional",
+        })
+    }
+}
+
 api! {
     client RouteFamilyApi {
-        timeout off;
+        timeout 30s;
         base "http://route-family.example.test/";
         values {
             platform: crate::RouteHost = crate::RouteHost::Platform;
@@ -295,20 +307,20 @@ api! {
 
     scope platform() {
         subdomain replace [client.platform, "api"];
-        rate_limit { allow 100 per 1h; }
-        GET read() -> Bytes using Bytes;
+        rate_limit { id "concord.rate_limits.23"; key [origin]; cost 1;  allow 100 per 1h; }
+        GET read() -> Bytes via Binary;
     }
 
     scope regional() {
         subdomain replace [client.regional, "api"];
-        rate_limit { allow 100 per 1h; }
-        GET read() -> Bytes using Bytes;
+        rate_limit { id "concord.rate_limits.24"; key [origin]; cost 1;  allow 100 per 1h; }
+        GET read() -> Bytes via Binary;
     }
 }}
 
 api! {
     client PartitionedRateApi {
-        timeout off;
+        timeout 30s;
         base "http://partitioned-rate.example.test/";
         values {
             tenant: String;
@@ -318,10 +330,10 @@ api! {
     scope regional(region: String) {
         subdomain replace [regional.region, "api"];
 
-        GET read(resource: crate::CanonicalOnly) -> Bytes using Bytes {
+        GET read(resource: crate::CanonicalOnly) -> Bytes via Binary {
             id "stable.partitioned.read";
-            rate_limit {
-                key [host, endpoint, client.tenant, regional.region, endpoint.resource];
+            rate_limit { id "concord.rate_limits.25"; cost 1;
+                key [origin, endpoint, client.tenant, regional.region, endpoint.resource];
                 allow 1 per 1h;
             }
         }
@@ -330,19 +342,19 @@ api! {
 
 api! {
     client EndpointBucketRateApi {
-        timeout off;
+        timeout 30s;
         base "http://endpoint-bucket.example.test/";
-        rate_limit {
+        rate_limit { id "concord.rate_limits.26"; cost 1;
             key [endpoint];
             allow 100 per 1h;
         }
 
 
-    GET first() -> Bytes using Bytes {
+    GET first() -> Bytes via Binary {
         id "stable.endpoint.first";
     }
 
-    GET second() -> Bytes using Bytes {
+    GET second() -> Bytes via Binary {
         id "stable.endpoint.second";
     }
 }}
@@ -352,12 +364,12 @@ mod nested_rate {
 
     api! {
         client NestedRateApi {
-            timeout off;
+            timeout 30s;
             base "http://nested-rate.example.test/";
-            rate_limit { allow 1 per 1s; }
+            rate_limit { id "concord.rate_limits.27"; key [origin]; cost 1;  allow 1 per 1s; }
 
 
-        GET read() -> Bytes using Bytes;
+        GET read() -> Bytes via Binary;
     }}
 }
 
@@ -366,22 +378,22 @@ mod repeated_rate {
 
     api! {
         client FirstRateApi {
-            timeout off;
+            timeout 30s;
             base "http://first-rate.example.test/";
-            rate_limit { allow 1 per 1s; }
+            rate_limit { id "concord.rate_limits.28"; key [origin]; cost 1;  allow 1 per 1s; }
 
 
-        GET read() -> Bytes using Bytes;
+        GET read() -> Bytes via Binary;
     }}
 
     api! {
         client SecondRateApi {
-            timeout off;
+            timeout 30s;
             base "http://second-rate.example.test/";
-            rate_limit { allow 1 per 1s; }
+            rate_limit { id "concord.rate_limits.29"; key [origin]; cost 1;  allow 1 per 1s; }
 
 
-        GET read() -> Bytes using Bytes;
+        GET read() -> Bytes via Binary;
     }}
 }
 
@@ -502,18 +514,12 @@ impl RateLimiter for CapturingLimiter {
         })
     }
 
-    fn observe<'a>(
-        &'a self,
-        response: RateLimitResponse<'a>,
-    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
+    fn observe(&self, response: RateLimitResponse<'_>) {
         let captured = Self::capture(response.request.plan);
-        Box::pin(async move {
-            self.observations
-                .lock()
-                .expect("observation capture lock")
-                .push(captured);
-            Ok(())
-        })
+        self.observations
+            .lock()
+            .expect("observation capture lock")
+            .push(captured);
     }
 }
 
@@ -536,7 +542,7 @@ fn generated_rate_limited_clients_fail_closed_without_an_explicit_limiter() {
 }
 
 #[tokio::test]
-async fn sibling_route_families_resolve_distinct_hosts_and_lexical_rule_ids() {
+async fn sibling_route_families_resolve_distinct_origins_and_explicit_policy_ids() {
     let server = ScriptedServer::start([
         ResponseScript::ok(b"platform".to_vec()),
         ResponseScript::ok(b"regional".to_vec()),
@@ -571,17 +577,10 @@ async fn sibling_route_families_resolve_distinct_hosts_and_lexical_rule_ids() {
     assert_eq!(acquisitions.len(), 2);
     assert_eq!(acquisitions[0].len(), 1);
     assert_eq!(acquisitions[1].len(), 1);
-    assert!(
-        acquisitions[0][0]
-            .id
-            .ends_with("route_family_api.platform.rate_limit")
-    );
-    assert!(
-        acquisitions[1][0]
-            .id
-            .ends_with("route_family_api.regional.rate_limit")
-    );
+    assert_eq!(acquisitions[0][0].id, "concord.rate_limits.23");
+    assert_eq!(acquisitions[1][0].id, "concord.rate_limits.24");
     assert_ne!(acquisitions[0][0].id, acquisitions[1][0].id);
+    assert_ne!(acquisitions[0][0].parts, acquisitions[1][0].parts);
 }
 
 #[tokio::test]
@@ -610,8 +609,8 @@ async fn client_global_rule_shares_one_bucket() {
     let acquisitions = limiter.acquisitions.lock().expect("client-global captures");
     assert_eq!(acquisitions.len(), 2);
     assert_eq!(acquisitions[0][0].id, acquisitions[1][0].id);
-    assert!(acquisitions[0][0].parts.is_empty());
-    assert!(acquisitions[1][0].parts.is_empty());
+    assert_eq!(acquisitions[0][0].parts, acquisitions[1][0].parts);
+    assert_eq!(acquisitions[0][0].parts[0].0, "origin");
 }
 
 #[tokio::test]
@@ -644,12 +643,12 @@ async fn scope_rule_without_by_shares_across_scope_values() {
     let acquisitions = limiter.acquisitions.lock().expect("scope-global captures");
     assert_eq!(acquisitions.len(), 2);
     assert_eq!(acquisitions[0][1].id, acquisitions[1][1].id);
-    assert!(acquisitions[0][1].parts.is_empty());
-    assert!(acquisitions[1][1].parts.is_empty());
+    assert_eq!(acquisitions[0][1].parts, acquisitions[1][1].parts);
+    assert_eq!(acquisitions[0][1].parts[0].0, "origin");
 }
 
 #[tokio::test]
-async fn scope_rule_by_host_separates_hosts() {
+async fn scope_rule_by_origin_separates_logical_origins() {
     let server = ScriptedServer::start([
         ResponseScript::ok(b"eu".to_vec()),
         ResponseScript::ok(b"us".to_vec()),
@@ -680,15 +679,15 @@ async fn scope_rule_by_host_separates_hosts() {
     assert_eq!(
         acquisitions[0][0].parts,
         [(
-            "host".to_owned(),
-            canonical_utf8("eu.api.host-bucket.example.test")
+            "origin".to_owned(),
+            canonical_utf8("http://eu.api.host-bucket.example.test:80")
         )]
     );
     assert_eq!(
         acquisitions[1][0].parts,
         [(
-            "host".to_owned(),
-            canonical_utf8("us.api.host-bucket.example.test")
+            "origin".to_owned(),
+            canonical_utf8("http://us.api.host-bucket.example.test:80")
         )]
     );
 }
@@ -778,7 +777,7 @@ async fn composite_keys_are_ordered_and_distinct() {
             .map(|(name, _)| name.as_str())
             .collect::<Vec<_>>(),
         [
-            "host",
+            "origin",
             "endpoint",
             "client.tenant",
             "regional.region",
@@ -797,7 +796,7 @@ async fn composite_keys_are_ordered_and_distinct() {
 }
 
 #[cfg(feature = "rate-limit")]
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn client_clones_share_state() {
     let server = ScriptedServer::start([ResponseScript::ok(b"first".to_vec())])
         .expect("shared-client limiter server");
@@ -988,11 +987,15 @@ async fn custom_limiter_receives_canonical_ordered_plan_and_owns_observation() {
     assert_eq!(acquisitions.len(), 1);
     let rules = &acquisitions[0];
     assert_eq!(rules.len(), 3);
-    assert!(rules[0].id.ends_with("rate_api.rate_limit"));
-    assert!(rules[1].id.ends_with("rate_api.regions.rate_limit"));
-    assert!(rules[2].id.ends_with("rate_api.regions.read.rate_limit"));
+    assert_eq!(rules[0].id, "concord.rate_limits.1");
+    assert_eq!(rules[1].id, "concord.rate_limits.2");
+    assert_eq!(rules[2].id, "concord.rate_limits.3");
     assert!(rules.windows(2).all(|pair| pair[0].id != pair[1].id));
-    assert!(rules.iter().all(|rule| rule.parts.is_empty()));
+    assert!(
+        rules
+            .iter()
+            .all(|rule| { rule.parts.len() == 1 && rule.parts[0].0 == "origin" })
+    );
     assert_eq!(rules[0].cost, 1);
     assert_eq!(
         rules[0].windows,
@@ -1010,7 +1013,7 @@ async fn custom_limiter_receives_canonical_ordered_plan_and_owns_observation() {
 }
 
 #[tokio::test]
-async fn inherited_lexical_declarations_keep_one_identity_across_descendant_modules() {
+async fn inherited_declarations_keep_explicit_identity_across_descendant_modules() {
     let responses = (0..5).map(|_| ResponseScript::ok(b"identity".to_vec()));
     let server = ScriptedServer::start(responses).expect("identity server");
     let proxy = SafeProxy::parse(server.url("")).expect("identity proxy");
@@ -1044,32 +1047,26 @@ async fn inherited_lexical_declarations_keep_one_identity_across_descendant_modu
     let acquisitions = limiter.acquisitions.lock().expect("identity captures");
     assert_eq!(acquisitions.len(), 5);
     let direct_client_id = &acquisitions[0][0].id;
-    assert_eq!(direct_client_id, "identity_rate_api.rate_limit");
+    assert_eq!(direct_client_id, "concord.rate_limits.5");
     assert_eq!(direct_client_id, &acquisitions[1][0].id);
     assert_eq!(direct_client_id, &acquisitions[2][0].id);
     assert_eq!(direct_client_id, &acquisitions[3][0].id);
     assert_eq!(direct_client_id, &acquisitions[4][0].id);
 
     let outer_id = &acquisitions[1][1].id;
-    assert_eq!(outer_id, "identity_rate_api.outer.rate_limit");
+    assert_eq!(outer_id, "concord.rate_limits.6");
     assert_eq!(outer_id, &acquisitions[2][1].id);
     assert_ne!(outer_id, &acquisitions[3][1].id);
     assert_ne!(outer_id, direct_client_id);
     assert!(!acquisitions[2][2].id.is_empty());
-    assert_eq!(
-        acquisitions[2][2].id,
-        "identity_rate_api.outer.inner.rate_limit"
-    );
+    assert_eq!(acquisitions[2][2].id, "concord.rate_limits.7");
     assert_eq!(acquisitions[2][2].cost, 1);
     assert_eq!(
         acquisitions[2][2].windows,
         [(10, std::time::Duration::from_secs(3600))]
     );
     assert_eq!(acquisitions[2][3].cost, 2);
-    assert_eq!(
-        acquisitions[2][3].id,
-        "identity_rate_api.outer.inner.nested.rate_limit"
-    );
+    assert_eq!(acquisitions[2][3].id, "concord.rate_limits.8");
     assert_eq!(
         acquisitions[2][3].windows,
         [(30, std::time::Duration::from_secs(3600))]
@@ -1077,11 +1074,10 @@ async fn inherited_lexical_declarations_keep_one_identity_across_descendant_modu
     assert_eq!(acquisitions[3].len(), 3);
     assert_ne!(acquisitions[3][1].id, acquisitions[1][1].id);
     assert_ne!(acquisitions[3][2].id, acquisitions[2][3].id);
-    assert!(
-        acquisitions
-            .iter()
-            .all(|plan| plan.iter().all(|rule| rule.parts.is_empty()))
-    );
+    assert!(acquisitions.iter().all(|plan| {
+        plan.iter()
+            .all(|rule| rule.parts.len() == 1 && rule.parts[0].0 == "origin")
+    }));
 }
 
 #[tokio::test]
@@ -1169,10 +1165,7 @@ async fn named_rule_bindings_emit_one_stable_logical_schema_across_branches() {
         .expect("named-rule acquisitions");
     assert_eq!(acquisitions.len(), 3);
     assert!(acquisitions.iter().all(|plan| plan.len() == 1));
-    assert_eq!(
-        acquisitions[0][0].id,
-        "named_rule_rate_api.rate_limit.account_reads"
-    );
+    assert_eq!(acquisitions[0][0].id, "concord.rate_limits.13");
     assert_eq!(acquisitions[0][0].id, acquisitions[1][0].id);
     assert_eq!(acquisitions[0][0].id, acquisitions[2][0].id);
     assert_eq!(
@@ -1189,7 +1182,7 @@ async fn named_rule_bindings_emit_one_stable_logical_schema_across_branches() {
 }
 
 #[cfg(feature = "rate-limit")]
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn named_rule_attachments_share_actual_local_limiter_bucket_state() {
     let server = ScriptedServer::start([
         ResponseScript::ok(b"first".to_vec()),
@@ -1291,7 +1284,7 @@ async fn policy_retry_reacquires_the_same_explicit_rule_identity() {
 }
 
 #[cfg(feature = "rate-limit")]
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn shared_limiter_reuses_one_explicit_id_across_generated_contracts() {
     let server = ScriptedServer::start([ResponseScript::ok(b"first".to_vec())])
         .expect("cross-contract shared limiter server");
@@ -1361,7 +1354,7 @@ async fn independent_clients_with_the_same_explicit_id_keep_isolated_state() {
 }
 
 #[tokio::test]
-async fn declaration_identities_repeat_within_one_contract_and_differ_by_source_path() {
+async fn explicit_policy_identities_repeat_within_one_contract_and_differ_by_declaration() {
     let server = ScriptedServer::start((0..6).map(|_| ResponseScript::ok(b"identity".to_vec())))
         .expect("identity collision server");
     let limiter = Arc::new(CapturingLimiter::default());
@@ -1436,13 +1429,21 @@ async fn declaration_identities_repeat_within_one_contract_and_differ_by_source_
     let acquisitions = limiter.acquisitions.lock().expect("collision captures");
     assert_eq!(acquisitions.len(), 5);
     assert_eq!(acquisitions[0][0].id, acquisitions[1][0].id);
+    assert_eq!(acquisitions[0][0].id, "concord.rate_limits.5");
     assert_ne!(acquisitions[0][0].id, acquisitions[2][0].id);
+    assert_eq!(acquisitions[2][0].id, "concord.rate_limits.27");
     assert_ne!(acquisitions[3][0].id, acquisitions[4][0].id);
-    assert!(acquisitions.iter().all(|plan| plan[0].parts.is_empty()));
+    assert_eq!(acquisitions[3][0].id, "concord.rate_limits.28");
+    assert_eq!(acquisitions[4][0].id, "concord.rate_limits.29");
+    assert!(
+        acquisitions
+            .iter()
+            .all(|plan| { plan[0].parts.len() == 1 && plan[0].parts[0].0 == "origin" })
+    );
 }
 
 #[tokio::test]
-async fn punctuation_distinct_lexical_paths_have_distinct_private_symbols() {
+async fn punctuation_distinct_paths_keep_distinct_explicit_policies() {
     let server = ScriptedServer::start([
         ResponseScript::ok(b"first".to_vec()),
         ResponseScript::ok(b"second".to_vec()),
@@ -1475,12 +1476,13 @@ async fn punctuation_distinct_lexical_paths_have_distinct_private_symbols() {
     assert_eq!(acquisitions.len(), 2);
     assert_eq!(acquisitions[0].len(), 1);
     assert_eq!(acquisitions[1].len(), 1);
-    assert_ne!(acquisitions[0][0].id, acquisitions[1][0].id);
+    assert_eq!(acquisitions[0][0].id, "concord.rate_limits.21");
+    assert_eq!(acquisitions[1][0].id, "concord.rate_limits.22");
     assert!(
         acquisitions
             .iter()
             .flatten()
-            .all(|rule| rule.parts.is_empty())
+            .all(|rule| rule.parts.len() == 1 && rule.parts[0].0 == "origin")
     );
 }
 
@@ -1514,7 +1516,7 @@ async fn sibling_and_endpoint_local_rules_do_not_share_unrelated_buckets() {
     assert_eq!(acquisitions.len(), 2);
     assert_eq!(acquisitions[0].len(), 3);
     assert_eq!(acquisitions[1].len(), 1);
-    assert_eq!(acquisitions[0][2].id, "stable.identity.sibling.rate_limit");
+    assert_eq!(acquisitions[0][2].id, "concord.rate_limits.10");
     assert_ne!(acquisitions[0][1].id, acquisitions[0][2].id);
     assert_ne!(acquisitions[0][2].id, acquisitions[1][0].id);
 }

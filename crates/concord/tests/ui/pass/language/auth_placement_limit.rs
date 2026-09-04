@@ -1,8 +1,8 @@
-use concord::{NoContent, api};
+use concord::{Empty, api};
 
 api! {
     client AuthPlacementBoundary {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
         credentials {
             secret key_value;
@@ -76,7 +76,7 @@ api! {
         }
 
 
-    GET read() -> () using NoContent;
+    GET read() -> () via Empty;
 }}
 
 fn main() {}

@@ -1,12 +1,93 @@
 use std::fmt;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use bytes::Bytes;
 use futures_core::Stream;
+use http::Method;
 
+use crate::endpoint::EndpointId;
 use crate::error::ApiError;
+use crate::hooks::{
+    OperationEvent, OperationObserver, StreamFinished, StreamKind, StreamOutcome, observe,
+};
 use crate::http::application::ApplicationByteStream;
+use crate::operation::OperationId;
+
+pub(crate) struct StreamObservation {
+    observer: Arc<dyn OperationObserver>,
+    operation_id: OperationId,
+    parent_operation_id: Option<OperationId>,
+    endpoint: EndpointId,
+    method: Method,
+    kind: StreamKind,
+    units_yielded: u64,
+    bytes_yielded: u64,
+    finished: bool,
+}
+
+impl StreamObservation {
+    pub(crate) fn new(
+        observer: Arc<dyn OperationObserver>,
+        operation_id: OperationId,
+        parent_operation_id: Option<OperationId>,
+        endpoint: EndpointId,
+        method: Method,
+    ) -> Self {
+        Self {
+            observer,
+            operation_id,
+            parent_operation_id,
+            endpoint,
+            method,
+            kind: StreamKind::Bytes,
+            units_yielded: 0,
+            bytes_yielded: 0,
+            finished: false,
+        }
+    }
+
+    #[cfg(feature = "records")]
+    pub(crate) fn into_items(mut self) -> Self {
+        self.kind = StreamKind::Items;
+        self.units_yielded = 0;
+        self.bytes_yielded = 0;
+        self
+    }
+
+    fn record_bytes(&mut self, length: usize) {
+        self.units_yielded = self.units_yielded.saturating_add(1);
+        self.bytes_yielded = self
+            .bytes_yielded
+            .saturating_add(u64::try_from(length).unwrap_or(u64::MAX));
+    }
+
+    #[cfg(feature = "records")]
+    pub(crate) fn record_item(&mut self) {
+        self.units_yielded = self.units_yielded.saturating_add(1);
+    }
+
+    pub(crate) fn finish(&mut self, outcome: StreamOutcome) {
+        if self.finished {
+            return;
+        }
+        self.finished = true;
+        observe(
+            self.observer.as_ref(),
+            OperationEvent::StreamFinished(StreamFinished {
+                operation_id: self.operation_id,
+                parent_operation_id: self.parent_operation_id,
+                endpoint: self.endpoint.as_str(),
+                method: &self.method,
+                kind: self.kind,
+                outcome,
+                units_yielded: self.units_yielded,
+                bytes_yielded: (self.kind == StreamKind::Bytes).then_some(self.bytes_yielded),
+            }),
+        );
+    }
+}
 
 /// A bounded media-independent lazy accepted response body.
 ///
@@ -30,11 +111,30 @@ use crate::http::application::ApplicationByteStream;
 /// `Debug` implementation does not inspect the body or any response data.
 pub struct ByteStream {
     body: Option<ApplicationByteStream>,
+    observation: Option<StreamObservation>,
 }
 
 impl ByteStream {
     pub(crate) const fn new(body: ApplicationByteStream) -> Self {
-        Self { body: Some(body) }
+        Self {
+            body: Some(body),
+            observation: None,
+        }
+    }
+
+    pub(crate) const fn observed(
+        body: ApplicationByteStream,
+        observation: StreamObservation,
+    ) -> Self {
+        Self {
+            body: Some(body),
+            observation: Some(observation),
+        }
+    }
+
+    #[cfg(feature = "records")]
+    pub(crate) fn take_observation(&mut self) -> Option<StreamObservation> {
+        self.observation.take()
     }
 }
 
@@ -50,13 +150,34 @@ impl Stream for ByteStream {
             Poll::Pending => Poll::Pending,
             Poll::Ready(None) => {
                 this.body = None;
+                if let Some(observation) = this.observation.as_mut() {
+                    observation.finish(StreamOutcome::Completed);
+                }
                 Poll::Ready(None)
             }
             Poll::Ready(Some(Err(error))) => {
                 this.body = None;
+                if let Some(observation) = this.observation.as_mut() {
+                    observation.finish(StreamOutcome::Failed);
+                }
                 Poll::Ready(Some(Err(error)))
             }
-            Poll::Ready(Some(Ok(bytes))) => Poll::Ready(Some(Ok(bytes))),
+            Poll::Ready(Some(Ok(bytes))) => {
+                if let Some(observation) = this.observation.as_mut() {
+                    observation.record_bytes(bytes.len());
+                }
+                Poll::Ready(Some(Ok(bytes)))
+            }
+        }
+    }
+}
+
+impl Drop for ByteStream {
+    fn drop(&mut self) {
+        if self.body.is_some() {
+            if let Some(observation) = self.observation.as_mut() {
+                observation.finish(StreamOutcome::Dropped);
+            }
         }
     }
 }

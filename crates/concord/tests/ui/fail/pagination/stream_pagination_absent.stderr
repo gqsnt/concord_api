@@ -3,7 +3,7 @@ error[E0599]: no method named `paginate` found for struct `DownloadRequest` in t
    |
  3 | / api! {
  4 | |     client StreamingApi {
- 5 | |         timeout off;
+ 5 | |         timeout 30s;
  6 | |         base "http://streaming.example.test";
 ...  |
 13 | | }}

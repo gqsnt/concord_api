@@ -2,7 +2,7 @@ use concord::api;
 
 api! {
     client CustomAuthHeaderApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         credentials {
             secret key;
@@ -11,7 +11,7 @@ api! {
         auth { header "X-API-Key" = key; }
 
 
-    GET read() -> () using NoContent;
+    GET read() -> () via Empty;
 }}
 
 fn main() {}

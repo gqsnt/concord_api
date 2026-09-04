@@ -1,5 +1,5 @@
 error: rate-limit profile `unused_rule` is never attached
- --> tests/ui/fail/rate_limits/rate_limit_unused_definition.rs:8:13
+ --> tests/ui/fail/rate_limits/rate_limit_unused_definition.rs:8:20
   |
-8 |             unused_rule() {
-  |             ^^^^^^^^^^^
+8 |             policy unused_rule() { id "concord.rate_limit_unused_definition.1"; key [origin]; cost 1;
+  |                    ^^^^^^^^^^^

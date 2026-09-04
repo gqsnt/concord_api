@@ -694,6 +694,7 @@ impl ApplicationHttp {
             disposition,
             self.status_body_limit,
             self.retry_after_cap,
+            None,
             deadline,
             ResponseChunkProgress::default(),
         )
@@ -705,11 +706,19 @@ impl ApplicationHttp {
         endpoint: EndpointId,
         method: Method,
         response: ApplicationResponse,
+        retry_after: Option<Duration>,
         deadline: Option<tokio::time::Instant>,
     ) -> HttpResponseFailure {
         let (native, progress) = response.into_native();
         match self
-            .collect_terminal_status_with_progress(endpoint, method, native, deadline, progress)
+            .collect_terminal_status_with_progress(
+                endpoint,
+                method,
+                native,
+                retry_after,
+                deadline,
+                progress,
+            )
             .await
         {
             StatusCapture::Terminal(failure) => failure,
@@ -724,6 +733,7 @@ impl ApplicationHttp {
         endpoint: EndpointId,
         method: Method,
         response: reqwest::Response,
+        retry_after: Option<Duration>,
         deadline: Option<tokio::time::Instant>,
         progress: ResponseChunkProgress,
     ) -> StatusCapture {
@@ -734,6 +744,7 @@ impl ApplicationHttp {
             StatusDisposition::Terminal,
             self.status_body_limit,
             self.retry_after_cap,
+            Some(retry_after),
             deadline,
             progress,
         )

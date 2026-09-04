@@ -6,7 +6,12 @@ mod driver;
 mod error;
 mod stream;
 
-pub use buffered::BufferedRecords;
+#[cfg(test)]
+pub(crate) use buffered::BufferedRecords;
+#[doc(hidden)]
+pub use buffered::{decode_complete_records, validate_record_decoder};
 pub use decoder::RecordDecoder;
 pub use error::{RecordError, RecordErrorKind};
-pub use stream::{RecordBatches, RecordStream, Records};
+#[cfg(test)]
+pub(crate) use stream::{DecodedRecordStream as RecordStream, RecordBatches, Records};
+pub use stream::{ItemBatches, ItemStream};

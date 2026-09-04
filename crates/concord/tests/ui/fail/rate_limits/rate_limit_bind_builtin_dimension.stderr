@@ -1,4 +1,4 @@
-error: built-in rate-limit dimension `host` cannot be bound
+error: unknown binding `host` for rate-limit profile `account_reads`
   --> tests/ui/fail/rate_limits/rate_limit_bind_builtin_dimension.rs:16:34
    |
 16 |         rate_limit account_reads(host = client.tenant, account = client.tenant);

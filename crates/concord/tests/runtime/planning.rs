@@ -12,19 +12,17 @@ use concord::auth::{
 };
 use concord::body::{
     BodyError, BodyFactory, BodyKind, LengthHint, RequestBody, RequestBodyContext,
-    RequestBodyMetadata, RequestBodySpec, RequestContentType, StreamBody,
+    RequestBodyMetadata, RequestContentType, RequestRepresentation, RequestStream,
 };
 use concord::codec::Text;
 #[cfg(feature = "default-tls")]
 use concord::endpoint::RequestBodyCategory;
 use concord::endpoint::{EndpointId, ResponseAcquisition, RuntimeEndpoint, TimeoutSelection};
-use concord::error::{ConfigurationErrorKind, GateError};
+use concord::error::ConfigurationErrorKind;
 use concord::http::{Method, SafeProxy};
 #[cfg(feature = "default-tls")]
 use concord::observation::SanitizedHeaderValue;
-use concord::observation::{
-    BeforeSend, CompletionEvent, CompletionObserver, RequestGate, ResponseGate, ResponseHeadEvent,
-};
+use concord::observation::{OperationEvent, OperationObserver};
 use concord::rate_limit::{
     NoopRateLimiter, RateLimitError, RateLimitPermit, RateLimitRequest, RateLimitResponse,
     RateLimiter,
@@ -83,11 +81,9 @@ pub struct PlanningBodyInput {
 
 pub struct PlanningBodySpec;
 
-impl RequestBodySpec for PlanningBodySpec {
-    type Input = PlanningBodyInput;
-
+impl RequestRepresentation<PlanningBodyInput> for PlanningBodySpec {
     fn metadata(
-        input: &Self::Input,
+        input: &PlanningBodyInput,
         _context: RequestBodyContext<'_>,
     ) -> Result<RequestBodyMetadata, BodyError> {
         input.effects.body_metadata.fetch_add(1, Ordering::SeqCst);
@@ -99,7 +95,7 @@ impl RequestBodySpec for PlanningBodySpec {
     }
 
     fn prepare(
-        input: Self::Input,
+        input: PlanningBodyInput,
         _context: RequestBodyContext<'_>,
     ) -> Result<RequestBody, BodyError> {
         input.effects.body_prepare.fetch_add(1, Ordering::SeqCst);
@@ -114,9 +110,9 @@ struct PlanningBodyFactory {
 }
 
 impl BodyFactory for PlanningBodyFactory {
-    fn create(&self) -> Result<StreamBody, BodyError> {
+    fn create(&self) -> Result<RequestStream, BodyError> {
         self.effects.body_factory.fetch_add(1, Ordering::SeqCst);
-        Ok(StreamBody::from_reader(CountingReader {
+        Ok(RequestStream::from_reader(CountingReader {
             effects: Arc::clone(&self.effects),
             bytes: Some(BODY_SENTINEL),
         }))
@@ -173,12 +169,8 @@ impl RateLimiter for CountingLimiter {
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
-    fn observe<'a>(
-        &'a self,
-        _response: RateLimitResponse<'a>,
-    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
+    fn observe(&self, _response: RateLimitResponse<'_>) {
         self.effects.limiter_observe.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async { Ok(()) })
     }
 }
 
@@ -186,52 +178,47 @@ struct CountingHooks {
     effects: Arc<EffectCounts>,
 }
 
-impl RequestGate for CountingHooks {
-    fn before_send<'a>(&'a self, context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), GateError>> {
-        self.effects.before_send.fetch_add(1, Ordering::SeqCst);
-        self.effects.heads.lock().expect("head capture").push((
-            context.endpoint.to_owned(),
-            context.observed_url.to_owned(),
-            format!("{:?}", context.headers),
-        ));
-        self.effects
-            .lifecycle
-            .lock()
-            .expect("lifecycle capture")
-            .push((context.endpoint.to_owned(), "before_send"));
-        Box::pin(async { Ok(()) })
-    }
-}
-
-impl ResponseGate for CountingHooks {
-    fn before_response_handling<'a>(
-        &'a self,
-        context: ResponseHeadEvent<'a>,
-    ) -> BoxFuture<'a, Result<(), GateError>> {
-        self.effects.response_head.fetch_add(1, Ordering::SeqCst);
-        self.effects
-            .lifecycle
-            .lock()
-            .expect("lifecycle capture")
-            .push((context.endpoint.to_owned(), "response_head"));
-        Box::pin(async { Ok(()) })
-    }
-}
-
-impl CompletionObserver for CountingHooks {
-    fn on_complete(&self, context: CompletionEvent<'_>) {
-        self.effects.completion.fetch_add(1, Ordering::SeqCst);
-        self.effects
-            .lifecycle
-            .lock()
-            .expect("lifecycle capture")
-            .push((context.endpoint.to_owned(), "completion"));
+impl OperationObserver for CountingHooks {
+    fn observe(&self, event: OperationEvent<'_>) {
+        match event {
+            OperationEvent::AttemptStarted(context) => {
+                self.effects.before_send.fetch_add(1, Ordering::SeqCst);
+                self.effects.heads.lock().expect("head capture").push((
+                    context.endpoint.to_owned(),
+                    context.observed_url.to_owned(),
+                    format!("{:?}", context.headers),
+                ));
+                self.effects
+                    .lifecycle
+                    .lock()
+                    .expect("lifecycle capture")
+                    .push((context.endpoint.to_owned(), "attempt_started"));
+            }
+            OperationEvent::ResponseHeadObserved(context) => {
+                self.effects.response_head.fetch_add(1, Ordering::SeqCst);
+                self.effects
+                    .lifecycle
+                    .lock()
+                    .expect("lifecycle capture")
+                    .push((context.endpoint.to_owned(), "response_observed"));
+            }
+            OperationEvent::OperationFinished(context) => {
+                self.effects.completion.fetch_add(1, Ordering::SeqCst);
+                self.effects
+                    .lifecycle
+                    .lock()
+                    .expect("lifecycle capture")
+                    .push((context.endpoint.to_owned(), "operation_finished"));
+            }
+            OperationEvent::PaginationFinished(_) => {}
+            _ => {}
+        }
     }
 }
 
 api! {
     client SecurePlanningApi {
-        timeout off;
+        timeout 30s;
         base "https://secure-planning.example.test/root/";
         credentials {
             credential bearer = custom crate::CountingProvider;
@@ -242,20 +229,20 @@ api! {
         resource: String,
         protected_query: String,
         protected_header: String,
-        body body: crate::runtime::planning::PlanningBodyInput using crate::PlanningBodySpec,
-    ) -> Bytes using Bytes {
+        body body: crate::runtime::planning::PlanningBodyInput via crate::PlanningBodySpec,
+    ) -> Bytes via Binary {
         id "planning.secure.protected";
         path ["resources", endpoint.resource];
         query { "api_key" = endpoint.protected_query; }
         headers { "X-Api-Key" = endpoint.protected_header; }
-        auth { bearer bearer recover on unauthorized; }
-        rate_limit { allow 1 per 1s; }
+        auth { bearer bearer challenge unauthorized; }
+        rate_limit { id "concord.planning.1"; key [origin]; cost 1;  allow 1 per 1s; }
     }
 }}
 
 api! {
     client PublicPlanningApi {
-        timeout off;
+        timeout 30s;
         base "http://public-planning.example.test/root/";
 
 
@@ -263,21 +250,21 @@ api! {
         resource: String,
         query_value: String,
         header_value: String,
-        body body: crate::runtime::planning::PlanningBodyInput using crate::PlanningBodySpec,
-    ) -> Bytes using Bytes {
+        body body: crate::runtime::planning::PlanningBodyInput via crate::PlanningBodySpec,
+    ) -> Bytes via Binary {
         id "planning.public.head";
         path ["resources", endpoint.resource];
         query { "q" = endpoint.query_value; }
         headers { "X-Public" = endpoint.header_value; }
-        rate_limit { allow 1 per 1s; }
+        rate_limit { id "concord.planning.2"; key [origin]; cost 1;  allow 1 per 1s; }
     }
 
-    GET lifecycle_probe() -> Bytes using Bytes {
+    GET lifecycle_probe() -> Bytes via Binary {
         id "planning.generated.lifecycle";
         path ["lifecycle"];
     }
 
-    GET aggregate_head(values: Vec<u16>) -> String using Text {
+    GET aggregate_head(values: Vec<u16>) -> String via Text {
         id "planning.generated.aggregate_head";
         query { "value" = each endpoint.values; }
     }
@@ -285,22 +272,22 @@ api! {
 
 api! {
     client StableBeforeApi {
-        timeout off;
+        timeout 30s;
         base "http://stable-before.example.test/";
 
 
-    GET old_rust_name() -> Bytes using Bytes {
+    GET old_rust_name() -> Bytes via Binary {
         id "stable.contract.identity";
     }
 }}
 
 api! {
     client StableAfterApi {
-        timeout off;
+        timeout 30s;
         base "http://stable-after.example.test/";
 
 
-    GET renamed_rust_name() -> Bytes using Bytes {
+    GET renamed_rust_name() -> Bytes via Binary {
         id "stable.contract.identity";
     }
 }}
@@ -323,9 +310,9 @@ fn configured_public_client(
             runtime
                 .runtime_endpoint_timeout(timeout)
                 .rate_limiter(limiter)
-                .request_gate(hooks.clone())
-                .response_gate(hooks.clone())
-                .completion_observer(hooks)
+                .operation_observer(hooks.clone())
+                .operation_observer(hooks.clone())
+                .operation_observer(hooks)
         })
         .build()
         .expect("public planning client")
@@ -348,9 +335,9 @@ fn safe_planning_uses_real_head_shaping_without_any_lifecycle_effect() {
         .configure_runtime(move |runtime| {
             runtime
                 .rate_limiter(limiter)
-                .request_gate(hooks.clone())
-                .response_gate(hooks.clone())
-                .completion_observer(hooks)
+                .operation_observer(hooks.clone())
+                .operation_observer(hooks.clone())
+                .operation_observer(hooks)
         })
         .build()
         .expect("secure planning client");
@@ -390,13 +377,16 @@ fn safe_planning_uses_real_head_shaping_without_any_lifecycle_effect() {
     assert!(description.capabilities().authentication());
     assert!(description.capabilities().rate_limits());
     assert!(!description.capabilities().pagination());
-    assert_eq!(description.timeout(), TimeoutSelection::Disabled);
+    assert_eq!(
+        description.timeout(),
+        TimeoutSelection::Explicit(Duration::from_secs(30))
+    );
 
     assert_eq!(plan.description().id(), description.id());
     assert_eq!(plan.endpoint_id(), "planning.secure.protected");
     assert_eq!(plan.method(), Method::POST);
     assert_eq!(plan.page_index(), 0);
-    assert_eq!(plan.rate_limit_rule_count(), 1);
+    assert_eq!(plan.rate_limit_policy_count(), 1);
     assert!(!plan.dynamic_body_metadata_available());
     assert_eq!(plan.body_category(), RequestBodyCategory::Specification);
     assert_eq!(plan.response_acquisition(), ResponseAcquisition::Buffered);
@@ -453,8 +443,8 @@ fn credential_references_cannot_cross_independent_client_builds() {
     .build()
     .expect("context-bound runtime endpoint");
 
-    let error = foreign
-        .plan(&endpoint)
+    let error = endpoint
+        .plan(&foreign)
         .expect_err("foreign client context must be rejected");
     assert_eq!(
         error.configuration_kind(),
@@ -463,9 +453,8 @@ fn credential_references_cannot_cross_independent_client_builds() {
     owner_effects.assert_no_effects();
     foreign_effects.assert_no_effects();
 
-    owner
-        .clone()
-        .plan(&endpoint)
+    endpoint
+        .plan(&owner.clone())
         .expect("a clone shares the credential context");
     owner_effects.assert_no_effects();
     foreign_effects.assert_no_effects();
@@ -488,8 +477,11 @@ async fn runtime_endpoint_timeout_does_not_change_generated_timeout_or_lazy_exec
 
     let plan = client.plan(&endpoint).expect("generated public plan");
     effects.assert_no_effects();
-    assert_eq!(plan.timeout_selection(), TimeoutSelection::Disabled);
-    assert_eq!(plan.resolved_timeout(), None);
+    assert_eq!(
+        plan.timeout_selection(),
+        TimeoutSelection::Explicit(Duration::from_secs(30))
+    );
+    assert_eq!(plan.resolved_timeout(), Some(Duration::from_secs(30)));
 
     assert_eq!(
         client
@@ -540,19 +532,20 @@ fn runtime_endpoint_plan_remains_zero_effect() {
     .accepted_bytes()
     .build()
     .expect("explicit runtime endpoint");
-    let disabled = RuntimeEndpoint::builder(
-        EndpointId::new("runtime.timeout.disabled").expect("valid endpoint ID"),
+    let reset = RuntimeEndpoint::builder(
+        EndpointId::new("runtime.timeout.reset").expect("valid endpoint ID"),
         Method::GET,
     )
-    .path("disabled")
-    .disable_timeout()
+    .path("reset")
+    .timeout(Duration::from_secs(9))
+    .reset_timeout()
     .accepted_bytes()
     .build()
-    .expect("disabled runtime endpoint");
+    .expect("reset runtime endpoint");
 
-    let inherited_plan = client.plan(&inherited).expect("inherited plan");
-    let explicit_plan = client.plan(&explicit).expect("explicit plan");
-    let disabled_plan = client.plan(&disabled).expect("disabled plan");
+    let inherited_plan = inherited.plan(&client).expect("inherited plan");
+    let explicit_plan = explicit.plan(&client).expect("explicit plan");
+    let reset_plan = reset.plan(&client).expect("reset plan");
     effects.assert_no_effects();
 
     assert_eq!(
@@ -572,10 +565,10 @@ fn runtime_endpoint_plan_remains_zero_effect() {
         Some(Duration::from_secs(7))
     );
     assert_eq!(
-        disabled_plan.timeout_selection(),
-        TimeoutSelection::Disabled
+        reset_plan.timeout_selection(),
+        TimeoutSelection::InheritClient
     );
-    assert_eq!(disabled_plan.resolved_timeout(), None);
+    assert_eq!(reset_plan.resolved_timeout(), Some(Duration::from_secs(23)));
 
     let description = inherited.description();
     assert_eq!(description.id(), "runtime.timeout.inherited");
@@ -606,7 +599,7 @@ fn runtime_method_limit_is_public_bounded_and_preserved_by_planning() {
     .accepted_bytes()
     .build()
     .expect("exact runtime method limit");
-    let plan = client.plan(&endpoint).expect("exact method plan");
+    let plan = endpoint.plan(&client).expect("exact method plan");
     assert_eq!(plan.method(), &exact_method);
     assert!(format!("{plan:?}").len() < 2_048);
     effects.assert_no_effects();
@@ -656,11 +649,11 @@ fn generated_and_runtime_planning_share_final_head_limits() {
         runtime_exact = runtime_exact.path("x");
     }
     let runtime_exact = runtime_exact
-        .response::<Text>()
+        .response::<Text, String>()
         .build()
         .expect("runtime exact structural boundary");
-    client
-        .plan(&runtime_exact)
+    runtime_exact
+        .plan(&client)
         .expect("runtime head exact boundary including Accept");
 
     let mut runtime_excess = RuntimeEndpoint::builder(
@@ -671,7 +664,7 @@ fn generated_and_runtime_planning_share_final_head_limits() {
         runtime_excess = runtime_excess.path("x");
     }
     let error = runtime_excess
-        .response::<Text>()
+        .response::<Text, String>()
         .build()
         .err()
         .expect("runtime first excess includes the retained method component");
@@ -702,7 +695,11 @@ async fn generated_and_runtime_endpoints_use_the_same_ordered_lifecycle() {
     .build()
     .expect("runtime lifecycle endpoint");
     assert_eq!(
-        client.request(runtime).await.expect("runtime lifecycle"),
+        runtime
+            .try_bind(&client)
+            .expect("runtime endpoint binds to client")
+            .await
+            .expect("runtime lifecycle"),
         Bytes::from_static(b"runtime")
     );
 
@@ -713,12 +710,21 @@ async fn generated_and_runtime_endpoints_use_the_same_ordered_lifecycle() {
             .expect("lifecycle capture")
             .as_slice(),
         [
-            ("planning.generated.lifecycle".to_owned(), "before_send"),
-            ("planning.generated.lifecycle".to_owned(), "response_head"),
-            ("planning.generated.lifecycle".to_owned(), "completion"),
-            ("planning.runtime.lifecycle".to_owned(), "before_send"),
-            ("planning.runtime.lifecycle".to_owned(), "response_head"),
-            ("planning.runtime.lifecycle".to_owned(), "completion"),
+            ("planning.generated.lifecycle".to_owned(), "attempt_started"),
+            (
+                "planning.generated.lifecycle".to_owned(),
+                "response_observed"
+            ),
+            (
+                "planning.generated.lifecycle".to_owned(),
+                "operation_finished"
+            ),
+            ("planning.runtime.lifecycle".to_owned(), "attempt_started"),
+            ("planning.runtime.lifecycle".to_owned(), "response_observed"),
+            (
+                "planning.runtime.lifecycle".to_owned(),
+                "operation_finished"
+            ),
         ]
     );
     let requests = server.requests();

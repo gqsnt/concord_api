@@ -39,9 +39,9 @@ async fn selected_limiter_receives_actual_page_hosts_while_automatic_surfaces_st
         "http://pagination-runtime.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
         RuntimeConfigBuilder::new()
-            .request_gate(hooks.clone())
-            .response_gate(hooks.clone())
-            .completion_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
             .rate_limiter(configured_limiter)
             .debug(DebugLevel::Headers),
         &executor,
@@ -84,6 +84,8 @@ async fn selected_limiter_receives_actual_page_hosts_while_automatic_surfaces_st
     );
     let initial_host = format!("{INITIAL}.pagination-runtime.example.test");
     let second_host = format!("{SECOND}.pagination-runtime.example.test");
+    let initial_origin = format!("http://{initial_host}:80");
+    let second_origin = format!("http://{second_host}:80");
     let canonical = |value: &str| {
         crate::rate_limit::encode_canonical(
             &value.to_owned(),
@@ -98,14 +100,14 @@ async fn selected_limiter_receives_actual_page_hosts_while_automatic_surfaces_st
     assert_eq!(
         acquisitions[0].3,
         [
-            ("host".to_owned(), canonical(&initial_host)),
+            ("origin".to_owned(), canonical(&initial_origin)),
             ("endpoint.host".to_owned(), canonical(INITIAL)),
         ]
     );
     assert_eq!(
         acquisitions[1].3,
         [
-            ("host".to_owned(), canonical(&second_host)),
+            ("origin".to_owned(), canonical(&second_origin)),
             ("endpoint.host".to_owned(), canonical(SECOND)),
         ]
     );
@@ -172,9 +174,9 @@ fn rate_key_core(
         "https://pagination-runtime.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
         RuntimeConfigBuilder::new()
-            .request_gate(hooks.clone())
-            .response_gate(hooks.clone())
-            .completion_observer(hooks)
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks)
             .rate_limiter(limiter)
             .debug(DebugLevel::Headers),
         executor,
@@ -262,12 +264,9 @@ async fn pagination_rate_key_limit_uses_actual_value_and_cuts_off_protected_work
     );
     assert_eq!(accepted_hooks.before.lock().expect("before").len(), 1);
     assert_eq!(accepted_hooks.response.lock().expect("response").len(), 1);
-    assert!(
-        accepted_hooks
-            .completion
-            .lock()
-            .expect("completion")
-            .is_empty()
+    assert_eq!(
+        accepted_hooks.completion.lock().expect("completion").len(),
+        1
     );
     let accepted_hook_safe = {
         let before = accepted_hooks.before.lock().expect("accepted before");

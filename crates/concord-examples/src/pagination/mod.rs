@@ -16,14 +16,14 @@ pub mod search;
 // ANCHOR: pagination_contract
 api! {
     client PaginationApi {
-        timeout off;
+        timeout 30s;
         base "http://pagination.example.test/";
 
 
     // ANCHOR: offset_endpoint
-    GET offset(offset: u64, limit: std::num::NonZeroU32) -> Vec<u32> using Json<Vec<u32>> {
+    GET offset(offset: u64, limit: std::num::NonZeroU32) -> Vec<u32> via Json {
         query { "offset" = endpoint.offset; "limit" = endpoint.limit; }
-        paginate with concord::pagination::OffsetPagination {
+        paginate via concord::pagination::OffsetPagination {
             offset -> endpoint.offset;
             page_size -> endpoint.limit;
         }
@@ -31,9 +31,9 @@ api! {
     // ANCHOR_END: offset_endpoint
 
     // ANCHOR: page_endpoint
-    GET page(page: std::num::NonZeroU64, per_page: std::num::NonZeroU32) -> Vec<u32> using Json<Vec<u32>> {
+    GET page(page: std::num::NonZeroU64, per_page: std::num::NonZeroU32) -> Vec<u32> via Json {
         query { "page" = endpoint.page; "per_page" = endpoint.per_page; }
-        paginate with concord::pagination::PagePagination {
+        paginate via concord::pagination::PagePagination {
             page -> endpoint.page;
             page_size -> endpoint.per_page;
         }
@@ -44,11 +44,12 @@ api! {
     POST search(
         offset: u64,
         limit: std::num::NonZeroU32,
-        body filter: crate::pagination::search::SearchFilter using concord::Json<crate::pagination::search::SearchFilter>,
-    ) -> Vec<u32> using Json<Vec<u32>> {
+        body filter: crate::pagination::search::SearchFilter via concord::Json,
+    ) -> Vec<u32> via Json {
+        effect safe;
         path ["search"];
         query { "offset" = endpoint.offset; "limit" = endpoint.limit; }
-        paginate with concord::pagination::OffsetPagination {
+        paginate via concord::pagination::OffsetPagination {
             offset -> endpoint.offset;
             page_size -> endpoint.limit;
         }
@@ -58,17 +59,17 @@ api! {
     // ANCHOR: cursor_endpoints
     GET cursor(
         cursor?: String
-    ) -> crate::pagination::custom::ExamplePage using crate::pagination::custom::ExamplePageCodec {
+    ) -> crate::pagination::custom::ExamplePage via crate::pagination::custom::ExamplePageCodec {
         query { "cursor" = endpoint.cursor; }
-        paginate with concord::pagination::CursorPagination<String> {
+        paginate via concord::pagination::CursorPagination<String> {
             cursor -> endpoint.cursor;
         }
     }
     GET custom(
         cursor?: String
-    ) -> crate::pagination::custom::ExamplePage using crate::pagination::custom::ExamplePageCodec {
+    ) -> crate::pagination::custom::ExamplePage via crate::pagination::custom::ExamplePageCodec {
         query { "cursor" = endpoint.cursor; }
-        paginate with crate::pagination::custom::ExampleController {
+        paginate via crate::pagination::custom::ExampleController {
             cursor -> endpoint.cursor;
         }
     }

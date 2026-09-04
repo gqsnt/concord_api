@@ -1,5 +1,131 @@
-error[E0599]: no method named `accepted_bytes` found for struct `concord::endpoint::Request<E>` in the current scope
-  --> tests/ui/fail/capabilities/runtime_endpoint_accepted_bytes_terminal_absent.rs:23:38
+error[E0277]: the trait bound `concord::Bytes: concord::response::ResponseRepresentation<concord::Bytes>` is not satisfied
+  --> tests/ui/fail/capabilities/runtime_endpoint_accepted_bytes_terminal_absent.rs:5:1
    |
-23 |     let _ = client.request(endpoint).accepted_bytes();
-   |                                      ^^^^^^^^^^^^^^ method not found in `concord::endpoint::Request<RuntimeEndpoint<concord::Bytes>>`
+ 5 | / api! {
+ 6 | |     client RuntimeAcceptedBytesApi {
+ 7 | |         timeout 30s;
+ 8 | |         base "https://example.test";
+...  |
+12 | | }
+   | |_^ the trait `DecodeBody` is not implemented for `concord::Bytes`
+   |
+help: the trait `DecodeBody` is implemented for `concord::Text`
+  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
+   |
+   | impl DecodeBody for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `concord::Bytes` to implement `concord::response::ResponseRepresentation<concord::Bytes>`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `concord::Bytes: concord::response::ResponseRepresentation<concord::Bytes>` is not satisfied
+  --> tests/ui/fail/capabilities/runtime_endpoint_accepted_bytes_terminal_absent.rs:5:1
+   |
+ 5 | / api! {
+ 6 | |     client RuntimeAcceptedBytesApi {
+ 7 | |         timeout 30s;
+ 8 | |         base "https://example.test";
+...  |
+12 | | }
+   | |_^ the trait `DecodeBody` is not implemented for `concord::Bytes`
+   |
+help: the trait `DecodeBody` is implemented for `concord::Text`
+  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
+   |
+   | impl DecodeBody for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `concord::Bytes` to implement `concord::response::ResponseRepresentation<concord::Bytes>`
+note: required by a bound in `__concord_assert_response_representation`
+  --> tests/ui/fail/capabilities/runtime_endpoint_accepted_bytes_terminal_absent.rs:5:1
+   |
+ 5 | / api! {
+ 6 | |     client RuntimeAcceptedBytesApi {
+ 7 | |         timeout 30s;
+ 8 | |         base "https://example.test";
+...  |
+12 | | }
+   | |_^ required by this bound in `__concord_assert_response_representation`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `concord::Bytes: DecodeBody` is not satisfied
+  --> tests/ui/fail/capabilities/runtime_endpoint_accepted_bytes_terminal_absent.rs:5:1
+   |
+ 5 | / api! {
+ 6 | |     client RuntimeAcceptedBytesApi {
+ 7 | |         timeout 30s;
+ 8 | |         base "https://example.test";
+...  |
+12 | | }
+   | |_^ the trait `DecodeBody` is not implemented for `concord::Bytes`
+   |
+help: the trait `DecodeBody` is implemented for `concord::Text`
+  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
+   |
+   | impl DecodeBody for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `concord::Bytes` to implement `concord::response::ResponseRepresentation<concord::Bytes>`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `concord::Bytes: concord::response::ResponseRepresentation<concord::Bytes>` is not satisfied
+  --> tests/ui/fail/capabilities/runtime_endpoint_accepted_bytes_terminal_absent.rs:5:1
+   |
+ 5 | / api! {
+ 6 | |     client RuntimeAcceptedBytesApi {
+ 7 | |         timeout 30s;
+ 8 | |         base "https://example.test";
+...  |
+12 | | }
+   | |_^ the trait `DecodeBody` is not implemented for `concord::Bytes`
+   |
+help: the trait `DecodeBody` is implemented for `concord::Text`
+  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
+   |
+   | impl DecodeBody for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `concord::Bytes` to implement `concord::response::ResponseRepresentation<concord::Bytes>`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `concord::Bytes: DecodeBody` is not satisfied
+  --> tests/ui/fail/capabilities/runtime_endpoint_accepted_bytes_terminal_absent.rs:5:1
+   |
+ 5 | / api! {
+ 6 | |     client RuntimeAcceptedBytesApi {
+ 7 | |         timeout 30s;
+ 8 | |         base "https://example.test";
+...  |
+12 | | }
+   | |_^ the trait `DecodeBody` is not implemented for `concord::Bytes`
+   |
+help: the trait `DecodeBody` is implemented for `concord::Text`
+  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
+   |
+   | impl DecodeBody for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `concord::Bytes` to implement `concord::response::ResponseRepresentation<concord::Bytes>`
+note: required for `Ordinary` to implement `concord::__private::EndpointSpec`
+  --> tests/ui/fail/capabilities/runtime_endpoint_accepted_bytes_terminal_absent.rs:5:1
+   |
+ 5 | / api! {
+ 6 | |     client RuntimeAcceptedBytesApi {
+ 7 | |         timeout 30s;
+ 8 | |         base "https://example.test";
+ 9 | |
+10 | |         GET ordinary() -> concord::Bytes via concord::Bytes;
+   | |             ^^^^^^^^
+11 | |     }
+12 | | }
+   | |_^ unsatisfied trait bound introduced here
+note: required by a bound in `concord::__private::request_plan`
+  --> $WORKSPACE/crates/concord-core/src/__private.rs
+   |
+   | pub fn request_plan<E>(
+   |        ------------ required by a bound in this function
+...
+   |     E: EndpointSpec,
+   |        ^^^^^^^^^^^^ required by this bound in `request_plan`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no method named `accepted_bytes` found for struct `concord::endpoint::Request<E>` in the current scope
+  --> tests/ui/fail/capabilities/runtime_endpoint_accepted_bytes_terminal_absent.rs:24:21
+   |
+24 |     let _ = request.accepted_bytes();
+   |                     ^^^^^^^^^^^^^^ method not found in `concord::endpoint::Request<RuntimeEndpoint<concord::Binary, concord::Bytes>>`

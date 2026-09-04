@@ -1,11 +1,10 @@
-use concord::response::{Discard, ResponseBodyError, ResponseSpec, ResponseHead};
+use concord::response::{DiscardDriver, ResponseBodyError, ResponseRepresentation, ResponseHead};
 use concord::{Bytes, api};
 
 pub struct ResponseOnly;
 
-impl ResponseSpec for ResponseOnly {
-    type Output = ();
-    type Mode = Discard;
+impl ResponseRepresentation<()> for ResponseOnly {
+    type Driver = DiscardDriver;
 
     fn from_body((): (), _head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         Ok(())
@@ -14,11 +13,11 @@ impl ResponseSpec for ResponseOnly {
 
 api! {
     client InvalidResponseOnlyRequestApi {
-        timeout off;
+        timeout 30s;
         base "http://invalid-response-only.example.test/";
 
 
-    POST invalid(body body: Bytes using crate::ResponseOnly) -> Bytes using Bytes;
+    POST invalid(body body: Bytes via crate::ResponseOnly) -> Bytes via Binary;
 }}
 
 fn main() {}

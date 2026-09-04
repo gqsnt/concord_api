@@ -11,28 +11,27 @@ use std::time::Duration;
 #[cfg(feature = "json")]
 use concord::Json;
 use concord::auth::{
-    Auth, AuthError, AuthErrorKind, CredentialMaterial, CredentialProvider, CredentialRequest,
-    ProviderBody, ProviderBodyFactory, ProviderRequest, SecretCredential,
+    Auth, AuthError, AuthErrorKind, BoxFuture, CredentialMaterial, CredentialProvider,
+    CredentialRequest, ProviderBody, ProviderBodyFactory, ProviderRequest, SecretCredential,
 };
 use concord::body::{
     BodyError, BodyFactory, BodyKind, LengthHint, RequestBody, RequestBodyContext,
-    RequestBodyMetadata, RequestBodySpec, RequestContentType, StreamBody,
+    RequestBodyMetadata, RequestContentType, RequestRepresentation, RequestStream,
 };
 #[cfg(feature = "multipart")]
 use concord::body::{MultipartBody, MultipartFactory, MultipartPart};
 #[cfg(feature = "records")]
 use concord::codec::BytesMut;
 use concord::codec::{
-    CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext, MediaType,
+    CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext,
 };
 use concord::endpoint::{EndpointId, Request, RuntimeEndpoint};
-use concord::error::GateError;
 use concord::http::{HeaderName, HeaderValue, Method, SafeProxy, StatusCode, Url};
-use concord::observation::{
-    BeforeSend, BoxFuture, CompletionEvent, CompletionObserver, PaginationCompletionEvent,
-    RequestGate, ResponseGate, ResponseHeadEvent,
+use concord::observation::{OperationEvent, OperationObserver};
+use concord::pagination::{
+    HasNextCursor, PageDecisionLimits, PageResponse, PageStep, PaginationController,
+    PaginationDescription, PaginationError, PaginationErrorKind,
 };
-use concord::pagination::{HasNextCursor, PaginationController, PaginationError};
 use concord::rate_limit::{
     Cooldown, CooldownScope, RateLimitError, RateLimitObserver, RateLimitPermit, RateLimitRequest,
     RateLimitResponse, RateLimitResponseHead, RateLimiter,
@@ -42,11 +41,12 @@ use concord::records::NdJson;
 #[cfg(feature = "csv")]
 use concord::records::{Csv, HasHeader, NoHeader, SemicolonDelimiter, TabDelimiter};
 #[cfg(feature = "records")]
-use concord::records::{RecordDecoder, RecordError, Records};
+use concord::records::{ItemStream, RecordDecoder, RecordError};
 #[cfg(feature = "csv")]
-use concord::response::PageResponseSpec;
+use concord::response::PageResponseRepresentation;
 use concord::response::{
-    Buffered, ByteStream, Discard, ResponseBodyError, ResponseHead, ResponseSpec, Streaming,
+    Buffered, ByteStream, DiscardDriver, ResponseBodyError, ResponseHead, ResponseRepresentation,
+    Streaming,
 };
 use concord::{Bytes, ClientBuildError, SecretString};
 use futures_core::Stream;
@@ -57,11 +57,9 @@ fn runtime_id(value: &str) -> EndpointId {
 
 pub struct ExtensionRequestSpec;
 
-impl RequestBodySpec for ExtensionRequestSpec {
-    type Input = Bytes;
-
+impl RequestRepresentation<Bytes> for ExtensionRequestSpec {
     fn metadata(
-        input: &Self::Input,
+        input: &Bytes,
         _context: RequestBodyContext<'_>,
     ) -> Result<RequestBodyMetadata, BodyError> {
         Ok(RequestBodyMetadata {
@@ -71,10 +69,7 @@ impl RequestBodySpec for ExtensionRequestSpec {
         })
     }
 
-    fn prepare(
-        input: Self::Input,
-        _context: RequestBodyContext<'_>,
-    ) -> Result<RequestBody, BodyError> {
+    fn prepare(input: Bytes, _context: RequestBodyContext<'_>) -> Result<RequestBody, BodyError> {
         Ok(RequestBody::bytes(input))
     }
 }
@@ -93,11 +88,9 @@ impl Stream for ExtensionEmptyChunkStream {
     }
 }
 
-impl RequestBodySpec for EmptyChunkRequestSpec {
-    type Input = Bytes;
-
+impl RequestRepresentation<Bytes> for EmptyChunkRequestSpec {
     fn metadata(
-        input: &Self::Input,
+        input: &Bytes,
         _context: RequestBodyContext<'_>,
     ) -> Result<RequestBodyMetadata, BodyError> {
         Ok(RequestBodyMetadata {
@@ -107,12 +100,9 @@ impl RequestBodySpec for EmptyChunkRequestSpec {
         })
     }
 
-    fn prepare(
-        input: Self::Input,
-        _context: RequestBodyContext<'_>,
-    ) -> Result<RequestBody, BodyError> {
+    fn prepare(input: Bytes, _context: RequestBodyContext<'_>) -> Result<RequestBody, BodyError> {
         let exact_length = u64::try_from(input.len()).unwrap_or(u64::MAX);
-        let stream = StreamBody::from_stream(ExtensionEmptyChunkStream {
+        let stream = RequestStream::from_stream(ExtensionEmptyChunkStream {
             chunks: [Ok(Bytes::new()), Ok(input), Ok(Bytes::new())]
                 .into_iter()
                 .collect(),
@@ -124,13 +114,8 @@ impl RequestBodySpec for EmptyChunkRequestSpec {
 
 pub struct ExtensionBufferedSpec;
 
-impl ResponseSpec for ExtensionBufferedSpec {
-    type Output = usize;
-    type Mode = Buffered;
-
-    fn accepts_status(status: StatusCode) -> bool {
-        status.is_success() || status == StatusCode::NOT_FOUND
-    }
+impl ResponseRepresentation<usize> for ExtensionBufferedSpec {
+    type Driver = Buffered;
 
     fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<usize, ResponseBodyError> {
         Ok(body.len())
@@ -139,9 +124,8 @@ impl ResponseSpec for ExtensionBufferedSpec {
 
 pub struct ExtensionStreamingSpec;
 
-impl ResponseSpec for ExtensionStreamingSpec {
-    type Output = ByteStream;
-    type Mode = Streaming;
+impl ResponseRepresentation<ByteStream> for ExtensionStreamingSpec {
+    type Driver = Streaming;
 
     fn from_body(
         body: ByteStream,
@@ -153,9 +137,8 @@ impl ResponseSpec for ExtensionStreamingSpec {
 
 pub struct ExtensionDiscardSpec;
 
-impl ResponseSpec for ExtensionDiscardSpec {
-    type Output = ();
-    type Mode = Discard;
+impl ResponseRepresentation<()> for ExtensionDiscardSpec {
+    type Driver = DiscardDriver;
 
     fn from_body((): (), _head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         Ok(())
@@ -223,10 +206,34 @@ impl RecordDecoder for NoProgressRecordDecoder {
     }
 }
 
-pub struct ExtensionMedia;
+#[cfg(feature = "records")]
+pub struct ExtensionRecords;
 
-impl MediaType for ExtensionMedia {
-    const MEDIA_TYPE: &'static str = "application/x-concord-extension";
+#[cfg(feature = "records")]
+impl ResponseRepresentation<ItemStream<Bytes>> for ExtensionRecords {
+    type Driver = Streaming;
+
+    fn from_body(
+        body: ByteStream,
+        head: &ResponseHead<'_>,
+    ) -> Result<ItemStream<Bytes>, ResponseBodyError> {
+        ItemStream::decode_with::<ExtensionRecordDecoder>(body, head)
+    }
+}
+
+#[cfg(feature = "records")]
+pub struct InvalidRecords;
+
+#[cfg(feature = "records")]
+impl ResponseRepresentation<ItemStream<Bytes>> for InvalidRecords {
+    type Driver = Streaming;
+
+    fn from_body(
+        body: ByteStream,
+        head: &ResponseHead<'_>,
+    ) -> Result<ItemStream<Bytes>, ResponseBodyError> {
+        ItemStream::decode_with::<NoProgressRecordDecoder>(body, head)
+    }
 }
 
 pub struct ExtensionCodec;
@@ -266,8 +273,8 @@ impl BodyFactory for ExtensionBodyFactory {
         Some(HeaderValue::from_static("application/x-concord-extension"))
     }
 
-    fn create(&self) -> Result<StreamBody, BodyError> {
-        Ok(StreamBody::from_bytes(Bytes::from_static(b"factory")))
+    fn create(&self) -> Result<RequestStream, BodyError> {
+        Ok(RequestStream::from_bytes(Bytes::from_static(b"factory")))
     }
 }
 
@@ -488,17 +495,35 @@ pub struct ExtensionController {
 }
 
 impl PaginationController<ExtensionPage> for ExtensionController {
+    type Item = u8;
+
+    const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
+
     fn validate(&self) -> Result<(), PaginationError> {
         EXTENSION_VALIDATION_CALLS.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 
-    fn next(self, page: &ExtensionPage) -> Result<Option<Self>, PaginationError> {
+    fn advance(
+        self,
+        page: PageResponse<ExtensionPage>,
+        limits: PageDecisionLimits,
+    ) -> Result<PageStep<Self, Self::Item>, PaginationError> {
         EXTENSION_NEXT_CALLS.fetch_add(1, Ordering::SeqCst);
-        Ok(page.next_cursor().cloned().map(|cursor| Self {
+        let next = page.page().next_cursor().cloned().map(|cursor| Self {
             cursor: Some(cursor),
             construction: self.construction,
-        }))
+        });
+        let items = page.into_page().items;
+        if items.len() > limits.remaining_items() {
+            return Err(PaginationError::new(
+                PaginationErrorKind::CollectedItemCeilingExceeded,
+            ));
+        }
+        Ok(match next {
+            Some(next) => PageStep::Continue { items, next },
+            None => PageStep::Done { items },
+        })
     }
 }
 
@@ -515,14 +540,10 @@ impl RateLimiter for ExtensionLimiter {
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
-    fn observe<'a>(
-        &'a self,
-        response: RateLimitResponse<'a>,
-    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
+    fn observe(&self, response: RateLimitResponse<'_>) {
         EXTENSION_LIMITER_OBSERVATIONS.fetch_add(1, Ordering::SeqCst);
         let _status = response.status;
         let _attempt = response.request.attempt;
-        Box::pin(async { Ok(()) })
     }
 }
 
@@ -541,39 +562,32 @@ impl RateLimitObserver for ExtensionObserver {
 
 pub struct ExtensionHooks;
 
-impl RequestGate for ExtensionHooks {
-    fn before_send<'a>(&'a self, context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), GateError>> {
-        EXTENSION_HOOK_BEFORE.fetch_add(1, Ordering::SeqCst);
-        let _attempt = context.attempt;
-        Box::pin(async { Ok(()) })
-    }
-}
-
-impl ResponseGate for ExtensionHooks {
-    fn before_response_handling<'a>(
-        &'a self,
-        context: ResponseHeadEvent<'a>,
-    ) -> BoxFuture<'a, Result<(), GateError>> {
-        EXTENSION_HOOK_RESPONSE.fetch_add(1, Ordering::SeqCst);
-        let _attempt = context.attempt;
-        Box::pin(async { Ok(()) })
-    }
-}
-
-impl CompletionObserver for ExtensionHooks {
-    fn on_complete(&self, context: CompletionEvent<'_>) {
-        EXTENSION_HOOK_COMPLETION.fetch_add(1, Ordering::SeqCst);
-        let _attempt_totals = (context.attempts_started, context.policy_retries);
-    }
-
-    fn on_pagination_complete(&self, context: PaginationCompletionEvent<'_>) {
-        let _attempt_totals = (context.attempts_started, context.policy_retries);
+impl OperationObserver for ExtensionHooks {
+    fn observe(&self, event: OperationEvent<'_>) {
+        match event {
+            OperationEvent::AttemptStarted(context) => {
+                EXTENSION_HOOK_BEFORE.fetch_add(1, Ordering::SeqCst);
+                let _attempt = context.attempt;
+            }
+            OperationEvent::ResponseHeadObserved(context) => {
+                EXTENSION_HOOK_RESPONSE.fetch_add(1, Ordering::SeqCst);
+                let _attempt = context.attempt;
+            }
+            OperationEvent::OperationFinished(context) => {
+                EXTENSION_HOOK_COMPLETION.fetch_add(1, Ordering::SeqCst);
+                let _attempt_totals = (context.attempts_started, context.policy_retries);
+            }
+            OperationEvent::PaginationFinished(context) => {
+                let _attempt_totals = (context.attempts_started, context.policy_retries);
+            }
+            _ => {}
+        }
     }
 }
 
 concord::api! {
     client ExtensionApi {
-        timeout off;
+        timeout 30s;
         base "http://extension.example.test/v1/";
         values {
             construction: crate::ExtensionConstructionProbe;
@@ -581,58 +595,60 @@ concord::api! {
         credentials {
             credential session = custom crate::ExtensionProvider;
         }
-        rate_limit { allow 10 per 1s; }
+        rate_limit { id "concord.contracts.1"; key [origin]; cost 1;  allow 10 per 1s; }
 
 
-    GET protected() -> Bytes using Bytes {
-        auth { header "X-Session" = session recover on unauthorized; }
+    GET protected() -> Bytes via Binary {
+        auth { header "X-Session" = session challenge unauthorized; }
     }
 
-    GET pages(cursor?: String) -> crate::extensions::contracts::ExtensionPage using crate::ExtensionPageCodec {
+    GET pages(cursor?: String) -> crate::extensions::contracts::ExtensionPage via crate::ExtensionPageCodec {
         query { "cursor" = endpoint.cursor; }
-        paginate with crate::ExtensionController {
+        paginate via crate::ExtensionController {
             cursor -> endpoint.cursor;
             construction = client.construction;
         }
     }
 
-    POST generic_body(body body: Bytes using crate::ExtensionRequestSpec) -> usize using crate::ExtensionBufferedSpec;
-    POST empty_chunk_body(body body: Bytes using crate::EmptyChunkRequestSpec) -> Bytes using Bytes;
-    GET generic_stream() -> ::concord::response::ByteStream using crate::ExtensionStreamingSpec;
-    GET generic_discard() -> () using crate::ExtensionDiscardSpec;
+    POST generic_body(body body: Bytes via crate::ExtensionRequestSpec) -> usize via crate::ExtensionBufferedSpec {
+        status [200..=299, 404];
+    }
+    POST empty_chunk_body(body body: Bytes via crate::EmptyChunkRequestSpec) -> Bytes via Binary;
+    GET generic_stream() -> ::concord::response::ByteStream via crate::ExtensionStreamingSpec;
+    GET generic_discard() -> () via crate::ExtensionDiscardSpec;
 }}
 
 concord::api! {
     client SecureExtensionApi {
-        timeout off;
+        timeout 30s;
         base "https://localhost/";
         credentials {
             credential session = custom crate::ExtensionProvider;
         }
-        rate_limit { allow 10 per 1s; }
+        rate_limit { id "concord.contracts.2"; key [origin]; cost 1;  allow 10 per 1s; }
 
 
-    GET protected() -> Bytes using Bytes {
-        auth { header "X-Session" = session recover on unauthorized; }
+    GET protected() -> Bytes via Binary {
+        auth { header "X-Session" = session challenge unauthorized; }
     }
 }}
 
 #[cfg(feature = "records")]
 concord::api! {
     client RecordExtensionApi {
-        timeout off;
+        timeout 30s;
         base "http://record-extension.example.test/";
 
 
-    GET custom() -> ::concord::records::RecordStream<crate::ExtensionRecordDecoder> using Records<crate::ExtensionRecordDecoder>;
-    GET invalid_decoder() -> ::concord::records::RecordStream<crate::NoProgressRecordDecoder> using Records<crate::NoProgressRecordDecoder>;
+    GET custom() -> ItemStream<Bytes> via crate::extensions::contracts::ExtensionRecords;
+    GET invalid_decoder() -> ItemStream<Bytes> via crate::extensions::contracts::InvalidRecords;
 }}
 
 #[cfg(feature = "csv")]
-pub type ConfCsv<T> = Csv<T, HasHeader, SemicolonDelimiter>;
+pub type ConfCsv = Csv<HasHeader, SemicolonDelimiter>;
 
 #[cfg(feature = "csv")]
-pub type HeaderlessTsv<T> = Csv<T, NoHeader, TabDelimiter>;
+pub type HeaderlessTsv = Csv<NoHeader, TabDelimiter>;
 
 #[cfg(feature = "csv")]
 pub type Row = (String, u32);
@@ -640,15 +656,15 @@ pub type Row = (String, u32);
 #[cfg(feature = "csv")]
 concord::api! {
     client CsvExtensionApi {
-        timeout off;
+        timeout 30s;
         base "http://csv-extension.example.test/";
 
 
-    GET rows() -> Vec<Vec<String>> using Csv<Vec<String>>;
-    GET rows_stream() -> ::concord::records::RecordStream<Csv<Vec<String>>> using Records<Csv<Vec<String>>>;
-    GET configured_rows() -> Vec<Row> using ConfCsv<Row>;
-    GET configured_rows_stream() -> ::concord::records::RecordStream<ConfCsv<Row>> using Records<ConfCsv<Row>>;
-    GET headerless_rows() -> Vec<Row> using HeaderlessTsv<Row>;
+    GET rows() -> Vec<Vec<String>> via Csv;
+    GET rows_stream() -> ItemStream<Vec<String>> via Csv;
+    GET configured_rows() -> Vec<Row> via ConfCsv;
+    GET configured_rows_stream() -> ItemStream<Row> via ConfCsv;
+    GET headerless_rows() -> Vec<Row> via HeaderlessTsv;
 }}
 
 #[cfg(feature = "csv")]
@@ -658,10 +674,10 @@ fn facade_reexports_the_complete_csv_policy_surface() {
 
     fn header_mode<H: CsvHeaderMode>() {}
     fn delimiter<D: CsvDelimiter>() {}
-    fn decoder<D: RecordDecoder>() {}
     fn complete_page<S>()
     where
-        S: ResponseSpec<Output = Vec<Row>, Mode = Buffered> + PageResponseSpec,
+        S: ResponseRepresentation<Vec<Row>, Driver = Buffered>
+            + PageResponseRepresentation<Vec<Row>>,
     {
     }
 
@@ -670,21 +686,19 @@ fn facade_reexports_the_complete_csv_policy_surface() {
     delimiter::<CommaDelimiter>();
     delimiter::<SemicolonDelimiter>();
     delimiter::<TabDelimiter>();
-    decoder::<ConfCsv<Row>>();
-    decoder::<HeaderlessTsv<Row>>();
-    complete_page::<ConfCsv<Row>>();
-    complete_page::<HeaderlessTsv<Row>>();
+    complete_page::<ConfCsv>();
+    complete_page::<HeaderlessTsv>();
 }
 
 #[cfg(feature = "ndjson")]
 concord::api! {
     client NdJsonExtensionApi {
-        timeout off;
+        timeout 30s;
         base "http://ndjson-extension.example.test/";
 
 
-    GET values() -> Vec<u32> using NdJson<u32>;
-    GET values_stream() -> ::concord::records::RecordStream<NdJson<u32>> using Records<NdJson<u32>>;
+    GET values() -> Vec<u32> via NdJson;
+    GET values_stream() -> ItemStream<u32> via NdJson;
 }}
 
 /// Compiles every stable extension workflow without private or native integration imports.
@@ -703,9 +717,9 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
             let observation = Arc::new(ExtensionHooks);
             runtime
                 .rate_limiter(Arc::new(ExtensionLimiter))
-                .request_gate(observation.clone())
-                .response_gate(observation.clone())
-                .completion_observer(observation)
+                .operation_observer(observation.clone())
+                .operation_observer(observation.clone())
+                .operation_observer(observation)
         })
         .build()?;
 
@@ -727,14 +741,12 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
         RuntimeEndpoint::builder(runtime_id("extension_api.runtime_buffered"), Method::POST)
             .path("buffered")
             .body_codec::<ExtensionCodec>("bounded-input".to_owned())
-            .auth(
-                Auth::header(HeaderName::from_static("x-prepared-session"), credential)
-                    .expect("valid header placement"),
-            )
-            .response::<ExtensionCodec>()
+            .response::<ExtensionCodec, String>()
             .build()
             .expect("valid buffered runtime endpoint");
-    let _: Request<_> = client.request(buffered);
+    let _: Request<_> = buffered
+        .try_bind(&client)
+        .expect("runtime endpoint binds to extension client");
 
     let bytes = RuntimeEndpoint::builder(runtime_id("extension_api.runtime_bytes"), Method::POST)
         .path("bytes")
@@ -742,52 +754,57 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
         .accepted_bytes()
         .build()
         .expect("valid bytes runtime endpoint");
-    let _: Request<_> = client.request(bytes);
+    let _: Request<_> = bytes
+        .try_bind(&client)
+        .expect("runtime endpoint binds to extension client");
 
     let no_content =
         RuntimeEndpoint::builder(runtime_id("extension_api.runtime_none"), Method::DELETE)
             .path("none")
             .build()
             .expect("valid no-content runtime endpoint");
-    let _: Request<_> = client.request(no_content);
+    let _: Request<_> = no_content
+        .try_bind(&client)
+        .expect("runtime endpoint binds to extension client");
 
     let stream = RuntimeEndpoint::builder(runtime_id("extension_api.runtime_stream"), Method::GET)
         .path("stream")
-        .response_stream::<ExtensionMedia>()
+        .response::<ExtensionStreamingSpec, ByteStream>()
         .build()
         .expect("valid streaming runtime endpoint");
-    let _: Request<_> = client.request(stream);
+    let _: Request<_> = stream
+        .try_bind(&client)
+        .expect("runtime endpoint binds to extension client");
 
     let generic =
         RuntimeEndpoint::builder(runtime_id("extension_api.runtime_generic"), Method::POST)
             .path("generic")
-            .body_spec::<ExtensionRequestSpec>(Bytes::from_static(b"prepared generic input"))
-            .response::<ExtensionBufferedSpec>()
+            .body_spec::<ExtensionRequestSpec, _>(Bytes::from_static(b"prepared generic input"))
+            .response::<ExtensionBufferedSpec, usize>()
             .build()
             .expect("valid generic runtime endpoint");
-    let _: Request<_> = client.request(generic);
+    let _: Request<_> = generic
+        .try_bind(&client)
+        .expect("runtime endpoint binds to extension client");
 
     let page = ExtensionPage {
         items: vec![1, 2],
         next: Some("next".to_owned()),
     };
-    let controller = ExtensionController {
-        cursor: None,
-        construction: ExtensionConstructionProbe::new(),
-    };
     let _next_cursor: Option<&String> = page.next_cursor();
-    let _next_controller: Option<ExtensionController> = controller
-        .next(&page)
-        .expect("bounded controller transition");
+    fn assert_controller<C: PaginationController<ExtensionPage, Item = u8>>() {}
+    assert_controller::<ExtensionController>();
 
     #[cfg(feature = "json")]
     {
         let json = RuntimeEndpoint::builder(runtime_id("extension_api.runtime_json"), Method::POST)
-            .body_codec::<Json<Vec<u32>>>(vec![1, 2, 3])
-            .response::<Json<Vec<u32>>>()
+            .body_spec::<Json, _>(vec![1, 2, 3])
+            .response::<Json, Vec<u32>>()
             .build()
             .expect("valid JSON runtime endpoint");
-        let _: Request<_> = client.request(json);
+        let _: Request<_> = json
+            .try_bind(&client)
+            .expect("runtime endpoint binds to extension client");
     }
 
     #[cfg(feature = "multipart")]
@@ -797,7 +814,9 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
                 .body(RequestBody::multipart_factory(ExtensionMultipartFactory))
                 .build()
                 .expect("valid multipart runtime endpoint");
-        let _: Request<_> = client.request(multipart);
+        let _: Request<_> = multipart
+            .try_bind(&client)
+            .expect("runtime endpoint binds to extension client");
     }
 
     #[cfg(feature = "records")]
@@ -922,7 +941,7 @@ async fn public_request_body_spec_suppresses_empty_chunks_before_transport() {
     clippy::await_holding_lock,
     reason = "the process-global extension probes require whole-test serialization"
 )]
-async fn public_response_body_spec_can_accept_a_non_2xx_status() {
+async fn endpoint_status_policy_can_accept_a_non_2xx_response() {
     use concord_test_support::server::{ResponseScript, ScriptedServer};
 
     let _guard = EXTENSION_TEST_LOCK
@@ -1010,9 +1029,9 @@ async fn downstream_credential_limiter_and_hooks_execute_through_generated_runti
             let observation = Arc::new(ExtensionHooks);
             runtime
                 .rate_limiter(Arc::new(ExtensionLimiter))
-                .request_gate(observation.clone())
-                .response_gate(observation.clone())
-                .completion_observer(observation)
+                .operation_observer(observation.clone())
+                .operation_observer(observation.clone())
+                .operation_observer(observation)
         })
         .build()
         .expect("public-only extension runtime client");

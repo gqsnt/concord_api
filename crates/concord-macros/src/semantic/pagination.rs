@@ -167,12 +167,12 @@ mod tests {
     fn resolves_controller_fields_to_owned_normalized_references() {
         let api = test_support::resolve_tokens(quote! {
             client PaginationApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 values { tenant: String; }
 
-            GET list(cursor?: String) -> Vec<u32> using PageSpec<Vec<u32>> {
-                paginate with crate::Controller {
+            GET list(cursor?: String) -> Vec<u32> via PageSpec<Vec<u32>> {
+                paginate via crate::Controller {
                     cursor -> endpoint.cursor;
                     tenant = client.tenant;
                     attempts = 0;
@@ -210,12 +210,12 @@ mod tests {
     fn client_binding_without_a_rate_dependency_remains_rejected() {
         let error = test_support::try_resolve_tokens(quote! {
             client PaginationApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 values { cursor: String; }
 
-            GET list() -> Vec<u32> using PageSpec<Vec<u32>> {
-                paginate with crate::Controller {
+            GET list() -> Vec<u32> via PageSpec<Vec<u32>> {
+                paginate via crate::Controller {
                     cursor -> client.cursor;
                 }
             }

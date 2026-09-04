@@ -145,8 +145,15 @@ fn validate_url_len(url: &Url, owner: Span) -> syn::Result<()> {
 fn static_expr_value(value: &ResolvedExpr) -> Option<String> {
     match value {
         ResolvedExpr::String(value) => Some(value.value()),
-        ResolvedExpr::Integer(value) => Some(value.base10_digits().to_owned()),
+        ResolvedExpr::Character(value) => Some(value.value().to_string()),
+        ResolvedExpr::Boolean(value) => Some(value.value.to_string()),
+        ResolvedExpr::Integer { negative, literal } => Some(format!(
+            "{}{}",
+            if *negative { "-" } else { "" },
+            literal.base10_digits()
+        )),
         ResolvedExpr::Value(_) => None,
+        ResolvedExpr::Adapted { .. } => None,
         ResolvedExpr::Concat(values) => {
             let mut output = String::new();
             for value in values {
@@ -170,10 +177,10 @@ mod tests {
         let headers = (!headers.is_empty()).then(|| quote!(headers { #headers }));
         quote! {
             client HeadLimitApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test/";
 
-            GET fetch() -> Bytes using Bytes {
+            GET fetch() -> Bytes via Binary {
                 #path
                 #headers
             }
@@ -198,10 +205,10 @@ mod tests {
     fn ipv4_base_without_host_prefix_is_valid() {
         resolve(quote! {
             client Ipv4Api {
-                timeout off;
+                timeout 30s;
                 base "http://127.0.0.1:8080/";
 
-            GET read() -> Bytes using Bytes;
+            GET read() -> Bytes via Binary;
         }})
         .expect("IPv4 fixed base without host shaping");
     }
@@ -210,10 +217,10 @@ mod tests {
     fn ipv6_base_without_host_prefix_is_valid() {
         resolve(quote! {
             client Ipv6Api {
-                timeout off;
+                timeout 30s;
                 base "http://[2001:db8::1]:8080/";
 
-            GET read() -> Bytes using Bytes;
+            GET read() -> Bytes via Binary;
         }})
         .expect("IPv6 fixed base without host shaping");
     }
@@ -222,10 +229,10 @@ mod tests {
     fn dns_base_with_static_host_prefix_is_valid() {
         resolve(quote! {
             client DnsApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test/";
 
-            GET read() -> Bytes using Bytes {
+            GET read() -> Bytes via Binary {
                 subdomain ["api"];
             }
         }})
@@ -236,10 +243,10 @@ mod tests {
     fn dns_base_with_dynamic_host_prefix_is_valid() {
         resolve(quote! {
             client DnsApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test/";
 
-            GET read(region: String) -> Bytes using Bytes {
+            GET read(region: String) -> Bytes via Binary {
                 subdomain [endpoint.region];
             }
         }})
@@ -250,11 +257,11 @@ mod tests {
     fn ipv4_base_with_client_host_prefix_is_rejected() {
         assert_ip_host_error(quote! {
             client Ipv4Api {
-                timeout off;
+                timeout 30s;
                 base "http://127.0.0.1:8080/";
                 subdomain ["api"];
 
-            GET read() -> Bytes using Bytes;
+            GET read() -> Bytes via Binary;
         }});
     }
 
@@ -262,11 +269,11 @@ mod tests {
     fn ipv6_base_with_client_host_prefix_is_rejected() {
         assert_ip_host_error(quote! {
             client Ipv6Api {
-                timeout off;
+                timeout 30s;
                 base "http://[2001:db8::1]:8080/";
                 subdomain ["api"];
 
-            GET read() -> Bytes using Bytes;
+            GET read() -> Bytes via Binary;
         }});
     }
 
@@ -274,12 +281,12 @@ mod tests {
     fn ipv4_base_with_scope_host_prefix_is_rejected() {
         assert_ip_host_error(quote! {
             client Ipv4Api {
-                timeout off;
+                timeout 30s;
                 base "http://127.0.0.1:8080/";
 
             scope shaped() {
                 subdomain ["api"];
-                GET read() -> Bytes using Bytes;
+                GET read() -> Bytes via Binary;
             }
         }});
     }
@@ -288,10 +295,10 @@ mod tests {
     fn ipv6_base_with_endpoint_host_prefix_is_rejected() {
         assert_ip_host_error(quote! {
             client Ipv6Api {
-                timeout off;
+                timeout 30s;
                 base "http://[2001:db8::1]:8080/";
 
-            GET read() -> Bytes using Bytes {
+            GET read() -> Bytes via Binary {
                 subdomain ["api"];
             }
         }});
@@ -301,13 +308,13 @@ mod tests {
     fn inherited_host_prefix_over_ip_base_is_rejected() {
         assert_ip_host_error(quote! {
             client Ipv4Api {
-                timeout off;
+                timeout 30s;
                 base "http://127.0.0.1:8080/";
 
             scope shaped() {
                 subdomain ["api"];
                 scope inherited() {
-                    GET read() -> Bytes using Bytes;
+                    GET read() -> Bytes via Binary;
                 }
             }
         }});
@@ -317,13 +324,13 @@ mod tests {
     fn host_off_removing_inherited_prefix_over_ip_base_is_valid() {
         resolve(quote! {
             client Ipv6Api {
-                timeout off;
+                timeout 30s;
                 base "http://[2001:db8::1]:8080/";
                 subdomain ["api"];
 
             scope unshaped() {
                 subdomain off;
-                GET read() -> Bytes using Bytes;
+                GET read() -> Bytes via Binary;
             }
         }})
         .expect("host off removes an inherited IP-base prefix before endpoint validation");

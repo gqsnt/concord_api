@@ -2,7 +2,7 @@ use concord::api;
 
 api! {
     client SharedSecretApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         credentials {
             secret shared;
@@ -15,7 +15,7 @@ api! {
         }
 
 
-    GET read() -> () using NoContent;
+    GET read() -> () via Empty;
 }}
 
 fn main() {}

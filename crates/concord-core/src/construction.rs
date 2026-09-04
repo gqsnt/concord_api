@@ -1,4 +1,4 @@
-use std::fmt::{self, Display, Write};
+use std::fmt;
 
 /// A value-free failure from checked public-structure accounting.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -90,24 +90,6 @@ impl StructuralBudget {
         Ok(())
     }
 
-    pub(crate) fn try_replace_public_bytes(
-        &mut self,
-        previous_bytes: usize,
-        replacement_bytes: usize,
-        maximum_public_bytes: usize,
-    ) -> Result<(), StructuralLimitError> {
-        let next_public_bytes = self
-            .public_bytes
-            .checked_sub(previous_bytes)
-            .and_then(|bytes| bytes.checked_add(replacement_bytes))
-            .ok_or(StructuralLimitError::ArithmeticOverflow)?;
-        if next_public_bytes > maximum_public_bytes {
-            return Err(StructuralLimitError::PublicByteLimitExceeded);
-        }
-        self.public_bytes = next_public_bytes;
-        Ok(())
-    }
-
     pub(crate) fn try_replace(
         &mut self,
         previous_components: usize,
@@ -136,85 +118,6 @@ impl StructuralBudget {
         self.components = next_components;
         self.public_bytes = next_public_bytes;
         Ok(())
-    }
-}
-
-/// A structural formatting failure that never retains the formatted value.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum BoundedFormatError {
-    LimitExceeded,
-    FormattingFailed,
-}
-
-impl fmt::Display for BoundedFormatError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::LimitExceeded => formatter.write_str("formatted value limit exceeded"),
-            Self::FormattingFailed => formatter.write_str("value formatting failed"),
-        }
-    }
-}
-
-struct CappedString {
-    output: String,
-    maximum_bytes: usize,
-    exceeded: bool,
-    failed: bool,
-}
-
-impl CappedString {
-    fn new(maximum_bytes: usize) -> Self {
-        Self {
-            output: String::new(),
-            maximum_bytes,
-            exceeded: false,
-            failed: false,
-        }
-    }
-}
-
-impl Write for CappedString {
-    fn write_str(&mut self, value: &str) -> fmt::Result {
-        if self.exceeded || self.failed {
-            return Err(fmt::Error);
-        }
-        let Some(next_length) = self.output.len().checked_add(value.len()) else {
-            self.exceeded = true;
-            return Err(fmt::Error);
-        };
-        if next_length > self.maximum_bytes {
-            self.exceeded = true;
-            return Err(fmt::Error);
-        }
-        if self.output.try_reserve_exact(value.len()).is_err() {
-            self.failed = true;
-            return Err(fmt::Error);
-        }
-        self.output.push_str(value);
-        Ok(())
-    }
-}
-
-/// Formats into a UTF-8 byte-capped Concord-owned string.
-///
-/// User `Display` code remains responsible for bounding its own CPU work and
-/// may panic or ignore formatting failures. This function bounds only the
-/// output retained by Concord.
-pub(crate) fn format_bounded<T>(
-    value: &T,
-    maximum_bytes: usize,
-) -> Result<String, BoundedFormatError>
-where
-    T: Display + ?Sized,
-{
-    let mut output = CappedString::new(maximum_bytes);
-    let formatting = write!(&mut output, "{value}");
-    if output.exceeded {
-        Err(BoundedFormatError::LimitExceeded)
-    } else if output.failed || formatting.is_err() {
-        Err(BoundedFormatError::FormattingFailed)
-    } else {
-        Ok(output.output)
     }
 }
 
@@ -252,22 +155,12 @@ mod tests {
 
     const SENTINEL: &str = "formatted-first-excess-sentinel-4d8e";
 
-    struct IgnoreFormattingFailure;
-
-    impl Display for IgnoreFormattingFailure {
-        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-            formatter.write_str("1234")?;
-            let _ = formatter.write_str(SENTINEL);
-            Ok(())
-        }
-    }
-
     #[test]
     fn structural_budget_checks_addition_replacement_and_overflow_before_mutation() {
         let mut budget = StructuralBudget::new();
         budget.try_add(2, 5, 3, 8).expect("initial budget");
         budget
-            .try_replace_public_bytes(2, 4, 8)
+            .try_replace(0, 2, 0, 4, 3, 8)
             .expect("replacement at boundary");
         assert_eq!(budget.components(), 2);
         assert_eq!(budget.public_bytes(), 7);
@@ -281,7 +174,7 @@ mod tests {
         assert_eq!(budget.public_bytes(), before.public_bytes());
 
         assert_eq!(
-            budget.try_replace_public_bytes(8, 0, 8),
+            budget.try_replace(0, 8, 0, 0, 3, 8),
             Err(StructuralLimitError::ArithmeticOverflow)
         );
         assert_eq!(budget.public_bytes(), before.public_bytes());
@@ -301,36 +194,5 @@ mod tests {
             StructuralLimitError::ArithmeticOverflow
         );
         assert!(!rendered.contains(SENTINEL));
-    }
-
-    #[test]
-    fn capped_formatting_uses_utf8_bytes_and_rejects_ignored_first_excess() {
-        let maximum = "x".repeat(crate::limits::MAX_FORMATTED_PUBLIC_VALUE_BYTES);
-        assert_eq!(
-            format_bounded(&maximum, crate::limits::MAX_FORMATTED_PUBLIC_VALUE_BYTES)
-                .expect("canonical formatted-value boundary")
-                .len(),
-            crate::limits::MAX_FORMATTED_PUBLIC_VALUE_BYTES
-        );
-        assert_eq!(format_bounded("éé", 4).expect("exact UTF-8 boundary"), "éé");
-        assert_eq!(
-            format_bounded("ééx", 4),
-            Err(BoundedFormatError::LimitExceeded)
-        );
-
-        let error = format_bounded(&IgnoreFormattingFailure, 4)
-            .expect_err("ignored first excess must remain a failure");
-        assert_eq!(error, BoundedFormatError::LimitExceeded);
-        let rendered = format!("{error} {error:?}");
-        assert!(!rendered.contains(SENTINEL));
-    }
-
-    #[test]
-    fn capped_writer_withholds_the_complete_first_excess_chunk() {
-        let mut output = CappedString::new(4);
-        output.write_str("1234").expect("exact boundary");
-        assert!(output.write_str(SENTINEL).is_err());
-        assert_eq!(output.output, "1234");
-        assert!(!output.output.contains(SENTINEL));
     }
 }

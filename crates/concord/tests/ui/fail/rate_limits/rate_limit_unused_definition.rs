@@ -2,16 +2,16 @@ use concord::api;
 
 api! {
     client Api {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
         rate_limits {
-            unused_rule() {
+            policy unused_rule() { id "concord.rate_limit_unused_definition.1"; key [origin]; cost 1;
                 allow 1 per 1s;
             }
         }
 
 
-    GET read() -> Bytes using Bytes;
+    GET read() -> Bytes via Binary;
 }}
 
 fn main() {}

@@ -223,6 +223,7 @@ pub struct HttpResponseFailure {
 }
 
 impl HttpResponseFailure {
+    #[cfg(test)]
     pub(crate) fn new(
         endpoint: EndpointId,
         method: Method,
@@ -231,17 +232,44 @@ impl HttpResponseFailure {
         body: StatusBody,
         retry_after_cap: Duration,
     ) -> Self {
-        Self::new_at(
+        let retry_after = parse_retry_after(&headers, retry_after_cap, SystemTime::now());
+        Self::new_with_retry_after(
             endpoint,
             method,
             status,
             headers,
             body,
             retry_after_cap,
-            SystemTime::now(),
+            retry_after,
         )
     }
 
+    pub(crate) fn new_with_retry_after(
+        endpoint: EndpointId,
+        method: Method,
+        status: StatusCode,
+        headers: HeaderMap,
+        body: StatusBody,
+        retry_after_cap: Duration,
+        retry_after: Option<Duration>,
+    ) -> Self {
+        let content_type = headers
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        let headers = SanitizedHeaderMap::from_headers(&headers);
+        Self {
+            endpoint,
+            method,
+            status,
+            headers,
+            body,
+            content_type,
+            retry_after: retry_after.map(|delay| delay.min(retry_after_cap)),
+        }
+    }
+
+    #[cfg(test)]
     fn new_at(
         endpoint: EndpointId,
         method: Method,
@@ -365,7 +393,11 @@ impl fmt::Debug for HttpResponseFailure {
     }
 }
 
-fn parse_retry_after(headers: &HeaderMap, cap: Duration, now: SystemTime) -> Option<Duration> {
+pub(crate) fn parse_retry_after(
+    headers: &HeaderMap,
+    cap: Duration,
+    now: SystemTime,
+) -> Option<Duration> {
     let value = headers.get(RETRY_AFTER)?.to_str().ok()?.trim();
     if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) {
         let seconds = value.bytes().try_fold(0_u64, |seconds, byte| {
@@ -375,7 +407,7 @@ fn parse_retry_after(headers: &HeaderMap, cap: Duration, now: SystemTime) -> Opt
     }
 
     let date = httpdate::parse_http_date(value).ok()?;
-    Some(date.duration_since(now).unwrap_or(Duration::ZERO).min(cap))
+    Some(date.duration_since(now).ok()?.min(cap))
 }
 
 #[cfg(test)]
@@ -566,10 +598,7 @@ mod tests {
             Some(cap)
         );
         let past = httpdate::fmt_http_date(now - Duration::from_secs(1));
-        assert_eq!(
-            parse_retry_after(&retry_headers(&past), cap, now),
-            Some(Duration::ZERO)
-        );
+        assert_eq!(parse_retry_after(&retry_headers(&past), cap, now), None);
     }
 
     #[test]

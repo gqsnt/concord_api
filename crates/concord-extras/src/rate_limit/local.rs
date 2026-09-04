@@ -203,6 +203,7 @@ impl LocalRateLimiter {
             request,
             status,
             headers,
+            server_delay,
             cooldown_cap,
         } = response;
         let RateLimitRequest {
@@ -224,6 +225,7 @@ impl LocalRateLimiter {
             plan,
             status,
             headers,
+            server_delay,
         };
         let Some(cooldown) = self.observer.observe(&response_head) else {
             return Ok(());
@@ -311,11 +313,10 @@ impl RateLimiter for LocalRateLimiter {
         self.acquire_loop(request)
     }
 
-    fn observe<'a>(
-        &'a self,
-        response: RateLimitResponse<'a>,
-    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
-        Box::pin(async move { self.observe_response(response) })
+    fn observe(&self, response: RateLimitResponse<'_>) {
+        // Observation never changes the current endpoint result. Any failure is
+        // retained by `observe_response` and reported by a future acquisition.
+        let _ = self.observe_response(response);
     }
 }
 

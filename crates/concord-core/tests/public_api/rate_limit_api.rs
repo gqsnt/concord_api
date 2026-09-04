@@ -49,10 +49,7 @@ impl RateLimiter for CustomLimiter {
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
-    fn observe<'a>(
-        &'a self,
-        response: RateLimitResponse<'a>,
-    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
+    fn observe(&self, response: RateLimitResponse<'_>) {
         let _ = (
             response.request.endpoint,
             response.request.method,
@@ -65,7 +62,6 @@ impl RateLimiter for CustomLimiter {
             response.headers,
             response.cooldown_cap,
         );
-        Box::pin(async { Ok(()) })
     }
 }
 
@@ -115,19 +111,13 @@ fn configure_limiter(
     builder.rate_limiter(limiter)
 }
 
-fn observe_without_replacement<'a>(
-    limiter: &'a dyn RateLimiter,
-    response: RateLimitResponse<'a>,
-) -> BoxFuture<'a, Result<(), RateLimitError>> {
+fn observe_without_replacement(limiter: &dyn RateLimiter, response: RateLimitResponse<'_>) {
     limiter.observe(response)
 }
 
 #[test]
 fn custom_observation_contract_returns_safe_completion() {
-    let _: for<'a> fn(
-        &'a dyn RateLimiter,
-        RateLimitResponse<'a>,
-    ) -> BoxFuture<'a, Result<(), RateLimitError>> = observe_without_replacement;
+    let _: for<'a> fn(&'a dyn RateLimiter, RateLimitResponse<'a>) = observe_without_replacement;
 }
 
 #[test]
@@ -138,7 +128,6 @@ fn extensions_construct_opaque_permits_and_typed_key_safe_errors() {
         RateLimitErrorKind::InvalidKey,
         RateLimitErrorKind::StateCapacity,
         RateLimitErrorKind::Acquire,
-        RateLimitErrorKind::Observe,
         RateLimitErrorKind::Internal,
     ] {
         let error = RateLimitError::new(kind);

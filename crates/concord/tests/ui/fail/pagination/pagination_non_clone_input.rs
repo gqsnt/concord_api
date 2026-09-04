@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use concord::api;
-use concord::body::PageRequestBodySpec;
+use concord::body::PageRequestRepresentation;
 use concord::codec::{Bytes, CodecError, EncodeBody, EncodeContext};
 
 #[path = "../../../support/mod.rs"]
@@ -24,7 +24,7 @@ where
     }
 }
 
-impl<T> PageRequestBodySpec for ConditionalPageCodec<T>
+impl<T> PageRequestRepresentation<T> for ConditionalPageCodec<T>
 where
     T: Clone + Send + 'static,
 {
@@ -32,25 +32,38 @@ where
 
 pub struct Controller {}
 
-impl<Page> concord::pagination::PaginationController<Page> for Controller {
-    fn next(
+impl<Page> concord::pagination::PaginationController<Page> for Controller
+where
+    Page: Send + 'static,
+{
+    type Item = ();
+
+    const DESCRIPTION: concord::pagination::PaginationDescription =
+        concord::pagination::PaginationDescription::NONE;
+
+    fn advance(
         self,
-        _page: &Page,
-    ) -> Result<Option<Self>, concord::pagination::PaginationError> {
-        Ok(None)
+        _page: concord::pagination::PageResponse<Page>,
+        _limits: concord::pagination::PageDecisionLimits,
+    ) -> Result<
+        concord::pagination::PageStep<Self, Self::Item>,
+        concord::pagination::PaginationError,
+    > {
+        Ok(concord::pagination::PageStep::Done { items: Vec::new() })
     }
 }
 
 api! {
     client NonClonePageInputApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
     POST read(
-        body body: crate::NonCloneInput using crate::ConditionalPageCodec<crate::NonCloneInput>,
-    ) -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::Controller {}
+        body body: crate::NonCloneInput via crate::ConditionalPageCodec<crate::NonCloneInput>,
+    ) -> Vec<u8> via crate::support::Json {
+        effect safe;
+        paginate via crate::Controller {}
     }
 }}
 

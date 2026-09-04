@@ -4,7 +4,7 @@ use proc_macro2::Span;
 use syn::Ident;
 
 use super::model::{
-    Child, ClientSurface, CloneEligibility, Credential, CredentialSource,
+    BodySetter, Child, ClientSurface, CloneEligibility, Credential, CredentialSource,
     CredentialStorageTerminal, Endpoint, EndpointSetter, EndpointSurface, RequestTerminals,
     RequiredArgument, Scope, ScopeSurface, Value,
 };
@@ -25,8 +25,7 @@ pub(crate) const RESERVED_GENERATED_METHODS: &[&str] = &[
     "accepted_bytes",
     "paginate",
     "timeout",
-    "disable_timeout",
-    "inherit_timeout",
+    "reset_timeout",
     "debug",
     "description",
     "into_future",
@@ -60,10 +59,14 @@ pub(crate) fn endpoint_surface(
     scope_path: &[Ident],
     endpoint_name: &Ident,
     parameters: &[Value],
-    body_position: Option<usize>,
+    body: Option<(usize, crate::syntax::ast::ValuePresence, &Ident)>,
     paginated: bool,
     accepted_bytes: bool,
 ) -> EndpointSurface {
+    let (body_position, body_presence, body_name) = body
+        .map_or((None, None, None), |(position, presence, name)| {
+            (Some(position), Some(presence), Some(name))
+        });
     let endpoint_type_name = pascal_ident(endpoint_name);
     let mut required_arguments = parameters
         .iter()
@@ -71,7 +74,9 @@ pub(crate) fn endpoint_surface(
         .filter(|(_, value)| value.is_required())
         .map(|(index, value)| (value.source_position, RequiredArgument::Parameter(index)))
         .collect::<Vec<_>>();
-    if let Some(position) = body_position {
+    if let (Some(position), Some(crate::syntax::ast::ValuePresence::Required)) =
+        (body_position, body_presence)
+    {
         required_arguments.push((position, RequiredArgument::Body));
     }
     required_arguments.sort_by_key(|(position, _)| *position);
@@ -89,9 +94,9 @@ pub(crate) fn endpoint_surface(
             with: value
                 .accepts_absence()
                 .then(|| helper_ident("with", &value.name)),
-            clear: value
+            omit: value
                 .accepts_absence()
-                .then(|| helper_ident("clear", &value.name)),
+                .then(|| helper_ident("omit", &value.name)),
             reset: value
                 .has_default()
                 .then(|| helper_ident("reset", &value.name)),
@@ -109,6 +114,18 @@ pub(crate) fn endpoint_surface(
         module_path: scope_path.iter().map(snake_ident).collect(),
         required_arguments,
         setters,
+        body_setter: matches!(
+            body_presence,
+            Some(crate::syntax::ast::ValuePresence::Optional)
+        )
+        .then(|| {
+            let name = body_name.expect("optional body has a name");
+            BodySetter {
+                setter: value_setter_ident(name),
+                with: helper_ident("with", name),
+                omit: helper_ident("omit", name),
+            }
+        }),
         terminals: RequestTerminals {
             response: true,
             accepted_bytes,
@@ -171,11 +188,11 @@ fn validate_request_surface(endpoint: &Endpoint) -> syn::Result<()> {
             setter.setter.span(),
             "named request wrapper methods",
         )?;
-        if let Some(clear) = &setter.clear {
+        if let Some(omit) = &setter.omit {
             insert_name(
                 &mut names,
-                canonical_ident(clear),
-                clear.span(),
+                canonical_ident(omit),
+                omit.span(),
                 "named request wrapper methods",
             )?;
         }
@@ -192,6 +209,16 @@ fn validate_request_surface(endpoint: &Endpoint) -> syn::Result<()> {
                 &mut names,
                 canonical_ident(reset),
                 reset.span(),
+                "named request wrapper methods",
+            )?;
+        }
+    }
+    if let Some(setter) = &endpoint.surface.body_setter {
+        for method in [&setter.setter, &setter.with, &setter.omit] {
+            insert_name(
+                &mut names,
+                canonical_ident(method),
+                method.span(),
                 "named request wrapper methods",
             )?;
         }
@@ -452,9 +479,9 @@ mod tests {
     fn resolved_surface_owns_names_paths_and_exact_capabilities() {
         let api = test_support::resolve_tokens(quote! {
             client SurfaceApi {
-                timeout off; base "https://example.test";
+                timeout 30s; base "https://example.test";
             scope http_status() {
-                GET get_http_status(optional?: bool) -> Bytes using Bytes;
+                GET get_http_status(optional?: bool) -> Bytes via Binary;
             }
         }});
         let endpoint = test_support::endpoint(&api.client.children, "get_http_status");

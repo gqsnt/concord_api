@@ -1,3 +1,275 @@
+error[E0277]: the trait bound `EndpointValue: RequestAtom` is not satisfied
+  --> tests/ui/fail/names/missing_scope_value.rs:20:1
+   |
+20 | / api! {
+21 | |     client MissingScopeApi {
+22 | |         timeout 30s;
+23 | |         base "https://missing-scope.example.test";
+...  |
+32 | | }}
+   | |__^ unsatisfied trait bound
+   |
+help: the trait `RequestAtom` is not implemented for `EndpointValue`
+  --> tests/ui/fail/names/missing_scope_value.rs:12:1
+   |
+12 | struct EndpointValue(&'static str);
+   | ^^^^^^^^^^^^^^^^^^^^
+   = help: the following other types implement trait `RequestAtom`:
+             &T
+             NonZero<i128>
+             NonZero<i16>
+             NonZero<i32>
+             NonZero<i64>
+             NonZero<i8>
+             NonZero<isize>
+             NonZero<u128>
+           and $N others
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `ScopeValue: RequestAtom` is not satisfied
+  --> tests/ui/fail/names/missing_scope_value.rs:20:1
+   |
+20 | / api! {
+21 | |     client MissingScopeApi {
+22 | |         timeout 30s;
+23 | |         base "https://missing-scope.example.test";
+...  |
+32 | | }}
+   | |__^ unsatisfied trait bound
+   |
+help: the trait `RequestAtom` is not implemented for `ScopeValue`
+  --> tests/ui/fail/names/missing_scope_value.rs:4:1
+   |
+ 4 | struct ScopeValue(&'static str);
+   | ^^^^^^^^^^^^^^^^^
+   = help: the following other types implement trait `RequestAtom`:
+             &T
+             NonZero<i128>
+             NonZero<i16>
+             NonZero<i32>
+             NonZero<i64>
+             NonZero<i8>
+             NonZero<isize>
+             NonZero<u128>
+           and $N others
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `ScopeValue: RequestAtom` is not satisfied
+  --> tests/ui/fail/names/missing_scope_value.rs:20:1
+   |
+20 | / api! {
+21 | |     client MissingScopeApi {
+22 | |         timeout 30s;
+23 | |         base "https://missing-scope.example.test";
+...  |
+32 | | }}
+   | |__^ unsatisfied trait bound
+   |
+help: the trait `RequestAtom` is not implemented for `ScopeValue`
+  --> tests/ui/fail/names/missing_scope_value.rs:4:1
+   |
+ 4 | struct ScopeValue(&'static str);
+   | ^^^^^^^^^^^^^^^^^
+   = help: the following other types implement trait `RequestAtom`:
+             &T
+             NonZero<i128>
+             NonZero<i16>
+             NonZero<i32>
+             NonZero<i64>
+             NonZero<i8>
+             NonZero<isize>
+             NonZero<u128>
+           and $N others
+note: required for `ById` to implement `missing_scope_api::Endpoint`
+  --> tests/ui/fail/names/missing_scope_value.rs:20:1
+   |
+20 | / api! {
+21 | |     client MissingScopeApi {
+22 | |         timeout 30s;
+23 | |         base "https://missing-scope.example.test";
+...  |
+28 | |         GET by_id(endpoint_value: crate::EndpointValue) -> () via Empty {
+   | |             ^^^^^
+...  |
+32 | | }}
+   | |__^ unsatisfied trait bound introduced here
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `EndpointValue: RequestAtom` is not satisfied
+  --> tests/ui/fail/names/missing_scope_value.rs:20:1
+   |
+20 | / api! {
+21 | |     client MissingScopeApi {
+22 | |         timeout 30s;
+23 | |         base "https://missing-scope.example.test";
+...  |
+32 | | }}
+   | |__^ unsatisfied trait bound
+   |
+help: the trait `RequestAtom` is not implemented for `EndpointValue`
+  --> tests/ui/fail/names/missing_scope_value.rs:12:1
+   |
+12 | struct EndpointValue(&'static str);
+   | ^^^^^^^^^^^^^^^^^^^^
+   = help: the following other types implement trait `RequestAtom`:
+             &T
+             NonZero<i128>
+             NonZero<i16>
+             NonZero<i32>
+             NonZero<i64>
+             NonZero<i8>
+             NonZero<isize>
+             NonZero<u128>
+           and $N others
+note: required for `ById` to implement `missing_scope_api::Endpoint`
+  --> tests/ui/fail/names/missing_scope_value.rs:20:1
+   |
+20 | / api! {
+21 | |     client MissingScopeApi {
+22 | |         timeout 30s;
+23 | |         base "https://missing-scope.example.test";
+...  |
+28 | |         GET by_id(endpoint_value: crate::EndpointValue) -> () via Empty {
+   | |             ^^^^^
+...  |
+32 | | }}
+   | |__^ unsatisfied trait bound introduced here
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `ScopeValue: RequestAtom` is not satisfied
+  --> tests/ui/fail/names/missing_scope_value.rs:20:1
+   |
+20 | / api! {
+21 | |     client MissingScopeApi {
+22 | |         timeout 30s;
+23 | |         base "https://missing-scope.example.test";
+...  |
+32 | | }}
+   | |__^ unsatisfied trait bound
+   |
+help: the trait `RequestAtom` is not implemented for `ScopeValue`
+  --> tests/ui/fail/names/missing_scope_value.rs:4:1
+   |
+ 4 | struct ScopeValue(&'static str);
+   | ^^^^^^^^^^^^^^^^^
+   = help: the following other types implement trait `RequestAtom`:
+             &T
+             NonZero<i128>
+             NonZero<i16>
+             NonZero<i32>
+             NonZero<i64>
+             NonZero<i8>
+             NonZero<isize>
+             NonZero<u128>
+           and $N others
+note: required by a bound in `BoundedAtomWriter::<'a>::write`
+  --> $WORKSPACE/crates/concord-core/src/atom.rs
+   |
+   |     pub fn write<T>(&mut self, value: &T) -> Result<(), AtomError>
+   |            ----- required by a bound in this associated function
+   |     where
+   |         T: RequestAtom + ?Sized,
+   |            ^^^^^^^^^^^ required by this bound in `BoundedAtomWriter::<'a>::write`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `ScopeValue: RequestAtom` is not satisfied
+  --> tests/ui/fail/names/missing_scope_value.rs:20:1
+   |
+20 | / api! {
+21 | |     client MissingScopeApi {
+22 | |         timeout 30s;
+23 | |         base "https://missing-scope.example.test";
+...  |
+32 | | }}
+   | |__^ unsatisfied trait bound
+   |
+help: the trait `RequestAtom` is not implemented for `ScopeValue`
+  --> tests/ui/fail/names/missing_scope_value.rs:4:1
+   |
+ 4 | struct ScopeValue(&'static str);
+   | ^^^^^^^^^^^^^^^^^
+   = help: the following other types implement trait `RequestAtom`:
+             &T
+             NonZero<i128>
+             NonZero<i16>
+             NonZero<i32>
+             NonZero<i64>
+             NonZero<i8>
+             NonZero<isize>
+             NonZero<u128>
+           and $N others
+note: required for `ById` to implement `concord::__private::EndpointSpec`
+  --> tests/ui/fail/names/missing_scope_value.rs:20:1
+   |
+20 | / api! {
+21 | |     client MissingScopeApi {
+22 | |         timeout 30s;
+23 | |         base "https://missing-scope.example.test";
+...  |
+28 | |         GET by_id(endpoint_value: crate::EndpointValue) -> () via Empty {
+   | |             ^^^^^
+...  |
+32 | | }}
+   | |__^ unsatisfied trait bound introduced here
+note: required by a bound in `concord::__private::request_plan`
+  --> $WORKSPACE/crates/concord-core/src/__private.rs
+   |
+   | pub fn request_plan<E>(
+   |        ------------ required by a bound in this function
+...
+   |     E: EndpointSpec,
+   |        ^^^^^^^^^^^^ required by this bound in `request_plan`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `EndpointValue: RequestAtom` is not satisfied
+  --> tests/ui/fail/names/missing_scope_value.rs:20:1
+   |
+20 | / api! {
+21 | |     client MissingScopeApi {
+22 | |         timeout 30s;
+23 | |         base "https://missing-scope.example.test";
+...  |
+32 | | }}
+   | |__^ unsatisfied trait bound
+   |
+help: the trait `RequestAtom` is not implemented for `EndpointValue`
+  --> tests/ui/fail/names/missing_scope_value.rs:12:1
+   |
+12 | struct EndpointValue(&'static str);
+   | ^^^^^^^^^^^^^^^^^^^^
+   = help: the following other types implement trait `RequestAtom`:
+             &T
+             NonZero<i128>
+             NonZero<i16>
+             NonZero<i32>
+             NonZero<i64>
+             NonZero<i8>
+             NonZero<isize>
+             NonZero<u128>
+           and $N others
+note: required for `ById` to implement `concord::__private::EndpointSpec`
+  --> tests/ui/fail/names/missing_scope_value.rs:20:1
+   |
+20 | / api! {
+21 | |     client MissingScopeApi {
+22 | |         timeout 30s;
+23 | |         base "https://missing-scope.example.test";
+...  |
+28 | |         GET by_id(endpoint_value: crate::EndpointValue) -> () via Empty {
+   | |             ^^^^^
+...  |
+32 | | }}
+   | |__^ unsatisfied trait bound introduced here
+note: required by a bound in `concord::__private::request_plan`
+  --> $WORKSPACE/crates/concord-core/src/__private.rs
+   |
+   | pub fn request_plan<E>(
+   |        ------------ required by a bound in this function
+...
+   |     E: EndpointSpec,
+   |        ^^^^^^^^^^^^ required by this bound in `request_plan`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
 error[E0308]: mismatched types
   --> tests/ui/fail/names/missing_scope_value.rs:36:20
    |

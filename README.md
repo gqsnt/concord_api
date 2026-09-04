@@ -1,113 +1,66 @@
-# Concord
+# Concord v2.1
 
-Concord v2 describes one typed HTTP API contract and projects it into a
-domain-shaped Rust client, bounded managed execution, and credential-free,
-redaction-aware operational evidence.
+Concord compiles one client-shaped API contract into a domain-shaped Rust API, inert plans and descriptions, and one bounded managed runtime.
 
-The declaration owns domain values, lexical scopes, wire placement,
-authentication, response semantics, pagination, and quota identity. Transport,
-retry policy, limiter implementation, gates, observation, and finite runtime
-limits remain cohesive client configuration.
+This checkout is a **v2.1 implementation prototype**. It is not a release candidate until every applicable gate in [evidence_and_release_gates.md](docs/evidence_and_release_gates.md) passes, including the human usability gate.
 
-## One declaration, one domain tree
-
-<!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_contract -->
-```rust
+```concord-pseudocode
 api! {
     client CatalogApi {
-        timeout off;
-        base "http://catalog.example.test/";
+        base "https://catalog.example.test/";
+        timeout 5s;
+        request Json;
+        response Json;
+
         values {
+            #[sensitive]
             tenant: String;
         }
-        path ["api"];
+
+        path ["v1"];
         query { "tenant" = client.tenant; }
 
-
-    scope regional(region: String) {
-        subdomain replace [regional.region, "api"];
-        path ["v1", "catalog"];
-
-        GET item_summaries(
-            category?: String,
-            offset: u64 = 0,
-            count: std::num::NonZeroU32 = DEFAULT_PAGE_SIZE,
-        ) -> Vec<ItemSummary> using Json<Vec<ItemSummary>> {
-            path ["items"];
-            query {
-                "category" = endpoint.category;
-                "offset" = endpoint.offset;
-                "count" = endpoint.count;
-            }
-            paginate with concord::pagination::OffsetPagination {
-                offset -> endpoint.offset;
-                page_size -> endpoint.count;
-            }
+        GET item(id: String) -> Item {
+            id "catalog.item.get";
+            path ["items", endpoint.id];
         }
     }
-}}
-```
-
-The generated use follows the same lexical tree. Required non-defaulted scope
-and endpoint values are positional; optional/defaulted values are exact typed
-controls; terminals exist only for declared capabilities.
-
-<!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_usage -->
-```rust
-pub fn construct() -> Result<(), concord::ClientBuildError> {
-    let client = CatalogApi::builder()
-        .set_tenant("acme".to_owned())
-        .build()?;
-
-    let _: PaginatedRequest<_> = client
-        .regional("eu".to_owned())
-        .item_summaries()
-        .with_category("hardware".to_owned())
-        .set_count(NonZeroU32::new(50).expect("positive page size"))
-        .paginate(PageLimit::Prefix(2));
-    Ok(())
 }
 ```
 
-`CatalogApi::unbound()` provides the same tree without a runtime. An intent can
-be stored, described, planned against a client, and later bound. Construction
-and planning are inert; managed effects start only when a terminal is polled.
+The authored tree is the caller tree:
 
-## Core guarantees
+```rust
+let client = CatalogApi::builder()
+    .set_tenant("acme".to_owned())
+    .build()?;
 
-- Rust type spelling never controls optionality or repetition. `?` adds one
-  outer presence layer and `each` selects repeated placement.
-- Public shaping and credential-free observation happen before private
-  authentication placement.
-- One executor owns direct, unbound-bound, runtime-defined, retry, recovery,
-  pagination, response, and accepted-byte paths.
-- Every growing dimension is bounded, and pagination shares one aggregate
-  deadline across all pages and attempts.
-- Plans and ordinary evidence structurally exclude credentials and propagate
-  `#[redact]`; visible public data may still be sensitive.
-- Rate keys use canonical typed framing, and a rate-limited contract cannot
-  build without an explicit limiter.
+let item: Item = client.item("42".to_owned()).await?;
 
-## Use from this checkout
-
-```toml
-[dependencies]
-concord = { path = "../concord_api2/crates/concord", features = ["json"] }
+let intent = CatalogApi::unbound().item("42".to_owned());
+let plan = client.plan(&intent)?;
+let request = client.request(intent);
 ```
 
-The workspace uses Rust edition 2024 and MSRV 1.86. Packages remain private
-(`publish = false`).
+Runtime-discovered relative operations retain separate, fallible proof:
 
-Start with the [documentation index](docs/README.md), the
-[quick start](docs/quick_start.md), or the normative
-[DSL specification](docs/spec.md). Existing v1 contracts should follow the
-[migration guide](docs/migration_v1_to_v2.md).
+```rust
+let endpoint = RuntimeEndpoint::builder(endpoint_id, Method::GET)
+    .path("items")
+    .path_value(RuntimeValue::sensitive(record_id))
+    .response::<Json, Item>()
+    .build()?;
+let item = endpoint.try_bind(&client)?.await?;
+```
 
-The complete repository gate is:
+Core guarantees include opaque Rust payload types, explicit outer presence and repetition, fixed logical origins, endpoint-owned status/effect, one absolute operation deadline, managed retry/auth/rate/pagination lifecycles, and sanitized bounded evidence.
+
+Start with the [documentation index](docs/README.md), [quick start](docs/quick_start.md), [normative DSL specification](docs/spec.md), or [v2.1 migration guide](docs/migration_v2_1.md). Maintainers should also read the [implementation plan](dev_doc/implementation_v2_1.md) and [claim/evidence ledger](dev_doc/claim_evidence_ledger.md).
+
+The complete maintained gate is:
 
 ```text
 just verify
 ```
 
-See the [v2 constitution](FINAL.md) and
-[maintainer internals](dev_doc/internals.md) for gate ownership.
+The workspace targets Rust 1.86 and keeps every package private (`publish = false`) during the prototype phase.

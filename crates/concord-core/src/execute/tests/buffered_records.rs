@@ -119,7 +119,7 @@ async fn buffered_records_collect_completely_and_complete_as_success() {
         hooks.records().as_slice(),
         [
             LifecycleRecord::Before { .. },
-            LifecycleRecord::Response(_, StatusCode::OK),
+            LifecycleRecord::Response(StatusCode::OK),
             LifecycleRecord::Complete {
                 outcome: CompletionOutcome::Success,
                 status: Some(StatusCode::OK),
@@ -328,24 +328,29 @@ async fn accepted_bytes_skips_buffered_record_validation_start_and_decode() {
 
 struct AcceptedNotFoundBufferedRecords;
 
-impl ResponseSpec for AcceptedNotFoundBufferedRecords {
+impl TestResponseRepresentation for AcceptedNotFoundBufferedRecords {
     type Output = Vec<Bytes>;
-    type Mode = Buffered;
+
+    fn accepted_status() -> AcceptedStatus {
+        AcceptedStatus::codes([StatusCode::NOT_FOUND]).expect("nonempty test status set")
+    }
+}
+
+impl ResponseRepresentation<Vec<Bytes>> for AcceptedNotFoundBufferedRecords {
+    type Driver = Buffered;
 
     fn accept() -> Option<&'static str> {
-        <BufferedRecords<SimpleRecordDecoder> as ResponseSpec>::accept()
-    }
-
-    fn accepts_status(status: StatusCode) -> bool {
-        status == StatusCode::NOT_FOUND
+        <BufferedRecords<SimpleRecordDecoder> as ResponseRepresentation<Vec<Bytes>>>::accept()
     }
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
-        <BufferedRecords<SimpleRecordDecoder> as ResponseSpec>::validate(head)
+        <BufferedRecords<SimpleRecordDecoder> as ResponseRepresentation<Vec<Bytes>>>::validate(head)
     }
 
-    fn from_body(body: Bytes, head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
-        <BufferedRecords<SimpleRecordDecoder> as ResponseSpec>::from_body(body, head)
+    fn from_body(body: Bytes, head: &ResponseHead<'_>) -> Result<Vec<Bytes>, ResponseBodyError> {
+        <BufferedRecords<SimpleRecordDecoder> as ResponseRepresentation<Vec<Bytes>>>::from_body(
+            body, head,
+        )
     }
 }
 

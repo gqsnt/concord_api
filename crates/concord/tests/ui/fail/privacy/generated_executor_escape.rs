@@ -2,13 +2,13 @@ use concord::api;
 
 api! {
     client DevelopmentProofApi {
-        timeout off;
+        timeout 30s;
         base "http://development-proof.example.test/";
 
 
     scope resources(id: String) {
         path ["resources", resources.id];
-        GET fetch(value: String) -> () using NoContent {
+        GET fetch(value: String) -> () via Empty {
             path [endpoint.value];
         }
     }

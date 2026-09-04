@@ -5,7 +5,7 @@ macro_rules! reserved_auth_header_case {
 
             api! {
                 client ReservedAuthHeaderApi {
-                    timeout off;
+                    timeout 30s;
                     base "https://example.test/";
                     credentials {
                         secret key;
@@ -14,7 +14,7 @@ macro_rules! reserved_auth_header_case {
                     auth { header $header = key; }
 
 
-                GET read() -> () using NoContent;
+                GET read() -> () via Empty;
             }}
         }
     };

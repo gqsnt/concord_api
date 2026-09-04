@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod atom;
 #[cfg(feature = "oauth2-client")]
 pub mod auth;
 pub mod codec;

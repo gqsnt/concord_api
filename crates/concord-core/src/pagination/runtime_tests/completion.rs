@@ -126,9 +126,9 @@ async fn later_page_errors_keep_ordinary_categories_and_aggregate_status() {
         "http://pagination-runtime.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
         RuntimeConfigBuilder::new()
-            .request_gate(rate_hooks.clone())
-            .response_gate(rate_hooks.clone())
-            .completion_observer(rate_hooks.clone())
+            .operation_observer(rate_hooks.clone())
+            .operation_observer(rate_hooks.clone())
+            .operation_observer(rate_hooks.clone())
             .rate_limiter(configured_limiter),
         &rate_executor,
     )
@@ -150,12 +150,9 @@ async fn later_page_errors_keep_ordinary_categories_and_aggregate_status() {
         rate_executor.application().request_count().expect("count"),
         0
     );
-    assert!(
-        rate_hooks
-            .completion
-            .lock()
-            .expect("completion lock")
-            .is_empty()
+    assert_eq!(
+        rate_hooks.completion.lock().expect("completion lock").len(),
+        1
     );
     let aggregate = rate_hooks.aggregate.lock().expect("aggregate lock").clone();
     assert_eq!(aggregate.len(), 1);
@@ -165,7 +162,7 @@ async fn later_page_errors_keep_ordinary_categories_and_aggregate_status() {
 }
 
 #[tokio::test]
-async fn pagination_emits_no_internal_page_terminal_observation() {
+async fn pagination_emits_correlated_page_and_aggregate_terminal_observation() {
     let executor = DeterministicExecutor::new();
     executor
         .application()
@@ -192,7 +189,7 @@ async fn pagination_emits_no_internal_page_terminal_observation() {
     .expect("pagination succeeds");
     assert_eq!(items, ["one", "two"]);
     assert_eq!(executor.application().request_count().expect("count"), 2);
-    assert!(hooks.completion.lock().expect("completion lock").is_empty());
+    assert_eq!(hooks.completion.lock().expect("completion lock").len(), 2);
     assert_eq!(hooks.aggregate.lock().expect("aggregate lock").len(), 1);
 }
 

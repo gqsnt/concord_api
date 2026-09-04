@@ -27,5 +27,5 @@ pub use types::{
 
 #[cfg(test)]
 pub(crate) use canonical::encode_canonical;
-pub use canonical::{CanonicalKeyWriter, RateLimitKeyValue};
+pub use canonical::{CanonicalKeyWriter, RateKeyPart};
 pub(crate) use limiter::fallback_limiter;

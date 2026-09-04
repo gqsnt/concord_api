@@ -8,7 +8,8 @@ use crate::http::application::ApplicationResponse;
 use crate::operation::OperationDeadline;
 
 use super::spec::ResponseSelection;
-use super::{ByteStream, ResponseBodyErrorKind, ResponseHead, ResponseSpec};
+use super::stream::StreamObservation;
+use super::{ByteStream, ResponseBodyErrorKind, ResponseHead, ResponseRepresentation};
 
 pub struct ResponseInput {
     pub(crate) response: ApplicationResponse,
@@ -17,17 +18,19 @@ pub struct ResponseInput {
     pub(crate) deadline: OperationDeadline,
     pub(crate) endpoint: EndpointId,
     pub(crate) method: http::Method,
+    pub(crate) stream_observation: Option<StreamObservation>,
 }
 
-pub(crate) async fn execute_response<R, S>(
+pub(crate) async fn execute_response<R, DeclaredOutput, S>(
     input: ResponseInput,
     head: &ResponseHead<'_>,
 ) -> Result<(S::Output, usize), ApiError>
 where
-    R: ResponseSpec,
-    S: ResponseSelection<R>,
+    R: ResponseRepresentation<DeclaredOutput>,
+    DeclaredOutput: Send + 'static,
+    S: ResponseSelection<R, DeclaredOutput>,
 {
-    <S::Mode as super::spec::private::Sealed>::preflight(&input)?;
+    <S::Driver as super::spec::private::Sealed>::preflight(&input)?;
 
     let validation = S::validate(head);
     input
@@ -40,8 +43,9 @@ where
     let deadline = input.deadline;
     let endpoint = input.endpoint.clone();
     let method = input.method.clone();
-    let body = <S::Mode as super::spec::private::Sealed>::acquire(input).await?;
-    let acquired_body_bytes = <S::Mode as super::spec::private::Sealed>::acquired_body_bytes(&body);
+    let body = <S::Driver as super::spec::private::Sealed>::acquire(input).await?;
+    let acquired_body_bytes =
+        <S::Driver as super::spec::private::Sealed>::acquired_body_bytes(&body);
     let output = S::from_body(body, head);
     deadline
         .check()
@@ -59,17 +63,14 @@ pub(crate) fn preflight_streaming(input: &ResponseInput) -> Result<(), ApiError>
 }
 
 pub(crate) fn preflight_discard(input: &ResponseInput) -> Result<(), ApiError> {
-    input
-        .deadline
-        .check()
-        .map_err(|_| timeout(&input.endpoint, &input.method))
+    preflight_length(input, input.limit)
 }
 
 pub(crate) async fn acquire_buffered(input: ResponseInput) -> Result<Bytes, ApiError> {
     collect_bounded(input).await
 }
 
-pub(crate) async fn acquire_streaming(input: ResponseInput) -> Result<ByteStream, ApiError> {
+pub(crate) async fn acquire_streaming(mut input: ResponseInput) -> Result<ByteStream, ApiError> {
     input
         .deadline
         .check()
@@ -80,20 +81,14 @@ pub(crate) async fn acquire_streaming(input: ResponseInput) -> Result<ByteStream
         .deadline
         .check()
         .map_err(|_| timeout(&input.endpoint, &input.method))?;
-    Ok(ByteStream::new(body))
+    Ok(match input.stream_observation.take() {
+        Some(observation) => ByteStream::observed(body, observation),
+        None => ByteStream::new(body),
+    })
 }
 
 pub(crate) async fn acquire_discard(input: ResponseInput) -> Result<(), ApiError> {
-    input
-        .deadline
-        .check()
-        .map_err(|_| timeout(&input.endpoint, &input.method))?;
-    drop(input.response);
-    input
-        .deadline
-        .check()
-        .map_err(|_| timeout(&input.endpoint, &input.method))?;
-    Ok(())
+    collect_bounded(input).await.map(drop)
 }
 
 fn response_spec_error(
@@ -110,21 +105,21 @@ fn response_spec_error(
     };
     ApiError::classified(endpoint.clone(), method.clone(), category).with_stage(
         FailureStage::ResponseConversion,
-        DispatchKnowledge::ResponseReceived,
+        DispatchKnowledge::ResponseObserved,
     )
 }
 
 fn timeout(endpoint: &EndpointId, method: &http::Method) -> ApiError {
     ApiError::classified(endpoint.clone(), method.clone(), ErrorCategory::Timeout).with_stage(
         FailureStage::ResponseAcquisition,
-        DispatchKnowledge::ResponseReceived,
+        DispatchKnowledge::ResponseObserved,
     )
 }
 
 fn conversion_timeout(endpoint: &EndpointId, method: &http::Method) -> ApiError {
     ApiError::classified(endpoint.clone(), method.clone(), ErrorCategory::Timeout).with_stage(
         FailureStage::ResponseConversion,
-        DispatchKnowledge::ResponseReceived,
+        DispatchKnowledge::ResponseObserved,
     )
 }
 
@@ -145,7 +140,7 @@ fn preflight_length(input: &ResponseInput, limit: NonZeroUsize) -> Result<(), Ap
         )
         .with_stage(
             FailureStage::ResponseAcquisition,
-            DispatchKnowledge::ResponseReceived,
+            DispatchKnowledge::ResponseObserved,
         ));
     }
     Ok(())
@@ -171,7 +166,7 @@ async fn collect_bounded(input: ResponseInput) -> Result<Bytes, ApiError> {
                     )
                     .with_stage(
                         FailureStage::ResponseAcquisition,
-                        DispatchKnowledge::ResponseReceived,
+                        DispatchKnowledge::ResponseObserved,
                     ));
                 };
                 if next_length > limit {
@@ -182,7 +177,7 @@ async fn collect_bounded(input: ResponseInput) -> Result<Bytes, ApiError> {
                     )
                     .with_stage(
                         FailureStage::ResponseAcquisition,
-                        DispatchKnowledge::ResponseReceived,
+                        DispatchKnowledge::ResponseObserved,
                     ));
                 }
                 body.extend_from_slice(&chunk);
@@ -230,6 +225,7 @@ mod tests {
                 .expect("disabled deadline"),
             endpoint,
             method,
+            stream_observation: None,
         }
     }
 

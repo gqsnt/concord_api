@@ -31,6 +31,7 @@ pub(super) async fn collect_terminal_status(
     disposition: StatusDisposition,
     limit: Option<NonZeroUsize>,
     retry_after_cap: Duration,
+    parsed_retry_after: Option<Option<Duration>>,
     deadline: Option<tokio::time::Instant>,
     mut progress: ResponseChunkProgress,
 ) -> StatusCapture {
@@ -40,6 +41,13 @@ pub(super) async fn collect_terminal_status(
 
     let status = response.status();
     let headers = response.headers().clone();
+    let retry_after = parsed_retry_after.unwrap_or_else(|| {
+        crate::error::status::parse_retry_after(
+            &headers,
+            retry_after_cap,
+            std::time::SystemTime::now(),
+        )
+    });
     let body = match limit {
         None => StatusBody::disabled(),
         Some(limit)
@@ -51,13 +59,14 @@ pub(super) async fn collect_terminal_status(
         }
         Some(limit) => read_complete_body(&mut response, &mut progress, limit, deadline).await,
     };
-    StatusCapture::Terminal(HttpResponseFailure::new(
+    StatusCapture::Terminal(HttpResponseFailure::new_with_retry_after(
         endpoint,
         method,
         status,
         headers,
         body,
         retry_after_cap,
+        retry_after,
     ))
 }
 
@@ -134,6 +143,7 @@ mod tests {
             StatusDisposition::Terminal,
             Some(NonZeroUsize::new(limit).expect("positive status limit")),
             Duration::from_secs(1),
+            None,
             None,
             ResponseChunkProgress::default(),
         )
@@ -432,6 +442,7 @@ mod tests {
             StatusDisposition::Terminal,
             Some(NonZeroUsize::new(64).expect("positive status limit")),
             Duration::from_secs(1),
+            None,
             None,
             ResponseChunkProgress::default(),
         ));

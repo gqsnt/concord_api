@@ -2,19 +2,99 @@ use super::*;
 
 struct AcceptedNotFoundStream;
 
-impl ResponseSpec for AcceptedNotFoundStream {
+impl TestResponseRepresentation for AcceptedNotFoundStream {
     type Output = ByteStream;
-    type Mode = Streaming;
 
-    fn accepts_status(status: StatusCode) -> bool {
-        status == StatusCode::NOT_FOUND
+    fn accepted_status() -> AcceptedStatus {
+        AcceptedStatus::codes([StatusCode::NOT_FOUND]).expect("nonempty test status set")
+    }
+}
+
+#[cfg(feature = "records")]
+struct BinaryStreamSurface;
+
+#[cfg(feature = "records")]
+impl TestResponseRepresentation for BinaryStreamSurface {
+    type Output = ByteStream;
+}
+
+#[cfg(feature = "records")]
+impl ResponseRepresentation<ByteStream> for BinaryStreamSurface {
+    type Driver = Streaming;
+
+    fn accept() -> Option<&'static str> {
+        <Binary as ResponseRepresentation<ByteStream>>::accept()
+    }
+
+    fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
+        <Binary as ResponseRepresentation<ByteStream>>::validate(head)
     }
 
     fn from_body(
         body: ByteStream,
         _head: &ResponseHead<'_>,
-    ) -> Result<Self::Output, ResponseBodyError> {
+    ) -> Result<ByteStream, ResponseBodyError> {
         Ok(body)
+    }
+}
+
+impl ResponseRepresentation<ByteStream> for AcceptedNotFoundStream {
+    type Driver = Streaming;
+
+    fn from_body(
+        body: ByteStream,
+        _head: &ResponseHead<'_>,
+    ) -> Result<ByteStream, ResponseBodyError> {
+        Ok(body)
+    }
+}
+
+#[cfg(feature = "records")]
+struct SemanticItemStreamSurface;
+
+#[cfg(feature = "records")]
+struct LifecycleItemDecoder;
+
+#[cfg(feature = "records")]
+impl RecordDecoder for LifecycleItemDecoder {
+    type Record = Bytes;
+
+    fn start(_head: &ResponseHead<'_>) -> Result<Self, RecordError> {
+        Ok(Self)
+    }
+
+    fn decode(&mut self, buffer: &mut BytesMut) -> Result<Option<Self::Record>, RecordError> {
+        let Some(end) = buffer.iter().position(|byte| *byte == b'\n') else {
+            return Ok(None);
+        };
+        let mut item = buffer.split_to(end + 1);
+        item.truncate(end);
+        Ok(Some(item.freeze()))
+    }
+
+    fn decode_eof(&mut self, buffer: &mut BytesMut) -> Result<Option<Self::Record>, RecordError> {
+        Ok((!buffer.is_empty()).then(|| buffer.split_to(buffer.len()).freeze()))
+    }
+
+    fn max_buffered_bytes() -> NonZeroUsize {
+        NonZeroUsize::new(1024).expect("positive item staging bound")
+    }
+}
+
+#[cfg(feature = "records")]
+impl TestResponseRepresentation for SemanticItemStreamSurface {
+    type Output = ItemStream<Bytes>;
+}
+
+#[cfg(feature = "records")]
+impl ResponseRepresentation<ItemStream<Bytes>> for SemanticItemStreamSurface {
+    type Driver = Streaming;
+
+    fn from_body(
+        body: ByteStream,
+        head: &ResponseHead<'_>,
+    ) -> Result<ItemStream<Bytes>, ResponseBodyError> {
+        ItemStream::decode_with::<LifecycleItemDecoder>(body, head)
     }
 }
 
@@ -65,8 +145,86 @@ fn server_stream_headers(content_type: &str) -> Vec<(String, String)> {
     vec![("Content-Type".to_owned(), content_type.to_owned())]
 }
 
+#[cfg(feature = "records")]
 #[tokio::test]
-async fn media_unconstrained_stream_keeps_streaming_lifecycle_and_limits() {
+async fn semantic_item_stream_reports_complete_failure_and_drop_after_acquisition() {
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_response(ScriptedResponse::success(Bytes::from_static(b"one\ntwo\n")))
+        .expect("complete item response");
+    executor
+        .application()
+        .queue_response(
+            ScriptedResponse::success(Bytes::new()).body_read_failure("private item failure"),
+        )
+        .expect("failed item response");
+    executor
+        .application()
+        .queue_response(ScriptedResponse::success(Bytes::from_static(b"unpolled\n")))
+        .expect("dropped item response");
+    let hooks = Arc::new(ProbeHooks::new());
+    let limiter: Arc<dyn RateLimiter> = Arc::new(NoopRateLimiter::new());
+    let core = development_core(
+        &executor,
+        Arc::clone(&hooks),
+        RuntimeConfigBuilder::new().rate_limiter(limiter),
+    );
+
+    let mut complete = surface_request::<SemanticItemStreamSurface>(core.clone(), "complete")
+        .await
+        .expect("complete item stream opens");
+    assert_eq!(
+        std::future::poll_fn(|context| Pin::new(&mut complete).poll_next(context))
+            .await
+            .expect("first item")
+            .expect("first item succeeds"),
+        Bytes::from_static(b"one")
+    );
+    assert_eq!(
+        std::future::poll_fn(|context| Pin::new(&mut complete).poll_next(context))
+            .await
+            .expect("second item")
+            .expect("second item succeeds"),
+        Bytes::from_static(b"two")
+    );
+    assert!(
+        std::future::poll_fn(|context| Pin::new(&mut complete).poll_next(context))
+            .await
+            .is_none()
+    );
+
+    let mut failed = surface_request::<SemanticItemStreamSurface>(core.clone(), "failed")
+        .await
+        .expect("failed item stream opens");
+    let error = std::future::poll_fn(|context| Pin::new(&mut failed).poll_next(context))
+        .await
+        .expect("failure item")
+        .expect_err("body failure remains a stream item");
+    assert_eq!(error.kind(), RecordErrorKind::Body);
+    assert!(!format!("{error:?} {error}").contains("private item failure"));
+
+    let dropped = surface_request::<SemanticItemStreamSurface>(core, "dropped")
+        .await
+        .expect("dropped item stream opens");
+    drop(dropped);
+
+    let records = hooks.stream_records();
+    assert_eq!(records.len(), 3);
+    assert_eq!(records[0].kind, StreamKind::Items);
+    assert_eq!(records[0].outcome, StreamOutcome::Completed);
+    assert_eq!(records[0].units_yielded, 2);
+    assert_eq!(records[0].bytes_yielded, None);
+    assert_eq!(records[1].kind, StreamKind::Items);
+    assert_eq!(records[1].outcome, StreamOutcome::Failed);
+    assert_eq!(records[1].units_yielded, 0);
+    assert_eq!(records[2].kind, StreamKind::Items);
+    assert_eq!(records[2].outcome, StreamOutcome::Dropped);
+    assert_eq!(records[2].units_yielded, 0);
+}
+
+#[tokio::test]
+async fn binary_stream_allows_missing_media_and_keeps_streaming_lifecycle_and_limits() {
     let executor = DeterministicExecutor::new();
     let hooks = Arc::new(ProbeHooks::new());
     let core = development_core(
@@ -75,7 +233,7 @@ async fn media_unconstrained_stream_keeps_streaming_lifecycle_and_limits() {
         RuntimeConfigBuilder::new()
             .stream_response_limit(NonZeroUsize::new(4).expect("positive stream limit")),
     );
-    let mut headers = stream_headers("not a media type");
+    let mut headers = http::HeaderMap::new();
     headers.insert(
         "x-stream-sentinel",
         http::HeaderValue::from_static("bare-stream-header"),
@@ -83,12 +241,12 @@ async fn media_unconstrained_stream_keeps_streaming_lifecycle_and_limits() {
     executor
         .application()
         .queue_response(ScriptedResponse::success("bare").headers(headers))
-        .expect("media-unconstrained stream response");
+        .expect("binary stream response without content type");
 
-    let response = stream_request::<AnyMedia>(core)
+    let response = stream_request(core)
         .response()
         .await
-        .expect("media-unconstrained stream opens");
+        .expect("binary stream with missing media opens");
     assert_eq!(
         response.headers()["x-stream-sentinel"],
         "bare-stream-header"
@@ -100,15 +258,15 @@ async fn media_unconstrained_stream_keeps_streaming_lifecycle_and_limits() {
     let captures = executor
         .application()
         .captures()
-        .expect("media-unconstrained stream capture");
+        .expect("binary stream capture");
     assert_eq!(captures.len(), 1);
-    assert!(
-        captures[0]
-            .headers()
-            .iter()
-            .all(|header| header.name() != http::header::ACCEPT),
-        "bare Stream must not insert Accept"
-    );
+    assert!(captures[0].headers().iter().any(|header| {
+        header.name() == http::header::ACCEPT
+            && header.value()
+                == &concord_test_support::script::CapturedHeaderValue::Text(
+                    "application/octet-stream".to_owned(),
+                )
+    }));
     let mut stream = response.into_value();
     assert_eq!(
         next_stream_chunk(&mut stream)
@@ -131,7 +289,7 @@ async fn media_unconstrained_stream_keeps_streaming_lifecycle_and_limits() {
         .application()
         .queue_response(ScriptedResponse::success("excess"))
         .expect("known-length excess response");
-    let error = stream_request::<AnyMedia>(limited_core)
+    let error = stream_request(limited_core)
         .await
         .expect_err("known-length bare stream excess");
     assert_eq!(error.category(), ErrorCategory::ResponseBody);
@@ -156,7 +314,7 @@ async fn stream_response_carries_metadata_and_completes_once_when_opened() {
         .queue_response(ScriptedResponse::success("stream-value-secret-8d0a").headers(headers))
         .expect("stream response script");
 
-    let response = stream_request::<OctetStream>(core)
+    let response = stream_request(core)
         .response()
         .await
         .expect("stream response");
@@ -221,13 +379,10 @@ async fn stream_response_known_length_and_media_fail_before_body_polling() {
         RuntimeConfigBuilder::new()
             .stream_response_limit(NonZeroUsize::new(4).expect("positive limit")),
     );
-    let error = tokio::time::timeout(
-        Duration::from_secs(1),
-        stream_request::<OctetStream>(known_core),
-    )
-    .await
-    .expect("known excess must not await the body")
-    .expect_err("known stream excess");
+    let error = tokio::time::timeout(Duration::from_secs(1), stream_request(known_core))
+        .await
+        .expect("known excess must not await the body")
+        .expect_err("known stream excess");
     known_gate.release();
     assert_eq!(error.category(), ErrorCategory::ResponseBody);
     assert!(!format!("{error:?} {error}").contains("known-excess-secret-f45c"));
@@ -245,68 +400,13 @@ async fn stream_response_known_length_and_media_fail_before_body_polling() {
         Arc::new(ProbeHooks::new()),
         RuntimeConfigBuilder::new(),
     );
-    let error = tokio::time::timeout(
-        Duration::from_secs(1),
-        stream_request::<OctetStream>(media_core),
-    )
-    .await
-    .expect("media mismatch must not await the body")
-    .expect_err("stream media mismatch");
+    let error = tokio::time::timeout(Duration::from_secs(1), stream_request(media_core))
+        .await
+        .expect("media mismatch must not await the body")
+        .expect_err("stream media mismatch");
     media_gate.release();
     assert_eq!(error.category(), ErrorCategory::ResponseContract);
     assert!(!format!("{error:?} {error}").contains("media-mismatch-secret-18bf"));
-}
-
-#[tokio::test]
-async fn invalid_stream_marker_is_rejected_preflight_and_required_parameters_are_enforced() {
-    let invalid_executor = DeterministicExecutor::new();
-    let invalid_hooks = Arc::new(ProbeHooks::new());
-    let invalid_core = development_core(
-        &invalid_executor,
-        Arc::clone(&invalid_hooks),
-        RuntimeConfigBuilder::new(),
-    );
-    let error = stream_request::<InvalidStreamMedia>(invalid_core)
-        .await
-        .expect_err("invalid media marker");
-    assert_eq!(error.category(), ErrorCategory::Configuration);
-    assert_eq!(invalid_executor.application().request_count().unwrap(), 0);
-    assert!(invalid_hooks.records().iter().all(|record| !matches!(
-        record,
-        LifecycleRecord::Before { .. } | LifecycleRecord::Response(..)
-    )));
-
-    let executor = DeterministicExecutor::new();
-    let hooks = Arc::new(ProbeHooks::new());
-    let core = development_core(&executor, hooks, RuntimeConfigBuilder::new());
-    executor
-        .application()
-        .queue_response(ScriptedResponse::success("vendor").headers(stream_headers(
-            "application/vnd.concord.stream; charset=utf-8; version=1",
-        )))
-        .expect("valid vendor media");
-    let mut accepted = stream_request::<VendorStream>(core.clone())
-        .await
-        .expect("required media parameter accepted with extras");
-    assert_eq!(
-        next_stream_chunk(&mut accepted)
-            .await
-            .expect("vendor chunk")
-            .expect("vendor chunk success"),
-        b"vendor"[..]
-    );
-
-    executor
-        .application()
-        .queue_response(
-            ScriptedResponse::success("must-not-be-yielded")
-                .headers(stream_headers("application/vnd.concord.stream; version=2")),
-        )
-        .expect("invalid vendor media");
-    let error = stream_request::<VendorStream>(core)
-        .await
-        .expect_err("required media parameter mismatch");
-    assert_eq!(error.category(), ErrorCategory::ResponseContract);
 }
 
 #[tokio::test]
@@ -334,13 +434,10 @@ async fn unknown_stream_is_lazy_and_first_cumulative_excess_chunk_is_withheld() 
             .response_body_limit(NonZeroUsize::new(1).expect("positive limit"))
             .stream_response_limit(NonZeroUsize::new(4).expect("positive limit")),
     );
-    let mut lazy = tokio::time::timeout(
-        Duration::from_secs(1),
-        stream_request::<OctetStream>(core.clone()),
-    )
-    .await
-    .expect("unknown stream must return before body gate")
-    .expect("lazy stream response");
+    let mut lazy = tokio::time::timeout(Duration::from_secs(1), stream_request(core.clone()))
+        .await
+        .expect("unknown stream must return before body gate")
+        .expect("lazy stream response");
     assert_eq!(
         completion(&hooks.records()).1,
         CompletionOutcome::StreamOpened
@@ -356,9 +453,7 @@ async fn unknown_stream_is_lazy_and_first_cumulative_excess_chunk_is_withheld() 
     );
     assert!(next_stream_chunk(&mut lazy).await.is_none());
 
-    let mut overflow = stream_request::<OctetStream>(core)
-        .await
-        .expect("overflow stream opens");
+    let mut overflow = stream_request(core).await.expect("overflow stream opens");
     assert_eq!(
         next_stream_chunk(&mut overflow).await.unwrap().unwrap(),
         b"abc"[..]
@@ -407,9 +502,7 @@ async fn response_stream_limit_counts_reqwest_post_decompression_bytes() {
         RuntimeConfigBuilder::new()
             .stream_response_limit(NonZeroUsize::new(64).expect("positive limit")),
     );
-    let mut response = stream_request::<OctetStream>(core)
-        .await
-        .expect("compressed stream opens");
+    let mut response = stream_request(core).await.expect("compressed stream opens");
     let error = next_stream_chunk(&mut response)
         .await
         .expect("post-decompression limit result")
@@ -419,7 +512,7 @@ async fn response_stream_limit_counts_reqwest_post_decompression_bytes() {
 }
 
 #[tokio::test]
-async fn response_stream_native_failure_is_safe_and_emits_no_second_completion() {
+async fn response_stream_native_failure_is_safe_and_emits_correlated_terminal_evidence() {
     let server = ScriptedServer::start([ResponseScript::TruncatedWithHeaders {
         status: 200,
         declared_length: 6,
@@ -429,7 +522,7 @@ async fn response_stream_native_failure_is_safe_and_emits_no_second_completion()
     .expect("truncated stream server");
     let hooks = Arc::new(ProbeHooks::new());
     let core = real_core(&server, Arc::clone(&hooks), RuntimeConfigBuilder::new());
-    let mut response = stream_request::<OctetStream>(core)
+    let mut response = stream_request(core)
         .await
         .expect("truncated stream opens after valid head");
     let mut saw_native_error = None;
@@ -450,6 +543,16 @@ async fn response_stream_native_failure_is_safe_and_emits_no_second_completion()
     assert_eq!(
         completion(&hooks.records()).1,
         CompletionOutcome::StreamOpened
+    );
+    let stream_records = hooks.stream_records();
+    assert_eq!(stream_records.len(), 1);
+    assert_eq!(stream_records[0].kind, StreamKind::Bytes);
+    assert_eq!(stream_records[0].outcome, StreamOutcome::Failed);
+    assert_eq!(stream_records[0].units_yielded, 1);
+    assert_eq!(stream_records[0].bytes_yielded, Some(5));
+    assert_eq!(
+        stream_records[0].operation_id,
+        completion(&hooks.records()).0
     );
 }
 
@@ -474,7 +577,7 @@ async fn caller_stream_polling_is_outside_operation_deadline_and_drop_is_termina
     .expect("deadline and drop stream server");
     let hooks = Arc::new(ProbeHooks::new());
     let core = real_core(&server, Arc::clone(&hooks), RuntimeConfigBuilder::new());
-    let mut after_deadline = stream_request::<OctetStream>(core.clone())
+    let mut after_deadline = stream_request(core.clone())
         .timeout(Duration::from_millis(100))
         .await
         .expect("stream opens inside deadline");
@@ -489,7 +592,7 @@ async fn caller_stream_polling_is_outside_operation_deadline_and_drop_is_termina
     );
     assert!(next_stream_chunk(&mut after_deadline).await.is_none());
 
-    let mut dropped = stream_request::<AnyMedia>(core)
+    let mut dropped = stream_request(core)
         .await
         .expect("media-unconstrained drop stream opens");
     assert_eq!(
@@ -513,6 +616,16 @@ async fn caller_stream_polling_is_outside_operation_deadline_and_drop_is_termina
                 }
             ))
     );
+    let stream_records = hooks.stream_records();
+    assert_eq!(stream_records.len(), 2);
+    assert_eq!(stream_records[0].kind, StreamKind::Bytes);
+    assert_eq!(stream_records[0].outcome, StreamOutcome::Completed);
+    assert_eq!(stream_records[0].units_yielded, 1);
+    assert_eq!(stream_records[0].bytes_yielded, Some(14));
+    assert_eq!(stream_records[1].kind, StreamKind::Bytes);
+    assert_eq!(stream_records[1].outcome, StreamOutcome::Dropped);
+    assert_eq!(stream_records[1].units_yielded, 1);
+    assert_eq!(stream_records[1].bytes_yielded, Some(5));
 }
 
 #[cfg(feature = "records")]
@@ -581,7 +694,7 @@ async fn records_response_validates_starts_unpolled_and_completes_stream_opened_
         lifecycle.as_slice(),
         [
             LifecycleRecord::Before { .. },
-            LifecycleRecord::Response(_, StatusCode::OK),
+            LifecycleRecord::Response(StatusCode::OK),
             LifecycleRecord::Complete {
                 outcome: CompletionOutcome::StreamOpened,
                 status: Some(StatusCode::OK),
@@ -738,6 +851,14 @@ async fn record_stream_body_and_decoder_failures_are_items_without_second_comple
     assert_eq!(FAILURE_START_CALLS.load(Ordering::SeqCst), 3);
     assert!(FAILURE_DECODE_CALLS.load(Ordering::SeqCst) >= 5);
     assert_eq!(FAILURE_EOF_CALLS.load(Ordering::SeqCst), 1);
+    let stream_records = hooks.stream_records();
+    assert_eq!(stream_records.len(), 3);
+    assert_eq!(stream_records[0].kind, StreamKind::Bytes);
+    assert_eq!(stream_records[0].outcome, StreamOutcome::Failed);
+    assert_eq!(stream_records[1].kind, StreamKind::Bytes);
+    assert_eq!(stream_records[1].outcome, StreamOutcome::Dropped);
+    assert_eq!(stream_records[2].kind, StreamKind::Bytes);
+    assert_eq!(stream_records[2].outcome, StreamOutcome::Completed);
 }
 
 #[cfg(feature = "records")]
@@ -985,7 +1106,7 @@ async fn response_payloads_never_enter_hooks_debug_limiter_completion_or_wrapper
     let buffered_debug = format!("{buffered:?}");
 
     let stream_response: ApiResponse<ByteStream> =
-        surface_request::<StreamSpec<OctetStream>>(core.clone(), QUERY_VALUE)
+        surface_request::<BinaryStreamSurface>(core.clone(), QUERY_VALUE)
             .response()
             .await
             .expect("byte stream output");

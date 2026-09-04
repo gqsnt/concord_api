@@ -1,61 +1,188 @@
-# Responses and terminals
+# Responses, status, representations, and streams
 
-The declared arrow type is exactly what await returns. The `using` type owns
-accepted status semantics, default `Accept`, one sealed acquisition mode, and
-conversion to that output.
+Response design separates endpoint success semantics, representation/media validation, acquisition, exact caller output, and lazy post-return lifecycles.
 
-<!-- concord-source: crates/concord-examples/src/request_response/acquisition.rs#response_acquisition_contract -->
+## Endpoint-owned accepted status
+
 ```rust
-api! {
-    client ResponseApi {
-        timeout off;
-        base "http://responses.example.test/";
-
-
-    GET message() -> String using Text {
-        expose accepted_bytes;
-    }
-    GET optional_message() -> Option<String> using crate::request_response::acquisition::OptionalText;
-}}
+status success;                // final 2xx
+status 200;
+status [200, 201, 204];
+status [200..=299, 304];
 ```
 
-The macro proves `Spec: ResponseSpec<Output = DeclaredOutput>` at an
-endpoint-local assertion site.
+Omission means final `200..=299`. Status is finite static endpoint data, not a callback hidden inside a JSON or custom response representation.
 
-## Sealed acquisition
+Authentication challenge attribution runs before status acceptance. A status cannot be both a recoverable auth challenge and an accepted endpoint outcome.
 
-- `Buffered` retains complete accepted bytes under a configured bound before
-  conversion.
-- `Streaming` returns a lazy bounded `ByteStream`; later polling remains managed.
-- `Discard` accepts metadata and intentionally does not poll the body.
+Expected non-2xx domain outcomes remain possible:
 
-Applications can select these modes through response specs but cannot implement
-a fourth mode or access the native response. Core owns challenge precedence,
-polling, decompression, bounds, deadline/cancellation, and classification.
+```concord-pseudocode
+GET find(id: ItemId) -> FindItem via FindItemRepresentation {
+    status [200, 404];
+}
+```
 
-## Universal and explicit terminals
+The representation receives an already accepted status/head and returns a domain enum.
 
-Await returns the declared output. `.response().await` returns
-`ApiResponse<Output>` with accepted metadata. `expose accepted_bytes;` adds an
-endpoint-specific `.accepted_bytes().await -> ApiResponse<Bytes>`.
+## Response representation role
 
-Accepted bytes preserves declared challenge behavior, accepted statuses,
-negotiation, response-head checks, and byte bounds while skipping declared
-conversion. Buffered mode uses acquired bytes. Discard mode may explicitly
-switch to bounded buffering. Streaming cannot expose the terminal. It is not raw
-native response access.
+Conceptually:
 
-## Streaming truth
+```rust
+pub trait ResponseRepresentation<Output>: Send + Sync + 'static {
+    type Driver: SealedResponseDriver<Output = Output>;
 
-Receiving a stream value means the response head was accepted and a bounded
-managed stream was opened. It does not mean the remote body was fully consumed.
-Dropping the stream stops further local acquisition but proves nothing about
-server work. No buffering terminal silently converts an unbounded stream into
-memory retention.
+    const DESCRIPTION: ResponseRepresentationDescription;
 
-Response heads supplied to response extensions include actual accepted headers
-and may be sensitive; the extension owns later logging/storage. Ordinary
-operational views remain sanitized and body-free.
+    fn default_accept() -> Option<StaticHeaderValue>;
 
-See [request bodies](request_bodies.md), the [runtime response model](runtime.md#response-authority),
-and [extension boundaries](extensions.md).
+    fn validate_accepted_head(
+        head: AcceptedResponseHead<'_>,
+    ) -> Result<(), ResponseRepresentationError>;
+}
+```
+
+The exact trait/driver shape is prototype-gated. Fixed authority:
+
+- representation receives only an accepted bounded head and chooses/configures a supported core driver;
+- it owns response media negotiation/validation and conversion semantics;
+- core owns native response, polling, content decoding, limits, progress, deadline, cancellation, and stream correlation;
+- status acceptance remains outside the trait;
+- custom representations cannot create arbitrary native drivers.
+
+## Exact caller output
+
+The arrow is exactly ordinary `.await` output.
+
+### Complete values
+
+```rust
+-> Item
+-> Vec<Item>
+-> Bytes
+-> String
+-> ()
+-> PageEnvelope<Item>
+```
+
+The operation does not return until the complete semantic value exists or fails.
+
+### Lazy bytes
+
+```rust
+-> ByteStream
+```
+
+`ByteStream` yields post-content-decoding byte chunks. Chunk boundaries are not stable semantic records. The type may support the ecosystem stream trait and `AsyncRead` where practical.
+
+### Lazy semantic items
+
+```rust
+-> ItemStream<Event>
+```
+
+`ItemStream<T>` yields semantic decoded items, with framing/decoding/item errors distinct from byte-stream failures.
+
+Neither stream is `Clone` without real replay/multicast semantics.
+
+## Built-in pair matrix
+
+The exact implementation is gated by Rust coherence and diagnostics. The intended finite first-party matrix is:
+
+| Representation | Output | Meaning |
+|---|---|---|
+| `Json` | `T: DeserializeOwned` | one complete JSON document |
+| `Text` | `String` | complete validated text |
+| `Binary` | `Bytes` / `Vec<u8>` | complete post-decoding bytes |
+| `Binary` | `ByteStream` | lazy bounded bytes |
+| `NdJson` | `Vec<T>` | incremental records collected completely |
+| `NdJson` | `ItemStream<T>` | lazy semantic records |
+| `Csv<Cfg>` | `Vec<T>` | incremental rows collected completely |
+| `Csv<Cfg>` | `ItemStream<T>` | lazy semantic rows |
+| `Empty` | `()` | accepted body must contain zero decoded bytes |
+| `Discard` | `()` | body deliberately ignored under finite discard limits |
+
+Do not make `Json<()>` the implicit no-body path. JSON null, zero bytes, and ignored bytes are different contracts.
+
+## Media ownership
+
+Response representation owns default `Accept` and accepted-content validation. Generic public headers cannot set `Accept` or `Accept-Encoding`.
+
+Dynamic per-request media remains deferred. A local endpoint chooses another representation marker/adaptor instead.
+
+## Runtime ordering
+
+```text
+response head observed
+→ parse standard server delay and limiter feedback
+→ auth challenge attribution/recovery
+→ endpoint status acceptance
+    rejected → policy retry or bounded status error
+    accepted → representation head/media validation
+             → sealed bounded acquisition
+             → conversion or stream acquisition
+```
+
+Rejected statuses do not invoke the success representation decoder.
+
+Accepted representation validation/decode failure is terminal by default; repeating deterministic malformed content is not an automatic retry strategy.
+
+## `ApiResponse<T>`
+
+```rust
+let response: ApiResponse<Item> = request.response().await?;
+```
+
+Exposes managed accepted metadata through bounded explicit accessors. It does not return native response ownership or automatic unsanitized header maps.
+
+## Accepted bytes
+
+Endpoint declaration:
+
+```rust
+expose accepted_bytes;
+```
+
+Generated:
+
+```rust
+let response: ApiResponse<Bytes> = request.accepted_bytes().await?;
+```
+
+Semantics:
+
+- same request, auth, rate, deadline, retry, negotiation, and endpoint status;
+- complete bounded post-content-decoding byte acquisition;
+- bypass response-representation accepted-head/body validation and output conversion;
+- no native response escape;
+- absent unless explicitly exposed and mechanically supportable.
+
+For a lazy endpoint, accepted bytes intentionally changes delivery to complete bounded collection and therefore still requires explicit exposure.
+
+## Stream lifecycle
+
+The request operation completes when the accepted stream handle is acquired. Later polling:
+
+- can fail independently;
+- uses post-return byte/item/progress/read-idle limits;
+- is never transparently retried after yielding data;
+- emits stream-correlated completion/failure/drop evidence;
+- is canceled locally on drop, without claiming remote effect cancellation.
+
+## Decompression and bounds
+
+All body/status/pagination/accepted-byte/stream limits count post-content-decoding bytes. Transport time and read-idle limits still bound receipt/decoding. Concord does not claim a compressed-wire-byte bound if the transport cannot expose it.
+
+## Diagnostics
+
+Prefer structured format/phase/location/reason:
+
+```text
+format: Json
+phase: Decode
+location: Field("items").AnyIndex.Field("created_at")
+reason: TypeMismatch
+```
+
+Bound segment count/bytes, remove values and dynamic sensitive keys, normalize indices where useful, and keep raw third-party strings protected.

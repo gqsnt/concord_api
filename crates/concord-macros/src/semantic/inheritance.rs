@@ -10,7 +10,8 @@ use crate::semantic::rate_limits::RateLimitResolutionContext;
 use crate::syntax::ast::{
     AttachmentSite, AuthChallenge as SourceChallenge, AuthOperation,
     AuthPlacementKind as SourceAuthPlacement, HeaderEntry, HeaderOperation, PathOperation,
-    PublicExpr, QueryEmission, QueryEntry, QueryOperation, SubdomainOperation, TimeoutOperation,
+    PublicExpr, QueryEmission, QueryEntry, QueryOperation, RepresentationOperation,
+    SubdomainOperation, TimeoutOperation,
 };
 use crate::{MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_POLICIES_PER_PLAN};
 
@@ -32,6 +33,29 @@ pub(super) fn local_attachment_ir(site: &AttachmentSite, origin: &str) -> Vec<At
             item_count,
         });
     };
+
+    for (family, clause) in [
+        (
+            AttachmentFamily::RequestRepresentation,
+            site.request.as_ref(),
+        ),
+        (
+            AttachmentFamily::ResponseRepresentation,
+            site.response.as_ref(),
+        ),
+    ] {
+        if let Some(clause) = clause {
+            push(
+                family,
+                match &clause.value {
+                    RepresentationOperation::Select(_) => AttachmentOperation::Set,
+                    RepresentationOperation::Explicit => AttachmentOperation::Off,
+                },
+                None,
+                usize::from(matches!(&clause.value, RepresentationOperation::Select(_))),
+            );
+        }
+    }
 
     if let Some(clause) = &site.subdomain {
         match &clause.value {
@@ -97,6 +121,12 @@ pub(super) fn local_attachment_ir(site: &AttachmentSite, origin: &str) -> Vec<At
                     Some(key.value()),
                     usize::from(matches!(emission, QueryEmission::Each { .. })),
                 ),
+                QueryEntry::WhenPresent { key, emission } => push(
+                    AttachmentFamily::Query,
+                    AttachmentOperation::WhenPresent,
+                    Some(key.value()),
+                    usize::from(matches!(emission, QueryEmission::Each { .. })),
+                ),
                 QueryEntry::Append { key, emission } => push(
                     AttachmentFamily::Query,
                     AttachmentOperation::Append,
@@ -131,11 +161,23 @@ pub(super) fn local_attachment_ir(site: &AttachmentSite, origin: &str) -> Vec<At
         };
         for entry in entries {
             match entry {
-                HeaderEntry::Assign { name, .. } => push(
+                HeaderEntry::Assign { name, emission } => push(
                     AttachmentFamily::Headers,
                     AttachmentOperation::Replace,
                     Some(name.value()),
-                    1,
+                    usize::from(matches!(emission, QueryEmission::Each { .. })),
+                ),
+                HeaderEntry::WhenPresent { name, emission } => push(
+                    AttachmentFamily::Headers,
+                    AttachmentOperation::WhenPresent,
+                    Some(name.value()),
+                    usize::from(matches!(emission, QueryEmission::Each { .. })),
+                ),
+                HeaderEntry::Append { name, emission } => push(
+                    AttachmentFamily::Headers,
+                    AttachmentOperation::Append,
+                    Some(name.value()),
+                    usize::from(matches!(emission, QueryEmission::Each { .. })),
                 ),
                 HeaderEntry::Remove(name) => push(
                     AttachmentFamily::Headers,
@@ -188,16 +230,8 @@ pub(super) fn local_attachment_ir(site: &AttachmentSite, origin: &str) -> Vec<At
             }
         }
     }
-    if let Some(clause) = &site.timeout {
-        push(
-            AttachmentFamily::Timeout,
-            match clause.value {
-                TimeoutOperation::Set(_) => AttachmentOperation::Set,
-                TimeoutOperation::Off => AttachmentOperation::Off,
-            },
-            None,
-            1,
-        );
+    if site.timeout.is_some() {
+        push(AttachmentFamily::Timeout, AttachmentOperation::Set, None, 1);
     }
     for _ in &site.rate_limits {
         push(
@@ -243,6 +277,32 @@ impl Resolver<'_> {
     ) -> syn::Result<NormalizedConfig> {
         let mut normalized = parent.clone();
         let origin = rate_limit_context.lexical_origin;
+
+        for (operation, state) in [
+            (
+                &attachment_site.request,
+                &mut normalized.request_representation,
+            ),
+            (
+                &attachment_site.response,
+                &mut normalized.response_representation,
+            ),
+        ] {
+            if let Some(operation) = operation {
+                match &operation.value {
+                    RepresentationOperation::Select(representation) => {
+                        state.representation = Some(representation.clone());
+                        state.origin = Some(origin.to_owned());
+                        state.fenced = false;
+                    }
+                    RepresentationOperation::Explicit => {
+                        state.representation = None;
+                        state.origin = Some(origin.to_owned());
+                        state.fenced = true;
+                    }
+                }
+            }
+        }
 
         if let Some(operation) = &attachment_site.subdomain {
             normalized.host = match &operation.value {
@@ -301,6 +361,7 @@ impl Resolver<'_> {
                 for entry in entries {
                     let key = match entry {
                         QueryEntry::Assign { key, .. }
+                        | QueryEntry::WhenPresent { key, .. }
                         | QueryEntry::Append { key, .. }
                         | QueryEntry::Remove(key) => key.value(),
                     };
@@ -308,18 +369,32 @@ impl Resolver<'_> {
                         normalized.query.retain(|entry| entry.key.value() != key);
                     }
                     if let QueryEntry::Assign { key, emission }
+                    | QueryEntry::WhenPresent { key, emission }
                     | QueryEntry::Append { key, emission } = entry
                     {
-                        let (value, cardinality) =
-                            self.resolve_query_emission(emission, scopes, endpoint)?;
+                        let (value, cardinality) = self.resolve_query_emission(
+                            emission,
+                            scopes,
+                            endpoint,
+                            ExpressionUse::Query,
+                        )?;
+                        if matches!(entry, QueryEntry::WhenPresent { .. })
+                            && !resolved_expr_is_optional_source(&value)
+                        {
+                            return Err(key.span().error(
+                                "`when_present` requires a direct Concord-optional value source",
+                            ));
+                        }
                         normalized.query.push(NormalizedQuery {
                             key: key.clone(),
                             value,
                             cardinality,
-                            operation: if matches!(entry, QueryEntry::Append { .. }) {
-                                AttachmentOperation::Append
-                            } else {
-                                AttachmentOperation::Replace
+                            operation: match entry {
+                                QueryEntry::Append { .. } => AttachmentOperation::Append,
+                                QueryEntry::WhenPresent { .. } => AttachmentOperation::WhenPresent,
+                                QueryEntry::Assign { .. } | QueryEntry::Remove(_) => {
+                                    AttachmentOperation::Replace
+                                }
                             },
                             origin: origin.to_owned(),
                         });
@@ -339,27 +414,54 @@ impl Resolver<'_> {
             {
                 for entry in entries {
                     let name = match entry {
-                        HeaderEntry::Assign { name, .. } | HeaderEntry::Remove(name) => {
-                            name.value().to_ascii_lowercase()
-                        }
+                        HeaderEntry::Assign { name, .. }
+                        | HeaderEntry::WhenPresent { name, .. }
+                        | HeaderEntry::Append { name, .. }
+                        | HeaderEntry::Remove(name) => name.value().to_ascii_lowercase(),
                     };
-                    normalized
-                        .headers
-                        .retain(|entry| entry.canonical_name != name);
+                    if matches!(entry, HeaderEntry::Assign { .. } | HeaderEntry::Remove(_)) {
+                        normalized
+                            .headers
+                            .retain(|entry| entry.canonical_name != name);
+                    }
                     if let HeaderEntry::Assign {
                         name: literal,
-                        value,
+                        emission,
+                    }
+                    | HeaderEntry::WhenPresent {
+                        name: literal,
+                        emission,
+                    }
+                    | HeaderEntry::Append {
+                        name: literal,
+                        emission,
                     } = entry
                     {
+                        let (value, cardinality) = self.resolve_query_emission(
+                            emission,
+                            scopes,
+                            endpoint,
+                            ExpressionUse::Header,
+                        )?;
+                        if matches!(entry, HeaderEntry::WhenPresent { .. })
+                            && !resolved_expr_is_optional_source(&value)
+                        {
+                            return Err(literal.span().error(
+                                "`when_present` requires a direct Concord-optional value source",
+                            ));
+                        }
                         normalized.headers.push(NormalizedHeader {
                             name: literal.clone(),
                             canonical_name: name,
-                            value: self.resolve_expr(
-                                value,
-                                scopes,
-                                endpoint,
-                                ExpressionUse::Header,
-                            )?,
+                            value,
+                            cardinality,
+                            operation: match entry {
+                                HeaderEntry::Append { .. } => AttachmentOperation::Append,
+                                HeaderEntry::WhenPresent { .. } => AttachmentOperation::WhenPresent,
+                                HeaderEntry::Assign { .. } | HeaderEntry::Remove(_) => {
+                                    AttachmentOperation::Replace
+                                }
+                            },
                             origin: origin.to_owned(),
                         });
                     }
@@ -401,13 +503,9 @@ impl Resolver<'_> {
         if let Some(operation) = &attachment_site.timeout {
             let operation = &operation.value;
             normalized.timeout_origin = Some(origin.to_owned());
-            normalized.timeout = match operation {
-                TimeoutOperation::Off => None,
-                TimeoutOperation::Set(value) => {
-                    let _ = value.span;
-                    Some(value.value)
-                }
-            };
+            let TimeoutOperation::Set(value) = operation;
+            let _ = value.span;
+            normalized.timeout = Some(value.value);
         }
         for declaration in &attachment_site.rate_limits {
             if normalized.rate_limits.len() >= MAX_RATE_LIMIT_POLICIES_PER_PLAN {
@@ -438,7 +536,7 @@ impl Resolver<'_> {
                 error.combine(
                     existing
                         .id_span
-                        .error("the first effective policy using this ID is here"),
+                        .error("the first effective policy via this ID is here"),
                 );
                 return Err(error);
             }
@@ -470,7 +568,16 @@ impl Resolver<'_> {
     ) -> syn::Result<ResolvedExpr> {
         match value {
             PublicExpr::String(value) => Ok(ResolvedExpr::String(value.clone())),
-            PublicExpr::Integer(value) => Ok(ResolvedExpr::Integer(value.clone())),
+            PublicExpr::Character(value) => Ok(ResolvedExpr::Character(value.clone())),
+            PublicExpr::Boolean(value) => Ok(ResolvedExpr::Boolean(value.clone())),
+            PublicExpr::Integer { negative, literal } => Ok(ResolvedExpr::Integer {
+                negative: *negative,
+                literal: literal.clone(),
+            }),
+            PublicExpr::Adapted { value, adapter } => Ok(ResolvedExpr::Adapted {
+                value: Box::new(self.resolve_expr(value, scopes, endpoint, usage)?),
+                adapter: (**adapter).clone(),
+            }),
             PublicExpr::Concat { span, values } => {
                 let _ = span;
                 let mut flattened = Vec::new();
@@ -506,26 +613,46 @@ impl Resolver<'_> {
         emission: &QueryEmission,
         scopes: &[ScopeFrame],
         endpoint: Option<&[Value]>,
+        usage: ExpressionUse,
     ) -> syn::Result<(ResolvedExpr, QueryCardinality)> {
         match emission {
             QueryEmission::One(value) => Ok((
-                self.resolve_expr(value, scopes, endpoint, ExpressionUse::Query)?,
+                self.resolve_expr(value, scopes, endpoint, usage)?,
                 QueryCardinality::One,
             )),
             QueryEmission::Each {
                 namespace,
                 name,
+                adapter,
                 span,
             } => {
                 let _ = span;
+                let value = ResolvedExpr::Value(
+                    self.resolve_value_reference(namespace, name, scopes, endpoint)?,
+                );
                 Ok((
-                    ResolvedExpr::Value(
-                        self.resolve_value_reference(namespace, name, scopes, endpoint)?,
-                    ),
+                    adapter
+                        .as_ref()
+                        .map_or(value.clone(), |adapter| ResolvedExpr::Adapted {
+                            value: Box::new(value),
+                            adapter: (**adapter).clone(),
+                        }),
                     QueryCardinality::Each,
                 ))
             }
         }
+    }
+}
+
+fn resolved_expr_is_optional_source(value: &ResolvedExpr) -> bool {
+    match value {
+        ResolvedExpr::Value(value) => matches!(value.presence, ValuePresence::Optional),
+        ResolvedExpr::Adapted { value, .. } => resolved_expr_is_optional_source(value),
+        ResolvedExpr::String(_)
+        | ResolvedExpr::Character(_)
+        | ResolvedExpr::Boolean(_)
+        | ResolvedExpr::Integer { .. }
+        | ResolvedExpr::Concat(_) => false,
     }
 }
 
@@ -540,7 +667,7 @@ mod tests {
     fn resolves_lexical_operations_into_one_normalized_public_head() {
         let api = test_support::resolve_tokens(quote! {
             client InheritanceApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 path ["v1"];
                 query { "client" = "yes"; }
@@ -548,7 +675,7 @@ mod tests {
             scope resources() {
                 path ["resources"];
                 query { "scope" = "yes"; }
-                GET read() -> Bytes using Bytes {
+                GET read() -> Bytes via Binary {
                     path ["read"];
                     query { remove "client"; "endpoint" = "yes"; }
                 }

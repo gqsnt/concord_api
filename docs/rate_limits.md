@@ -1,68 +1,148 @@
-# Rate limiting
+# Rate limits
 
-The declaration defines stable quota semantics; a selected runtime limiter
-implements admission, waiting, rejection, and coordination.
+Concord separates provider quota semantics from application-selected enforcement topology.
 
-## Profiles and attachments
+## Declare a reusable policy
 
-Profiles are client-owned and name every formal. They cannot capture client,
-scope, or endpoint values. An attachment binds each formal exactly once and may
-override cost. Anonymous attachments declare one policy inline.
-
-`id` is stable policy identity. `key` is an ordered dimension schema. `cost`
-defaults to 1, must be positive, and cannot exceed any window capacity. Every
-policy has at least one positive `allow capacity per duration` window.
-
-Policies add across client and nested scopes/endpoints. A descendant cannot turn
-off inherited quota semantics. Duplicate effective use of one ID is rejected;
-reuse elsewhere requires compatible ordered dimensions and windows.
-
-## Canonical keys
-
-Built-in dimensions are final logical `host` and stable `endpoint` ID. Other
-dimensions are direct total owner references or bound profile formals. Outer
-optional slots and pagination-mutated values are rejected, as are secrets,
-credentials, concatenation, and display formatting.
-
-`RateLimitKeyValue` writes bounded deterministic bytes with type and length
-framing. First-party primitives and structural `Option`/`Vec` encodings keep
-variants and boundaries distinct. A required `Option<T>` payload may therefore
-encode `None` as real domain identity; a Concord-optional slot cannot make policy
-presence data-dependent.
-
-Canonical values are supplied only to the limiter. They do not appear in plans,
-errors, gates, completion, descriptions, or Rustdoc.
-
-## Enforcement
-
-Any generated client with an effective rate policy requires explicit limiter
-selection. There is no implicit allow-all implementation and no production
-bypass method. Tests can select the explicit test limiter from test support.
-
-<!-- concord-source: crates/concord-examples/src/rate_limiting/lexical.rs#configured_rate_limiter -->
-```rust
-pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
-    let limiter =
-        LocalRateLimiter::new().observer(Arc::new(super::observer::DelegatingRetryAfterObserver));
-    let client = RateLimitApi::builder()
-        .set_tenant("example-tenant".to_owned())
-        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(limiter)))
-        .build()?;
-    let _: rate_limit_api::region::ItemRequest =
-        client.region("eu".to_owned()).item("record-42".to_owned());
-    let _: rate_limit_api::LookupRequest = client.lookup("account-7".to_owned());
-    let _: rate_limit_api::PublicRequest = client.public();
-    Ok(())
+```concord-pseudocode
+rate_limits {
+    policy tenant_reads(tenant) {
+        id "catalog.tenant.read";
+        key [origin, endpoint, tenant];
+        cost 1;
+        allow 120 per 1m;
+        allow 5_000 per 1h;
+    }
 }
 ```
 
-Admission occurs once per actual network attempt, including policy retry and
-authentication recovery, inside the operation's aggregate deadline. Private
-credential placement follows admission. Response-head limiter observation may
-update future cooldown state but cannot replace the current response.
+Attach it:
 
-Client clones share their selected limiter and budgets. Independent builds
-share quota state only if the application supplies the same limiter handle.
+```concord
+rate_limit tenant_reads(tenant = client.tenant);
+```
 
-See the exact [rate grammar](spec.md#rate-limits) and
-[runtime admission model](runtime.md#rate-admission).
+Anonymous policies use the same explicit ID/key/cost/windows inline.
+
+## Ownership
+
+DSL owns:
+
+- stable policy ID;
+- formal dimension schema and bindings;
+- cost;
+- conjunctive windows;
+- additive attachment.
+
+Application/limiter owns:
+
+- local versus distributed implementation;
+- clock/state storage;
+- wait/reject;
+- fail-open/closed/fallback;
+- cleanup and operational evidence.
+
+A declaration does not imply distributed enforcement.
+
+## Canonical key
+
+Use a bounded `RateKeyPart`, not `Display` or ordinary `RequestAtom`.
+
+Key encoding includes policy/dimension identities and length-framed components. Equal semantic values must produce equal canonical bytes.
+
+Built-ins:
+
+- `origin`: normalized logical scheme, lowercase ASCII host, effective port, never proxy route;
+- `endpoint`: explicit stable endpoint ID;
+- explicit domain dimensions.
+
+Reject:
+
+- secrets/credentials/private values;
+- Concord-optional values;
+- repeated/dynamic dimensions;
+- page-live pagination values;
+- unordered collections or collections without an explicit canonical scalar adapter.
+
+## Policy validation
+
+Require:
+
+- globally unique stable policy IDs;
+- one positive cost;
+- at least one positive finite window;
+- cost no greater than any capacity;
+- all formal bindings exactly once;
+- bounded dimensions/key bytes/windows;
+- duplicate effective attachment of one policy ID rejected;
+- endpoint built-in dimension only when the endpoint has an explicit stable ID.
+
+All windows in a policy are conjunctive.
+
+## Additive inheritance
+
+Client, outer scope, inner scope, and endpoint policy attachments compose additively. A descendant cannot disable an ancestor provider constraint.
+
+## Explicit limiter selection
+
+A generated client with effective policies must choose explicitly:
+
+```rust
+.rate_limiter(shared_or_distributed)
+.local_rate_limits()
+.noop_rate_limits_for_test()
+```
+
+Do not silently install a process-local limiter because a Cargo feature is enabled.
+
+## Whole-plan admission
+
+For one visible attempt, core supplies the complete effective policy plan to the limiter. A local implementation can apply several windows/keys atomically where possible.
+
+A distributed implementation documents whether failed multi-key admission can conservatively debit an earlier reservation. Concord does not promise universal transactional rollback across independent authorities.
+
+Every policy retry, auth-recovery replay, and page visible attempt reacquires the complete plan. Protocol-proven physical transport recovery does not.
+
+## Response feedback
+
+```rust
+trait RateLimiter {
+    async fn acquire(
+        &self,
+        request: RateLimitRequest<'_>,
+    ) -> Result<RateLimitPermit, RateLimitError>;
+
+    fn observe(&self, feedback: RateLimitFeedback<'_>);
+}
+```
+
+Only admission can fail the current attempt. Response feedback is synchronous, prompt, bounded, and non-result-determining.
+
+Feedback may:
+
+- update cooldown/not-before state for future acquisitions;
+- update remaining/capacity observations;
+- mark the limiter degraded;
+- emit bounded diagnostics.
+
+It must not hide or replace the current endpoint response. A distributed implementation that needs async storage owns a bounded handoff and applies its fail-open/closed policy on future `acquire` calls.
+
+The limiter declares a finite static set of vendor header interests. Core supplies only those plus standardized `ServerDelayHint`, not an unrestricted response header map.
+
+## Local limiter extra
+
+The first-party local limiter documents:
+
+- process-local scope;
+- bucket/window algorithm;
+- fairness and wakeup behavior;
+- state/cardinality bounds and eviction;
+- deterministic clock dependency;
+- cooldown semantics;
+- sharing across client clones and independent builds.
+
+It must never be presented as distributed quota enforcement.
+
+## Observation and security
+
+Plans/descriptions expose policy ID, schema, cost, windows, bindings, and provenance—not resolved raw keys. Errors/events expose policy identity and wait/reject category, not key values.

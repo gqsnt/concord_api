@@ -2,7 +2,7 @@ use concord::api;
 
 api! {
     client ConfiguredApi {
-        timeout off;
+        timeout 30s;
         base "http://configured.example.test/";
         credentials {
             secret api_key;
@@ -10,7 +10,7 @@ api! {
         }
 
 
-    GET read() -> () using NoContent;
+    GET read() -> () via Empty;
 }}
 
 fn main() {

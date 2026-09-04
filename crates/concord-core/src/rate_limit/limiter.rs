@@ -39,6 +39,8 @@ pub struct RateLimitResponse<'a> {
     pub status: StatusCode,
     /// Sanitized response headers.
     pub headers: SanitizedHeaders<'a>,
+    /// Standard server delay parsed once by core from the response head.
+    pub server_delay: Option<Duration>,
     /// Centrally configured maximum duration for server-directed cooldown state.
     pub cooldown_cap: Duration,
 }
@@ -49,16 +51,11 @@ pub struct RateLimitResponse<'a> {
 /// retries, maps, queues, spawned tasks, metric cardinality, and external I/O,
 /// and must treat resolved plan keys and logical hosts as potentially sensitive.
 /// Custom implementations are responsible for protecting those values in their
-/// own logs and storage. Acquisition and response observation are
-/// correctness-relevant runtime authority and run under the remaining operation
-/// deadline. Observation cannot replace the received response, but its safe
-/// error or timeout determines the operation before the user response hook,
-/// challenge handling, status handling, or body acquisition. With the operation
-/// timeout disabled, a custom observation future is trusted and may remain
-/// pending. Futures are dropped on cancellation, but completed reservations and
-/// external effects are not rolled back. Concord does not automatically bound
-/// custom limiter state, synchronous work before a future is returned, or
-/// application-created tasks.
+/// own logs and storage. Acquisition is current-attempt authority and runs under
+/// the remaining operation deadline. Response observation is synchronous,
+/// prompt, and non-fallible for the current result; an implementation may record
+/// degradation that a later `acquire` reports. Concord cannot preempt arbitrary
+/// blocking synchronous Rust or bound application-created work.
 pub trait RateLimiter: Send + Sync + 'static {
     /// Returns the maximum aggregate byte length accepted while preparing one
     /// resolved rate-limit key.
@@ -83,13 +80,8 @@ pub trait RateLimiter: Send + Sync + 'static {
         request: RateLimitRequest<'a>,
     ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>>;
 
-    /// Observes one sanitized response head before the user response hook.
-    fn observe<'a>(
-        &'a self,
-        _response: RateLimitResponse<'a>,
-    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
-        Box::pin(async { Ok(()) })
-    }
+    /// Observes one sanitized response head for future admission only.
+    fn observe(&self, _response: RateLimitResponse<'_>) {}
 }
 
 /// The future-acquisition scope of an observed cooldown.
@@ -131,6 +123,8 @@ pub struct RateLimitResponseHead<'a> {
     pub status: StatusCode,
     /// Sanitized response headers.
     pub headers: SanitizedHeaders<'a>,
+    /// Standard server delay parsed once by core from the response head.
+    pub server_delay: Option<Duration>,
 }
 
 /// Synchronous policy for translating a response head into a future cooldown.

@@ -2,11 +2,11 @@ use concord::{Bytes, api};
 
 api! {
     client PlainApi {
-        timeout off;
+        timeout 30s;
         base "http://plain.example.test/";
 
 
-    GET read() -> Bytes using Bytes;
+    GET read() -> Bytes via Binary;
 }}
 
 fn main() {

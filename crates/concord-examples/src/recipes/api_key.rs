@@ -9,7 +9,7 @@ use concord::{SecretString, api};
 // ANCHOR: api_key_recipe
 api! {
     client ApiKeyApi {
-        timeout off;
+        timeout 30s;
         base "https://api-key.example.test/";
         credentials {
             secret api_key;
@@ -17,7 +17,7 @@ api! {
         }
 
 
-    GET profile() -> () using NoContent {
+    GET profile() -> () via Empty {
         auth { header "X-Api-Key" = application_key; }
     }
 }}

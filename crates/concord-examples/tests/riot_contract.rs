@@ -34,7 +34,7 @@ fn platform_and_regional_plans_compose_hosts_limits_and_redacted_auth() {
             .observed_url()
             .starts_with("https://euw1.api.riotgames.com/")
     );
-    assert_eq!(platform_plan.rate_limit_rule_count(), 2);
+    assert_eq!(platform_plan.rate_limit_policy_count(), 2);
 
     let regional = RiotApi::unbound()
         .regional(RegionalRoute::Europe)
@@ -46,7 +46,7 @@ fn platform_and_regional_plans_compose_hosts_limits_and_redacted_auth() {
             .observed_url()
             .starts_with("https://europe.api.riotgames.com/")
     );
-    assert_eq!(regional_plan.rate_limit_rule_count(), 2);
+    assert_eq!(regional_plan.rate_limit_policy_count(), 2);
 
     let token_header = HeaderName::from_static("x-riot-token");
     for plan in [&platform_plan, &regional_plan] {
@@ -100,7 +100,7 @@ fn optional_defaults_pagination_binding_and_explicit_description_are_predictable
     assert!(plan.observed_url().contains("start=%3Credacted%3E"));
     assert!(plan.observed_url().contains("count=%3Credacted%3E"));
     assert_eq!(plan.endpoint_id(), description.id());
-    assert_eq!(plan.rate_limit_rule_count(), 2);
+    assert_eq!(plan.rate_limit_policy_count(), 2);
     assert!(plan.capabilities().pagination());
 
     let _request: PaginatedRequest<_> = client.request(endpoint).paginate(PageLimit::Prefix(2));
@@ -119,7 +119,7 @@ fn data_dragon_is_an_independent_importable_contract() {
         .champions();
     let plan = client.plan(&endpoint).expect("Data Dragon plan");
     assert_eq!(plan.method(), Method::GET);
-    assert_eq!(plan.rate_limit_rule_count(), 0);
+    assert_eq!(plan.rate_limit_policy_count(), 0);
     assert!(
         plan.observed_url()
             .contains("/cdn/15.1.1/data/fr_FR/champion.json")

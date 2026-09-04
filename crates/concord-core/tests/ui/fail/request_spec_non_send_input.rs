@@ -1,23 +1,21 @@
 use std::rc::Rc;
 
 use concord_core::contracts::{
-    BodyError, RequestBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec,
+    BodyError, RequestBody, RequestBodyContext, RequestBodyMetadata, RequestRepresentation,
 };
 
 struct NonSendInputSpec;
 
-impl RequestBodySpec for NonSendInputSpec {
-    type Input = Rc<String>;
-
+impl RequestRepresentation<Rc<String>> for NonSendInputSpec {
     fn metadata(
-        _input: &Self::Input,
+        _input: &Rc<String>,
         _context: RequestBodyContext<'_>,
     ) -> Result<RequestBodyMetadata, BodyError> {
         unreachable!()
     }
 
     fn prepare(
-        _input: Self::Input,
+        _input: Rc<String>,
         _context: RequestBodyContext<'_>,
     ) -> Result<RequestBody, BodyError> {
         unreachable!()

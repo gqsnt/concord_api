@@ -3,7 +3,7 @@ error[E0599]: no method named `set` found for struct `CustomProviderCredentialHa
    |
 24 | / api! {
 25 | |     client Api {
-26 | |         timeout off;
+26 | |         timeout 30s;
 27 | |         base "http://example.test";
 ...  |
 32 | | }
@@ -20,7 +20,7 @@ help: there is a method `is_set` with a similar name, but with different argumen
    |
 24 | / api! {
 25 | |     client Api {
-26 | |         timeout off;
+26 | |         timeout 30s;
 27 | |         base "http://example.test";
 ...  |
 32 | | }

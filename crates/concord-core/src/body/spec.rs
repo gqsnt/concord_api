@@ -4,12 +4,12 @@ use std::num::NonZeroUsize;
 use bytes::Bytes;
 use http::{HeaderValue, Method};
 
-use crate::codec::{AnyMedia, EncodeBody, EncodeContext, MediaType, Text};
+use crate::codec::{Binary, EncodeBody, EncodeContext, Text};
 
 #[cfg(feature = "multipart")]
 use super::MultipartBody;
 use super::prepared::validated_content_type;
-use super::{BodyError, BodyErrorKind, BodyKind, RequestBody, StreamBody};
+use super::{BodyError, BodyErrorKind, BodyKind, RequestBody, RequestStream};
 
 /// Structural context supplied to a request-body specification.
 ///
@@ -120,47 +120,82 @@ impl RequestBodyMetadata {
 /// Ordinary complete buffered encoders should implement
 /// [`EncodeBody`](crate::codec::EncodeBody) instead; Concord supplies this
 /// specification through a blanket implementation.
-pub trait RequestBodySpec: Send + Sync + 'static {
-    /// Application input stored by a pending request.
-    type Input: Send + 'static;
-
+pub trait RequestRepresentation<Input>: Send + Sync + 'static
+where
+    Input: Send + 'static,
+{
     /// Computes pre-hook structural facts without materializing the body.
     fn metadata(
-        input: &Self::Input,
+        input: &Input,
         context: RequestBodyContext<'_>,
     ) -> Result<RequestBodyMetadata, BodyError>;
 
     /// Produces the one managed outgoing request body after hook approval.
-    fn prepare(
-        input: Self::Input,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBody, BodyError>;
+    fn prepare(input: Input, context: RequestBodyContext<'_>) -> Result<RequestBody, BodyError>;
 }
 
 /// Trusted opt-in for a page-stable repeatable request-body specification.
 ///
-/// Every clone of [`RequestBodySpec::Input`] must independently prepare the
-/// same request body. Preparing or consuming one clone must not invalidate any
-/// other clone. Generated pagination relies on that promise when it clones the
+/// Every clone of the exact `Input` type must independently prepare the same
+/// request body. Preparing or consuming one clone must not invalidate any other
+/// clone. Generated pagination relies on that promise when it clones the
 /// original endpoint for each page.
 ///
 /// `Clone` is necessary but does not establish this semantic contract by
 /// itself. Specifications backed by shared one-shot state must not implement
 /// this trait.
-pub trait PageRequestBodySpec: RequestBodySpec
+pub trait PageRequestRepresentation<Input>: RequestRepresentation<Input>
 where
-    Self::Input: Clone,
+    Input: Clone + Send + 'static,
 {
 }
 
-impl<C> RequestBodySpec for C
-where
-    C: EncodeBody,
-{
-    type Input = C::Input;
+/// Generated-private adapter that gives an authored optional body its outer
+/// absence lifecycle without asking the selected representation to interpret
+/// `Option`.
+#[doc(hidden)]
+pub struct OptionalRequestRepresentation<R>(PhantomData<fn() -> R>);
 
+impl<R, Input> RequestRepresentation<Option<Input>> for OptionalRequestRepresentation<R>
+where
+    R: RequestRepresentation<Input>,
+    Input: Send + 'static,
+{
     fn metadata(
-        _input: &Self::Input,
+        input: &Option<Input>,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        input.as_ref().map_or_else(
+            || Ok(RequestBodyMetadata::empty()),
+            |input| R::metadata(input, context),
+        )
+    }
+
+    fn prepare(
+        input: Option<Input>,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBody, BodyError> {
+        input.map_or_else(
+            || Ok(RequestBody::empty()),
+            |input| R::prepare(input, context),
+        )
+    }
+}
+
+impl<R, Input> PageRequestRepresentation<Option<Input>> for OptionalRequestRepresentation<R>
+where
+    R: PageRequestRepresentation<Input>,
+    Input: Clone + Send + 'static,
+{
+}
+
+impl<C, Input> RequestRepresentation<Input> for C
+where
+    C: EncodeBody<Input = Input>,
+    Input: Send + 'static,
+{
+    fn metadata(
+        _input: &Input,
         _context: RequestBodyContext<'_>,
     ) -> Result<RequestBodyMetadata, BodyError> {
         let content_type = C::CONTENT_TYPE
@@ -174,10 +209,7 @@ where
         })
     }
 
-    fn prepare(
-        input: Self::Input,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBody, BodyError> {
+    fn prepare(input: Input, context: RequestBodyContext<'_>) -> Result<RequestBody, BodyError> {
         let bytes = C::encode(
             input,
             EncodeContext {
@@ -198,44 +230,51 @@ where
     }
 }
 
-impl RequestBodySpec for Bytes {
-    type Input = Bytes;
-
+impl RequestRepresentation<Bytes> for Binary {
     fn metadata(
-        input: &Self::Input,
+        input: &Bytes,
         _context: RequestBodyContext<'_>,
     ) -> Result<RequestBodyMetadata, BodyError> {
-        Ok(RequestBodyMetadata {
-            length: LengthHint::Exact(u64::try_from(input.len()).unwrap_or(u64::MAX)),
-            content_type: RequestContentType::None,
-            kind: BodyKind::Buffered,
-        })
+        binary_metadata(input.len())
     }
 
-    fn prepare(
-        input: Self::Input,
-        _context: RequestBodyContext<'_>,
-    ) -> Result<RequestBody, BodyError> {
-        Ok(RequestBody::bytes(input))
+    fn prepare(input: Bytes, _context: RequestBodyContext<'_>) -> Result<RequestBody, BodyError> {
+        RequestBody::bytes(input).content_type("application/octet-stream")
     }
 }
 
-impl PageRequestBodySpec for Bytes {}
+impl PageRequestRepresentation<Bytes> for Binary {}
 
-impl PageRequestBodySpec for Text {}
-
-/// Bounded streaming request and response specification.
-///
-/// Bare `Stream` is media-unconstrained. `Stream<M>` for a [`MediaType`]
-/// marker owns one exact request `Content-Type` and response media assertion.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Stream<M = AnyMedia>(PhantomData<M>);
-
-impl RequestBodySpec for Stream<AnyMedia> {
-    type Input = StreamBody;
-
+impl RequestRepresentation<Vec<u8>> for Binary {
     fn metadata(
-        input: &Self::Input,
+        input: &Vec<u8>,
+        _context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        binary_metadata(input.len())
+    }
+
+    fn prepare(input: Vec<u8>, _context: RequestBodyContext<'_>) -> Result<RequestBody, BodyError> {
+        RequestBody::bytes(Bytes::from(input)).content_type("application/octet-stream")
+    }
+}
+
+impl PageRequestRepresentation<Vec<u8>> for Binary {}
+
+impl PageRequestRepresentation<String> for Text {}
+
+fn binary_metadata(length: usize) -> Result<RequestBodyMetadata, BodyError> {
+    Ok(RequestBodyMetadata {
+        length: LengthHint::Exact(u64::try_from(length).unwrap_or(u64::MAX)),
+        content_type: RequestContentType::Exact(validated_content_type(
+            "application/octet-stream",
+        )?),
+        kind: BodyKind::Buffered,
+    })
+}
+
+impl RequestRepresentation<RequestStream<Bytes>> for Binary {
+    fn metadata(
+        input: &RequestStream<Bytes>,
         _context: RequestBodyContext<'_>,
     ) -> Result<RequestBodyMetadata, BodyError> {
         input.validate_metadata()?;
@@ -247,48 +286,18 @@ impl RequestBodySpec for Stream<AnyMedia> {
         };
         Ok(RequestBodyMetadata {
             length,
-            content_type: RequestContentType::None,
+            content_type: RequestContentType::Exact(validated_content_type(
+                "application/octet-stream",
+            )?),
             kind: BodyKind::Stream,
         })
     }
 
     fn prepare(
-        input: Self::Input,
+        input: RequestStream<Bytes>,
         _context: RequestBodyContext<'_>,
     ) -> Result<RequestBody, BodyError> {
-        Ok(RequestBody::stream(input))
-    }
-}
-
-impl<M> RequestBodySpec for Stream<M>
-where
-    M: MediaType,
-{
-    type Input = StreamBody;
-
-    fn metadata(
-        input: &Self::Input,
-        _context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        input.validate_metadata()?;
-        let length = match input.exact_length_value() {
-            Some(length) => LengthHint::Exact(length),
-            None => input
-                .lower_bound()
-                .map_or(LengthHint::Unknown, LengthHint::AtLeast),
-        };
-        Ok(RequestBodyMetadata {
-            length,
-            content_type: RequestContentType::Exact(validated_content_type(M::MEDIA_TYPE)?),
-            kind: BodyKind::Stream,
-        })
-    }
-
-    fn prepare(
-        input: Self::Input,
-        _context: RequestBodyContext<'_>,
-    ) -> Result<RequestBody, BodyError> {
-        RequestBody::stream(input).content_type(M::MEDIA_TYPE)
+        RequestBody::stream(input).content_type("application/octet-stream")
     }
 }
 
@@ -298,11 +307,9 @@ where
 pub struct Multipart;
 
 #[cfg(feature = "multipart")]
-impl RequestBodySpec for Multipart {
-    type Input = MultipartBody;
-
+impl RequestRepresentation<MultipartBody> for Multipart {
     fn metadata(
-        input: &Self::Input,
+        input: &MultipartBody,
         _context: RequestBodyContext<'_>,
     ) -> Result<RequestBodyMetadata, BodyError> {
         let metadata = input.metadata()?;
@@ -314,25 +321,23 @@ impl RequestBodySpec for Multipart {
     }
 
     fn prepare(
-        input: Self::Input,
+        input: MultipartBody,
         _context: RequestBodyContext<'_>,
     ) -> Result<RequestBody, BodyError> {
         Ok(RequestBody::multipart(input))
     }
 }
 
-impl RequestBodySpec for RequestBody {
-    type Input = RequestBody;
-
+impl RequestRepresentation<RequestBody> for RequestBody {
     fn metadata(
-        input: &Self::Input,
+        input: &RequestBody,
         _context: RequestBodyContext<'_>,
     ) -> Result<RequestBodyMetadata, BodyError> {
         input.structural_metadata()
     }
 
     fn prepare(
-        input: Self::Input,
+        input: RequestBody,
         _context: RequestBodyContext<'_>,
     ) -> Result<RequestBody, BodyError> {
         Ok(input)
@@ -342,25 +347,20 @@ impl RequestBodySpec for RequestBody {
 #[doc(hidden)]
 pub struct EmptyBody;
 
-impl RequestBodySpec for EmptyBody {
-    type Input = ();
-
+impl RequestRepresentation<()> for EmptyBody {
     fn metadata(
-        _input: &Self::Input,
+        _input: &(),
         _context: RequestBodyContext<'_>,
     ) -> Result<RequestBodyMetadata, BodyError> {
         Ok(RequestBodyMetadata::empty())
     }
 
-    fn prepare(
-        (): Self::Input,
-        _context: RequestBodyContext<'_>,
-    ) -> Result<RequestBody, BodyError> {
+    fn prepare((): (), _context: RequestBodyContext<'_>) -> Result<RequestBody, BodyError> {
         Ok(RequestBody::empty())
     }
 }
 
-impl PageRequestBodySpec for EmptyBody {}
+impl PageRequestRepresentation<()> for EmptyBody {}
 
 trait ErasedRequestBody: Send {
     fn metadata(&self, context: RequestBodyContext<'_>) -> Result<RequestBodyMetadata, BodyError>;
@@ -368,17 +368,19 @@ trait ErasedRequestBody: Send {
     fn prepare(self: Box<Self>, context: RequestBodyContext<'_>) -> Result<RequestBody, BodyError>;
 }
 
-struct SelectedRequestBody<B>
+struct SelectedRequestBody<B, Input>
 where
-    B: RequestBodySpec,
+    B: RequestRepresentation<Input>,
+    Input: Send + 'static,
 {
-    input: B::Input,
-    marker: PhantomData<fn() -> B>,
+    input: Input,
+    marker: PhantomData<fn() -> (B, Input)>,
 }
 
-impl<B> ErasedRequestBody for SelectedRequestBody<B>
+impl<B, Input> ErasedRequestBody for SelectedRequestBody<B, Input>
 where
-    B: RequestBodySpec,
+    B: RequestRepresentation<Input>,
+    Input: Send + 'static,
 {
     fn metadata(&self, context: RequestBodyContext<'_>) -> Result<RequestBodyMetadata, BodyError> {
         B::metadata(&self.input, context)
@@ -396,12 +398,13 @@ pub struct PreparedRequestBody {
 }
 
 impl PreparedRequestBody {
-    pub(crate) fn new<B>(input: B::Input) -> Self
+    pub(crate) fn new<B, Input>(input: Input) -> Self
     where
-        B: RequestBodySpec,
+        B: RequestRepresentation<Input>,
+        Input: Send + 'static,
     {
         Self {
-            body: Box::new(SelectedRequestBody::<B> {
+            body: Box::new(SelectedRequestBody::<B, Input> {
                 input,
                 marker: PhantomData,
             }),
@@ -413,18 +416,16 @@ impl PreparedRequestBody {
 #[doc(hidden)]
 pub struct PreparedBodySpec;
 
-impl RequestBodySpec for PreparedBodySpec {
-    type Input = PreparedRequestBody;
-
+impl RequestRepresentation<PreparedRequestBody> for PreparedBodySpec {
     fn metadata(
-        input: &Self::Input,
+        input: &PreparedRequestBody,
         context: RequestBodyContext<'_>,
     ) -> Result<RequestBodyMetadata, BodyError> {
         input.body.metadata(context)
     }
 
     fn prepare(
-        input: Self::Input,
+        input: PreparedRequestBody,
         context: RequestBodyContext<'_>,
     ) -> Result<RequestBody, BodyError> {
         input.body.prepare(context)
@@ -460,7 +461,6 @@ pub(crate) fn validate_produced_body(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::codec::OctetStream;
 
     fn context() -> RequestBodyContext<'static> {
         RequestBodyContext {
@@ -471,35 +471,17 @@ mod tests {
     }
 
     #[test]
-    fn media_unconstrained_stream_owns_no_content_type() {
-        let input = StreamBody::from_bytes(Bytes::from_static(b"bare-stream"));
-        let metadata =
-            <Stream as RequestBodySpec>::metadata(&input, context()).expect("bare stream metadata");
-        assert_eq!(metadata.length, LengthHint::Exact(11));
-        assert_eq!(metadata.content_type, RequestContentType::None);
-        assert_eq!(metadata.kind, BodyKind::Stream);
-
-        let body =
-            <Stream as RequestBodySpec>::prepare(input, context()).expect("bare stream body");
-        assert_eq!(
-            body.structural_metadata()
-                .expect("prepared bare stream metadata")
-                .content_type,
-            RequestContentType::None
-        );
-    }
-
-    #[test]
     fn exact_media_stream_keeps_its_owned_content_type() {
-        let input = StreamBody::from_bytes(Bytes::from_static(b"exact-stream"));
-        let metadata = <Stream<OctetStream> as RequestBodySpec>::metadata(&input, context())
-            .expect("exact stream metadata");
+        let input = RequestStream::from_bytes(Bytes::from_static(b"exact-stream"));
+        let metadata =
+            <Binary as RequestRepresentation<RequestStream>>::metadata(&input, context())
+                .expect("exact stream metadata");
         assert_eq!(
             metadata.content_type,
             RequestContentType::Exact(HeaderValue::from_static("application/octet-stream"))
         );
 
-        let body = <Stream<OctetStream> as RequestBodySpec>::prepare(input, context())
+        let body = <Binary as RequestRepresentation<RequestStream>>::prepare(input, context())
             .expect("exact stream body");
         assert_eq!(
             body.structural_metadata()

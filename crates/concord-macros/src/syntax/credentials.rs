@@ -243,22 +243,25 @@ fn parse_auth_placement(input: ParseStream<'_>) -> syn::Result<AuthPlacement> {
             )
         );
     };
-    let challenge = if input.peek(keyword::recover) {
-        input.parse::<keyword::recover>()?;
-        input.parse::<keyword::on>()?;
-        Some(if input.peek(keyword::unauthorized) {
+    let challenge = if input.peek(keyword::challenge) {
+        input.parse::<keyword::challenge>()?;
+        Some(if input.peek(keyword::never) {
+            input.parse::<keyword::never>()?;
+            AuthChallenge::Never
+        } else if input.peek(keyword::unauthorized) {
             input.parse::<keyword::unauthorized>()?;
             AuthChallenge::Unauthorized
         } else if input.peek(keyword::unauthorized_or_forbidden) {
             input.parse::<keyword::unauthorized_or_forbidden>()?;
             AuthChallenge::UnauthorizedOrForbidden
         } else {
-            return Err(input
-                .error("recovery signal must be `unauthorized` or `unauthorized_or_forbidden`"));
+            return Err(input.error(
+                "challenge policy must be `never`, `unauthorized`, or `unauthorized_or_forbidden`",
+            ));
         })
-    } else if input.peek(keyword::challenge) {
+    } else if input.peek(keyword::recover) {
         return Err(input.error(
-            "v1 `challenge ...` was removed; use `recover on unauthorized`, `recover on unauthorized_or_forbidden`, or omit recovery",
+            "historical `recover on ...` syntax was removed; use `challenge never`, `challenge unauthorized`, or `challenge unauthorized_or_forbidden`",
         ));
     } else {
         None
@@ -283,7 +286,7 @@ mod tests {
     fn parses_secret_sources_generic_providers_and_auth_placements() {
         let source = super::super::parse(quote! {
             client AuthApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 credentials {
                     secret token;
@@ -292,7 +295,7 @@ mod tests {
                 }
                 auth { bearer bearer; }
 
-            GET read() -> Bytes using Bytes {
+            GET read() -> Bytes via Binary {
                 auth replace { header "X-Session" = session; }
             }
         }})
@@ -321,7 +324,7 @@ mod tests {
         ] {
             let source = quote! {
                 client AuthApi {
-                    timeout off;
+                    timeout 30s;
                     base "https://example.test";
                     auth { #spelling; }
                 }
@@ -394,18 +397,18 @@ mod tests {
     fn parses_exact_and_static_scheme_authorization_placements() {
         let source = super::super::parse(quote! {
             client AuthApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 credentials {
                     secret token;
                     credential key = api_key(secret.token);
                 }
 
-            GET exact() -> Bytes using Bytes {
+            GET exact() -> Bytes via Binary {
                 auth { authorization = key; }
             }
-            GET scheme() -> Bytes using Bytes {
-                auth { authorization "tOkEn" = key recover on unauthorized; }
+            GET scheme() -> Bytes via Binary {
+                auth { authorization "tOkEn" = key challenge unauthorized; }
             }
         }})
         .expect("custom Authorization syntax");

@@ -3,14 +3,14 @@ use concord::api;
 
 api! {
     client BuilderSetterApi {
-        timeout off;
+        timeout 30s;
         values {
             label?: String;
         }
         base "http://builder-setter.example.test";
 
 
-    GET read() -> Bytes using Bytes;
+    GET read() -> Bytes via Binary;
 }}
 
 fn main() {

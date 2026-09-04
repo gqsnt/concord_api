@@ -1,8 +1,8 @@
-use concord::{Bytes, NoContent, Text, api};
+use concord::{Binary, Bytes, Empty, Text, api};
 
 api! {
     client FacadeApi {
-        timeout off;
+        timeout 30s;
         base "http://facade.example.test/";
 
 
@@ -16,14 +16,14 @@ api! {
             id: String,
             verbose?: bool,
             page_size: u32 = 25,
-        ) -> Bytes using Bytes {
+        ) -> Bytes via Binary {
             path [endpoint.id];
         }
-        POST update(id: String, body payload: String using Text, revision: u32) -> Bytes using Bytes {
+        POST update(id: String, body payload: String via Text, revision: u32) -> Bytes via Binary {
             path [endpoint.id];
             headers { "X-Revision" = endpoint.revision; }
         }
-        GET delete(id: String) -> () using NoContent {
+        GET delete(id: String) -> () via Empty {
             path [endpoint.id];
         }
     }
@@ -39,7 +39,7 @@ fn one_facade_dependency_exposes_predictable_named_inherent_surface() {
         .reset_scope_limit()
         .fetch("resource".to_owned())
         .with_verbose(true)
-        .clear_verbose()
+        .omit_verbose()
         .set_page_size(100)
         .reset_page_size();
     assert_eq!(format!("{request:?}"), "FetchRequest { .. }");
@@ -80,7 +80,6 @@ fn one_facade_dependency_exposes_predictable_named_inherent_surface() {
         "body".to_owned(),
         7,
     );
-    let _: facade_api::resources::Update = body_endpoint.clone();
     let _: facade_api::resources::UpdateRequest = client.request(body_endpoint);
 
     fn bind<E>(client: &FacadeApi, endpoint: E) -> E::Request
@@ -92,7 +91,7 @@ fn one_facade_dependency_exposes_predictable_named_inherent_surface() {
 
     fn assert_bytes_response<E>()
     where
-        E: facade_api::Endpoint<Response = Bytes>,
+        E: facade_api::Endpoint<Response = Binary>,
     {
     }
 

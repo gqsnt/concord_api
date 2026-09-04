@@ -6,8 +6,8 @@
 
 use std::sync::Arc;
 
-use concord::api;
 use concord::rate_limit::NoopRateLimiter;
+use concord::{Bytes, api};
 
 /// Retained client default used to demonstrate clear/reset distinction.
 pub const DEFAULT_CLIENT_LABEL: &str = "client-default";
@@ -42,13 +42,13 @@ api! {
         headers { "X-Client" = "canonical-reference"; }
         timeout 15s;
         rate_limits {
-            regional_reads(region) {
-                key [host, region];
+            policy regional_reads(region) { id "concord.full_dsl.1";
+                key [origin, region];
                 cost 1;
                 allow 200 per 1m;
             }
         }
-        rate_limit {
+        rate_limit { id "concord.full_dsl.2"; key [origin]; cost 1;
             allow 100 per 1s;
             allow 1000 per 1m;
         }
@@ -60,14 +60,14 @@ api! {
         verbose?: bool = crate::contracts::full_dsl::DEFAULT_VERBOSE,
         #[default]
         tags?: Vec<&'static str>,
-    ) -> Bytes using Bytes {
+    ) -> Bytes via Binary {
         path ["status"];
         query {
             "verbose" = endpoint.verbose;
             "tag" = each endpoint.tags;
         }
         auth off;
-        timeout off;
+        timeout 30s;
     }
     // ANCHOR_END: status_endpoint
 
@@ -86,7 +86,7 @@ api! {
         timeout 5s;
         rate_limit regional_reads(region = regions.region);
 
-        METHOD("PROPFIND") fetch(id: String, tags: Vec<String>) -> String using Text {
+        METHOD("PROPFIND") fetch(id: String, tags: Vec<String>) -> String via Text {
             path [concat ["resource-", endpoint.id]];
             query { "tag" = each endpoint.tags; }
             headers { "Accept-Language" = regions.language; }
@@ -103,12 +103,12 @@ pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
     let client = ReferenceApi::builder()
         .set_tenant("tenant-a".to_owned())
         .set_locale(Some("fr".to_owned()))
-        .clear_locale()
+        .omit_locale()
         .reset_locale()
         .set_page_size(50)
         .reset_page_size()
         .with_client_label("client-override")
-        .clear_client_label()
+        .omit_client_label()
         .reset_client_label()
         .api_key(
             concord::SecretString::try_new("example-api-key").expect("bounded example API key"),
@@ -123,10 +123,10 @@ pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
     let _: reference_api::StatusRequest = client
         .status()
         .with_verbose(true)
-        .clear_verbose()
+        .omit_verbose()
         .reset_verbose()
         .with_tags(vec!["stable", "documented"])
-        .clear_tags()
+        .omit_tags()
         .reset_tags();
     // ANCHOR_END: request_controls
 
@@ -135,14 +135,14 @@ pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
         .regions("eu-west".to_owned())
         .with_language("fr".to_owned())
         .with_scope_label("scope-override")
-        .clear_scope_label()
+        .omit_scope_label()
         .reset_scope_label()
         .fetch("42".to_owned(), vec!["stable".to_owned()]);
     let endpoint = ReferenceApi::unbound()
         .regions("eu-west".to_owned())
         .with_language("fr".to_owned())
         .with_scope_label("scope-override")
-        .clear_scope_label()
+        .omit_scope_label()
         .reset_scope_label()
         .fetch("42".to_owned(), vec!["stable".to_owned()]);
     let _: reference_api::regions::FetchRequest = client.request(endpoint);

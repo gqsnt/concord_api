@@ -2,12 +2,12 @@ use concord::api;
 
 api! {
     client NestedChildApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
     }
 
     scope users() {
-        GET list() -> Bytes using Bytes;
+        GET list() -> Bytes via Binary;
     }
 }
 

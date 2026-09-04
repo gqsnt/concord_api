@@ -72,7 +72,7 @@ fn semantic_domains_are_available_without_implementation_crate_imports() {
         public_type::<pagination::OffsetPagination>(),
         public_type::<pagination::PaginatedRequest<()>>(),
         public_type::<rate_limit::NoopRateLimiter>(),
-        public_type::<response::NoContent>(),
+        public_type::<response::Empty>(),
         public_type::<retry::RetryPolicy>(),
         public_type::<retry::RetryAttempt<'static>>(),
         public_type::<retry::RetryFailure<'static>>(),
@@ -82,20 +82,20 @@ fn semantic_domains_are_available_without_implementation_crate_imports() {
 
     assert!(names.iter().all(|name| !name.is_empty()));
 
-    fn supports_accepted_bytes<T: response::AcceptedBytesMode>() {}
+    fn supports_accepted_bytes<T: response::AcceptedBytesDriver>() {}
     supports_accepted_bytes::<response::Buffered>();
-    supports_accepted_bytes::<response::Discard>();
+    supports_accepted_bytes::<response::DiscardDriver>();
 
-    fn supports_page_body<B>()
+    fn supports_page_body<B, Input>()
     where
-        B: body::PageRequestBodySpec,
-        B::Input: Clone,
+        B: body::PageRequestRepresentation<Input>,
+        Input: Clone + Send + 'static,
     {
     }
-    supports_page_body::<codec::Bytes>();
-    supports_page_body::<codec::Text>();
+    supports_page_body::<codec::Binary, concord::Bytes>();
+    supports_page_body::<codec::Text, String>();
     #[cfg(feature = "json")]
-    supports_page_body::<codec::Json<Vec<u32>>>();
+    supports_page_body::<codec::Json, Vec<u32>>();
 }
 
 #[test]
@@ -163,27 +163,16 @@ fn hard_structural_limits_are_reachable_from_their_facade_domains() {
 #[test]
 fn records_contracts_are_exposed_by_the_records_domain() {
     assert!(!public_type::<concord::records::RecordError>().is_empty());
-    assert!(!public_type::<concord::records::BufferedRecords<PublicRecordDecoder>>().is_empty());
-    assert_eq!(
-        public_type::<concord::records::BufferedRecords<PublicRecordDecoder>>(),
-        public_type::<concord::prelude::BufferedRecords<PublicRecordDecoder>>()
-    );
-
-    fn buffered_page_spec<S>()
-    where
-        S: response::ResponseSpec<Output = Vec<NonCloneRecord>, Mode = response::Buffered>
-            + response::PageResponseSpec,
-    {
-    }
-    buffered_page_spec::<concord::records::BufferedRecords<PublicRecordDecoder>>();
+    assert!(!public_type::<concord::records::ItemStream<NonCloneRecord>>().is_empty());
+    assert!(!public_type::<PublicRecordDecoder>().is_empty());
 }
 
 #[cfg(feature = "json")]
 #[test]
 fn json_is_exposed_by_the_codec_domain_and_curated_top_level() {
     assert_eq!(
-        public_type::<concord::codec::Json<Vec<u32>>>(),
-        public_type::<concord::Json<Vec<u32>>>()
+        public_type::<concord::codec::Json>(),
+        public_type::<concord::Json>()
     );
 }
 

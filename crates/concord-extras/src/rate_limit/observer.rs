@@ -1,14 +1,10 @@
-use std::time::{Duration, SystemTime};
-
-use concord_core::contracts::SanitizedHeaderValue;
 use concord_core::rate_limit::{Cooldown, CooldownScope, RateLimitObserver, RateLimitResponseHead};
 use http::StatusCode;
-use http::header::RETRY_AFTER;
 
 /// Built-in final-429 `Retry-After` observer.
 ///
-/// Decimal delta-seconds and HTTP dates are accepted after trimming. Malformed,
-/// past, and zero values are ignored. Positive values target current buckets,
+/// Core supplies the one parsed standard delay fact. Past, malformed, and zero
+/// values are ignored. Positive values target current buckets,
 /// or the logical host when the effective plan is empty. The local limiter
 /// clamps every proposal to the runtime cap supplied by core. Supplying
 /// [`LocalRateLimiter::observer`](super::LocalRateLimiter::observer) replaces
@@ -21,10 +17,7 @@ impl RateLimitObserver for RetryAfterObserver {
         if response.status != StatusCode::TOO_MANY_REQUESTS {
             return None;
         }
-        let SanitizedHeaderValue::Text(value) = response.headers.get(&RETRY_AFTER)? else {
-            return None;
-        };
-        let duration = parse_positive_retry_after(value, SystemTime::now())?;
+        let duration = response.server_delay.filter(|delay| !delay.is_zero())?;
         let scope = if response.plan.is_empty() {
             CooldownScope::Host
         } else {
@@ -34,58 +27,22 @@ impl RateLimitObserver for RetryAfterObserver {
     }
 }
 
-fn parse_positive_retry_after(value: &str, now: SystemTime) -> Option<Duration> {
-    let value = value.trim();
-    let duration = if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) {
-        let seconds = value.bytes().try_fold(0_u64, |seconds, byte| {
-            seconds.checked_mul(10)?.checked_add(u64::from(byte - b'0'))
-        })?;
-        Duration::from_secs(seconds)
-    } else {
-        let date = httpdate::parse_http_date(value).ok()?;
-        date.duration_since(now).unwrap_or(Duration::ZERO)
-    };
-    (!duration.is_zero()).then_some(duration)
-}
-
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU32;
-    use std::time::UNIX_EPOCH;
-
-    use concord_core::contracts::{HeaderMap, HeaderValue, Method, SanitizedHeaders};
+    use concord_core::contracts::{HeaderMap, Method, SanitizedHeaders};
     use concord_core::rate_limit::{
         RateLimitId, RateLimitKey, RateLimitPlan, RateLimitPolicy, RateLimitWindow,
     };
+    use std::num::NonZeroU32;
+    use std::time::Duration;
 
     use super::*;
-
-    #[test]
-    fn retry_after_parser_accepts_positive_delta_and_date_only() {
-        let now = UNIX_EPOCH + Duration::from_secs(1_000_000);
-        assert_eq!(
-            parse_positive_retry_after(" 12 ", now),
-            Some(Duration::from_secs(12))
-        );
-        assert_eq!(parse_positive_retry_after("0", now), None);
-        let future = httpdate::fmt_http_date(now + Duration::from_secs(30));
-        assert_eq!(
-            parse_positive_retry_after(&format!(" {future} "), now),
-            Some(Duration::from_secs(30))
-        );
-        let past = httpdate::fmt_http_date(now - Duration::from_secs(1));
-        assert_eq!(parse_positive_retry_after(&past, now), None);
-        for malformed in ["", "-1", "+1", "1.5", "tomorrow", "12 seconds"] {
-            assert_eq!(parse_positive_retry_after(malformed, now), None);
-        }
-    }
 
     #[test]
     fn default_observer_uses_only_final_429_and_sanitized_retry_after() {
         let method = Method::GET;
         let plan = RateLimitPlan::empty();
-        let mut headers = HeaderMap::new();
-        headers.insert(RETRY_AFTER, HeaderValue::from_static(" 7 "));
+        let headers = HeaderMap::new();
         let response = RateLimitResponseHead {
             endpoint: "RateApi::get",
             method: &method,
@@ -100,6 +57,7 @@ mod tests {
             plan: &plan,
             status: StatusCode::TOO_MANY_REQUESTS,
             headers: SanitizedHeaders::new(&headers),
+            server_delay: Some(Duration::from_secs(7)),
         };
         let cooldown = RetryAfterObserver
             .observe(&response)

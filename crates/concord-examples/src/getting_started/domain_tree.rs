@@ -34,7 +34,7 @@ pub struct ItemSummary {
 // ANCHOR: domain_tree_contract
 api! {
     client CatalogApi {
-        timeout off;
+        timeout 30s;
         base "http://catalog.example.test/";
         values {
             tenant: String;
@@ -51,14 +51,14 @@ api! {
             category?: String,
             offset: u64 = 0,
             count: std::num::NonZeroU32 = DEFAULT_PAGE_SIZE,
-        ) -> Vec<ItemSummary> using Json<Vec<ItemSummary>> {
+        ) -> Vec<ItemSummary> via Json {
             path ["items"];
             query {
                 "category" = endpoint.category;
                 "offset" = endpoint.offset;
                 "count" = endpoint.count;
             }
-            paginate with concord::pagination::OffsetPagination {
+            paginate via concord::pagination::OffsetPagination {
                 offset -> endpoint.offset;
                 page_size -> endpoint.count;
             }

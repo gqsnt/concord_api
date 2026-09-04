@@ -1,16 +1,20 @@
-use crate::body::{PageRequestBodySpec, RequestBodySpec};
+use crate::body::PageRequestRepresentation;
 use crate::error::{ApiError, PaginationErrorKind};
-use crate::hooks::{BoxFuture, CompletionOutcome, PaginationCompletionEvent};
+use crate::hooks::{BoxFuture, CompletionOutcome, OperationEvent, PaginationFinished};
 use crate::operation::OperationDeadline;
 use crate::request::{EndpointSpec, Request, prepare_pagination_page};
-use crate::response::{PageResponseSpec, ResponseSpec};
+use crate::response::PageResponseRepresentation;
 
 use super::identity::CanonicalIdentity;
 use super::limits::CycleDetector;
-use super::{PageLimit, PaginatedEndpoint, PaginationController, PaginationError};
+use super::{
+    PageDecisionLimits, PageLimit, PageResponse, PageStep, PaginatedEndpoint, PaginationController,
+    PaginationError,
+};
 
-type DecodedPage<E> = <<E as EndpointSpec>::Response as ResponseSpec>::Output;
-type PageItem<E> = <DecodedPage<E> as IntoIterator>::Item;
+type DecodedPage<E> = <E as EndpointSpec>::Output;
+type PageItem<E> =
+    <<E as PaginatedEndpoint>::Controller as PaginationController<DecodedPage<E>>>::Item;
 type PaginationResult<E> = Result<Vec<PageItem<E>>, ApiError>;
 
 pub(super) fn paginate_with<E>(
@@ -19,10 +23,10 @@ pub(super) fn paginate_with<E>(
 ) -> BoxFuture<'static, PaginationResult<E>>
 where
     E: PaginatedEndpoint,
-    E::Body: PageRequestBodySpec,
-    <E::Body as RequestBodySpec>::Input: Clone,
-    E::Response: PageResponseSpec,
-    DecodedPage<E>: IntoIterator<Item = E::Item> + Send + 'static,
+    E::Input: Clone,
+    E::Body: PageRequestRepresentation<E::Input>,
+    E::Response: PageResponseRepresentation<E::Output>,
+    DecodedPage<E>: Send + 'static,
     PageItem<E>: Send + 'static,
 {
     Box::pin(async move {
@@ -106,7 +110,7 @@ where
             Ok(_) => CompletionOutcome::Success,
             Err(error) => CompletionOutcome::from_error_category(error.category()),
         };
-        let event = PaginationCompletionEvent {
+        let event = PaginationFinished {
             operation_id: aggregate_operation_id,
             endpoint: meta.endpoint(),
             method: meta.method(),
@@ -121,9 +125,10 @@ where
         };
         core.debug_dispatcher(options.resolve_debug(core.default_debug()))
             .pagination_completion(&event);
-        let observer_started = std::time::Instant::now();
-        core.completion_observer().on_pagination_complete(event);
-        let _observer_elapsed = observer_started.elapsed();
+        crate::hooks::observe(
+            core.operation_observer().as_ref(),
+            OperationEvent::PaginationFinished(event),
+        );
         result
     })
 }
@@ -154,10 +159,10 @@ async fn run_pages<E>(
 ) -> PaginationResult<E>
 where
     E: PaginatedEndpoint,
-    E::Body: PageRequestBodySpec,
-    <E::Body as RequestBodySpec>::Input: Clone,
-    E::Response: PageResponseSpec,
-    DecodedPage<E>: IntoIterator<Item = E::Item> + Send + 'static,
+    E::Input: Clone,
+    E::Body: PageRequestRepresentation<E::Input>,
+    E::Response: PageResponseRepresentation<E::Output>,
+    DecodedPage<E>: Send + 'static,
     PageItem<E>: Send + 'static,
 {
     let meta = original_endpoint.request_meta();
@@ -211,8 +216,15 @@ where
             aggregate_operation_id,
             page_index,
             aggregate_deadline,
+            crate::execute::MAX_VISIBLE_ATTEMPTS_PER_OPERATION
+                .checked_sub(*attempts_started)
+                .filter(|remaining| *remaining > 0)
+                .ok_or_else(|| {
+                    pagination_kind_error(&meta, PaginationErrorKind::AttemptCeilingExceeded)
+                })?,
         )
         .await?;
+        let page_operation_id = executed.operation_id;
         let page_response_body_bytes = executed.response_body_bytes;
         let next_attempts_started = (*attempts_started)
             .checked_add(executed.attempts_started)
@@ -236,7 +248,14 @@ where
                 PaginationErrorKind::CollectedResponseByteCeilingExceeded,
             ));
         }
-        let page = response.into_value();
+        let page = PageResponse::from_accepted(
+            response,
+            E::Controller::DESCRIPTION,
+            aggregate_operation_id,
+            page_operation_id,
+            page_index,
+        )
+        .map_err(|error| pagination_api_error(&meta, error))?;
 
         let accepted_page_count = (*pages_completed)
             .checked_add(1)
@@ -250,25 +269,23 @@ where
 
         let final_soft_page =
             matches!(limit, PageLimit::Prefix(maximum) if accepted_page_count == maximum);
-        let candidate = if final_soft_page {
-            None
-        } else {
-            let short_page_size = controller.short_page_size();
-            aggregate_deadline
-                .check()
-                .map_err(|_| aggregate_timeout(&meta))?;
-            let next = controller.next(&page);
-            aggregate_deadline
-                .check()
-                .map_err(|_| aggregate_timeout(&meta))?;
-            Some((short_page_size, next))
-        };
+        let remaining_items = max_items
+            .checked_sub(*items_collected)
+            .ok_or_else(|| pagination_kind_error(&meta, PaginationErrorKind::Overflow))?;
+        aggregate_deadline
+            .check()
+            .map_err(|_| aggregate_timeout(&meta))?;
+        let step = controller.advance(page, PageDecisionLimits::new(remaining_items));
+        aggregate_deadline
+            .check()
+            .map_err(|_| aggregate_timeout(&meta))?;
+        let (page_items, next_controller) =
+            match step.map_err(|error| pagination_api_error(&meta, error))? {
+                PageStep::Done { items } => (items, None),
+                PageStep::Continue { items, next } => (items, Some(next)),
+            };
 
-        let mut page_item_count = 0_usize;
-        for item in page {
-            let next_page_count = page_item_count
-                .checked_add(1)
-                .ok_or_else(|| pagination_kind_error(&meta, PaginationErrorKind::Overflow))?;
+        for item in page_items {
             let next_item_count = (*items_collected)
                 .checked_add(1)
                 .ok_or_else(|| pagination_kind_error(&meta, PaginationErrorKind::Overflow))?;
@@ -279,7 +296,6 @@ where
                 ));
             }
             items.push(item);
-            page_item_count = next_page_count;
             *items_collected = next_item_count;
         }
         *pages_completed = accepted_page_count;
@@ -288,14 +304,7 @@ where
         if final_soft_page {
             return Ok(items);
         }
-        let (short_page_size, candidate) = candidate
-            .expect("non-final prefix and complete-within pages retain a controller result");
-        if short_page_size.is_some_and(|size| page_item_count < size.get()) {
-            return Ok(items);
-        }
-
-        let candidate = candidate.map_err(|error| pagination_api_error(&meta, error))?;
-        let Some(next_controller) = candidate else {
+        let Some(next_controller) = next_controller else {
             return Ok(items);
         };
 

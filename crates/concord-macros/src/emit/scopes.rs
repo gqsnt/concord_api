@@ -49,7 +49,7 @@ pub(super) fn generate_scope_module(
     let client_name = &client.name;
     let scope_values = value_category_summary(&scope.parameters, "Scope");
     let facade_doc = format!(
-        "Immutable `{}` scope selection. {scope_values} Optional and defaulted inputs use consuming `set_*` controls. Optional values also expose `with_*` and `clear_*`; defaulted values expose `reset_*`, which restores the retained default without re-evaluation. A `#[default]` declaration invokes application-owned `Default::default()` when the scope snapshot is constructed.",
+        "Immutable `{}` scope selection. {scope_values} Optional and defaulted inputs use consuming `set_*` controls. Optional values also expose `with_*` and `omit_*`; defaulted values expose `reset_*`, which restores the retained default without re-evaluation. A `#[default]` declaration invokes application-owned `Default::default()` when the scope snapshot is constructed.",
         scope.name
     );
 
@@ -78,6 +78,31 @@ pub(super) fn generate_scope_module(
         .collect::<Vec<_>>();
     let nested = generate_scope_tree(client, &scope.children, &visible, facade_path);
     let unbound = generate_scope_unbound(client, scope, ancestors);
+    let runtime_endpoint_id = Ident::new("__concord_runtime_endpoint_id", Span::mixed_site());
+    let RuntimeScopeHeadStatements {
+        host: runtime_host,
+        path: runtime_path,
+        query: runtime_query,
+        headers: runtime_headers,
+        auth: runtime_auth,
+        rate_limits: runtime_rate_limits,
+    } = runtime_scope_head_statements(
+        client,
+        &visible,
+        facade_path,
+        &invocation_path,
+        &runtime_endpoint_id,
+    );
+    let runtime_timeout = scope.config.timeout.map_or_else(
+        || quote!(::std::option::Option::None),
+        |duration| {
+            let seconds = duration.as_secs();
+            let nanos = duration.subsec_nanos();
+            quote!(::std::option::Option::Some(::std::time::Duration::new(#seconds, #nanos)))
+        },
+    );
+    let runtime_authentication = !scope.config.auth.is_empty();
+    let runtime_rate_limits_present = !scope.config.rate_limits.is_empty();
 
     quote! {
         pub mod #module_name {
@@ -103,6 +128,131 @@ pub(super) fn generate_scope_module(
 
                 #(#setters)*
                 #(#child_methods)*
+
+                #[doc(hidden)]
+                fn __concord_runtime_prefix(
+                    &self,
+                    __concord_inherits_path: bool,
+                    __concord_inherits_auth: bool,
+                    #runtime_endpoint_id: &str,
+                    mut __concord_builder: #facade_path::__private::HeadBuilder,
+                ) -> ::std::result::Result<
+                    #facade_path::__private::HeadBuilder,
+                    #facade_path::ApiError,
+                > {
+                    let __concord_scope = self;
+                    let __concord_client_values = &self.__concord_client.__concord_values;
+                    let __concord_credentials = &self.__concord_client.__concord_credentials;
+                    #runtime_host
+                    if __concord_inherits_path {
+                        #runtime_path
+                    }
+                    #runtime_query
+                    #runtime_headers
+                    if __concord_inherits_auth {
+                        #runtime_auth
+                    }
+                    #runtime_rate_limits
+                    ::std::result::Result::Ok(__concord_builder)
+                }
+            }
+
+            #[doc(hidden)]
+            impl<R, Output> #facade_path::endpoint::RuntimeEndpointBinding<R, Output>
+                for #facade_name
+            where
+                R: #facade_path::response::ResponseRepresentation<Output>,
+                Output: ::std::marker::Send + 'static,
+            {
+                type BoundEndpoint = #facade_path::endpoint::RuntimeEndpoint<R, Output>;
+
+                fn try_bind_runtime_endpoint(
+                    &self,
+                    endpoint: #facade_path::endpoint::RuntimeEndpoint<R, Output>,
+                ) -> ::std::result::Result<
+                    #facade_path::endpoint::Request<Self::BoundEndpoint>,
+                    #facade_path::ApiError,
+                > {
+                    let __concord_inherits_path = endpoint.__concord_inherits_path();
+                    let __concord_inherits_auth = endpoint.__concord_inherits_auth();
+                    let __concord_runtime_endpoint_id = endpoint.description().id().to_owned();
+                    let __concord_description =
+                        endpoint.__concord_description_for_owner(
+                            #runtime_timeout,
+                            #runtime_authentication,
+                            #runtime_rate_limits_present,
+                        );
+                    #facade_path::__private::plan_unbound_request(
+                        &self.__concord_client.__concord_core,
+                        &__concord_description,
+                        <R as #facade_path::response::ResponseRepresentation<Output>>::accept(),
+                        |builder| {
+                            let builder = self.__concord_runtime_prefix(
+                                __concord_inherits_path,
+                                __concord_inherits_auth,
+                                &__concord_runtime_endpoint_id,
+                                builder,
+                            )?;
+                            <#facade_path::endpoint::RuntimeEndpoint<R, Output>
+                                as #facade_path::__private::EndpointSpec
+                            >::prepare_head(&endpoint, builder)
+                        },
+                    )?;
+                    let __concord_scope = self.clone();
+                    let endpoint = endpoint.__concord_bind_owner(
+                        #runtime_timeout,
+                        #runtime_authentication,
+                        #runtime_rate_limits_present,
+                        move |builder| {
+                            __concord_scope.__concord_runtime_prefix(
+                                __concord_inherits_path,
+                                __concord_inherits_auth,
+                                &__concord_runtime_endpoint_id,
+                                builder,
+                            )
+                        },
+                    );
+                    ::std::result::Result::Ok(
+                        #facade_path::__private::request(
+                            &self.__concord_client.__concord_core,
+                            endpoint,
+                        ),
+                    )
+                }
+
+                fn plan_runtime_endpoint(
+                    &self,
+                    endpoint: &#facade_path::endpoint::RuntimeEndpoint<R, Output>,
+                ) -> ::std::result::Result<
+                    #facade_path::endpoint::RequestPlan,
+                    #facade_path::ApiError,
+                > {
+                    let __concord_inherits_path = endpoint.__concord_inherits_path();
+                    let __concord_inherits_auth = endpoint.__concord_inherits_auth();
+                    let __concord_runtime_endpoint_id = endpoint.description().id().to_owned();
+                    let __concord_description =
+                        endpoint.__concord_description_for_owner(
+                            #runtime_timeout,
+                            #runtime_authentication,
+                            #runtime_rate_limits_present,
+                        );
+                    #facade_path::__private::plan_unbound_request(
+                        &self.__concord_client.__concord_core,
+                        &__concord_description,
+                        <R as #facade_path::response::ResponseRepresentation<Output>>::accept(),
+                        |builder| {
+                            let builder = self.__concord_runtime_prefix(
+                                __concord_inherits_path,
+                                __concord_inherits_auth,
+                                &__concord_runtime_endpoint_id,
+                                builder,
+                            )?;
+                            <#facade_path::endpoint::RuntimeEndpoint<R, Output>
+                                as #facade_path::__private::EndpointSpec
+                            >::prepare_head(endpoint, builder)
+                        },
+                    )
+                }
             }
 
             #unbound
@@ -359,8 +509,8 @@ pub(super) fn generate_facade_setters(scope_id: usize, index: usize, value: &Val
             canonical_ident(&value.name)
         )
     };
-    let clear = value.accepts_absence().then(|| {
-        let clear = helper_ident("clear", &value.name);
+    let omit = value.accepts_absence().then(|| {
+        let omit = helper_ident("omit", &value.name);
         let clear_doc = format!(
             "Returns a new facade explicitly selecting absence for absence-capable scope value `{}`.",
             canonical_ident(&value.name)
@@ -368,7 +518,7 @@ pub(super) fn generate_facade_setters(scope_id: usize, index: usize, value: &Val
         quote! {
             #[doc = #clear_doc]
             #[must_use]
-            pub fn #clear(mut self) -> Self {
+            pub fn #omit(mut self) -> Self {
                 self.#field = ::std::sync::Arc::new(::std::option::Option::None);
                 self
             }
@@ -399,7 +549,7 @@ pub(super) fn generate_facade_setters(scope_id: usize, index: usize, value: &Val
         }
 
         #with
-        #clear
+        #omit
         #reset
     }
 }

@@ -2,7 +2,7 @@ use concord::api;
 
 api! {
     client BoundaryApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test/";
         credentials {
             secret key;
@@ -14,7 +14,7 @@ api! {
         }
 
 
-    GET read() -> () using NoContent;
+    GET read() -> () via Empty;
 }}
 
 fn main() {}

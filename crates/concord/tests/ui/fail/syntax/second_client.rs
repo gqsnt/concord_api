@@ -2,7 +2,7 @@ use concord::api;
 
 api! {
     client FirstApi {
-        timeout off;
+        timeout 30s;
         base "https://one.example.test";
 
 

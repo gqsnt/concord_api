@@ -2,9 +2,9 @@ use concord::api;
 
 api! {
     client Duplicate {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
-        rate_limit {
+        rate_limit { key [origin]; cost 1;
             id "service.first";
             id "service.second";
             allow 1 per 1s;
@@ -14,9 +14,9 @@ api! {
 
 api! {
     client Late {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
-        rate_limit {
+        rate_limit { key [origin]; cost 1;
             allow 1 per 1s;
             id "service.late";
         }

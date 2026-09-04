@@ -7,15 +7,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use concord::api;
-use concord::body::{Multipart, MultipartBody, MultipartPart, Stream, StreamBody};
-use concord::codec::OctetStream;
+use concord::body::{Multipart, MultipartBody, MultipartPart, RequestStream};
 use concord::endpoint::{EndpointId, MAX_FORMATTED_PUBLIC_VALUE_BYTES, RuntimeEndpoint};
 use concord::error::{
     ClientBuildErrorKind, ClientInputKind, ConfigurationErrorKind, ErrorCategory,
 };
 use concord::http::{Method, SafeProxy};
 use concord::response::{ApiResponse, ByteStream};
-use concord::{Bytes, NoContent, Text};
+use concord::{Binary, Bytes, Empty, Text};
 use concord_test_support::server::{BodyGate, ResponseScript, ScriptedServer};
 use futures_core::Stream as FuturesStream;
 use tokio::sync::{Mutex, MutexGuard};
@@ -51,6 +50,15 @@ impl Display for DropProbe {
     }
 }
 
+impl concord::RequestAtom for DropProbe {
+    fn write_atom(
+        &self,
+        output: &mut concord::BoundedAtomWriter<'_>,
+    ) -> Result<(), concord::AtomError> {
+        output.push_str(self.value)
+    }
+}
+
 impl Drop for DropProbe {
     fn drop(&mut self) {
         (self.drops)().fetch_add(1, Ordering::SeqCst);
@@ -63,6 +71,16 @@ impl Display for ShapeProbe {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         SHAPING_FORMATS.fetch_add(1, Ordering::SeqCst);
         formatter.write_str(self.0)
+    }
+}
+
+impl concord::RequestAtom for ShapeProbe {
+    fn write_atom(
+        &self,
+        output: &mut concord::BoundedAtomWriter<'_>,
+    ) -> Result<(), concord::AtomError> {
+        SHAPING_FORMATS.fetch_add(1, Ordering::SeqCst);
+        output.push_str(self.0)
     }
 }
 
@@ -98,11 +116,31 @@ impl Display for FormatProbe {
     }
 }
 
+impl concord::RequestAtom for FormatProbe {
+    fn write_atom(
+        &self,
+        output: &mut concord::BoundedAtomWriter<'_>,
+    ) -> Result<(), concord::AtomError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        assert!(!self.panic_if_formatted, "later atom value was inspected");
+        output.push_str(&self.output)
+    }
+}
+
 pub struct FailingFormatProbe;
 
 impl Display for FailingFormatProbe {
     fn fmt(&self, _formatter: &mut Formatter<'_>) -> fmt::Result {
         Err(fmt::Error)
+    }
+}
+
+impl concord::RequestAtom for FailingFormatProbe {
+    fn write_atom(
+        &self,
+        _output: &mut concord::BoundedAtomWriter<'_>,
+    ) -> Result<(), concord::AtomError> {
+        Err(concord::AtomError::new(concord::AtomErrorKind::Encode))
     }
 }
 
@@ -177,12 +215,12 @@ api! {
         timeout 5s;
 
 
-    GET root(verbose?: bool) -> Bytes using Bytes {
+    GET root(verbose?: bool) -> Bytes via Binary {
         path ["root"];
         query { "verbose" = endpoint.verbose; }
     }
 
-    GET search(tags: Vec<String>, filters?: Vec<String>) -> Bytes using Bytes {
+    GET search(tags: Vec<String>, filters?: Vec<String>) -> Bytes via Binary {
         path ["search"];
         query {
             "tag" = each endpoint.tags;
@@ -190,59 +228,59 @@ api! {
         }
     }
 
-    GET accept(accept: String) -> String using Text {
+    GET accept(accept: String) -> String via Text {
         path ["accept"];
         accept endpoint.accept;
     }
 
-    POST text_body(body body: String using Text) -> Bytes using Bytes {
+    POST text_body(body body: String via Text) -> Bytes via Binary {
         path ["text-body"];
     }
 
-    POST stream_body(body body: ::concord::body::StreamBody using Stream<OctetStream>) -> Bytes using Bytes {
+    POST stream_body(body body: ::concord::body::RequestStream via Binary) -> Bytes via Binary {
         path ["stream-body"];
     }
 
-    POST multipart_body(body body: ::concord::body::MultipartBody using Multipart) -> () using NoContent {
+    POST multipart_body(body body: ::concord::body::MultipartBody via Multipart) -> () via Empty {
         path ["multipart-body"];
     }
 
-    GET streamed(verbose?: bool) -> ::concord::response::ByteStream using Stream<OctetStream> {
+    GET streamed(verbose?: bool) -> ::concord::response::ByteStream via Binary {
         path ["streamed"];
         query { "verbose" = endpoint.verbose; }
     }
 
-    GET unsafe_path(segment: crate::ShapeProbe) -> Bytes using Bytes {
+    GET unsafe_path(segment: crate::ShapeProbe) -> Bytes via Binary {
         path ["unsafe-path", endpoint.segment];
     }
 
-    GET unsafe_host(label: crate::ShapeProbe) -> Bytes using Bytes {
+    GET unsafe_host(label: crate::ShapeProbe) -> Bytes via Binary {
         subdomain replace [endpoint.label];
         path ["unsafe-host"];
     }
 
-    GET unsafe_header(value: crate::ShapeProbe) -> Bytes using Bytes {
+    GET unsafe_header(value: crate::ShapeProbe) -> Bytes via Binary {
         path ["unsafe-header"];
         headers { "X-Dynamic" = endpoint.value; }
     }
 
-    GET bounded_format_path(first: crate::FormatProbe, tail: crate::FormatProbe) -> Bytes using Bytes {
+    GET bounded_format_path(first: crate::FormatProbe, tail: crate::FormatProbe) -> Bytes via Binary {
         path [concat [concat [endpoint.first], concat [endpoint.tail]]];
     }
 
-    GET bounded_format_host(first: crate::FormatProbe, tail: crate::FormatProbe) -> Bytes using Bytes {
+    GET bounded_format_host(first: crate::FormatProbe, tail: crate::FormatProbe) -> Bytes via Binary {
         subdomain replace [concat [concat [endpoint.first], concat [endpoint.tail]]];
     }
 
-    GET bounded_format_query(first: crate::FormatProbe, tail: crate::FormatProbe) -> Bytes using Bytes {
+    GET bounded_format_query(first: crate::FormatProbe, tail: crate::FormatProbe) -> Bytes via Binary {
         query { "formatted" = concat [concat [endpoint.first], concat [endpoint.tail]]; }
     }
 
-    GET bounded_format_header(first: crate::FormatProbe, tail: crate::FormatProbe) -> Bytes using Bytes {
+    GET bounded_format_header(first: crate::FormatProbe, tail: crate::FormatProbe) -> Bytes via Binary {
         headers { "X-Formatted" = concat [concat [endpoint.first], concat [endpoint.tail]]; }
     }
 
-    GET failing_format(value: crate::FailingFormatProbe) -> Bytes using Bytes {
+    GET failing_format(value: crate::FailingFormatProbe) -> Bytes via Binary {
         path [concat ["prefix-", endpoint.value]];
     }
 
@@ -267,7 +305,7 @@ api! {
                 id: String,
                 verbose?: bool,
                 endpoint_marker: crate::DropProbe = crate::ENDPOINT_DEFAULT,
-            ) -> Bytes using Bytes {
+            ) -> Bytes via Binary {
                 path [concat ["id-", endpoint.id]];
                 query {
                     "verbose" = endpoint.verbose;
@@ -282,27 +320,27 @@ api! {
 
 api! {
     client OtherApi {
-        timeout off;
+        timeout 30s;
         base "http://other.request-shaping.example.test/";
         values {
             label?: String;
         }
 
 
-    GET echo(verbose?: bool) -> Bytes using Bytes {
+    GET echo(verbose?: bool) -> Bytes via Binary {
         path ["echo"];
         query {
             "label" = client.label;
             "verbose" = endpoint.verbose;
         }
     }
-    PUT put() -> () using NoContent { path ["put"]; }
-    PATCH patch() -> () using NoContent { path ["patch"]; }
-    DELETE delete() -> () using NoContent { path ["delete"]; }
-    HEAD head() -> () using NoContent { path ["head"]; }
-    OPTIONS options() -> () using NoContent { path ["options"]; }
-    METHOD("TRACE") trace() -> () using NoContent { path ["trace"]; }
-    GET r#type() -> () using NoContent { path ["keyword"]; }
+    PUT put() -> () via Empty { path ["put"]; }
+    PATCH patch() -> () via Empty { path ["patch"]; }
+    DELETE delete() -> () via Empty { path ["delete"]; }
+    HEAD head() -> () via Empty { path ["head"]; }
+    OPTIONS options() -> () via Empty { path ["options"]; }
+    METHOD("PROPFIND") propfind() -> () via Empty { path ["propfind"]; }
+    GET r#type() -> () via Empty { path ["keyword"]; }
 }}
 
 api! {
@@ -313,21 +351,21 @@ api! {
 
     scope timed() {
         timeout 10ms;
-        GET scope_inherited() -> Bytes using Bytes { path ["scope-inherited"]; }
-        GET endpoint_override() -> Bytes using Bytes {
+        GET scope_inherited() -> Bytes via Binary { path ["scope-inherited"]; }
+        GET endpoint_override() -> Bytes via Binary {
             path ["endpoint-override"];
             timeout 200ms;
         }
-        GET endpoint_off() -> Bytes using Bytes {
-            path ["endpoint-off"];
-            timeout off;
+        GET endpoint_long() -> Bytes via Binary {
+            path ["endpoint-long"];
+            timeout 30s;
         }
     }
 }}
 
 api! {
     client OptionalControlApi {
-        timeout off;
+        timeout 30s;
         base "http://optional-controls.example.test/";
         values {
             client_label?: &'static str = crate::OPTIONAL_CLIENT_DEFAULT;
@@ -347,7 +385,7 @@ api! {
         GET inspect(
             endpoint_label?: &'static str = crate::OPTIONAL_ENDPOINT_DEFAULT,
             values?: Vec<&'static str> = crate::OPTIONAL_VALUES_DEFAULT,
-        ) -> Bytes using Bytes {
+        ) -> Bytes via Binary {
             query {
                 "endpoint_label" = endpoint.endpoint_label;
                 "value" = each endpoint.values;
@@ -358,7 +396,7 @@ api! {
 
 api! {
     client TraitDefaultTimingApi {
-        timeout off;
+        timeout 30s;
         base "http://trait-default-timing.example.test/";
         values {
             #[default]
@@ -373,7 +411,7 @@ api! {
 
 
     scope group(#[default] scope_probe: crate::ScopeTraitDefaultProbe) {
-        GET read(#[default] endpoint_probe: crate::EndpointTraitDefaultProbe) -> Bytes using Bytes;
+        GET read(#[default] endpoint_probe: crate::EndpointTraitDefaultProbe) -> Bytes via Binary;
     }
 }}
 
@@ -456,7 +494,7 @@ async fn required_optional_defaulted_client_values_and_missing_input_are_stable(
 }
 
 #[test]
-fn defaulted_option_client_clear_and_reset_are_distinct_override_states() {
+fn defaulted_option_client_omit_and_reset_are_distinct_override_states() {
     let default_client = OptionalControlApi::new().expect("default optional-control client");
     let default_url = optional_control_url(
         &default_client,
@@ -473,7 +511,7 @@ fn defaulted_option_client_clear_and_reset_are_distinct_override_states() {
     assert!(selected_url.contains("client_label=client-chosen"));
 
     let cleared = OptionalControlApi::builder()
-        .clear_client_label()
+        .omit_client_label()
         .build()
         .expect("explicitly absent client label");
     let cleared_url =
@@ -481,7 +519,7 @@ fn defaulted_option_client_clear_and_reset_are_distinct_override_states() {
     assert!(!cleared_url.contains("client_label="));
 
     let reset = OptionalControlApi::builder()
-        .clear_client_label()
+        .omit_client_label()
         .reset_client_label()
         .build()
         .expect("reset client label");
@@ -509,7 +547,7 @@ fn trait_default_evaluation_preserves_owner_and_reset_timing() {
         .set_scalar(7)
         .reset_scalar()
         .with_optional("chosen".to_owned())
-        .clear_optional()
+        .omit_optional()
         .reset_optional()
         .set_vector(vec!["chosen".to_owned()])
         .reset_vector()
@@ -620,10 +658,10 @@ fn explicit_snapshots_restore_defaulted_option_and_option_vec_values() {
 
     let cleared = OptionalControlApi::unbound()
         .groups()
-        .clear_scope_label()
+        .omit_scope_label()
         .inspect()
-        .clear_endpoint_label()
-        .clear_values();
+        .omit_endpoint_label()
+        .omit_values();
     let cleared_url = optional_control_url(&client, &cleared);
     assert!(!cleared_url.contains("scope_label="));
     assert!(!cleared_url.contains("endpoint_label="));
@@ -631,10 +669,10 @@ fn explicit_snapshots_restore_defaulted_option_and_option_vec_values() {
 
     let reset = OptionalControlApi::unbound()
         .groups()
-        .clear_scope_label()
+        .omit_scope_label()
         .reset_scope_label()
         .inspect()
-        .clear_endpoint_label()
+        .omit_endpoint_label()
         .reset_endpoint_label()
         .with_values(vec!["discarded"])
         .reset_values();
@@ -668,13 +706,13 @@ async fn scope_and_request_controls_share_defaulted_option_snapshot_semantics() 
         .expect("selected scope value");
     client
         .groups()
-        .clear_scope_label()
+        .omit_scope_label()
         .inspect()
         .await
         .expect("cleared scope value");
     client
         .groups()
-        .clear_scope_label()
+        .omit_scope_label()
         .reset_scope_label()
         .inspect()
         .await
@@ -688,13 +726,13 @@ async fn scope_and_request_controls_share_defaulted_option_snapshot_semantics() 
     client
         .groups()
         .inspect()
-        .clear_endpoint_label()
+        .omit_endpoint_label()
         .await
         .expect("cleared request value");
     client
         .groups()
         .inspect()
-        .clear_endpoint_label()
+        .omit_endpoint_label()
         .reset_endpoint_label()
         .await
         .expect("reset request value");
@@ -707,7 +745,7 @@ async fn scope_and_request_controls_share_defaulted_option_snapshot_semantics() 
     client
         .groups()
         .inspect()
-        .clear_values()
+        .omit_values()
         .await
         .expect("cleared request vector");
     client
@@ -759,7 +797,7 @@ async fn nested_facade_extension_setters_and_explicit_endpoint_have_head_parity(
         .expect("other client");
     let reset_other = OtherApi::builder()
         .with_label("unused".to_owned())
-        .clear_label()
+        .omit_label()
         .build()
         .expect("cleared optional client value");
     drop(reset_other);
@@ -790,7 +828,7 @@ async fn nested_facade_extension_setters_and_explicit_endpoint_have_head_parity(
         .root()
         .timeout(Duration::from_secs(1))
         .with_verbose(true)
-        .inherit_timeout()
+        .reset_timeout()
         .response()
         .await
         .expect("metadata after generated extension setter");
@@ -877,7 +915,7 @@ async fn consuming_request_setters_keep_sibling_snapshots_isolated() {
     let client = shaped_client(&server);
 
     let selected = client.root().with_verbose(true);
-    let cleared = client.root().with_verbose(false).clear_verbose();
+    let cleared = client.root().with_verbose(false).omit_verbose();
     assert_eq!(selected.await.expect("selected sibling"), b"selected"[..]);
     assert_eq!(cleared.await.expect("cleared sibling"), b"cleared"[..]);
 
@@ -898,7 +936,7 @@ async fn facade_setters_leave_the_source_scope_snapshot_unchanged() {
     let source = client
         .regions("eu".to_owned())
         .with_language("fr".to_owned());
-    let cleared = source.clone().clear_language();
+    let cleared = source.clone().omit_language();
 
     assert_eq!(
         source
@@ -934,7 +972,7 @@ async fn independently_built_clients_retain_independent_value_snapshots() {
         .set_tenant("discarded".to_owned())
         .set_tenant("tenant-one".to_owned())
         .with_locale("discarded".to_owned())
-        .clear_locale()
+        .omit_locale()
         .set_client_marker(DropProbe::new("discarded", explicit_drops))
         .reset_client_marker()
         .configure_http(move |http| http.proxy(first_proxy))
@@ -995,7 +1033,7 @@ async fn collection_queries_and_every_standard_method_preserve_runtime_order() {
     other.delete().await.expect("DELETE");
     other.head().await.expect("HEAD");
     other.options().await.expect("OPTIONS");
-    other.trace().await.expect("TRACE");
+    other.propfind().await.expect("PROPFIND");
     other.r#type().await.expect("raw-keyword alias");
 
     let requests = server.requests();
@@ -1013,7 +1051,9 @@ async fn collection_queries_and_every_standard_method_preserve_runtime_order() {
             .iter()
             .map(|request| request.method())
             .collect::<Vec<_>>(),
-        ["PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE", "GET"]
+        [
+            "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "PROPFIND", "GET"
+        ]
     );
 }
 
@@ -1065,7 +1105,7 @@ async fn response_accept_and_body_specs_own_media_headers() {
     assert_eq!(text, b"text-body"[..]);
 
     let stream = client
-        .stream_body(StreamBody::from_bytes(Bytes::from_static(b"stream")))
+        .stream_body(RequestStream::from_bytes(Bytes::from_static(b"stream")))
         .await
         .expect("stream body specification");
     assert_eq!(stream, b"stream-body"[..]);
@@ -1216,7 +1256,7 @@ async fn generated_nested_formats_stop_at_the_core_bound_and_return_structured_e
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn generated_timeout_inheritance_off_and_request_overrides_remain_distinct() {
+async fn generated_finite_timeout_inheritance_and_request_reset_remain_distinct() {
     let _guard = request_shaping_test_guard().await;
     let gate = BodyGate::closed();
     let server = Arc::new(
@@ -1241,28 +1281,28 @@ async fn generated_timeout_inheritance_off_and_request_overrides_remain_distinct
         let client = client.clone();
         async move { client.timed().endpoint_override().await }
     });
-    let endpoint_off = tokio::spawn({
+    let endpoint_long = tokio::spawn({
         let client = client.clone();
-        async move { client.timed().endpoint_off().await }
+        async move { client.timed().endpoint_long().await }
     });
     let local = tokio::spawn({
         let client = client.clone();
         async move {
             client
                 .timed()
-                .endpoint_off()
+                .endpoint_long()
                 .timeout(Duration::from_millis(10))
                 .await
         }
     });
-    let disabled = tokio::spawn({
+    let reset = tokio::spawn({
         let client = client.clone();
         async move {
             client
                 .timed()
-                .endpoint_off()
+                .endpoint_long()
                 .timeout(Duration::from_millis(10))
-                .disable_timeout()
+                .reset_timeout()
                 .await
         }
     });
@@ -1272,8 +1312,8 @@ async fn generated_timeout_inheritance_off_and_request_overrides_remain_distinct
             client
                 .timed()
                 .endpoint_override()
-                .disable_timeout()
-                .inherit_timeout()
+                .timeout(Duration::from_millis(5))
+                .reset_timeout()
                 .await
         }
     });
@@ -1287,7 +1327,10 @@ async fn generated_timeout_inheritance_off_and_request_overrides_remain_distinct
             .accepted_bytes()
             .build()
             .expect("runtime endpoint");
-            client.request(endpoint).await
+            endpoint
+                .try_bind(&client)
+                .expect("runtime endpoint binds to client")
+                .await
         }
     });
 
@@ -1301,7 +1344,7 @@ async fn generated_timeout_inheritance_off_and_request_overrides_remain_distinct
     let local = local
         .await
         .expect("request-local timeout task")
-        .expect_err("request-local timeout must override endpoint off");
+        .expect_err("request-local timeout must override the endpoint deadline");
     assert_eq!(local.category(), ErrorCategory::Timeout);
     let runtime_inherited = runtime_inherited
         .await
@@ -1318,17 +1361,17 @@ async fn generated_timeout_inheritance_off_and_request_overrides_remain_distinct
         b"done"[..]
     );
     assert_eq!(
-        endpoint_off
+        endpoint_long
             .await
-            .expect("endpoint timeout off task")
-            .expect("endpoint timeout off"),
+            .expect("long endpoint timeout task")
+            .expect("long endpoint timeout"),
         b"done"[..]
     );
     assert_eq!(
-        disabled
+        reset
             .await
-            .expect("request-local disable task")
-            .expect("request-local disable"),
+            .expect("request-local reset task")
+            .expect("request-local reset"),
         b"done"[..]
     );
     assert_eq!(

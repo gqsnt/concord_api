@@ -3,13 +3,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use concord::api;
-use concord::body::Stream;
-use concord::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext, OctetStream};
+use concord::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};
 use concord::endpoint::AcceptedBytesRequest;
 use concord::error::ErrorCategory;
 use concord::http::{SafeProxy, StatusCode};
-use concord::response::{Buffered, ResponseBodyError, ResponseHead, ResponseSpec};
-use concord::{ApiResponse, Bytes};
+use concord::response::{Buffered, ResponseBodyError, ResponseHead, ResponseRepresentation};
+use concord::{ApiResponse, Binary, Bytes};
 use concord_test_support::server::{BodyGate, ResponseScript, ScriptedServer};
 
 static CONTENT_TYPE_VALIDATIONS: AtomicUsize = AtomicUsize::new(0);
@@ -40,16 +39,11 @@ impl DecodeBody for ObservedCodec {
 
 pub struct AcceptedMissing;
 
-impl ResponseSpec for AcceptedMissing {
-    type Output = String;
-    type Mode = Buffered;
+impl ResponseRepresentation<String> for AcceptedMissing {
+    type Driver = Buffered;
 
     fn accept() -> Option<&'static str> {
         Some("application/x-accepted-missing")
-    }
-
-    fn accepts_status(status: StatusCode) -> bool {
-        status == StatusCode::NOT_FOUND
     }
 
     fn validate(_head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
@@ -57,7 +51,7 @@ impl ResponseSpec for AcceptedMissing {
         Ok(())
     }
 
-    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
+    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<String, ResponseBodyError> {
         ACCEPTED_SPEC_CALLBACKS.fetch_add(1, Ordering::SeqCst);
         Ok(String::from_utf8_lossy(&body).into_owned())
     }
@@ -65,25 +59,29 @@ impl ResponseSpec for AcceptedMissing {
 
 api! {
     client AcceptedBytesApi {
-        timeout off;
+        timeout 30s;
         base "http://response-bytes.example.test/root/";
 
 
-    GET text_value() -> String using Text { path ["text"]; expose accepted_bytes; }
-    GET custom_value() -> String using crate::ObservedCodec { path ["custom"]; expose accepted_bytes; }
-    GET bytes_value() -> Bytes using Bytes { path ["bytes"]; expose accepted_bytes; }
-    GET empty_value() -> () using NoContent { path ["empty"]; expose accepted_bytes; }
-    GET accepted_missing() -> String using crate::AcceptedMissing { path ["accepted"]; expose accepted_bytes; }
-    GET stream_value() -> ::concord::response::ByteStream using Stream<OctetStream> { path ["stream"]; }
+    GET text_value() -> String via Text { path ["text"]; expose accepted_bytes; }
+    GET custom_value() -> String via crate::ObservedCodec { path ["custom"]; expose accepted_bytes; }
+    GET bytes_value() -> Bytes via Binary { path ["bytes"]; expose accepted_bytes; }
+    GET empty_value() -> () via Empty { path ["empty"]; expose accepted_bytes; }
+    GET accepted_missing() -> String via crate::AcceptedMissing {
+        path ["accepted"];
+        status 404;
+        expose accepted_bytes;
+    }
+    GET stream_value() -> ::concord::response::ByteStream via Binary { path ["stream"]; }
 }}
 
 api! {
     client AcceptedBytesJsonApi {
-        timeout off;
+        timeout 30s;
         base "http://response-bytes-json.example.test/";
 
 
-    GET json_value() -> Vec<u32> using crate::support::Json<Vec<u32>> { expose accepted_bytes; }
+    GET json_value() -> Vec<u32> via crate::support::Json { expose accepted_bytes; }
 }}
 
 fn proxy(server: &ScriptedServer) -> SafeProxy {

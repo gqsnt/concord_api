@@ -72,14 +72,8 @@ impl RateLimiter for CapturingLimiter {
         })
     }
 
-    fn observe<'a>(
-        &'a self,
-        _response: RateLimitResponse<'a>,
-    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
-        Box::pin(async move {
-            self.observations.fetch_add(1, Ordering::SeqCst);
-            Ok(())
-        })
+    fn observe(&self, _response: RateLimitResponse<'_>) {
+        self.observations.fetch_add(1, Ordering::SeqCst);
     }
 }
 
@@ -181,7 +175,7 @@ fn canonical_text(value: &str) -> Vec<u8> {
     bytes
 }
 
-fn empty_runtime_endpoint() -> RuntimeEndpoint<Bytes> {
+fn empty_runtime_endpoint() -> RuntimeEndpoint<runtime::Binary, Bytes> {
     RuntimeEndpoint::builder(
         EndpointId::try_from("runtime.empty").expect("runtime endpoint ID"),
         Method::GET,
@@ -192,7 +186,7 @@ fn empty_runtime_endpoint() -> RuntimeEndpoint<Bytes> {
     .expect("empty runtime endpoint")
 }
 
-fn explicit_runtime_endpoint() -> RuntimeEndpoint<Bytes> {
+fn explicit_runtime_endpoint() -> RuntimeEndpoint<runtime::Binary, Bytes> {
     RuntimeEndpoint::builder(
         EndpointId::try_from("runtime.explicit").expect("runtime endpoint ID"),
         Method::GET,
@@ -272,9 +266,15 @@ async fn generated_clients_fail_closed_without_local_limiter_unless_limiter_is_d
     assert_eq!(generated_plan[0].len(), 1);
     assert_eq!(
         generated_plan[0][0].id,
-        "limited_generated_api.rate_limit.fixture_limit"
+        "fixture.generated.limit"
     );
-    assert!(generated_plan[0][0].parts.is_empty());
+    assert_eq!(
+        generated_plan[0][0].parts,
+        [(
+            "origin".to_owned(),
+            canonical_text("http://no-local-limiter-limited.example.test:80"),
+        )]
+    );
     assert_eq!(generated_plan[0][0].cost, 2);
     assert_eq!(
         generated_plan[0][0].windows,
@@ -300,14 +300,16 @@ async fn generated_clients_fail_closed_without_local_limiter_unless_limiter_is_d
         })
         .build()
         .expect("empty runtime fallback client");
-    empty_runtime_client
-        .request(empty_runtime_endpoint())
+    empty_runtime_endpoint()
+        .try_bind(&empty_runtime_client)
+        .expect("empty runtime endpoint binds")
         .await
         .expect("empty runtime fallback request");
     assert_eq!(server.request_count(), 4);
 
-    let nonempty_fallback = empty_runtime_client
-        .request(explicit_runtime_endpoint())
+    let nonempty_fallback = explicit_runtime_endpoint()
+        .try_bind(&empty_runtime_client)
+        .expect("rate-limited runtime endpoint binds")
         .await;
     let error = nonempty_fallback.expect_err("runtime fallback must fail before send");
     assert_eq!(error.category(), ErrorCategory::RateLimit);
@@ -329,8 +331,9 @@ async fn generated_clients_fail_closed_without_local_limiter_unless_limiter_is_d
         })
         .build()
         .expect("custom runtime limiter client");
-    custom_runtime_client
-        .request(explicit_runtime_endpoint())
+    explicit_runtime_endpoint()
+        .try_bind(&custom_runtime_client)
+        .expect("rate-limited runtime endpoint binds")
         .await
         .expect("custom runtime request");
     assert_eq!(server.request_count(), 5);
@@ -363,8 +366,9 @@ async fn generated_clients_fail_closed_without_local_limiter_unless_limiter_is_d
         .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
         .build()
         .expect("no-op runtime client");
-    noop_runtime_client
-        .request(explicit_runtime_endpoint())
+    explicit_runtime_endpoint()
+        .try_bind(&noop_runtime_client)
+        .expect("rate-limited runtime endpoint binds")
         .await
         .expect("no-op runtime request");
     assert_eq!(server.request_count(), 6);

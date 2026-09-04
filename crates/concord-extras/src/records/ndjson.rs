@@ -2,10 +2,12 @@ use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 
 use concord_core::contracts::{
-    Buffered, BufferedRecords, Bytes, BytesMut, PageResponseSpec, ResponseBodyError, ResponseHead,
-    ResponseSpec,
+    Buffered, Bytes, BytesMut, ItemStream, PageResponseRepresentation, ResponseBodyError,
+    ResponseDriver, ResponseHead, ResponseRepresentation, Streaming,
 };
-use concord_core::records::{RecordDecoder, RecordError, RecordErrorKind};
+use concord_core::records::{
+    RecordDecoder, RecordError, RecordErrorKind, decode_complete_records, validate_record_decoder,
+};
 use serde::de::DeserializeOwned;
 
 const MAX_STAGED_RECORD_BYTES: usize = 1024 * 1024;
@@ -14,18 +16,21 @@ const MAX_STAGED_RECORD_BYTES: usize = 1024 * 1024;
 ///
 /// One typed JSON value is decoded from each non-empty UTF-8 LF or CRLF line;
 /// whitespace-only lines are ignored and the final line may omit its newline.
-/// A direct `NdJson<T>` response completely acquires the bounded body and
-/// returns `Vec<T>`; [`Records<NdJson<T>>`](concord_core::records::Records)
-/// returns a lazy record stream through the same decoder and core driver.
+/// `NdJson` with `Vec<T>` completely acquires the bounded body; `NdJson` with
+/// [`ItemStream<T>`] returns a lazy semantic stream through the same decoder
+/// and sealed core driver.
 /// Undecoded staging is bounded to 1 MiB. Parser text, raw lines, and JSON values
 /// are absent from errors. This type is available through the independent
 /// `ndjson` feature and does not require the general endpoint `json` feature.
-pub struct NdJson<T> {
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct NdJson;
+
+struct NdJsonDecoder<T> {
     scan_index: usize,
     marker: PhantomData<fn() -> T>,
 }
 
-impl<T> NdJson<T>
+impl<T> NdJsonDecoder<T>
 where
     T: DeserializeOwned + Send + 'static,
 {
@@ -82,7 +87,7 @@ where
     }
 }
 
-impl<T> RecordDecoder for NdJson<T>
+impl<T> RecordDecoder for NdJsonDecoder<T>
 where
     T: DeserializeOwned + Send + 'static,
 {
@@ -126,27 +131,50 @@ where
     }
 }
 
-impl<T> ResponseSpec for NdJson<T>
+impl<T> ResponseRepresentation<Vec<T>> for NdJson
 where
     T: DeserializeOwned + Send + 'static,
 {
-    type Output = Vec<T>;
-    type Mode = Buffered;
+    type Driver = Buffered;
 
     fn accept() -> Option<&'static str> {
-        <BufferedRecords<Self> as ResponseSpec>::accept()
+        NdJsonDecoder::<T>::accept()
     }
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
-        <BufferedRecords<Self> as ResponseSpec>::validate(head)
+        validate_record_decoder::<NdJsonDecoder<T>>(head)
     }
 
-    fn from_body(body: Bytes, head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
-        <BufferedRecords<Self> as ResponseSpec>::from_body(body, head)
+    fn from_body(body: Bytes, head: &ResponseHead<'_>) -> Result<Vec<T>, ResponseBodyError> {
+        decode_complete_records::<NdJsonDecoder<T>>(body, head)
     }
 }
 
-impl<T> PageResponseSpec for NdJson<T> where T: DeserializeOwned + Send + 'static {}
+impl<T> PageResponseRepresentation<Vec<T>> for NdJson where T: DeserializeOwned + Send + 'static {}
+
+impl<T> ResponseRepresentation<ItemStream<T>> for NdJson
+where
+    T: DeserializeOwned + Send + 'static,
+{
+    type Driver = Streaming;
+
+    fn accept() -> Option<&'static str> {
+        NdJsonDecoder::<T>::accept()
+    }
+
+    fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
+        NdJsonDecoder::<T>::validate(head).map_err(|_| {
+            ResponseBodyError::new(concord_core::contracts::ResponseBodyErrorKind::InvalidMediaType)
+        })
+    }
+
+    fn from_body(
+        body: <Self::Driver as ResponseDriver>::Body,
+        head: &ResponseHead<'_>,
+    ) -> Result<ItemStream<T>, ResponseBodyError> {
+        ItemStream::decode_with::<NdJsonDecoder<T>>(body, head)
+    }
+}
 
 fn is_ndjson_media_type(value: &str) -> bool {
     value.parse::<mime::Mime>().is_ok_and(|media| {
@@ -169,8 +197,8 @@ mod tests {
         text: String,
     }
 
-    fn decoder() -> NdJson<Value> {
-        NdJson {
+    fn decoder() -> NdJsonDecoder<Value> {
+        NdJsonDecoder {
             scan_index: 0,
             marker: PhantomData,
         }
@@ -242,19 +270,23 @@ mod tests {
             "application/ndjson; broken=\"unterminated"
         ));
         assert_eq!(
-            <NdJson<Value> as RecordDecoder>::accept(),
+            <NdJsonDecoder<Value> as RecordDecoder>::accept(),
             Some("application/x-ndjson")
         );
-        assert_eq!(NdJson::<Value>::max_buffered_bytes().get(), 1024 * 1024);
+        assert_eq!(
+            NdJsonDecoder::<Value>::max_buffered_bytes().get(),
+            1024 * 1024
+        );
 
         fn complete_page_spec<S>()
         where
-            S: ResponseSpec<Output = Vec<Value>, Mode = Buffered> + PageResponseSpec,
+            S: ResponseRepresentation<Vec<Value>, Driver = Buffered>
+                + PageResponseRepresentation<Vec<Value>>,
         {
         }
-        complete_page_spec::<NdJson<Value>>();
+        complete_page_spec::<NdJson>();
         assert_eq!(
-            <NdJson<Value> as ResponseSpec>::accept(),
+            <NdJson as ResponseRepresentation<Vec<Value>>>::accept(),
             Some("application/x-ndjson")
         );
     }

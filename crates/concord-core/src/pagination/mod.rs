@@ -15,7 +15,10 @@ mod limits;
 mod pending;
 
 pub use crate::error::PaginationErrorKind;
-pub use controller::PaginationController;
+pub use controller::{
+    MAX_PAGINATION_HEADER_BYTES, MAX_PAGINATION_HEADER_INTERESTS, PageCorrelation,
+    PageDecisionLimits, PageResponse, PageStep, PaginationController, PaginationDescription,
+};
 pub use error::PaginationError;
 pub use pending::{PageLimit, PaginatedEndpoint, PaginatedRequest};
 

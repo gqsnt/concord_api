@@ -1,144 +1,56 @@
-# Concord v2 design invariants
+# Concord v2.1 design invariants
 
-- **Audience:** maintainers and extension authors
-- **Purpose:** normative cross-cutting reference
+These invariants are normative.
 
-Concord v2 is a contract language that projects one semantic API model into a
-domain-shaped Rust client, bounded managed execution, and inspectable
-operational evidence. The [DSL specification](spec.md) owns syntax and the
-[runtime model](runtime.md) owns execution detail; this page owns the laws that
-cross those boundaries.
+## Language and projection
 
-## One semantic graph
+1. One `api!` invocation contains exactly one closed client-shaped domain tree.
+2. Rust payload types are opaque. The macro never assigns semantics by recognizing `Option`, `Vec`, aliases, qualification, stream names, or other type spelling.
+3. `?` adds exactly one Concord-owned outer presence layer.
+4. `#[default]` adds retained initialization at the narrowest owner-snapshot boundary.
+5. `#[sensitive]` classifies public protocol data for observation; it does not make the value a credential.
+6. Every public value reference names an exact owner: `client`, a named visible scope, or `endpoint`.
+7. One atom expression creates one scalar atom. `each` alone expands an ordered sequence into repeated query/header occurrences.
+8. Public protocol atoms use `RequestAtom` or an explicit adapter, not implicit `Display`.
+9. Body input is exactly what the caller supplies. The result type is exactly what ordinary `.await` returns.
+10. Request and response representation, status, and effect have independent owners.
+11. Generated direct, unbound, documentation, reflection, planning, and runtime bridge views derive from one canonical semantic graph.
+12. Capability methods are present exactly when the contract grants the capability.
 
-The macro resolves a raw declaration into one canonical, identity-bearing IR.
-Generated Rust, Rustdoc, public descriptions, collision checks, diagnostics,
-and semantic snapshots consume that IR. Emitters do not rediscover meaning
-from tokens or maintain a documentation-only model.
+## Runtime and authority
 
-Rust type tokens are opaque. Optionality comes only from `?`, initialization
-from `#[default]` or a stable initializer, repetition from `each`, and body or
-response behavior from an explicit `using` specification.
+13. Every request form uses one managed executor.
+14. Core alone owns native request/response objects and transport execution.
+15. Public shaping and observation happen before private credential placement.
+16. Every generated operation has one positive finite absolute deadline.
+17. Page and retry loops cannot reset or extend the operation deadline.
+18. Operation, pagination aggregate, page, visible attempt, and transport-private physical try remain distinct identities.
+19. Dispatch knowledge is conservative and monotonic: `NotDispatched`, `PossiblyDispatched`, `ResponseObserved`.
+20. Mechanical body replayability never implies endpoint `safe` or `idempotent` semantics.
+21. Policy retry, auth recovery, transport-private recovery, and pagination continuation are separate finite authorities.
+22. Ordinary pagination requires `effect safe` and a complete page response.
+23. A declared auth placement is never silently omitted because material is unavailable.
+24. At most one effective credential placement may attribute a recoverable challenge.
+25. Rate policies compose additively and descendants cannot disable an ancestor provider constraint.
+26. A client with effective rate policies requires an explicit limiter choice.
+27. Rate response feedback influences future admission and cannot replace the current endpoint result.
+28. General observation is read-only, synchronous, bounded, and non-fallible for the operation result.
+29. Lazy stream acquisition and later stream completion/failure are distinct lifecycles.
+30. Every growing dimension has an independent finite bound or an explicit caller-owned post-return contract.
 
-## One execution authority
+## Security and negative space
 
-Generated direct requests, bound unbound intents, runtime-defined endpoints,
-endpoint-backed credential operations, retries, authentication recovery,
-pagination pages, response terminals, and accepted-byte terminals use the
-same core executor. No public API exposes native request or response mutation.
+31. Secrets, credential material, private auth values, bodies, outputs, and raw rate keys never appear in general plans, errors, observer events, contract descriptions, or automatic debug output.
+32. Sensitive public values affect the real request and internal correctness identities while remaining redacted in automatic observation.
+33. Public/private/media/transport target ownership conflicts are errors; no last-writer precedence repairs them.
+34. The logical origin is fixed by the contract. A proxy may change routing but not origin identity or credential trust.
+35. Automatic redirects are disabled.
+36. Runtime endpoints cannot gain greater origin, auth, native, retry, or resource authority than generated endpoints.
+37. Extensions receive only the facts and authority required by one semantic role.
+38. Unsupported native middleware, arbitrary origins, cookies, caching, TRACE, CONNECT, upgrades, and WebSockets remain outside the product.
 
-Request construction, descriptions, and plans are inert. Managed effects begin
-only when an execution terminal is polled.
+## Evidence
 
-## Syntax-neutral core
-
-`concord-macros` owns grammar, names, source spans, semantic resolution, and
-projection. `concord-core` receives resolved typed operations and never parses
-or recognizes DSL spelling. The hidden generated bridge is versioned and
-contains semantic handoff only; v2 uses contract version 32.
-
-## Public before private
-
-Credential-free route, query, and header shaping and decision gates run before
-private credential placement. Credential material is resolved only inside its
-own bounded context and placed after rate admission. Secrets and credentials
-are structurally absent from public expressions, plans, descriptions, rate
-keys, gates, observers, errors, and ordinary diagnostics.
-
-`#[redact]` marks public data, not credentials. Its real value shapes the wire
-request and internal identities; every ordinary observation receives a fixed
-redacted marker. A `concat` depending on a redacted value is wholly redacted.
-
-## Immutable snapshots
-
-Built clients, scopes, endpoint intents, and requests are immutable snapshots.
-Controls consume a value and return a new one. Defaults are evaluated once at
-their narrowest owning snapshot and retained; request retries, recovery,
-pagination, and reset never reevaluate them.
-
-Client clones share transport, runtime policy, credential slots, limiter,
-retry budget, gates, observers, and diagnostics. Independent builds share only
-handles deliberately supplied by the application.
-
-## Capability-shaped API
-
-A terminal or control exists only when the declaration and core can enforce
-it. Pagination, accepted bytes, and credential storage are endpoint-specific.
-Response acquisition is one of the sealed finite modes `Buffered`,
-`Streaming`, or `Discard`.
-
-Method names state complete guarantees. `accepted_bytes` is bounded accepted
-data, not a native response; `CompleteWithin` is all-or-error if continuation
-remains; dropping a future stops local polling but does not prove remote
-cancellation.
-
-## Finite behavior
-
-Every growing dimension has a finite bound and a first-excess test: formatted
-atoms, hosts, paths, queries, headers, bodies, responses, streams, records,
-attempts, retry budget, pages, items, cycle state, provider traffic, canonical
-keys, limiter state owned by first-party implementations, diagnostic data, and
-observer queues.
-
-Known excess fails before retention. Iterator-like unknown excess consumes at
-most the first value that cannot be retained. Extension implementations must
-document and enforce bounds for state core cannot own.
-
-## Stable, distinct identities
-
-Endpoint, rate-policy, operation, attempt, aggregate-pagination, and page
-identity are distinct. Explicit endpoint and policy IDs are durable. Derived
-IDs are deterministic but rename-sensitive and described as such.
-
-Rate keys use canonical typed framing, never `Display` or `Debug`. Pagination
-cycles use the real credential-free request identity; observed cycle evidence
-is redacted.
-
-## Retry and dispatch truth
-
-Policy retry requires classifier approval plus core-owned stage,
-repeatability, replayability, attempt, shared-budget, and deadline gates.
-Authentication recovery is separate authority but remains within the same
-attempt and deadline bounds and reacquires rate admission.
-
-Errors report one of `NotDispatched`, `PossiblyDispatched`, or
-`ResponseReceived`. Concord never presents transport knowledge as proof of
-remote commit or rollback.
-
-## One aggregate deadline
-
-One caller-visible terminal allocates at most one absolute deadline when first
-polled. It covers gates, body work, credentials, limiter waits, dispatch,
-backoff, retries, recovery, acquisition, conversion, controller work, and all
-pagination pages. A page cannot reset that deadline.
-
-Completion observation happens after the result is fixed and cannot transform
-it. Synchronous extension callbacks are trusted bounded work; core checks the
-deadline before and after result-determining callbacks.
-
-## Narrow extension authority
-
-Each extension varies one named semantic decision. No extension may bypass
-route ownership, authentication isolation, retry gates, deadlines, rate
-admission, body or response bounds, or execution ordering. Gates may reject at
-their named phase. Completion observers only record a fixed bounded event.
-
-Runtime-defined endpoints are the dynamic-contract escape route, not a native
-HTTP escape hatch. They use the same executor, planner, patch vocabulary,
-limits, and response specifications as generated endpoints.
-
-## Responsibility boundaries
-
-- `concord-macros`: syntax, canonical IR, validation, projection, and static
-  reflection.
-- `concord-core`: bounded shaping, runtime snapshots, planning, execution,
-  authentication, rate admission, retries, deadlines, pagination, errors, and
-  observation.
-- `concord-extras`: optional codecs, providers, record helpers, limiters, and
-  bounded export adapters.
-- `concord`: curated re-exports, feature composition, macro entry point, and
-  hidden bridge path.
-
-Changes may strengthen implementation or diagnostics, but must preserve these
-laws or explicitly revise the v2 contract and its tests. There is no frozen v1
-compatibility mode.
+39. Selected public syntax is not considered cognitively supported until unfamiliar-user tasks are run.
+40. Representation traits, stream erasure, and large-contract metadata are not considered mechanically/performance supported until the release gates pass.
+41. A private implementation may change to satisfy Rust coherence or performance; changing any invariant above requires an ADR, counterexample, and updated evidence.

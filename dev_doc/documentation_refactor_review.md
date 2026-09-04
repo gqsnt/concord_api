@@ -1,48 +1,40 @@
-# Concord v2 documentation review
+# Documentation refactor review for v2.1
 
-## Scope
+## Objective
 
-The public documentation was rewritten as one v2 corpus rather than mechanically
-renaming the previous language. `docs/spec.md`, `docs/runtime.md`, and
-`docs/design_invariants.md` remain the normative owners. Topic guides explain
-those rules without defining parallel semantics. `docs/README.md` inventories
-every top-level user page exactly once.
+Replace the v1 documentation set with one coherent v2.1 task-oriented set while code lands in semantic slices.
 
-## Evidence model
+## Risks
 
-Prominent complete examples use `concord-source` anchors into compiled
-`concord-examples` targets. Standalone DSL fences must occur in the compiled
-`docs_spec.rs` fixture. The PowerShell checker validates anchor containment and
-integrity, normalized source equality, closed fences, local links/fragments,
-and documentation inventory coverage.
+- installing target docs before behavior exists;
+- leaving v1 and v2.1 examples side by side;
+- repeating normative semantics with divergent wording;
+- inherited representation hidden from endpoint-first docs;
+- release claims stronger than evidence gates;
+- source-anchor breakage during large example migration.
 
-Anchors are restricted to compiled Rust files beneath
-`crates/concord-examples/src` or `crates/concord-examples/tests`. Absolute paths,
-upward traversal, other extensions, duplicate/unbalanced/overlapping markers,
-and empty regions fail. Proper nesting is supported and nested marker lines are
-excluded from rendered source.
+## Refactor sequence
 
-## v2 corrections
+1. Add target docs under a versioned implementation branch or staged directory.
+2. Land design invariants and vocabulary with the canonical IR phase.
+3. Update subsystem docs only with the corresponding code slice.
+4. Keep migration guide recording old forms as quotations.
+5. Migrate compile-checked examples and anchors in the same change as syntax/public API.
+6. Update generated Rustdoc/descriptions before claiming inherited representation is usable.
+7. Remove superseded v1 docs/public aliases after all internal call sites move.
+8. Run stale-vocabulary search and docs gates.
 
-- All declarations contain descendants inside their client.
-- Teaching signatures show the real domain input/output before `using Spec`.
-- Optionality, defaults, and repetition are taught as independent facts.
-- Query/header/subdomain/path/auth inheritance is described as explicit patch
-  algebra.
-- Plans are named credential-free and are described as potentially containing
-  visible sensitive public data.
-- Retry docs include repeatability, replayability, stage, dispatch knowledge,
-  budget, attempt, and aggregate deadline gates.
-- Pagination docs state one deadline and the exact prefix/complete-within laws.
-- Rate docs require explicit limiter enforcement and canonical typed keys.
-- Decision gates and completion observation are documented as different
-  authorities.
-- Runtime endpoint docs use the v2 builder vocabulary and reject native escape
-  semantics.
-- Migration documentation is the only user-facing home for retired spellings.
+## Review checklist
 
-## Gate
+- Does each file have one audience and purpose?
+- Is every normative statement owned/tested?
+- Does the endpoint-first experience show exact type, representation origin, status, effect, and capability?
+- Are private/sensitive examples sanitized?
+- Are unsupported features described as unsupported rather than “not yet documented”?
+- Are provisional cognitive/performance claims labeled?
+- Can a migrator distinguish mechanical rewrite from semantic review?
+- Are duplicated explanations links rather than divergent restatements?
 
-Documentation is accepted only when `just docs` and the full `just verify` pass.
-The final implementation report records the exact run results; this review does
-not pre-assert a green gate.
+## Stop condition
+
+The documentation refactor is complete when an unfamiliar user can follow quick start, add one endpoint, inspect inherited representation, understand one failure, and find exact semantics without opening source or a superseded design report.

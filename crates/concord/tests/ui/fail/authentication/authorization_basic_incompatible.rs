@@ -2,7 +2,7 @@ use concord::api;
 
 api! {
     client Api {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
         credentials {
             secret username;
@@ -11,7 +11,7 @@ api! {
         }
 
 
-    GET protected() -> Bytes using Bytes {
+    GET protected() -> Bytes via Binary {
         auth { authorization = login; }
     }
 }}

@@ -57,7 +57,7 @@ impl CredentialProvider for Provider {
 
 api! {
     client Api {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
         credentials {
             secret key;
@@ -69,17 +69,17 @@ api! {
         }
 
 
-    GET acquire() -> crate::Session using crate::SessionCodec;
-    GET exact_key() -> Bytes using Bytes {
+    GET acquire() -> crate::Session via crate::SessionCodec;
+    GET exact_key() -> Bytes via Binary {
         auth { authorization = api_key; }
     }
-    GET exact_bearer() -> Bytes using Bytes {
+    GET exact_bearer() -> Bytes via Binary {
         auth { authorization = bearer; }
     }
-    GET scheme_endpoint() -> Bytes using Bytes {
+    GET scheme_endpoint() -> Bytes via Binary {
         auth { authorization "Session" = endpoint; }
     }
-    GET scheme_provider() -> Bytes using Bytes {
+    GET scheme_provider() -> Bytes via Binary {
         auth { authorization "tOkEn" = provider; }
     }
 }}

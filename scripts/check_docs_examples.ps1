@@ -9,6 +9,7 @@ $docs = Join-Path $root 'docs'
 $docsIndex = Join-Path $docs 'README.md'
 $fixture = Join-Path $root 'crates/concord-examples/src/docs_spec.rs'
 $dslLanguage = 'concord'
+$dslPseudocodeLanguage = 'concord-pseudocode'
 $dslStart = '^\s*(?:api!|client\s|scope\s|(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s|METHOD\s*\(|values\s*\{|credentials\s*\{|subdomain\s|path\s|query(?:\s+replace)?\s*\{|query\s+off|headers(?:\s+replace)?\s*\{|headers\s+off|auth(?:\s+replace)?\s*\{|auth\s+off|accept\s|timeout\s|repeatability\s|paginate\s+with\s|rate_limits\s*\{|rate_limit\s|concat\s*\[)'
 $sourceMarker = '^\s*<!--\s*concord-source:\s*([^#\s]+)#([A-Za-z0-9_-]+)\s*-->\s*$'
 $removedDocs = @(
@@ -285,6 +286,7 @@ $fixtureSource = Get-Content -LiteralPath $fixture -Raw
 $normalizedFixture = Get-NormalizedSource -Source $fixtureSource
 $errors = [System.Collections.Generic.List[string]]::new()
 $checkedDsl = 0
+$checkedDslPseudocode = 0
 $checkedAnchors = 0
 $checkedLinks = 0
 $checkedFragments = 0
@@ -309,7 +311,7 @@ foreach ($file in $markdownFiles | Sort-Object FullName -Unique) {
         # Source-anchored blocks quote compiled Rust and intentionally retain
         # the `rust` fence language. Only standalone DSL snippets use the
         # dedicated `concord` language marker.
-        if ($looksLikeDsl -and $null -eq $block.Source -and $block.Language -ne $dslLanguage) {
+        if ($looksLikeDsl -and $null -eq $block.Source -and $block.Language -in @('', 'rust')) {
             $errors.Add("${location}: DSL fence must use ``````${dslLanguage}")
         }
 
@@ -334,6 +336,11 @@ foreach ($file in $markdownFiles | Sort-Object FullName -Unique) {
             } elseif (-not $normalizedFixture.Contains((Get-NormalizedSource -Source $block.Body))) {
                 $fixtureRelative = [System.IO.Path]::GetRelativePath($root, $fixture)
                 $errors.Add("${location}: normalized DSL block is absent from ${fixtureRelative}")
+            }
+        } elseif ($block.Language -eq $dslPseudocodeLanguage) {
+            $checkedDslPseudocode++
+            if ([string]::IsNullOrWhiteSpace($block.Body)) {
+                $errors.Add("${location}: empty DSL pseudocode fence")
             }
         }
     }
@@ -418,6 +425,7 @@ if ($errors.Count -gt 0) {
 
 $fixtureRelative = [System.IO.Path]::GetRelativePath($root, $fixture)
 Write-Output "validated ${checkedDsl} DSL fences against ${fixtureRelative}"
+Write-Output "validated ${checkedDslPseudocode} explicitly labeled DSL pseudocode fences"
 Write-Output "validated ${checkedAnchors} source-anchored examples in $($anchorRoots -join ', ')"
 Write-Output "validated ${checkedLinks} local Markdown links and ${checkedFragments} heading fragments"
 Write-Output 'validated canonical docs/README.md inventory coverage'

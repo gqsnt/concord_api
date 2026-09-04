@@ -20,11 +20,11 @@ api! {
         timeout 20s;
 
 
-    GET versions() -> Vec<String> using Json<Vec<String>> {
+    GET versions() -> Vec<String> via Json {
         path ["api", "versions.json"];
     }
 
-    GET realm(region: String) -> serde_json::Value using Json<serde_json::Value> {
+    GET realm(region: String) -> serde_json::Value via Json {
         path ["realms", concat [endpoint.region, ".json"]];
     }
 
@@ -34,11 +34,11 @@ api! {
         scope data() {
             path ["data", client.locale];
 
-            GET champions() -> serde_json::Value using Json<serde_json::Value> {
+            GET champions() -> serde_json::Value via Json {
                 path ["champion.json"];
             }
 
-            GET items() -> serde_json::Value using Json<serde_json::Value> {
+            GET items() -> serde_json::Value via Json {
                 path ["item.json"];
             }
         }
@@ -46,11 +46,11 @@ api! {
         scope assets() {
             path ["img"];
 
-            GET champion_image(filename: String) -> Bytes using Bytes {
+            GET champion_image(filename: String) -> Bytes via Binary {
                 path ["champion", endpoint.filename];
             }
 
-            GET item_image(filename: String) -> Bytes using Bytes {
+            GET item_image(filename: String) -> Bytes via Binary {
                 path ["item", endpoint.filename];
             }
         }

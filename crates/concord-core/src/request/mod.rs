@@ -6,7 +6,7 @@ mod prepare;
 mod prepared;
 
 pub use pending::{AcceptedBytesRequest, Request, ResponseRequest};
-pub use prepared::{RuntimeEndpoint, RuntimeEndpointBuilder};
+pub use prepared::{RuntimeEndpoint, RuntimeEndpointBinding, RuntimeEndpointBuilder, RuntimeValue};
 
 pub(crate) use prepare::{
     OperationPreparation, PreparationFailure, PreparedOperation, PreparedPaginationPage,

@@ -59,15 +59,13 @@ async fn downstream_local_limiter_uses_public_contracts_and_core_cooldown_cap() 
         plan: &plan,
     };
     let headers = HeaderMap::new();
-    limiter
-        .observe(RateLimitResponse {
-            request: request(),
-            status: StatusCode::TOO_MANY_REQUESTS,
-            headers: SanitizedHeaders::new(&headers),
-            cooldown_cap: Duration::from_secs(3),
-        })
-        .await
-        .expect("public local limiter observation");
+    limiter.observe(RateLimitResponse {
+        request: request(),
+        status: StatusCode::TOO_MANY_REQUESTS,
+        headers: SanitizedHeaders::new(&headers),
+        server_delay: Some(Duration::from_secs(7)),
+        cooldown_cap: Duration::from_secs(3),
+    });
 
     let mut pending = Box::pin(limiter.acquire(request()));
     let waker = std::task::Waker::noop();

@@ -35,7 +35,7 @@ async fn pagination_pages_use_the_declared_status_acceptance_policy() {
             .as_slice(),
         [(0, StatusCode::NOT_FOUND)]
     );
-    assert!(hooks.completion.lock().expect("completion lock").is_empty());
+    assert_eq!(hooks.completion.lock().expect("completion lock").len(), 1);
     let aggregate = hooks.aggregate.lock().expect("aggregate lock");
     assert_eq!(aggregate.len(), 1);
     assert_eq!(aggregate[0].pages_completed, 1);
@@ -168,7 +168,7 @@ async fn page_lifecycle_is_sequential_correlated_and_limited_once_per_page() {
         assert!(!record.safe.contains(SECOND_CURSOR));
     }
 
-    assert!(hooks.completion.lock().expect("completion lock").is_empty());
+    assert_eq!(hooks.completion.lock().expect("completion lock").len(), 2);
 
     let aggregate = hooks.aggregate.lock().expect("aggregate lock").clone();
     assert_eq!(aggregate.len(), 1);
@@ -320,7 +320,7 @@ async fn one_page_retry_preserves_page_progress_and_aggregates_visible_attempts(
         )]
     );
 
-    assert!(hooks.completion.lock().expect("completion lock").is_empty());
+    assert_eq!(hooks.completion.lock().expect("completion lock").len(), 2);
     let aggregate = hooks.aggregate.lock().expect("aggregate lock").clone();
     assert_eq!(aggregate.len(), 1);
     assert_eq!(aggregate[0].pages_completed, 2);
@@ -399,9 +399,9 @@ async fn protocol_recovery_does_not_repeat_pagination_preparation_or_page_lifecy
         &server.base_url(),
         HttpConfigBuilder::new().http2_prior_knowledge(),
         RuntimeConfigBuilder::new()
-            .request_gate(hooks.clone())
-            .response_gate(hooks.clone())
-            .completion_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
             .rate_limiter(configured_limiter),
     )
     .expect("HTTP/2 pagination core");
@@ -420,10 +420,10 @@ async fn protocol_recovery_does_not_repeat_pagination_preparation_or_page_lifecy
     assert_eq!(physical_attempts.load(Ordering::SeqCst), 2);
     assert_eq!(construction_calls.load(Ordering::SeqCst), 1);
     assert_eq!(validate_calls.load(Ordering::SeqCst), 1);
-    assert_eq!(next_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(next_calls.load(Ordering::SeqCst), 1);
     assert_eq!(hooks.before.lock().expect("before lock").len(), 1);
     assert_eq!(hooks.response.lock().expect("response lock").len(), 1);
-    assert!(hooks.completion.lock().expect("completion lock").is_empty());
+    assert_eq!(hooks.completion.lock().expect("completion lock").len(), 1);
     assert_eq!(hooks.aggregate.lock().expect("aggregate lock").len(), 1);
     assert_eq!(
         limiter.acquisitions.lock().expect("acquisition lock").len(),

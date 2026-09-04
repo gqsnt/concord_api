@@ -3,12 +3,12 @@ use concord::api;
 
 api! {
     client ScopeSetterApi {
-        timeout off;
+        timeout 30s;
         base "http://scope-setter.example.test";
 
 
     scope control_scope(label: Option<String>) {
-        GET list() -> Bytes using Bytes;
+        GET list() -> Bytes via Binary;
     }
 }}
 

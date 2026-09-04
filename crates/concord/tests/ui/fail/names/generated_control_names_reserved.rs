@@ -3,25 +3,25 @@ use concord::api;
 api! {
     client PlanApi {
         base "https://example.test";
-        timeout off;
-        GET plan() -> Bytes using Bytes;
+        timeout 30s;
+        GET plan() -> Bytes via Binary;
     }
 }
 
 api! {
     client ContractApi {
         base "https://example.test";
-        timeout off;
-        GET contract() -> Bytes using Bytes;
+        timeout 30s;
+        GET contract() -> Bytes via Binary;
     }
 }
 
 api! {
     client UnboundApi {
         base "https://example.test";
-        timeout off;
+        timeout 30s;
         scope unbound() {
-            GET read() -> Bytes using Bytes;
+            GET read() -> Bytes via Binary;
         }
     }
 }

@@ -1,57 +1,43 @@
-# Concord documentation
+# Concord v2.1 documentation
 
-- **Audience:** all readers
-- **Purpose:** canonical documentation index
-- **Normative owners:** `spec.md`, `runtime.md`, and `design_invariants.md`
+Concord v2.1 is a typed HTTP client contract language. It projects one client-shaped domain contract into:
+
+- a domain-shaped generated Rust client;
+- inert unbound endpoint intents;
+- redaction-aware request plans;
+- local and effective contract descriptions;
+- one bounded managed runtime;
+- stable operational evidence;
+- narrow extension contracts.
 
 ## Start here
 
-- [Overview](overview.md) — product identity and tradeoffs.
-- [Quick start](quick_start.md) — declare, build, plan, and execute a client.
-- [Mental model](mental_model.md) — the declaration tree, snapshots, intents,
-  and managed execution.
-- [v2 architecture decision](v2_architecture.md) — projection laws, non-goals,
-  and migration posture.
-- [v1 to v2 migration](migration_v1_to_v2.md) — mechanical mapping and semantic
-  review traps.
+| Goal | Read |
+|---|---|
+| Understand the product | [Overview](overview.md) and [mental model](mental_model.md) |
+| Review non-negotiable semantics | [Design invariants](design_invariants.md) |
+| Declare and call a client | [Quick start](quick_start.md) |
+| Model a real API | [Modeling APIs](modeling_apis.md) |
+| Follow the maintained Riot example | [Riot walkthrough](riot_walkthrough.md) |
+| Look up exact language meaning | [DSL specification](spec.md) |
+| Understand generated Rust | [Generated client](generated_client.md) |
+| Understand values and wire shaping | [Requests and values](requests_and_values.md) |
+| Understand bodies and responses | [Request bodies](request_bodies.md) and [responses](responses.md) |
+| Understand execution | [Execution policy](execution_policy.md) and [runtime](runtime.md) |
+| Configure authentication | [Authentication](auth.md) |
+| Configure retry | [Retry](retry.md) |
+| Declare and enforce quotas | [Rate limits](rate_limits.md) |
+| Add pagination | [Pagination](pagination.md) |
+| Inspect and observe | [Planning and observation](planning_and_observation.md) |
+| Build a dynamic endpoint | [Runtime endpoints](runtime_endpoints.md) |
+| Implement an extension | [Extensions](extensions.md) |
+| Migrate from the supplied v1 | [Migration guide](migration_v2_1.md) |
+| Understand release evidence | [Evidence and release gates](evidence_and_release_gates.md) |
 
-## Declare and use an API
+## Normative order
 
-- [Modeling APIs](modeling_apis.md) — ownership, values, names, and identities.
-- [Generated client](generated_client.md) — builders, scopes, requests, unbound
-  intents, controls, and terminals.
-- [Requests and values](requests_and_values.md) — exact type law, defaults,
-  route and public-head patches, and timeouts.
-- [Request bodies](request_bodies.md) — truthful inputs, specs, preparation,
-  replay, streams, and multipart.
-- [Responses](responses.md) — truthful outputs, sealed acquisition, metadata,
-  accepted bytes, and streaming.
-- [Authentication](auth.md) — secrets, credential sources, placement, recovery,
-  and isolation.
-- [Rate limits](rate_limits.md) — profiles, canonical keys, required enforcement,
-  admission, and sharing.
-- [Retry](retry.md) — repeatability, dispatch knowledge, classifiers, budgets,
-  and deadlines.
-- [Pagination](pagination.md) — directional bindings, page limits, aggregate
-  deadline, cycle detection, and bounds.
-- [Execution policy](execution_policy.md) — one executor, gates, observers,
-  attempts, cancellation, and evidence.
-- [Planning and observation](planning_and_observation.md) — credential-free
-  plans, redaction, descriptions, errors, and diagnostics.
-- [Runtime endpoints](runtime_endpoints.md) — dynamic contracts through the same
-  planner and executor.
-- [Extensions](extensions.md) — narrow runtime variation and trust boundaries.
-- [Riot walkthrough](riot_walkthrough.md) — a larger nested contract.
+`design_invariants.md` and `spec.md` are normative. Subsystem documents explain the same contract by task. `dev_doc/internals.md` assigns implementation responsibility but does not override public semantics.
 
-## Normative reference
+## Status
 
-- [DSL specification](spec.md)
-- [Runtime model](runtime.md)
-- [Design invariants](design_invariants.md)
-
-## Maintainer records
-
-- [Maintainer internals](../dev_doc/internals.md)
-- [Documentation contract](../dev_doc/documentation_contract.md)
-- [Finalization decisions](../dev_doc/finalization_decisions.md)
-- [v2 constitution](../FINAL.md)
+These documents specify the v2.1 implementation prototype. Mechanical gates support the selected representation relationship and current observer/stream surface; human comprehension and release-scale evidence remain pending as recorded in the claim ledger. No alternative public spellings are retained as a compromise.

@@ -3,11 +3,11 @@ use concord::api;
 
 api! {
     client SetterApi {
-        timeout off;
+        timeout 30s;
         base "http://setter.example.test";
 
 
-    GET read(verbose: Option<bool>) -> Bytes using Bytes;
+    GET read(verbose: Option<bool>) -> Bytes via Binary;
 }}
 
 fn main() {

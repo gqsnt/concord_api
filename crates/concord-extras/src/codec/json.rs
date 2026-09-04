@@ -1,72 +1,105 @@
 use std::fmt;
 use std::io::{self, Write};
-use std::marker::PhantomData;
 
-use concord_core::codec::{
-    CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext,
+use concord_core::contracts::{
+    BodyError, BodyErrorKind, BodyKind, Buffered, Bytes, HeaderValue, LengthHint,
+    PageRequestRepresentation, PageResponseRepresentation, RequestBody, RequestBodyContext,
+    RequestBodyMetadata, RequestContentType, RequestRepresentation, ResponseBodyError,
+    ResponseBodyErrorKind, ResponseDriver, ResponseHead, ResponseRepresentation,
 };
-use concord_core::contracts::{Bytes, PageRequestBodySpec};
 
 const INITIAL_JSON_CAPACITY: usize = 8 * 1024;
 
 /// Typed JSON request and response codec.
 ///
-/// Request serialization writes directly into a capped buffer when
-/// [`EncodeContext::body_limit`] is configured and stops at the first encoded
-/// excess. Parser-, serializer-, and application-authored text is discarded
-/// when errors cross the semantic codec boundary.
+/// Request serialization writes directly into a buffer capped by
+/// [`RequestBodyContext::body_limit`] and stops at the first encoded excess.
+/// Parser-, serializer-, and application-authored text is discarded when
+/// errors cross the semantic codec boundary.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Json<T>(PhantomData<fn() -> T>);
+pub struct Json;
 
-impl<T> EncodeBody for Json<T>
+impl<T> RequestRepresentation<T> for Json
 where
     T: serde::Serialize + Send + 'static,
 {
-    type Input = T;
+    fn metadata(
+        _input: &T,
+        _context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, BodyError> {
+        Ok(RequestBodyMetadata {
+            length: LengthHint::Unknown,
+            content_type: RequestContentType::Exact(HeaderValue::from_static("application/json")),
+            kind: BodyKind::Buffered,
+        })
+    }
 
-    const CONTENT_TYPE: Option<&'static str> = Some("application/json");
+    fn prepare(input: T, context: RequestBodyContext<'_>) -> Result<RequestBody, BodyError> {
+        RequestBody::bytes(encode_json(&input, context.body_limit.get())?)
+            .content_type("application/json")
+    }
+}
 
-    fn encode(input: Self::Input, context: EncodeContext<'_>) -> Result<Bytes, CodecError> {
-        let mut writer = BoundedVecWriter::new(context.body_limit.unwrap_or(usize::MAX));
-        match serde_json::to_writer(&mut writer, &input) {
-            Ok(()) => Ok(Bytes::from(writer.into_bytes())),
-            Err(error) => {
-                drop(error);
-                let kind = if writer.limit_exceeded() {
-                    CodecErrorKind::Limit
-                } else {
-                    CodecErrorKind::Encode
-                };
-                Err(CodecError::new(kind))
-            }
+impl<T> PageRequestRepresentation<T> for Json where T: Clone + serde::Serialize + Send + 'static {}
+
+impl<T> ResponseRepresentation<T> for Json
+where
+    T: serde::de::DeserializeOwned + Send + 'static,
+{
+    type Driver = Buffered;
+
+    fn accept() -> Option<&'static str> {
+        Some("application/json")
+    }
+
+    fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
+        let content_type = head
+            .headers
+            .get("content-type")
+            .and_then(|value| value.to_str().ok());
+        if content_type.is_some_and(is_json_media_type) {
+            Ok(())
+        } else {
+            Err(ResponseBodyError::new(
+                ResponseBodyErrorKind::InvalidMediaType,
+            ))
+        }
+    }
+
+    fn from_body(
+        body: <Self::Driver as ResponseDriver>::Body,
+        _head: &ResponseHead<'_>,
+    ) -> Result<T, ResponseBodyError> {
+        decode_json(&body)
+    }
+}
+
+fn encode_json<T: serde::Serialize>(input: &T, limit: usize) -> Result<Bytes, BodyError> {
+    let mut writer = BoundedVecWriter::new(limit);
+    match serde_json::to_writer(&mut writer, input) {
+        Ok(()) => Ok(Bytes::from(writer.into_bytes())),
+        Err(error) => {
+            drop(error);
+            let kind = if writer.limit_exceeded() {
+                BodyErrorKind::LimitExceeded
+            } else {
+                BodyErrorKind::Producer
+            };
+            Err(BodyError::new(kind))
         }
     }
 }
 
-impl<T> PageRequestBodySpec for Json<T> where T: Clone + serde::Serialize + Send + 'static {}
+fn decode_json<T: serde::de::DeserializeOwned>(body: &Bytes) -> Result<T, ResponseBodyError> {
+    serde_json::from_slice(body).map_err(|error| {
+        drop(error);
+        ResponseBodyError::new(ResponseBodyErrorKind::Decode)
+    })
+}
 
-impl<T> DecodeBody for Json<T>
-where
-    T: serde::de::DeserializeOwned + Send + 'static,
+impl<T> PageResponseRepresentation<T> for Json where
+    T: serde::de::DeserializeOwned + IntoIterator + Send + 'static
 {
-    type Output = T;
-
-    const ACCEPT: Option<&'static str> = Some("application/json");
-
-    fn validate_content_type(content_type: Option<&str>) -> Result<(), CodecError> {
-        if content_type.is_some_and(is_json_media_type) {
-            Ok(())
-        } else {
-            Err(CodecError::new(CodecErrorKind::Decode))
-        }
-    }
-
-    fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
-        serde_json::from_slice(&body).map_err(|error| {
-            drop(error);
-            CodecError::new(CodecErrorKind::Decode)
-        })
-    }
 }
 
 struct BoundedVecWriter {
@@ -164,27 +197,10 @@ mod tests {
     use std::cell::Cell;
     use std::error::Error as _;
 
-    use concord_core::contracts::{Method, StatusCode};
+    use concord_core::contracts::ResponseBodyErrorKind;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     use super::*;
-
-    fn encode_context(limit: usize) -> EncodeContext<'static> {
-        EncodeContext {
-            endpoint: "CodecApi::messages::create",
-            method: &Method::POST,
-            body_limit: Some(limit),
-        }
-    }
-
-    fn decode_context(content_type: Option<&str>) -> DecodeContext<'_> {
-        DecodeContext {
-            endpoint: "CodecApi::messages::create",
-            method: &Method::POST,
-            status: StatusCode::OK,
-            content_type,
-        }
-    }
 
     #[test]
     fn accepts_standard_and_structured_suffix_media_types() {
@@ -194,7 +210,7 @@ mod tests {
             "application/problem+json",
             "application/vnd.example+json; version=2",
         ] {
-            Json::<String>::validate_content_type(Some(accepted)).expect(accepted);
+            assert!(is_json_media_type(accepted), "{accepted}");
         }
         for rejected in [
             None,
@@ -203,31 +219,23 @@ mod tests {
             Some("application/json; invalid"),
             Some("application/problem+json; broken=\"unterminated"),
         ] {
-            assert!(Json::<String>::validate_content_type(rejected).is_err());
+            assert!(!rejected.is_some_and(is_json_media_type));
         }
     }
 
     #[test]
     fn request_and_response_round_trip_without_exposing_serde_failures() {
-        let encoded =
-            Json::<Vec<u32>>::encode(vec![1, 2, 3], encode_context(1024)).expect("encode");
+        let encoded = encode_json(&vec![1, 2, 3], 1024).expect("encode");
         assert_eq!(
             encoded.as_ref(),
             serde_json::to_vec(&vec![1, 2, 3]).unwrap()
         );
-        let decoded = Json::<Vec<u32>>::decode(
-            encoded,
-            decode_context(Some("application/json; charset=utf-8")),
-        )
-        .expect("decode");
+        let decoded = decode_json::<Vec<u32>>(&encoded).expect("decode");
         assert_eq!(decoded, vec![1, 2, 3]);
 
-        let error = Json::<Vec<u32>>::decode(
-            Bytes::from_static(b"not-json-sentinel"),
-            decode_context(Some("application/json")),
-        )
-        .expect_err("invalid JSON");
-        assert_eq!(error.kind(), CodecErrorKind::Decode);
+        let error = decode_json::<Vec<u32>>(&Bytes::from_static(b"not-json-sentinel"))
+            .expect_err("invalid JSON");
+        assert_eq!(error.kind(), ResponseBodyErrorKind::Decode);
         for formatted in [error.to_string(), format!("{error:?}")] {
             assert!(!formatted.contains("not-json-sentinel"));
         }
@@ -235,14 +243,13 @@ mod tests {
 
     #[test]
     fn request_encoding_accepts_exact_limit_and_rejects_first_excess() {
-        let exact = Json::<String>::encode("abc".to_owned(), encode_context(5))
-            .expect("encoded JSON exactly fits");
+        let exact = encode_json(&"abc".to_owned(), 5).expect("encoded JSON exactly fits");
         assert_eq!(exact.as_ref(), br#""abc""#);
 
-        let error = Json::<String>::encode("abc".to_owned(), encode_context(4))
-            .expect_err("closing quote is the first excess byte");
-        assert_eq!(error.kind(), CodecErrorKind::Limit);
-        assert_eq!(error.to_string(), "codec operation failed (Limit)");
+        let error =
+            encode_json(&"abc".to_owned(), 4).expect_err("closing quote is the first excess byte");
+        assert_eq!(error.kind(), BodyErrorKind::LimitExceeded);
+        assert_eq!(error.to_string(), "request body operation failed");
         assert!(error.source().is_none());
 
         let mut writer = BoundedVecWriter::new(4);
@@ -260,9 +267,9 @@ mod tests {
         const SENTINEL: &str = "escaped-input-sentinel-3d12";
         let input = format!("\0\0\0\0{SENTINEL}");
         assert!(input.len() < 64);
-        let error = Json::<String>::encode(input, encode_context(16))
+        let error = encode_json(&input, 16)
             .expect_err("escaped JSON expansion exceeds the encoded body limit");
-        assert_eq!(error.kind(), CodecErrorKind::Limit);
+        assert_eq!(error.kind(), BodyErrorKind::LimitExceeded);
         for rendered in [error.to_string(), format!("{error:?}")] {
             assert!(!rendered.contains(SENTINEL));
         }
@@ -283,13 +290,10 @@ mod tests {
 
     #[test]
     fn serializer_failures_reduce_to_the_finite_encode_category() {
-        let error = Json::<SerializerFailure>::encode(
-            SerializerFailure,
-            encode_context(INITIAL_JSON_CAPACITY),
-        )
-        .expect_err("application serializer failure");
-        assert_eq!(error.kind(), CodecErrorKind::Encode);
-        assert_eq!(error.to_string(), "codec operation failed (Encode)");
+        let error = encode_json(&SerializerFailure, INITIAL_JSON_CAPACITY)
+            .expect_err("application serializer failure");
+        assert_eq!(error.kind(), BodyErrorKind::Producer);
+        assert_eq!(error.to_string(), "request body operation failed");
         assert!(!format!("{error:?}").contains("serializer-application-sentinel-1f9b"));
         assert!(error.source().is_none());
     }
@@ -316,25 +320,25 @@ mod tests {
 
     #[test]
     fn json_marker_is_non_owning_and_does_not_require_sync_values() {
-        fn assert_encode<C: EncodeBody<Input = SendNotSync>>() {}
-        fn assert_decode<C: DecodeBody<Output = SendNotSync>>() {}
+        fn assert_encode<C: RequestRepresentation<SendNotSync>>() {}
+        fn assert_decode<C: ResponseRepresentation<SendNotSync>>() {}
         fn assert_send_sync<T: Send + Sync>() {}
 
-        assert_encode::<Json<SendNotSync>>();
-        assert_decode::<Json<SendNotSync>>();
-        assert_send_sync::<Json<SendNotSync>>();
-        assert_eq!(std::mem::size_of::<Json<SendNotSync>>(), 0);
+        assert_encode::<Json>();
+        assert_decode::<Json>();
+        assert_send_sync::<Json>();
+        assert_eq!(std::mem::size_of::<Json>(), 0);
     }
 
     #[test]
     fn cloneable_json_input_is_page_repeatable() {
-        fn assert_page_body<C>()
+        fn assert_page_body<C, Input>()
         where
-            C: PageRequestBodySpec,
-            C::Input: Clone,
+            C: PageRequestRepresentation<Input>,
+            Input: Clone + Send + 'static,
         {
         }
 
-        assert_page_body::<Json<Vec<u32>>>();
+        assert_page_body::<Json, Vec<u32>>();
     }
 }

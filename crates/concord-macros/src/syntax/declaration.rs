@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 use http::Method;
 use proc_macro2::TokenStream;
@@ -6,8 +6,8 @@ use syn::parse::{Parse, ParseStream};
 use syn::{Attribute, Ident, LitStr, Token, braced, parenthesized};
 
 use super::ast::{
-    AcceptOperation, AttachmentSite, Clause, MethodKind, RepeatabilityDecl, SourceApi, SourceChild,
-    SourceClient, SourceEndpoint, SourceScope,
+    AcceptOperation, AttachmentSite, Clause, EffectDecl, MethodKind, RepresentationOperation,
+    SourceApi, SourceChild, SourceClient, SourceEndpoint, SourceScope, StatusDecl,
 };
 use super::credentials::{parse_auth, parse_credentials};
 use super::diagnostics::{
@@ -132,6 +132,9 @@ impl Parse for SourceClient {
             if body.peek(keyword::retry) {
                 return Err(removed_retry_diagnostic(&body));
             }
+            if parse_representation_clause(&body, &mut attachment_site, false, &owner)? {
+                continue;
+            }
             if parse_attachment_site_clause(&body, &mut attachment_site, true, &owner)? {
                 continue;
             }
@@ -149,7 +152,7 @@ impl Parse for SourceClient {
 
         if attachment_site.timeout.is_none() {
             return Err(name.span().error(
-                "a v2 client must explicitly declare `timeout DURATION;` or `timeout off;`",
+                "a v2.1 client must explicitly declare one positive finite `timeout DURATION;`",
             ));
         }
         validate_child_names(&children, "client")?;
@@ -231,6 +234,9 @@ fn parse_scope(input: ParseStream<'_>, depth: usize) -> syn::Result<SourceScope>
         if parse_attachment_site_clause(&body, &mut attachment_site, true, &owner)? {
             continue;
         }
+        if parse_representation_clause(&body, &mut attachment_site, true, &owner)? {
+            continue;
+        }
         if body.peek(keyword::retry) {
             return Err(removed_retry_diagnostic(&body));
         }
@@ -274,10 +280,16 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
 
     input.parse::<Token![->]>()?;
     let output = input.parse()?;
-    input.parse::<keyword::using>().map_err(|_| {
-        input.error("a v2 endpoint response must be declared as `-> Output using ResponseSpec`")
-    })?;
-    let response_spec = input.parse()?;
+    let response_spec = if input.peek(keyword::via) {
+        input.parse::<keyword::via>()?;
+        Some(input.parse()?)
+    } else if input.peek(keyword::using) {
+        return Err(input.error(
+            "v2.1 replaced result `using Representation` with inline `via Representation`",
+        ));
+    } else {
+        None
+    };
 
     if input.peek(Token![;]) {
         input.parse::<Token![;]>()?;
@@ -292,7 +304,8 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
             response_spec,
             pagination: None,
             contract_id: None,
-            repeatability: None,
+            status: None,
+            effect: None,
             accept: None,
             expose_accepted_bytes: None,
         })
@@ -303,7 +316,8 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
         let mut attachment_site = AttachmentSite::default();
         let mut pagination = None;
         let mut contract_id = None;
-        let mut repeatability = None;
+        let mut status = None;
+        let mut effect = None;
         let mut accept = None;
         let mut expose_accepted_bytes: Option<proc_macro2::Span> = None;
         while !clauses.is_empty() {
@@ -318,25 +332,32 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
                 )?;
                 continue;
             }
-            if clauses.peek(keyword::repeatability) {
+            if clauses.peek(keyword::effect) {
                 let key_span = clauses.span();
-                clauses.parse::<keyword::repeatability>()?;
-                let value = if clauses.peek(keyword::idempotent) {
+                clauses.parse::<keyword::effect>()?;
+                let value = if clauses.peek(keyword::safe) {
+                    clauses.parse::<keyword::safe>()?;
+                    EffectDecl::Safe
+                } else if clauses.peek(keyword::idempotent) {
                     clauses.parse::<keyword::idempotent>()?;
-                    RepeatabilityDecl::Idempotent
-                } else if clauses.peek(keyword::never) {
-                    clauses.parse::<keyword::never>()?;
-                    RepeatabilityDecl::Never
+                    EffectDecl::Idempotent
+                } else if clauses.peek(keyword::non_idempotent) {
+                    clauses.parse::<keyword::non_idempotent>()?;
+                    EffectDecl::NonIdempotent
                 } else {
-                    return Err(clauses.error("`repeatability` requires `idempotent` or `never`"));
+                    return Err(clauses
+                        .error("`effect` requires `safe`, `idempotent`, or `non_idempotent`"));
                 };
                 clauses.parse::<Token![;]>()?;
-                insert_clause(
-                    &mut repeatability,
-                    Clause { key_span, value },
-                    "repeatability",
-                    &owner,
-                )?;
+                insert_clause(&mut effect, Clause { key_span, value }, "effect", &owner)?;
+                continue;
+            }
+            if clauses.peek(keyword::status) {
+                let key_span = clauses.span();
+                clauses.parse::<keyword::status>()?;
+                let value = parse_status(&clauses)?;
+                clauses.parse::<Token![;]>()?;
+                insert_clause(&mut status, Clause { key_span, value }, "status", &owner)?;
                 continue;
             }
             if clauses.peek(keyword::accept) {
@@ -346,7 +367,9 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
                     clauses.parse::<keyword::off>()?;
                     AcceptOperation::Off
                 } else {
-                    AcceptOperation::Value(super::request::parse_total_public_expr(&clauses)?)
+                    AcceptOperation::Value(Box::new(super::request::parse_total_public_expr(
+                        &clauses,
+                    )?))
                 };
                 clauses.parse::<Token![;]>()?;
                 insert_clause(&mut accept, Clause { key_span, value }, "accept", &owner)?;
@@ -384,6 +407,11 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
             if parse_attachment_site_clause(&clauses, &mut attachment_site, true, &owner)? {
                 continue;
             }
+            if clauses.peek(keyword::request) || clauses.peek(keyword::response) {
+                return Err(clauses.error(
+                    "endpoint representation exceptions are inline: use `body name: Input via RequestRepresentation` or `-> Output via ResponseRepresentation`",
+                ));
+            }
             if clauses.peek(keyword::retry) {
                 return Err(removed_retry_diagnostic(&clauses));
             }
@@ -395,7 +423,7 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
                 return Err(error);
             }
             return Err(clauses.error(
-                "unsupported endpoint clause; expected `id`, an attachment, `accept`, `repeatability`, `paginate`, or `expose accepted_bytes`",
+                "unsupported endpoint clause; expected `id`, an attachment, `accept`, `effect`, `paginate`, or `expose accepted_bytes`",
             ));
         }
         Ok(SourceEndpoint {
@@ -409,11 +437,80 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
             response_spec,
             pagination,
             contract_id,
-            repeatability,
+            status,
+            effect,
             accept,
             expose_accepted_bytes,
         })
     }
+}
+
+fn parse_status(input: ParseStream<'_>) -> syn::Result<StatusDecl> {
+    if input.peek(keyword::success) {
+        input.parse::<keyword::success>()?;
+        return Ok(StatusDecl::Success);
+    }
+
+    let mut codes = BTreeSet::new();
+    if input.peek(syn::token::Bracket) {
+        let content;
+        syn::bracketed!(content in input);
+        if content.is_empty() {
+            return Err(content.error("an explicit status list cannot be empty"));
+        }
+        while !content.is_empty() {
+            parse_status_item(&content, &mut codes)?;
+            if content.is_empty() {
+                break;
+            }
+            content.parse::<Token![,]>()?;
+        }
+    } else {
+        parse_status_item(input, &mut codes)?;
+    }
+    Ok(StatusDecl::Codes(codes.into_iter().collect()))
+}
+
+fn parse_status_item(input: ParseStream<'_>, codes: &mut BTreeSet<u16>) -> syn::Result<()> {
+    let first: syn::LitInt = input
+        .parse()
+        .map_err(|_| input.error("a status item requires a three-digit HTTP status"))?;
+    let start = parse_status_code(&first)?;
+    let end = if input.peek(Token![..=]) {
+        input.parse::<Token![..=]>()?;
+        let last: syn::LitInt = input.parse().map_err(|_| {
+            input.error("an inclusive status range requires a three-digit upper bound")
+        })?;
+        let end = parse_status_code(&last)?;
+        if end < start {
+            return Err(last
+                .span()
+                .error("an inclusive status range cannot descend"));
+        }
+        end
+    } else {
+        start
+    };
+    for code in start..=end {
+        if !codes.insert(code) {
+            return Err(first
+                .span()
+                .error("accepted status items cannot overlap or repeat"));
+        }
+    }
+    Ok(())
+}
+
+fn parse_status_code(literal: &syn::LitInt) -> syn::Result<u16> {
+    if literal.suffix().is_empty() && literal.base10_digits().len() == 3 {
+        let value = literal.base10_parse::<u16>()?;
+        if (100..=599).contains(&value) {
+            return Ok(value);
+        }
+    }
+    Err(literal
+        .span()
+        .error("HTTP status must be a three-digit value in 100..=599"))
 }
 
 fn endpoint_starts(input: ParseStream<'_>) -> bool {
@@ -442,10 +539,10 @@ fn parse_method(input: ParseStream<'_>) -> syn::Result<MethodKind> {
                 .span()
                 .error("custom endpoint method must be a valid HTTP method token")
         })?;
-        if literal.value() == "CONNECT" {
-            return Err(literal.span().error(
-                "CONNECT is unsupported because Concord does not expose tunnel or upgrade semantics",
-            ));
+        if matches!(literal.value().as_str(), "CONNECT" | "TRACE") {
+            return Err(literal
+                .span()
+                .error("CONNECT and TRACE are unsupported, including custom spelling"));
         }
         return Ok(MethodKind::Custom(literal));
     }
@@ -463,9 +560,9 @@ fn parse_method(input: ParseStream<'_>) -> syn::Result<MethodKind> {
         "DELETE" => Ok(MethodKind::Delete),
         "HEAD" => Ok(MethodKind::Head),
         "OPTIONS" => Ok(MethodKind::Options),
-        "TRACE" => Err(method.span().error(
-            "TRACE is not a first-class keyword; declare its unusual security semantics explicitly with `METHOD(\"TRACE\")`",
-        )),
+        "TRACE" => Err(method
+            .span()
+            .error("TRACE is unsupported, including custom spelling")),
         "CONNECT" => Err(method.span().error(
             "CONNECT is unsupported because Concord does not expose tunnel or upgrade semantics",
         )),
@@ -621,6 +718,42 @@ fn parse_attachment_site_clause(
     Ok(false)
 }
 
+fn parse_representation_clause(
+    input: ParseStream<'_>,
+    attachment_site: &mut AttachmentSite,
+    allow_explicit: bool,
+    owner: &str,
+) -> syn::Result<bool> {
+    let (direction, target) = if input.peek(keyword::request) {
+        input.parse::<keyword::request>()?;
+        ("request", &mut attachment_site.request)
+    } else if input.peek(keyword::response) {
+        input.parse::<keyword::response>()?;
+        ("response", &mut attachment_site.response)
+    } else {
+        return Ok(false);
+    };
+    let key_span = input.span();
+    let value = if input.peek(keyword::explicit) {
+        let explicit: keyword::explicit = input.parse()?;
+        if !allow_explicit {
+            return Err(explicit
+                .span
+                .error("`explicit` representation fences are scope-only"));
+        }
+        RepresentationOperation::Explicit
+    } else {
+        RepresentationOperation::Select(Box::new(input.parse().map_err(|_| {
+            input.error(format!(
+                "`{direction}` requires a representation type or `explicit`"
+            ))
+        })?))
+    };
+    input.parse::<Token![;]>()?;
+    insert_clause(target, Clause { key_span, value }, direction, owner)?;
+    Ok(true)
+}
+
 fn is_client_configuration_start(input: ParseStream<'_>) -> bool {
     is_client_only_declaration_start(input)
         || input.peek(keyword::subdomain)
@@ -631,6 +764,8 @@ fn is_client_configuration_start(input: ParseStream<'_>) -> bool {
         || input.peek(keyword::auth)
         || input.peek(keyword::timeout)
         || input.peek(keyword::rate_limit)
+        || input.peek(keyword::request)
+        || input.peek(keyword::response)
 }
 
 fn is_client_only_declaration_start(input: ParseStream<'_>) -> bool {

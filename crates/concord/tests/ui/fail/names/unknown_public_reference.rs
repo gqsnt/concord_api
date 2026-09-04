@@ -2,11 +2,11 @@ use concord::api;
 
 api! {
     client ReferenceApi {
-        timeout off;
+        timeout 30s;
         base "https://reference.example.test";
 
 
-    GET item() -> Bytes using Bytes {
+    GET item() -> Bytes via Binary {
         path [endpoint.missing];
     }
 }}

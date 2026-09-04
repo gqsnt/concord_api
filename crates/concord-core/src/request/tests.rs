@@ -9,14 +9,16 @@ use http::Method;
 
 use super::*;
 use crate::__private::GeneratedCredential;
+use crate::atom::{AtomError, BoundedAtomWriter, RequestAtom};
 use crate::auth::{AccessToken, Auth};
-use crate::body::{EmptyBody, RequestBodyContext, RequestBodyMetadata, RequestBodySpec};
+use crate::body::{EmptyBody, RequestBodyContext, RequestBodyMetadata, RequestRepresentation};
 use crate::client::ClientCore;
+use crate::codec::Binary;
 use crate::endpoint::EndpointId;
 use crate::error::{ClientBuildErrorKind, ErrorCategory};
-use crate::hooks::{BoxFuture, DebugLevel, RequestGate};
+use crate::hooks::{DebugLevel, OperationEvent, OperationObserver};
 use crate::http::HttpConfigBuilder;
-use crate::response::NoContent;
+use crate::response::Empty;
 use crate::runtime::RuntimeConfigBuilder;
 
 struct CountingHooks {
@@ -31,13 +33,11 @@ impl CountingHooks {
     }
 }
 
-impl RequestGate for CountingHooks {
-    fn before_send<'a>(
-        &'a self,
-        _context: crate::hooks::BeforeSend<'a>,
-    ) -> BoxFuture<'a, Result<(), crate::error::GateError>> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async { Ok(()) })
+impl OperationObserver for CountingHooks {
+    fn observe(&self, event: OperationEvent<'_>) {
+        if matches!(event, OperationEvent::AttemptStarted(_)) {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+        }
     }
 }
 
@@ -53,13 +53,22 @@ impl fmt::Display for DisplayValue {
     }
 }
 
+impl RequestAtom for DisplayValue {
+    fn write_atom(&self, output: &mut BoundedAtomWriter<'_>) -> Result<(), AtomError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        output.push_str(self.value)
+    }
+}
+
 struct BytesEndpoint {
     account: DisplayValue,
 }
 
 impl EndpointSpec for BytesEndpoint {
+    type Input = ();
     type Body = EmptyBody;
-    type Response = Bytes;
+    type Output = Bytes;
+    type Response = Binary;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(
@@ -92,8 +101,10 @@ impl EndpointSpec for BytesEndpoint {
 struct NoContentEndpoint;
 
 impl EndpointSpec for NoContentEndpoint {
+    type Input = ();
     type Body = EmptyBody;
-    type Response = NoContent;
+    type Output = ();
+    type Response = Empty;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(
@@ -122,11 +133,11 @@ impl EndpointSpec for NoContentEndpoint {
     fn into_body(self) {}
 }
 
-fn core(executor: &DeterministicExecutor, gate: Arc<dyn RequestGate>) -> ClientCore {
+fn core(executor: &DeterministicExecutor, observer: Arc<dyn OperationObserver>) -> ClientCore {
     ClientCore::build_with_development(
         "http://preparation.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
-        RuntimeConfigBuilder::new().request_gate(gate),
+        RuntimeConfigBuilder::new().operation_observer(observer),
         executor,
     )
     .expect("test core")
@@ -161,8 +172,7 @@ async fn request_creation_and_setters_are_side_effect_free_until_first_poll() {
         bytes_endpoint("team-alpha", Arc::clone(&display_calls)),
     )
     .timeout(Duration::from_secs(2))
-    .disable_timeout()
-    .inherit_timeout()
+    .reset_timeout()
     .debug(DebugLevel::Headers);
     let future = prepare_operation(request);
 
@@ -191,7 +201,11 @@ async fn request_creation_and_setters_are_side_effect_free_until_first_poll() {
     );
     assert_eq!(prepared.head.timeout(), Some(Duration::from_secs(20)));
     assert_eq!(prepared.head.debug(), DebugLevel::Headers);
-    assert!(prepared.head.public_headers().is_empty());
+    assert_eq!(prepared.head.public_headers().len(), 1);
+    assert_eq!(
+        prepared.head.public_headers().get(http::header::ACCEPT),
+        Some(&http::HeaderValue::from_static("application/octet-stream"))
+    );
     assert_eq!(prepared.body_metadata.kind, crate::hooks::BodyKind::Empty);
     assert_eq!(prepared.body_metadata.known_length(), Some(0));
     prepared.endpoint.into_body();
@@ -201,12 +215,12 @@ async fn request_creation_and_setters_are_side_effect_free_until_first_poll() {
 fn hand_authored_endpoint_types_select_only_declared_response_handlers() {
     fn assert_bytes<E>()
     where
-        E: EndpointSpec<Body = EmptyBody, Response = Bytes>,
+        E: EndpointSpec<Body = EmptyBody, Response = Binary>,
     {
     }
     fn assert_no_content<E>()
     where
-        E: EndpointSpec<Body = EmptyBody, Response = NoContent>,
+        E: EndpointSpec<Body = EmptyBody, Response = Empty>,
     {
     }
     assert_bytes::<BytesEndpoint>();
@@ -214,7 +228,7 @@ fn hand_authored_endpoint_types_select_only_declared_response_handlers() {
 }
 
 #[tokio::test]
-async fn invalid_dynamic_segment_fails_before_hooks_or_transport() {
+async fn invalid_dynamic_segment_fails_before_observation_or_transport() {
     let executor = DeterministicExecutor::new();
     let hooks = Arc::new(CountingHooks::new());
     let display_calls = Arc::new(AtomicUsize::new(0));
@@ -247,13 +261,13 @@ async fn request_options_are_local_and_core_clones_share_one_inner_owner() {
             .timeout(Duration::from_secs(1))
             .debug(DebugLevel::Basic),
     );
-    let second = prepare_operation(Request::new(sibling, NoContentEndpoint).disable_timeout());
+    let second = prepare_operation(Request::new(sibling, NoContentEndpoint));
     let (first, second) = tokio::join!(first, second);
     let first = ready(first.expect("first preparation"));
     let second = ready(second.expect("second preparation"));
     assert_eq!(first.head.timeout(), Some(Duration::from_secs(1)));
     assert_eq!(first.head.debug(), DebugLevel::Basic);
-    assert_eq!(second.head.timeout(), None);
+    assert_eq!(second.head.timeout(), Some(Duration::from_secs(5)));
     assert_eq!(second.head.debug(), DebugLevel::None);
     assert_ne!(first.operation_id, second.operation_id);
 }
@@ -275,13 +289,11 @@ async fn runtime_auth_rejects_a_foreign_client_context_before_planning_or_execut
             .auth(Auth::bearer(credential.credential()))
             .build()
             .expect("runtime endpoint");
-    let planning_error = crate::__private::credential_free_request_plan(
-        &foreign,
-        planned.description(),
-        None,
-        |builder| planned.prepare_head(builder),
-    )
-    .expect_err("foreign planning context must fail");
+    let planning_error =
+        crate::__private::plan_unbound_request(&foreign, planned.description(), None, |builder| {
+            planned.prepare_head(builder)
+        })
+        .expect_err("foreign planning context must fail");
     assert_eq!(
         planning_error.configuration_kind(),
         Some(crate::error::ConfigurationErrorKind::InvalidAuthentication)
@@ -331,7 +343,7 @@ async fn runtime_auth_rejects_a_foreign_client_context_before_planning_or_execut
 }
 
 #[tokio::test]
-async fn runtime_endpoints_inherit_the_snapshot_timeout_with_exact_tri_state_overrides() {
+async fn runtime_endpoints_inherit_the_snapshot_timeout_with_finite_overrides() {
     let executor = DeterministicExecutor::new();
     let core = ClientCore::build_with_development(
         "http://runtime-timeout.example.test/",
@@ -363,18 +375,6 @@ async fn runtime_endpoints_inherit_the_snapshot_timeout_with_exact_tri_state_ove
             .expect("explicit preparation"),
     );
     assert_eq!(explicit.head.timeout(), Some(Duration::from_secs(7)));
-
-    let disabled =
-        RuntimeEndpoint::builder(EndpointId::from_static("runtime.disabled"), Method::GET)
-            .disable_timeout()
-            .build()
-            .expect("disabled runtime endpoint");
-    let disabled = ready(
-        prepare_operation(Request::new(core.clone(), disabled))
-            .await
-            .expect("disabled preparation"),
-    );
-    assert_eq!(disabled.head.timeout(), None);
 
     let request_override =
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.request"), Method::GET)
@@ -421,7 +421,7 @@ fn generated_private_endpoint_mapping_preserves_core_and_request_options() {
 
 #[tokio::test]
 async fn live_operation_ids_are_unique_across_cores_sharing_gates() {
-    let gate: Arc<dyn RequestGate> = Arc::new(CountingHooks::new());
+    let gate: Arc<dyn OperationObserver> = Arc::new(CountingHooks::new());
     let first_executor = DeterministicExecutor::new();
     let second_executor = DeterministicExecutor::new();
     let first_core = core(&first_executor, Arc::clone(&gate));

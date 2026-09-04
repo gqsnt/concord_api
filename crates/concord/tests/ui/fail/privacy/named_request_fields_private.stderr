@@ -7,7 +7,7 @@ error[E0061]: this method takes 1 argument but 0 arguments were supplied
 note: method defined here
   --> tests/ui/fail/privacy/named_request_fields_private.rs:9:9
    |
- 9 |     GET item(verbose: Option<bool>) -> Bytes using Bytes;
+ 9 |     GET item(verbose: Option<bool>) -> Bytes via Binary;
    |         ^^^^ ---------------------
 help: provide the argument
    |

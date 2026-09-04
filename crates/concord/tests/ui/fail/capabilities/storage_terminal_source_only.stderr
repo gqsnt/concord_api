@@ -3,10 +3,10 @@ error[E0599]: no method named `store_as_session` found for struct `OtherRequest`
    |
 22 | / api! {
 23 | |     client StorageApi {
-24 | |         timeout off;
+24 | |         timeout 30s;
 25 | |         base "http://storage.example.test/";
 ...  |
-32 | |     GET other() -> String using Text;
+32 | |     GET other() -> String via Text;
 33 | | }}
    | |__- method `store_as_session` not found for this struct
 ...

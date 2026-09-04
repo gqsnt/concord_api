@@ -106,7 +106,7 @@ impl CredentialProvider for BearerProvider {
 
 api! {
     client AuthApi {
-        timeout off;
+        timeout 30s;
         base "http://authentication.example.test/";
         values {
             tenant: String;
@@ -125,26 +125,26 @@ api! {
         }
 
 
-    GET login() -> crate::generated::authentication::SessionToken using crate::SessionCodec;
-    GET api_key_endpoint() -> Bytes using Bytes {
+    GET login() -> crate::generated::authentication::SessionToken via crate::SessionCodec;
+    GET api_key_endpoint() -> Bytes via Binary {
         auth { header "X-Api-Key" = application_key; }
     }
-    GET bearer_endpoint() -> Bytes using Bytes {
+    GET bearer_endpoint() -> Bytes via Binary {
         auth { bearer static_bearer; }
     }
-    GET basic_endpoint() -> Bytes using Bytes {
+    GET basic_endpoint() -> Bytes via Binary {
         auth { basic login; }
     }
-    GET provider_bearer_endpoint() -> Bytes using Bytes {
-        auth { bearer rotating_bearer recover on unauthorized; }
+    GET provider_bearer_endpoint() -> Bytes via Binary {
+        auth { bearer rotating_bearer challenge unauthorized; }
     }
     scope nested() {
         auth { header "X-Session" = session; }
-        GET inherited() -> Bytes using Bytes;
-        GET replaced() -> Bytes using Bytes {
+        GET inherited() -> Bytes via Binary;
+        GET replaced() -> Bytes via Binary {
             auth replace { query "token" = acquired; }
         }
-        GET public() -> Bytes using Bytes {
+        GET public() -> Bytes via Binary {
             auth off;
         }
     }
@@ -152,7 +152,7 @@ api! {
 
 api! {
     client SharedSecretApi {
-        timeout off;
+        timeout 30s;
         base "http://shared-secret.example.test/";
         credentials {
             secret shared;
@@ -161,17 +161,17 @@ api! {
         }
 
 
-    GET keyed() -> Bytes using Bytes {
+    GET keyed() -> Bytes via Binary {
         auth { header "X-Api-Key" = key; }
     }
-    GET bearer() -> Bytes using Bytes {
+    GET bearer() -> Bytes via Binary {
         auth { bearer token; }
     }
 }}
 
 api! {
     client CredentialProofApi {
-        timeout off;
+        timeout 30s;
         base "https://localhost/";
         credentials {
             secret api_secret;
@@ -180,16 +180,16 @@ api! {
         }
 
 
-    GET api_key_endpoint() -> Bytes using Bytes {
+    GET api_key_endpoint() -> Bytes via Binary {
         auth { header "X-Api-Key" = application_key; }
     }
-    GET session_endpoint() -> Bytes using Bytes {
+    GET session_endpoint() -> Bytes via Binary {
         auth { header "X-Session" = session; }
     }
-    GET exact_authorization() -> Bytes using Bytes {
+    GET exact_authorization() -> Bytes via Binary {
         auth { authorization = application_key; }
     }
-    GET scheme_authorization() -> Bytes using Bytes {
+    GET scheme_authorization() -> Bytes via Binary {
         auth { authorization "tOkEn" = session; }
     }
 }}

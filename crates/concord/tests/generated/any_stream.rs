@@ -1,61 +1,50 @@
 use std::pin::Pin;
 
 use concord::api;
-use concord::body::{RequestBodySpec, Stream, StreamBody};
-use concord::codec::{AnyMedia, MediaType, OctetStream};
+use concord::body::{RequestRepresentation, RequestStream};
 use concord::endpoint::{EndpointId, RuntimeEndpoint};
 use concord::error::ErrorCategory;
 use concord::http::{Method, SafeProxy};
-use concord::response::{ByteStream, ResponseSpec, Streaming};
-use concord::{ApiError, Bytes};
+use concord::response::{ByteStream, ResponseRepresentation, Streaming};
+use concord::{ApiError, Binary, Bytes};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 use futures_core::Stream as _;
 
-pub struct VendorMedia;
-
-impl MediaType for VendorMedia {
-    const MEDIA_TYPE: &'static str = "application/vnd.concord.stream; version=1";
-}
-
 api! {
     client AnyStreamApi {
-        timeout off;
+        timeout 30s;
         base "http://any-stream.example.test/root/";
 
 
-    POST upload(body body: ::concord::body::StreamBody using Stream) -> Bytes using Bytes {
+    POST upload(body body: ::concord::body::RequestStream via Binary) -> Bytes via Binary {
         path ["upload"];
     }
 
-    POST exact_upload(body body: ::concord::body::StreamBody using Stream<OctetStream>) -> Bytes using Bytes {
+    POST exact_upload(body body: ::concord::body::RequestStream via Binary) -> Bytes via Binary {
         path ["exact-upload"];
     }
 
-    GET missing_media() -> ::concord::response::ByteStream using Stream {
+    GET missing_media() -> ::concord::response::ByteStream via Binary {
         path ["missing-media"];
     }
 
-    GET malformed_media() -> ::concord::response::ByteStream using Stream {
+    GET malformed_media() -> ::concord::response::ByteStream via Binary {
         path ["malformed-media"];
     }
 
-    GET arbitrary_media() -> ::concord::response::ByteStream using Stream {
+    GET arbitrary_media() -> ::concord::response::ByteStream via Binary {
         path ["arbitrary-media"];
     }
 
-    GET empty() -> ::concord::response::ByteStream using Stream {
+    GET empty() -> ::concord::response::ByteStream via Binary {
         path ["empty"];
     }
 
-    GET exact() -> ::concord::response::ByteStream using Stream<OctetStream> {
+    GET exact() -> ::concord::response::ByteStream via Binary {
         path ["exact"];
     }
 
-    GET vendor() -> ::concord::response::ByteStream using Stream<crate::generated::any_stream::VendorMedia> {
-        path ["vendor"];
-    }
-
-    GET exact_mismatch() -> ::concord::response::ByteStream using Stream<OctetStream> {
+    GET exact_mismatch() -> ::concord::response::ByteStream via Binary {
         path ["exact-mismatch"];
     }
 }}
@@ -79,34 +68,29 @@ async fn collect(mut stream: ByteStream) -> Result<Bytes, ApiError> {
 }
 
 #[test]
-fn default_and_explicit_any_media_streams_have_the_same_public_contract() {
+fn binary_is_the_exact_public_request_and_response_stream_representation() {
     fn assert_request<S>()
     where
-        S: RequestBodySpec<Input = StreamBody>,
+        S: RequestRepresentation<RequestStream>,
     {
     }
 
     fn assert_response<S>()
     where
-        S: ResponseSpec<Output = ByteStream, Mode = Streaming>,
+        S: ResponseRepresentation<ByteStream, Driver = Streaming>,
     {
     }
 
-    assert_request::<Stream>();
-    assert_request::<Stream<AnyMedia>>();
-    assert_request::<Stream<OctetStream>>();
-    assert_response::<Stream>();
-    assert_response::<Stream<AnyMedia>>();
-    assert_response::<Stream<OctetStream>>();
-    assert_eq!(<Stream as ResponseSpec>::accept(), None);
+    assert_request::<Binary>();
+    assert_response::<Binary>();
     assert_eq!(
-        <Stream<OctetStream> as ResponseSpec>::accept(),
+        <Binary as ResponseRepresentation<ByteStream>>::accept(),
         Some("application/octet-stream")
     );
 }
 
 #[tokio::test]
-async fn generated_and_runtime_streams_preserve_bare_and_exact_wire_semantics() {
+async fn generated_and_runtime_binary_streams_preserve_bounded_wire_semantics() {
     let server = ScriptedServer::start([
         ResponseScript::ok(b"bare-upload-accepted".to_vec()),
         ResponseScript::ok(b"exact-upload-accepted".to_vec()),
@@ -117,12 +101,8 @@ async fn generated_and_runtime_streams_preserve_bare_and_exact_wire_semantics() 
         ResponseScript::ok(Vec::new()),
         ResponseScript::ok(b"exact-media".to_vec())
             .with_header("content-type", "application/octet-stream; version=1"),
-        ResponseScript::ok(b"vendor-media".to_vec()).with_header(
-            "content-type",
-            "application/vnd.concord.stream; charset=utf-8; version=1",
-        ),
         ResponseScript::ok(b"runtime-bare".to_vec())
-            .with_header("content-type", "not a media type"),
+            .with_header("content-type", "application/octet-stream"),
         ResponseScript::ok(b"exact-mismatch-secret".to_vec())
             .with_header("content-type", "text/plain"),
     ])
@@ -131,7 +111,7 @@ async fn generated_and_runtime_streams_preserve_bare_and_exact_wire_semantics() 
 
     assert_eq!(
         client
-            .upload(StreamBody::from_bytes(Bytes::from_static(
+            .upload(RequestStream::from_bytes(Bytes::from_static(
                 b"bare-upload-body"
             )))
             .await
@@ -140,7 +120,7 @@ async fn generated_and_runtime_streams_preserve_bare_and_exact_wire_semantics() 
     );
     assert_eq!(
         client
-            .exact_upload(StreamBody::from_bytes(Bytes::from_static(
+            .exact_upload(RequestStream::from_bytes(Bytes::from_static(
                 b"exact-upload-body"
             )))
             .await
@@ -155,26 +135,20 @@ async fn generated_and_runtime_streams_preserve_bare_and_exact_wire_semantics() 
         Bytes::from_static(b"missing-media")
     );
     assert_eq!(
-        collect(
-            client
-                .malformed_media()
-                .await
-                .expect("malformed media stream"),
-        )
-        .await
-        .expect("malformed media body"),
-        Bytes::from_static(b"malformed-media")
+        client
+            .malformed_media()
+            .await
+            .expect_err("malformed media")
+            .category(),
+        ErrorCategory::ResponseContract
     );
     assert_eq!(
-        collect(
-            client
-                .arbitrary_media()
-                .await
-                .expect("arbitrary media stream"),
-        )
-        .await
-        .expect("arbitrary media body"),
-        Bytes::from_static(b"arbitrary-media")
+        client
+            .arbitrary_media()
+            .await
+            .expect_err("wrong media")
+            .category(),
+        ErrorCategory::ResponseContract
     );
     assert!(
         collect(client.empty().await.expect("empty bare stream"))
@@ -188,25 +162,24 @@ async fn generated_and_runtime_streams_preserve_bare_and_exact_wire_semantics() 
             .expect("exact body"),
         Bytes::from_static(b"exact-media")
     );
-    assert_eq!(
-        collect(client.vendor().await.expect("vendor stream"))
-            .await
-            .expect("vendor body"),
-        Bytes::from_static(b"vendor-media")
-    );
-
     let runtime = RuntimeEndpoint::builder(
         EndpointId::try_from("runtime.any_stream").expect("runtime stream endpoint ID"),
         Method::GET,
     )
     .path("runtime")
-    .response::<Stream>()
+    .response::<Binary, ByteStream>()
     .build()
     .expect("runtime bare stream response");
     assert_eq!(
-        collect(client.request(runtime).await.expect("runtime bare stream"))
-            .await
-            .expect("runtime bare body"),
+        collect(
+            runtime
+                .try_bind(&client)
+                .expect("runtime binding")
+                .await
+                .expect("runtime bare stream")
+        )
+        .await
+        .expect("runtime bare body"),
         Bytes::from_static(b"runtime-bare")
     );
 
@@ -218,8 +191,11 @@ async fn generated_and_runtime_streams_preserve_bare_and_exact_wire_semantics() 
     assert!(!format!("{error:?} {error}").contains("exact-mismatch-secret"));
 
     let requests = server.requests();
-    assert_eq!(requests.len(), 10);
-    assert_eq!(requests[0].header("content-type"), None);
+    assert_eq!(requests.len(), 9);
+    assert_eq!(
+        requests[0].header("content-type"),
+        Some("application/octet-stream")
+    );
     assert_eq!(requests[0].body(), b"bare-upload-body");
     assert_eq!(
         requests[1].header("content-type"),
@@ -231,11 +207,7 @@ async fn generated_and_runtime_streams_preserve_bare_and_exact_wire_semantics() 
         Some("application/octet-stream")
     );
     assert_eq!(
-        requests[7].header("accept"),
-        Some("application/vnd.concord.stream; version=1")
-    );
-    assert_eq!(
-        requests[9].header("accept"),
+        requests[8].header("accept"),
         Some("application/octet-stream")
     );
 }

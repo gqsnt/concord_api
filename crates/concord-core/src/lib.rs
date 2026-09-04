@@ -12,6 +12,7 @@ pub mod contracts;
 #[cfg(feature = "records")]
 pub mod records;
 
+mod atom;
 mod auth;
 mod body;
 mod client;

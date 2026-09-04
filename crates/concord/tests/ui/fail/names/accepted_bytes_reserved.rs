@@ -2,10 +2,10 @@ use concord::api;
 
 api! {
     client NamingApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
-        GET accepted_bytes() -> concord::Bytes using concord::Bytes;
+        GET accepted_bytes() -> concord::Bytes via concord::Bytes;
     }
 }
 

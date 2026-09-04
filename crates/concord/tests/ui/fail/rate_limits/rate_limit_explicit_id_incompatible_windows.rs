@@ -2,26 +2,26 @@ use concord::api;
 
 api! {
     client Api {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
     scope first() {
-        rate_limit {
+        rate_limit { key [origin]; cost 1;
             id "service.shared";
             allow 10 per 1s;
             allow 100 per 1m;
         }
-        GET read() -> Bytes using Bytes;
+        GET read() -> Bytes via Binary;
     }
 
     scope second() {
-        rate_limit {
+        rate_limit { key [origin]; cost 1;
             id "service.shared";
             allow 100 per 1m;
             allow 10 per 1s;
         }
-        GET write() -> Bytes using Bytes;
+        GET write() -> Bytes via Binary;
     }
 }}
 

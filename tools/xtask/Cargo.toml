@@ -8,8 +8,8 @@ publish = false
 
 [dependencies]
 cargo_metadata.workspace = true
-concord_core = { package = "concord-core", version = "=2.0.0", path = "../../crates/concord-core", default-features = false, features = ["multipart"] }
-concord_extras = { package = "concord-extras", version = "=2.0.0", path = "../../crates/concord-extras", default-features = false, features = ["oauth2-client"] }
+concord_core = { package = "concord-core", version = "=2.1.0", path = "../../crates/concord-core", default-features = false, features = ["multipart"] }
+concord_extras = { package = "concord-extras", version = "=2.1.0", path = "../../crates/concord-extras", default-features = false, features = ["oauth2-client"] }
 serde_json.workspace = true
 
 [lints]

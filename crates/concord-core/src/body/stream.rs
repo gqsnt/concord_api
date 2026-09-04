@@ -14,7 +14,7 @@ pub(crate) type BodyStream = Pin<Box<dyn Stream<Item = Result<Bytes, BodyError>>
 
 const READER_BUFFER_BYTES: usize = 8 * 1024;
 
-/// An owned one-shot request byte stream.
+/// An owned one-shot request stream.
 ///
 /// Construction is lazy: Concord does not poll the source until native
 /// request execution begins. Producer failures are reduced to a structural
@@ -24,13 +24,14 @@ const READER_BUFFER_BYTES: usize = 8 * 1024;
 /// for one request body, and yields cooperatively during immediately ready
 /// empty runs. Empty chunks consume neither the body-byte limit nor an exact
 /// declared length.
-pub struct StreamBody {
+pub struct RequestStream<T = Bytes> {
     source: BodyStream,
     source_length: Option<u64>,
     declared_length: Option<u64>,
+    marker: PhantomData<fn() -> T>,
 }
 
-impl StreamBody {
+impl RequestStream<Bytes> {
     /// Creates a lazy one-frame stream from bytes.
     #[must_use]
     pub fn from_bytes(bytes: Bytes) -> Self {
@@ -39,6 +40,7 @@ impl StreamBody {
             source: Box::pin(OneChunk { bytes: Some(bytes) }),
             source_length: Some(length),
             declared_length: None,
+            marker: PhantomData,
         }
     }
 
@@ -60,6 +62,7 @@ impl StreamBody {
             }),
             source_length: None,
             declared_length: None,
+            marker: PhantomData,
         }
     }
 
@@ -73,6 +76,7 @@ impl StreamBody {
             source: Box::pin(ReaderStream::new(reader)),
             source_length: None,
             declared_length: None,
+            marker: PhantomData,
         }
     }
 
@@ -92,6 +96,7 @@ impl StreamBody {
             source: Box::pin(ReaderStream::new(file)),
             source_length: Some(length.len()),
             declared_length: None,
+            marker: PhantomData,
         })
     }
 
@@ -129,10 +134,10 @@ impl StreamBody {
     }
 }
 
-impl fmt::Debug for StreamBody {
+impl fmt::Debug for RequestStream<Bytes> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("StreamBody")
+            .debug_struct("RequestStream")
             .field("source_length", &self.source_length)
             .field("declared_length", &self.declared_length)
             .field("source", &"<request stream omitted>")
@@ -272,13 +277,13 @@ mod tests {
     #[tokio::test]
     async fn constructors_are_lazy_and_reader_is_chunked() {
         let polls = Arc::new(AtomicUsize::new(0));
-        let body = StreamBody::from_stream(PollProbe {
+        let body = RequestStream::from_stream(PollProbe {
             polls: Arc::clone(&polls),
         });
         assert_eq!(polls.load(Ordering::SeqCst), 0);
         assert_eq!(body.exact_length_value(), None);
 
-        let body = StreamBody::from_reader(&b"reader bytes"[..]).exact_length(12);
+        let body = RequestStream::from_reader(&b"reader bytes"[..]).exact_length(12);
         assert_eq!(body.exact_length_value(), Some(12));
         assert_eq!(body.lower_bound(), None);
     }
@@ -311,12 +316,12 @@ mod tests {
 
     #[test]
     fn bytes_have_trustworthy_length_and_conflicts_fail_without_polling() {
-        let body = StreamBody::from_bytes(Bytes::from_static(b"four"));
+        let body = RequestStream::from_bytes(Bytes::from_static(b"four"));
         assert_eq!(body.exact_length_value(), Some(4));
         assert_eq!(body.lower_bound(), Some(4));
         body.validate_metadata().expect("matching source metadata");
 
-        let error = StreamBody::from_bytes(Bytes::from_static(b"four"))
+        let error = RequestStream::from_bytes(Bytes::from_static(b"four"))
             .exact_length(3)
             .validate_metadata()
             .expect_err("conflicting known source length");

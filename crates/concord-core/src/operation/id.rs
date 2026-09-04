@@ -11,6 +11,17 @@ impl OperationId {
     pub(crate) fn allocate() -> Result<Self, OperationIdExhausted> {
         GLOBAL_OPERATION_IDS.allocate()
     }
+
+    pub(crate) const fn retry_entropy(self, retry_number: u32, page_index: u32) -> u64 {
+        let mut value = self.0
+            ^ (retry_number as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+            ^ (page_index as u64).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        value ^= value >> 30;
+        value = value.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        value ^= value >> 27;
+        value = value.wrapping_mul(0x94d0_49bb_1331_11eb);
+        value ^ (value >> 31)
+    }
 }
 
 impl fmt::Debug for OperationId {

@@ -1,6 +1,7 @@
 use super::*;
+use http::{HeaderMap, HeaderValue};
 
-use crate::retry::{RetryAttempt, RetryDecision, RetryFailure, RetryPolicy};
+use crate::retry::{RetryAttempt, RetryBackoff, RetryDecision, RetryFailure, RetryPolicy};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct CompletionSnapshot {
@@ -20,14 +21,9 @@ struct RetryLifecycleProbe {
     acquisitions: Mutex<Vec<AttemptInfo>>,
     observations: Mutex<Vec<(AttemptInfo, StatusCode)>>,
     trace: Mutex<Vec<&'static str>>,
-    fail_before_attempt: Option<u32>,
     fail_acquire_attempt: Option<u32>,
-    fail_response_hook_attempt: Option<u32>,
     response_drop_required_before_attempt: Option<(u32, Arc<AtomicUsize>)>,
-    before_gate: Option<(u32, Gate)>,
     acquire_gate: Option<(u32, Gate)>,
-    observe_gate: Option<(u32, Gate)>,
-    response_hook_gate: Option<(u32, Gate)>,
 }
 
 impl RetryLifecycleProbe {
@@ -62,86 +58,52 @@ impl RetryLifecycleProbe {
     }
 }
 
-impl RequestGate for RetryLifecycleProbe {
-    fn before_send<'a>(&'a self, event: BeforeSend<'a>) -> BoxFuture<'a, Result<(), GateError>> {
-        self.trace.lock().expect("retry trace").push("before_send");
-        self.before
-            .lock()
-            .expect("before records")
-            .push((event.operation_id, event.attempt));
-        if let Some((attempt, drops)) = &self.response_drop_required_before_attempt {
-            if event.attempt.index == *attempt {
-                assert_eq!(
-                    drops.load(Ordering::SeqCst),
-                    1,
-                    "the intermediate response must be dropped before retry work"
-                );
+impl OperationObserver for RetryLifecycleProbe {
+    fn observe(&self, event: OperationEvent<'_>) {
+        match event {
+            OperationEvent::AttemptStarted(event) => {
+                self.trace
+                    .lock()
+                    .expect("retry trace")
+                    .push("attempt_started");
+                self.before
+                    .lock()
+                    .expect("before records")
+                    .push((event.operation_id, event.attempt));
+                if let Some((attempt, drops)) = &self.response_drop_required_before_attempt {
+                    if event.attempt.index == *attempt {
+                        assert_eq!(drops.load(Ordering::SeqCst), 1);
+                    }
+                }
             }
+            OperationEvent::ResponseHeadObserved(event) => {
+                self.trace
+                    .lock()
+                    .expect("retry trace")
+                    .push("response_observed");
+                self.responses.lock().expect("response records").push((
+                    event.operation_id,
+                    event.attempt,
+                    event.status,
+                ));
+            }
+            OperationEvent::OperationFinished(event) => {
+                self.trace.lock().expect("retry trace").push("complete");
+                self.completions
+                    .lock()
+                    .expect("completion records")
+                    .push(CompletionSnapshot {
+                        operation_id: event.operation_id,
+                        attempts_started: event.attempts_started,
+                        policy_retries: event.policy_retries,
+                        recovered_authentication: event.recovered_authentication,
+                        outcome: event.outcome,
+                        final_status: event.final_status,
+                    });
+            }
+            OperationEvent::PaginationFinished(_) => {}
+            _ => {}
         }
-        let gate = self
-            .before_gate
-            .as_ref()
-            .filter(|(attempt, _)| *attempt == event.attempt.index)
-            .map(|(_, gate)| gate.clone());
-        Box::pin(async move {
-            if let Some(gate) = gate {
-                gate.wait().await;
-            }
-            if self.fail_before_attempt == Some(event.attempt.index) {
-                Err(GateError::new("safe retry hook veto"))
-            } else {
-                Ok(())
-            }
-        })
-    }
-}
-
-impl ResponseGate for RetryLifecycleProbe {
-    fn before_response_handling<'a>(
-        &'a self,
-        event: ResponseHeadEvent<'a>,
-    ) -> BoxFuture<'a, Result<(), GateError>> {
-        self.trace
-            .lock()
-            .expect("retry trace")
-            .push("response_hook");
-        self.responses.lock().expect("response records").push((
-            event.operation_id,
-            event.attempt,
-            event.status,
-        ));
-        let gate = self
-            .response_hook_gate
-            .as_ref()
-            .filter(|(attempt, _)| *attempt == event.attempt.index)
-            .map(|(_, gate)| gate.clone());
-        Box::pin(async move {
-            if let Some(gate) = gate {
-                gate.wait().await;
-            }
-            if self.fail_response_hook_attempt == Some(event.attempt.index) {
-                Err(GateError::new("safe retry response-hook veto"))
-            } else {
-                Ok(())
-            }
-        })
-    }
-}
-
-impl CompletionObserver for RetryLifecycleProbe {
-    fn on_complete(&self, event: CompletionEvent<'_>) {
-        self.trace.lock().expect("retry trace").push("complete");
-        self.completions
-            .lock()
-            .expect("completion records")
-            .push(CompletionSnapshot {
-                operation_id: event.operation_id,
-                attempts_started: event.attempts_started,
-                policy_retries: event.policy_retries,
-                recovered_authentication: event.recovered_authentication,
-                outcome: event.outcome,
-                final_status: event.final_status,
-            });
     }
 }
 
@@ -177,10 +139,7 @@ impl RateLimiter for RetryLifecycleProbe {
         })
     }
 
-    fn observe<'a>(
-        &'a self,
-        response: RateLimitResponse<'a>,
-    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
+    fn observe(&self, response: RateLimitResponse<'_>) {
         self.trace
             .lock()
             .expect("retry trace")
@@ -189,17 +148,6 @@ impl RateLimiter for RetryLifecycleProbe {
             .lock()
             .expect("observation records")
             .push((response.request.attempt, response.status));
-        let gate = self
-            .observe_gate
-            .as_ref()
-            .filter(|(attempt, _)| *attempt == response.request.attempt.index)
-            .map(|(_, gate)| gate.clone());
-        Box::pin(async move {
-            if let Some(gate) = gate {
-                gate.wait().await;
-            }
-            Ok(())
-        })
     }
 }
 
@@ -227,9 +175,9 @@ fn retry_core(
         "http://execution.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
         RuntimeConfigBuilder::new()
-            .request_gate(probe.clone())
-            .response_gate(probe.clone())
-            .completion_observer(probe)
+            .operation_observer(probe.clone())
+            .operation_observer(probe.clone())
+            .operation_observer(probe)
             .rate_limiter(limiter)
             .retry_policy(policy),
         executor,
@@ -297,9 +245,9 @@ async fn private_protocol_recovery_is_one_visible_attempt_and_consumes_no_policy
         &base_url,
         HttpConfigBuilder::new().http2_prior_knowledge(),
         RuntimeConfigBuilder::new()
-            .request_gate(probe.clone())
-            .response_gate(probe.clone())
-            .completion_observer(probe.clone())
+            .operation_observer(probe.clone())
+            .operation_observer(probe.clone())
+            .operation_observer(probe.clone())
             .rate_limiter(limiter)
             .retry_policy(policy),
     )
@@ -352,14 +300,14 @@ async fn private_protocol_recovery_does_not_resend_a_one_shot_native_body() {
         &server.base_url(),
         HttpConfigBuilder::new().http2_prior_knowledge(),
         RuntimeConfigBuilder::new()
-            .request_gate(probe.clone())
-            .response_gate(probe.clone())
-            .completion_observer(probe.clone())
+            .operation_observer(probe.clone())
+            .operation_observer(probe.clone())
+            .operation_observer(probe.clone())
             .rate_limiter(limiter),
     )
     .expect("HTTP/2 one-shot core");
     let polls = Arc::new(AtomicUsize::new(0));
-    let body = RequestBody::stream(StreamBody::from_stream(BodyPollProbe::new(
+    let body = RequestBody::stream(RequestStream::from_stream(BodyPollProbe::new(
         [ProbeFrame::Data(b"one-shot-protocol-body")],
         &polls,
     )));
@@ -564,15 +512,15 @@ async fn rejected_status_observation_and_hook_precede_classifier_and_body_is_unp
     assert_eq!(
         probe.trace(),
         [
-            "before_send",
+            "attempt_started",
             "limiter_acquire",
             "limiter_observe",
-            "response_hook",
+            "response_observed",
             "classifier",
-            "before_send",
+            "attempt_started",
             "limiter_acquire",
             "limiter_observe",
-            "response_hook",
+            "response_observed",
             "complete",
         ]
     );
@@ -580,15 +528,18 @@ async fn rejected_status_observation_and_hook_precede_classifier_and_body_is_unp
 
 struct AcceptServiceUnavailable;
 
-impl ResponseSpec for AcceptServiceUnavailable {
+impl TestResponseRepresentation for AcceptServiceUnavailable {
     type Output = Bytes;
-    type Mode = Buffered;
 
-    fn accepts_status(status: StatusCode) -> bool {
-        status == StatusCode::SERVICE_UNAVAILABLE
+    fn accepted_status() -> AcceptedStatus {
+        AcceptedStatus::codes([StatusCode::SERVICE_UNAVAILABLE]).expect("nonempty test status set")
     }
+}
 
-    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
+impl ResponseRepresentation<Bytes> for AcceptServiceUnavailable {
+    type Driver = Buffered;
+
+    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<Bytes, ResponseBodyError> {
         Ok(body)
     }
 }
@@ -682,10 +633,10 @@ async fn poisoned_retry_budget_preserves_the_original_rejected_status() {
     assert_eq!(
         probe.trace(),
         [
-            "before_send",
+            "attempt_started",
             "limiter_acquire",
             "limiter_observe",
-            "response_hook",
+            "response_observed",
             "complete",
         ]
     );
@@ -825,7 +776,7 @@ async fn one_shot_suppression_consumes_no_shared_retry_budget() {
     let core = retry_core(&executor, Arc::clone(&probe), policy);
     let polls = Arc::new(AtomicUsize::new(0));
     let one_shot = RequestBody::stream(
-        StreamBody::from_stream(BodyPollProbe::new([ProbeFrame::Data(b"one-shot")], &polls))
+        RequestStream::from_stream(BodyPollProbe::new([ProbeFrame::Data(b"one-shot")], &polls))
             .exact_length(8),
     );
 
@@ -851,30 +802,6 @@ async fn one_shot_suppression_consumes_no_shared_retry_budget() {
 
 #[tokio::test]
 async fn failures_after_retry_reservation_use_their_ordinary_categories() {
-    let hook_executor = DeterministicExecutor::new();
-    hook_executor
-        .application()
-        .queue_response(ScriptedResponse::status(
-            StatusCode::SERVICE_UNAVAILABLE,
-            Bytes::new(),
-        ))
-        .expect("hook retry status");
-    let hook_probe = Arc::new(RetryLifecycleProbe {
-        fail_before_attempt: Some(1),
-        ..RetryLifecycleProbe::default()
-    });
-    let hook_core = retry_core(
-        &hook_executor,
-        Arc::clone(&hook_probe),
-        policy_without_budget(1, |_| RetryDecision::Retry),
-    );
-    let hook = retry_request(hook_core, Duration::from_secs(30))
-        .await
-        .expect_err("retry hook veto");
-    assert_eq!(hook.category(), ErrorCategory::PolicyRejected);
-    assert_eq!(hook_probe.completions()[0].attempts_started, 2);
-    assert_eq!(hook_probe.completions()[0].policy_retries, 1);
-
     let limiter_executor = DeterministicExecutor::new();
     limiter_executor
         .application()
@@ -898,34 +825,6 @@ async fn failures_after_retry_reservation_use_their_ordinary_categories() {
     assert_eq!(limiter.category(), ErrorCategory::RateLimit);
     assert_eq!(limiter_probe.acquisitions().len(), 2);
     assert_eq!(limiter_probe.completions()[0].policy_retries, 1);
-
-    let response_hook_executor = DeterministicExecutor::new();
-    response_hook_executor
-        .application()
-        .queue_response(ScriptedResponse::status(
-            StatusCode::SERVICE_UNAVAILABLE,
-            Bytes::new(),
-        ))
-        .expect("response-hook retry status");
-    response_hook_executor
-        .application()
-        .queue_response(ScriptedResponse::success(Bytes::from_static(b"unobserved")))
-        .expect("response-hook retry response");
-    let response_hook_probe = Arc::new(RetryLifecycleProbe {
-        fail_response_hook_attempt: Some(1),
-        ..RetryLifecycleProbe::default()
-    });
-    let response_hook_core = retry_core(
-        &response_hook_executor,
-        Arc::clone(&response_hook_probe),
-        policy_without_budget(1, |_| RetryDecision::Retry),
-    );
-    let response_hook = retry_request(response_hook_core, Duration::from_secs(30))
-        .await
-        .expect_err("retry response-hook failure");
-    assert_eq!(response_hook.category(), ErrorCategory::PolicyRejected);
-    assert_eq!(response_hook_probe.observations().len(), 2);
-    assert_eq!(response_hook_probe.completions()[0].policy_retries, 1);
 }
 
 struct FailSecondFactory {
@@ -933,10 +832,10 @@ struct FailSecondFactory {
 }
 
 impl BodyFactory for FailSecondFactory {
-    fn create(&self) -> Result<StreamBody, BodyError> {
+    fn create(&self) -> Result<RequestStream, BodyError> {
         let call = self.calls.fetch_add(1, Ordering::SeqCst);
         if call == 0 {
-            Ok(StreamBody::from_bytes(Bytes::from_static(b"initial")))
+            Ok(RequestStream::from_bytes(Bytes::from_static(b"initial")))
         } else {
             Err(BodyError::new(crate::body::BodyErrorKind::Factory))
         }
@@ -1036,21 +935,15 @@ async fn classifier_and_later_attempt_share_one_operation_deadline() {
 
 #[derive(Clone, Copy)]
 enum RetryCancellationStage {
-    BeforeSend,
     LimiterAcquire,
     NativeExecution,
-    LimiterObserve,
-    ResponseHook,
 }
 
 #[tokio::test]
 async fn cancellation_drops_every_awaited_retry_stage_without_completion() {
     for stage in [
-        RetryCancellationStage::BeforeSend,
         RetryCancellationStage::LimiterAcquire,
         RetryCancellationStage::NativeExecution,
-        RetryCancellationStage::LimiterObserve,
-        RetryCancellationStage::ResponseHook,
     ] {
         let executor = DeterministicExecutor::new();
         executor
@@ -1073,19 +966,10 @@ async fn cancellation_drops_every_awaited_retry_stage_without_completion() {
             .expect("retry response");
         let mut probe = RetryLifecycleProbe::default();
         match stage {
-            RetryCancellationStage::BeforeSend => {
-                probe.before_gate = Some((1, gate.clone()));
-            }
             RetryCancellationStage::LimiterAcquire => {
                 probe.acquire_gate = Some((1, gate.clone()));
             }
             RetryCancellationStage::NativeExecution => {}
-            RetryCancellationStage::LimiterObserve => {
-                probe.observe_gate = Some((1, gate.clone()));
-            }
-            RetryCancellationStage::ResponseHook => {
-                probe.response_hook_gate = Some((1, gate.clone()));
-            }
         }
         let probe = Arc::new(probe);
         let core = retry_core(
@@ -1103,10 +987,8 @@ async fn cancellation_drops_every_awaited_retry_stage_without_completion() {
         assert!(probe.completions().is_empty());
         assert_eq!(probe.before_attempts().len(), 2);
         let expected_requests = match stage {
-            RetryCancellationStage::BeforeSend | RetryCancellationStage::LimiterAcquire => 1,
-            RetryCancellationStage::NativeExecution
-            | RetryCancellationStage::LimiterObserve
-            | RetryCancellationStage::ResponseHook => 2,
+            RetryCancellationStage::LimiterAcquire => 1,
+            RetryCancellationStage::NativeExecution => 2,
         };
         assert_eq!(
             executor
@@ -1270,7 +1152,7 @@ async fn multipart_retry_follows_recipe_replayability() {
     let one_shot = MultipartBody::new()
         .part(
             "stream",
-            MultipartPart::stream(StreamBody::from_bytes(Bytes::from_static(
+            MultipartPart::stream(RequestStream::from_bytes(Bytes::from_static(
                 b"one-shot multipart",
             ))),
         )
@@ -1301,4 +1183,80 @@ async fn multipart_retry_follows_recipe_replayability() {
         1
     );
     assert_eq!(one_shot_probe.completions()[0].policy_retries, 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn retry_waits_for_maximum_of_backoff_and_server_minimum() {
+    let executor = DeterministicExecutor::new();
+    let mut headers = HeaderMap::new();
+    headers.insert(http::header::RETRY_AFTER, HeaderValue::from_static("5"));
+    executor
+        .application()
+        .queue_response(
+            ScriptedResponse::status(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
+                .headers(headers),
+        )
+        .expect("delayed retry status");
+    executor
+        .application()
+        .queue_response(ScriptedResponse::success(Bytes::from_static(b"delayed-ok")))
+        .expect("delayed retry success");
+    let policy = RetryPolicy::builder()
+        .max_retries_per_operation(1)
+        .without_budget()
+        .backoff(RetryBackoff::fixed(Duration::from_secs(2)))
+        .honor_server_delay_up_to(Duration::from_secs(10))
+        .classify_fn(|_| RetryDecision::Retry)
+        .build()
+        .expect("delayed retry policy");
+    let probe = Arc::new(RetryLifecycleProbe::default());
+    let core = retry_core(&executor, Arc::clone(&probe), policy);
+    let task = tokio::spawn(retry_request(core, Duration::from_secs(30)).into_future());
+
+    tokio::task::yield_now().await;
+    assert_eq!(executor.application().request_count().expect("count"), 1);
+    assert_eq!(probe.acquisitions().len(), 1);
+    tokio::time::advance(Duration::from_secs(4)).await;
+    tokio::task::yield_now().await;
+    assert_eq!(executor.application().request_count().expect("count"), 1);
+    assert_eq!(probe.acquisitions().len(), 1);
+    tokio::time::advance(Duration::from_secs(1)).await;
+    let output = task.await.expect("retry task").expect("delayed retry");
+    assert_eq!(output, Bytes::from_static(b"delayed-ok"));
+    assert_eq!(probe.acquisitions().len(), 2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn cancellation_during_backoff_consumes_no_shared_retry_budget() {
+    let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_response(ScriptedResponse::status(
+            StatusCode::SERVICE_UNAVAILABLE,
+            Bytes::new(),
+        ))
+        .expect("retry status");
+    let policy = RetryPolicy::builder()
+        .max_retries_per_operation(1)
+        .max_extra_load(1.0)
+        .backoff(RetryBackoff::fixed(Duration::from_secs(10)))
+        .classify_fn(|_| RetryDecision::Retry)
+        .build()
+        .expect("budgeted delayed policy");
+    let retained = policy.clone();
+    let probe = Arc::new(RetryLifecycleProbe::default());
+    let core = retry_core(&executor, probe, policy);
+    let task = tokio::spawn(retry_request(core, Duration::from_secs(30)).into_future());
+
+    tokio::task::yield_now().await;
+    assert_eq!(executor.application().request_count().expect("count"), 1);
+    task.abort();
+    let _ = task.await;
+
+    let logical_origin =
+        url::Url::parse("http://execution.example.test/v1/").expect("logical retry origin");
+    assert!(
+        retained.reserve_retry(&logical_origin),
+        "backoff cancellation must leave the shared retry allowance unused"
+    );
 }

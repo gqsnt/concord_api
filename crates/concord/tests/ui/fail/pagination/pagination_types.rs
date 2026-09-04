@@ -15,23 +15,32 @@ mod private_controller {
     }
 
     impl concord::pagination::PaginationController<Vec<u8>> for Controller {
-        fn next(
+        type Item = u8;
+
+        const DESCRIPTION: concord::pagination::PaginationDescription =
+            concord::pagination::PaginationDescription::NONE;
+
+        fn advance(
             self,
-            _page: &Vec<u8>,
-        ) -> Result<Option<Self>, concord::pagination::PaginationError> {
-            Ok(None)
+            _page: concord::pagination::PageResponse<Vec<u8>>,
+            _limits: concord::pagination::PageDecisionLimits,
+        ) -> Result<
+            concord::pagination::PageStep<Self, Self::Item>,
+            concord::pagination::PaginationError,
+        > {
+            Ok(concord::pagination::PageStep::Done { items: Vec::new() })
         }
     }
 }
 
 api! {
     client UndefinedField {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read(offset: u64, limit: std::num::NonZeroU32) -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::support::OffsetController {
+    GET read(offset: u64, limit: std::num::NonZeroU32) -> Vec<u8> via crate::support::Json {
+        paginate via crate::support::OffsetController {
             offset -> endpoint.missing;
             page_size -> endpoint.limit;
         }
@@ -40,12 +49,12 @@ api! {
 
 api! {
     client WrongOffsetType {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read(offset: String, limit: std::num::NonZeroU32) -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::support::OffsetController {
+    GET read(offset: String, limit: std::num::NonZeroU32) -> Vec<u8> via crate::support::Json {
+        paginate via crate::support::OffsetController {
             offset -> endpoint.offset;
             page_size -> endpoint.limit;
         }
@@ -54,12 +63,12 @@ api! {
 
 api! {
     client WrongCursorType {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read(cursor: String) -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::support::CursorController<String> {
+    GET read(cursor: String) -> Vec<u8> via crate::support::Json {
+        paginate via crate::support::CursorController<String> {
             cursor -> endpoint.cursor;
         }
     }
@@ -67,12 +76,12 @@ api! {
 
 api! {
     client MissingControllerField {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read(offset: u64) -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::support::OffsetController {
+    GET read(offset: u64) -> Vec<u8> via crate::support::Json {
+        paginate via crate::support::OffsetController {
             offset -> endpoint.offset;
         }
     }
@@ -80,12 +89,12 @@ api! {
 
 api! {
     client UnknownControllerField {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read(offset: u64, limit: std::num::NonZeroU32) -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::support::OffsetController {
+    GET read(offset: u64, limit: std::num::NonZeroU32) -> Vec<u8> via crate::support::Json {
+        paginate via crate::support::OffsetController {
             offset -> endpoint.offset;
             page_size -> endpoint.limit;
             unknown = 0;
@@ -95,12 +104,12 @@ api! {
 
 api! {
     client NonControllerType {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read(value: u64) -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::NotController {
+    GET read(value: u64) -> Vec<u8> via crate::support::Json {
+        paginate via crate::NotController {
             value -> endpoint.value;
         }
     }
@@ -108,12 +117,12 @@ api! {
 
 api! {
     client InaccessibleControllerField {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
 
-    GET read(state: u64) -> Vec<u8> using crate::support::Json<Vec<u8>> {
-        paginate with crate::private_controller::Controller {
+    GET read(state: u64) -> Vec<u8> via crate::support::Json {
+        paginate via crate::private_controller::Controller {
             state -> endpoint.state;
         }
     }

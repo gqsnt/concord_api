@@ -2,11 +2,11 @@ use concord::{Bytes, api};
 
 api! {
     client NamingApi {
-        timeout off;
+        timeout 30s;
         base "http://example.test";
 
 
-    GET raw_response() -> Bytes using Bytes {
+    GET raw_response() -> Bytes via Binary {
         expose accepted_bytes;
     }
 }}

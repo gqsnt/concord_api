@@ -7,8 +7,8 @@ use runtime::records::{
 fn main() {
     #[cfg(feature = "fixture-absence")]
     {
-        let _: Option<Csv<Vec<String>>> = None;
-        let _: Option<NdJson<u32>> = None;
+        let _: Option<Csv> = None;
+        let _: Option<NdJson> = None;
         let _: Option<HasHeader> = None;
         let _: Option<NoHeader> = None;
         let _: Option<CommaDelimiter> = None;

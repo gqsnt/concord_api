@@ -1,21 +1,13 @@
-use std::error::Error;
+use concord_core::contracts::{OperationEvent, OperationObserver};
 
-use concord_core::contracts::GateError;
+struct ReadOnlyObserver;
 
-const SAFE_MESSAGE: &str = "application-approved lifecycle veto";
-const BODY_SENTINEL: &str = "hook-body-sentinel-771bca";
-const NATIVE_URL_SENTINEL: &str = "hook-native-url-sentinel-418fae";
+impl OperationObserver for ReadOnlyObserver {
+    fn observe(&self, _event: OperationEvent<'_>) {}
+}
 
 #[test]
-fn hook_error_formats_only_application_owned_safe_message() {
-    let error = GateError::new(SAFE_MESSAGE);
-    let display = error.to_string();
-    let debug = format!("{error:?}");
-    assert!(display.contains(SAFE_MESSAGE));
-    assert!(debug.contains(SAFE_MESSAGE));
-    for forbidden in [BODY_SENTINEL, NATIVE_URL_SENTINEL] {
-        assert!(!display.contains(forbidden));
-        assert!(!debug.contains(forbidden));
-    }
-    assert!(Error::source(&error).is_none());
+fn observation_contract_exposes_no_result_or_async_decision_channel() {
+    fn assert_observer<T: OperationObserver>() {}
+    assert_observer::<ReadOnlyObserver>();
 }

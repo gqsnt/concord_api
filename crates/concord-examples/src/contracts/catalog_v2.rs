@@ -10,7 +10,9 @@ use std::time::Duration;
 
 use concord::auth::{CredentialMaterial, SecretCredential};
 use concord::rate_limit::LocalRateLimiter;
-use concord::{ApiResponse, Bytes, PageLimit, SecretString, api};
+use concord::{
+    ApiResponse, AtomError, BoundedAtomWriter, Bytes, PageLimit, RequestAtom, SecretString, api,
+};
 
 pub type TenantId = String;
 pub type Locale = String;
@@ -39,6 +41,12 @@ impl Default for ApiVersion {
 impl fmt::Display for ApiVersion {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.0)
+    }
+}
+
+impl RequestAtom for ApiVersion {
+    fn write_atom(&self, output: &mut BoundedAtomWriter<'_>) -> Result<(), AtomError> {
+        output.push_str(self.0)
     }
 }
 
@@ -101,7 +109,7 @@ api! {
 
         values {
             /// Tenant whose catalog is visible.
-            #[redact]
+            #[sensitive]
             tenant: TenantId;
 
             /// Optional localization preference.
@@ -135,9 +143,9 @@ api! {
         }
 
         rate_limits {
-            tenant_reads(tenant) {
+            policy tenant_reads(tenant) {
                 id "catalog.tenant.read";
-                key [host, tenant];
+                key [origin, tenant];
                 cost 1;
                 allow 120 per 1m;
                 allow 5_000 per 1h;
@@ -146,14 +154,14 @@ api! {
 
         /// Creates a session credential.
         POST authenticate(
-            body input: LoginInput using Json<LoginInput>,
-        ) -> SessionToken using Json<SessionToken> {
+            body input: LoginInput via Json,
+        ) -> SessionToken via Json {
             id "catalog.auth.login";
             path ["auth", "session"];
             auth replace {
                 header "X-Bootstrap-Key" = application_key;
             }
-            repeatability never;
+            effect non_idempotent;
         }
 
         scope regional(
@@ -168,7 +176,7 @@ api! {
             }
 
             auth replace {
-                bearer session recover on unauthorized;
+                bearer session challenge unauthorized;
             }
 
             rate_limit tenant_reads(tenant = client.tenant);
@@ -179,7 +187,7 @@ api! {
                 offset: u64 = 0,
                 count: PageSize = DEFAULT_PAGE_SIZE,
                 tags: Vec<Tag>,
-            ) -> Vec<ItemSummary> using Json<Vec<ItemSummary>> {
+            ) -> Vec<ItemSummary> via Json {
                 id "catalog.items.list";
                 path ["items"];
                 query {
@@ -188,14 +196,14 @@ api! {
                     "count" = endpoint.count;
                     "tag" = each endpoint.tags;
                 }
-                paginate with concord::pagination::OffsetPagination {
+                paginate via concord::pagination::OffsetPagination {
                     offset -> endpoint.offset;
                     page_size -> endpoint.count;
                 }
             }
 
             /// Returns one item.
-            GET item(id: ItemId) -> Item using Json<Item> {
+            GET item(id: ItemId) -> Item via Json {
                 id "catalog.item.get";
                 path ["items", endpoint.id];
                 expose accepted_bytes;
@@ -204,19 +212,19 @@ api! {
             /// Applies an idempotent update identified by `command_id`.
             PUT update_item(
                 id: ItemId,
-                #[redact]
+                #[sensitive]
                 command_id: CommandId,
-                body update: UpdateInput using Json<UpdateInput>,
-            ) -> Item using Json<Item> {
+                body update: UpdateInput via Json,
+            ) -> Item via Json {
                 id "catalog.item.update";
                 path ["items", endpoint.id];
                 headers {
                     "Idempotency-Key" = endpoint.command_id;
                 }
-                repeatability idempotent;
+                effect idempotent;
                 rate_limit {
                     id "catalog.item.write";
-                    key [host, endpoint, client.tenant];
+                    key [origin, endpoint, client.tenant];
                     cost 5;
                     allow 30 per 1m;
                 }

@@ -1,322 +1,610 @@
-# Concord v2 DSL specification
+# Concord v2.1 DSL specification
 
-- **Audience:** API authors, reviewers, and macro maintainers
-- **Status:** normative for declaration syntax and compile-time semantics
+This document is normative for authored language meaning. It specifies the implementation target, not yet a public compatibility freeze. Private compiler representations may differ; generated/runtime behavior may not.
 
-Concord accepts exactly one v2 client per `api!` invocation. All scopes and
-endpoints are lexically contained by that client. Selected retired forms are
-recognized only to produce migration diagnostics; they do not select another
-semantic mode. See the [migration guide](migration_v1_to_v2.md).
-The compile-checked [catalog v2 contract](../crates/concord-examples/src/contracts/catalog_v2.rs)
-shows the complete declaration and representative direct and unbound usage in one file.
+# 1. Lexical and structural model
 
-## Grammar overview
+## 1.1 One closed client tree
 
 ```text
-api             = api! { client }
-client          = attributes client TypeIdent { client_item* }
-client_item     = base | timeout | values | credentials | rate_limits
-                | attachment | scope | endpoint
-scope           = attributes scope ident ( parameters? ) { scope_item* }
-scope_item      = attachment | scope | endpoint
-endpoint        = attributes method ident ( parameters? )
-                  -> Type using Type ( ; | { endpoint_item* } )
-value_parameter = attributes ident [?] : Type [= stable_value]
-body_parameter  = body ident : Type using Type
-method          = GET | POST | PUT | PATCH | DELETE | HEAD | OPTIONS
-                | METHOD("TOKEN")
+api_decl     := api! { client_decl }
+
+client_decl  := attrs client TypeIdent {
+                    client_preamble*
+                    child+
+                }
+
+child        := scope_decl | endpoint_decl
+
+scope_decl   := attrs scope ident ( parameter_list? ) {
+                    scope_preamble*
+                    child+
+                }
+
+endpoint_decl:= attrs method ident ( endpoint_parameter_list? )
+                -> RustType result_representation?
+                ( ; | { endpoint_clause* } )
 ```
 
-`base` is required and client-only. The root must also select `timeout D;` or
-`timeout off;`. A parameter list may contain ordinary values and at most one
-body parameter in source order.
+Rules:
 
-Every Rust `Type` is parsed as arbitrary valid Rust type syntax and retained as
-opaque tokens. The macro never recognizes a path such as `Option`, `Vec`, an
-alias, or a qualified spelling to assign language semantics.
+- exactly one client per invocation;
+- every scope and endpoint is lexically inside that client;
+- a client/scope configuration preamble precedes the first child;
+- after the first child, only child declarations are accepted;
+- sibling child names are unique;
+- a scope must contain at least one child;
+- one visible root-to-leaf chain cannot contain the same canonical scope name twice;
+- sibling branches may reuse a scope name;
+- Rust types/paths are parsed opaquely and resolved by Rust after expansion.
 
-## Documentation and attributes
+## 1.2 Supported attributes
 
-Rust `///` documentation is contract data and appears in generated Rustdoc and
-descriptions. Supported non-doc attributes are:
+Supported where the generated projection has meaning:
 
-- `#[default]` on ordinary values;
-- `#[redact]` on ordinary public values;
-- `#[deprecated(note = "...")]` on clients, scopes, and endpoints.
+```text
+/// and #[doc = ...]
+#[deprecated(...)]
+#[default]
+#[sensitive]
+```
 
-Other attributes are declaration errors. `#[default_with]` and value-level
-deprecation are not part of v2.
+- `#[default]` applies only to ordinary public values;
+- `#[sensitive]` applies only to ordinary public values;
+- body/content and credential material have stronger dedicated information classes;
+- unknown attributes are rejected;
+- declaration-level `#[cfg]` remains unsupported; condition the containing module or complete `api!` invocation.
 
-## Owners and names
+## 1.3 Clause multiplicity
 
-Ordinary references always identify the owner: `client.tenant`,
-`regional.region`, or `endpoint.item_id`. A scope reference uses the exact
-visible source identifier. Reusing one scope identifier in an ancestor chain is
-an error; disjoint sibling branches may reuse it.
+At one owner:
 
-Body inputs are not public-expression values. Secrets appear only as
-`secret.name` in credential-source declarations. Credential names appear only
-inside authentication declarations.
+- client: exactly one `base`, exactly one finite root `timeout`;
+- client: at most one `values`, `credentials`, and `rate_limits` block;
+- client/scope: at most one local `request`, `response`, `subdomain`, `path`, `query`, `headers`, and `auth` family declaration;
+- client/scope/endpoint: rate-limit attachments may repeat because they are additive;
+- endpoint: at most one `id`, `status`, `effect`, pagination declaration, and each exposed terminal;
+- empty blocks are rejected when omission or `off` communicates intent more clearly.
 
-Resolution binds references to stable internal owner and value identities.
-Every generated type, method, control, terminal, storage method, unbound method,
-and hidden source-derived bridge name participates in collision analysis. A
-collision identifies both declarations and the generated symbol; convenience
-methods are never silently dropped.
+Scalar clause order inside a preamble is semantically irrelevant. Order inside query/header/auth operation lists and rate windows is retained where defined.
 
-## Values: exact type law
+# 2. Values, presence, defaults, and sensitivity
 
-`?` adds exactly one Concord-owned outer presence layer. The written payload
-type remains unchanged.
+```text
+values_block := values { value_decl* }
+value_decl   := attrs ident optional_mark? : RustType initializer? ;
+parameter    := attrs ident optional_mark? : RustType initializer?
+optional_mark:= ?
+initializer  := = stable_value
+stable_value:= string | char | bool | signed_integer | ConstPath
+```
 
-| Declaration | Effective stored type | Required input? |
-|---|---|---|
-| `x: T` | `T` | yes, unless defaulted |
-| `x?: T` | `Option<T>` | no |
-| `x: Option<T>` | `Option<T>` | yes, unless defaulted |
-| `x?: Option<T>` | `Option<Option<T>>` | no |
-| `x: Vec<T>` | `Vec<T>` | yes, unless defaulted |
-| `x?: Vec<T>` | `Option<Vec<T>>` | no |
+## 2.1 Exact type law
 
-A required `Option<T>` asks the caller for a domain decision, where `None` is a
-valid payload. For `x?: Option<T>`, outer `None` omits the decision,
-`Some(None)` explicitly clears it, and `Some(Some(v))` sets it. Storage,
-setters, placement, reflection, and diagnostics never flatten these states.
+`?` adds one outer Concord presence layer. No other type spelling has DSL meaning.
 
-## Defaults and controls
-
-`#[default]` evaluates `<T as Default>::default()` for the payload type. A
-stable initializer may instead be a string, character, Boolean, or signed
-numeric literal, or a simple const/static path. Calls, methods, macros, blocks,
-closures, indexing, collection construction, and arbitrary Rust expressions
-are rejected. Attribute default and explicit initializer are mutually
-exclusive.
-
-The initializer is applied before the outer presence layer. Thus a defaulted
-optional value begins as `Some(default)`, and a defaulted optional
-`Option<T>` begins as `Some(None)`.
-
-Defaults are evaluated once at the narrowest owner boundary: successful client
-build, scope creation, or endpoint intent construction. Retried attempts,
-recovery, and pages reuse the retained value. A snapshot `reset_x()` restores
-that retained value without reevaluation or `Clone`; a builder reset removes
-the override so the next build evaluates once.
-
-Generated controls consume `self`:
-
-| Value kind | Controls |
+| Source | Effective type |
 |---|---|
-| required, no default client value | `set_x(T)`; build reports omission |
-| required, no default scope/endpoint value | positional constructor argument |
-| optional `x?: T` | `set_x(Option<T>)`, `with_x(T)`, `clear_x()` |
-| required defaulted | `set_x(T)`, `reset_x()` |
-| optional defaulted | optional controls plus `reset_x()` |
+| `x: T` | `T` |
+| `x?: T` | `Option<T>` |
+| `x: Option<T>` | `Option<T>` required as payload |
+| `x?: Option<T>` | `Option<Option<T>>` |
+| `x: Vec<T>` | `Vec<T>` |
+| `x?: Vec<T>` | `Option<Vec<T>>` |
 
-`set_x(Some(v))` equals `with_x(v)` and `set_x(None)` equals `clear_x()`.
-Exact types are used; broad `Into<Option<T>>` setters are not generated.
-Scope/endpoint constructor arguments contain required non-defaulted ordinary
-values and body inputs in original source order.
+The macro must not detect `Option`, `Vec`, stream types, aliases, qualified names, or familiar standard types.
 
-## Public expressions and cardinality
+## 2.2 Initialization
 
-The only public atoms are string literals, supported integer literals, direct
-owner references, and `concat [atoms...]`. Nested concatenations flatten into
-one bounded write. Calls, indexing, extended field chains, macros, closures,
-blocks, conditions, matching, arithmetic, secrets, and credentials are rejected.
+```rust
+#[default]
+x: T;
 
-An outer optional slot is allowed directly only in omission-aware query or
-header assignment. It is rejected in subdomain labels, path segments,
-concatenation children, `accept`, and rate dimensions. A required payload whose
-Rust type happens to be optional is not a Concord-optional slot; normal trait
-requirements decide whether it can be formatted or iterated.
+x: T = CONSTANT;
 
-One-value query emission uses `"key" = endpoint.value;`. Repetition is explicit:
-`"tag" = each endpoint.tags;`. `each` accepts only a direct owner reference and
-iterates the payload by shared reference. An absent outer slot emits nothing;
-iteration order is observable. Headers intentionally have no repeated-value
-operator in v2.
+#[default]
+x?: T;
+```
 
-URL and header atoms use bounded `Display`-style conversion followed by
-context validation. Rate dimensions use the separate canonical-key contract.
+- `#[default]` means `T::default()` on the exact written payload type;
+- `#[default]` and `= value` cannot coexist;
+- an optional initialized value starts as outer `Some(initial)`;
+- defaults evaluate once when the narrowest owner snapshot is created;
+- reset restores the retained result and does not reevaluate;
+- body parameters cannot have defaults.
 
-## Fixed base and subdomains
+## 2.3 Sensitivity
 
-The base must be an absolute HTTP(S) URL with a host and without user info,
-query, or fragment. Its optional path is fixed. There is no per-request base or
-authority override.
+`#[sensitive]` marks public protocol data whose automatic observation must be redacted. It does not hide the value from the server/network path and does not make it a secret or credential.
 
-Subdomain operations are `subdomain [...]`, `subdomain replace [...]`, and
-`subdomain off;`. Omission inherits. A normal local list prepends its labels to
-the inherited generated labels; replace discards inherited generated labels;
-off returns to the fixed base host. Each atom creates one ASCII DNS label.
+Sensitivity propagates through `concat`, adapters, and every `each` item to the complete emitted atom.
 
-Static labels are checked at expansion and dynamic labels during planning and
-execution. Label and total-host bounds apply. Any effective subdomain shaping
-requires a DNS-domain base; IP-literal bases are rejected.
+# 3. Representation ownership
 
-## Path algebra
+## 3.1 Directional defaults
 
-Path operations are `path [...]`, `path replace [...]`, and `path off;`.
-Omission inherits; normal operation appends generated segments; replace starts
-with no inherited generated segments; off removes all generated segments. The
-fixed base path is never removed.
+Representation defaults are valid at client and scope owners. `explicit` fences are valid only at scope owners:
 
-Each atom is one segment. Empty, dot, dot-dot, slash, backslash, and
-pre-encoded values are rejected. A valid value is encoded exactly once. Segment
-count, segment bytes, and total URL bytes are bounded.
+```text
+request RustType ;
+response RustType ;
+request explicit ;
+response explicit ;
+```
 
-## Query patch algebra
+- `request R;` establishes an inherited request-body representation default;
+- `response R;` establishes an inherited response representation default;
+- `request explicit;` and `response explicit;` stop inheritance across that owner;
+- `explicit` is an inheritance fence, not raw/disabled/empty behavior;
+- request and response directions are independent;
+- there is no combined `format R` shorthand.
 
-The effective query is an ordered sequence of pairs, never a map. Keys are
-static strings with exact case-sensitive identity. Inherited state and local
-statements are processed deterministically in source order.
+Resolution for one direction:
 
-- `"k" = emission;` removes all exact-key occurrences, then appends zero, one,
-  or many emitted pairs. Absent optional assignment therefore removes inherited
-  values.
-- `"k" += emission;` appends emission without removal. Absent optional append
-  changes nothing.
-- `remove "k";` removes all occurrences.
-- `query replace { ... }` starts empty.
-- `query off;` produces an empty query and is exclusive at that site.
+```text
+inline body/result override
+else nearest enclosing scope default not blocked by explicit
+else client default not blocked by explicit
+else unresolved
+```
 
-Repeated statements for one key are meaningful. Values are bounded before
-retention. Public query shaping precedes private auth query placement, and a
-public/private key collision fails before dispatch.
+A request representation is required only for an endpoint with a present body slot. A response representation is required for every endpoint.
 
-## Public header patch and media ownership
+## 3.2 Inline exceptions
 
-Header identity is ASCII case-insensitive. Assignment replaces all current
-values and inserts one at the statement position; absent optional assignment
-removes inherited values. `remove`, `headers replace`, and `headers off` mirror
-the query concepts. There is no append operator.
+```text
+body_parameter       := attrs body ident optional_mark? : RustType [ via RustType ]
+result_representation:= via RustType
+```
 
-Public headers reject host, authorization/proxy authorization, hop-by-hop and
-transfer fields, cookie-owned fields, content length, content type, and accept.
-`RequestBodySpec` exclusively owns request media and `Content-Type`.
-`ResponseSpec` owns default `Accept`; an endpoint alone may write `accept atom;`
-or `accept off;`.
+Examples:
 
-## Request bodies and responses
+```concord-pseudocode
+POST login(body input: Login via Form) -> Token;
+GET download(id: Id) -> ByteStream via Binary;
+```
 
-A body parameter is written `body input: Input using Spec`. `Input` is exactly
-what the caller supplies and `Spec` must implement
-`RequestBodySpec<Input = Input>`. It may occur anywhere in the parameter list,
-but cannot be optional, defaulted, redacted, publicly referenced, or controlled
-after construction. An optional domain body is explicitly `Input = Option<T>`;
-the spec owns its encoding.
+The endpoint body/result types remain exact caller-visible types. `via` selects only the representation for that direction.
 
-An endpoint result is written `-> Output using Spec`. Await returns exactly
-`Output`, and `Spec` must implement `ResponseSpec<Output = Output>`. Generated
-endpoint-local assertions make either mismatch a compile error.
+## 3.3 Generic pair obligations
 
-Every request supports await and `.response().await`. `expose accepted_bytes;`
-adds `.accepted_bytes().await` only when the sealed response mode supports it.
-It preserves challenge handling, status acceptance, negotiation, head limits,
-and bounded acquisition while skipping declared conversion. Buffered mode uses
-acquired bytes; discard may switch to bounded buffering; streaming is rejected.
+The generated code requires conceptually:
 
-Response acquisition is sealed to buffered, streaming, or discard. Receiving a
-stream value does not mean the body was fully consumed, and no buffer terminal
-may silently retain an unbounded stream.
+```rust
+EffectiveRequestRepresentation: RequestRepresentation<Input>
+EffectiveResponseRepresentation: ResponseRepresentation<Output>
+```
 
-## Methods and repeatability
+The macro does not infer trait implementations or delivery from token spelling. It emits targeted Rust obligations pointing to the endpoint and representation owner.
 
-First-class methods are GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS.
-`METHOD("TOKEN")` accepts another valid HTTP method token. CONNECT is always
-rejected because Concord exposes no tunnel/upgrade semantics. TRACE is available
-only as `METHOD("TRACE")` and carries its usual security concerns.
+# 4. Public value references and atom expressions
 
-Endpoint-only `repeatability idempotent;` and `repeatability never;` override
-the method default. GET, HEAD, PUT, DELETE, OPTIONS, and exact TRACE default to
-idempotent; POST, PATCH, and unknown methods default to never. Idempotent grants
-only semantic permission for another eligible attempt; it does not claim safety,
-cacheability, server correctness, or automatic retry desirability.
+```text
+value_ref   := client . ident
+             | scope_ident . ident
+             | endpoint . ident
 
-## Credentials and authentication
+atom_source:= string | char | bool | signed_integer | value_ref
+atom_expr  := atom_source [ via RustType ]
+             | concat [ atom_expr (, atom_expr)* ,? ]
 
-Credential blocks declare protected inputs and sources. A `secret name;`
-generates a required `SecretString` builder input. Sources include API key,
-bearer, Basic, endpoint-backed acquisition, and custom providers. Endpoint
-sources resolve to stable endpoint IDs and participate in cycle detection.
-Optional secrets/providers are not supported.
+emission   := atom_expr
+             | each value_ref [ via RustType ]
+```
 
-Authentication is grouped as `auth { placements... }`, `auth replace { ... }`,
-or exclusive `auth off;`. Normal blocks add ordered placements; replace starts
-without inherited placements. Bearer, Basic, exact/scheme authorization,
-private header, and private query placement are supported. Duplicate targets
-and incompatible authorization forms are errors.
+## 4.1 Owner references
 
-Recovery is explicit as `recover on unauthorized` or
-`recover on unauthorized_or_forbidden`; omission means none. Credential and
-secret material cannot occur in public expressions or observations.
+- `client.x` refers only to a client public value;
+- `scope_name.x` refers only to that exact visible scope owner;
+- `endpoint.x` refers to the endpoint ordinary/body slot;
+- credentials have no public expression namespace;
+- no nearest-scope search, `vars`, `ep`, `self`, or `parent` shorthand exists.
 
-## Timeouts
+## 4.2 Atoms
 
-Durations are positive integers followed by `ms`, `s`, `m`, or `h` and are
-validated for overflow. Descendants inherit by omission and may select a
-duration or `timeout off;`. Every request exposes `.timeout(duration)`,
-`.disable_timeout()`, and `.inherit_timeout()`; the last restores the resolved
-endpoint selection.
+Default scalar use requires `T: RequestAtom`. `via Encoder` requires a purpose-specific atom adapter compatible with the exact source type.
 
-## Pagination declarations
+One atom expression produces one logical scalar. Context code subsequently validates/encodes it as one DNS label, path segment, query value, or header value.
 
-Pagination uses `paginate with Controller { fields... }`. A directional field
-`controller_field -> endpoint.value;` grants the adapter authority to update
-exactly that endpoint-owned slot between pages. A stable initializer
-`controller_field = value;` copies initial state without mutation authority.
-Fields and live destinations are unique and source-ordered.
+Optional values are illegal in total atom positions such as `concat`, subdomain, path, and rate dimensions. A surrounding query/header operation may own optional absence.
 
-Live destinations cannot be client/scope values, bodies, secrets, credentials,
-or arbitrary request state. A pagination-controlled slot cannot be a rate-key
-dimension in v2. Callers may configure ordinary optional/defaulted controls
-before pagination begins; the controller owns bound slots after handoff.
+## 4.3 `concat`
 
-## Rate limits
+`concat` produces one atom. Nested concatenation may normalize into one sequence. It cannot contain `each` or outer-optional values.
 
-Client-owned profiles declare formals and do not capture lexical values. A
-profile body has optional explicit `id`, `key [dimensions...]`, positive `cost`
-(default 1), and one or more positive `allow capacity per duration;` windows.
-Each attachment binds every formal exactly once and may override cost. Anonymous
-attachments declare the same facts inline.
+## 4.4 Ordered repetition
 
-Policies add across client and scopes; descendants cannot disable them. Built-in
-dimensions are final logical `host` and stable `endpoint` ID. Other dimensions
-are total direct owner references. Outer optional slots, concatenation, secrets,
-credentials, and pagination-mutated slots are rejected.
+`each` is valid only in query/header emission. It requires `OrderedValues` and makes zero-or-many occurrence cardinality explicit. The collection type itself has no query/header meaning.
 
-`RateLimitKeyValue` writes deterministic, bounded, type/length-framed bytes.
-Standard primitive and structural implementations distinguish variants and
-boundaries, so tuple-like dimensions cannot concatenate ambiguously. Values are
-never exposed through plans or ordinary evidence.
+# 5. Fixed base, subdomain, and path
 
-IDs are explicit or deterministic/rename-sensitive. Reused IDs require
-compatible ordered dimension schemas and windows; duplicate effective use is an
-error. Any client with effective rate policy requires an explicitly configured
-limiter.
+## 5.1 Base
 
-## Reflection and unbound intents
+```text
+base_clause := base string_literal ;
+```
 
-`Client::contract()`, request/intent `.description()`, and credential-free plans
-derive from the canonical IR. Descriptions expose docs, owners, opaque type
-spellings, presence/default/observation, local and effective operations with
-origins, body/response contracts, auth categories, timeouts, repeatability,
-rate schemas, pagination bindings, capabilities, and identity stability—never
-runtime values or credential material.
+The literal must be one absolute HTTP(S) URL with host and without userinfo, query, or fragment. The base owns the logical trust origin and fixed base-path prefix.
 
-`Client::unbound()` generates the same scope/endpoint tree without client
-runtime or client values. `client.request(intent)` binds it and
-`client.plan(&intent)` plans it. Direct and unbound-bound paths are semantically
-equivalent.
+No caller, scope, endpoint, or runtime endpoint may replace it with an arbitrary absolute URL. A configured proxy changes transport routing only. Redirects remain disabled.
 
-## Diagnostics and limits
+## 5.2 Subdomain
 
-Diagnostics target retired syntax, unsupported attributes/clauses, owner and
-name errors, optionality in total contexts, invalid `each`, patch conflicts,
-reserved media, body/response mismatches, CONNECT, pagination authority, rate
-schemas, accepted-byte mode, and generated-name collisions. They identify the
-declaration and rule without runtime values.
+```text
+subdomain_clause := subdomain atom_list ;
+                  | subdomain replace atom_list ;
+                  | subdomain off ;
+atom_list        := [ atom_expr (, atom_expr)* ,? ]
+```
 
-All static collections and strings are bounded. The same limits continue at
-runtime for dynamic formatting, route/head preparation, response acquisition,
-attempts, pages, items, cycle state, canonical keys, and evidence.
+- ordinary form prepends local labels to inherited generated labels;
+- `replace` discards inherited generated labels;
+- `off` uses the fixed base host;
+- fixed port and base origin remain;
+- each atom is exactly one ASCII DNS label;
+- reject empty, dot-containing/multi-label, invalid, or oversized labels;
+- reject generated labels for IP-literal bases.
+
+## 5.3 Path
+
+```text
+path_clause := path atom_list ;
+             | path replace atom_list ;
+             | path off ;
+```
+
+- ordinary form appends local generated segments;
+- `replace` discards inherited generated segments;
+- `off` retains the fixed base path only;
+- each atom is exactly one segment;
+- reject empty, `.`, `..`, `/`, and `\\` before percent encoding.
+
+Raw/pre-encoded paths, optional structural segments, route templates, wildcards, and trailing-slash language are unsupported.
+
+# 6. Query patch program
+
+```text
+query_clause := query { query_stmt* }
+              | query replace { query_stmt* }
+              | query off ;
+
+query_stmt   := string_literal = emission ;
+              | when_present string_literal = optional_emission ;
+              | append string_literal = emission ;
+              | remove string_literal ;
+```
+
+`optional_emission` uses the same source forms, but the outer source must be Concord-optional.
+
+Query is an ordered multimap patch.
+
+## 6.1 Assignment
+
+```rust
+"K" = emission;
+```
+
+Remove every current generated occurrence of `K`, then emit zero, one, or many local occurrences at this statement position. Outer optional absence clears.
+
+## 6.2 Conditional override
+
+```rust
+when_present "K" = optional_emission;
+```
+
+- outer absent: preserve existing entries and positions;
+- outer present scalar: replace;
+- outer present empty ordered sequence: explicitly clear;
+- outer present non-empty sequence: replace with those occurrences.
+
+## 6.3 Append
+
+```rust
+append "K" = emission;
+```
+
+Preserve existing entries and append emitted occurrences. Optional absence and empty sequences append nothing.
+
+## 6.4 Remove, replace, off
+
+- `remove` removes all generated occurrences of the static key;
+- `query replace` starts from an empty generated public query;
+- `query off` emits no generated public query;
+- neither can remove later private-auth query placement.
+
+Keys are static bounded strings. Dynamic key names and generic query-object serialization are unsupported.
+
+# 7. Public headers
+
+```text
+headers_clause := headers { header_stmt* }
+                | headers replace { header_stmt* }
+                | headers off ;
+
+header_stmt    := string_literal = emission ;
+                | when_present string_literal = optional_emission ;
+                | append string_literal = emission ;
+                | remove string_literal ;
+```
+
+Header identity is case-insensitive. Assignment/conditional/append/removal follow the query meanings under header identity.
+
+Explicit repeated occurrences are allowed only for fields where the endpoint author deliberately owns that protocol claim. Known singleton or reserved fields are rejected. Use a scalar adapter for comma/list grammar.
+
+Generic public headers cannot own:
+
+- `Host`;
+- transfer/framing/hop-by-hop fields;
+- proxy fields;
+- `Authorization` or effective private targets;
+- `Accept` or transport `Accept-Encoding`;
+- request `Content-Type` or `Content-Encoding`;
+- cookie fields under the no-cookie model.
+
+No silent precedence repairs collisions.
+
+# 8. Endpoint declaration
+
+```text
+endpoint_decl := attrs method ident ( endpoint_parameter_list? )
+                 -> RustType [ via RustType ]
+                 ( ; | { endpoint_clause* } )
+
+endpoint_clause:= id_clause
+                | request_attachment
+                | status_clause
+                | effect_clause
+                | pagination_clause
+                | expose_clause
+```
+
+Required ordinary parameters and required body parameters become direct arguments in source order. Optional/defaulted values become generated controls.
+
+# 9. HTTP methods
+
+```text
+method := GET | HEAD | POST | PUT | PATCH | DELETE | OPTIONS
+        | METHOD ( string_literal )
+```
+
+Custom method literals are bounded valid HTTP tokens and default conservatively.
+
+Reject `CONNECT` and `TRACE`, including custom spelling. Reject connection upgrades/WebSockets and server-wide `OPTIONS *` because they require a different native connection ownership model.
+
+# 10. Status policy
+
+```text
+status_clause := status success ;
+               | status status_item ;
+               | status [ status_item (, status_item)* ,? ] ;
+status_item   := three_digit_status
+               | three_digit_status ..= three_digit_status
+```
+
+Omission and `status success` mean final `200..=299`.
+
+The macro validates values/ranges, rejects empty sets and confusing overlap, and canonicalizes the finite accepted set for reflection/diff. Source order has no runtime meaning.
+
+Authentication challenge attribution precedes status acceptance. A status cannot be both an effective auth challenge and accepted endpoint outcome.
+
+# 11. Effect class
+
+```text
+effect_clause := effect safe ;
+               | effect idempotent ;
+               | effect non_idempotent ;
+```
+
+Defaults:
+
+| Method | Effect |
+|---|---|
+| GET, HEAD, OPTIONS | `safe` |
+| PUT, DELETE | `idempotent` |
+| POST, PATCH, custom method | `non_idempotent` |
+
+An explicit declaration may correct provider-specific semantics. An idempotency header does not infer effect.
+
+Policy retry after possible dispatch requires `safe` or `idempotent`. Ordinary pagination requires `safe`.
+
+# 12. Request body
+
+A body slot may be required or optional:
+
+```rust
+body input: Input
+body input: Input via Representation
+body input?: Input
+body input?: Option<Input>
+```
+
+- required body becomes a direct endpoint argument;
+- optional body is initially absent and uses ordinary optional controls;
+- outer absence means no native body, no representation invocation, and no body-owned media header;
+- a present payload is passed exactly to the representation;
+- defaults are forbidden;
+- body content is never a public atom or general observation value.
+
+# 13. Response and terminals
+
+The result type is exactly ordinary `.await` output. Complete values, `ByteStream`, and `ItemStream<T>` are distinct caller lifecycles.
+
+Every endpoint supports ordinary await and managed accepted metadata. `accepted_bytes` requires explicit endpoint exposure:
+
+```text
+expose_clause := expose accepted_bytes ;
+```
+
+It retains auth, negotiation, status, deadline, and finite complete acquisition, while bypassing representation-specific accepted-head/body validation and output conversion.
+
+# 14. Credentials and authentication
+
+```text
+credentials_block := credentials { credential_decl* }
+credential_decl   := attrs secret ident [ ? ] ;
+                   | attrs credential ident = credential_source ;
+
+credential_source := api_key ( secret_ref )
+                   | bearer ( secret_ref )
+                   | basic ( secret_ref , secret_ref )
+                   | custom RustType
+                   | endpoint endpoint_path
+
+secret_ref        := secret . ident
+endpoint_path     := ident (:: ident)*
+```
+
+- required secret is a protected builder input;
+- optional secret may be initially absent; a derived slot is unavailable;
+- custom provider object is required, though acquisition may report unavailable;
+- endpoint-backed source starts empty by source semantics;
+- endpoint paths are client-root-relative and may forward-reference a later endpoint;
+- the complete graph is resolved and cycles rejected.
+
+Auth attachment:
+
+```text
+auth_clause      := auth { auth_placement* }
+                  | auth replace { auth_placement* }
+                  | auth off ;
+
+auth_placement  := bearer ident challenge_clause? ;
+                  | basic ident challenge_clause? ;
+                  | authorization = ident challenge_clause? ;
+                  | authorization string_literal = ident challenge_clause? ;
+                  | header string_literal = ident challenge_clause? ;
+                  | query string_literal = ident challenge_clause? ;
+
+challenge_clause := challenge never
+                  | challenge unauthorized
+                  | challenge unauthorized_or_forbidden
+```
+
+- ordinary auth appends placements;
+- `replace` discards inherited placements;
+- `off` removes all inherited placements;
+- at most one effective placement may classify a non-`never` challenge;
+- target ownership is exclusive;
+- unavailable required material fails before dispatch, never silently omits auth;
+- private values appear only in the native request.
+
+# 15. Timeout
+
+```text
+timeout_clause := timeout positive_duration ;
+```
+
+Every client has one finite positive root timeout. Scope/endpoint omission inherits the nearest value. No `off` form exists. Request-local API may select another validated finite timeout and reset to the retained effective contract timeout.
+
+One absolute deadline covers every core-controlled stage and pagination page. It never restarts for attempts or recovery.
+
+# 16. Rate policies
+
+```text
+rate_policies_block := rate_limits { rate_policy_decl* }
+rate_policy_decl    := attrs policy ident ( formal_list? ) {
+                           id string_literal ;
+                           key [ rate_dimension (, rate_dimension)* ,? ] ;
+                           cost positive_integer ;
+                           rate_window+
+                       }
+formal_list          := ident (, ident)* ,?
+rate_dimension       := origin | endpoint | ident [ via RustType ]
+rate_window          := allow positive_integer per positive_duration ;
+```
+
+Attachments:
+
+```text
+rate_attachment := rate_limit ident ( rate_binding_list? )
+                   ( ; | { cost positive_integer ; } )
+                 | rate_limit {
+                       id string_literal ;
+                       key [ bound_rate_dimension (, bound_rate_dimension)* ,? ] ;
+                       cost positive_integer ;
+                       rate_window+
+                   }
+```
+
+Rules:
+
+- stable policy ID is required;
+- positive cost and at least one positive finite window are required;
+- all windows are conjunctive;
+- formal bindings are exact and total;
+- `origin` is normalized logical scheme/host/effective port, never proxy destination;
+- `endpoint` requires the stable endpoint contract ID;
+- dimensions require `RateKeyPart` or explicit canonical adapter;
+- secrets, credentials, optional values, dynamic dimensions, occurrence expansion, and page-live values are rejected;
+- policies compose additively and cannot be disabled by descendants;
+- duplicate effective attachment of the same policy identity is rejected.
+
+The DSL declares provider quota semantics. Runtime enforcement is explicitly selected by the application.
+
+# 17. Pagination
+
+```text
+pagination_clause := paginate via RustType { pagination_entry+ }
+pagination_entry  := ident -> endpoint . ident ;
+                   | ident = stable_controller_value ;
+stable_controller_value := stable_value | client . ident | scope_ident . ident | endpoint . ident
+```
+
+Rules:
+
+- endpoint effect must be `safe`;
+- response output must be complete, not lazy stream;
+- representation/output pair must be page-capable;
+- body must be page-stable when present;
+- live destinations are endpoint-owned ordinary scalar slots only;
+- no body, secret, auth, timeout, effect, policy, client/scope, repeated, or effective rate-key destination;
+- controller owns item extraction and continuation;
+- controller description declares bounded response-header interests and whether current page URI is needed;
+- no native response or unrestricted header map is exposed.
+
+# 18. Request attachments by owner
+
+| Family | Client | Scope | Endpoint | Inheritance |
+|---|---:|---:|---:|---|
+| request/response representation default/fence | defaults only | defaults and fences | inline only | nearest owner, independent directions |
+| subdomain | yes | yes | no | prepend/replace/off |
+| path | yes | yes | yes | append/replace/off |
+| query | yes | yes | yes | ordered patch/replace/off |
+| public headers | yes | yes | yes | case-insensitive patch/replace/off |
+| auth | yes | yes | yes | ordered append/replace/off |
+| timeout | yes | yes | yes | nearest finite selection |
+| rate attachment | yes | yes | yes | additive only |
+| status/effect/pagination/expose | no | no | yes | endpoint-local |
+
+# 19. Diagnostics and generated names
+
+The compiler must validate generated names before emission, including:
+
+- child methods/types/modules;
+- `set_`, `with_`, `omit_`, `reset_` controls;
+- terminals and planning/description helpers;
+- endpoint-backed credential storage methods;
+- internal bridge names.
+
+Diagnostics identify the semantic owner, violated rule, conflicting declaration, inherited origin where applicable, and one valid v2.1 correction. Trait assertions should name the endpoint, exact type, and required role rather than exposing expansion internals.
+
+# 20. Unsupported language
+
+The active grammar does not contain:
+
+- generic native request/response mutation;
+- arbitrary absolute runtime origin;
+- redirects;
+- dynamic query/header names;
+- generic query-object serialization;
+- optional/spread path or subdomain structure;
+- raw/pre-encoded paths;
+- body defaults;
+- generic status callback;
+- implicit collection cardinality;
+- implicit `Display` protocol encoding;
+- descendant rate-policy disable;
+- unbounded timeout;
+- automatic pagination;
+- pagination over lazy stream outputs;
+- CONNECT, TRACE, upgrades, WebSockets, cookies, or caching.

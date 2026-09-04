@@ -1,4 +1,4 @@
-//! Authentication examples using only façade-owned semantic contracts.
+//! Authentication examples via only façade-owned semantic contracts.
 //!
 //! Required feature: `oauth2-client`; building the fixed HTTPS declaration also
 //! requires `default-tls`. Mode: construction and deterministic local

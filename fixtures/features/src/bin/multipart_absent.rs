@@ -4,11 +4,11 @@ use runtime::api;
 #[cfg(feature = "fixture-absence")]
 api! {
     client MultipartAbsentApi {
-        timeout off;
+        timeout 30s;
         base "http://multipart-absent.example.test";
 
 
-    POST create(body body: ::concord::body::MultipartBody using Multipart) -> () using NoContent;
+    POST create(body body: ::concord::body::MultipartBody via Multipart) -> () via Empty;
 }}
 
 fn main() {}

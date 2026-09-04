@@ -32,7 +32,7 @@ fn parses_singular_client_root_children_values_and_all_attachment_sites() {
             headers { "X-Locale" = client.locale; }
             timeout 5s;
 
-        GET root(id: String, verbose?: bool, page: u32 = 10) -> Bytes using Bytes {
+        GET root(id: String, verbose?: bool, page: u32 = 10) -> Bytes via Binary {
             path [endpoint.id];
         }
         scope regions(region: String, language?: String) {
@@ -40,7 +40,7 @@ fn parses_singular_client_root_children_values_and_all_attachment_sites() {
             path ["regions", regions.region];
             scope users(account: String) {
                 path ["users", users.account];
-                METHOD("PROPFIND") inspect() -> String using Text;
+                METHOD("PROPFIND") inspect() -> String via Text;
             }
         }
     }});
@@ -50,22 +50,80 @@ fn parses_singular_client_root_children_values_and_all_attachment_sites() {
 }
 
 #[test]
+fn endpoint_status_and_effect_forms_are_finite_and_canonical() {
+    let api = parse_ok(quote! {
+        client PolicyApi {
+            timeout 10s;
+            base "https://example.test";
+            GET defaulted() -> Bytes via Binary;
+            GET explicit_success() -> Bytes via Binary { status success; effect safe; }
+            PUT selected() -> Bytes via Binary {
+                status [204, 200..=202, 418];
+                effect idempotent;
+            }
+            POST mutation() -> Bytes via Binary { effect non_idempotent; }
+        }
+    });
+    let SourceChild::Endpoint(success) = &api.client.children[1] else {
+        panic!("endpoint")
+    };
+    assert!(matches!(
+        success.status.as_ref().map(|clause| &clause.value),
+        Some(StatusDecl::Success)
+    ));
+    assert!(matches!(
+        success.effect.as_ref().map(|clause| clause.value),
+        Some(EffectDecl::Safe)
+    ));
+    let SourceChild::Endpoint(selected) = &api.client.children[2] else {
+        panic!("endpoint")
+    };
+    assert!(matches!(
+        selected.status.as_ref().map(|clause| &clause.value),
+        Some(StatusDecl::Codes(codes)) if codes == &[200, 201, 202, 204, 418]
+    ));
+
+    for tokens in [
+        quote!(status [];),
+        quote!(status 99;),
+        quote!(status 600;),
+        quote!(status 299..=200;),
+        quote!(status [200..=204, 202];),
+    ] {
+        let error = parse(quote! {
+            client InvalidApi {
+                timeout 10s;
+                base "https://example.test";
+                GET invalid() -> Bytes via Binary { #tokens }
+            }
+        })
+        .err()
+        .expect("invalid status policy");
+        let diagnostic = error.to_string();
+        assert!(
+            diagnostic.contains("status") || diagnostic.contains("range"),
+            "{diagnostic}"
+        );
+    }
+}
+
+#[test]
 fn singular_api_structure_and_vars_diagnostics_are_focused() {
     let empty = parse(TokenStream::new()).err().expect("missing client");
     assert!(empty.to_string().contains("exactly one `client`"));
 
     let child_first = parse(quote! {
-        GET status() -> Bytes using Bytes;
+        GET status() -> Bytes via Binary;
         client Api {
-            timeout off; base "https://example.test"; }
+            timeout 30s; base "https://example.test"; }
     })
     .err()
     .expect("child before client");
     assert!(child_first.to_string().contains("must be the first"));
 
     let second_client = parse(quote! {
-        client FirstApi { timeout off; base "https://one.example.test"; }
-        client SecondApi { timeout off; base "https://two.example.test"; }
+        client FirstApi { timeout 30s; base "https://one.example.test"; }
+        client SecondApi { timeout 30s; base "https://two.example.test"; }
     })
     .err()
     .expect("second client");
@@ -78,28 +136,28 @@ fn singular_api_structure_and_vars_diagnostics_are_focused() {
 
     let api = parse_ok(quote! {
         client Api {
-            timeout off; base "https://example.test";
-        GET root() -> Bytes using Bytes;
-        scope first() { GET nested() -> Bytes using Bytes; }
+            timeout 30s; base "https://example.test";
+        GET root() -> Bytes via Binary;
+        scope first() { GET nested() -> Bytes via Binary; }
         scope second() { }
     }});
     assert_eq!(api.client.children.len(), 3);
 
     let no_vars = parse_ok(quote! {
         client Api {
-            timeout off; base "https://example.test"; }
+            timeout 30s; base "https://example.test"; }
     });
     assert!(no_vars.client.values.is_none());
 
     let empty_vars = parse_ok(quote! {
         client Api {
-            timeout off; base "https://example.test"; values { } }
+            timeout 30s; base "https://example.test"; values { } }
     });
     assert!(empty_vars.client.values.as_ref().unwrap().value.is_empty());
 
     let values = parse_ok(quote! {
         client Api {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
             values {
                 required: String;
@@ -115,7 +173,7 @@ fn singular_api_structure_and_vars_diagnostics_are_focused() {
 
     let duplicate_value = parse(quote! {
         client Api {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
             values { value: String; value: String; }
         }
@@ -130,7 +188,7 @@ fn singular_api_structure_and_vars_diagnostics_are_focused() {
 
     parse(quote! {
         client Api {
-            timeout off;
+            timeout 30s;
             credentials { }
             values { value: String; }
             base "https://example.test";
@@ -140,7 +198,7 @@ fn singular_api_structure_and_vars_diagnostics_are_focused() {
 
     let duplicate_values = parse(quote! {
         client Api {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
             values { }
             values { }
@@ -156,16 +214,16 @@ fn singular_api_structure_and_vars_diagnostics_are_focused() {
 
     for tokens in [
         quote! { client Api {
-        timeout off; base "https://example.test"; } scope nested() { } },
+        timeout 30s; base "https://example.test"; } scope nested() { } },
         quote! { client Api {
-        timeout off; base "https://example.test"; } GET nested() -> Bytes using Bytes; },
+        timeout 30s; base "https://example.test"; } GET nested() -> Bytes via Binary; },
     ] {
         let error = parse(tokens).err().expect("client child");
         assert!(error.to_string().contains("after the `client` block"));
     }
 
     let root_config = parse(quote! {
-        client Api { base "https://example.test"; timeout off; }
+        client Api { base "https://example.test"; timeout 30s; }
         timeout 1s;
     })
     .err()
@@ -182,14 +240,14 @@ fn removed_retry_dsl_has_a_focused_migration_diagnostic() {
     for declaration in [
         quote! {
             client Api {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 retry off;
             }
         },
         quote! {
             client Api {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 retry reqwest_default;
             }
@@ -209,52 +267,52 @@ fn retired_declarations_have_focused_replacement_diagnostics() {
     let cases = [
         (
             quote! { client Api {
-            timeout off; base "https://example.test"; secret token; } },
+            timeout 30s; base "https://example.test"; secret token; } },
             "`credentials { ... }` block",
         ),
         (
             quote! { client Api {
-            timeout off; base "https://example.test"; credential token = bearer(secret.token); } },
+            timeout 30s; base "https://example.test"; credential token = bearer(secret.token); } },
             "`credentials { ... }` block",
         ),
         (
             quote! { client Api {
-            timeout off; base "https://example.test"; default { timeout 1s; } } },
+            timeout 30s; base "https://example.test"; default { timeout 1s; } } },
             "`default { ... }` is not DSL syntax",
         ),
         (
             quote! { client Api {
-            timeout off; base "https://example.test"; defaults { timeout 1s; } } },
+            timeout 30s; base "https://example.test"; defaults { timeout 1s; } } },
             "`defaults { ... }` is not DSL syntax",
         ),
         (
             quote! { client Api {
-            timeout off; base "https://example.test"; policies { } } },
+            timeout 30s; base "https://example.test"; policies { } } },
             "`policies { ... }` is not DSL syntax",
         ),
         (
             quote! { client Api {
-            timeout off; base "https://example.test"; behavior finite; } },
+            timeout 30s; base "https://example.test"; behavior finite; } },
             "behavior profiles are not DSL syntax",
         ),
         (
             quote! { client Api {
-            timeout off; base "https://example.test"; prefix ["v1"]; } },
+            timeout 30s; base "https://example.test"; prefix ["v1"]; } },
             "`prefix` is not DSL syntax",
         ),
         (
             quote! { client Api {
-            timeout off; base "https://example.test"; params { "id" = client.id; } } },
+            timeout 30s; base "https://example.test"; params { "id" = client.id; } } },
             "`params { ... }` is not DSL syntax",
         ),
         (
             quote! { client Api {
-            timeout off; base "https://example.test"; profile standard { } } },
+            timeout 30s; base "https://example.test"; profile standard { } } },
             "`profile` is not a DSL keyword",
         ),
         (
             quote! { client Api {
-            timeout off; base "https://example.test"; access_token token: String; } },
+            timeout 30s; base "https://example.test"; access_token token: String; } },
             "`access_token` is not DSL syntax",
         ),
     ];
@@ -269,7 +327,7 @@ fn retired_declarations_have_focused_replacement_diagnostics() {
 fn rejects_arbitrary_defaults_and_public_expressions() {
     let default_error = parse(quote! {
         client Api {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
             values { value: String = make_value(); }
         }
@@ -280,10 +338,10 @@ fn rejects_arbitrary_defaults_and_public_expressions() {
 
     let expression_error = parse(quote! {
         client Api {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
 
-        GET root(id: String) -> Bytes using Bytes { path [endpoint.id.to_string()]; }
+        GET root(id: String) -> Bytes via Binary { path [endpoint.id.to_string()]; }
     }})
     .err()
     .expect("method expression");
@@ -315,8 +373,8 @@ fn duration_and_custom_method_boundaries_are_checked() {
 
     let invalid = parse(quote! {
         client Api {
-            timeout off; base "https://example.test";
-        METHOD("BAD METHOD") root() -> Bytes using Bytes;
+            timeout 30s; base "https://example.test";
+        METHOD("BAD METHOD") root() -> Bytes via Binary;
     }})
     .err()
     .expect("invalid method");
@@ -334,12 +392,12 @@ fn duration_and_custom_method_boundaries_are_checked() {
 }
 
 fn nested_scopes(depth: usize) -> TokenStream {
-    let mut child = quote!(GET leaf() -> Bytes using Bytes;);
+    let mut child = quote!(GET leaf() -> Bytes via Binary;);
     for index in 0..depth {
         let name = format_ident!("scope_{index}");
         child = quote!(scope #name() { #child });
     }
-    quote!(client Api { timeout off; base "https://example.test"; #child })
+    quote!(client Api { timeout 30s; base "https://example.test"; #child })
 }
 
 fn nested_format(depth: usize) -> TokenStream {
@@ -349,10 +407,10 @@ fn nested_format(depth: usize) -> TokenStream {
     }
     quote! {
         client Api {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
 
-        GET leaf() -> Bytes using Bytes { path [#expression]; }
+        GET leaf() -> Bytes via Binary { path [#expression]; }
     }}
 }
 
@@ -375,10 +433,10 @@ fn scope_and_format_depth_bounds_accept_64_and_reject_65() {
 fn focused_structure_and_ordered_patch_syntax_are_stable() {
     let body_order = parse_ok(quote! {
         client Api {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
 
-        POST create(body body: String using Text, id: String) -> Bytes using Bytes;
+        POST create(body body: String via Text, id: String) -> Bytes via Binary;
     }});
     let SourceChild::Endpoint(endpoint) = &body_order.client.children[0] else {
         panic!("endpoint")
@@ -388,30 +446,32 @@ fn focused_structure_and_ordered_patch_syntax_are_stable() {
 
     parse(quote! {
         client Api {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
             query { "key" = "one"; remove "key"; }
         }
     })
     .expect("repeated query operations are source ordered");
 
-    let duplicate_header = parse(quote! {
+    parse(quote! {
         client Api {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
-            headers { "X-Key" = "one"; "x-key" = "two"; }
+            headers {
+                "X-Key" = "one";
+                append "x-key" = "two";
+                remove "X-Key";
+            }
         }
     })
-    .err()
-    .expect("header names are case-insensitively unique at one site");
-    assert!(duplicate_header.to_string().contains("case-insensitive"));
+    .expect("header patch operations are source ordered and case-insensitive");
 }
 
 #[test]
 fn defaults_formats_and_static_atoms_obey_grammar_boundaries() {
     parse(quote! {
         client Api {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
             values {
                 text: &'static str = "value";
@@ -421,13 +481,13 @@ fn defaults_formats_and_static_atoms_obey_grammar_boundaries() {
             }
             subdomain ["a12345678901234567890123456789012345678901234567890123456789012"];
 
-        GET read(id: u32) -> Bytes using Bytes { path [concat["id-", endpoint.id]]; }
+        GET read(id: u32) -> Bytes via Binary { path [concat["id-", endpoint.id]]; }
     }})
     .expect("restricted defaults and 63-byte host label");
 
     let host = parse(quote! {
         client Api {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
             subdomain ["a123456789012345678901234567890123456789012345678901234567890123"];
         }
@@ -438,7 +498,7 @@ fn defaults_formats_and_static_atoms_obey_grammar_boundaries() {
 
     let segment = parse(quote! {
         client Api {
-            timeout off; base "https://example.test"; path ["two/segments"]; }
+            timeout 30s; base "https://example.test"; path ["two/segments"]; }
     })
     .err()
     .expect("static path structure");
@@ -446,10 +506,10 @@ fn defaults_formats_and_static_atoms_obey_grammar_boundaries() {
 
     let commas = parse(quote! {
         client Api {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
 
-        GET read(id: u32) -> Bytes using Bytes { path [concat["id-" endpoint.id]]; }
+        GET read(id: u32) -> Bytes via Binary { path [concat["id-" endpoint.id]]; }
     }})
     .err()
     .expect("missing format comma");
@@ -457,7 +517,7 @@ fn defaults_formats_and_static_atoms_obey_grammar_boundaries() {
 
     parse(quote! {
         client Api {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
             credentials { }
         }
@@ -469,7 +529,7 @@ fn defaults_formats_and_static_atoms_obey_grammar_boundaries() {
 fn credentials_parse_all_sources_and_enforce_definition_order() {
     let api = parse_ok(quote! {
         client AuthApi {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
             credentials {
                 secret api_key;
@@ -483,7 +543,7 @@ fn credentials_parse_all_sources_and_enforce_definition_order() {
                 credential custom = custom crate::SessionProvider;
             }
 
-        GET login() -> Bytes using Bytes;
+        GET login() -> Bytes via Binary;
     }});
     let credentials = api.client.credentials.as_ref().expect("credentials block");
     assert_eq!(credentials.value.secrets.len(), 4);
@@ -491,7 +551,7 @@ fn credentials_parse_all_sources_and_enforce_definition_order() {
 
     let error = parse(quote! {
         client AuthApi {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
             credentials {
                 credential key = api_key(secret.later);
@@ -509,7 +569,7 @@ fn credentials_parse_all_sources_and_enforce_definition_order() {
 
     let error = parse(quote! {
         client AuthApi {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
             credentials { secret first; }
             credentials { secret second; }
@@ -524,14 +584,14 @@ fn credentials_parse_all_sources_and_enforce_definition_order() {
 fn authentication_attachment_site_operations_and_challenge_suffixes_are_bounded() {
     parse(quote! {
         client AuthApi {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
             credentials {
                 secret token;
                 credential session = bearer(secret.token);
             }
             auth replace {
-                bearer session recover on unauthorized_or_forbidden;
+                bearer session challenge unauthorized_or_forbidden;
                 query "fallback" = session;
             }
 
@@ -541,7 +601,7 @@ fn authentication_attachment_site_operations_and_challenge_suffixes_are_bounded(
 
     let off = parse(quote! {
         client AuthApi {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
             auth off;
             auth { bearer session; }
@@ -553,7 +613,7 @@ fn authentication_attachment_site_operations_and_challenge_suffixes_are_bounded(
 
     let late_replace = parse(quote! {
         client AuthApi {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
             auth { bearer first; }
             auth replace { bearer second; }
@@ -581,7 +641,7 @@ fn authentication_attachment_site_operations_and_challenge_suffixes_are_bounded(
 fn secret_shapes_and_custom_provider_paths_have_focused_diagnostics() {
     let optional = parse(quote! {
         client AuthApi {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
             credentials { secret token: String; }
         }
@@ -592,7 +652,7 @@ fn secret_shapes_and_custom_provider_paths_have_focused_diagnostics() {
 
     let non_path_provider = parse(quote! {
         client AuthApi {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
             credentials {
                 credential session = custom (crate::Provider,);
@@ -615,23 +675,23 @@ fn lexical_rate_limit_declarations_parse_in_order() {
             base "https://example.test";
             values { tenant: String; }
             timeout 5s;
-            rate_limit {
+            rate_limit { id "concord.tests.1"; key [origin]; cost 1;
                 allow 500 per 10s;
                 allow 30000 per 10m;
             }
 
         scope tenants(tenant: String) {
-            rate_limit {
+            rate_limit { id "concord.tests.2"; key [origin]; cost 1;
                 allow 100 per 1m;
             }
-            GET read(item: String) -> Bytes using Bytes {
+            GET read(item: String) -> Bytes via Binary {
                 timeout 2s;
-                rate_limit {
+                rate_limit { id "concord.tests.3"; key [origin];
                     cost 2;
                     allow 10 per 1s;
                 }
             }
-            GET public() -> Bytes using Bytes;
+            GET public() -> Bytes via Binary;
         }
     }});
     let client = &api.client;
@@ -654,19 +714,19 @@ fn lexical_rate_limit_declarations_parse_in_order() {
 fn rate_limit_cost_defaults_and_equal_capacity_is_valid() {
     let api = parse_ok(quote! {
         client Api {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
-            rate_limit {
+            rate_limit { id "concord.tests.4"; key [origin]; cost 1;
                 allow 1 per 1s;
             }
 
         scope narrow() {
-            rate_limit {
+            rate_limit { id "concord.tests.5"; key [origin];
                 cost 2;
                 allow 2 per 1s;
                 allow 10 per 1m;
             }
-            GET read() -> Bytes using Bytes;
+            GET read() -> Bytes via Binary;
         }
     }});
     assert_eq!(inline_rate_limit(&api.client.attachment_site).cost, 1);
@@ -684,10 +744,10 @@ fn rate_limit_cost_defaults_and_equal_capacity_is_valid() {
 fn rate_limit_syntax_rejects_invalid_structure_values_dimensions_and_order() {
     let duplicate_rule = parse(quote! {
         client Api {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
-            rate_limit { allow 1 per 1s; }
-            rate_limit { allow 1 per 1s; }
+            rate_limit { id "concord.tests.6"; key [origin]; cost 1;  allow 1 per 1s; }
+            rate_limit { id "concord.tests.7"; key [origin]; cost 1;  allow 1 per 1s; }
         }
     })
     .err()
@@ -701,32 +761,32 @@ fn rate_limit_syntax_rejects_invalid_structure_values_dimensions_and_order() {
     for (tokens, expected) in [
         (
             quote! { client Api {
-            timeout off; base "https://example.test"; rate_limit { cost 0; allow 1 per 1s; } } },
+            timeout 30s; base "https://example.test"; rate_limit { id "concord.tests.8"; key [origin];  cost 0; allow 1 per 1s; } } },
             "cost must be greater than zero",
         ),
         (
             quote! { client Api {
-            timeout off; base "https://example.test"; rate_limit { allow 0 per 1s; } } },
+            timeout 30s; base "https://example.test"; rate_limit { id "concord.tests.9"; key [origin]; cost 1;  allow 0 per 1s; } } },
             "capacity must be greater than zero",
         ),
         (
             quote! { client Api {
-            timeout off; base "https://example.test"; rate_limit { allow 1 per 0s; } } },
+            timeout 30s; base "https://example.test"; rate_limit { id "concord.tests.10"; key [origin]; cost 1;  allow 1 per 0s; } } },
             "duration must be greater than zero",
         ),
         (
             quote! { client Api {
-            timeout off; base "https://example.test"; rate_limit { allow 1 per 0x10s; } } },
+            timeout 30s; base "https://example.test"; rate_limit { id "concord.tests.11"; key [origin]; cost 1;  allow 1 per 0x10s; } } },
             "duration integer literals must be base-10",
         ),
         (
             quote! { client Api {
-            timeout off; base "https://example.test"; rate_limit { cost 2; allow 1 per 1s; } } },
+            timeout 30s; base "https://example.test"; rate_limit { id "concord.tests.12"; key [origin];  cost 2; allow 1 per 1s; } } },
             "must not exceed any window capacity",
         ),
         (
             quote! { client Api {
-            timeout off; base "https://example.test"; rate_limit { cost 2; allow 100 per 1s; allow 1 per 1m; } } },
+            timeout 30s; base "https://example.test"; rate_limit { id "concord.tests.13"; key [origin];  cost 2; allow 100 per 1s; allow 1 per 1m; } } },
             "must not exceed any window capacity",
         ),
     ] {
@@ -739,11 +799,11 @@ fn rate_limit_syntax_rejects_invalid_structure_values_dimensions_and_order() {
 
     parse(quote! {
         client Api {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
 
-        GET read() -> Bytes using Bytes {
-            rate_limit { allow 1 per 1s; }
+        GET read() -> Bytes via Binary {
+            rate_limit { id "concord.tests.14"; key [origin]; cost 1;  allow 1 per 1s; }
             timeout 1s;
         }
     }})
@@ -754,27 +814,27 @@ fn rate_limit_syntax_rejects_invalid_structure_values_dimensions_and_order() {
 fn pagination_struct_forms_parse_with_restricted_initializers() {
     let api = parse_ok(quote! {
         client Api {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
 
-        GET offset(offset: u64, limit: u32) -> Vec<u32> using PageSpec<Vec<u32>> {
-            paginate with concord_core::contracts::OffsetController {
+        GET offset(offset: u64, limit: u32) -> Vec<u32> via PageSpec<Vec<u32>> {
+            paginate via concord_core::contracts::OffsetController {
                 offset -> endpoint.offset;
                 page_size -> endpoint.limit;
             }
         }
-        GET page(page: u64, per_page: u32) -> Vec<u32> using PageSpec<Vec<u32>> {
-            paginate with PageController {
+        GET page(page: u64, per_page: u32) -> Vec<u32> via PageSpec<Vec<u32>> {
+            paginate via PageController {
                 page -> endpoint.page;
                 page_size -> endpoint.per_page;
             }
         }
-        GET cursor(cursor?: String) -> Vec<u32> using PageSpec<Vec<u32>> {
-            paginate with CursorController<String> { cursor -> endpoint.cursor; }
+        GET cursor(cursor?: String) -> Vec<u32> via PageSpec<Vec<u32>> {
+            paginate via CursorController<String> { cursor -> endpoint.cursor; }
         }
         scope regions(region: String) {
-            GET custom(cursor?: String, maximum: u32) -> Vec<u32> using PageSpec<Vec<u32>> {
-                paginate with crate::pagination::VendorCursor {
+            GET custom(cursor?: String, maximum: u32) -> Vec<u32> via PageSpec<Vec<u32>> {
+                paginate via crate::pagination::VendorCursor {
                     cursor -> endpoint.cursor;
                     region = regions.region;
                     empty_pages = 0;
@@ -793,14 +853,14 @@ fn pagination_struct_forms_parse_with_restricted_initializers() {
 fn pagination_accepts_an_explicit_request_body_for_rust_trait_validation() {
     let api = parse_ok(quote! {
         client Api {
-            timeout off;
+            timeout 30s;
             base "https://example.test";
 
         POST search(
             offset: u64,
-            body filter: Filter using Json<Filter>,
-        ) -> Vec<u32> using PageSpec<Vec<u32>> {
-            paginate with OffsetController {
+            body filter: Filter via Json,
+        ) -> Vec<u32> via PageSpec<Vec<u32>> {
+            paginate via OffsetController {
                 offset -> endpoint.offset;
                 page_size = 25;
             }
@@ -819,8 +879,8 @@ fn pagination_rejects_old_forms_and_unsafe_initializers() {
         (
             quote! {
                 client Api {
-                    timeout off; base "https://example.test";
-                GET read(offset: u64, limit: u32) -> Vec<u32> using PageSpec<Vec<u32>> {
+                    timeout 30s; base "https://example.test";
+                GET read(offset: u64, limit: u32) -> Vec<u32> via PageSpec<Vec<u32>> {
                     paginate OffsetController
                 }
             }},
@@ -829,9 +889,9 @@ fn pagination_rejects_old_forms_and_unsafe_initializers() {
         (
             quote! {
                 client Api {
-                    timeout off; base "https://example.test";
-                GET read(offset: u64, limit: u32) -> Vec<u32> using PageSpec<Vec<u32>> {
-                    paginate with OffsetController { offset = endpoint.offset }
+                    timeout 30s; base "https://example.test";
+                GET read(offset: u64, limit: u32) -> Vec<u32> via PageSpec<Vec<u32>> {
+                    paginate via OffsetController { offset = endpoint.offset }
                 }
             }},
             "expected `;`",
@@ -839,9 +899,9 @@ fn pagination_rejects_old_forms_and_unsafe_initializers() {
         (
             quote! {
                 client Api {
-                    timeout off; base "https://example.test";
-                GET read(offset: u64, limit: u32) -> Vec<u32> using PageSpec<Vec<u32>> {
-                    paginate with OffsetController {
+                    timeout 30s; base "https://example.test";
+                GET read(offset: u64, limit: u32) -> Vec<u32> via PageSpec<Vec<u32>> {
+                    paginate via OffsetController {
                         offset -> endpoint.offset;
                         offset -> endpoint.limit;
                     }
@@ -852,9 +912,9 @@ fn pagination_rejects_old_forms_and_unsafe_initializers() {
         (
             quote! {
                 client Api {
-                    timeout off; base "https://example.test";
-                GET read(offset: u64, limit: u32) -> Vec<u32> using PageSpec<Vec<u32>> {
-                    paginate with OffsetController {
+                    timeout 30s; base "https://example.test";
+                GET read(offset: u64, limit: u32) -> Vec<u32> via PageSpec<Vec<u32>> {
+                    paginate via OffsetController {
                         offset -> endpoint.offset;
                         page_size -> endpoint.offset;
                     }
@@ -865,9 +925,9 @@ fn pagination_rejects_old_forms_and_unsafe_initializers() {
         (
             quote! {
                 client Api {
-                    timeout off; base "https://example.test";
-                GET read(offset: u64, limit: u32) -> Vec<u32> using PageSpec<Vec<u32>> {
-                    paginate with OffsetController { offset -> endpoint.state.offset; }
+                    timeout 30s; base "https://example.test";
+                GET read(offset: u64, limit: u32) -> Vec<u32> via PageSpec<Vec<u32>> {
+                    paginate via OffsetController { offset -> endpoint.state.offset; }
                 }
             }},
             "one direct `endpoint.NAME`",
@@ -875,9 +935,9 @@ fn pagination_rejects_old_forms_and_unsafe_initializers() {
         (
             quote! {
                 client Api {
-                    timeout off; base "https://example.test";
-                GET read(offset: u64) -> Vec<u32> using PageSpec<Vec<u32>> {
-                    paginate with OffsetController { offset }
+                    timeout 30s; base "https://example.test";
+                GET read(offset: u64) -> Vec<u32> via PageSpec<Vec<u32>> {
+                    paginate via OffsetController { offset }
                 }
             }},
             "pagination fields require",
@@ -885,9 +945,9 @@ fn pagination_rejects_old_forms_and_unsafe_initializers() {
         (
             quote! {
                 client Api {
-                    timeout off; base "https://example.test";
-                GET read(offset: u64) -> Vec<u32> using PageSpec<Vec<u32>> {
-                    paginate with OffsetController { .. }
+                    timeout 30s; base "https://example.test";
+                GET read(offset: u64) -> Vec<u32> via PageSpec<Vec<u32>> {
+                    paginate via OffsetController { .. }
                 }
             }},
             "field begins with its field name",
@@ -895,9 +955,9 @@ fn pagination_rejects_old_forms_and_unsafe_initializers() {
         (
             quote! {
                 client Api {
-                    timeout off; base "https://example.test";
-                GET read() -> Vec<u32> using PageSpec<Vec<u32>> {
-                    paginate with crate::Controller { value = crate::make(); }
+                    timeout 30s; base "https://example.test";
+                GET read() -> Vec<u32> via PageSpec<Vec<u32>> {
+                    paginate via crate::Controller { value = crate::make(); }
                 }
             }},
             "supported literals, or Rust const/static paths",
@@ -905,8 +965,8 @@ fn pagination_rejects_old_forms_and_unsafe_initializers() {
         (
             quote! {
                 client Api {
-                    timeout off; base "https://example.test";
-                GET read() -> Vec<u32> using PageSpec<Vec<u32>> {
+                    timeout 30s; base "https://example.test";
+                GET read() -> Vec<u32> via PageSpec<Vec<u32>> {
                     paginate custom crate::factory();
                 }
             }},
@@ -967,7 +1027,7 @@ fn named_client_scope_and_endpoint_entries_are_order_independent() {
         parse(quote! {
             client Api {
                 #clauses
-            GET read() -> Bytes using Bytes;
+            GET read() -> Bytes via Binary;
         }})
         .expect("client clause permutation");
     }
@@ -982,8 +1042,8 @@ fn named_client_scope_and_endpoint_entries_are_order_independent() {
     for clauses in clause_permutations(&endpoint_clauses) {
         parse(quote! {
             client Api {
-                timeout off; base "https://example.test";
-            GET read() -> Bytes using Bytes { #clauses }
+                timeout 30s; base "https://example.test";
+            GET read() -> Bytes via Binary { #clauses }
         }})
         .expect("endpoint clause permutation");
     }
@@ -991,13 +1051,13 @@ fn named_client_scope_and_endpoint_entries_are_order_independent() {
     let scope_entries = [
         quote!(path ["items"];),
         quote!(timeout 2s;),
-        quote!(GET first() -> Bytes using Bytes;),
-        quote!(scope nested() { GET second() -> Bytes using Bytes; }),
+        quote!(GET first() -> Bytes via Binary;),
+        quote!(scope nested() { GET second() -> Bytes via Binary; }),
     ];
     for entries in clause_permutations(&scope_entries) {
         parse(quote! {
             client Api {
-                timeout off; base "https://example.test";
+                timeout 30s; base "https://example.test";
             scope items() { #entries }
         }})
         .expect("scope clause/child permutation");
@@ -1005,8 +1065,8 @@ fn named_client_scope_and_endpoint_entries_are_order_independent() {
 
     let auth = parse_ok(quote! {
         client Api {
-            timeout off; base "https://example.test";
-        GET read() -> Bytes using Bytes {
+            timeout 30s; base "https://example.test";
+        GET read() -> Bytes via Binary {
             auth {
                 bearer first;
                 query "fallback" = second;
@@ -1029,8 +1089,8 @@ fn named_client_scope_and_endpoint_entries_are_order_independent() {
 fn duplicate_named_clauses_report_duplicate_and_first_spans() {
     let error = parse(quote! {
         client Api {
-            timeout off; base "https://example.test";
-        GET read() -> Bytes using Bytes {
+            timeout 30s; base "https://example.test";
+        GET read() -> Bytes via Binary {
             timeout 1s;
             path ["items"];
             timeout 2s;
@@ -1048,18 +1108,18 @@ fn duplicate_named_clauses_report_duplicate_and_first_spans() {
 fn source_names_body_roles_optionality_and_stable_ids_follow_v2_syntax() {
     let api = parse_ok(quote! {
         client HTTPApi {
-            timeout off; base "https://example.test";
+            timeout 30s; base "https://example.test";
         scope http_status() {
             GET get_http_status(
                 first?: String,
-                body payload: String using Text,
+                body payload: String via Text,
                 body_value: String,
                 second?: std::option::Option<u32>,
                 alias_value: crate::MaybeString,
-            ) -> Bytes using Bytes {
+            ) -> Bytes via Binary {
                 id "http.status_v2.get";
             }
-            GET r#type() -> Bytes using Bytes;
+            GET r#type() -> Bytes via Binary;
         }
     }});
     let SourceChild::Scope(scope) = &api.client.children[0] else {
@@ -1094,15 +1154,15 @@ fn source_names_body_roles_optionality_and_stable_ids_follow_v2_syntax() {
         (
             quote! {
                 client Api {
-                    timeout off; base "https://example.test";
-                GET PascalCase() -> Bytes using Bytes;
+                    timeout 30s; base "https://example.test";
+                GET PascalCase() -> Bytes via Binary;
             }},
             "must be snake_case",
         ),
         (
             quote! {
                 client Api {
-                    timeout off; base "https://example.test";
+                    timeout 30s; base "https://example.test";
                 scope PascalCase() { }
             }},
             "must be snake_case",
@@ -1110,24 +1170,24 @@ fn source_names_body_roles_optionality_and_stable_ids_follow_v2_syntax() {
         (
             quote! {
                 client Api {
-                    timeout off; base "https://example.test";
-                POST duplicate(body first: String using Text, body second: Bytes using Bytes) -> Bytes using Bytes;
+                    timeout 30s; base "https://example.test";
+                POST duplicate(body first: String via Text, body second: Bytes via Binary) -> Bytes via Binary;
             }},
             "two request body parameters",
         ),
         (
             quote! {
                 client Api {
-                    timeout off; base "https://example.test";
-                POST malformed(#[body(value)] payload: Text) -> Bytes using Bytes;
+                    timeout 30s; base "https://example.test";
+                POST malformed(#[body(value)] payload: Text) -> Bytes via Binary;
             }},
             "v1 `#[body] name: Spec` syntax was removed",
         ),
         (
             quote! {
                 client Api {
-                    timeout off; base "https://example.test";
-                POST defaulted(body payload: String using Text = crate::DEFAULT) -> Bytes using Bytes;
+                    timeout 30s; base "https://example.test";
+                POST defaulted(body payload: String via Text = crate::DEFAULT) -> Bytes via Binary;
             }},
             "cannot have a default",
         ),
@@ -1155,8 +1215,8 @@ fn stable_id_format_is_focused() {
         let invalid = LitStr::new(invalid, proc_macro2::Span::call_site());
         let error = parse(quote! {
             client Api {
-                timeout off; base "https://example.test";
-            GET read() -> Bytes using Bytes { id #invalid; }
+                timeout 30s; base "https://example.test";
+            GET read() -> Bytes via Binary { id #invalid; }
         }})
         .err()
         .expect("invalid stable ID");

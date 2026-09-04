@@ -200,7 +200,7 @@ async fn zero_page_and_configured_ceilings_cut_off_the_first_forbidden_work() {
     );
     let item_aggregate = item_hooks.aggregate.lock().expect("aggregate lock").clone();
     assert_eq!(item_aggregate.len(), 1);
-    assert_eq!(item_aggregate[0].items_collected, 1);
+    assert_eq!(item_aggregate[0].items_collected, 0);
     assert_eq!(item_aggregate[0].outcome, CompletionOutcome::Pagination);
     assert_eq!(item_aggregate[0].final_status, Some(StatusCode::OK));
 }
@@ -296,12 +296,13 @@ async fn aggregate_response_body_budget_accepts_exact_total_and_drops_first_exce
         2
     );
     assert_eq!(next_calls.load(Ordering::SeqCst), 1);
-    assert!(
+    assert_eq!(
         excess_hooks
             .completion
             .lock()
             .expect("completion lock")
-            .is_empty()
+            .len(),
+        2
     );
     let excess_aggregate = excess_hooks.aggregate.lock().expect("aggregate lock");
     assert_eq!(excess_aggregate[0].pages_completed, 1);
@@ -452,7 +453,7 @@ async fn final_soft_and_controller_selected_count_pages_apply_exact_next_precede
     .await
     .expect("final soft page");
     assert_eq!(items, ["item"]);
-    assert_eq!(next_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(next_calls.load(Ordering::SeqCst), 1);
 
     let empty_executor = DeterministicExecutor::new();
     empty_executor

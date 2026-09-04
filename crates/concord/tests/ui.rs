@@ -20,7 +20,7 @@ fn v2_language_surface_and_diagnostics() {
     #[cfg(feature = "json")]
     for path in [
         "tests/ui/fail/pagination/pagination_modes.rs",
-        "tests/ui/fail/pagination/pagination_non_repeatable_codec.rs",
+        "tests/ui/fail/pagination/pagination_non_page_request_representation.rs",
         "tests/ui/fail/pagination/pagination_request_body.rs",
         "tests/ui/fail/pagination/pagination_stream_body.rs",
     ] {

@@ -1,17 +1,9 @@
-# Concord v2 constitution
+# Concord v2.1 implementation status
 
-Concord 2.0.0 is the single active language and runtime contract in this
-repository. It supersedes the previous major-version contract.
+Concord v2.1 is the single active language target in this repository. The workspace version is `2.1.0` and the generated/core contract handshake is `33`; no public v2.0 language is implemented as an intermediate mode.
 
-The product identity, projection laws, non-goals, and migration posture are
-recorded in [the v2 architecture decision](docs/v2_architecture.md). Normative
-syntax, execution, and cross-cutting rules live in the
-[DSL specification](docs/spec.md), [runtime model](docs/runtime.md), and
-[design invariants](docs/design_invariants.md).
+The normative contract lives in the [design invariants](docs/design_invariants.md), [DSL specification](docs/spec.md), and [execution policy](docs/execution_policy.md), and selected [ADRs](dev_doc/adrs/README.md). Old spellings remain only in rejection diagnostics, migration tooling/tests, and quoted migration documentation.
 
-There is no production v1 parser mode, public compatibility alias, or alternate
-executor. Selected old spellings exist only in migration diagnostics and the
-[migration guide](docs/migration_v1_to_v2.md).
+This checkout remains a **v2.1 implementation prototype**, not a release candidate. Promotion requires every applicable item in the [evidence and release gates](docs/evidence_and_release_gates.md), including recorded unfamiliar-user evidence. Current supported, disconfirmed, deferred, and unknown claims are tracked in the [claim/evidence ledger](dev_doc/claim_evidence_ledger.md); the current ten-gate disposition is in [release-gate status](dev_doc/release_gate_status.md).
 
-The release gate is `just verify`; workspace version 2.0.0 and generated
-contract handshake 32 move together.
+The maintained aggregate verification command is `just verify`. A green subset must not be reported as the complete release gate.

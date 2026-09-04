@@ -6,9 +6,9 @@ use syn::spanned::Spanned;
 use syn::{PathArguments, Type};
 
 use crate::semantic::model::{
-    Api, AttachmentFamily, AttachmentOperation, Child, Client, CloneEligibility, Credential,
-    CredentialSource, Endpoint, NormalizedConfig, NormalizedRateLimitDimension, ObservationClass,
-    PaginationInitializer, PaginationValue, QueryCardinality, Repeatability, RequiredArgument,
+    AcceptedStatus, Api, AttachmentFamily, AttachmentOperation, Child, Client, CloneEligibility,
+    Credential, CredentialSource, Effect, Endpoint, NormalizedConfig, NormalizedRateLimitDimension,
+    ObservationClass, PaginationInitializer, PaginationValue, QueryCardinality, RequiredArgument,
     ResolvedAccept, ResolvedAuthPlacement, ResolvedChallengePolicy, ResolvedDefault, ResolvedExpr,
     ResolvedMethod, ResolvedValue, Scope, Value, ValuePresence, ValueReference,
 };
@@ -54,7 +54,7 @@ mod test_support {
     pub(super) fn api() -> Api {
         semantic::test_support::resolve_tokens(quote! {
             client ArtifactApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 values { tenant: String; }
                 credentials {
@@ -62,13 +62,13 @@ mod test_support {
                     credential bearer = bearer(secret.bearer_value);
                 }
 
-            GET fetch_item(id: String, verbose?: bool) -> Bytes using Bytes {
+            GET fetch_item(id: String, verbose?: bool) -> Bytes via Binary {
                 path [client.tenant, endpoint.id];
                 auth { bearer bearer; }
                 expose accepted_bytes;
             }
             scope resources(region: String) {
-                GET list() -> () using NoContent;
+                GET list() -> () via Empty;
             }
         }})
     }
@@ -113,15 +113,15 @@ mod tests {
     fn complete_generation_consumes_normalized_singular_client_ir() {
         let api = semantic::test_support::resolve_tokens(quote! {
             client FirstApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 values { tenant: String; }
 
-            GET root(id: String, verbose?: bool) -> Bytes using Bytes {
+            GET root(id: String, verbose?: bool) -> Bytes via Binary {
                 path [client.tenant, endpoint.id];
             }
             scope resources(region: String) {
-                GET list() -> () using NoContent;
+                GET list() -> () via Empty;
             }
         }});
         let output = generate(&api, &quote!(::concord)).to_string();
@@ -135,10 +135,10 @@ mod tests {
     }
 
     #[test]
-    fn generated_value_mutations_use_the_exact_set_clear_reset_matrix() {
+    fn generated_value_mutations_use_the_exact_set_omit_reset_matrix() {
         let api = semantic::test_support::resolve_tokens(quote! {
             client ControlApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 values {
                     required_client_value: String;
@@ -164,7 +164,7 @@ mod tests {
                     defaulted_endpoint_value: u32 = 30,
                     defaulted_optional_endpoint_value?: Option<String> = None,
                     defaulted_optional_vector_endpoint_value?: Option<Vec<String>> = None,
-                ) -> Bytes using Bytes;
+                ) -> Bytes via Binary;
             }
         }});
         let output = generate(&api, &quote!(::concord)).to_string();
@@ -178,40 +178,39 @@ mod tests {
             "set_required_client_value",
             "set_optional_client_value",
             "with_optional_client_value",
-            "clear_optional_client_value",
+            "omit_optional_client_value",
             "set_defaulted_client_value",
             "reset_defaulted_client_value",
             "set_defaulted_optional_client_value",
             "with_defaulted_optional_client_value",
-            "clear_defaulted_optional_client_value",
+            "omit_defaulted_optional_client_value",
             "reset_defaulted_optional_client_value",
             "set_build",
             "set_timeout",
-            "clear_timeout",
             "set_response",
             "reset_response",
             "set_debug",
             "set_optional_scope_value",
             "with_optional_scope_value",
-            "clear_optional_scope_value",
+            "omit_optional_scope_value",
             "set_defaulted_scope_value",
             "reset_defaulted_scope_value",
             "set_defaulted_optional_scope_value",
             "with_defaulted_optional_scope_value",
-            "clear_defaulted_optional_scope_value",
+            "omit_defaulted_optional_scope_value",
             "reset_defaulted_optional_scope_value",
             "set_optional_endpoint_value",
             "with_optional_endpoint_value",
-            "clear_optional_endpoint_value",
+            "omit_optional_endpoint_value",
             "set_defaulted_endpoint_value",
             "reset_defaulted_endpoint_value",
             "set_defaulted_optional_endpoint_value",
             "with_defaulted_optional_endpoint_value",
-            "clear_defaulted_optional_endpoint_value",
+            "omit_defaulted_optional_endpoint_value",
             "reset_defaulted_optional_endpoint_value",
             "set_defaulted_optional_vector_endpoint_value",
             "with_defaulted_optional_vector_endpoint_value",
-            "clear_defaulted_optional_vector_endpoint_value",
+            "omit_defaulted_optional_vector_endpoint_value",
             "reset_defaulted_optional_vector_endpoint_value",
         ] {
             assert!(output.contains(&format!("pub fn {method}")), "{method}");
@@ -219,18 +218,18 @@ mod tests {
         for absent in [
             "set_required_scope_value",
             "set_required_endpoint_value",
-            "clear_required_client_value",
+            "omit_required_client_value",
             "reset_required_client_value",
             "reset_optional_client_value",
-            "clear_defaulted_client_value",
-            "clear_required_scope_value",
+            "omit_defaulted_client_value",
+            "omit_required_scope_value",
             "reset_required_scope_value",
             "reset_optional_scope_value",
-            "clear_defaulted_scope_value",
-            "clear_required_endpoint_value",
+            "omit_defaulted_scope_value",
+            "omit_required_endpoint_value",
             "reset_required_endpoint_value",
             "reset_optional_endpoint_value",
-            "clear_defaulted_endpoint_value",
+            "omit_defaulted_endpoint_value",
             "required_client_value",
             "optional_client_value",
             "defaulted_client_value",
@@ -293,12 +292,12 @@ mod tests {
         assert!(request.contains("endpoint . set_optional_endpoint_value (value)"));
         assert!(request.contains("endpoint . reset_defaulted_endpoint_value ()"));
         assert!(request.contains("endpoint . set_defaulted_optional_endpoint_value (value)"));
-        assert!(request.contains("endpoint . clear_defaulted_optional_endpoint_value ()"));
+        assert!(request.contains("endpoint . omit_defaulted_optional_endpoint_value ()"));
         assert!(request.contains("endpoint . reset_defaulted_optional_endpoint_value ()"));
         assert!(
             request.contains("endpoint . set_defaulted_optional_vector_endpoint_value (value)")
         );
-        assert!(request.contains("endpoint . clear_defaulted_optional_vector_endpoint_value ()"));
+        assert!(request.contains("endpoint . omit_defaulted_optional_vector_endpoint_value ()"));
         assert!(request.contains("endpoint . reset_defaulted_optional_vector_endpoint_value ()"));
         assert!(!request.contains("set_optional_scope_value"));
         assert!(!request.contains("set_defaulted_scope_value"));
@@ -308,7 +307,7 @@ mod tests {
     fn normalized_semantic_enums_preserve_emitted_contract_behavior() {
         let api = semantic::test_support::resolve_tokens(quote! {
             client NormalizedApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 values {
                     region: String = "eu";
@@ -319,8 +318,8 @@ mod tests {
                     credential bearer = bearer(secret.token);
                 }
 
-            METHOD("PROPFIND") inspect() -> () using NoContent {
-                auth { bearer bearer recover on unauthorized_or_forbidden; }
+            METHOD("PROPFIND") inspect() -> () via Empty {
+                auth { bearer bearer challenge unauthorized_or_forbidden; }
             }
         }});
         let endpoint = test_support::endpoint(&api);
@@ -358,7 +357,7 @@ mod tests {
     fn custom_authorization_emits_dedicated_calls_bounds_and_safe_docs() {
         let api = semantic::test_support::resolve_tokens(quote! {
             client AuthorizationApi {
-                timeout off;
+                timeout 30s;
                 base "https://example.test";
                 credentials {
                     secret key;
@@ -366,11 +365,11 @@ mod tests {
                     credential custom = custom crate::SessionProvider;
                 }
 
-            GET exact() -> Bytes using Bytes {
+            GET exact() -> Bytes via Binary {
                 auth { authorization = exact; }
             }
-            GET scheme() -> Bytes using Bytes {
-                auth { authorization "tOkEn" = custom recover on unauthorized; }
+            GET scheme() -> Bytes via Binary {
+                auth { authorization "tOkEn" = custom challenge unauthorized; }
             }
         }});
         let output = generate(&api, &quote!(::concord)).to_string();

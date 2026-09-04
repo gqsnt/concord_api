@@ -2,11 +2,11 @@ use concord::api;
 
 api! {
     client MethodApi {
-        timeout off;
+        timeout 30s;
         base "https://method.example.test";
 
 
-    METHOD("BAD METHOD") item() -> Bytes using Bytes;
+    METHOD("BAD METHOD") item() -> Bytes via Binary;
 }}
 
 fn main() {}

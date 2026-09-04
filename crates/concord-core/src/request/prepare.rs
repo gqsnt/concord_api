@@ -247,7 +247,7 @@ where
         RequestContentType::Exact(value) => (Some(value), true),
         RequestContentType::Generated => (None, true),
     };
-    let accept = <E::Response as crate::response::ResponseSpec>::accept();
+    let accept = <E::Response as crate::response::ResponseRepresentation<E::Output>>::accept();
     head.apply_media_headers(accept, content_type, owns_content_type)?;
     head.validate_auth()?;
     ensure_matching_meta(meta, head)?;

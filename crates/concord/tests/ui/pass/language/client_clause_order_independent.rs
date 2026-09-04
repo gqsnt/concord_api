@@ -2,7 +2,7 @@ use concord::api;
 
 api! {
     client VarsOrderApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
         credentials {}
         values {

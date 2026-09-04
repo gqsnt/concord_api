@@ -1,7 +1,7 @@
 use super::*;
 
 #[tokio::test]
-async fn limiter_observes_before_user_response_hook() {
+async fn limiter_observes_synchronously_before_user_response_observer() {
     const KEY_SENTINEL: &str = "controlled-custom-key-5e8c7f2b";
     let executor = DeterministicExecutor::new();
     let body_polls = Arc::new(AtomicUsize::new(0));
@@ -14,10 +14,8 @@ async fn limiter_observes_before_user_response_hook() {
         .expect("limited response");
     let trace = Arc::new(Mutex::new(Vec::new()));
     let hooks = Arc::new(ProbeHooks::traced(Arc::clone(&trace)));
-    let observe_gate = Gate::closed();
     let limiter = Arc::new(ProbeRateLimiter {
         trace: Some(Arc::clone(&trace)),
-        observe_gate: Some(observe_gate.clone()),
         response_body_polls: Some(Arc::clone(&body_polls)),
         ..ProbeRateLimiter::new()
     });
@@ -36,16 +34,8 @@ async fn limiter_observes_before_user_response_hook() {
     assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 0);
     assert_eq!(executor.application().request_count().expect("count"), 0);
 
-    let task = tokio::spawn(request.into_future());
-    observe_gate.wait_until_reached().await;
-    assert_eq!(body_polls.load(Ordering::SeqCst), 0);
     assert_eq!(
-        trace.lock().expect("trace").as_slice(),
-        ["before_send", "limiter acquire", "limiter observe"]
-    );
-    observe_gate.open();
-    assert_eq!(
-        task.await.expect("request task").expect("limited result"),
+        request.await.expect("limited result"),
         Bytes::from_static(b"limited")
     );
     assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 1);
@@ -53,11 +43,11 @@ async fn limiter_observes_before_user_response_hook() {
     assert_eq!(
         trace.lock().expect("trace").as_slice(),
         [
-            "before_send",
+            "attempt_started",
             "limiter acquire",
             "limiter observe",
-            "on_response_head",
-            "on_complete",
+            "response_head_observed",
+            "operation_finished",
         ]
     );
     assert_eq!(
@@ -99,7 +89,7 @@ async fn limiter_observes_before_user_response_hook() {
 }
 
 #[tokio::test]
-async fn limiter_learns_cooldown_when_user_hook_would_fail() {
+async fn limiter_learns_cooldown_before_a_panicking_observer_without_changing_status() {
     let executor = DeterministicExecutor::new();
     let body_polls = Arc::new(AtomicUsize::new(0));
     let mut headers = http::HeaderMap::new();
@@ -119,7 +109,7 @@ async fn limiter_learns_cooldown_when_user_hook_would_fail() {
         )
         .expect("cooldown response");
     let hooks = Arc::new(ProbeHooks {
-        response_fail: true,
+        panic_on_response: true,
         ..ProbeHooks::new()
     });
     let limiter = Arc::new(ProbeRateLimiter {
@@ -134,18 +124,18 @@ async fn limiter_learns_cooldown_when_user_hook_would_fail() {
 
     let error = bytes_request(core)
         .await
-        .expect_err("response hook rejection");
-    assert_eq!(error.category(), ErrorCategory::PolicyRejected);
+        .expect_err("declared status rejection");
+    assert_eq!(error.category(), ErrorCategory::HttpStatus);
     assert!(limiter.learned_cooldown.load(Ordering::SeqCst));
     assert_eq!(limiter.observations.load(Ordering::SeqCst), 1);
-    assert_eq!(body_polls.load(Ordering::SeqCst), 0);
+    assert_eq!(body_polls.load(Ordering::SeqCst), 2);
     assert!(matches!(
         hooks.records().as_slice(),
         [
             LifecycleRecord::Before { .. },
-            LifecycleRecord::Response(_, StatusCode::TOO_MANY_REQUESTS),
+            LifecycleRecord::Response(StatusCode::TOO_MANY_REQUESTS),
             LifecycleRecord::Complete {
-                outcome: CompletionOutcome::PolicyRejected,
+                outcome: CompletionOutcome::HttpStatus,
                 status: Some(StatusCode::TOO_MANY_REQUESTS),
                 ..
             }
@@ -154,7 +144,7 @@ async fn limiter_learns_cooldown_when_user_hook_would_fail() {
 }
 
 #[tokio::test]
-async fn limiter_observation_error_prevents_user_hook() {
+async fn limiter_observation_is_non_result_determining() {
     const RESPONSE_SECRET: &str = "response-observation-secret-4f6a";
     let executor = DeterministicExecutor::new();
     let body_polls = Arc::new(AtomicUsize::new(0));
@@ -171,13 +161,9 @@ async fn limiter_observation_error_prevents_user_hook() {
                 .body_poll_counter(Arc::clone(&body_polls)),
         )
         .expect("observation-error response");
-    let hooks = Arc::new(ProbeHooks {
-        response_fail: true,
-        ..ProbeHooks::new()
-    });
+    let hooks = Arc::new(ProbeHooks::new());
     let limiter = Arc::new(ProbeRateLimiter {
         response_body_polls: Some(Arc::clone(&body_polls)),
-        observe_fail: true,
         ..ProbeRateLimiter::new()
     });
     let core = development_core(
@@ -186,33 +172,25 @@ async fn limiter_observation_error_prevents_user_hook() {
         RuntimeConfigBuilder::new().rate_limiter(limiter.clone()),
     );
 
-    let error = bytes_request(core)
+    let output = bytes_request(core)
         .await
-        .expect_err("limiter observation failure");
-    assert_eq!(error.category(), ErrorCategory::RateLimit);
-    assert_eq!(
-        error.rate_limit_kind(),
-        Some(crate::error::RateLimitErrorKind::Observe)
-    );
+        .expect("current result is fixed normally");
+    assert_eq!(output, Bytes::from_static(b"withheld"));
     assert_eq!(limiter.observations.load(Ordering::SeqCst), 1);
-    assert_eq!(body_polls.load(Ordering::SeqCst), 0);
+    assert!(body_polls.load(Ordering::SeqCst) >= 1);
     assert!(matches!(
         hooks.records().as_slice(),
         [
             LifecycleRecord::Before { .. },
+            LifecycleRecord::Response(StatusCode::OK),
             LifecycleRecord::Complete {
-                outcome: CompletionOutcome::RateLimit,
+                outcome: CompletionOutcome::Success,
                 status: Some(StatusCode::OK),
                 ..
             }
         ]
     ));
-    let mut source: Option<&(dyn std::error::Error + 'static)> = Some(&error);
-    while let Some(current) = source {
-        assert!(!current.to_string().contains(RESPONSE_SECRET));
-        assert!(!format!("{current:?}").contains(RESPONSE_SECRET));
-        source = current.source();
-    }
+    assert!(!format!("{:?}", limiter.response_records()).contains(RESPONSE_SECRET));
 }
 
 #[tokio::test]
@@ -299,7 +277,7 @@ async fn accepted_bytes_reuses_limiter_hooks_observation_and_success_completion(
         hooks.records().as_slice(),
         [
             LifecycleRecord::Before { .. },
-            LifecycleRecord::Response(_, StatusCode::OK),
+            LifecycleRecord::Response(StatusCode::OK),
             LifecycleRecord::Complete {
                 outcome: CompletionOutcome::Success,
                 status: Some(StatusCode::OK),
@@ -363,7 +341,7 @@ async fn limiter_failure_prevents_request_debug_and_native_execution() {
     );
     assert_eq!(
         trace.lock().expect("trace").as_slice(),
-        ["before_send", "limiter acquire", "on_complete"]
+        ["attempt_started", "limiter acquire", "operation_finished"]
     );
 }
 
@@ -477,10 +455,14 @@ async fn prepared_plans_use_selected_limiter_metadata_and_configured_key_limit()
 }
 
 #[tokio::test]
-async fn hook_body_and_key_preparation_failures_perform_no_limiter_work() {
+async fn observer_panic_has_no_authority_while_body_and_key_failures_precede_limiter() {
     let executor = DeterministicExecutor::new();
+    executor
+        .application()
+        .queue_response(ScriptedResponse::success(Bytes::from_static(b"observed")))
+        .expect("observer panic response");
     let hooks = Arc::new(ProbeHooks::new());
-    hooks.veto.store(true, Ordering::SeqCst);
+    hooks.panic_on_attempt.store(true, Ordering::SeqCst);
     let limiter = Arc::new(ProbeRateLimiter::new());
     let configured: Arc<dyn RateLimiter> = limiter.clone();
     let core = development_core(
@@ -488,13 +470,13 @@ async fn hook_body_and_key_preparation_failures_perform_no_limiter_work() {
         Arc::clone(&hooks),
         RuntimeConfigBuilder::new().rate_limiter(configured),
     );
-    let error = rate_limited_bytes_request(core, Some(Duration::from_secs(30)), "hook-veto-key")
+    let output = rate_limited_bytes_request(core, Some(Duration::from_secs(30)), "observer-key")
         .await
-        .expect_err("hook veto");
-    assert_eq!(error.category(), ErrorCategory::PolicyRejected);
-    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 0);
+        .expect("observer panic cannot veto");
+    assert_eq!(output, Bytes::from_static(b"observed"));
+    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 1);
 
-    hooks.veto.store(false, Ordering::SeqCst);
+    hooks.panic_on_attempt.store(false, Ordering::SeqCst);
     let core = development_core(
         &executor,
         Arc::clone(&hooks),
@@ -512,7 +494,7 @@ async fn hook_body_and_key_preparation_failures_perform_no_limiter_work() {
     .await
     .expect_err("body failure");
     assert_eq!(error.category(), ErrorCategory::RequestBody);
-    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 0);
+    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 1);
 
     let hook_records_before_key = hooks.records().len();
     let core = development_core(
@@ -528,13 +510,13 @@ async fn hook_body_and_key_preparation_failures_perform_no_limiter_work() {
         error.configuration_kind(),
         Some(crate::error::ConfigurationErrorKind::InvalidRateLimit)
     );
-    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 0);
+    assert_eq!(limiter.acquisitions.load(Ordering::SeqCst), 1);
     assert_eq!(
         hooks.records().len(),
         hook_records_before_key + 1,
         "key rejection occurs before before-send; only completion is added"
     );
-    assert_eq!(executor.application().request_count().expect("count"), 0);
+    assert_eq!(executor.application().request_count().expect("count"), 1);
 }
 
 #[tokio::test]
@@ -836,9 +818,9 @@ async fn private_protocol_recovery_does_not_reenter_custom_limiter_or_lifecycle(
         &server.base_url(),
         HttpConfigBuilder::new().http2_prior_knowledge(),
         RuntimeConfigBuilder::new()
-            .request_gate(hooks.clone())
-            .response_gate(hooks.clone())
-            .completion_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
             .rate_limiter(configured),
     )
     .expect("real HTTP/2 core");
@@ -863,7 +845,7 @@ async fn private_protocol_recovery_does_not_reenter_custom_limiter_or_lifecycle(
     assert_eq!(
         records
             .iter()
-            .filter(|record| matches!(record, LifecycleRecord::Response(_, _)))
+            .filter(|record| matches!(record, LifecycleRecord::Response(_)))
             .count(),
         1
     );
@@ -877,9 +859,9 @@ async fn private_protocol_recovery_does_not_reenter_custom_limiter_or_lifecycle(
         &prepared_server.base_url(),
         HttpConfigBuilder::new().http2_prior_knowledge(),
         RuntimeConfigBuilder::new()
-            .request_gate(prepared_hooks.clone())
-            .response_gate(prepared_hooks.clone())
-            .completion_observer(prepared_hooks.clone())
+            .operation_observer(prepared_hooks.clone())
+            .operation_observer(prepared_hooks.clone())
+            .operation_observer(prepared_hooks.clone())
             .rate_limiter(configured),
     )
     .expect("prepared real HTTP/2 core");
@@ -909,7 +891,7 @@ async fn private_protocol_recovery_does_not_reenter_custom_limiter_or_lifecycle(
     assert_eq!(
         prepared_records
             .iter()
-            .filter(|record| matches!(record, LifecycleRecord::Response(_, _)))
+            .filter(|record| matches!(record, LifecycleRecord::Response(_)))
             .count(),
         1
     );
@@ -927,9 +909,9 @@ async fn accepted_bytes_contains_protocol_recovery_inside_one_logical_attempt() 
         &server.base_url(),
         HttpConfigBuilder::new().http2_prior_knowledge(),
         RuntimeConfigBuilder::new()
-            .request_gate(hooks.clone())
-            .response_gate(hooks.clone())
-            .completion_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
             .rate_limiter(configured),
     )
     .expect("response-bytes HTTP/2 core");
@@ -954,7 +936,7 @@ async fn accepted_bytes_contains_protocol_recovery_inside_one_logical_attempt() 
     assert_eq!(
         records
             .iter()
-            .filter(|record| matches!(record, LifecycleRecord::Response(_, _)))
+            .filter(|record| matches!(record, LifecycleRecord::Response(_)))
             .count(),
         1
     );

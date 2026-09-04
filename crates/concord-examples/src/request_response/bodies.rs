@@ -8,37 +8,36 @@
 use std::pin::Pin;
 
 use concord::api;
-use concord::body::{Multipart, MultipartBody, MultipartPart, Stream, StreamBody};
-use concord::codec::OctetStream;
-use concord::{Bytes, Json, NoContent, Text};
+use concord::body::{Multipart, MultipartBody, MultipartPart, RequestStream};
+use concord::{Binary, Bytes, Empty, Json, Text};
 use futures_core::Stream as _;
 
 // ANCHOR: body_contract
 api! {
     client BodyApi {
-        timeout off;
+        timeout 30s;
         base "http://body.example.test/";
 
 
     // ANCHOR: buffered_endpoints
-    POST json_round_trip(body body: Vec<u32> using Json<Vec<u32>>) -> Vec<u32> using Json<Vec<u32>>;
-    POST text_round_trip(body body: String using Text) -> String using Text;
+    POST json_round_trip(body body: Vec<u32> via Json) -> Vec<u32> via Json;
+    POST text_round_trip(body body: String via Text) -> String via Text;
     // ANCHOR: custom_codec_endpoint
     POST custom_round_trip(
-        body body: String using crate::request_response::specifications::ExampleCodec
-    ) -> String using crate::request_response::specifications::ExampleCodec;
+        body body: String via crate::request_response::specifications::ExampleCodec
+    ) -> String via crate::request_response::specifications::ExampleCodec;
     // ANCHOR_END: custom_codec_endpoint
     // ANCHOR_END: buffered_endpoints
 
     // ANCHOR: streaming_endpoints
-    POST upload(body body: concord::body::StreamBody using Stream) -> Bytes using Bytes;
-    GET download() -> concord::response::ByteStream using Stream;
-    POST exact_upload(body body: concord::body::StreamBody using Stream<OctetStream>) -> Bytes using Bytes;
-    GET exact_download() -> concord::response::ByteStream using Stream<OctetStream>;
+    POST upload(body body: concord::body::RequestStream via Binary) -> Bytes via Binary;
+    GET download() -> concord::response::ByteStream via Binary;
+    POST exact_upload(body body: concord::body::RequestStream via Binary) -> Bytes via Binary;
+    GET exact_download() -> concord::response::ByteStream via Binary;
     // ANCHOR_END: streaming_endpoints
 
     // ANCHOR: multipart_endpoint
-    POST multipart_upload(body body: concord::body::MultipartBody using Multipart) -> () using NoContent;
+    POST multipart_upload(body body: concord::body::MultipartBody via Multipart) -> () via Empty;
     // ANCHOR_END: multipart_endpoint
 }}
 // ANCHOR_END: body_contract
@@ -54,11 +53,11 @@ pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
     // ANCHOR_END: buffered_requests
 
     // ANCHOR: streaming_requests
-    let _: body_api::UploadRequest = client.upload(StreamBody::from_bytes(Bytes::from_static(
+    let _: body_api::UploadRequest = client.upload(RequestStream::from_bytes(Bytes::from_static(
         b"stream payload",
     )));
     let _: body_api::DownloadRequest = client.download();
-    let _: body_api::ExactUploadRequest = client.exact_upload(StreamBody::from_bytes(
+    let _: body_api::ExactUploadRequest = client.exact_upload(RequestStream::from_bytes(
         Bytes::from_static(b"binary payload"),
     ));
     let _: body_api::ExactDownloadRequest = client.exact_download();
@@ -98,7 +97,7 @@ pub async fn file_upload(
     client: &BodyApi,
     path: impl AsRef<std::path::Path>,
 ) -> Result<body_api::MultipartUploadRequest, concord::body::BodyError> {
-    let file = StreamBody::from_file(path).await?;
+    let file = RequestStream::from_file(path).await?;
     let multipart = MultipartBody::new()
         .part("description", MultipartPart::text("file upload")?)?
         .part(

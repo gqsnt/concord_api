@@ -1,61 +1,217 @@
-# Planning, reflection, and observation
+# Planning, descriptions, observation, and errors
 
-Concord distinguishes static contract facts, inert value-bound plans,
-result-determining gates, fixed completion evidence, public errors, and trusted
-diagnostics.
+Concord exposes several inspection/evidence products. They share one semantic contract but have different authority and runtime state.
 
-## Static descriptions
+## Four products
 
-`Client::contract()` returns the client/scope/endpoint tree without runtime
-values. Request and unbound intent `.description()` return the same endpoint
-view. Descriptions expose docs/deprecation, value owners and opaque type spelling,
-presence/default/observation, attachment operations and origins, body/response
-contracts, auth categories, timeout, repeatability, rate schemas, pagination,
-capabilities, and identity stability. They never expose credential material.
+1. **Static contract description** — value-free declarations and provenance.
+2. **Effective endpoint description** — inherited normalized endpoint contract.
+3. **Request plan** — one bound credential-free public request projection.
+4. **Operation evidence** — runtime identities, stages, waits, and outcomes.
 
-Trait-owned behavior is identified as a declared capability or opaque extension
-rather than invented static precision.
+Do not conflate them or call all of them “request metadata.”
 
-## Credential-free plans
+## Static and effective descriptions
 
-`request.plan()` borrows an inert request. `client.plan(&intent)` does the same
-after binding an unbound intent to public client values. Planning uses the same
-bounded public shaping operations as execution and exposes endpoint identity,
-method, redaction-aware observed URL/headers, timeout, repeatability, body/
-response categories, rate-policy identities, and terminals.
+Generated entry points:
 
-Planning never performs I/O, calls providers, places authentication, acquires a
-limiter, invokes execution gates/observers, inspects/materializes body values,
-or allocates operation/attempt identity. Body information is static metadata
-only.
+```rust
+CatalogApi::contract()
+request.description()
+intent.description()
+```
 
-`CredentialFreeRequestPlan` makes one exact guarantee: credentials are absent.
-Visible ordinary public data may still be personal or operationally sensitive,
-and `observed_url()` may differ from the real public wire URL when redaction is
-declared.
+Descriptions include:
 
-## Observation classes
+- client/scope/endpoint tree;
+- docs/deprecation and stable/derived identity;
+- exact value types, presence, defaults, sensitivity, and controls;
+- local and effective request/response representation plus origin;
+- route/query/header/auth/rate patches and provenance;
+- status, effect, timeout, body/response capabilities;
+- pagination bindings and metadata interests;
+- available terminals;
+- opaque custom behavior marked as opaque rather than guessed.
 
-Ordinary public values may be visible. `#[redact]` selects redacted public
-observation while preserving real wire/internal identity. Secrets/credentials
-are a private class structurally excluded from public representations. Structured
-sanitized headers and fixed redacted markers prevent safe accessors from leaking
-values that `Debug` merely hides.
+Because representation defaults are inherited, the effective representation and owner must appear near every endpoint signature in generated Rustdoc and tooling.
 
-## Operational evidence
+## Request plan
 
-Gates receive credential-free/redacted bounded views and may reject at one named
-phase. Completion receives one already-fixed bounded event and cannot change the
-caller result. Rate limiters receive opaque canonical keys under a documented
-application trust boundary; key values are absent elsewhere.
+```rust
+let plan = request.plan()?;
+let plan = client.plan(&unbound_intent)?;
+```
 
-Public errors expose stable categories, endpoint/method, operation/attempt/page
-identity, stage, and dispatch knowledge where applicable. Ordinary formatting
-excludes bodies, credentials, dependency details, and redacted values. A
-separate trusted diagnostic sink can receive bounded source-chain information;
-applications remain responsible for visible public data.
+A plan is inert, credential-free, redaction-aware, and not universally safe for unrestricted disclosure.
 
-Semantic contract snapshots are deterministic tool-private data. `xtask` diff
-classifies caller API, value/domain, wire, security/auth, runtime policy,
-capability, identity/rate schema, and documentation-only changes without
-promising a public JSON format.
+It may include:
+
+- stable endpoint ID and owner path;
+- method and logical origin;
+- actual public path/query/header structure;
+- ordinary public values through explicit accessors;
+- sensitive values as structural redaction markers;
+- private auth target/source structure without material;
+- body category/representation, not content;
+- exact output and caller-lifecycle category;
+- response representation and negotiation metadata;
+- status, effect, timeout;
+- rate schemas without resolved key values;
+- pagination and terminals;
+- local/effective provenance.
+
+Planning performs bounded public atom encoding/validation. It does not invoke body preparation, provider, limiter, retry, observer, native HTTP, endpoint-backed storage, or completion.
+
+## Plan versus execution
+
+Both consume the same semantic shaping program. `RequestAtom` promises deterministic output for an unchanged semantic value. Within each pass, real and sanitized views derive from one atom emission.
+
+Planning and later execution may perform separate passes; exact byte identity is not promised for an extension that violates its deterministic contract. A public frozen resolved request remains deferred.
+
+## Information classes
+
+```text
+ordinary public protocol data
+sensitive public protocol data
+private credential data
+body/content data
+operator-only bounded diagnostics
+```
+
+### Sensitivity propagation
+
+A `#[sensitive]` source redacts complete derived atoms, including `concat` and every `each` occurrence. It still affects the real request and internal pagination identity.
+
+No plan, observer, error, or debug path may downgrade sensitivity.
+
+## Operation observer
+
+```rust
+pub trait OperationObserver: Send + Sync + 'static {
+    fn observe(&self, event: OperationEvent<'_>);
+}
+```
+
+Properties:
+
+- synchronous and borrowed;
+- returns unit;
+- cannot mutate or veto request/result/retry/auth/rate;
+- prompt, finite, non-blocking, no external I/O, no panic by contract;
+- event views are bounded and sanitized;
+- core checks deadline around calls but cannot preempt arbitrary blocking code;
+- final observation cannot change the already fixed result.
+
+Applications needing asynchronous export use an extras/application-owned bounded queue with explicit drop/backpressure/shutdown policy. Core does not own a telemetry worker.
+
+## Event vocabulary
+
+Prototype minimum:
+
+```text
+OperationStarted
+AttemptStarted
+AttemptFinished
+RetryScheduled
+AuthRecovery
+PageFinished
+OperationFinished
+StreamOpened
+StreamFinished | StreamFailed | StreamDropped
+```
+
+The release gate should remove events that do not answer a real operator decision. Transport-private physical retries appear as bounded counters inside attempt evidence, not full public attempts.
+
+Events may expose:
+
+- endpoint/operation/page/attempt identities;
+- method and effect;
+- static/sanitized route structure;
+- timeout and elapsed stage durations;
+- body/representation/acquisition categories;
+- retry/auth/rate categories and waits;
+- status and dispatch knowledge;
+- bounded counts/byte categories.
+
+They never expose dynamic public values, bodies, output values, credentials, private auth, raw rate keys, native errors, or unrestricted headers.
+
+## Error model
+
+Stable top-level categories:
+
+```rust
+pub enum ApiErrorCategory {
+    InvalidRequest,
+    Body,
+    Credential,
+    RateLimit,
+    Transport,
+    Timeout,
+    RejectedStatus,
+    Response,
+    Pagination,
+    Internal,
+}
+```
+
+Each error exposes or permits bounded access to:
+
+- stable endpoint ID;
+- operation ID;
+- page/attempt ordinal;
+- failure stage;
+- dispatch knowledge;
+- status when observed;
+- policy-retry/auth-recovery counts;
+- sanitized structured diagnostics;
+- protected source only through explicit trusted access when safe.
+
+Do not mirror every dependency error type in the public enum.
+
+## Dispatch knowledge
+
+```rust
+pub enum DispatchKnowledge {
+    NotDispatched,
+    PossiblyDispatched,
+    ResponseObserved,
+}
+```
+
+A timeout or transport failure after dispatch does not prove remote rejection. `PossiblyDispatched` should direct callers toward application reconciliation using their own domain/idempotency identity.
+
+## No universal retry boolean
+
+Retry depends on effect, dispatch knowledge, body replayability, deadline, budgets, application workflow, and reconciliation. Expose the facts rather than one `is_retryable()` answer.
+
+## Codec and provider diagnostics
+
+Use stable codes and bounded structural locations. Raw third-party text may quote values/URLs/headers and remains protected.
+
+Example:
+
+```text
+ResponseDecode {
+  format: Json,
+  location: Field("items").AnyIndex.Field("created_at"),
+  reason: TypeMismatch,
+}
+```
+
+## Semantic diff
+
+Compare effective leaf contracts and classify:
+
+```text
+CallerApi
+DomainMeaning
+WireShapeOrRepresentation
+SecurityOrAuthority
+RuntimePolicyOrResource
+Capability
+OperationalIdentity
+DocumentationOnly
+OpaqueUnknown
+```
+
+A parent representation/query/header/auth/rate/timeout change expands to every affected leaf. Source moves must report inherited changes, not only generated Rust names.

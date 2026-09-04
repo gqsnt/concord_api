@@ -1,13 +1,13 @@
 error: generated client method `plan` collides with a reserved Concord method
  --> tests/ui/fail/names/generated_control_names_reserved.rs:7:13
   |
-7 |         GET plan() -> Bytes using Bytes;
+7 |         GET plan() -> Bytes via Binary;
   |             ^^^^
 
 error: generated client method `contract` collides with a reserved Concord method
   --> tests/ui/fail/names/generated_control_names_reserved.rs:15:13
    |
-15 |         GET contract() -> Bytes using Bytes;
+15 |         GET contract() -> Bytes via Binary;
    |             ^^^^^^^^
 
 error: generated client method `unbound` collides with a reserved Concord method

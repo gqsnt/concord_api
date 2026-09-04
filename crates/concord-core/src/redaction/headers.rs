@@ -24,7 +24,7 @@ pub struct SanitizedHeaders<'a> {
 }
 
 impl<'a> SanitizedHeaders<'a> {
-    /// Creates a borrowed view using Concord's built-in sensitive-header policy.
+    /// Creates a borrowed view via Concord's built-in sensitive-header policy.
     ///
     /// Runtime-owned views may additionally protect declaration-selected names.
     #[must_use]

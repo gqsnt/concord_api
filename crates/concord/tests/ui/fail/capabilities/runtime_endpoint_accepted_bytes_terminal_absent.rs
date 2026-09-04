@@ -4,10 +4,10 @@ use concord::http::Method;
 
 api! {
     client RuntimeAcceptedBytesApi {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
 
-        GET ordinary() -> concord::Bytes using concord::Bytes;
+        GET ordinary() -> concord::Bytes via concord::Bytes;
     }
 }
 
@@ -20,5 +20,6 @@ fn main() {
     .accepted_bytes()
     .build()
     .unwrap();
-    let _ = client.request(endpoint).accepted_bytes();
+    let request = endpoint.try_bind(&client).unwrap();
+    let _ = request.accepted_bytes();
 }

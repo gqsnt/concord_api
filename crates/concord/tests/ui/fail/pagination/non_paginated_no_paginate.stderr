@@ -3,10 +3,10 @@ error[E0599]: no method named `paginate` found for struct `ReadRequest` in the c
    |
  3 | / api! {
  4 | |     client PlainApi {
- 5 | |         timeout off;
+ 5 | |         timeout 30s;
  6 | |         base "http://plain.example.test/";
 ...  |
- 9 | |     GET read() -> Bytes using Bytes;
+ 9 | |     GET read() -> Bytes via Binary;
 10 | | }}
    | |__- method `paginate` not found for this struct
 ...

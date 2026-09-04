@@ -130,23 +130,21 @@ async fn observe(
 ) {
     let limiter_object: Arc<dyn RateLimiter> = limiter.clone();
     let headers = HeaderMap::new();
-    limiter_object
-        .observe(RateLimitResponse {
-            request: RateLimitRequest {
-                endpoint: "RateApi::get",
-                method: &Method::GET,
-                observed_url: "https://example.test/get",
-                host,
-                page_index: 0,
-                attempt: initial_attempt(),
-                plan,
-            },
-            status,
-            headers: SanitizedHeaders::new(&headers),
-            cooldown_cap: cap,
-        })
-        .await
-        .expect("local limiter observes response");
+    limiter_object.observe(RateLimitResponse {
+        request: RateLimitRequest {
+            endpoint: "RateApi::get",
+            method: &Method::GET,
+            observed_url: "https://example.test/get",
+            host,
+            page_index: 0,
+            attempt: initial_attempt(),
+            plan,
+        },
+        status,
+        headers: SanitizedHeaders::new(&headers),
+        server_delay: None,
+        cooldown_cap: cap,
+    });
 }
 
 async fn observe_headers(
@@ -158,23 +156,26 @@ async fn observe_headers(
     cap: Duration,
 ) {
     let limiter_object: Arc<dyn RateLimiter> = limiter.clone();
-    limiter_object
-        .observe(RateLimitResponse {
-            request: RateLimitRequest {
-                endpoint: "RateApi::get",
-                method: &Method::GET,
-                observed_url: "https://example.test/get",
-                host,
-                page_index: 0,
-                attempt: initial_attempt(),
-                plan,
-            },
-            status,
-            headers: SanitizedHeaders::new(headers),
-            cooldown_cap: cap,
-        })
-        .await
-        .expect("local limiter observes response headers");
+    let server_delay = headers
+        .get(http::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .map(Duration::from_secs);
+    limiter_object.observe(RateLimitResponse {
+        request: RateLimitRequest {
+            endpoint: "RateApi::get",
+            method: &Method::GET,
+            observed_url: "https://example.test/get",
+            host,
+            page_index: 0,
+            attempt: initial_attempt(),
+            plan,
+        },
+        status,
+        headers: SanitizedHeaders::new(headers),
+        server_delay,
+        cooldown_cap: cap,
+    });
 }
 
 #[test]
@@ -1466,24 +1467,21 @@ fn poisoned_state_fails_future_acquisition_closed() {
     let runtime = tokio::runtime::Runtime::new().expect("runtime");
     let empty = RateLimitPlan::empty();
     let headers = HeaderMap::new();
-    let observation_error = rate_error(
-        runtime.block_on(limiter.observe(RateLimitResponse {
-            request: RateLimitRequest {
-                endpoint: "RateApi::get",
-                method: &Method::GET,
-                observed_url: "https://example.test/get",
-                host: Some("example.test"),
-                page_index: 0,
-                attempt: initial_attempt(),
-                plan: &empty,
-            },
-            status: StatusCode::OK,
-            headers: SanitizedHeaders::new(&headers),
-            cooldown_cap: Duration::from_secs(60),
-        })),
-        "poisoned state observation unexpectedly succeeded",
-    );
-    assert_eq!(observation_error.kind(), RateLimitErrorKind::Internal);
+    limiter.observe(RateLimitResponse {
+        request: RateLimitRequest {
+            endpoint: "RateApi::get",
+            method: &Method::GET,
+            observed_url: "https://example.test/get",
+            host: Some("example.test"),
+            page_index: 0,
+            attempt: initial_attempt(),
+            plan: &empty,
+        },
+        status: StatusCode::OK,
+        headers: SanitizedHeaders::new(&headers),
+        server_delay: None,
+        cooldown_cap: Duration::from_secs(60),
+    });
     assert!(limiter.internal_failed.load(AtomicOrdering::Acquire));
     let error = rate_error(
         runtime.block_on(limiter.acquire(RateLimitRequest {

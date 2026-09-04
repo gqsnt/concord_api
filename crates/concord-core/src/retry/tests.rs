@@ -8,8 +8,8 @@ use url::Url;
 
 use super::budget::FixedRatio;
 use super::policy::{
-    MAX_POLICY_RETRIES_PER_OPERATION, RetryAttempt, RetryClassifier, RetryDecision, RetryFailure,
-    RetryPolicy, RetryPolicyBuildError, RetryPolicyBuildErrorKind,
+    MAX_POLICY_RETRIES_PER_OPERATION, RetryAttempt, RetryBackoff, RetryClassifier, RetryDecision,
+    RetryFailure, RetryJitter, RetryPolicy, RetryPolicyBuildError, RetryPolicyBuildErrorKind,
 };
 use crate::hooks::AttemptInfo;
 use crate::redaction::SanitizedHeaders;
@@ -456,4 +456,60 @@ fn debug_and_build_error_formatting_exclude_host_header_and_classifier_state() {
             "retry formatting leaked {forbidden}"
         );
     }
+}
+
+#[test]
+fn exponential_backoff_is_capped_and_jitter_is_operation_local() {
+    let exact = RetryBackoff::exponential(
+        Duration::from_millis(100),
+        Duration::from_millis(250),
+        RetryJitter::None,
+    )
+    .expect("valid exponential backoff");
+    assert_eq!(exact.delay(1, 7), Duration::from_millis(100));
+    assert_eq!(exact.delay(2, 7), Duration::from_millis(200));
+    assert_eq!(exact.delay(3, 7), Duration::from_millis(250));
+    assert_eq!(exact.delay(16, 7), Duration::from_millis(250));
+
+    let full = RetryBackoff::exponential(
+        Duration::from_millis(100),
+        Duration::from_secs(1),
+        RetryJitter::Full,
+    )
+    .expect("full jitter");
+    assert_eq!(full.delay(2, 42), full.delay(2, 42));
+    assert!(full.delay(2, 42) <= Duration::from_millis(200));
+
+    let equal = RetryBackoff::exponential(
+        Duration::from_millis(100),
+        Duration::from_secs(1),
+        RetryJitter::Equal,
+    )
+    .expect("equal jitter");
+    assert!(
+        (Duration::from_millis(100)..=Duration::from_millis(200)).contains(&equal.delay(2, 42))
+    );
+    assert!(
+        RetryBackoff::exponential(Duration::ZERO, Duration::from_secs(1), RetryJitter::None,)
+            .is_err()
+    );
+}
+
+#[test]
+fn server_minimum_is_combined_with_backoff_and_never_exceeds_willingness() {
+    let policy = RetryPolicy::builder()
+        .backoff(RetryBackoff::fixed(Duration::from_millis(250)))
+        .honor_server_delay_up_to(Duration::from_secs(2))
+        .classify_fn(|_| RetryDecision::Retry)
+        .build()
+        .expect("retry policy");
+    assert_eq!(
+        policy.retry_delay(1, 0, Some(Duration::from_secs(1))),
+        Some(Duration::from_secs(1))
+    );
+    assert_eq!(policy.retry_delay(1, 0, Some(Duration::from_secs(3))), None);
+    assert_eq!(
+        policy.retry_delay(1, 0, None),
+        Some(Duration::from_millis(250))
+    );
 }

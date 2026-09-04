@@ -5,6 +5,7 @@ pub(super) fn generate_endpoint_description(
     scopes: &[&Scope],
     endpoint: &Endpoint,
     response: &TokenStream,
+    output: &TokenStream,
     facade_path: &TokenStream,
 ) -> (Ident, TokenStream) {
     let description_static = private_ident("endpoint_description", endpoint.id, &endpoint.name);
@@ -15,18 +16,17 @@ pub(super) fn generate_endpoint_description(
         endpoint.name.span(),
     );
     let method = method_token(&endpoint.method, facade_path);
-    let timeout = endpoint.config.timeout.map_or_else(
-        || quote!(#facade_path::endpoint::TimeoutSelection::Disabled),
-        |duration| {
-            let seconds = duration.as_secs();
-            let nanos = duration.subsec_nanos();
-            quote! {
-                #facade_path::endpoint::TimeoutSelection::Explicit(
-                    ::std::time::Duration::new(#seconds, #nanos)
-                )
-            }
-        },
-    );
+    let duration = endpoint
+        .config
+        .timeout
+        .expect("semantic inheritance retains one finite endpoint timeout");
+    let seconds = duration.as_secs();
+    let nanos = duration.subsec_nanos();
+    let timeout = quote! {
+        #facade_path::endpoint::TimeoutSelection::Explicit(
+            ::std::time::Duration::new(#seconds, #nanos)
+        )
+    };
     let body_category = endpoint.body.as_ref().map_or_else(
         || quote!(#facade_path::endpoint::RequestBodyCategory::Empty),
         |_| quote!(#facade_path::endpoint::RequestBodyCategory::Specification),
@@ -43,14 +43,33 @@ pub(super) fn generate_endpoint_description(
     let authentication = !endpoint.config.auth.is_empty();
     let rate_limit = !endpoint.config.rate_limits.is_empty();
     let accepted_bytes = endpoint.surface.terminals.accepted_bytes;
-    let repeatability = match endpoint.repeatability {
-        Repeatability::Idempotent => quote!(#facade_path::endpoint::Repeatability::Idempotent),
-        Repeatability::Never => quote!(#facade_path::endpoint::Repeatability::Never),
+    let accepted_status = match &endpoint.accepted_status {
+        AcceptedStatus::Success => {
+            quote!(#facade_path::endpoint::AcceptedStatus::Success)
+        }
+        AcceptedStatus::Codes(codes) => {
+            let codes = codes.iter().map(|code| {
+                quote!(#facade_path::http::StatusCode::from_u16(#code)
+                    .expect("macro-validated HTTP status"))
+            });
+            quote!(#facade_path::endpoint::AcceptedStatus::codes([#(#codes),*])
+                .expect("macro-validated nonempty status set"))
+        }
     };
-    let repeatability_source = if endpoint.repeatability_explicit {
-        quote!(#facade_path::endpoint::RepeatabilitySource::Explicit)
+    let status_source = if endpoint.status_explicit {
+        quote!(#facade_path::endpoint::StatusSource::Explicit)
     } else {
-        quote!(#facade_path::endpoint::RepeatabilitySource::MethodDefault)
+        quote!(#facade_path::endpoint::StatusSource::DefaultSuccess)
+    };
+    let effect = match endpoint.effect {
+        Effect::Safe => quote!(#facade_path::endpoint::Effect::Safe),
+        Effect::Idempotent => quote!(#facade_path::endpoint::Effect::Idempotent),
+        Effect::NonIdempotent => quote!(#facade_path::endpoint::Effect::NonIdempotent),
+    };
+    let effect_source = if endpoint.effect_explicit {
+        quote!(#facade_path::endpoint::EffectSource::Explicit)
+    } else {
+        quote!(#facade_path::endpoint::EffectSource::MethodDefault)
     };
     let details = endpoint_contract_tokens(endpoint, facade_path);
     let tokens = quote! {
@@ -58,8 +77,8 @@ pub(super) fn generate_endpoint_description(
             ::std::sync::LazyLock<#facade_path::endpoint::EndpointDescription> =
             ::std::sync::LazyLock::new(|| {
                 let __concord_response_acquisition =
-                    <<#response as #facade_path::response::ResponseSpec>::Mode
-                    as #facade_path::response::ResponseMode>::ACQUISITION;
+                    <<#response as #facade_path::response::ResponseRepresentation<#output>>::Driver
+                    as #facade_path::response::ResponseDriver>::ACQUISITION;
                 #facade_path::endpoint::EndpointDescription::generated(
                     #facade_path::__private::endpoint_id_from_static(#contract_id),
                     #method,
@@ -76,8 +95,10 @@ pub(super) fn generate_endpoint_description(
                         #rate_limit,
                     ),
                     #timeout,
-                    #repeatability,
-                    #repeatability_source,
+                    #accepted_status,
+                    #status_source,
+                    #effect,
+                    #effect_source,
                     #details,
                 )
             });
@@ -138,7 +159,7 @@ fn endpoint_contract_tokens(endpoint: &Endpoint, facade_path: &TokenStream) -> T
         let cost = policy.cost;
         let dimensions = policy.dimensions.iter().map(|dimension| {
             let name = match dimension {
-                NormalizedRateLimitDimension::Host { .. } => "host".to_owned(),
+                NormalizedRateLimitDimension::Origin { .. } => "host".to_owned(),
                 NormalizedRateLimitDimension::Endpoint { .. } => "endpoint".to_owned(),
                 NormalizedRateLimitDimension::Value { public_name, .. } => public_name.clone(),
             };
@@ -188,7 +209,7 @@ fn endpoint_contract_tokens(endpoint: &Endpoint, facade_path: &TokenStream) -> T
                 }
             });
             quote!(::std::option::Option::Some(
-                #facade_path::endpoint::PaginationDescription::generated(
+                #facade_path::endpoint::PaginationContractDescription::generated(
                     #controller,
                     ::std::vec![#(#fields),*],
                 )
@@ -335,6 +356,30 @@ pub(super) fn effective_config_attachment_tokens(
     facade_path: &TokenStream,
 ) -> Vec<TokenStream> {
     let mut output = Vec::new();
+    for (family, state) in [
+        (
+            AttachmentFamily::RequestRepresentation,
+            &config.request_representation,
+        ),
+        (
+            AttachmentFamily::ResponseRepresentation,
+            &config.response_representation,
+        ),
+    ] {
+        if let Some(origin) = &state.origin {
+            output.push(effective_attachment(
+                family,
+                if state.fenced {
+                    AttachmentOperation::Off
+                } else {
+                    AttachmentOperation::Set
+                },
+                origin,
+                None,
+                facade_path,
+            ));
+        }
+    }
     for origin in &config.host_origins {
         output.push(effective_attachment(
             AttachmentFamily::Subdomain,
@@ -365,7 +410,7 @@ pub(super) fn effective_config_attachment_tokens(
     for header in &config.headers {
         output.push(effective_attachment(
             AttachmentFamily::Headers,
-            AttachmentOperation::Replace,
+            header.operation,
             &header.origin,
             Some(header.name.value()),
             facade_path,
@@ -424,6 +469,8 @@ fn effective_attachment(
 
 fn attachment_family_token(family: AttachmentFamily, facade_path: &TokenStream) -> TokenStream {
     let variant = match family {
+        AttachmentFamily::RequestRepresentation => quote!(RequestRepresentation),
+        AttachmentFamily::ResponseRepresentation => quote!(ResponseRepresentation),
         AttachmentFamily::Subdomain => quote!(Subdomain),
         AttachmentFamily::Path => quote!(Path),
         AttachmentFamily::Query => quote!(Query),
@@ -447,6 +494,7 @@ fn attachment_operation_token(
         AttachmentOperation::Remove => quote!(Remove),
         AttachmentOperation::Off => quote!(Off),
         AttachmentOperation::Set => quote!(Set),
+        AttachmentOperation::WhenPresent => quote!(WhenPresent),
     };
     quote!(#facade_path::endpoint::AttachmentOperation::#variant)
 }
@@ -509,7 +557,8 @@ mod tests {
             &api.client,
             &[],
             endpoint,
-            &quote!(crate::ResponseSpec),
+            &quote!(crate::ResponseRepresentation),
+            &quote!(crate::Output),
             &test_support::facade_path(),
         );
         let output = tokens.to_string();

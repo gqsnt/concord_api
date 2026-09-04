@@ -1,131 +1,161 @@
-# Quick start
+# Concord v2.1 quick start
 
-This walkthrough uses the compiled catalog example in
-`crates/concord-examples`.
+- **Audience:** first-time API authors and callers
+- **Status:** target syntax; release freeze follows the evidence gates
+- **Normative references:** [DSL specification](spec.md), [generated client](generated_client.md)
 
-## 1. Define domain types and a stable default
+## Add dependencies
 
-<!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_types -->
+```toml
+[dependencies]
+concord = { path = "../concord_api/crates/concord", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+```
+
+Concord v2.1 keeps the workspace MSRV at Rust 1.86 unless the representation prototype proves that impossible and the change is recorded explicitly.
+
+## Domain types
+
 ```rust
-use std::num::NonZeroU32;
+use concord::{api, Json};
+use serde::{Deserialize, Serialize};
 
-use concord::pagination::PaginatedRequest;
-use concord::{Json, PageLimit, api};
-use serde::Deserialize;
-
-/// Default page size retained by each endpoint snapshot.
-pub const DEFAULT_PAGE_SIZE: NonZeroU32 = match NonZeroU32::new(25) {
-    Some(value) => value,
-    None => unreachable!(),
-};
-
-/// One item returned by the example catalog API.
-#[derive(Debug, Deserialize)]
-pub struct ItemSummary {
-    /// Stable item identifier.
-    pub id: String,
-    /// Human-readable title.
+#[derive(Debug, Clone, Serialize)]
+pub struct CreateItem {
     pub title: String,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct Item {
+    pub id: String,
+    pub title: String,
+}
+
+pub type ItemId = String;
 ```
 
-## 2. Declare one contained client tree
+`RequestAtom` is a stable public-protocol role. Concord does not silently use a human-facing `Display` implementation.
 
-<!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_contract -->
-```rust
+## Declare one client
+
+```concord-pseudocode
 api! {
     client CatalogApi {
-        timeout off;
-        base "http://catalog.example.test/";
+        base "https://catalog.example.test/";
+        timeout 5s;
+        request Json;
+        response Json;
+
         values {
+            #[sensitive]
             tenant: String;
         }
-        path ["api"];
+
+        path ["v1"];
         query { "tenant" = client.tenant; }
 
+        GET item(id: ItemId) -> Item {
+            id "catalog.item.get";
+            path ["items", endpoint.id];
+        }
 
-    scope regional(region: String) {
-        subdomain replace [regional.region, "api"];
-        path ["v1", "catalog"];
-
-        GET item_summaries(
-            category?: String,
-            offset: u64 = 0,
-            count: std::num::NonZeroU32 = DEFAULT_PAGE_SIZE,
-        ) -> Vec<ItemSummary> using Json<Vec<ItemSummary>> {
+        POST create(
+            body input: CreateItem,
+        ) -> Item {
+            id "catalog.item.create";
             path ["items"];
-            query {
-                "category" = endpoint.category;
-                "offset" = endpoint.offset;
-                "count" = endpoint.count;
-            }
-            paginate with concord::pagination::OffsetPagination {
-                offset -> endpoint.offset;
-                page_size -> endpoint.count;
-            }
+            status 201;
+            effect non_idempotent;
         }
     }
-}}
-```
-
-The output type is exactly `Vec<ItemSummary>`; `Json<Vec<ItemSummary>>` owns
-status/media/acquisition/conversion. `category?` creates one outer omission
-slot. `offset` and `count` are defaulted once per request snapshot and remain
-available to the pagination adapter.
-
-## 3. Build and configure immutable snapshots
-
-<!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_usage -->
-```rust
-pub fn construct() -> Result<(), concord::ClientBuildError> {
-    let client = CatalogApi::builder()
-        .set_tenant("acme".to_owned())
-        .build()?;
-
-    let _: PaginatedRequest<_> = client
-        .regional("eu".to_owned())
-        .item_summaries()
-        .with_category("hardware".to_owned())
-        .set_count(NonZeroU32::new(50).expect("positive page size"))
-        .paginate(PageLimit::Prefix(2));
-    Ok(())
 }
 ```
 
-All controls consume a snapshot and return another. Nothing above performs HTTP
-or allocates an operation lifecycle.
+Read the declaration in layers:
 
-## 4. Execute one page or a bounded prefix
+1. The client owns the fixed origin, finite timeout, and common JSON representations.
+2. The client value owns the tenant protocol value and sensitivity.
+3. Each endpoint line contains exact caller input and exact awaited output.
+4. Endpoint blocks contain only local route, status, effect, and exceptional capabilities.
 
-<!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_execution -->
+## Build the client
+
 ```rust
-pub async fn execute(client: &CatalogApi) -> Result<(usize, usize), concord::ApiError> {
-    let one_page: Vec<ItemSummary> = client
-        .regional("eu".to_owned())
-        .item_summaries()
-        .with_category("hardware".to_owned())
-        .await?;
+let client = CatalogApi::builder()
+    .set_tenant("acme".to_owned())
+    .build()?;
+```
 
-    let first_two_pages: Vec<ItemSummary> = client
-        .regional("eu".to_owned())
-        .item_summaries()
-        .paginate(PageLimit::Prefix(2))
-        .await?;
+Construction is inert. No provider, limiter, body encoder, observer, request, or HTTP work begins.
 
-    Ok((one_page.len(), first_two_pages.len()))
+## Call an endpoint
+
+```rust
+let item: Item = client.item(item_id).await?;
+```
+
+The caller does not mention JSON because representation is a stable contract default.
+
+## Send a body
+
+```rust
+let created: Item = client.create(CreateItem {
+    title: "System Design".to_owned(),
+}).await?;
+```
+
+The body parameter type is exactly `CreateItem`. The result type is exactly `Item`.
+
+## Inspect without executing
+
+```rust
+let request = client.item(item_id);
+let description = request.description();
+let plan = request.plan()?;
+let item = request.await?;
+```
+
+Planning performs bounded public shaping but does not invoke body preparation, credentials, rate admission, retry, observers, or HTTP. Sensitive values remain structurally redacted in automatic formatting.
+
+## Add an optional query value
+
+```concord-pseudocode
+GET items(category?: String) -> Vec<Item> {
+    id "catalog.items.list";
+    path ["items"];
+    query { "category" = endpoint.category; }
 }
 ```
 
-Polling the terminal begins the managed executor. Pagination shares one
-deadline and independent page/item/byte/cycle/attempt bounds.
+Generated usage:
 
-## 5. Plan or transport intent
+```rust
+let request = client
+    .items()
+    .set_category(category_from_config) // Option<String>
+    .with_category("books".to_owned())
+    .omit_category();
+```
 
-Use `let intent = CatalogApi::unbound().regional(region).item_summaries();` to
-construct the same endpoint tree without a runtime. `intent.description()` is
-static. `client.plan(&intent)` performs credential-free/redaction-aware public
-shaping. `client.request(intent)` binds it for execution. None of these operations
-executes until the returned request terminal is polled.
+- `set_category` accepts the exact effective `Option<String>`.
+- `with_category` is the common present-value convenience retained until the DX gate disproves its value.
+- `omit_category` selects outer absence.
 
-Continue with [generated client details](generated_client.md),
-[authentication](auth.md), and [planning](planning_and_observation.md).
+## Repeated values are explicit
+
+```concord-pseudocode
+GET search(tags: Vec<String>) -> Vec<Item> {
+    id "catalog.items.search";
+    path ["search"];
+    query { append "tag" = each endpoint.tags; }
+}
+```
+
+`Vec<String>` remains an exact Rust collection. `each`—not the type name—owns repeated wire occurrences.
+
+## Next
+
+- [Requests and values](requests_and_values.md)
+- [Generated client](generated_client.md)
+- [Execution policy](execution_policy.md)
+- [Modeling APIs](modeling_apis.md)

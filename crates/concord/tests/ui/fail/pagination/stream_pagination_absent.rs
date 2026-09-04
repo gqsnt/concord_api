@@ -1,14 +1,14 @@
-use concord::api;
+use concord::{Binary, api};
 
 api! {
     client StreamingApi {
-        timeout off;
+        timeout 30s;
         base "http://streaming.example.test";
 
 
     scope transfers() {
         path ["transfers"];
-        GET download() -> ::concord::response::ByteStream using Stream;
+        GET download() -> ::concord::response::ByteStream via Binary;
     }
 }}
 

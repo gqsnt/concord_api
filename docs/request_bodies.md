@@ -1,59 +1,169 @@
 # Request bodies
 
-Body declarations separate the caller's domain input from the specification
-that interprets it.
+A request body is a dedicated semantic role. It is not a public atom, header map, arbitrary async stream, or native transport object.
 
-<!-- concord-source: crates/concord-examples/src/request_response/bodies.rs#body_contract -->
-```rust
-api! {
-    client BodyApi {
-        timeout off;
-        base "http://body.example.test/";
+## Declaration
 
+With an inherited request representation:
 
-    POST json_round_trip(body body: Vec<u32> using Json<Vec<u32>>) -> Vec<u32> using Json<Vec<u32>>;
-    POST text_round_trip(body body: String using Text) -> String using Text;
-    POST custom_round_trip(
-        body body: String using crate::request_response::specifications::ExampleCodec
-    ) -> String using crate::request_response::specifications::ExampleCodec;
-
-    POST upload(body body: concord::body::StreamBody using Stream) -> Bytes using Bytes;
-    GET download() -> concord::response::ByteStream using Stream;
-    POST exact_upload(body body: concord::body::StreamBody using Stream<OctetStream>) -> Bytes using Bytes;
-    GET exact_download() -> concord::response::ByteStream using Stream<OctetStream>;
-
-    POST multipart_upload(body body: concord::body::MultipartBody using Multipart) -> () using NoContent;
-}}
+```concord-pseudocode
+POST create(body input: CreateItem) -> Item;
 ```
 
-The first body type is exactly the method argument. The `using` type implements
-`RequestBodySpec<Input = DeclaredInput>`; the macro emits an endpoint-local
-compile-time equality assertion. A body may occur anywhere among parameters and
-keeps that source position in the generated constructor.
+With a local exception:
 
-There is at most one body and it is endpoint-only. It cannot use `?`, defaults,
-redaction, public shaping references, or post-construction controls. Optional
-domain semantics use an explicit input such as `Option<UpdateInput>` and a spec
-that defines how `None` encodes; Concord never infers absence from type spelling.
+```concord-pseudocode
+POST login(body input: LoginInput via Form) -> Token;
+```
 
-## Lifecycle and authority
+The body type is exactly what the caller passes. At most one body slot exists. Body defaults are forbidden.
 
-The managed path is caller input, static metadata, core-controlled preparation,
-prepared body, per-attempt/page materialization, then native body. The
-specification owns input interpretation, media metadata, preparation, and an
-explicit replay/page-stability contract. Core owns timing, bounds, ordering,
-retry gates, page execution, and native request construction.
+## Optional body
 
-Mechanical replayability and semantic endpoint repeatability are independent.
-Cloning does not prove pagination page stability. One-shot streams block resend.
+```concord-pseudocode
+PATCH patch_item(
+    id: ItemId,
+    body patch?: Option<ItemPatch>,
+) -> Item;
+```
 
-Body values and bytes never enter contract descriptions, plans, rate keys,
-ordinary gates, completion, errors, or debug. Planning may report only static
-kind/media and purely known length metadata that does not inspect the input.
+States:
 
-Request specs exclusively own `Content-Type`; public/auth header placement
-cannot write it. All buffered, streaming, multipart, and factory forms remain
-under configured request-body and structural bounds.
+```text
+outer None             no native body; no Content-Type; representation not invoked
+Some(None)             body present; representation receives Option::None
+Some(Some(patch))      body present; representation receives the patch
+```
 
-See [responses](responses.md), [retry](retry.md), and the normative
-[body grammar](spec.md#request-bodies-and-responses).
+Generated controls:
+
+```rust
+.set_patch(Option<Option<ItemPatch>>)
+.with_patch(Option<ItemPatch>)
+.omit_patch()
+```
+
+Do not flatten the outer Concord presence and inner Rust payload.
+
+## Representation role
+
+Conceptually:
+
+```rust
+pub trait RequestRepresentation<Input>: Send + Sync + 'static {
+    type Prepared: PreparedRequestBody;
+
+    const DESCRIPTION: RequestRepresentationDescription;
+
+    fn metadata(
+        input: &Input,
+        context: RequestBodyContext<'_>,
+    ) -> Result<RequestBodyMetadata, RequestRepresentationError>;
+
+    fn prepare(
+        input: Input,
+        context: RequestBodyContext<'_>,
+    ) -> Result<Self::Prepared, RequestRepresentationError>;
+}
+```
+
+The exact trait shape is prototype-gated. The authority division is fixed:
+
+- representation sees the exact body input and bounded body context;
+- it owns encoding, request media, structural metadata, and mechanical capabilities;
+- core owns timing, invocation cardinality, private ordering, limits, cancellation, attempt construction, and native body adaptation;
+- representation never sees method/path/query/auth/limiter/native request unless a narrow body-specific fact is explicitly part of its context.
+
+## Lifecycle
+
+Baseline direct/page lifecycle:
+
+```text
+exact caller input
+→ structural metadata without encoding/opening/polling
+→ operation begins and public head is shaped
+→ prepare once for this direct/page request
+→ retain managed prepared representation
+→ create/reconstruct one attempt body for each admitted visible attempt
+→ core adapts to native transport after private admission
+```
+
+Preparation occurs before credential readiness and rate admission so deterministic local encoding/validation failure does not consume provider quota. Attempt-only or one-shot resources should be opened as late as the prepared-body contract allows.
+
+A producer can still fail while transport is consuming it; that is a real attempted request and consumes admission.
+
+## Mechanical capabilities
+
+Keep separate:
+
+```text
+ReplayableWithinRequest
+  prepared body can produce another equivalent visible-attempt body
+
+PageStableInput
+  preparing a page after declared page-value changes remains semantically valid
+
+AggregateReusablePreparedBody
+  one prepared body may live/replay across the complete pagination aggregate
+```
+
+The third capability is deferred. Do not infer it from page stability. The v2.1 baseline prepares once per page and reuses only within that page’s visible attempts.
+
+## Complete and streaming bodies
+
+First-party caller carriers may include:
+
+```rust
+Bytes
+Vec<u8>
+RequestStream<Bytes>
+RequestStream<Event>
+ManagedMultipart
+```
+
+A request stream is one-shot unless an explicit factory/representation proves independent reconstruction. `Clone` never implies replayability.
+
+Multipart independently bounds:
+
+- part count;
+- names and headers;
+- known and streamed bytes;
+- aggregate bytes;
+- empty/non-progress behavior;
+- per-attempt reconstruction.
+
+## Media ownership
+
+The effective request representation owns default `Content-Type` and any body-specific `Content-Encoding`. Generic public headers cannot set them.
+
+Dynamic media selection requires a representation that models media and body encoding together. It is not a generic header escape.
+
+## Information boundary
+
+Plans, descriptions, observers, rate keys, credential providers, and ordinary errors may expose body category/spec identity and bounded size metadata only. They never receive the input or body bytes.
+
+## Errors
+
+Body failures distinguish stages such as:
+
+```text
+Metadata
+Prepare
+AttemptConstruction
+TransportConsumption
+ReplayUnavailable
+LimitExceeded
+```
+
+Public detail is structured, bounded, and content-free. Third-party error strings are protected because they may quote serialized values.
+
+## Evidence requirements
+
+- metadata does not materialize or poll content;
+- prepare exactly once per direct/page request;
+- retries/recovery reconstruct through prepared state;
+- one-shot bodies block unsafe replay;
+- local body failure occurs before provider/rate/transport;
+- body limits and progress rules hold;
+- optional absence invokes no representation/media behavior;
+- sensitive/body sentinel values never enter public evidence.

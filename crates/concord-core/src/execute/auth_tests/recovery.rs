@@ -1,44 +1,28 @@
 use super::*;
 use crate::retry::{RetryDecision, RetryFailure, RetryPolicy};
 
-static CHALLENGE_PRECEDENCE_ACCEPTANCE_CALLS: AtomicUsize = AtomicUsize::new(0);
-static NEVER_CHALLENGE_ACCEPTANCE_CALLS: AtomicUsize = AtomicUsize::new(0);
-
 struct ChallengePrecedenceAcceptance;
 
-impl ResponseSpec for ChallengePrecedenceAcceptance {
-    type Output = Bytes;
-    type Mode = Buffered;
+impl ResponseRepresentation<Bytes> for ChallengePrecedenceAcceptance {
+    type Driver = Buffered;
 
-    fn accepts_status(status: StatusCode) -> bool {
-        CHALLENGE_PRECEDENCE_ACCEPTANCE_CALLS.fetch_add(1, Ordering::SeqCst);
-        status == StatusCode::UNAUTHORIZED
-    }
-
-    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
+    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<Bytes, ResponseBodyError> {
         Ok(body)
     }
 }
 
 struct NeverChallengeAcceptance;
 
-impl ResponseSpec for NeverChallengeAcceptance {
-    type Output = Bytes;
-    type Mode = Buffered;
+impl ResponseRepresentation<Bytes> for NeverChallengeAcceptance {
+    type Driver = Buffered;
 
-    fn accepts_status(status: StatusCode) -> bool {
-        NEVER_CHALLENGE_ACCEPTANCE_CALLS.fetch_add(1, Ordering::SeqCst);
-        status == StatusCode::UNAUTHORIZED
-    }
-
-    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
+    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<Bytes, ResponseBodyError> {
         Ok(body)
     }
 }
 
 #[tokio::test]
 async fn attributable_challenge_precedes_declared_status_acceptance() {
-    CHALLENGE_PRECEDENCE_ACCEPTANCE_CALLS.store(0, Ordering::SeqCst);
     let executor = DeterministicExecutor::new();
     executor
         .application()
@@ -58,7 +42,8 @@ async fn attributable_challenge_precedes_declared_status_acceptance() {
         Auth::bearer(CredentialRef::new(Arc::clone(&selector)))
             .challenge(ChallengePolicy::Unauthorized),
     )
-    .response::<ChallengePrecedenceAcceptance>()
+    .status_codes([StatusCode::UNAUTHORIZED])
+    .response::<ChallengePrecedenceAcceptance, Bytes>()
     .build()
     .expect("challenge precedence endpoint");
 
@@ -66,16 +51,11 @@ async fn attributable_challenge_precedes_declared_status_acceptance() {
         .await
         .expect_err("attributable challenge remains authoritative");
     assert_eq!(error.category(), ErrorCategory::AuthenticationRejected);
-    assert_eq!(
-        CHALLENGE_PRECEDENCE_ACCEPTANCE_CALLS.load(Ordering::SeqCst),
-        0
-    );
     assert!(!selector.is_set());
 }
 
 #[tokio::test]
 async fn challenge_never_allows_the_response_specification_to_accept_401() {
-    NEVER_CHALLENGE_ACCEPTANCE_CALLS.store(0, Ordering::SeqCst);
     let executor = DeterministicExecutor::new();
     executor
         .application()
@@ -92,7 +72,8 @@ async fn challenge_never_allows_the_response_specification_to_accept_401() {
     )
     .path("challenge-never-acceptance")
     .auth(Auth::bearer(CredentialRef::new(Arc::clone(&selector))).challenge(ChallengePolicy::Never))
-    .response::<NeverChallengeAcceptance>()
+    .status_codes([StatusCode::UNAUTHORIZED])
+    .response::<NeverChallengeAcceptance, Bytes>()
     .build()
     .expect("challenge-never acceptance endpoint");
 
@@ -107,7 +88,6 @@ async fn challenge_never_allows_the_response_specification_to_accept_401() {
     );
     assert_eq!(response.metadata().attempts_started(), 1);
     assert_eq!(response.metadata().policy_retries(), 0);
-    assert_eq!(NEVER_CHALLENGE_ACCEPTANCE_CALLS.load(Ordering::SeqCst), 1);
     assert!(selector.is_set());
 }
 
@@ -463,62 +443,6 @@ async fn authentication_recovery_is_globally_limited_across_policy_retries() {
 }
 
 #[tokio::test]
-async fn policy_retry_selects_concurrently_replaced_current_material() {
-    let executor = DeterministicExecutor::new();
-    executor
-        .application()
-        .queue_expected_response(
-            ExpectedRequest::new().header(
-                AUTHORIZATION,
-                HeaderValue::from_static("Bearer initial-auth-token-1148c7"),
-            ),
-            ScriptedResponse::status(StatusCode::SERVICE_UNAVAILABLE, Bytes::new()),
-        )
-        .expect("initial status");
-    executor
-        .application()
-        .queue_expected_response(
-            ExpectedRequest::new().header(
-                AUTHORIZATION,
-                HeaderValue::from_static("Bearer newer-auth-token-265f0a"),
-            ),
-            ScriptedResponse::success(Bytes::from_static(b"newer")),
-        )
-        .expect("replacement status");
-    let acquires = Arc::new(AtomicUsize::new(0));
-    let refreshes = Arc::new(AtomicUsize::new(0));
-    let selector = SlotSelector::provider(
-        RotatingProvider {
-            acquires: Arc::clone(&acquires),
-            refreshes: Arc::clone(&refreshes),
-            exact_current_seen: Arc::new(AtomicBool::new(false)),
-        },
-        Duration::ZERO,
-    );
-    let hooks = Arc::new(AuthHooks::default());
-    hooks.observe(Arc::clone(&selector));
-    hooks.replace_on_first_response();
-    let (core, _) = core_with_runtime(
-        &executor,
-        Arc::clone(&hooks),
-        RuntimeConfigBuilder::new()
-            .retry_policy(status_retry_policy(Arc::new(AtomicUsize::new(0)))),
-    );
-
-    let output = request(
-        core,
-        &selector,
-        ChallengePolicy::Unauthorized,
-        RequestBody::bytes(Bytes::new()),
-    )
-    .await
-    .expect("policy retry selects response-hook replacement");
-    assert_eq!(output, Bytes::from_static(b"newer"));
-    assert_eq!(acquires.load(Ordering::SeqCst), 1);
-    assert_eq!(refreshes.load(Ordering::SeqCst), 0);
-}
-
-#[tokio::test]
 async fn authentication_preflight_failure_after_retry_reservation_is_final() {
     let executor = DeterministicExecutor::new();
     executor
@@ -752,9 +676,9 @@ async fn paginated_tls_recovery_reuses_lexical_plan_across_recovery_and_later_pa
             .http1_only()
             .add_root_certificate_pem(server.certificate_pem()),
         RuntimeConfigBuilder::new()
-            .request_gate(hooks.clone())
-            .response_gate(hooks.clone())
-            .completion_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
             .rate_limiter(limiter),
     )
     .expect("managed TLS pagination core");
@@ -866,12 +790,9 @@ async fn paginated_tls_recovery_reuses_lexical_plan_across_recovery_and_later_pa
     assert_eq!(responses[0].3, responses[2].3);
     drop(responses);
 
-    assert!(
-        hooks
-            .completion
-            .lock()
-            .expect("completion records")
-            .is_empty()
+    assert_eq!(
+        hooks.completion.lock().expect("completion records").len(),
+        2
     );
 
     let pagination = hooks.pagination.lock().expect("pagination records");
@@ -919,12 +840,9 @@ async fn paginated_authentication_failure_keeps_its_ordinary_category_and_correl
     drop(before);
 
     assert!(hooks.response.lock().expect("response records").is_empty());
-    assert!(
-        hooks
-            .completion
-            .lock()
-            .expect("completion records")
-            .is_empty()
+    assert_eq!(
+        hooks.completion.lock().expect("completion records").len(),
+        1
     );
 
     let pagination = hooks.pagination.lock().expect("pagination records");
@@ -1015,7 +933,7 @@ async fn challenge_recovery_still_observes_each_received_response_once() {
     assert!(exact.load(Ordering::SeqCst));
     assert!(
         hooks
-            .observed_ready_during_response_hook
+            .observed_ready_during_response_observer
             .load(Ordering::SeqCst)
     );
     assert_eq!(core.operation_allocations(), 1);
@@ -1388,7 +1306,7 @@ async fn prepared_one_shot_body_does_not_perform_an_unsafe_recovery_resend() {
     let (core, _) = core(&executor, Arc::new(AuthHooks::default()));
     let endpoint =
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.one_shot"), Method::POST)
-            .body(RequestBody::stream(StreamBody::from_bytes(
+            .body(RequestBody::stream(RequestStream::from_bytes(
                 Bytes::from_static(b"prepared-one-shot"),
             )))
             .auth(
@@ -1428,7 +1346,7 @@ async fn prepared_one_shot_multipart_does_not_perform_an_unsafe_recovery_resend(
     let multipart = MultipartBody::new()
         .part(
             "stream",
-            MultipartPart::stream(StreamBody::from_bytes(Bytes::from_static(
+            MultipartPart::stream(RequestStream::from_bytes(Bytes::from_static(
                 b"prepared-multipart-one-shot",
             ))),
         )
@@ -1493,66 +1411,6 @@ async fn recovered_stream_reports_recovery_in_owned_metadata() {
     assert_eq!(executor.application().request_count().expect("count"), 2);
 }
 
-#[tokio::test]
-async fn response_hook_replacement_is_observed_before_challenge_and_newer_material_is_reused() {
-    let executor = DeterministicExecutor::new();
-    executor
-        .application()
-        .queue_expected_response(
-            ExpectedRequest::new().header(
-                AUTHORIZATION,
-                HeaderValue::from_static("Bearer initial-auth-token-1148c7"),
-            ),
-            ScriptedResponse::status(StatusCode::UNAUTHORIZED, Bytes::from_static(b"unread")),
-        )
-        .expect("challenge response");
-    executor
-        .application()
-        .queue_expected_response(
-            ExpectedRequest::new().header(
-                AUTHORIZATION,
-                HeaderValue::from_static("Bearer newer-auth-token-265f0a"),
-            ),
-            ScriptedResponse::success(Bytes::from_static(b"newer")),
-        )
-        .expect("newer response");
-    let acquires = Arc::new(AtomicUsize::new(0));
-    let refreshes = Arc::new(AtomicUsize::new(0));
-    let selector = SlotSelector::provider(
-        RotatingProvider {
-            acquires: Arc::clone(&acquires),
-            refreshes: Arc::clone(&refreshes),
-            exact_current_seen: Arc::new(AtomicBool::new(false)),
-        },
-        Duration::ZERO,
-    );
-    let hooks = Arc::new(AuthHooks::default());
-    hooks.observe(Arc::clone(&selector));
-    hooks.replace_on_first_response();
-    let (core, _) = core(&executor, Arc::clone(&hooks));
-
-    let result = request(
-        core,
-        &selector,
-        ChallengePolicy::Unauthorized,
-        RequestBody::bytes(Bytes::new()),
-    )
-    .await
-    .expect("newer current credential recovery");
-    assert_eq!(result, Bytes::from_static(b"newer"));
-    assert_eq!(acquires.load(Ordering::SeqCst), 1);
-    assert_eq!(refreshes.load(Ordering::SeqCst), 0);
-    assert_eq!(
-        hooks
-            .ready_during_response
-            .lock()
-            .expect("response readiness")
-            .as_slice(),
-        &[true, true]
-    );
-    assert_eq!(executor.application().request_count().expect("count"), 2);
-}
-
 fn before_operation_id(hooks: &AuthHooks) -> OperationId {
     hooks.before.lock().expect("before records")[0].operation_id
 }
@@ -1610,50 +1468,8 @@ async fn reconstructible_factory_runs_once_per_concord_attempt_and_no_third_atte
             .iter()
             .map(|record| record.known_body_length)
             .collect::<Vec<_>>(),
-        [None, None]
+        [Some(12), None]
     );
-}
-
-#[tokio::test]
-async fn recovery_hook_veto_is_primary_and_invalidates_exact_challenged_material() {
-    let executor = DeterministicExecutor::new();
-    executor
-        .application()
-        .queue_response(ScriptedResponse::status(
-            StatusCode::UNAUTHORIZED,
-            Bytes::from_static(b"unread"),
-        ))
-        .expect("challenge response");
-    let refreshes = Arc::new(AtomicUsize::new(0));
-    let selector = SlotSelector::provider(
-        RotatingProvider {
-            acquires: Arc::new(AtomicUsize::new(0)),
-            refreshes: Arc::clone(&refreshes),
-            exact_current_seen: Arc::new(AtomicBool::new(false)),
-        },
-        Duration::ZERO,
-    );
-    let hooks = Arc::new(AuthHooks::default());
-    hooks.veto_recovery();
-    let (core, _) = core(&executor, hooks);
-    let error = api_error(
-        request(
-            core.clone(),
-            &selector,
-            ChallengePolicy::Unauthorized,
-            RequestBody::bytes(Bytes::new()),
-        )
-        .await,
-    );
-    assert_eq!(error.category(), ErrorCategory::PolicyRejected);
-    assert_eq!(refreshes.load(Ordering::SeqCst), 0);
-    let current = selector
-        .preflight(core.provider_http(None))
-        .await
-        .expect("later operation refreshes rejected material");
-    assert_eq!(current.value().expose_secret(), REFRESHED);
-    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
-    assert_eq!(executor.application().request_count().expect("count"), 1);
 }
 
 #[tokio::test]
@@ -1720,7 +1536,7 @@ async fn one_shot_body_prevents_recovery_and_provider_refresh() {
         Duration::ZERO,
     );
     let (core, _) = core(&executor, Arc::new(AuthHooks::default()));
-    let stream = StreamBody::from_bytes(Bytes::from_static(b"one-shot"));
+    let stream = RequestStream::from_bytes(Bytes::from_static(b"one-shot"));
     let error = api_error(
         request(
             core,
@@ -1759,7 +1575,7 @@ async fn one_shot_multipart_prevents_recovery_and_provider_refresh() {
     let multipart = MultipartBody::new()
         .part(
             "stream",
-            MultipartPart::stream(StreamBody::from_bytes(Bytes::from_static(b"one-shot"))),
+            MultipartPart::stream(RequestStream::from_bytes(Bytes::from_static(b"one-shot"))),
         )
         .expect("one-shot multipart");
     let error = api_error(

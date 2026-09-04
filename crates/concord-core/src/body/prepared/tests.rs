@@ -23,7 +23,7 @@ struct EmptyChunkFactory {
 }
 
 impl BodyFactory for EmptyChunkFactory {
-    fn create(&self) -> Result<StreamBody, BodyError> {
+    fn create(&self) -> Result<RequestStream, BodyError> {
         Ok(stream_bytes(
             [
                 Ok(Bytes::new()),
@@ -61,9 +61,9 @@ impl BodyFactory for Factory {
         Some(HeaderValue::from_static("application/x-factory"))
     }
 
-    fn create(&self) -> Result<StreamBody, BodyError> {
+    fn create(&self) -> Result<RequestStream, BodyError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        Ok(StreamBody::from_bytes(Bytes::from_static(b"factory")))
+        Ok(RequestStream::from_bytes(Bytes::from_static(b"factory")))
     }
 }
 
@@ -73,9 +73,9 @@ impl BodyFactory for MetadataFactory {
         Some(HeaderValue::from_static("application/x-captured"))
     }
 
-    fn create(&self) -> Result<StreamBody, BodyError> {
+    fn create(&self) -> Result<RequestStream, BodyError> {
         self.create_calls.fetch_add(1, Ordering::SeqCst);
-        Ok(StreamBody::from_bytes(Bytes::from_static(b"factory")))
+        Ok(RequestStream::from_bytes(Bytes::from_static(b"factory")))
     }
 }
 
@@ -118,7 +118,7 @@ fn request_body_kinds_and_replayability_are_inferred() {
         Replayability::Reusable
     );
 
-    let stream = RequestBody::stream(StreamBody::from_bytes(Bytes::from_static(b"bytes")));
+    let stream = RequestBody::stream(RequestStream::from_bytes(Bytes::from_static(b"bytes")));
     assert_eq!(stream.kind(), BodyKind::Stream);
     assert_eq!(
         stream
@@ -242,7 +242,7 @@ fn multipart_replayability_and_factory_freshness_are_internal() {
         MultipartBody::new()
             .part(
                 "stream",
-                crate::body::MultipartPart::stream(StreamBody::from_bytes(Bytes::from_static(
+                crate::body::MultipartPart::stream(RequestStream::from_bytes(Bytes::from_static(
                     b"multipart-stream-secret",
                 ))),
             )
@@ -383,7 +383,7 @@ impl Stream for FrameStream {
 fn stream(
     frames: impl IntoIterator<Item = Result<&'static [u8], io::Error>>,
     polls: &Arc<AtomicUsize>,
-) -> StreamBody {
+) -> RequestStream {
     stream_bytes(
         frames
             .into_iter()
@@ -395,8 +395,8 @@ fn stream(
 fn stream_bytes(
     frames: impl IntoIterator<Item = Result<Bytes, io::Error>>,
     polls: &Arc<AtomicUsize>,
-) -> StreamBody {
-    StreamBody::from_stream(FrameStream {
+) -> RequestStream {
+    RequestStream::from_stream(FrameStream {
         frames: frames.into_iter().collect(),
         polls: Arc::clone(polls),
     })
@@ -409,7 +409,7 @@ fn empty_request_chunks(count: usize) -> Vec<Result<Bytes, io::Error>> {
 }
 
 fn direct_managed(
-    body: StreamBody,
+    body: RequestStream,
     exact_length: Option<u64>,
     limit: usize,
 ) -> (ManagedRequestStream, BodyFailureState) {
@@ -449,7 +449,7 @@ async fn consume_native_stream(
 }
 
 async fn consume(
-    body: StreamBody,
+    body: RequestStream,
     exact_length: Option<u64>,
     limit: usize,
 ) -> (Vec<Bytes>, Option<BodyErrorKind>) {
@@ -717,7 +717,7 @@ async fn request_nonempty_byte_limit_is_unchanged() {
 
 #[tokio::test]
 async fn request_exact_zero_with_empty_chunks_and_eof_succeeds() {
-    let (accepted, failure) = consume(StreamBody::from_bytes(Bytes::new()), Some(0), 64).await;
+    let (accepted, failure) = consume(RequestStream::from_bytes(Bytes::new()), Some(0), 64).await;
 
     assert!(accepted.is_empty());
     assert_eq!(failure, None);
@@ -804,7 +804,7 @@ impl Drop for DroppableEmptyStream {
 async fn request_source_is_dropped_after_first_excess() {
     let polls = Arc::new(AtomicUsize::new(0));
     let dropped = Arc::new(AtomicBool::new(false));
-    let body = StreamBody::from_stream(DroppableEmptyStream {
+    let body = RequestStream::from_stream(DroppableEmptyStream {
         remaining: MAX_EMPTY_REQUEST_CHUNKS + 1,
         polls: Arc::clone(&polls),
         dropped: Arc::clone(&dropped),
@@ -896,7 +896,7 @@ async fn dropping_native_consumption_drops_source_and_stops_polling() {
     let polls = Arc::new(AtomicUsize::new(0));
     let dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let reached = Arc::new(tokio::sync::Notify::new());
-    let body = StreamBody::from_stream(PendingStream {
+    let body = RequestStream::from_stream(PendingStream {
         polls: Arc::clone(&polls),
         dropped: Arc::clone(&dropped),
         reached: Arc::clone(&reached),

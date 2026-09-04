@@ -18,17 +18,20 @@ pub use http::{HeaderName, Method};
 pub use url::Url;
 
 #[doc(hidden)]
+pub use crate::atom::{AtomEncoder, BoundedAtomWriter, OrderedValues, RequestAtom};
+#[doc(hidden)]
 pub use crate::auth::Auth;
 #[doc(hidden)]
 pub use crate::body::{
-    EmptyBody, PageRequestBodySpec, RequestBodyContext, RequestBodyMetadata, RequestBodySpec,
+    EmptyBody, OptionalRequestRepresentation, PageRequestRepresentation, RequestBodyContext,
+    RequestBodyMetadata, RequestRepresentation,
 };
 #[doc(hidden)]
 pub use crate::client::ClientCore;
 #[doc(hidden)]
 pub use crate::endpoint::{
-    CredentialFreeRequestPlan, EndpointCapabilities, EndpointDescription, EndpointId,
-    Repeatability, RepeatabilitySource, RequestBodyCategory, ResponseAcquisition, TimeoutSelection,
+    AcceptedStatus, Effect, EffectSource, EndpointCapabilities, EndpointDescription, EndpointId,
+    RequestBodyCategory, RequestPlan, ResponseAcquisition, StatusSource, TimeoutSelection,
 };
 #[doc(hidden)]
 pub use crate::error::{ApiError, ClientBuildError, ClientInputKind};
@@ -43,15 +46,14 @@ pub use crate::limits::{
 pub use crate::pagination::PaginatedEndpoint;
 #[doc(hidden)]
 pub use crate::rate_limit::{
-    RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitKeyValue, RateLimitPolicy,
-    RateLimitWindow,
+    RateKeyPart, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPolicy, RateLimitWindow,
 };
 #[doc(hidden)]
 pub use crate::request::{
     EndpointSpec, HeadBuilder, PreparedHead, RequestMeta, RequestOptions, TimeoutOverride,
 };
 #[doc(hidden)]
-pub use crate::response::{ApiResponse, PageResponseSpec, ResponseSpec};
+pub use crate::response::{ApiResponse, PageResponseRepresentation, ResponseRepresentation};
 #[doc(hidden)]
 pub use crate::runtime::defaults::{
     DEFAULT_AUTH_FAILURE_COOLDOWN_SECONDS, DEFAULT_PAGINATION_IDENTITY_BYTES,
@@ -290,14 +292,14 @@ pub fn request<E>(core: &ClientCore, endpoint: E) -> crate::Request<E> {
     crate::Request::new(core.clone(), endpoint)
 }
 
-/// Creates one no-effect sanitized plan through real public-head preparation.
+/// Creates one inert unbound-intent plan through real public-head preparation.
 #[doc(hidden)]
-pub fn credential_free_request_plan(
+pub fn plan_unbound_request(
     core: &ClientCore,
     description: &EndpointDescription,
     response_accept: Option<&'static str>,
     prepare_head: impl FnOnce(HeadBuilder) -> Result<PreparedHead, ApiError>,
-) -> Result<CredentialFreeRequestPlan, ApiError> {
+) -> Result<RequestPlan, ApiError> {
     let meta = RequestMeta::from_description(description);
     let builder = HeadBuilder::new(
         core.base_url(),
@@ -316,7 +318,7 @@ pub fn credential_free_request_plan(
         ));
     }
     head.validate_rate_limit_key_limit(core.rate_limit_key_limit())?;
-    // Safe planning cannot call application-owned body metadata, but the
+    // Planning cannot call application-owned body metadata, but the
     // response specification's static Accept value is part of every finalized
     // head and must consume the same aggregate budget as execution.
     head.apply_media_headers(response_accept, None, false)?;
@@ -330,7 +332,7 @@ pub fn credential_free_request_plan(
         head.public_headers(),
         Some(head.pagination_sensitive_headers()),
     );
-    Ok(CredentialFreeRequestPlan::new(
+    Ok(RequestPlan::new(
         description.clone(),
         std::sync::Arc::from(head.observed_url()),
         public_headers,
@@ -346,7 +348,7 @@ pub fn credential_free_request_plan(
 pub fn request_plan<E>(
     request: &crate::Request<E>,
     description: &EndpointDescription,
-) -> Result<CredentialFreeRequestPlan, ApiError>
+) -> Result<RequestPlan, ApiError>
 where
     E: EndpointSpec,
 {
@@ -378,7 +380,7 @@ where
         head.public_headers(),
         Some(head.pagination_sensitive_headers()),
     );
-    Ok(CredentialFreeRequestPlan::new(
+    Ok(RequestPlan::new(
         description.clone(),
         std::sync::Arc::from(head.observed_url()),
         public_headers,

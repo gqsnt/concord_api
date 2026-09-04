@@ -1,7 +1,7 @@
 use std::fmt;
 
 use super::{
-    BeforeSend, CompletionEvent, DebugLevel, PaginationCompletionEvent, ResponseHeadEvent,
+    AttemptStarted, DebugLevel, OperationFinished, PaginationFinished, ResponseHeadObserved,
 };
 
 /// Private body-free presentation dispatcher for built-in debug output.
@@ -29,7 +29,7 @@ impl DebugDispatcher {
         self
     }
 
-    pub(crate) fn request_ready(&self, event: &BeforeSend<'_>) {
+    pub(crate) fn request_ready(&self, event: &AttemptStarted<'_>) {
         match self.level {
             DebugLevel::None => {}
             DebugLevel::Basic => self.emit(format_args!(
@@ -56,7 +56,7 @@ impl DebugDispatcher {
         }
     }
 
-    pub(crate) fn response_head(&self, event: &ResponseHeadEvent<'_>) {
+    pub(crate) fn response_head(&self, event: &ResponseHeadObserved<'_>) {
         match self.level {
             DebugLevel::None => {}
             DebugLevel::Basic => self.emit(format_args!(
@@ -85,7 +85,7 @@ impl DebugDispatcher {
         }
     }
 
-    pub(crate) fn completion(&self, event: &CompletionEvent<'_>) {
+    pub(crate) fn completion(&self, event: &OperationFinished<'_>) {
         if self.level != DebugLevel::None {
             self.emit(format_args!(
                 "completion endpoint={} method={} url={} page={} attempts={} policy-retries={} recovered-authentication={} status={:?} outcome={:?} elapsed={:?}",
@@ -103,7 +103,7 @@ impl DebugDispatcher {
         }
     }
 
-    pub(crate) fn pagination_completion(&self, event: &PaginationCompletionEvent<'_>) {
+    pub(crate) fn pagination_completion(&self, event: &PaginationFinished<'_>) {
         if self.level != DebugLevel::None {
             self.emit(format_args!(
                 "pagination-completion endpoint={} method={} pages={} items={} attempts={} policy-retries={} recovered-authentication={} status={:?} outcome={:?} elapsed={:?}",
@@ -166,7 +166,7 @@ mod tests {
         let method = Method::GET;
         let headers = headers();
         let id = operation_id();
-        let before = BeforeSend {
+        let before = AttemptStarted {
             operation_id: id,
             parent_operation_id: None,
             endpoint: "DebugApi::health::bytes",
@@ -178,7 +178,7 @@ mod tests {
             body_kind: BodyKind::Empty,
             known_body_length: Some(0),
         };
-        let response = ResponseHeadEvent {
+        let response = ResponseHeadObserved {
             operation_id: id,
             parent_operation_id: None,
             endpoint: before.endpoint,
@@ -189,7 +189,7 @@ mod tests {
             status: StatusCode::OK,
             headers: SanitizedHeaders::new(&headers),
         };
-        let completion = CompletionEvent {
+        let completion = OperationFinished {
             operation_id: id,
             parent_operation_id: None,
             endpoint: before.endpoint,

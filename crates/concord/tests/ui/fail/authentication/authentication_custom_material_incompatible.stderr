@@ -3,7 +3,7 @@ error[E0277]: the trait bound `NonSecretMaterial: SecretCredential` is not satis
    |
 24 | / api! {
 25 | |     client Api {
-26 | |         timeout off;
+26 | |         timeout 30s;
 27 | |         base "https://example.test";
 ...  |
 36 | | }}

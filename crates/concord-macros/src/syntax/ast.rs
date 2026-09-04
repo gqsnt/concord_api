@@ -53,23 +53,31 @@ pub(crate) struct SourceEndpoint {
     pub(crate) body: Option<BodyDecl>,
     pub(crate) attachment_site: AttachmentSite,
     pub(crate) output: Type,
-    pub(crate) response_spec: Type,
+    pub(crate) response_spec: Option<Type>,
     pub(crate) pagination: Option<Clause<PaginationDecl>>,
     pub(crate) contract_id: Option<Clause<LitStr>>,
-    pub(crate) repeatability: Option<Clause<RepeatabilityDecl>>,
+    pub(crate) status: Option<Clause<StatusDecl>>,
+    pub(crate) effect: Option<Clause<EffectDecl>>,
     pub(crate) accept: Option<Clause<AcceptOperation>>,
     pub(crate) expose_accepted_bytes: Option<Span>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum StatusDecl {
+    Success,
+    Codes(Vec<u16>),
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum RepeatabilityDecl {
+pub(crate) enum EffectDecl {
+    Safe,
     Idempotent,
-    Never,
+    NonIdempotent,
 }
 
 #[derive(Clone)]
 pub(crate) enum AcceptOperation {
-    Value(PublicExpr),
+    Value(Box<PublicExpr>),
     Off,
 }
 
@@ -77,7 +85,8 @@ pub(crate) enum AcceptOperation {
 pub(crate) struct BodyDecl {
     pub(crate) name: Ident,
     pub(crate) input_type: Type,
-    pub(crate) spec_type: Type,
+    pub(crate) spec_type: Option<Type>,
+    pub(crate) presence: ValuePresence,
     pub(crate) docs: Vec<LitStr>,
     pub(crate) position: usize,
 }
@@ -151,6 +160,8 @@ pub(crate) enum DefaultExpr {
 
 #[derive(Clone, Default)]
 pub(crate) struct AttachmentSite {
+    pub(crate) request: Option<Clause<RepresentationOperation>>,
+    pub(crate) response: Option<Clause<RepresentationOperation>>,
     pub(crate) subdomain: Option<Clause<SubdomainOperation>>,
     pub(crate) path: Option<Clause<PathOperation>>,
     pub(crate) query: Option<Clause<QueryOperation>>,
@@ -158,6 +169,12 @@ pub(crate) struct AttachmentSite {
     pub(crate) auth: Option<AuthOperation>,
     pub(crate) timeout: Option<Clause<TimeoutOperation>>,
     pub(crate) rate_limits: Vec<Clause<RateLimitAttachmentDecl>>,
+}
+
+#[derive(Clone)]
+pub(crate) enum RepresentationOperation {
+    Select(Box<Type>),
+    Explicit,
 }
 
 #[derive(Clone)]
@@ -179,7 +196,7 @@ pub(crate) struct RateLimitDefinitionDecl {
 
 #[derive(Clone)]
 pub(crate) enum RateLimitDefinitionDimensionDecl {
-    Host { span: Span },
+    Origin { span: Span },
     Endpoint { span: Span },
     Formal { name: Ident },
 }
@@ -187,14 +204,14 @@ pub(crate) enum RateLimitDefinitionDimensionDecl {
 impl RateLimitDefinitionDimensionDecl {
     pub(crate) fn span(&self) -> Span {
         match self {
-            Self::Host { span } | Self::Endpoint { span } => *span,
+            Self::Origin { span } | Self::Endpoint { span } => *span,
             Self::Formal { name } => name.span(),
         }
     }
 
     pub(crate) fn public_name(&self) -> String {
         match self {
-            Self::Host { .. } => "host".to_owned(),
+            Self::Origin { .. } => "origin".to_owned(),
             Self::Endpoint { .. } => "endpoint".to_owned(),
             Self::Formal { name } => canonical_dimension_ident(name),
         }
@@ -232,7 +249,7 @@ pub(crate) struct RateLimitDecl {
 
 #[derive(Clone)]
 pub(crate) enum RateLimitDimensionDecl {
-    Host {
+    Origin {
         span: Span,
     },
     Endpoint {
@@ -248,13 +265,13 @@ pub(crate) enum RateLimitDimensionDecl {
 impl RateLimitDimensionDecl {
     pub(crate) const fn span(&self) -> Span {
         match self {
-            Self::Host { span } | Self::Endpoint { span } | Self::Value { span, .. } => *span,
+            Self::Origin { span } | Self::Endpoint { span } | Self::Value { span, .. } => *span,
         }
     }
 
     pub(crate) fn public_name(&self) -> String {
         match self {
-            Self::Host { .. } => "host".to_owned(),
+            Self::Origin { .. } => "origin".to_owned(),
             Self::Endpoint { .. } => "endpoint".to_owned(),
             Self::Value {
                 namespace, name, ..
@@ -367,6 +384,10 @@ pub(crate) enum QueryEntry {
         key: LitStr,
         emission: QueryEmission,
     },
+    WhenPresent {
+        key: LitStr,
+        emission: QueryEmission,
+    },
     Append {
         key: LitStr,
         emission: QueryEmission,
@@ -380,6 +401,7 @@ pub(crate) enum QueryEmission {
     Each {
         namespace: Ident,
         name: Ident,
+        adapter: Option<Box<Type>>,
         span: Span,
     },
 }
@@ -393,14 +415,24 @@ pub(crate) enum HeaderOperation {
 
 #[derive(Clone)]
 pub(crate) enum HeaderEntry {
-    Assign { name: LitStr, value: PublicExpr },
+    Assign {
+        name: LitStr,
+        emission: QueryEmission,
+    },
+    WhenPresent {
+        name: LitStr,
+        emission: QueryEmission,
+    },
+    Append {
+        name: LitStr,
+        emission: QueryEmission,
+    },
     Remove(LitStr),
 }
 
 #[derive(Clone)]
 pub(crate) enum TimeoutOperation {
     Set(DurationLiteral),
-    Off,
 }
 
 #[derive(Clone)]
@@ -412,9 +444,24 @@ pub(crate) struct DurationLiteral {
 #[derive(Clone)]
 pub(crate) enum PublicExpr {
     String(LitStr),
-    Integer(LitInt),
-    Reference { namespace: Ident, name: Ident },
-    Concat { span: Span, values: Vec<PublicExpr> },
+    Character(LitChar),
+    Boolean(LitBool),
+    Integer {
+        negative: bool,
+        literal: LitInt,
+    },
+    Reference {
+        namespace: Ident,
+        name: Ident,
+    },
+    Adapted {
+        value: Box<PublicExpr>,
+        adapter: Box<Type>,
+    },
+    Concat {
+        span: Span,
+        values: Vec<PublicExpr>,
+    },
 }
 
 #[derive(Clone)]

@@ -6,7 +6,7 @@
 
 use concord::http::StatusCode;
 use concord::response::{
-    Buffered, ResponseBodyError, ResponseBodyErrorKind, ResponseHead, ResponseSpec,
+    Buffered, ResponseBodyError, ResponseBodyErrorKind, ResponseHead, ResponseRepresentation,
 };
 use concord::{ApiError, ApiResponse, Bytes, ClientBuildError, Text, api};
 
@@ -14,19 +14,17 @@ use concord::{ApiError, ApiResponse, Bytes, ClientBuildError, Text, api};
 /// A buffered response that maps an accepted `404` to `None`.
 pub struct OptionalText;
 
-impl ResponseSpec for OptionalText {
-    type Output = Option<String>;
-    type Mode = Buffered;
+impl ResponseRepresentation<Option<String>> for OptionalText {
+    type Driver = Buffered;
 
     fn accept() -> Option<&'static str> {
         Some("text/plain")
     }
 
-    fn accepts_status(status: StatusCode) -> bool {
-        status.is_success() || status == StatusCode::NOT_FOUND
-    }
-
-    fn from_body(body: Bytes, head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
+    fn from_body(
+        body: Bytes,
+        head: &ResponseHead<'_>,
+    ) -> Result<Option<String>, ResponseBodyError> {
         if head.status == StatusCode::NOT_FOUND {
             return Ok(None);
         }
@@ -40,14 +38,16 @@ impl ResponseSpec for OptionalText {
 // ANCHOR: response_acquisition_contract
 api! {
     client ResponseApi {
-        timeout off;
+        timeout 30s;
         base "http://responses.example.test/";
 
 
-    GET message() -> String using Text {
+    GET message() -> String via Text {
         expose accepted_bytes;
     }
-    GET optional_message() -> Option<String> using crate::request_response::acquisition::OptionalText;
+    GET optional_message() -> Option<String> via crate::request_response::acquisition::OptionalText {
+        status [200..=299, 404];
+    }
 }}
 // ANCHOR_END: response_acquisition_contract
 

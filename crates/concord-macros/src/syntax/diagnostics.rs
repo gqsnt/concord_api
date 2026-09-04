@@ -311,8 +311,8 @@ mod tests {
     fn duplicate_clauses_retain_both_diagnostic_spans() {
         let error = super::super::parse(quote! {
             client DuplicateApi {
-                timeout off; base "https://example.test";
-            GET read() -> Bytes using Bytes {
+                timeout 30s; base "https://example.test";
+            GET read() -> Bytes via Binary {
                 path ["first"];
                 path ["second"];
             }

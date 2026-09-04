@@ -2,10 +2,12 @@ use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 
 use concord_core::contracts::{
-    Buffered, BufferedRecords, Bytes, BytesMut, PageResponseSpec, ResponseBodyError, ResponseHead,
-    ResponseSpec,
+    Buffered, Bytes, BytesMut, ItemStream, PageResponseRepresentation, ResponseBodyError,
+    ResponseBodyErrorKind, ResponseDriver, ResponseHead, ResponseRepresentation, Streaming,
 };
-use concord_core::records::{RecordDecoder, RecordError, RecordErrorKind};
+use concord_core::records::{
+    RecordDecoder, RecordError, RecordErrorKind, decode_complete_records, validate_record_decoder,
+};
 use serde::de::DeserializeOwned;
 
 const MAX_STAGED_RECORD_BYTES: usize = 1024 * 1024;
@@ -82,14 +84,12 @@ impl CsvDelimiter for TabDelimiter {
 
 /// Typed CSV responses with type-level header and delimiter policies.
 ///
-/// As a response specification, `Csv<T, H, D>` completely acquires the bounded
-/// body and returns `Vec<T>`. Wrapping the same format in
-/// [`Records`](concord_core::records::Records) returns a lazy record stream.
-/// Both forms use the same [`RecordDecoder`] implementation and core driver.
+/// With `Vec<T>`, `Csv<H, D>` completely acquires the bounded body. With
+/// [`ItemStream<T>`], it returns a lazy semantic stream. Both forms use the
+/// same internal [`RecordDecoder`] implementation and sealed core drivers.
 ///
-/// The record type `T` is the first generic parameter. Header mode `H` and
-/// delimiter `D` are trailing policies so [`Csv<T>`](Csv) remains source
-/// compatible and means `Csv<T, HasHeader, CommaDelimiter>`.
+/// Header mode `H` and delimiter `D` are representation policies. Plain `Csv`
+/// means `Csv<HasHeader, CommaDelimiter>`; the output type supplies `T`.
 ///
 /// [`HasHeader`] consumes the first non-empty record, rejects empty or duplicate
 /// header names, and uses those names when deserializing subsequent records.
@@ -124,8 +124,7 @@ impl CsvDelimiter for TabDelimiter {
 ///     SemicolonDelimiter,
 /// };
 ///
-/// type ConfCsv<T> =
-///     Csv<T, HasHeader, SemicolonDelimiter>;
+/// type ConfCsv = Csv<HasHeader, SemicolonDelimiter>;
 /// ```
 ///
 /// Headerless tab-delimited records can be named similarly:
@@ -137,13 +136,15 @@ impl CsvDelimiter for TabDelimiter {
 ///     TabDelimiter,
 /// };
 ///
-/// type HeaderlessTsv<T> =
-///     Csv<T, NoHeader, TabDelimiter>;
+/// type HeaderlessTsv = Csv<NoHeader, TabDelimiter>;
 /// ```
 ///
 /// This type is available through the independent `csv` feature, which does
 /// not enable NDJSON or the general endpoint `json` feature.
-pub struct Csv<T, H = HasHeader, D = CommaDelimiter> {
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Csv<H = HasHeader, D = CommaDelimiter>(PhantomData<fn() -> (H, D)>);
+
+struct CsvDecoder<T, H, D> {
     headers: Option<csv::StringRecord>,
     scan: CsvScan,
     #[allow(
@@ -176,7 +177,7 @@ impl CsvScan {
     }
 }
 
-impl<T, H, D> Csv<T, H, D>
+impl<T, H, D> CsvDecoder<T, H, D>
 where
     T: DeserializeOwned + Send + 'static,
     H: CsvHeaderMode,
@@ -348,7 +349,7 @@ where
     }
 }
 
-impl<T, H, D> RecordDecoder for Csv<T, H, D>
+impl<T, H, D> RecordDecoder for CsvDecoder<T, H, D>
 where
     T: DeserializeOwned + Send + 'static,
     H: CsvHeaderMode,
@@ -395,34 +396,58 @@ where
     }
 }
 
-impl<T, H, D> ResponseSpec for Csv<T, H, D>
+impl<T, H, D> ResponseRepresentation<Vec<T>> for Csv<H, D>
 where
     T: DeserializeOwned + Send + 'static,
     H: CsvHeaderMode,
     D: CsvDelimiter,
 {
-    type Output = Vec<T>;
-    type Mode = Buffered;
+    type Driver = Buffered;
 
     fn accept() -> Option<&'static str> {
-        <BufferedRecords<Self> as ResponseSpec>::accept()
+        CsvDecoder::<T, H, D>::accept()
     }
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
-        <BufferedRecords<Self> as ResponseSpec>::validate(head)
+        validate_record_decoder::<CsvDecoder<T, H, D>>(head)
     }
 
-    fn from_body(body: Bytes, head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
-        <BufferedRecords<Self> as ResponseSpec>::from_body(body, head)
+    fn from_body(body: Bytes, head: &ResponseHead<'_>) -> Result<Vec<T>, ResponseBodyError> {
+        decode_complete_records::<CsvDecoder<T, H, D>>(body, head)
     }
 }
 
-impl<T, H, D> PageResponseSpec for Csv<T, H, D>
+impl<T, H, D> PageResponseRepresentation<Vec<T>> for Csv<H, D>
 where
     T: DeserializeOwned + Send + 'static,
     H: CsvHeaderMode,
     D: CsvDelimiter,
 {
+}
+
+impl<T, H, D> ResponseRepresentation<ItemStream<T>> for Csv<H, D>
+where
+    T: DeserializeOwned + Send + 'static,
+    H: CsvHeaderMode,
+    D: CsvDelimiter,
+{
+    type Driver = Streaming;
+
+    fn accept() -> Option<&'static str> {
+        CsvDecoder::<T, H, D>::accept()
+    }
+
+    fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
+        CsvDecoder::<T, H, D>::validate(head)
+            .map_err(|_| ResponseBodyError::new(ResponseBodyErrorKind::InvalidMediaType))
+    }
+
+    fn from_body(
+        body: <Self::Driver as ResponseDriver>::Body,
+        head: &ResponseHead<'_>,
+    ) -> Result<ItemStream<T>, ResponseBodyError> {
+        ItemStream::decode_with::<CsvDecoder<T, H, D>>(body, head)
+    }
 }
 
 fn is_csv_media_type(value: &str) -> bool {
@@ -463,8 +488,8 @@ mod tests {
         number: u32,
     }
 
-    fn decoder<T, H, D>() -> Csv<T, H, D> {
-        Csv {
+    fn decoder<T, H, D>() -> CsvDecoder<T, H, D> {
+        CsvDecoder {
             headers: None,
             scan: CsvScan::new(),
             marker: PhantomData,
@@ -494,7 +519,7 @@ mod tests {
 
     #[test]
     fn default_csv_retains_header_plus_comma_compatibility() {
-        let decoder: Csv<Row> = decoder();
+        let decoder: CsvDecoder<Row, HasHeader, CommaDelimiter> = decoder();
         let input = b"\r\nname,note,count\r\nalpha,\"comma, value\",1\nbeta,\"line one\nline \"\"two\"\"\",2\r\n\ngamma,plain,3";
         let rows = feed(decoder, input.iter().map(|byte| vec![*byte]))
             .expect("default one-byte CSV splits");
@@ -742,23 +767,33 @@ mod tests {
         assert!(!is_csv_media_type("text/tab-separated-values"));
         assert!(!is_csv_media_type("text/csv; broken=\"unterminated"));
 
-        assert_eq!(<Csv<Row> as RecordDecoder>::accept(), Some("text/csv"));
-        assert_eq!(Csv::<Row>::max_buffered_bytes().get(), 1024 * 1024);
         assert_eq!(
-            <Csv<Row, NoHeader, SemicolonDelimiter> as RecordDecoder>::accept(),
+            <CsvDecoder<Row, HasHeader, CommaDelimiter> as RecordDecoder>::accept(),
             Some("text/csv")
         );
         assert_eq!(
-            Csv::<Row, HasHeader, TabDelimiter>::max_buffered_bytes().get(),
+            CsvDecoder::<Row, HasHeader, CommaDelimiter>::max_buffered_bytes().get(),
+            1024 * 1024
+        );
+        assert_eq!(
+            <CsvDecoder<Row, NoHeader, SemicolonDelimiter> as RecordDecoder>::accept(),
+            Some("text/csv")
+        );
+        assert_eq!(
+            CsvDecoder::<Row, HasHeader, TabDelimiter>::max_buffered_bytes().get(),
             1024 * 1024
         );
 
         fn complete_page_spec<S>()
         where
-            S: ResponseSpec<Output = Vec<Row>, Mode = Buffered> + PageResponseSpec,
+            S: ResponseRepresentation<Vec<Row>, Driver = Buffered>
+                + PageResponseRepresentation<Vec<Row>>,
         {
         }
-        complete_page_spec::<Csv<Row>>();
-        assert_eq!(<Csv<Row> as ResponseSpec>::accept(), Some("text/csv"));
+        complete_page_spec::<Csv>();
+        assert_eq!(
+            <Csv as ResponseRepresentation<Vec<Row>>>::accept(),
+            Some("text/csv")
+        );
     }
 }

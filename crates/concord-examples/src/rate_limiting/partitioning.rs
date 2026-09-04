@@ -7,16 +7,16 @@
 use std::error::Error;
 use std::sync::Arc;
 
-use concord::api;
 use concord::rate_limit::{LocalRateLimiter, RateLimiter};
+use concord::{Bytes, api};
 
 // ANCHOR: rate_partitioning_recipe
 // ANCHOR: partitioning_contract
 api! {
     client PartitioningApi {
-        timeout off;
+        timeout 30s;
         base "http://partitioning.example.test/";
-        rate_limit {
+        rate_limit { id "concord.partitioning.1"; cost 1;
             key [endpoint];
             allow 100 per 1m;
         }
@@ -26,21 +26,21 @@ api! {
         subdomain replace [regions.region, "api"];
 
         scope accounts(account: String) {
-            rate_limit {
+            rate_limit { id "concord.partitioning.2"; cost 1;
                 key [accounts.account];
                 allow 100 per 1m;
             }
 
-            GET channel(channel: String) -> Bytes using Bytes {
-                rate_limit {
+            GET channel(channel: String) -> Bytes via Binary {
+                rate_limit { id "concord.partitioning.3"; cost 1;
                     key [endpoint.channel];
                     allow 20 per 1s;
                 }
             }
 
-            GET composite(account: String) -> Bytes using Bytes {
-                rate_limit {
-                    key [host, regions.region, endpoint.account];
+            GET composite(account: String) -> Bytes via Binary {
+                rate_limit { id "concord.partitioning.4";
+                    key [origin, regions.region, endpoint.account];
                     cost 2;
                     allow 100 per 1m;
                 }
@@ -52,12 +52,12 @@ api! {
 
 api! {
     client ResourceStateApi {
-        timeout off;
+        timeout 30s;
         base "http://resource-state.example.test/";
 
 
-    GET channel(channel: String) -> Bytes using Bytes {
-        rate_limit {
+    GET channel(channel: String) -> Bytes via Binary {
+        rate_limit { id "concord.partitioning.5"; cost 1;
             key [endpoint.channel];
             allow 2 per 1h;
         }
@@ -66,12 +66,12 @@ api! {
 
 api! {
     client SharedStateApi {
-        timeout off;
+        timeout 30s;
         base "http://shared-state.example.test/";
-        rate_limit { allow 1 per 1h; }
+        rate_limit { id "concord.partitioning.6"; key [origin]; cost 1;  allow 1 per 1h; }
 
 
-    GET ping() -> Bytes using Bytes;
+    GET ping() -> Bytes via Binary;
 }}
 
 /// Constructs every partition shape and two clients sharing one limiter.

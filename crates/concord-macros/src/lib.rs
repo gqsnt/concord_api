@@ -4,7 +4,7 @@
 //! depend on and import from `concord`. This package parses and validates
 //! façade declarations and emits against the façade's versioned generated-code
 //! bridge. Its resolved surface model owns the exact `set_*`, optional
-//! `clear_*`, and defaulted `reset_*` value-control names.
+//! `omit_*`, and defaulted `reset_*` value-control names.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

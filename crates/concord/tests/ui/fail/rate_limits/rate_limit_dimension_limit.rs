@@ -2,9 +2,9 @@ use concord::api;
 
 api! {
     client Api {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
-        rate_limit {
+        rate_limit { id "concord.rate_limit_dimension_limit.1"; cost 1;
             key [
                 client.k00, client.k01, client.k02, client.k03,
                 client.k04, client.k05, client.k06, client.k07,

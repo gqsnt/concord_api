@@ -1,4 +1,5 @@
 use std::fmt;
+#[cfg(test)]
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::pin::Pin;
@@ -6,9 +7,10 @@ use std::task::{Context, Poll};
 
 use futures_core::Stream;
 
-use crate::response::{
-    ByteStream, ResponseBodyError, ResponseHead, ResponseMode, ResponseSpec, Streaming,
-};
+use crate::hooks::StreamOutcome;
+use crate::response::{ByteStream, ResponseBodyError, ResponseHead, StreamObservation};
+#[cfg(test)]
+use crate::response::{ResponseDriver, ResponseRepresentation, Streaming};
 
 use super::driver::{RecordDriver, RecordStep};
 use super::error::response_error;
@@ -16,17 +18,18 @@ use super::{RecordDecoder, RecordError, RecordErrorKind};
 
 /// A streaming accepted-response specification decoded by `D`.
 ///
-/// It selects Concord's sealed streaming mode and returns a [`RecordStream`]
+/// It selects Concord's sealed streaming mode and returns a [`DecodedRecordStream`]
 /// without introducing another executor or acquisition mode.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Records<D>(PhantomData<fn() -> D>);
+#[cfg(test)]
+pub(crate) struct Records<D>(PhantomData<fn() -> D>);
 
-impl<D> ResponseSpec for Records<D>
+#[cfg(test)]
+impl<D> ResponseRepresentation<DecodedRecordStream<D>> for Records<D>
 where
     D: RecordDecoder,
 {
-    type Output = RecordStream<D>;
-    type Mode = Streaming;
+    type Driver = Streaming;
 
     fn accept() -> Option<&'static str> {
         D::accept()
@@ -37,11 +40,15 @@ where
     }
 
     fn from_body(
-        body: <Self::Mode as ResponseMode>::Body,
+        body: <Self::Driver as ResponseDriver>::Body,
         head: &ResponseHead<'_>,
-    ) -> Result<Self::Output, ResponseBodyError> {
+    ) -> Result<DecodedRecordStream<D>, ResponseBodyError> {
         let decoder = D::start(head).map_err(response_error)?;
-        Ok(RecordStream::new(body, decoder, D::max_buffered_bytes()))
+        Ok(DecodedRecordStream::new(
+            body,
+            decoder,
+            D::max_buffered_bytes(),
+        ))
     }
 }
 
@@ -55,7 +62,7 @@ where
 /// drops the underlying byte stream and cancels native body consumption.
 /// `Debug` omits the byte stream, decoder state, pending source bytes, and
 /// staged bytes and never formats records.
-pub struct RecordStream<D>
+pub(crate) struct DecodedRecordStream<D>
 where
     D: RecordDecoder,
 {
@@ -63,7 +70,7 @@ where
     driver: RecordDriver<D>,
 }
 
-impl<D> RecordStream<D>
+impl<D> DecodedRecordStream<D>
 where
     D: RecordDecoder,
 {
@@ -76,7 +83,8 @@ where
 
     /// Groups records into non-empty batches of at most `size` records.
     #[must_use]
-    pub fn batches(self, size: NonZeroUsize) -> RecordBatches<D> {
+    #[cfg(test)]
+    pub(crate) fn batches(self, size: NonZeroUsize) -> RecordBatches<D> {
         RecordBatches {
             stream: self,
             size: size.get(),
@@ -91,9 +99,9 @@ where
     }
 }
 
-impl<D> Unpin for RecordStream<D> where D: RecordDecoder {}
+impl<D> Unpin for DecodedRecordStream<D> where D: RecordDecoder {}
 
-impl<D> Stream for RecordStream<D>
+impl<D> Stream for DecodedRecordStream<D>
 where
     D: RecordDecoder,
 {
@@ -143,15 +151,165 @@ where
     }
 }
 
-impl<D> fmt::Debug for RecordStream<D>
+impl<D> fmt::Debug for DecodedRecordStream<D>
 where
     D: RecordDecoder,
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("RecordStream")
+            .debug_struct("DecodedRecordStream")
             .field("body_open", &self.body.is_some())
             .field("driver", &self.driver)
+            .finish()
+    }
+}
+
+type ErasedItemStream<T> = Pin<Box<dyn Stream<Item = Result<T, RecordError>> + Send + 'static>>;
+
+/// A lazy stream of semantic items whose decoder and framing strategy are hidden.
+///
+/// The stream owns a core-managed bounded [`ByteStream`]. Failures after the
+/// response is acquired are yielded as stream items and do not retroactively
+/// change the completed request result. Dropping the stream cancels remaining
+/// response-body consumption. `Debug` never formats decoded items or decoder
+/// state.
+pub struct ItemStream<T> {
+    inner: ErasedItemStream<T>,
+    observation: Option<StreamObservation>,
+}
+
+impl<T> ItemStream<T>
+where
+    T: Send + 'static,
+{
+    /// Builds a semantic item stream from one bounded core record decoder.
+    ///
+    /// This is an advanced representation integration point. The decoder sees
+    /// only the managed byte stream and the sanitized semantic response head;
+    /// it receives no native response or client authority.
+    #[doc(hidden)]
+    pub fn decode_with<D>(
+        mut body: ByteStream,
+        head: &ResponseHead<'_>,
+    ) -> Result<Self, ResponseBodyError>
+    where
+        D: RecordDecoder<Record = T>,
+    {
+        let decoder = D::start(head).map_err(response_error)?;
+        let observation = body.take_observation().map(StreamObservation::into_items);
+        Ok(Self {
+            inner: Box::pin(DecodedRecordStream::new(
+                body,
+                decoder,
+                D::max_buffered_bytes(),
+            )),
+            observation,
+        })
+    }
+
+    /// Groups items into non-empty batches of at most `size` items.
+    #[must_use]
+    pub fn batches(self, size: NonZeroUsize) -> ItemBatches<T> {
+        ItemBatches {
+            stream: self,
+            size: size.get(),
+            pending: Vec::new(),
+            done: false,
+        }
+    }
+}
+
+impl<T> Stream for ItemStream<T> {
+    type Item = Result<T, RecordError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let result = self.inner.as_mut().poll_next(context);
+        if let Some(observation) = self.observation.as_mut() {
+            match &result {
+                Poll::Ready(Some(Ok(_))) => observation.record_item(),
+                Poll::Ready(Some(Err(_))) => observation.finish(StreamOutcome::Failed),
+                Poll::Ready(None) => observation.finish(StreamOutcome::Completed),
+                Poll::Pending => {}
+            }
+        }
+        result
+    }
+}
+
+impl<T> Drop for ItemStream<T> {
+    fn drop(&mut self) {
+        if let Some(observation) = self.observation.as_mut() {
+            observation.finish(StreamOutcome::Dropped);
+        }
+    }
+}
+
+impl<T> fmt::Debug for ItemStream<T> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ItemStream")
+            .field("state", &"<semantic stream omitted>")
+            .finish()
+    }
+}
+
+/// A consumer adapter yielding non-empty vectors from an [`ItemStream`].
+pub struct ItemBatches<T> {
+    stream: ItemStream<T>,
+    size: usize,
+    pending: Vec<T>,
+    done: bool,
+}
+
+impl<T> Unpin for ItemBatches<T> {}
+
+impl<T> Stream for ItemBatches<T>
+where
+    T: Send + 'static,
+{
+    type Item = Result<Vec<T>, RecordError>;
+
+    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        if this.done {
+            return Poll::Ready(None);
+        }
+
+        loop {
+            match Pin::new(&mut this.stream).poll_next(context) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(Some(Ok(item))) => {
+                    this.pending.push(item);
+                    if this.pending.len() == this.size {
+                        return Poll::Ready(Some(Ok(std::mem::take(&mut this.pending))));
+                    }
+                }
+                Poll::Ready(Some(Err(error))) => {
+                    this.done = true;
+                    this.pending.clear();
+                    return Poll::Ready(Some(Err(error)));
+                }
+                Poll::Ready(None) => {
+                    this.done = true;
+                    return if this.pending.is_empty() {
+                        Poll::Ready(None)
+                    } else {
+                        Poll::Ready(Some(Ok(std::mem::take(&mut this.pending))))
+                    };
+                }
+            }
+        }
+    }
+}
+
+impl<T> fmt::Debug for ItemBatches<T> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ItemBatches")
+            .field("stream", &self.stream)
+            .field("batch_size", &self.size)
+            .field("pending_items", &self.pending.len())
+            .field("done", &self.done)
             .finish()
     }
 }
@@ -161,18 +319,21 @@ where
 /// One-record streaming remains the primitive. This adapter holds at most the
 /// requested positive batch size and discards a partial batch if the underlying
 /// stream fails. Its `Debug` implementation never formats records.
-pub struct RecordBatches<D>
+#[cfg(test)]
+pub(crate) struct RecordBatches<D>
 where
     D: RecordDecoder,
 {
-    stream: RecordStream<D>,
+    stream: DecodedRecordStream<D>,
     size: usize,
     pending: Vec<D::Record>,
     done: bool,
 }
 
+#[cfg(test)]
 impl<D> Unpin for RecordBatches<D> where D: RecordDecoder {}
 
+#[cfg(test)]
 impl<D> Stream for RecordBatches<D>
 where
     D: RecordDecoder,
@@ -212,6 +373,7 @@ where
     }
 }
 
+#[cfg(test)]
 impl<D> fmt::Debug for RecordBatches<D>
 where
     D: RecordDecoder,
@@ -407,7 +569,7 @@ mod tests {
         polls: &Arc<AtomicUsize>,
         dropped: &Arc<AtomicBool>,
         staging: usize,
-    ) -> RecordStream<LineDecoder> {
+    ) -> DecodedRecordStream<LineDecoder> {
         stream_with_decoder(LineDecoder, chunks, polls, dropped, staging)
     }
 
@@ -417,7 +579,7 @@ mod tests {
         polls: &Arc<AtomicUsize>,
         dropped: &Arc<AtomicBool>,
         staging: usize,
-    ) -> RecordStream<D>
+    ) -> DecodedRecordStream<D>
     where
         D: RecordDecoder,
     {
@@ -432,7 +594,7 @@ mod tests {
             http::Method::GET,
             1024,
         ));
-        RecordStream::new(
+        DecodedRecordStream::new(
             body,
             decoder,
             NonZeroUsize::new(staging).expect("positive test staging bound"),

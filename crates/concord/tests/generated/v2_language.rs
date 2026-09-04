@@ -32,25 +32,25 @@ api! {
                 required_option: Option<String>,
                 tags: Vec<String>,
                 count: u64 = DEFAULT_COUNT,
-            ) -> Bytes using Bytes {
+            ) -> Bytes via Binary {
                 id "v2.language.list";
                 path ["items"];
                 query {
                     "tag" = each endpoint.tags;
                     "count" = endpoint.count;
                 }
-                repeatability idempotent;
+                effect idempotent;
                 expose accepted_bytes;
             }
 
             POST update(
                 id: String,
                 mode?: Option<String>,
-                body input: String using Text,
-            ) -> String using Text {
+                body input: String via Text,
+            ) -> String via Text {
                 id "v2.language.update";
                 path ["items", endpoint.id];
-                repeatability never;
+                effect non_idempotent;
             }
         }
     }
@@ -59,7 +59,7 @@ api! {
 api! {
     client ReflectedAuthoritiesApi {
         base "https://example.test";
-        timeout off;
+        timeout 30s;
 
         values {
             tenant: String;
@@ -71,15 +71,15 @@ api! {
         }
 
         rate_limits {
-            tenant_reads(tenant) {
+            policy tenant_reads(tenant) {
                 id "v2.reflection.tenant";
-                key [host, tenant];
+                key [origin, tenant];
                 cost 2;
                 allow 10 per 1m;
             }
         }
 
-        GET fetch() -> Bytes using Bytes {
+        GET fetch() -> Bytes via Binary {
             id "v2.reflection.fetch";
             auth {
                 bearer bearer_auth;
@@ -94,7 +94,7 @@ fn exact_value_and_capability_surface_compiles() {
     let client = V2LanguageApi::builder()
         .set_tenant("tenant".to_owned())
         .with_locale("fr".to_owned())
-        .clear_locale()
+        .omit_locale()
         .reset_retry_hint()
         .build()
         .expect("v2 client");
@@ -105,7 +105,7 @@ fn exact_value_and_capability_surface_compiles() {
     let list = regional
         .list(None, vec!["one".to_owned(), "two".to_owned()])
         .reset_count();
-    let _: concord::endpoint::CredentialFreeRequestPlan = list.plan().expect("plan");
+    let _: concord::endpoint::RequestPlan = list.plan().expect("plan");
     let _bytes = list.accepted_bytes();
 
     let intent = V2LanguageApi::unbound()
@@ -120,7 +120,7 @@ fn exact_value_and_capability_surface_compiles() {
         .update("id".to_owned(), "body".to_owned())
         .set_mode(Some(None))
         .with_mode(Some("replace".to_owned()))
-        .clear_mode();
+        .omit_mode();
 }
 
 #[test]
@@ -180,7 +180,7 @@ fn contract_reflection_preserves_the_domain_tree_and_exact_semantics() {
         ObservationClass::OrdinaryPublic
     );
     assert_eq!(details.response().output_type(), "Bytes");
-    assert_eq!(details.response().specification_type(), "Bytes");
+    assert_eq!(details.response().specification_type(), "Binary");
     assert!(
         details
             .effective_attachments()
@@ -222,7 +222,7 @@ fn contract_reflection_includes_value_free_authority_and_profile_schemas() {
     assert!(profile.explicit_id());
     assert!(!profile.rename_sensitive());
     assert_eq!(profile.formals(), ["tenant"]);
-    assert_eq!(profile.dimensions(), ["host", "tenant"]);
+    assert_eq!(profile.dimensions(), ["origin", "tenant"]);
     assert_eq!(profile.cost(), 2);
     assert_eq!(profile.windows().len(), 1);
 }

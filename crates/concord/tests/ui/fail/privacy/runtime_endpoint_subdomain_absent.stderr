@@ -1,0 +1,12 @@
+error[E0599]: no method named `subdomain` found for struct `RuntimeEndpointBuilder<R, Output>` in the current scope
+  --> tests/ui/fail/privacy/runtime_endpoint_subdomain_absent.rs:19:6
+   |
+15 |       let _ = RuntimeEndpoint::builder(
+   |  _____________-
+16 | |         EndpointId::new("runtime.origin.escape").unwrap(),
+17 | |         Method::GET,
+18 | |     )
+19 | |     .subdomain("attacker-controlled")
+   | |     -^^^^^^^^^ method not found in `RuntimeEndpointBuilder`
+   | |_____|
+   |

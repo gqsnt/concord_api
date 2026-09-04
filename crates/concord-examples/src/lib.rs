@@ -6,7 +6,7 @@
 //! test pointer. The targets under `examples/` only call these modules.
 //!
 //! Generated examples keep constructor/navigation names and use the public
-//! `set_*`, absence-capable `clear_*`, and declaration-default `reset_*`
+//! `set_*`, absence-capable `omit_*`, and declaration-default `reset_*`
 //! value-control model. The capabilities are independent: the full DSL
 //! example exercises all three controls on defaulted `Option` values and the
 //! ordinary-value `#[default]` declarations.

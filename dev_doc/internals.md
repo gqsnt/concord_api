@@ -1,184 +1,221 @@
-# Concord internals
+# Concord v2.1 internals
 
-This file defines maintainer ownership, compiler stages, and validation paths.
+This document assigns implementation responsibility. Public semantics remain owned by `docs/design_invariants.md` and `docs/spec.md`.
 
-## Workspace
+## Workspace roles
 
-| Path | Owner |
+| Crate | Responsibility |
 |---|---|
-| `crates/concord` | application façade and feature composition |
-| `crates/concord-core` | syntax-neutral runtime and extension traits |
-| `crates/concord-extras` | first-party extension implementations |
-| `crates/concord-macros` | `api!` parser, semantic resolver, and code generator |
-| `crates/concord-examples` | compile-checked declarations and runtime examples |
-| `crates/concord-test-support` | deterministic loopback and concurrency support |
-| `tools/xtask` | repository validation utilities |
-| `tools/perf` | internal observational performance probes |
-| `fixtures` | isolated Cargo-graph fixtures |
-
-Applications depend only on `concord`.
+| `concord-macros` | parse, resolve, validate, derive surfaces, emit bridge/docs/descriptions/assertions |
+| `concord-core` | semantic runtime types, one executor, native HTTP, bounds, auth/retry/rate/pagination/errors |
+| `concord-extras` | optional curated semantic implementations |
+| `concord` | stable ergonomic façade and feature re-exports |
+| `concord-test-support` | deterministic fixtures using production semantics |
+| `concord-examples` | compile-checked product examples and docs anchors |
+| `xtask` | policy, fixtures, MSRV UI, semantic diff/migration/evidence tooling |
+| `perf` | compile/expansion/runtime benchmark evidence |
 
 ## Compiler pipeline
 
-The macro pipeline is raw parse, owner/name resolution, canonical semantic IR,
-validation/surface computation, then projection.
+```text
+TokenStream
+→ syntax AST with spans/docs
+→ symbol and owner resolution
+→ canonical declared semantic graph
+→ family-specific effective contract with provenance
+→ generated surface/capability model
+→ Rust bridge/API/docs/descriptions/assertions
+```
 
-### Parse
+Emitters never infer semantics from syntax tokens or generated strings.
 
-`syntax` builds a source-shaped AST with spans. It validates local grammar,
-literal structure, duplicate local entries, and bounded nesting.
+## Canonical semantic graph
 
-The parser does not inspect concrete Rust type meaning.
+Conceptually:
 
-### Resolve canonical IR
+```rust
+struct ApiContractIr {
+    client: ClientIr,
+    symbols: SymbolTable,
+    descriptions: DescriptionIr,
+}
 
-`semantic` assigns stable owner, value, endpoint, and attachment identities and
-resolves client, scope, and endpoint-leaf operations into one effective request
-configuration with source origins.
+struct ValueIr {
+    id: ValueId,
+    owner: OwnerId,
+    name: Ident,
+    payload_type: syn::Type,
+    presence: Presence,
+    initializer: InitializerIr,
+    sensitivity: Sensitivity,
+    docs: Docs,
+    span: Span,
+    controls: ControlSurfaceIr,
+}
 
-Subdomain, path, ordered query/header patches, authentication, timeout,
-repeatability, pagination, and rate-limit semantics are normalized once. Source
-order is retained for ordered entries. Rust types remain opaque.
+struct EndpointIr {
+    id: OwnerId,
+    source_name: Ident,
+    contract_id: ContractIdIr,
+    method: MethodIr,
+    values: Vec<ValueIr>,
+    body: Option<BodyInputIr>,
+    output: OutputIr,
+    local: LocalEndpointContract,
+    effective: EffectiveEndpointContract,
+    surface: EndpointSurface,
+}
+```
 
-### Validate
+No `ValueShape::Option`, `ValueShape::Vec`, stream-token detection, or equivalent exists.
 
-Semantic validation resolves value visibility, endpoint identities,
-credential dependencies, public-expression ownership, pagination bindings,
-rate-limit profile bindings, effective duplicate targets, host constraints,
-and static head ceilings.
+## Resolved references and atoms
 
-Cross-attachment-site rules are checked against each final endpoint leaf.
+```rust
+struct ResolvedValueRef {
+    value: ValueId,
+    owner: ValueOwnerRef,
+    presence: Presence,
+    sensitivity: Sensitivity,
+}
 
-### Surface
+enum AtomIr {
+    Literal(BoundedLiteral),
+    Value(ResolvedValueRef),
+    Adapted { source: Box<AtomIr>, adapter: syn::Type },
+    Concat(Vec<AtomIr>),
+}
 
-`semantic::surface` derives public names, modules, request capabilities and
-trait obligations. Descriptions, Rustdoc, semantic snapshots, diagnostics, and
-code emission consume the same resolved model.
+enum EmissionIr {
+    Scalar(AtomIr),
+    Each { source: ResolvedValueRef, adapter: Option<syn::Type> },
+}
+```
 
-Name collision checking uses the exact emitted helper set.
+The compiler resolves names into IDs before inheritance/emission. Runtime/generated bridge executes a pre-resolved shaping program.
 
-### Emit
+## Family-specific attachments
 
-`emit` consumes normalized semantic data. It does not reparse source grammar
-or infer missing semantics.
+Do not implement one generic public merge trait. Maintain dedicated IR/algebra:
 
-Generated code targets the caller-visible `concord` façade through the private
-bridge. A bridge-version assertion rejects incompatible macro and runtime
-pairs.
+- request/response representation nearest-owner resolution plus explicit fences;
+- subdomain prepend/replace/off;
+- path append/replace/off;
+- query ordered patch;
+- header case-insensitive patch;
+- auth ordered append/replace/off and target ownership;
+- timeout nearest finite selection;
+- rate additive attachments;
+- endpoint-local status/effect/pagination/exposed capabilities.
 
-## Runtime ownership
+Every effective item retains source owner/span and inheritance operation.
 
-Core owns:
+## Surface model
 
-- immutable client runtime snapshots;
-- public request planning;
-- managed request and response bodies;
-- credential slots and recovery;
-- limiter and retry sequencing;
-- native HTTP construction;
-- response acquisition and conversion;
-- pagination execution;
-- decision gates, fixed completion observation, structured errors, trusted
-  diagnostics, and redaction.
+One surface description generates direct, unbound, docs, and collision analysis:
 
-Extras implement JSON, CSV, NDJSON, OAuth2 client credentials, and the local
-rate limiter behind façade features.
+```rust
+struct EndpointSurface {
+    direct_required_inputs: Vec<ValueId>,
+    configurable_inputs: Vec<ValueControl>,
+    body: Option<BodySurface>,
+    output: OutputSurface,
+    capabilities: EndpointCapabilities,
+    names: GeneratedNames,
+}
+```
 
-## Testing
+Direct and unbound generators must not implement independent argument/control algorithms.
 
-Unit tests own local invariants. Integration tests own cross-module runtime
-behavior. Trybuild files own generated API absence and compiler diagnostics.
-Examples own documentation declarations. Cargo fixtures own dependency-graph
-and feature-isolation behavior.
+## Rust assertions
 
-`pwsh -NoLogo -NoProfile -File scripts/check_docs_examples.ps1` requires every
-`concord` fence under the root README, `FINAL.md`, `docs/`, and `dev_doc/` to
-either match whitespace-normalized source in the compiled
-`crates/concord-examples/src/docs_spec.rs` fixture or carry a `concord-source`
-marker resolving to a compiled anchor. Marked Rust fences are compared against
-the same anchors.
+Generate focused assertions for facts the macro cannot prove:
 
-Source anchors are restricted to compiled roots:
+- effective request representation implements `RequestRepresentation<Input>`;
+- effective response representation implements `ResponseRepresentation<Output>`;
+- `RequestAtom` or selected atom adapter;
+- `OrderedValues` and item atom adapter;
+- pagination controller field/destination types and page capability;
+- body page stability/replay capabilities;
+- endpoint-backed output-to-credential material compatibility;
+- accepted-byte support;
+- rate dimension canonicalization.
 
-| Anchor root | Compiled by |
-|---|---|
-| `crates/concord-examples/src` | the `concord-examples` lib target |
-| `crates/concord-examples/tests` | the `concord-examples` integration test targets |
+Assertions must point at the endpoint/value and inherited representation owner.
 
-The checker rejects absolute paths, `..` traversal, paths outside those roots,
-and non-`.rs` sources. It validates anchor integrity per file: duplicate anchor
-names, unopened `ANCHOR_END`, unclosed anchors, overlapping regions, and regions
-selecting no source lines all fail. Proper nesting is supported so one fixture
-can serve both a whole-contract and a single-endpoint quotation; nested markers
-are excluded from the compared source. Local Markdown links are resolved, and
-`#fragment` targets are checked against the target document's headings.
+## Generated bridge
 
-Adding an anchor root requires a documented reason and a compiled Cargo target.
+Bridge code:
 
-### Validation levels
+- reads explicit owner-qualified immutable values;
+- executes shaping operations once per pass;
+- creates real and sanitized atoms together;
+- binds representations/status/effect/auth/rate/pagination metadata;
+- preserves client/security-context identity;
+- exposes no public fields/native types;
+- cannot run a second executor.
 
-`cargo test --workspace` is not the gate. The `ui` targets set `test = false`,
-and MSRV, feature-isolation, documentation, and fixture checks are separate.
+## Core state
 
-| Level | Command | Owns |
-|---|---|---|
-| fast loop | `just fmt`, `just docs-check` | formatting and documentation contract |
-| pre-commit | `just check`, `just test`, `just ui`, `just docs`, `just msrv` | features, runtime tests, compiler contracts, rustdoc, MSRV |
-| release equivalent | `just verify` | the pre-commit set plus `fixtures`, `deny`, `workflow`, `analyzer`, `bench` |
+```text
+Static contract
+Built client/security context
+Selected immutable snapshots
+Logical operation/deadline
+Visible attempts and dispatch knowledge
+Prepared body and current attempt body
+Credential source/slot/version
+Rate plan/permit/feedback
+Response status/driver/output
+Pagination aggregate/controller/identity/items
+Operation and stream evidence
+```
 
-`.github/workflows/ci.yml` mirrors these as the `quality`, `test`,
-`documentation`, `ui`, `msrv`, `fixtures_policy`, `platform`, and `analyzer`
-jobs. CI does not currently invoke `scripts/check_docs_examples.ps1`; that
-check is owned by `just docs` and `just docs-check` locally.
+Core owns all state transitions involving native transport, time, private material, attempts, and aggregate loops.
 
-Snapshot changes are reviewed before `.stderr` files are updated. A snapshot is
-re-blessed only after confirming the new diagnostic proves the property the
-fixture exists to prove, not merely that the fixture still fails.
+## Executor state machine
 
-### Specification rejection coverage
+The normative order lives in `docs/execution_policy.md`. Implement one internal state machine shared by:
 
-| Specification rule | Enforcement |
-|---|---|
-| unknown and ghost syntax | `crates/concord/tests/ui/fail/syntax/ghost_syntax.rs` |
-| defaults and public-expression grammar | `default_expression_restrictions.rs`, `spec_rejections.rs`, and `names/` |
-| fixed base, static subdomain, static path, and reserved headers | `spec_rejections.rs`, `ipv4_host_prefix.rs`, and `ipv6_host_prefix.rs` |
-| credential compatibility and duplicate authentication targets | `authentication/` and `spec_rejections.rs` |
-| pagination syntax, bindings, bodies, modes, and terminal capabilities | `pagination/` |
-| rate-limit structure, visibility, bindings, keys, windows, and identity | `rate_limits/` and `spec_rejections.rs` |
-| dynamic subdomain labels and path atoms | `concord_core::request::head` unit tests and `concord-core/tests/public_api/generated_contract.rs` |
+- direct await/response;
+- accepted bytes;
+- endpoint-backed store;
+- generated unbound binding;
+- runtime endpoint binding;
+- retries and auth recovery;
+- pagination pages;
+- stream acquisition.
 
-## Security review
+No terminal creates a private loop that bypasses the executor.
 
-Security tests use unique sentinels and inspect `Debug`, `Display`, sources,
-plans, descriptions, gates, completion, limiter metadata, provider failures,
-status bodies, and generated Rustdoc.
+## Time and randomness
 
-Positive loopback tests prove private authentication reaches transport while
-remaining absent from public observation.
+Core/testable dependencies own:
 
-## Performance review
+- operation deadlines;
+- retry jitter;
+- HTTP-date/server-delay parsing;
+- credential expiry/skew;
+- rate windows/cooldown;
+- pagination/controller timestamps if required.
 
-Performance probes are observational. They compare identical machines,
-toolchains, feature sets, profiles, and input sizes.
+Extras do not call wall clock independently for a decision also owned by core.
 
-No benchmark threshold defines a semantic contract.
+## Error boundary
 
-## Documentation ownership
+Core constructs stable `ApiErrorCategory`, `FailureStage`, `DispatchKnowledge`, IDs, status, counts, and bounded sanitized detail. Raw dependency strings are protected because they may include URLs, headers, payloads, or values.
 
-`docs/spec.md` owns DSL grammar and rejection rules.
-`docs/runtime.md` owns execution order and observation.
-`docs/design_invariants.md` owns cross-cutting invariants.
-`docs/README.md` owns the canonical user-facing inventory.
-Topic guides explain concepts end to end without becoming parallel specifications.
-`dev_doc/documentation_contract.md` owns documentation classes, examples, links, and validation.
-`dev_doc/finalization_decisions.md` owns historical finalization judgments.
+## Test architecture
 
-The documentation checker validates DSL fences, source-anchored usage examples, local links, and inventory coverage.
+- parser/semantic unit tests;
+- UI compile-pass/fail diagnostics;
+- generated surface and negative-space tests;
+- deterministic runtime event traces;
+- systematic auth/concurrency tests;
+- query/header/atom properties;
+- pagination proof suite;
+- information-flow sentinel matrix;
+- large-contract expansion/compile benchmarks;
+- feature/MSRV/docs/policy/deny/analyzer gates.
 
-## Active version
-
-Concord 2.0.0 is the sole production language. The generated macro/core
-handshake is 32. Selected retired syntax exists only in migration diagnostics;
-there is no compatibility semantic mode or alternate executor. `FINAL.md`
-records the active constitution and `just verify` is the release-equivalent
-gate.
+Test support uses the same public and core contracts. It must never add a production-inaccessible native mutation path.

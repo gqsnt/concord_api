@@ -3,7 +3,10 @@ use std::error::Error;
 use std::num::NonZeroU32;
 
 use concord_core::PageLimit;
-use concord_core::contracts::{PaginationController, PaginationError, PaginationErrorKind};
+use concord_core::contracts::{
+    PageDecisionLimits, PageResponse, PageStep, PaginationController, PaginationDescription,
+    PaginationError, PaginationErrorKind,
+};
 
 struct CustomPage<T> {
     items: Vec<T>,
@@ -25,12 +28,30 @@ struct PrivateController {
 }
 
 impl PaginationController<CustomPage<u64>> for PrivateController {
-    fn next(self, page: &CustomPage<u64>) -> Result<Option<Self>, PaginationError> {
+    type Item = u64;
+
+    const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
+
+    fn advance(
+        self,
+        page: PageResponse<CustomPage<u64>>,
+        limits: PageDecisionLimits,
+    ) -> Result<PageStep<Self, Self::Item>, PaginationError> {
         let _previous_cursor = self.private_cursor;
-        Ok(page.cursor.as_ref().map(|cursor| Self {
+        let next = page.page().cursor.as_ref().map(|cursor| Self {
             private_cursor: Some(cursor.clone()),
             _not_sync: Cell::new(()),
-        }))
+        });
+        let items = page.into_page().items;
+        if items.len() > limits.remaining_items() {
+            return Err(PaginationError::new(
+                PaginationErrorKind::CollectedItemCeilingExceeded,
+            ));
+        }
+        Ok(match next {
+            Some(next) => PageStep::Continue { items, next },
+            None => PageStep::Done { items },
+        })
     }
 }
 
@@ -57,19 +78,8 @@ fn stable_pagination_contracts_compile_without_private_imports_or_item_traits() 
     .collect();
     assert_eq!(custom_items, [4, 5]);
 
-    let controller = PrivateController {
-        private_cursor: None,
-        _not_sync: Cell::new(()),
-    };
-    assert!(
-        controller
-            .next(&CustomPage::<u64> {
-                items: Vec::new(),
-                cursor: None,
-            })
-            .expect("controller next")
-            .is_none()
-    );
+    fn assert_controller<C: PaginationController<CustomPage<u64>, Item = u64>>() {}
+    assert_controller::<PrivateController>();
 }
 
 #[test]

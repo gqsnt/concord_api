@@ -1,16 +1,20 @@
-use crate::body::{RequestBodyContext, RequestBodyMetadata, RequestBodySpec};
+use crate::body::{RequestBodyContext, RequestBodyMetadata, RequestRepresentation};
 use crate::error::ApiError;
-use crate::response::ResponseSpec;
+use crate::response::ResponseRepresentation;
 
 use super::{HeadBuilder, PreparedHead, RequestMeta};
 
 /// Generated-private bridge from one concrete endpoint value into core.
 #[doc(hidden)]
 pub trait EndpointSpec: Send + 'static {
+    /// Exact caller-supplied request-body input, or `()` for a bodyless endpoint.
+    type Input: Send + 'static;
     /// Selected request specification, including the private empty bodyless specification.
-    type Body: RequestBodySpec;
+    type Body: RequestRepresentation<Self::Input>;
+    /// Exact value produced by ordinary `.await`.
+    type Output: Send + 'static;
     /// Selected accepted-response specification.
-    type Response: ResponseSpec;
+    type Response: ResponseRepresentation<Self::Output>;
 
     /// Returns stable endpoint identity and inherited timeout metadata.
     fn request_meta(&self) -> RequestMeta;
@@ -25,5 +29,5 @@ pub trait EndpointSpec: Send + 'static {
     ) -> Result<RequestBodyMetadata, crate::body::BodyError>;
 
     /// Transfers the selected request-specification input exactly once.
-    fn into_body(self) -> <Self::Body as RequestBodySpec>::Input;
+    fn into_body(self) -> Self::Input;
 }

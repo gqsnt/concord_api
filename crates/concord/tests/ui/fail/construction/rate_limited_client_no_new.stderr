@@ -4,7 +4,7 @@ error[E0599]: no associated function or constant named `new` found for struct `R
  3 | / api! {
  4 | |     client RateLimitedApi {
  5 | |         base "https://rate.example.test";
- 6 | |         timeout off;
+ 6 | |         timeout 30s;
 ...  |
 16 | | }
    | |_- associated function or constant `new` not found for this struct

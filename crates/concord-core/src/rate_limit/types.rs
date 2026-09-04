@@ -7,9 +7,10 @@ use crate::limits::{
     MAX_RATE_LIMIT_KEY_PARTS, MAX_RATE_LIMIT_POLICIES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_POLICY,
 };
 
-use super::{RateLimitError, RateLimitKeyValue, canonical::encode_canonical};
+use super::{RateKeyPart, RateLimitError, canonical::encode_canonical};
 
 /// A stable logical identifier for one resolved rate-limit policy.
+#[derive(Clone)]
 pub struct RateLimitId {
     value: Box<str>,
 }
@@ -35,6 +36,7 @@ impl RateLimitId {
 }
 
 /// One ordered name/value component of a resolved rate-limit key.
+#[derive(Clone)]
 pub struct RateLimitKeyPart {
     name: Box<str>,
     value: Box<[u8]>,
@@ -88,6 +90,7 @@ impl RateLimitKeyPart {
 ///
 /// This type intentionally has no automatic `Debug` or `Display`
 /// implementation because values may be operationally sensitive.
+#[derive(Clone)]
 pub struct RateLimitKey {
     parts: Box<[RateLimitKeyPart]>,
     total_bytes: usize,
@@ -128,13 +131,13 @@ impl RateLimitKey {
     /// Builds an ordered key by canonically encoding each semantic value.
     ///
     /// This is the constructor for generated and runtime-defined endpoint
-    /// policies. Values are encoded through [`RateLimitKeyValue`] with type and
+    /// policies. Values are encoded through [`RateKeyPart`] with type and
     /// length framing; human `Display` text is never used as quota identity.
     pub fn from_canonical_values<I, N, V>(parts: I) -> Result<Self, RateLimitError>
     where
         I: IntoIterator<Item = (N, V)>,
         N: AsRef<str>,
-        V: RateLimitKeyValue,
+        V: RateKeyPart,
     {
         let mut retained: Vec<(Box<str>, Box<[u8]>)> = Vec::new();
         let mut total_bytes = 0_usize;
@@ -223,6 +226,7 @@ impl RateLimitKey {
 }
 
 /// One positive capacity over one positive refill duration.
+#[derive(Clone)]
 pub struct RateLimitWindow {
     capacity: NonZeroU32,
     duration: Duration,
@@ -254,6 +258,7 @@ impl RateLimitWindow {
 ///
 /// A limiter combines the policy ID and ordered key with each window to select
 /// independent quota state.
+#[derive(Clone)]
 pub struct RateLimitPolicy {
     id: RateLimitId,
     key: RateLimitKey,
@@ -356,6 +361,7 @@ impl RateLimitPolicy {
 ///
 /// Plan values intentionally have no automatic `Debug` or `Display`
 /// implementation.
+#[derive(Clone)]
 pub struct RateLimitPlan {
     policies: Box<[RateLimitPolicy]>,
 }

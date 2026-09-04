@@ -11,22 +11,22 @@ use concord_test_support::server::{ResponseScript, ScriptedServer};
 
 api! {
     client DefaultLocalLimiterApi {
-        timeout off;
+        timeout 30s;
         base "http://default-local-limiter.example.test/";
-        rate_limit { allow 10 per 1s; }
+        rate_limit { id "concord.rate_limit_composition.1"; key [origin]; cost 1;  allow 10 per 1s; }
 
 
-    GET read() -> Bytes using Bytes;
+    GET read() -> Bytes via Binary;
 }}
 
 api! {
     client ExplicitLimiterApi {
-        timeout off;
+        timeout 30s;
         base "http://explicit-limiter.example.test/";
-        rate_limit { allow 10 per 1s; }
+        rate_limit { id "concord.rate_limit_composition.2"; key [origin]; cost 1;  allow 10 per 1s; }
 
 
-    GET read() -> Bytes using Bytes;
+    GET read() -> Bytes via Binary;
 }}
 
 struct CapturingLimiter {
@@ -43,13 +43,9 @@ impl RateLimiter for CapturingLimiter {
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
-    fn observe<'a>(
-        &'a self,
-        response: RateLimitResponse<'a>,
-    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
+    fn observe(&self, response: RateLimitResponse<'_>) {
         assert_eq!(response.cooldown_cap, std::time::Duration::from_secs(60));
         self.observations.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async { Ok(()) })
     }
 }
 

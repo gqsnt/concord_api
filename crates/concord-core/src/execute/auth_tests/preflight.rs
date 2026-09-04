@@ -110,7 +110,7 @@ async fn body_failure_prevents_provider_debug_and_native_send() {
     let debug = debug.lock().expect("debug output");
     assert_eq!(debug.len(), 1);
     assert!(debug[0].starts_with("completion "));
-    assert_eq!(hooks.before.lock().expect("before records").len(), 1);
+    assert!(hooks.before.lock().expect("before records").is_empty());
     assert!(hooks.response.lock().expect("response records").is_empty());
 }
 
@@ -638,16 +638,16 @@ async fn custom_provider_oversized_material_is_revalidated_at_the_core_boundary(
 }
 
 #[tokio::test]
-async fn authenticated_cleartext_fails_in_public_preparation_before_hook_body_or_provider() {
+async fn authenticated_cleartext_fails_before_observer_body_or_provider() {
     let executor = DeterministicExecutor::new();
     let hooks = Arc::new(AuthHooks::default());
     let core = ClientCore::build_with_development(
         "http://cleartext.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
         RuntimeConfigBuilder::new()
-            .request_gate(hooks.clone())
-            .response_gate(hooks.clone())
-            .completion_observer(hooks.clone()),
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone()),
         &executor,
     )
     .expect("cleartext core remains valid for public endpoints");

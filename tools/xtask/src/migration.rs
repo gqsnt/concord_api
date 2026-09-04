@@ -9,23 +9,25 @@ const RETIRED_DSL_PATTERNS: &[(&str, &str)] = &[
     ("fmt[", "concat ["),
     ("fmt [", "concat ["),
     ("host [", "subdomain ["),
-    ("#[body]", "body INPUT using SPEC"),
+    (
+        "#[body]",
+        "body NAME: INPUT via REPRESENTATION (manual type review required)",
+    ),
     ("= default", "#[default]"),
-    ("challenge unauthorized", "recover on unauthorized"),
     ("rate_limit use", "rate_limit PROFILE(...)"),
     ("rule ", "a named rate profile with explicit formals"),
 ];
 
 const RETIRED_RUST_PATTERNS: &[(&str, &str)] = &[
-    ("ResponseBodySpec", "ResponseSpec"),
+    ("ResponseBodySpec", "ResponseRepresentation"),
     ("response_bytes", "accepted_bytes"),
-    ("SafeRequestPlan", "CredentialFreeRequestPlan"),
+    ("SafeRequestPlan", "RequestPlan"),
     ("PageLimit::Take", "PageLimit::Prefix"),
     ("PageLimit::HardCap", "PageLimit::CompleteWithin"),
 ];
 
-const INPUT_TYPE_REVIEW: &str = "__ConcordV2BodyInputTypeRequiresReview";
-const OUTPUT_TYPE_REVIEW: &str = "__ConcordV2OutputTypeRequiresReview";
+const INPUT_TYPE_REVIEW: &str = "__ConcordV2_1BodyInputTypeRequiresReview";
+const OUTPUT_TYPE_REVIEW: &str = "__ConcordV2_1OutputTypeRequiresReview";
 
 pub(crate) fn run(root: &Path, write: bool) -> Result<(), String> {
     let mut files = Vec::new();
@@ -41,10 +43,17 @@ pub(crate) fn run(root: &Path, write: bool) -> Result<(), String> {
     for path in files {
         let source = fs::read_to_string(&path)
             .map_err(|error| format!("could not read {}: {error}", path.display()))?;
+        let visible_source = code_only(&source);
         let (rewritten, moved, timeouts, signatures) = rewrite_mechanical(&source)?;
         topology_changes += moved;
         timeout_changes += timeouts;
         signature_changes += signatures;
+        if timeouts > 0 {
+            findings.push(format!(
+                "{}: client root needs an explicit positive finite v2.1 timeout; no value was guessed",
+                relative(root, &path).display(),
+            ));
+        }
         if write && rewritten != source {
             fs::write(&path, rewritten)
                 .map_err(|error| format!("could not write {}: {error}", path.display()))?;
@@ -54,7 +63,7 @@ pub(crate) fn run(root: &Path, write: bool) -> Result<(), String> {
             continue;
         }
 
-        for (line_index, line) in source.lines().enumerate() {
+        for (line_index, line) in visible_source.lines().enumerate() {
             for (retired, replacement) in RETIRED_RUST_PATTERNS {
                 if line.contains(retired) {
                     findings.push(format!(
@@ -67,7 +76,7 @@ pub(crate) fn run(root: &Path, write: bool) -> Result<(), String> {
             for marker in [INPUT_TYPE_REVIEW, OUTPUT_TYPE_REVIEW] {
                 if line.contains(marker) {
                     findings.push(format!(
-                        "{}:{}: replace `{marker}` with the exact v2 domain type",
+                        "{}:{}: replace `{marker}` with the exact v2.1 domain type",
                         relative(root, &path).display(),
                         line_index + 1,
                     ));
@@ -79,7 +88,7 @@ pub(crate) fn run(root: &Path, write: bool) -> Result<(), String> {
                 .bytes()
                 .filter(|byte| *byte == b'\n')
                 .count();
-            for (line_index, line) in source[(open + 1)..close].lines().enumerate() {
+            for (line_index, line) in visible_source[(open + 1)..close].lines().enumerate() {
                 for (retired, replacement) in RETIRED_DSL_PATTERNS {
                     if line.contains(retired) {
                         findings.push(format!(
@@ -102,16 +111,16 @@ pub(crate) fn run(root: &Path, write: bool) -> Result<(), String> {
 
     if write {
         println!(
-            "migration: moved {topology_changes} client child region(s); inserted {timeout_changes} explicit root timeout(s); made {signature_changes} body/response signature(s) explicit"
+            "migration: moved {topology_changes} client child region(s); reported {timeout_changes} missing finite root timeout(s); marked {signature_changes} ambiguous body/response signature(s) for review"
         );
     } else {
         println!("migration audit: {} review item(s)", findings.len());
-        for finding in findings.iter().take(500) {
-            println!("{finding}");
-        }
-        if findings.len() > 500 {
-            println!("... {} additional item(s) omitted", findings.len() - 500);
-        }
+    }
+    for finding in findings.iter().take(500) {
+        println!("{finding}");
+    }
+    if findings.len() > 500 {
+        println!("... {} additional item(s) omitted", findings.len() - 500);
     }
     Ok(())
 }
@@ -182,8 +191,6 @@ fn rewrite_mechanical(source: &str) -> Result<(String, usize, usize, usize), Str
             continue;
         };
         if !has_top_level_word(&rewritten, client_open + 1, client_close, "timeout") {
-            let indent = line_indent(&rewritten, client_open) + "    ";
-            rewritten.insert_str(client_open + 1, &format!("\n{indent}timeout off;"));
             timeouts += 1;
         }
     }
@@ -254,16 +261,6 @@ fn rewrite_basic_vocabulary(contract: &str) -> String {
                 index += 4;
                 continue;
             }
-        }
-        if word_at(bytes, &mask, index, "challenge") {
-            let signal = skip_space(bytes, index + 9, bytes.len());
-            if word_at(bytes, &mask, signal, "never") {
-                replacements.push((index, signal + 5, String::new()));
-            } else {
-                replacements.push((index, index + 9, "recover on".to_owned()));
-            }
-            index += 9;
-            continue;
         }
         if word_at(bytes, &mask, index, "secret") {
             let name_start = skip_space(bytes, index + 6, bytes.len());
@@ -567,7 +564,7 @@ fn rewrite_pagination_vocabulary(contract: &str) -> String {
             continue;
         }
         let cursor = skip_space(bytes, index + 8, bytes.len());
-        if word_at(bytes, &mask, cursor, "with") {
+        if word_at(bytes, &mask, cursor, "via") {
             index += 8;
             continue;
         }
@@ -579,7 +576,11 @@ fn rewrite_pagination_vocabulary(contract: &str) -> String {
             index += 8;
             continue;
         };
-        replacements.push((index + 8, index + 8, " with".to_owned()));
+        if word_at(bytes, &mask, cursor, "with") {
+            replacements.push((cursor, cursor + 4, "via".to_owned()));
+        } else {
+            replacements.push((index + 8, index + 8, " via".to_owned()));
+        }
         let fields = split_top_level(bytes, &mask, open + 1, close, b',');
         for (field_start, field_end) in fields {
             let field_start = skip_space(bytes, field_start, field_end);
@@ -771,14 +772,14 @@ fn signature_replacements(source: &str, start: usize, end: usize) -> Vec<(usize,
             index = parameters_end + 1;
             continue;
         };
-        if !contains_top_level_word(bytes, &mask, type_start, type_end, "using") {
+        if !contains_top_level_word(bytes, &mask, type_start, type_end, "via") {
             let trimmed_end = trim_space_end(bytes, type_start, type_end);
             let specification = source[type_start..trimmed_end].trim();
             if !specification.is_empty() {
                 replacements.push((
                     type_start,
                     trimmed_end,
-                    format!("{OUTPUT_TYPE_REVIEW} using {specification}"),
+                    format!("{OUTPUT_TYPE_REVIEW} via {specification}"),
                 ));
             }
         }
@@ -822,7 +823,7 @@ fn body_signature_replacements(
             replacements.push((
                 marker_start,
                 trimmed_end,
-                format!("body {name}: {INPUT_TYPE_REVIEW} using {specification}"),
+                format!("body {name}: {INPUT_TYPE_REVIEW} via {specification}"),
             ));
         }
         index = type_end.max(index + 7);
@@ -1065,16 +1066,6 @@ fn boundary(bytes: &[u8], index: Option<usize>) -> bool {
     })
 }
 
-fn line_indent(source: &str, index: usize) -> String {
-    let line_start = source[..index]
-        .rfind('\n')
-        .map_or(0, |position| position + 1);
-    source[line_start..index]
-        .chars()
-        .take_while(|character| character.is_whitespace())
-        .collect()
-}
-
 fn code_mask(bytes: &[u8]) -> Vec<bool> {
     #[derive(Clone, Copy)]
     enum State {
@@ -1171,6 +1162,17 @@ fn code_mask(bytes: &[u8]) -> Vec<bool> {
     mask
 }
 
+fn code_only(source: &str) -> String {
+    let mask = code_mask(source.as_bytes());
+    let mut visible = source.as_bytes().to_vec();
+    for (index, byte) in visible.iter_mut().enumerate() {
+        if !mask[index] && !matches!(*byte, b'\r' | b'\n') {
+            *byte = b' ';
+        }
+    }
+    String::from_utf8(visible).expect("masking UTF-8 with ASCII spaces preserves UTF-8")
+}
+
 fn raw_string_start(bytes: &[u8]) -> Option<(usize, usize)> {
     let offset = usize::from(bytes.first().copied() == Some(b'b'));
     if bytes.get(offset).copied()? != b'r' {
@@ -1197,7 +1199,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mechanical_rewrite_moves_children_and_inserts_explicit_timeout() {
+    fn mechanical_rewrite_moves_children_and_reports_ambiguous_timeout() {
         let source = r#"
 api! {
     client A { base "https://example.test/{ignored}"; }
@@ -1208,11 +1210,37 @@ api! {
         assert_eq!(moved, 1);
         assert_eq!(timeouts, 1);
         assert_eq!(signatures, 2);
-        assert!(rewritten.contains("timeout off;"));
+        assert!(!rewritten.contains("timeout off;"));
         assert!(
-            rewritten.contains("body input: __ConcordV2BodyInputTypeRequiresReview using Text")
+            rewritten.contains("body input: __ConcordV2_1BodyInputTypeRequiresReview via Text")
         );
-        assert!(rewritten.contains("__ConcordV2OutputTypeRequiresReview using Bytes"));
+        assert!(
+            rewritten.contains("__ConcordV2_1OutputTypeRequiresReview via Bytes"),
+            "{rewritten}"
+        );
         assert!(rewritten.find("POST value").unwrap() < rewritten.rfind('}').unwrap());
+    }
+
+    #[test]
+    fn audit_view_ignores_retired_spellings_in_strings_and_comments() {
+        let source = r#"
+api! {
+    client A {
+        timeout 1s;
+        base "https://scope.example.test";
+        // ep.value and vars.value are migration prose, not syntax.
+        GET read(value: Option<String>) -> String {
+            id "runtime.scope.value";
+            path [endpoint.value];
+        }
+    }
+}
+"#;
+        let visible = code_only(source);
+        assert!(!visible.contains("scope.example"));
+        assert!(!visible.contains("runtime.scope"));
+        assert!(!visible.contains("ep.value"));
+        assert!(visible.contains("value: Option<String>"));
+        assert!(visible.contains("endpoint.value"));
     }
 }

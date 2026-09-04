@@ -3,8 +3,8 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use concord_core::contracts::{
-    BodyError, BodyErrorKind, BodyFactory, BodyKind, Bytes, HeaderValue, MAX_EMPTY_REQUEST_CHUNKS,
-    PageRequestBodySpec, RequestBody, StreamBody, Text,
+    Binary, BodyError, BodyErrorKind, BodyFactory, BodyKind, Bytes, HeaderValue,
+    MAX_EMPTY_REQUEST_CHUNKS, PageRequestRepresentation, RequestBody, RequestStream, Text,
 };
 use futures_core::Stream;
 
@@ -27,8 +27,8 @@ impl BodyFactory for DownstreamFactory {
         Some(HeaderValue::from_static("application/x-downstream-body"))
     }
 
-    fn create(&self) -> Result<StreamBody, BodyError> {
-        Ok(StreamBody::from_bytes(Bytes::from_static(b"fresh-body")))
+    fn create(&self) -> Result<RequestStream, BodyError> {
+        Ok(RequestStream::from_bytes(Bytes::from_static(b"fresh-body")))
     }
 }
 
@@ -37,14 +37,14 @@ fn downstream_body_contracts_need_only_the_contract_surface() {
     fn assert_send<T: Send>(_: &T) {}
     fn assert_sync<T: Sync>(_: &T) {}
 
-    let stream = StreamBody::from_stream(DownstreamStream {
+    let stream = RequestStream::from_stream(DownstreamStream {
         item: Some(Ok(Bytes::from_static(b"downstream-body-secret-851a"))),
     })
     .exact_length(27);
     assert_send(&stream);
     assert!(!format!("{stream:?}").contains("downstream-body-secret-851a"));
 
-    let reader = StreamBody::from_reader(std::io::Cursor::new(b"reader".to_vec()));
+    let reader = RequestStream::from_reader(std::io::Cursor::new(b"reader".to_vec()));
     assert_send(&reader);
 
     let bytes = RequestBody::bytes(Bytes::from_static(b"bytes"));
@@ -66,14 +66,14 @@ fn downstream_body_contracts_need_only_the_contract_surface() {
             .contains("safe downstream body configuration")
     );
 
-    fn assert_page_body<B>()
+    fn assert_page_body<B, Input>()
     where
-        B: PageRequestBodySpec,
-        B::Input: Clone,
+        B: PageRequestRepresentation<Input>,
+        Input: Clone + Send + 'static,
     {
     }
-    assert_page_body::<Bytes>();
-    assert_page_body::<Text>();
+    assert_page_body::<Binary, Bytes>();
+    assert_page_body::<Text, String>();
 }
 
 #[tokio::test]
@@ -82,7 +82,7 @@ async fn file_constructor_is_public_and_sanitizes_native_failures() {
         "concord-request-body-missing-file-{}.tmp",
         std::process::id()
     ));
-    let error = StreamBody::from_file(&missing)
+    let error = RequestStream::from_file(&missing)
         .await
         .expect_err("missing downstream file");
     assert_eq!(error.kind(), BodyErrorKind::Producer);

@@ -85,34 +85,31 @@ pub(super) fn generate_endpoint(
     let specification_module = specification_module_name(client);
     let response_specification = response_specification_name(endpoint);
     let response = quote!(#invocation_path::#specification_module::#response_specification);
+    let response_output = response_output_name(endpoint);
+    let output = quote!(#invocation_path::#specification_module::#response_output);
     let (description_static, description_declaration) =
-        generate_endpoint_description(client, scopes, endpoint, &response, facade_path);
+        generate_endpoint_description(client, scopes, endpoint, &response, &output, facade_path);
     let endpoint_doc = endpoint_type_doc(client, scopes, endpoint);
 
     let scope_fields = endpoint_scope_fields(scopes);
     let endpoint_fields = endpoint_value_fields(endpoint);
-    let body_type = endpoint.body.as_ref().map_or_else(
+    let declared_body_type = endpoint.body.as_ref().map_or_else(
         || quote!(#facade_path::__private::EmptyBody),
         |_| {
             let body_specification = body_specification_name(endpoint);
             quote!(#invocation_path::#specification_module::#body_specification)
         },
     );
-    let body_input = endpoint.body.as_ref().map_or_else(
+    let declared_body_input = endpoint.body.as_ref().map_or_else(
         || quote!(()),
-        |body| {
-            let input = &body.input_type;
-            quote!(#input)
+        |_| {
+            let input = body_input_name(endpoint);
+            quote!(#invocation_path::#specification_module::#input)
         },
     );
-    let body_storage = Ident::new("BodyInput", Span::mixed_site());
-    let (struct_generics, body_field) = match endpoint.surface.clone_eligibility {
-        CloneEligibility::Always => (quote!(), quote!(__concord_body: #body_input,)),
-        CloneEligibility::BodyInputBound => (
-            quote!(<#body_storage = #body_input>),
-            quote!(__concord_body: #body_storage,),
-        ),
-    };
+    let body_type = effective_body_representation(endpoint, declared_body_type, facade_path);
+    let body_input = effective_body_input(endpoint, declared_body_input);
+    let body_field = quote!(__concord_body: #body_input,);
     let client_values_field = quote!(
         __concord_client_values: ::std::option::Option<::std::sync::Arc<#invocation_path::#values_type>>,
     );
@@ -127,12 +124,11 @@ pub(super) fn generate_endpoint(
     let clone_fields = endpoint_clone_field_initializers(scopes, endpoint);
     let clone_attribute = matches!(endpoint.surface.clone_eligibility, CloneEligibility::Always)
         .then(|| quote!(#[derive(Clone)]));
-    let clone_impl = match endpoint.surface.clone_eligibility {
-        CloneEligibility::Always => quote!(),
-        CloneEligibility::BodyInputBound => quote! {
-            impl<#body_storage> ::std::clone::Clone for #endpoint_name<#body_storage>
+    let clone_impl = if endpoint.pagination.is_some() && endpoint.body.is_some() {
+        quote! {
+            impl ::std::clone::Clone for #endpoint_name
             where
-                #body_storage: ::std::clone::Clone,
+                #body_input: ::std::clone::Clone,
             {
                 fn clone(&self) -> Self {
                     Self {
@@ -140,7 +136,9 @@ pub(super) fn generate_endpoint(
                     }
                 }
             }
-        },
+        }
+    } else {
+        quote!()
     };
     let setter_impl = match endpoint.surface.clone_eligibility {
         CloneEligibility::Always => quote! {
@@ -149,16 +147,14 @@ pub(super) fn generate_endpoint(
             }
         },
         CloneEligibility::BodyInputBound => quote! {
-            impl<#body_storage> #endpoint_name<#body_storage> {
+            impl #endpoint_name {
                 #inherent_setters
             }
         },
     };
     let prepare_head_impl = match endpoint.surface.clone_eligibility {
         CloneEligibility::Always => quote!(impl #endpoint_name),
-        CloneEligibility::BodyInputBound => {
-            quote!(impl<#body_storage> #endpoint_name<#body_storage>)
-        }
+        CloneEligibility::BodyInputBound => quote!(impl #endpoint_name),
     };
 
     let host_statements = host_statements(client, scopes, endpoint);
@@ -201,7 +197,6 @@ pub(super) fn generate_endpoint(
         scopes,
         endpoint,
         &generated_core,
-        facade_path,
         &invocation_path,
         &where_clause,
     );
@@ -210,7 +205,7 @@ pub(super) fn generate_endpoint(
 
         #[doc = #endpoint_doc]
         #clone_attribute
-        pub struct #endpoint_name #struct_generics {
+        pub struct #endpoint_name {
             #client_values_field
             #credentials_field
             #scope_fields
@@ -271,6 +266,8 @@ pub(super) fn generate_endpoint(
         {
             type Request = #request_name;
             #[doc(hidden)]
+            type Output = #output;
+            #[doc(hidden)]
             type Response = #response;
 
             fn description(
@@ -301,13 +298,13 @@ pub(super) fn generate_endpoint(
                 &self,
                 client: &#invocation_path::#client_name,
             ) -> ::std::result::Result<
-                #facade_path::endpoint::CredentialFreeRequestPlan,
+                #facade_path::endpoint::RequestPlan,
                 #facade_path::ApiError,
             > {
-                #generated_core::__private::credential_free_request_plan(
+                #generated_core::__private::plan_unbound_request(
                     &client.__concord_core,
                     ::std::sync::LazyLock::force(&#description_static),
-                    <#response as #facade_path::response::ResponseSpec>::accept(),
+                    <#response as #facade_path::response::ResponseRepresentation<#output>>::accept(),
                     |builder| self.__concord_prepare_head(
                         &client.__concord_values,
                         &client.__concord_credentials,
@@ -321,7 +318,9 @@ pub(super) fn generate_endpoint(
         impl #generated_core::__private::EndpointSpec for #endpoint_name
         #where_clause
         {
+            type Input = #body_input;
             type Body = #body_type;
+            type Output = #output;
             type Response = #response;
 
             fn request_meta(&self) -> #generated_core::__private::RequestMeta {
@@ -359,7 +358,7 @@ pub(super) fn generate_endpoint(
                 #generated_core::__private::RequestBodyMetadata,
                 #generated_core::body::BodyError,
             > {
-                <Self::Body as #generated_core::__private::RequestBodySpec>::metadata(
+                <Self::Body as #generated_core::__private::RequestRepresentation<Self::Input>>::metadata(
                     &self.__concord_body,
                     __concord_context,
                 )
@@ -367,7 +366,7 @@ pub(super) fn generate_endpoint(
 
             fn into_body(
                 self,
-            ) -> <Self::Body as #generated_core::__private::RequestBodySpec>::Input {
+            ) -> Self::Input {
                 self.__concord_body
             }
         }
@@ -424,7 +423,6 @@ pub(super) fn generate_pagination_impl(
     scopes: &[&Scope],
     endpoint: &Endpoint,
     generated_core: &TokenStream,
-    facade_path: &TokenStream,
     invocation_path: &TokenStream,
     where_clause: &TokenStream,
 ) -> TokenStream {
@@ -432,10 +430,6 @@ pub(super) fn generate_pagination_impl(
         return quote!();
     };
     let endpoint_name = &endpoint.surface.endpoint_type_name;
-    let specification_module = specification_module_name(client);
-    let response_specification = response_specification_name(endpoint);
-    let response = quote!(#invocation_path::#specification_module::#response_specification);
-    let page_type = quote!(<#response as #facade_path::response::ResponseSpec>::Output);
     let controller = &pagination.controller;
     let controller_type = pagination_controller_type(controller, invocation_path, false);
     let controller_fields = pagination
@@ -496,7 +490,6 @@ pub(super) fn generate_pagination_impl(
         impl #generated_core::__private::PaginatedEndpoint for #endpoint_name
         #where_clause
         {
-            type Item = <#page_type as ::std::iter::IntoIterator>::Item;
             type Controller = #controller_type;
 
             fn initial_controller(
@@ -594,8 +587,8 @@ pub(super) fn endpoint_facade_constructor_parameters(
 pub(super) fn initialize_facade_endpoint(
     scopes: &[&Scope],
     endpoint: &Endpoint,
-    generated_core: &TokenStream,
-    facade_path: &TokenStream,
+    _generated_core: &TokenStream,
+    _facade_path: &TokenStream,
 ) -> TokenStream {
     let statements = endpoint
         .parameters
@@ -652,15 +645,12 @@ pub(super) fn initialize_facade_endpoint(
             values
         })
         .collect::<Vec<_>>();
-    let body_binding = endpoint
-        .body
-        .as_ref()
-        .map(|_| Ident::new("__concord_body_input", Span::call_site()));
-    let body = body_constructor(
-        endpoint.body.as_ref().map(|body| &body.spec_type),
-        body_binding.as_ref(),
-        generated_core,
-        facade_path,
+    let body = endpoint.body.as_ref().map_or_else(
+        || quote!(()),
+        |body| match body.presence {
+            ValuePresence::Required => quote!(__concord_body_input),
+            ValuePresence::Optional => quote!(::std::option::Option::None),
+        },
     );
     quote! {
         #(#statements)*
@@ -735,7 +725,40 @@ pub(super) fn generate_endpoint_setters(endpoint: &Endpoint) -> TokenStream {
             )
         })
         .collect::<Vec<_>>();
-    quote!(#(#endpoint_setters)*)
+    let body_setters = endpoint.surface.body_setter.as_ref().map(|setter| {
+        let body = endpoint
+            .body
+            .as_ref()
+            .expect("optional body setter has a body");
+        let input = &body.input_type;
+        let effective = &body.effective_input_type;
+        let set = &setter.setter;
+        let with = &setter.with;
+        let omit = &setter.omit;
+        quote! {
+            /// Replaces the optional body slot with its exact outer presence value.
+            #[must_use]
+            pub fn #set(mut self, value: #effective) -> Self {
+                self.__concord_body = value;
+                self
+            }
+
+            /// Selects a present optional request body.
+            #[must_use]
+            pub fn #with(mut self, value: #input) -> Self {
+                self.__concord_body = ::std::option::Option::Some(value);
+                self
+            }
+
+            /// Selects absence for the optional request body.
+            #[must_use]
+            pub fn #omit(mut self) -> Self {
+                self.__concord_body = ::std::option::Option::None;
+                self
+            }
+        }
+    });
+    quote!(#(#endpoint_setters)* #body_setters)
 }
 
 pub(super) fn generate_endpoint_snapshot_setters(
@@ -773,8 +796,8 @@ pub(super) fn generate_endpoint_snapshot_setters(
             canonical_ident(&value.name)
         )
     };
-    let clear = value.accepts_absence().then(|| {
-        let clear = helper_ident("clear", &value.name);
+    let omit = value.accepts_absence().then(|| {
+        let omit = helper_ident("omit", &value.name);
         let clear_doc = format!(
             "Returns a new unbound endpoint intent explicitly selecting absence for absence-capable value `{}`.",
             canonical_ident(&value.name)
@@ -782,7 +805,7 @@ pub(super) fn generate_endpoint_snapshot_setters(
         quote! {
             #[doc = #clear_doc]
             #[must_use]
-            pub fn #clear(mut self) -> Self {
+            pub fn #omit(mut self) -> Self {
                 self.#field = ::std::sync::Arc::new(::std::option::Option::None);
                 self
             }
@@ -813,7 +836,7 @@ pub(super) fn generate_endpoint_snapshot_setters(
         }
 
         #with
-        #clear
+        #omit
         #reset
     }
 }

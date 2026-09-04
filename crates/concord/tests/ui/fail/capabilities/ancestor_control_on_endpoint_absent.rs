@@ -2,11 +2,11 @@ use concord::api;
 
 api! {
     client TreeControlApi {
-        timeout off;
+        timeout 30s;
         base "https://tree-controls.example.test";
 
         scope regional(region: String, language?: String) {
-            GET item(id: String) -> concord::Bytes using concord::Bytes;
+            GET item(id: String) -> concord::Bytes via concord::Bytes;
         }
     }
 }

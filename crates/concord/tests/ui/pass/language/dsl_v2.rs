@@ -13,17 +13,17 @@ api! {
 
 
     scope http_status() {
-        GET r#type() -> Bytes using Bytes;
+        GET r#type() -> Bytes via Binary;
         path ["status"];
 
         POST submit(
             first: String,
-            body payload: String using Text,
+            body payload: String via Text,
             body_value: String,
             optional?: u32,
             alias_is_required: crate::MaybeString,
             last: bool,
-        ) -> Bytes using Bytes {
+        ) -> Bytes via Binary {
             timeout 2s;
             id "v2.http_status.submit";
             headers { "X-Last" = endpoint.last; }
@@ -55,6 +55,6 @@ fn main() {
             true,
         )
         .with_optional(7)
-        .clear_optional();
+        .omit_optional();
     let _: v2_api::http_status::SubmitRequest = client.request(endpoint);
 }

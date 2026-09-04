@@ -1,65 +1,157 @@
-# Generated client surface
+# Generated client
 
-The generated Rust API mirrors the declaration tree and keeps fields private.
+The generated API mirrors the source domain tree and exposes only contract-valid capabilities.
+
+## Declaration-to-usage law
+
+```text
+client declaration     → client builder and built client
+scope declaration      → immutable selected scope
+endpoint declaration   → inert typed request
+unbound root           → same tree without runtime/security attachment
+terminal capability    → inherent method only on matching request
+```
 
 ## Client construction
 
-`Client::builder()` is canonical. Required client values use exact `set_x(T)`
-methods; optional values use `set_x(Option<T>)`, `with_x(T)`, and `clear_x()`;
-defaulted values add `reset_x()`. Secrets accept exactly `SecretString`. Custom
-providers and an explicit limiter are required when the contract needs them.
+```rust
+let client = CatalogApi::builder()
+    .set_tenant(tenant)
+    .set_locale(locale_from_config)
+    .bootstrap_key(secret)
+    .retry(retry_policy)
+    .rate_limiter(shared_limiter)
+    .configure_http(|http| {
+        http.require_https();
+    })
+    .configure_provider_http(|provider| {
+        provider.response_body_limit(provider_limit);
+    })
+    .configure_runtime(|runtime| {
+        runtime.pagination_max_pages(max_pages);
+    })
+    .build()?;
+```
 
-`.retry(policy)`, `.configure_http(...)`, and `.configure_runtime(...)` keep
-transport and operational configuration cohesive. `build()` deterministically
-reports missing input categories and never panics for ordinary configuration.
+`new()` is generated only when no required value, secret/provider, limiter, or other construction decision remains.
 
-`Client::new()` exists only when no required client value, secret, custom
-provider, limiter, or other runtime choice is missing.
+A client with effective rate policies cannot build without an explicit limiter choice such as a supplied limiter, explicit local limiter, or explicitly named test no-op.
 
-## Scopes and endpoints
+## Scope snapshots
 
-A required non-defaulted scope value appears on its domain method:
-`client.regional(region)`. Optional/defaulted scope controls live on the returned
-scope, so ownership stays visible before selecting a child.
+```rust
+let regional = client
+    .regional(region)
+    .set_language(language_from_config)
+    .with_language(Language::Fr)
+    .omit_language();
+```
 
-An endpoint method takes required non-defaulted ordinary values and body inputs
-in declaration order. Optional/defaulted endpoint values become controls on the
-request snapshot. Required endpoint values have no public setter; construct a
-new endpoint intent to change them.
+Scopes are inert immutable snapshots. They expose controls only for values they own and navigation only to their children.
 
-Generated controls consume `self` and return an immutable new snapshot. `clear`
-and `reset` are distinct whenever a retained optional default is present.
+## Endpoint construction
 
-## Request and terminals
+Required non-initialized ordinary values and required bodies are direct arguments in source order. Optional/defaulted values become controls.
 
-Requests are `#[must_use]`, body-free in `Debug`, and inert until polled. Every
-endpoint supports await for its declared output and `.response().await` for
-`ApiResponse<Output>`. Only declared capabilities add `.accepted_bytes()`,
-`.paginate(limit)`, or credential storage terminals.
+```rust
+let request = regional
+    .item_summaries(tags)
+    .set_category(category_from_config)
+    .with_category(category)
+    .omit_category()
+    .set_count(PageSize::new(100)?)
+    .reset_count();
+```
 
-Every request also supports `.timeout(duration)`, `.disable_timeout()`, and
-`.inherit_timeout()`. Request-level controls do not duplicate ancestor value
-controls.
+Do not generate generic path/query/header/body/auth/native mutation methods for declared endpoints.
 
-## Unbound tree
+## Value-control matrix
 
-`Client::unbound()` starts an isomorphic tree with scope/endpoint values and body
-input but no client values, credentials, transport, limiter, gates, or runtime.
-An intent is storable, passable, describable, and inert.
+| Declaration | Construction | Controls |
+|---|---|---|
+| `x: T` | required argument/builder field | none after scope/endpoint construction |
+| `x?: T` | initially absent | `set_x(Option<T>)`, `with_x(T)`, `omit_x()` |
+| `x: T = V` / `#[default] x: T` | retained initialized value | `set_x(T)`, `reset_x()` |
+| initialized `x?: T` | retained present default | `set_x(Option<T>)`, `with_x(T)`, `omit_x()`, `reset_x()` |
 
-`client.plan(&intent)` creates a credential-free plan without consuming it.
-`client.request(intent)` returns the same named request shape as direct
-construction. Direct and unbound-bound paths share identity, values, attachments,
-capabilities, and executor behavior.
+For `x?: Option<U>`, `set_x` accepts `Option<Option<U>>`, `with_x` accepts `Option<U>`, and `omit_x` selects the outer absence.
 
-## Reflection
+`with_x` remains prototype-gated. Do not publish both a retained and removed spelling. Keep it if the DX study supports it; otherwise remove it before release.
 
-`Client::contract()` returns the immutable value-free contract tree. Request and
-intent `.description()` return the same endpoint view. Docs, deprecation,
-presence/default/observation, type spelling, attachment origins, body/response
-contracts, auth categories, timeout, repeatability, rate schema, pagination, and
-terminals derive from the same resolved IR as generated code.
+## Ordinary terminals
 
-The facade provides narrow modules for authentication, body/codec, endpoint,
-error, HTTP, observation, pagination, rate limiting, response, retry, and
-runtime configuration. Ordinary generated use does not require a broad prelude.
+Every endpoint request supports:
+
+```rust
+let output: Output = request.await?;
+let response: ApiResponse<Output> = request.response().await?;
+let plan = request.plan()?;
+let description = request.description();
+```
+
+`ApiResponse<T>` is a managed accepted response with bounded explicit metadata access. It is not a native response escape.
+
+## Capability-specific terminals
+
+Generated only when the contract proves the capability:
+
+```rust
+request.accepted_bytes().await?;
+request.paginate(PageLimit::CompleteWithin(limit)).await?;
+request.store_as_session().await?;
+```
+
+- `accepted_bytes` is endpoint-declared and bypasses representation validation/conversion while retaining auth, status, negotiation, and finite acquisition.
+- `paginate` exists only for a safe pageable complete response.
+- `store_as_*` exists only on a declared endpoint-backed credential source and returns `Result<(), ApiError>`.
+
+## Streams
+
+```rust
+let bytes: ByteStream = client.download(id).await?;
+let items: ItemStream<Event> = client.watch().await?;
+```
+
+The initial operation completes when the accepted stream handle is acquired. Later failures belong to the stream. Neither stream type is `Clone` without real replay/multicast semantics.
+
+## Unbound generated intents
+
+```rust
+let intent = CatalogApi::unbound()
+    .regional(region)
+    .item_summaries(tags)
+    .with_category(category);
+
+let plan = client.plan(&intent)?;
+let request = client.request(intent); // statically matching and infallible
+```
+
+The unbound tree uses the same navigation, values, representation, and capabilities. It carries no client runtime, credentials, limiter, observer, or operation identity.
+
+Binding a generated intent through another client type is a compile-time error.
+
+## Runtime endpoints
+
+Runtime endpoints use an explicit fallible path:
+
+```rust
+let request = runtime_endpoint.try_bind(&client_or_scope)?;
+```
+
+Do not weaken generated binding merely to unify it with dynamic validation.
+
+## Errors
+
+Generated docs should teach callers to combine stable category and dispatch knowledge:
+
+```rust
+match request.await {
+    Ok(value) => use_value(value),
+    Err(error) if error.dispatch_knowledge() == DispatchKnowledge::PossiblyDispatched => {
+        reconcile(error.operation_id())
+    }
+    Err(error) => handle_by_category(error.category()),
+}
+```
+
+No universal `is_retryable()` can answer application workflow, effect, body replay, deadline, budget, and remote uncertainty at once.

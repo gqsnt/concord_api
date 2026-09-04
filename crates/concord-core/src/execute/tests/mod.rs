@@ -24,17 +24,16 @@ use http::{Method, StatusCode};
 use super::*;
 use crate::body::{
     BodyError, BodyFactory, EmptyBody, RequestBody, RequestBodyContext, RequestBodyMetadata,
-    RequestBodySpec, Stream as StreamSpec, StreamBody,
+    RequestRepresentation, RequestStream,
 };
 #[cfg(feature = "multipart")]
 use crate::body::{MultipartBody, MultipartFactory, MultipartPart};
 use crate::codec::{
-    AnyMedia, CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext,
-    MediaType, OctetStream, Text,
+    Binary, CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext, Text,
 };
-use crate::endpoint::EndpointId;
-use crate::error::{ErrorCategory, GateError, StatusBodyState};
-use crate::hooks::{BoxFuture, CompletionObserver, RequestGate, ResponseGate};
+use crate::endpoint::{AcceptedStatus, EndpointId};
+use crate::error::{ErrorCategory, StatusBodyState};
+use crate::hooks::{BoxFuture, OperationEvent, OperationObserver, StreamKind, StreamOutcome};
 use crate::http::HttpConfigBuilder;
 #[cfg(feature = "records")]
 use crate::rate_limit::NoopRateLimiter;
@@ -44,15 +43,15 @@ use crate::rate_limit::{
 };
 #[cfg(feature = "records")]
 use crate::records::{
-    BufferedRecords, RecordBatches, RecordDecoder, RecordError, RecordErrorKind, RecordStream,
-    Records,
+    BufferedRecords, ItemStream, RecordBatches, RecordDecoder, RecordError, RecordErrorKind,
+    RecordStream, Records,
 };
 use crate::request::{HeadBuilder, PreparedHead, RequestMeta, RuntimeEndpoint};
 #[cfg(feature = "records")]
 use crate::response::ApiResponse;
 use crate::response::{
-    Buffered, ByteStream, NoContent, ResponseBodyError, ResponseBodyErrorKind, ResponseHead,
-    ResponseSpec, Streaming,
+    Buffered, ByteStream, Empty, ResponseBodyError, ResponseBodyErrorKind, ResponseHead,
+    ResponseRepresentation, Streaming,
 };
 use crate::runtime::RuntimeConfigBuilder;
 
@@ -65,9 +64,42 @@ const RESPONSE_ENDPOINT: &str = "execution_api.response.selected";
 #[cfg(feature = "records")]
 const RECORD_ENDPOINT: &str = "execution_api.records.stream";
 
-struct StreamEndpoint<M> {
-    marker: std::marker::PhantomData<fn() -> M>,
+trait TestResponseRepresentation: Send + Sync + 'static {
+    type Output: Send + 'static;
+
+    fn accepted_status() -> AcceptedStatus {
+        AcceptedStatus::Success
+    }
 }
+
+impl<C> TestResponseRepresentation for C
+where
+    C: DecodeBody,
+{
+    type Output = C::Output;
+}
+
+impl TestResponseRepresentation for Binary {
+    type Output = Bytes;
+}
+
+#[cfg(feature = "records")]
+impl<D> TestResponseRepresentation for BufferedRecords<D>
+where
+    D: RecordDecoder,
+{
+    type Output = Vec<D::Record>;
+}
+
+#[cfg(feature = "records")]
+impl<D> TestResponseRepresentation for Records<D>
+where
+    D: RecordDecoder,
+{
+    type Output = RecordStream<D>;
+}
+
+struct StreamEndpoint;
 
 struct ResponseEndpoint<R> {
     timeout: Option<Duration>,
@@ -85,13 +117,16 @@ impl<R> ResponseEndpoint<R> {
 
 impl<R> EndpointSpec for ResponseEndpoint<R>
 where
-    R: ResponseSpec,
+    R: TestResponseRepresentation + ResponseRepresentation<R::Output>,
 {
+    type Input = ();
     type Body = EmptyBody;
+    type Output = R::Output;
     type Response = R;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(RESPONSE_ENDPOINT, Method::GET, self.timeout)
+            .with_accepted_status(R::accepted_status())
     }
 
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
@@ -110,20 +145,11 @@ where
     fn into_body(self) {}
 }
 
-impl<M> StreamEndpoint<M> {
-    fn new() -> Self {
-        Self {
-            marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<M> EndpointSpec for StreamEndpoint<M>
-where
-    StreamSpec<M>: ResponseSpec,
-{
+impl EndpointSpec for StreamEndpoint {
+    type Input = ();
     type Body = EmptyBody;
-    type Response = StreamSpec<M>;
+    type Output = ByteStream;
+    type Response = Binary;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(STREAM_ENDPOINT, Method::GET, Some(Duration::from_secs(30)))
@@ -145,18 +171,6 @@ where
     fn into_body(self) {}
 }
 
-struct VendorStream;
-
-impl MediaType for VendorStream {
-    const MEDIA_TYPE: &'static str = "application/vnd.concord.stream; version=1";
-}
-
-struct InvalidStreamMedia;
-
-impl MediaType for InvalidStreamMedia {
-    const MEDIA_TYPE: &'static str = "not-a-media-type";
-}
-
 #[cfg(feature = "records")]
 struct SurfaceEndpoint<R> {
     query: &'static str,
@@ -176,13 +190,16 @@ impl<R> SurfaceEndpoint<R> {
 #[cfg(feature = "records")]
 impl<R> EndpointSpec for SurfaceEndpoint<R>
 where
-    R: ResponseSpec,
+    R: TestResponseRepresentation + ResponseRepresentation<R::Output>,
 {
+    type Input = ();
     type Body = EmptyBody;
+    type Output = R::Output;
     type Response = R;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(RECORD_ENDPOINT, Method::GET, Some(Duration::from_secs(30)))
+            .with_accepted_status(R::accepted_status())
     }
 
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
@@ -211,7 +228,7 @@ where
 #[cfg(feature = "records")]
 fn surface_request<R>(core: ClientCore, query: &'static str) -> Request<SurfaceEndpoint<R>>
 where
-    R: ResponseSpec,
+    R: TestResponseRepresentation + ResponseRepresentation<R::Output>,
 {
     Request::new(core, SurfaceEndpoint::new(query))
 }
@@ -503,11 +520,18 @@ impl fmt::Debug for SensitiveBufferedOutput {
 struct SensitiveBufferedSpec;
 
 #[cfg(feature = "records")]
-impl ResponseSpec for SensitiveBufferedSpec {
+impl TestResponseRepresentation for SensitiveBufferedSpec {
     type Output = SensitiveBufferedOutput;
-    type Mode = Buffered;
+}
 
-    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<Self::Output, ResponseBodyError> {
+#[cfg(feature = "records")]
+impl ResponseRepresentation<SensitiveBufferedOutput> for SensitiveBufferedSpec {
+    type Driver = Buffered;
+
+    fn from_body(
+        body: Bytes,
+        _head: &ResponseHead<'_>,
+    ) -> Result<SensitiveBufferedOutput, ResponseBodyError> {
         Ok(SensitiveBufferedOutput(
             String::from_utf8_lossy(&body).into_owned(),
         ))
@@ -518,14 +542,15 @@ impl ResponseSpec for SensitiveBufferedSpec {
 struct FailingBufferedSpec;
 
 #[cfg(feature = "records")]
-impl ResponseSpec for FailingBufferedSpec {
+impl TestResponseRepresentation for FailingBufferedSpec {
     type Output = ();
-    type Mode = Buffered;
+}
 
-    fn from_body(
-        _body: Bytes,
-        _head: &ResponseHead<'_>,
-    ) -> Result<Self::Output, ResponseBodyError> {
+#[cfg(feature = "records")]
+impl ResponseRepresentation<()> for FailingBufferedSpec {
+    type Driver = Buffered;
+
+    fn from_body(_body: Bytes, _head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         Err(ResponseBodyError::with_safe_message(
             ResponseBodyErrorKind::Decode,
             "response-parser-text-sentinel-11fa62",
@@ -573,15 +598,17 @@ impl BodyEndpoint {
 }
 
 impl EndpointSpec for BodyEndpoint {
+    type Input = RequestBody;
     type Body = RequestBody;
-    type Response = Bytes;
+    type Output = Bytes;
+    type Response = Binary;
 
     fn request_meta(&self) -> RequestMeta {
-        RequestMeta::new_with_repeatability(
+        RequestMeta::new_with_effect(
             BODY_ENDPOINT,
             Method::POST,
             Some(Duration::from_secs(30)),
-            crate::endpoint::Repeatability::Idempotent,
+            crate::endpoint::Effect::Idempotent,
         )
     }
 
@@ -659,7 +686,7 @@ impl BodyFactory for ProbeBodyFactory {
         ))
     }
 
-    fn create(&self) -> Result<StreamBody, BodyError> {
+    fn create(&self) -> Result<RequestStream, BodyError> {
         self.create_calls.fetch_add(1, Ordering::SeqCst);
         if self.fail {
             Err(BodyError::with_safe_message(
@@ -667,7 +694,7 @@ impl BodyFactory for ProbeBodyFactory {
                 "safe factory configuration failure",
             ))
         } else {
-            Ok(StreamBody::from_stream(BodyPollProbe::new(
+            Ok(RequestStream::from_stream(BodyPollProbe::new(
                 [ProbeFrame::Data(b"factory")],
                 &self.polls,
             ))
@@ -706,9 +733,9 @@ struct PendingBodyFactory {
 }
 
 impl BodyFactory for PendingBodyFactory {
-    fn create(&self) -> Result<StreamBody, BodyError> {
+    fn create(&self) -> Result<RequestStream, BodyError> {
         self.create_calls.fetch_add(1, Ordering::SeqCst);
-        Ok(StreamBody::from_stream(PendingBodyStream {
+        Ok(RequestStream::from_stream(PendingBodyStream {
             polls: Arc::clone(&self.polls),
             dropped: Arc::clone(&self.dropped),
             reached: Arc::clone(&self.reached),
@@ -767,15 +794,17 @@ where
     Encoder: EncodeBody,
     Decoder: DecodeBody,
 {
+    type Input = Encoder::Input;
     type Body = Encoder;
+    type Output = Decoder::Output;
     type Response = Decoder;
 
     fn request_meta(&self) -> RequestMeta {
-        RequestMeta::new_with_repeatability(
+        RequestMeta::new_with_effect(
             CODEC_ENDPOINT,
             Method::POST,
             Some(Duration::from_secs(30)),
-            crate::endpoint::Repeatability::Idempotent,
+            crate::endpoint::Effect::Idempotent,
         )
     }
 
@@ -951,8 +980,10 @@ impl BytesEndpoint {
 }
 
 impl EndpointSpec for BytesEndpoint {
+    type Input = ();
     type Body = EmptyBody;
-    type Response = Bytes;
+    type Output = Bytes;
+    type Response = Binary;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::GET, self.inherited_timeout)
@@ -999,8 +1030,10 @@ impl RateLimitedBytesEndpoint {
 }
 
 impl EndpointSpec for RateLimitedBytesEndpoint {
+    type Input = ();
     type Body = EmptyBody;
-    type Response = Bytes;
+    type Output = Bytes;
+    type Response = Binary;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::GET, self.inherited_timeout)
@@ -1031,8 +1064,10 @@ impl EndpointSpec for RateLimitedBytesEndpoint {
 struct GlobalRateLimitedBytesEndpoint;
 
 impl EndpointSpec for GlobalRateLimitedBytesEndpoint {
+    type Input = ();
     type Body = EmptyBody;
-    type Response = Bytes;
+    type Output = Bytes;
+    type Response = Binary;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::GET, Some(Duration::from_secs(30)))
@@ -1063,8 +1098,10 @@ impl EndpointSpec for GlobalRateLimitedBytesEndpoint {
 struct NoContentEndpoint;
 
 impl EndpointSpec for NoContentEndpoint {
+    type Input = ();
     type Body = EmptyBody;
-    type Response = NoContent;
+    type Output = ();
+    type Response = Empty;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(
@@ -1093,8 +1130,10 @@ impl EndpointSpec for NoContentEndpoint {
 struct InvalidEndpoint;
 
 impl EndpointSpec for InvalidEndpoint {
+    type Input = ();
     type Body = EmptyBody;
-    type Response = Bytes;
+    type Output = Bytes;
+    type Response = Binary;
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(ENDPOINT, Method::GET, Some(Duration::from_secs(30)))
@@ -1122,7 +1161,7 @@ enum LifecycleRecord {
         body_kind: crate::hooks::BodyKind,
         known_body_length: Option<u64>,
     },
-    Response(OperationId, StatusCode),
+    Response(StatusCode),
     Complete {
         operation_id: OperationId,
         outcome: CompletionOutcome,
@@ -1133,12 +1172,22 @@ enum LifecycleRecord {
 
 struct ProbeHooks {
     records: Mutex<Vec<LifecycleRecord>>,
+    stream_records: Mutex<Vec<StreamRecord>>,
     trace: Option<Arc<Mutex<Vec<String>>>>,
-    before_gate: Option<Gate>,
-    response_gate: Option<Gate>,
-    veto: AtomicBool,
-    response_fail: bool,
+    panic_on_attempt: AtomicBool,
+    panic_on_response: bool,
+    attempt_delay: Option<Duration>,
     completion_returned: AtomicUsize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct StreamRecord {
+    operation_id: OperationId,
+    endpoint: String,
+    kind: StreamKind,
+    outcome: StreamOutcome,
+    units_yielded: u64,
+    bytes_yielded: Option<u64>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1168,10 +1217,8 @@ struct ProbeRateLimiter {
     response_cooldown_caps: Mutex<Vec<Duration>>,
     trace: Option<Arc<Mutex<Vec<String>>>>,
     acquire_gate: Option<Gate>,
-    observe_gate: Option<Gate>,
     response_body_polls: Option<Arc<AtomicUsize>>,
     fail: bool,
-    observe_fail: bool,
     key_limit: usize,
 }
 
@@ -1197,41 +1244,34 @@ impl AutomaticSurfaceHooks {
 }
 
 #[cfg(feature = "records")]
-impl RequestGate for AutomaticSurfaceHooks {
-    fn before_send<'a>(&'a self, context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), GateError>> {
+impl OperationObserver for AutomaticSurfaceHooks {
+    fn observe(&self, event: OperationEvent<'_>) {
+        let (entry, outcome) = match event {
+            OperationEvent::AttemptStarted(context) => {
+                (format!("attempt-started {context:?}"), None)
+            }
+            OperationEvent::ResponseHeadObserved(context) => {
+                (format!("response-head {context:?}"), None)
+            }
+            OperationEvent::OperationFinished(context) => {
+                (format!("completion {context:?}"), Some(context.outcome))
+            }
+            OperationEvent::PaginationFinished(context) => (
+                format!("pagination-completion {context:?}"),
+                Some(context.outcome),
+            ),
+            _ => return,
+        };
         self.entries
             .lock()
             .expect("automatic hook entries")
-            .push(format!("before-send {context:?}"));
-        Box::pin(async { Ok(()) })
-    }
-}
-
-#[cfg(feature = "records")]
-impl ResponseGate for AutomaticSurfaceHooks {
-    fn before_response_handling<'a>(
-        &'a self,
-        context: ResponseHeadEvent<'a>,
-    ) -> BoxFuture<'a, Result<(), GateError>> {
-        self.entries
-            .lock()
-            .expect("automatic hook entries")
-            .push(format!("response-head {context:?}"));
-        Box::pin(async { Ok(()) })
-    }
-}
-
-#[cfg(feature = "records")]
-impl CompletionObserver for AutomaticSurfaceHooks {
-    fn on_complete(&self, context: CompletionEvent<'_>) {
-        self.entries
-            .lock()
-            .expect("automatic hook entries")
-            .push(format!("completion {context:?}"));
-        self.outcomes
-            .lock()
-            .expect("automatic completion outcomes")
-            .push(context.outcome);
+            .push(entry);
+        if let Some(outcome) = outcome {
+            self.outcomes
+                .lock()
+                .expect("automatic completion outcomes")
+                .push(outcome);
+        }
     }
 }
 
@@ -1277,10 +1317,7 @@ impl RateLimiter for AutomaticSurfaceLimiter {
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
 
-    fn observe<'a>(
-        &'a self,
-        response: RateLimitResponse<'a>,
-    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
+    fn observe(&self, response: RateLimitResponse<'_>) {
         self.observations.fetch_add(1, Ordering::SeqCst);
         self.entries
             .lock()
@@ -1294,7 +1331,6 @@ impl RateLimiter for AutomaticSurfaceLimiter {
                 response.status,
                 response.headers,
             ));
-        Box::pin(async { Ok(()) })
     }
 }
 
@@ -1309,10 +1345,8 @@ impl ProbeRateLimiter {
             response_cooldown_caps: Mutex::new(Vec::new()),
             trace: None,
             acquire_gate: None,
-            observe_gate: None,
             response_body_polls: None,
             fail: false,
-            observe_fail: false,
             key_limit: crate::rate_limit::DEFAULT_RATE_LIMIT_KEY_BYTES,
         }
     }
@@ -1379,10 +1413,7 @@ impl RateLimiter for ProbeRateLimiter {
         })
     }
 
-    fn observe<'a>(
-        &'a self,
-        response: RateLimitResponse<'a>,
-    ) -> BoxFuture<'a, Result<(), RateLimitError>> {
+    fn observe(&self, response: RateLimitResponse<'_>) {
         self.observations.fetch_add(1, Ordering::SeqCst);
         if response.status == StatusCode::TOO_MANY_REQUESTS
             && response.headers.get(&http::header::RETRY_AFTER)
@@ -1408,25 +1439,13 @@ impl RateLimiter for ProbeRateLimiter {
                 .expect("trace lock")
                 .push("limiter observe".into());
         }
-        Box::pin(async move {
-            if let Some(body_polls) = &self.response_body_polls {
-                assert_eq!(
-                    body_polls.load(Ordering::SeqCst),
-                    0,
-                    "response body was polled before limiter observation finished"
-                );
-            }
-            if let Some(gate) = &self.observe_gate {
-                gate.wait().await;
-            }
-            if self.observe_fail {
-                Err(RateLimitError::new(
-                    crate::error::RateLimitErrorKind::Observe,
-                ))
-            } else {
-                Ok(())
-            }
-        })
+        if let Some(body_polls) = &self.response_body_polls {
+            assert_eq!(
+                body_polls.load(Ordering::SeqCst),
+                0,
+                "response body was polled before limiter observation returned"
+            );
+        }
     }
 }
 
@@ -1434,11 +1453,11 @@ impl ProbeHooks {
     fn new() -> Self {
         Self {
             records: Mutex::new(Vec::new()),
+            stream_records: Mutex::new(Vec::new()),
             trace: None,
-            before_gate: None,
-            response_gate: None,
-            veto: AtomicBool::new(false),
-            response_fail: false,
+            panic_on_attempt: AtomicBool::new(false),
+            panic_on_response: false,
+            attempt_delay: None,
             completion_returned: AtomicUsize::new(0),
         }
     }
@@ -1454,6 +1473,13 @@ impl ProbeHooks {
         self.records.lock().expect("records lock").clone()
     }
 
+    fn stream_records(&self) -> Vec<StreamRecord> {
+        self.stream_records
+            .lock()
+            .expect("stream records lock")
+            .clone()
+    }
+
     fn push_trace(&self, stage: &str) {
         if let Some(trace) = &self.trace {
             trace.lock().expect("trace lock").push(stage.into());
@@ -1461,69 +1487,63 @@ impl ProbeHooks {
     }
 }
 
-impl RequestGate for ProbeHooks {
-    fn before_send<'a>(&'a self, context: BeforeSend<'a>) -> BoxFuture<'a, Result<(), GateError>> {
-        self.push_trace("before_send");
-        self.records
-            .lock()
-            .expect("records lock")
-            .push(LifecycleRecord::Before {
-                operation_id: context.operation_id,
-                body_kind: context.body_kind,
-                known_body_length: context.known_body_length,
-            });
-        Box::pin(async move {
-            if let Some(gate) = &self.before_gate {
-                gate.wait().await;
+impl OperationObserver for ProbeHooks {
+    fn observe(&self, event: OperationEvent<'_>) {
+        match event {
+            OperationEvent::AttemptStarted(context) => {
+                if let Some(delay) = self.attempt_delay {
+                    std::thread::sleep(delay);
+                }
+                self.push_trace("attempt_started");
+                self.records
+                    .lock()
+                    .expect("records lock")
+                    .push(LifecycleRecord::Before {
+                        operation_id: context.operation_id,
+                        body_kind: context.body_kind,
+                        known_body_length: context.known_body_length,
+                    });
+                if self.panic_on_attempt.load(Ordering::SeqCst) {
+                    panic!("test observer attempt panic");
+                }
             }
-            if self.veto.load(Ordering::SeqCst) {
-                Err(GateError::new("safe hook veto"))
-            } else {
-                Ok(())
+            OperationEvent::ResponseHeadObserved(context) => {
+                self.push_trace("response_head_observed");
+                self.records
+                    .lock()
+                    .expect("records lock")
+                    .push(LifecycleRecord::Response(context.status));
+                assert!(!self.panic_on_response, "test observer response panic");
             }
-        })
-    }
-}
-
-impl ResponseGate for ProbeHooks {
-    fn before_response_handling<'a>(
-        &'a self,
-        context: ResponseHeadEvent<'a>,
-    ) -> BoxFuture<'a, Result<(), GateError>> {
-        self.push_trace("on_response_head");
-        self.records
-            .lock()
-            .expect("records lock")
-            .push(LifecycleRecord::Response(
-                context.operation_id,
-                context.status,
-            ));
-        Box::pin(async move {
-            if let Some(gate) = &self.response_gate {
-                gate.wait().await;
+            OperationEvent::OperationFinished(context) => {
+                self.push_trace("operation_finished");
+                self.records
+                    .lock()
+                    .expect("records lock")
+                    .push(LifecycleRecord::Complete {
+                        operation_id: context.operation_id,
+                        outcome: context.outcome,
+                        status: context.final_status,
+                        elapsed: context.elapsed,
+                    });
+                self.completion_returned.fetch_add(1, Ordering::SeqCst);
             }
-            if self.response_fail {
-                Err(GateError::new("safe response-hook rejection"))
-            } else {
-                Ok(())
+            OperationEvent::PaginationFinished(_) => {}
+            OperationEvent::StreamFinished(context) => {
+                self.stream_records
+                    .lock()
+                    .expect("stream records lock")
+                    .push(StreamRecord {
+                        operation_id: context.operation_id,
+                        endpoint: context.endpoint.to_owned(),
+                        kind: context.kind,
+                        outcome: context.outcome,
+                        units_yielded: context.units_yielded,
+                        bytes_yielded: context.bytes_yielded,
+                    });
             }
-        })
-    }
-}
-
-impl CompletionObserver for ProbeHooks {
-    fn on_complete(&self, context: CompletionEvent<'_>) {
-        self.push_trace("on_complete");
-        self.records
-            .lock()
-            .expect("records lock")
-            .push(LifecycleRecord::Complete {
-                operation_id: context.operation_id,
-                outcome: context.outcome,
-                status: context.final_status,
-                elapsed: context.elapsed,
-            });
-        self.completion_returned.fetch_add(1, Ordering::SeqCst);
+            _ => {}
+        }
     }
 }
 
@@ -1538,9 +1558,9 @@ fn development_core(
         "http://execution.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
         runtime
-            .request_gate(hooks.clone())
-            .response_gate(hooks.clone())
-            .completion_observer(hooks),
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks),
         executor,
     )
     .expect("development core")
@@ -1560,9 +1580,9 @@ fn automatic_surface_core(
         "http://execution.example.test/v1/",
         HttpConfigBuilder::new().http1_only(),
         RuntimeConfigBuilder::new()
-            .request_gate(hooks.clone())
-            .response_gate(hooks.clone())
-            .completion_observer(hooks)
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks)
             .rate_limiter(configured)
             .debug(DebugLevel::Headers),
         executor,
@@ -1582,9 +1602,9 @@ fn real_core(
         &server.url("/v1/"),
         HttpConfigBuilder::new().http1_only(),
         runtime
-            .request_gate(hooks.clone())
-            .response_gate(hooks.clone())
-            .completion_observer(hooks),
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks),
     )
     .expect("real HTTP core")
 }
@@ -1628,16 +1648,13 @@ fn body_request(core: ClientCore, body: RequestBody) -> Request<BodyEndpoint> {
     Request::new(core, BodyEndpoint::new(body))
 }
 
-fn stream_request<M>(core: ClientCore) -> Request<StreamEndpoint<M>>
-where
-    StreamSpec<M>: ResponseSpec,
-{
-    Request::new(core, StreamEndpoint::new())
+fn stream_request(core: ClientCore) -> Request<StreamEndpoint> {
+    Request::new(core, StreamEndpoint)
 }
 
 fn response_request<R>(core: ClientCore, timeout: Option<Duration>) -> Request<ResponseEndpoint<R>>
 where
-    R: ResponseSpec,
+    R: TestResponseRepresentation + ResponseRepresentation<R::Output>,
 {
     Request::new(core, ResponseEndpoint::new(timeout))
 }

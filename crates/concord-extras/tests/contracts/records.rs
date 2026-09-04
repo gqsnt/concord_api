@@ -1,7 +1,8 @@
 #![cfg(any(feature = "csv", feature = "ndjson"))]
 
-use concord_core::contracts::{Buffered, PageResponseSpec, ResponseSpec};
-use concord_core::records::RecordDecoder;
+use concord_core::contracts::{
+    Buffered, ItemStream, PageResponseRepresentation, ResponseRepresentation,
+};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -11,15 +12,13 @@ struct Row {
 }
 
 #[cfg(feature = "csv")]
-type ConfCsv<T> = concord_extras::records::Csv<
-    T,
+type ConfCsv = concord_extras::records::Csv<
     concord_extras::records::HasHeader,
     concord_extras::records::SemicolonDelimiter,
 >;
 
 #[cfg(feature = "csv")]
-type HeaderlessTsv<T> = concord_extras::records::Csv<
-    T,
+type HeaderlessTsv = concord_extras::records::Csv<
     concord_extras::records::NoHeader,
     concord_extras::records::TabDelimiter,
 >;
@@ -28,40 +27,34 @@ type HeaderlessTsv<T> = concord_extras::records::Csv<
 fn concrete_record_decoders_expose_finite_public_core_contracts() {
     fn complete_page_spec<S>()
     where
-        S: ResponseSpec<Output = Vec<Row>, Mode = Buffered> + PageResponseSpec,
+        S: ResponseRepresentation<Vec<Row>, Driver = Buffered>
+            + PageResponseRepresentation<Vec<Row>>,
+    {
+    }
+    fn item_stream_spec<S>()
+    where
+        S: ResponseRepresentation<ItemStream<Row>>,
     {
     }
 
     #[cfg(feature = "csv")]
     {
-        complete_page_spec::<concord_extras::records::Csv<Row>>();
+        complete_page_spec::<concord_extras::records::Csv>();
+        item_stream_spec::<concord_extras::records::Csv>();
         assert_eq!(
-            <concord_extras::records::Csv<Row> as RecordDecoder>::accept(),
+            <concord_extras::records::Csv as ResponseRepresentation<Vec<Row>>>::accept(),
             Some("text/csv")
         );
-        assert_eq!(
-            <concord_extras::records::Csv<Row> as RecordDecoder>::max_buffered_bytes().get(),
-            1024 * 1024
-        );
-        assert_eq!(
-            <HeaderlessTsv<(u32,)> as RecordDecoder>::accept(),
-            Some("text/csv")
-        );
-        assert_eq!(
-            <ConfCsv<Row> as RecordDecoder>::max_buffered_bytes().get(),
-            1024 * 1024
-        );
+        complete_page_spec::<ConfCsv>();
+        item_stream_spec::<HeaderlessTsv>();
     }
     #[cfg(feature = "ndjson")]
     {
-        complete_page_spec::<concord_extras::records::NdJson<Row>>();
+        complete_page_spec::<concord_extras::records::NdJson>();
+        item_stream_spec::<concord_extras::records::NdJson>();
         assert_eq!(
-            <concord_extras::records::NdJson<Row> as RecordDecoder>::accept(),
+            <concord_extras::records::NdJson as ResponseRepresentation<Vec<Row>>>::accept(),
             Some("application/x-ndjson")
-        );
-        assert_eq!(
-            <concord_extras::records::NdJson<Row> as RecordDecoder>::max_buffered_bytes().get(),
-            1024 * 1024
         );
     }
 }
@@ -76,13 +69,13 @@ fn csv_policy_markers_and_configured_aliases_satisfy_the_public_bounds() {
 
     fn header_mode<H: CsvHeaderMode>() {}
     fn delimiter<D: CsvDelimiter>() {}
-    fn decoder<D: RecordDecoder>() {}
+    fn representation<R: ResponseRepresentation<Vec<Row>>>() {}
 
     header_mode::<HasHeader>();
     header_mode::<NoHeader>();
     delimiter::<CommaDelimiter>();
     delimiter::<SemicolonDelimiter>();
     delimiter::<TabDelimiter>();
-    decoder::<ConfCsv<Row>>();
-    decoder::<HeaderlessTsv<(String, u32)>>();
+    representation::<ConfCsv>();
+    representation::<HeaderlessTsv>();
 }

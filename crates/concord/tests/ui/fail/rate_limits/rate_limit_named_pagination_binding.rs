@@ -2,19 +2,19 @@ use concord::api;
 
 api! {
     client Api {
-        timeout off;
+        timeout 30s;
         base "https://example.test";
         rate_limits {
-            account_reads(account) {
+            policy account_reads(account) { id "concord.rate_limit_named_pagination_binding.1"; cost 1;
                 key [account];
                 allow 1 per 1s;
             }
         }
 
 
-    GET list(account: String) -> Bytes using Bytes {
+    GET list(account: String) -> Bytes via Binary {
         rate_limit account_reads(account = endpoint.account);
-        paginate with crate::CursorPagination {
+        paginate via crate::CursorPagination {
             account -> endpoint.account;
         }
     }
