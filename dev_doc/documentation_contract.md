@@ -6,11 +6,16 @@
 2. Selected target behavior not yet implemented is marked explicitly and should remain in the implementation kit or feature branch, not active release docs.
 3. `docs/design_invariants.md`, `docs/spec.md`, and `docs/execution_policy.md` are the highest normative in-repository documents.
 4. Generated Rustdoc, static descriptions, semantic diff, and hand-written docs consume the same vocabulary and semantic graph.
-5. A public example is compile checked or clearly labeled conceptual pseudocode.
-6. A claim that depends on Rust coherence, performance, user cognition, or operation remains provisional until its gate passes.
-7. No doc calls a plan “safe,” a local limiter “distributed,” a timeout “operation-wide,” or a response “complete” unless the exact guarantee is implemented.
-8. Secrets, body values, sensitive public values, and raw rate keys never appear in example diagnostic output.
-9. `dev_doc/release_gate_status.md` is the only lifecycle/gate owner. Historical
+5. Every full canonical API declaration shown as recommended usage is
+   source-anchored to compiled code.
+6. Every normative Rust usage fence is source-anchored to compiled code.
+7. `concord-pseudocode` is the explicit machine-visible label for partial
+   grammar fragments, alternatives, deliberately incomplete excerpts, and
+   explanatory state tables only. Surrounding prose names the omitted context.
+8. A claim that depends on Rust coherence, performance, user cognition, or operation remains provisional until its gate passes.
+9. No doc calls a plan “safe,” a local limiter “distributed,” a timeout “operation-wide,” or a response “complete” unless the exact guarantee is implemented.
+10. Secrets, body values, sensitive public values, and raw rate keys never appear in example diagnostic output.
+11. `dev_doc/release_gate_status.md` is the only lifecycle/gate owner. Historical
    plans, audits, and exact-SHA evidence must identify their limited scope.
 
 ## Vocabulary
@@ -66,12 +71,14 @@ The common caller should understand the first screen without seeing bridge gener
 
 ## Source anchors
 
-Use compile-checked example anchors for quick start, value matrix,
-representation, auth, retry, pagination, runtime endpoint, and Riot
-walkthrough. `cargo run --locked -p concord-xtask -- docs-check --locked` is the
-single canonical checker used by `just docs`, local release verification, and
-the GitHub Actions documentation job. The PowerShell entry point is only a thin
-compatibility wrapper around that Rust command.
+Use compile-checked example anchors for README, quick start, overview, value
+matrix, representation, auth, retry, pagination, runtime endpoints, and the
+Riot walkthrough. `cargo run --locked -p concord-xtask -- docs-check --locked`
+is the single canonical checker used by `just docs`, local release
+verification, and the GitHub Actions documentation job. Its machine-maintained
+canonical-source list prevents the front-door declarations from reverting to
+unchecked pseudocode. The PowerShell entry point is only a thin wrapper around
+the Rust command.
 
 ## Documentation completion
 

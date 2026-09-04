@@ -9,6 +9,72 @@ use regex::Regex;
 const RELEASE_STATUS_OWNER: &str = "<!-- concord-release-status-owner -->";
 const DSL_LANGUAGE: &str = "concord";
 const DSL_PSEUDOCODE_LANGUAGE: &str = "concord-pseudocode";
+const CANONICAL_SOURCES: &[(&str, &str, &str, &str)] = &[
+    (
+        "README.md",
+        "crates/concord-examples/src/getting_started/domain_tree.rs",
+        "domain_tree_contract",
+        DSL_LANGUAGE,
+    ),
+    (
+        "docs/quick_start.md",
+        "crates/concord-examples/src/getting_started/domain_tree.rs",
+        "domain_tree_contract",
+        DSL_LANGUAGE,
+    ),
+    (
+        "docs/overview.md",
+        "crates/concord-examples/src/getting_started/domain_tree.rs",
+        "domain_tree_contract",
+        DSL_LANGUAGE,
+    ),
+    (
+        "docs/riot_walkthrough.md",
+        "crates/concord-examples/src/riot/api/riot.rs",
+        "riot_client",
+        DSL_PSEUDOCODE_LANGUAGE,
+    ),
+    (
+        "docs/riot_walkthrough.md",
+        "crates/concord-examples/src/riot/api/riot.rs",
+        "riot_match_ids_endpoint",
+        DSL_LANGUAGE,
+    ),
+    (
+        "docs/riot_walkthrough.md",
+        "crates/concord-examples/src/riot/usage.rs",
+        "riot_paginated_request",
+        "rust",
+    ),
+];
+const ACTIVE_MAINTAINER_DOCS: &[&str] = &[
+    "dev_doc/release_gate_status.md",
+    "dev_doc/claim_evidence_ledger.md",
+    "dev_doc/decision_record.md",
+    "dev_doc/adrs/README.md",
+    "dev_doc/adrs/0001-representation-ownership.md",
+    "dev_doc/adrs/0002-canonical-request-atoms.md",
+    "dev_doc/adrs/0003-query-header-patch-language.md",
+    "dev_doc/adrs/0005-pagination-controller-ownership.md",
+    "dev_doc/adrs/0007-observation-without-policy-authority.md",
+    "dev_doc/adrs/0011-public-stream-carriers.md",
+    "dev_doc/adrs/0012-freeze-exact-optional-control-surface.md",
+    "dev_doc/adrs/0013-observer-panic-diagnostics.md",
+    "dev_doc/owner_release_decisions.md",
+];
+const NEGATIVE_SPACE_FIXTURES: &[&str] = &[
+    "crates/concord/tests/ui/fail/syntax/spec_rejections.rs",
+    "crates/concord/tests/ui/fail/syntax/ghost_syntax.rs",
+    "crates/concord/tests/ui/fail/syntax/endpoint_accept_removed.rs",
+    "crates/concord/tests/ui/fail/syntax/optional_static_secret_deferred.rs",
+    "crates/concord/tests/ui/fail/syntax/retry_dsl_removed.rs",
+    "crates/concord/tests/ui/fail/pagination/numeric_page_limit_absent.rs",
+    "crates/concord/tests/ui/fail/pagination/pagination_syntax.rs",
+    "crates/concord/tests/ui/fail/capabilities/clear_optional_control_absent.rs",
+    "crates/concord/tests/ui/fail/capabilities/with_optional_control_absent.rs",
+    "crates/concord/tests/ui/fail/capabilities/generated_accept_override_absent.rs",
+    "crates/concord/tests/ui/fail/capabilities/runtime_accept_override_absent.rs",
+];
 const ANCHOR_ROOTS: &[&str] = &[
     "crates/concord-examples/src",
     "crates/concord-examples/tests",
@@ -29,6 +95,7 @@ struct Counts {
     links: usize,
     fragments: usize,
     retired_files: usize,
+    canonical_sources: usize,
 }
 
 #[derive(Clone)]
@@ -71,6 +138,7 @@ pub(crate) fn run(root: &Path) -> Result<(), String> {
     }
 
     check_documentation_inventory(root, &mut counts, &mut errors)?;
+    check_canonical_sources(root, &mut counts, &mut errors)?;
     check_retired_language(root, &markdown_files, &mut counts, &mut errors)?;
     check_release_truth(root, &markdown_files, &mut errors)?;
     check_language_projection_agreement(root, &mut errors)?;
@@ -107,6 +175,10 @@ pub(crate) fn run(root: &Path) -> Result<(), String> {
         counts.links, counts.fragments
     );
     println!("validated canonical docs/README.md inventory coverage");
+    println!(
+        "validated {} machine-owned canonical source anchors",
+        counts.canonical_sources
+    );
     println!(
         "validated retired public language across {} active files with explicit context allowlists",
         counts.retired_files
@@ -377,19 +449,30 @@ fn looks_like_dsl(line: &str) -> bool {
         "DELETE ",
         "HEAD ",
         "OPTIONS ",
+        "TRACE ",
+        "CONNECT ",
         "METHOD(",
         "values {",
         "credentials {",
+        "request ",
+        "response ",
         "subdomain ",
         "path ",
         "query ",
         "headers ",
         "auth ",
         "timeout ",
-        "paginate with ",
+        "status ",
+        "effect ",
+        "paginate via ",
         "rate_limits {",
         "rate_limit ",
+        "when_present ",
+        "append ",
+        "remove ",
+        "replace ",
         "concat [",
+        "expose accepted_bytes",
     ]
     .iter()
     .any(|prefix| line.starts_with(prefix))
@@ -508,6 +591,61 @@ fn check_documentation_inventory(
     Ok(())
 }
 
+fn check_canonical_sources(
+    root: &Path,
+    counts: &mut Counts,
+    errors: &mut Vec<String>,
+) -> Result<(), String> {
+    let mut parsed = HashMap::<String, Vec<Fence>>::new();
+    for (document, source_path, anchor, language) in CANONICAL_SOURCES {
+        if !parsed.contains_key(*document) {
+            let content = read(&root.join(document))?;
+            parsed.insert(
+                (*document).to_owned(),
+                parse_fences(document, &content, errors),
+            );
+        }
+        let found = parsed
+            .get(*document)
+            .expect("canonical document was parsed")
+            .iter()
+            .any(|fence| {
+                fence.language == *language
+                    && fence.source.as_ref().is_some_and(|source| {
+                        source.path == *source_path && source.anchor == *anchor
+                    })
+            });
+        if found {
+            counts.canonical_sources += 1;
+        } else {
+            errors.push(format!(
+                "{document}: canonical example must contain a `{language}` fence anchored to {source_path}#{anchor}"
+            ));
+        }
+    }
+
+    for document in ["README.md", "docs/quick_start.md", "docs/overview.md"] {
+        let full_contract = parsed
+            .get(document)
+            .expect("front-door canonical document was parsed")
+            .iter()
+            .find(|fence| {
+                fence.source.as_ref().is_some_and(|source| {
+                    source.path == "crates/concord-examples/src/getting_started/domain_tree.rs"
+                        && source.anchor == "domain_tree_contract"
+                })
+            });
+        if !full_contract.is_some_and(|fence| {
+            fence.body.trim_start().starts_with("api!") && fence.body.contains("client CatalogApi")
+        }) {
+            errors.push(format!(
+                "{document}: canonical front-door declaration must be the complete compiled CatalogApi contract"
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn check_retired_language(
     root: &Path,
     markdown_files: &[PathBuf],
@@ -551,7 +689,7 @@ fn retired_fence_findings(fence: &Fence) -> Vec<String> {
     let mut findings = retired_surface_findings(&fence.body);
     if matches!(
         fence.language.as_str(),
-        DSL_LANGUAGE | DSL_PSEUDOCODE_LANGUAGE | "text"
+        DSL_LANGUAGE | DSL_PSEUDOCODE_LANGUAGE
     ) {
         let patterns = [
             (r"(?m)^\s*vars\s*\{", "retired `vars` declaration"),
@@ -564,10 +702,22 @@ fn retired_fence_findings(fence: &Fence) -> Vec<String> {
             (r"\[\s*host(?:\s*[,\]])", "retired `host` rate dimension"),
             (r"\bfmt\s*\[", "retired `fmt` formatter"),
             (r"#\[body\]", "retired `#[body]` marker"),
+            (r"\busing\b", "retired body/result `using` form"),
             (
                 r"(?m)^\s*accept(?:\s+off)?\s*;",
                 "retired endpoint `accept` override",
             ),
+            (r"(?m)^\s*timeout\s+off\s*;", "retired `timeout off` clause"),
+            (
+                r"(?m)^\s*rate_limit\s+use\b",
+                "retired `rate_limit use` clause",
+            ),
+            (r"(?m)^\s*by\s*\[", "retired rate-limit `by` clause"),
+            (
+                r"(?m)^\s*paginate\s+(?:with\b|[A-Z_][A-Za-z0-9_:<>]*)",
+                "retired pagination declaration",
+            ),
+            (r"\?=|\+=", "retired punctuation patch operator"),
             (
                 r"\bsecret\s+[A-Za-z_][A-Za-z0-9_]*\s*\?\s*;",
                 "optional static secret syntax is deferred",
@@ -601,6 +751,7 @@ fn retired_surface_findings(content: &str) -> Vec<String> {
         ),
         (r"\bresponse_bytes\s*\(", "retired `response_bytes` API"),
         (r"\bSafeRequestPlan\b", "retired `SafeRequestPlan` type"),
+        (r"\bResponseBodySpec\b", "retired `ResponseBodySpec` type"),
         (r"\.paginate\s*\(\s*[0-9]", "numeric pagination coercion"),
         (r"\.with_x\s*\(", "retired `with_*` optional-value control"),
         (
@@ -682,9 +833,11 @@ fn check_release_truth(
     if version.contains("beta") {
         if !status.contains("integration candidate / beta")
             || !status.contains("Publication:** disabled")
+            || !status.contains("**Beta integration decision:**")
+            || !status.contains("**Stable publication decision:**")
         {
             errors.push(
-                "beta workspace must declare integration-candidate lifecycle and disabled publication"
+                "beta workspace must declare integration lifecycle, disabled publication, and separate beta/stable decisions"
                     .to_owned(),
             );
         }
@@ -710,6 +863,8 @@ fn check_release_truth(
         }
     }
     check_claim_states(root, errors)?;
+    check_active_maintainer_truth(root, errors)?;
+    check_negative_space_fixtures(root, errors);
     Ok(())
 }
 
@@ -753,10 +908,124 @@ fn check_claim_states(root: &Path, errors: &mut Vec<String>) -> Result<(), Strin
     Ok(())
 }
 
+fn check_active_maintainer_truth(root: &Path, errors: &mut Vec<String>) -> Result<(), String> {
+    for relative_path in ACTIVE_MAINTAINER_DOCS {
+        let content = read(&root.join(relative_path))?;
+        if !content.contains("**Status:**")
+            && !content.contains("<!-- concord-release-status-owner -->")
+        {
+            errors.push(format!(
+                "{relative_path}: active maintainer document must carry an explicit status"
+            ));
+        }
+        for stale in [
+            "NOT MERGEABLE while Gate 0",
+            "trait and real-API gates pending",
+            "trait ergonomics gate pending",
+            "exact-candidate rerun pending",
+            "Stream erasure/performance remains Gate 8 work",
+            "stable merge is forbidden",
+        ] {
+            if content.contains(stale) {
+                errors.push(format!(
+                    "{relative_path}: stale active maintainer claim remains: `{stale}`"
+                ));
+            }
+        }
+        for stale_platform in [
+            "Windows, Linux, and macOS is mandatory",
+            "Windows, Linux, and macOS are mandatory",
+            "required macOS",
+            "macOS execution required",
+        ] {
+            if content.contains(stale_platform) {
+                errors.push(format!(
+                    "{relative_path}: macOS is still described as a mandatory gate"
+                ));
+            }
+        }
+    }
+
+    for relative_path in [
+        "dev_doc/release_verification_2_1.md",
+        "dev_doc/evidence/package_verification.md",
+        "dev_doc/evidence/beta_candidate_0f72e865.md",
+    ] {
+        let content = read(&root.join(relative_path))?;
+        let header = content.lines().take(12).collect::<Vec<_>>().join("\n");
+        if !header.contains("Historical") && !header.contains("Superseded") {
+            errors.push(format!(
+                "{relative_path}: prior evidence must be explicitly historical or superseded near its heading"
+            ));
+        }
+    }
+
+    let status = read(&root.join("dev_doc/release_gate_status.md"))?;
+    let gates = read(&root.join("docs/evidence_and_release_gates.md"))?;
+    let workflow = read(&root.join(".github/workflows/ci.yml"))?;
+    for (relative_path, content) in [
+        ("dev_doc/release_gate_status.md", status.as_str()),
+        ("docs/evidence_and_release_gates.md", gates.as_str()),
+    ] {
+        if !content.contains("Windows and Linux are supported and mandatory")
+            || !content.contains("macOS is not currently a supported or release-gated platform")
+        {
+            errors.push(format!(
+                "{relative_path}: supported-platform policy must require only Windows and Linux"
+            ));
+        }
+    }
+    if workflow.contains("macos-latest")
+        || !workflow.contains("os: [ubuntu-latest, windows-latest]")
+    {
+        errors.push(
+            ".github/workflows/ci.yml: required platform matrix must contain only Ubuntu and Windows"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
+fn check_negative_space_fixtures(root: &Path, errors: &mut Vec<String>) {
+    for relative_path in NEGATIVE_SPACE_FIXTURES {
+        if !root.join(relative_path).is_file() {
+            errors.push(format!(
+                "missing no-retrocompatibility fixture {relative_path}"
+            ));
+        }
+    }
+}
+
 fn check_language_projection_agreement(
     root: &Path,
     errors: &mut Vec<String>,
 ) -> Result<(), String> {
+    let declaration = read(&root.join("crates/concord-macros/src/syntax/declaration.rs"))?;
+    for (message, required) in [
+        ("unsupported client entry", &["`request`", "`response`"][..]),
+        ("unsupported scope entry", &["`request`", "`response`"][..]),
+        ("unsupported endpoint clause", &["`status`"][..]),
+    ] {
+        let diagnostic = declaration
+            .lines()
+            .find(|line| line.contains(message))
+            .unwrap_or_default();
+        if required.iter().any(|clause| !diagnostic.contains(clause)) {
+            errors.push(format!(
+                "parser fallback `{message}` does not name all current legal clauses"
+            ));
+        }
+    }
+    for snapshot in [
+        "crates/concord/tests/ui/fail/syntax/second_client.stderr",
+        "crates/concord/tests/ui/fail/syntax/malformed.stderr",
+        "crates/concord/tests/ui/fail/syntax/unsupported_endpoint_clause.stderr",
+    ] {
+        if !root.join(snapshot).is_file() {
+            errors.push(format!("missing parser fallback UI snapshot {snapshot}"));
+        }
+    }
+
     let credentials = read(&root.join("crates/concord-macros/src/syntax/credentials.rs"))?;
     let spec = read(&root.join("docs/spec.md"))?;
     let optional_secret_fixture =
@@ -780,6 +1049,20 @@ fn check_language_projection_agreement(
     let auth = read(&root.join("crates/concord-macros/src/semantic/auth.rs"))?;
     if symbols.contains("format!(\"with_") || auth.contains("format!(\"with_") {
         errors.push("semantic generated-name model still reserves `with_*`".to_owned());
+    }
+    let emit_root = root.join("crates/concord-macros/src");
+    for path in collect_files(&emit_root, "rs")? {
+        let source = read(&path)?;
+        if source.contains("format!(\"with_")
+            || source.contains("format_ident!(\"with_")
+            || source.contains("format!(\"clear_")
+            || source.contains("format_ident!(\"clear_")
+        {
+            errors.push(format!(
+                "{}: generated optional-control alias construction remains",
+                relative(root, &path)
+            ));
+        }
     }
     for fixture in [
         "crates/concord/tests/ui/pass/language/with_namespace_released.rs",
@@ -820,6 +1103,26 @@ fn check_language_projection_agreement(
         errors.push(
             "spec must retain representation inheritance and explicit-fence examples".to_owned(),
         );
+    }
+
+    for directory in [
+        "crates/concord/src",
+        "crates/concord-core/src",
+        "crates/concord-extras/src",
+        "crates/concord-macros/src/emit",
+        "crates/concord-macros/src/semantic",
+    ] {
+        for path in collect_files(&root.join(directory), "rs")? {
+            let source = read(&path)?;
+            for retired in ["ResponseBodySpec", "SafeRequestPlan", "response_bytes"] {
+                if source.contains(retired) {
+                    errors.push(format!(
+                        "{}: retired public symbol `{retired}` remains in active implementation source",
+                        relative(root, &path)
+                    ));
+                }
+            }
+        }
     }
 
     let facade_manifest = read(&root.join("crates/concord/Cargo.toml"))?;
@@ -1075,6 +1378,57 @@ mod tests {
                 .iter()
                 .any(|finding| finding.contains("optional static secret"))
         );
+        for retired in [
+            "POST create() -> Item using Json;",
+            "timeout off;",
+            "rate_limit use shared;",
+            "by [origin];",
+            "paginate with OffsetPages;",
+            "\"q\" += endpoint.value;",
+        ] {
+            assert!(!retired_fence_findings(&fence("concord", retired)).is_empty());
+        }
+    }
+
+    #[test]
+    fn current_dsl_first_lines_are_classified() {
+        for current in [
+            "api! {",
+            "client Api {",
+            "scope items() {",
+            "GET item() -> Item;",
+            "POST item() -> Item;",
+            "PUT item() -> Item;",
+            "PATCH item() -> Item;",
+            "DELETE item() -> Item;",
+            "HEAD item() -> Item;",
+            "OPTIONS item() -> Item;",
+            "METHOD(\"PROPFIND\") item() -> Item;",
+            "values {",
+            "credentials {",
+            "request Json;",
+            "response Json;",
+            "subdomain replace [\"api\"];",
+            "path [\"items\"];",
+            "query {",
+            "headers {",
+            "auth {",
+            "timeout 5s;",
+            "status success;",
+            "effect safe;",
+            "paginate via OffsetPages {",
+            "rate_limits {",
+            "rate_limit shared();",
+            "when_present \"q\" = endpoint.q;",
+            "append \"q\" = each endpoint.q;",
+            "remove \"q\";",
+            "replace {",
+            "concat [\"item-\", endpoint.id]",
+            "expose accepted_bytes;",
+        ] {
+            assert!(looks_like_dsl(current), "not classified: {current}");
+        }
+        assert!(!looks_like_dsl("paginate with OffsetPages;"));
     }
 
     #[test]
