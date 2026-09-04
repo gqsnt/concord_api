@@ -15,10 +15,23 @@ Do not conflate them or call all of them “request metadata.”
 
 Generated entry points:
 
+<!-- concord-source: crates/concord-examples/src/contracts/catalog_v2.rs#catalog_planning -->
 ```rust
-CatalogApi::contract()
-request.description()
-intent.description()
+    let _plan = request.plan()?;
+    let _pagination = request.paginate(PageLimit::CompleteWithin(
+        NonZeroU32::new(20).expect("positive"),
+    ));
+    let _accepted: concord::endpoint::AcceptedBytesRequest<_> =
+        regional.item("item-42".to_owned()).accepted_bytes();
+
+    let endpoint = CatalogApi::unbound()
+        .regional("eu-west".to_owned())
+        .item("item-42".to_owned());
+    let _description = endpoint.description();
+    let _unbound_plan = client.plan(&endpoint)?;
+    let request = client.request(endpoint);
+    let _response: concord::endpoint::ResponseRequest<_> = request.response();
+    let _metadata_shape: Option<ApiResponse<Bytes>> = None;
 ```
 
 Descriptions include:
@@ -37,9 +50,23 @@ Because representation defaults are inherited, the effective representation and 
 
 ## Request plan
 
+<!-- concord-source: crates/concord-examples/src/contracts/catalog_v2.rs#catalog_planning -->
 ```rust
-let plan = request.plan()?;
-let plan = client.plan(&unbound_intent)?;
+    let _plan = request.plan()?;
+    let _pagination = request.paginate(PageLimit::CompleteWithin(
+        NonZeroU32::new(20).expect("positive"),
+    ));
+    let _accepted: concord::endpoint::AcceptedBytesRequest<_> =
+        regional.item("item-42".to_owned()).accepted_bytes();
+
+    let endpoint = CatalogApi::unbound()
+        .regional("eu-west".to_owned())
+        .item("item-42".to_owned());
+    let _description = endpoint.description();
+    let _unbound_plan = client.plan(&endpoint)?;
+    let request = client.request(endpoint);
+    let _response: concord::endpoint::ResponseRequest<_> = request.response();
+    let _metadata_shape: Option<ApiResponse<Bytes>> = None;
 ```
 
 A plan is inert, credential-free, redaction-aware, and not universally safe for unrestricted disclosure.
@@ -86,7 +113,7 @@ No plan, observer, error, or debug path may downgrade sensitivity.
 
 ## Operation observer
 
-```rust
+```text
 pub trait OperationObserver: Send + Sync + 'static {
     fn observe(&self, event: OperationEvent<'_>);
 }
@@ -143,7 +170,7 @@ sanitized public request headers; response output remains typed and value-free.
 
 Stable top-level categories:
 
-```rust
+```text
 pub enum ErrorCategory {
     Configuration,
     RequestEncoding,
@@ -180,7 +207,7 @@ Do not mirror every dependency error type in the public enum.
 
 ## Dispatch knowledge
 
-```rust
+```text
 pub enum DispatchKnowledge {
     NotDispatched,
     PossiblyDispatched,

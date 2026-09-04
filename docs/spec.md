@@ -96,7 +96,7 @@ The macro must not detect `Option`, `Vec`, stream types, aliases, qualified name
 
 ## 2.2 Initialization
 
-```rust
+```concord-pseudocode
 #[default]
 x: T;
 
@@ -125,11 +125,32 @@ Sensitivity propagates through `concat`, adapters, and every `each` item to the 
 
 Representation defaults are valid at client and scope owners. `explicit` fences are valid only at scope owners:
 
-```text
-request RustType ;
-response RustType ;
-request explicit ;
-response explicit ;
+<!-- concord-source: crates/concord/tests/generated/representation_inheritance.rs#representation_inheritance_contract -->
+```rust
+api! {
+    client RepresentationInheritanceApi {
+        base "https://inheritance.example.test/";
+        timeout 30s;
+        request Text;
+        response ParentBuffered;
+
+        POST inherited(body input: String) -> String;
+
+        scope overrides() {
+            request Text;
+            response Text;
+
+            POST local(body input: String) -> String;
+        }
+
+        scope fenced() {
+            request explicit;
+            response explicit;
+
+            POST explicit(body input: String via Text) -> String via Text;
+        }
+    }
+}
 ```
 
 - `request R;` establishes an inherited request-body representation default;
@@ -170,7 +191,7 @@ The endpoint body/result types remain exact caller-visible types. `via` selects 
 
 The generated code requires conceptually:
 
-```rust
+```text
 EffectiveRequestRepresentation: RequestRepresentation<Input>
 EffectiveResponseRepresentation: ResponseRepresentation<Output>
 ```
@@ -280,7 +301,7 @@ Query is an ordered multimap patch.
 
 ## 6.1 Assignment
 
-```rust
+```concord-pseudocode
 "K" = emission;
 ```
 
@@ -288,7 +309,7 @@ Remove every current generated occurrence of `K`, then emit zero, one, or many l
 
 ## 6.2 Conditional override
 
-```rust
+```concord-pseudocode
 when_present "K" = optional_emission;
 ```
 
@@ -299,7 +320,7 @@ when_present "K" = optional_emission;
 
 ## 6.3 Append
 
-```rust
+```concord-pseudocode
 append "K" = emission;
 ```
 
@@ -411,7 +432,7 @@ Policy retry after possible dispatch requires `safe` or `idempotent`. Ordinary p
 
 A body slot may be required or optional:
 
-```rust
+```concord-pseudocode
 body input: Input
 body input: Input via Representation
 body input?: Input

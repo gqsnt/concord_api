@@ -87,10 +87,20 @@ Client, outer scope, inner scope, and endpoint policy attachments compose additi
 
 A generated client with effective policies must choose explicitly:
 
+<!-- concord-source: crates/concord-examples/src/rate_limiting/lexical.rs#configured_rate_limiter -->
 ```rust
-.rate_limiter(shared_or_distributed)
-.local_rate_limits()
-.noop_rate_limits_for_test()
+pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
+    let limiter = LocalRateLimiter::new();
+    let client = RateLimitApi::builder()
+        .set_tenant("example-tenant".to_owned())
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(limiter)))
+        .build()?;
+    let _: rate_limit_api::region::ItemRequest =
+        client.region("eu".to_owned()).item("record-42".to_owned());
+    let _: rate_limit_api::LookupRequest = client.lookup("account-7".to_owned());
+    let _: rate_limit_api::PublicRequest = client.public();
+    Ok(())
+}
 ```
 
 Do not silently install a process-local limiter because a Cargo feature is enabled.
@@ -105,7 +115,7 @@ Every policy retry, auth-recovery replay, and page visible attempt reacquires th
 
 ## Response feedback
 
-```rust
+```text
 trait RateLimiter {
     async fn acquire(
         &self,

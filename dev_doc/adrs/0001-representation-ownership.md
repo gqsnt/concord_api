@@ -11,7 +11,7 @@ heterogeneous subtrees.
 
 The selected trait relationship is:
 
-```rust
+```text
 RequestRepresentation<Input>
 ResponseRepresentation<Output>
 ```

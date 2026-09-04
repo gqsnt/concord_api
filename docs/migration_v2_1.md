@@ -118,7 +118,7 @@ v1 ordinary assignment remains assignment, but optional and collection behavior 
 
 v2.1 forms:
 
-```rust
+```concord-pseudocode
 "key" = value;
 when_present "key" = optional_value;
 append "key" = value;
@@ -136,6 +136,20 @@ Migration rules:
 - dynamic query/header names remain unsupported.
 
 Do not preserve `?=`, `+=`, or `...` as public aliases.
+
+The migrated exact optional-control surface is compiled from this source:
+
+<!-- concord-source: crates/concord-examples/src/contracts/full_dsl.rs#request_controls -->
+```rust
+    let _: reference_api::StatusRequest = client
+        .status()
+        .set_verbose(Some(true))
+        .omit_verbose()
+        .reset_verbose()
+        .set_tags(Some(vec!["stable", "documented"]))
+        .omit_tags()
+        .reset_tags();
+```
 
 ## Request and response representation
 
@@ -181,7 +195,7 @@ Do not translate wrapper aliases mechanically into more wrapper aliases.
 
 Move accepted status from `ResponseBodySpec::accepts_status` or custom response wrappers to endpoint static data:
 
-```rust
+```concord-pseudocode
 status success;
 status [200, 201, 404];
 ```
@@ -274,7 +288,7 @@ Review stable IDs, canonical `RateKeyPart`, dimensions, cost, conjunctive window
 
 v1:
 
-```rust
+```concord-pseudocode
 paginate OffsetPagination {
     offset: bind ep.offset,
     page_size: bind ep.count,

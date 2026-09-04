@@ -83,7 +83,7 @@ No last-writer precedence repairs an authority conflict.
 
 ## Challenge is attribution
 
-```rust
+```concord-pseudocode
 challenge never
 challenge unauthorized
 challenge unauthorized_or_forbidden
@@ -144,14 +144,22 @@ This is separate from application policy retry. It may replay a non-idempotent e
 
 ## Endpoint-backed acquisition
 
-```rust
+```concord-pseudocode
 credential session = endpoint authenticate;
 ```
 
 Generated only on the source endpoint:
 
+<!-- concord-source: crates/concord-examples/src/authentication/usage.rs#authenticated_requests -->
 ```rust
-client.authenticate(login).store_as_session().await?;
+    let _: authentication_api::ApiKeyRequest = client.api_key();
+    let _: authentication_api::TokenAuthorizationRequest = client.token_authorization();
+    let _: authentication_api::BearerRequest = client.bearer();
+    let _: authentication_api::BasicRequest = client.basic();
+    let _: authentication_api::OAuthRequest = client.o_auth();
+    let _: authentication_api::EndpointBackedRequest = client.endpoint_backed();
+    let _: authentication_api::ProviderBackedRequest = client.provider_backed();
+    let _acquisition = client.login().store_as_acquired();
 ```
 
 `store_as_session`:
@@ -167,7 +175,7 @@ Ordinary `.await` returns the endpoint’s domain output and does not secretly s
 
 ## Credential facade
 
-```rust
+```text
 let slot = client.credentials().session();
 slot.is_available();
 slot.clear()?;

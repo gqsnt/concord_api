@@ -19,36 +19,31 @@ Unsuitable:
 
 ## Builder
 
+<!-- concord-source: crates/concord-examples/src/runtime_endpoints/generated_and_runtime.rs#runtime_endpoint -->
 ```rust
-let endpoint = RuntimeEndpoint::builder(
-        EndpointId::new("catalog.runtime.lookup")?,
-        Method::POST,
-    )
-    .path_segment("lookup")
-    .path_value(RuntimeValue::sensitive(record_id))
-    .query_assign("view", "summary")
-    .query_assign_optional("category", category)       // None clears
-    .query_when_present("locale", locale_override)    // None preserves
-    .query_assign_each("tag", tags)
-    .query_append_each("tag", extra_tags)
-    .query_remove("legacy")
-    .body::<LookupInput, Json>(input)
-    .response::<LookupOutput, Json>()
-    .status(StatusPolicy::success())
-    .effect(Effect::Safe)
-    .timeout(timeout)?
-    .build()?;
-
-let output = endpoint.try_bind(&client)?.await?;
+pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
+    let client = PreparedApi::builder().build()?;
+    let endpoint = RuntimeEndpoint::builder(EndpointId::new("prepared_api.lookup")?, Method::POST)
+        .path("records")
+        .path("42")
+        .query("view", "summary")
+        .header(HeaderName::from_static("x-example"), "canonical")
+        .timeout(Duration::from_secs(5))
+        .body_codec::<crate::request_response::specifications::ExampleCodec>(
+            "request body".to_owned(),
+        )
+        .response::<crate::request_response::specifications::ExampleCodec, String>()
+        .build()?;
+    let _: Request<_> = endpoint.try_bind(&client)?;
+    Ok(())
+}
 ```
-
-The exact method naming may be compressed if every meaning remains distinct and discoverable. Do not replace the patch algebra with booleans or a generic map.
 
 ## Binding
 
 A runtime endpoint binds fallibly through a built client root or generated selected scope:
 
-```rust
+```text
 let request = endpoint.try_bind(&client)?;
 let request = endpoint.try_bind(&regional_scope)?;
 ```
@@ -65,7 +60,7 @@ The runtime endpoint contributes validated local operations. It cannot select a 
 
 Generated unbound binding remains separate and infallible:
 
-```rust
+```text
 client.request(generated_intent)
 ```
 
@@ -92,7 +87,7 @@ They do not receive compile-time domain navigation or generated pagination. Auto
 
 Plain runtime values are ordinary public. Use a bounded wrapper:
 
-```rust
+```text
 RuntimeValue::visible(value)
 RuntimeValue::sensitive(value)
 ```

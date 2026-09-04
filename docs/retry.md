@@ -46,7 +46,7 @@ separate post-return limits.
 
 ## Dispatch knowledge
 
-```rust
+```text
 pub enum DispatchKnowledge {
     NotDispatched,
     PossiblyDispatched,
@@ -60,18 +60,25 @@ It moves monotonically and describes client knowledge, not remote business commi
 
 Representative builder:
 
+<!-- concord-source: crates/concord-examples/src/runtime_policy/retries.rs#managed_retry_policy -->
 ```rust
-let retry = RetryPolicy::builder()
-    .max_retries_per_operation(2)
-    .backoff(RetryBackoff::exponential(
-        Duration::from_millis(100),
-        Duration::from_secs(2),
-        RetryJitter::Full,
-    )?)
-    .max_extra_load(RetryLoadRatio::percent(20)?)
-    .honor_server_delay_up_to(Duration::from_secs(30))
-    .classify_fn(classify)
-    .build()?;
+pub fn managed_retry_policy() -> RetryPolicy {
+    RetryPolicy::builder()
+        .max_retries_per_operation(2)
+        .max_extra_load(0.20)
+        .classify_fn(|attempt| match attempt.failure() {
+            RetryFailure::Connect | RetryFailure::Transport => RetryDecision::Retry,
+            RetryFailure::RejectedStatus { status, .. }
+                if status == concord::http::StatusCode::TOO_MANY_REQUESTS
+                    || status.is_server_error() =>
+            {
+                RetryDecision::Retry
+            }
+            _ => RetryDecision::Stop,
+        })
+        .build()
+        .expect("the documented retry policy is structurally valid")
+}
 ```
 
 Retry is disabled unless installed. Policy owns appetite/backoff/load willingness; endpoint/body/core own semantic gates.
@@ -111,7 +118,7 @@ Cancellation during backoff consumes no shared retry capacity.
 
 Parse `Retry-After` and supported vendor rate-reset data once at response head into a bounded core fact such as:
 
-```rust
+```text
 ServerDelayHint {
     not_before: Instant,
     source: RetryAfter | VendorRateReset,

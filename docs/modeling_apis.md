@@ -95,7 +95,7 @@ scope assets() {
 
 Use the written Rust type for domain meaning and the DSL markers for Concord semantics:
 
-```rust
+```concord-pseudocode
 mode: Option<Mode>        // required domain decision
 mode?: Mode               // optional slot
 mode?: Option<Mode>       // optional slot around an optional payload
@@ -116,7 +116,7 @@ query { "at" = endpoint.time via Rfc3339; }
 
 Use a scalar adapter for one joined collection and `each` for repeated occurrences:
 
-```rust
+```concord-pseudocode
 "fields" = endpoint.fields via CommaSeparated;
 append "tag" = each endpoint.tags via TagSlug;
 ```

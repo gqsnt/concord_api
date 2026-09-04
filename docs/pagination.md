@@ -52,7 +52,7 @@ Each page is a fresh immutable endpoint/request snapshot. The original request r
 
 Conceptually:
 
-```rust
+```text
 pub trait PaginationController<Page>: Sized + Send + 'static {
     type Item: Send + 'static;
 
@@ -115,9 +115,19 @@ replay prepared state only within that page’s attempts
 
 ## Caller limits
 
+<!-- concord-source: crates/concord-examples/src/pagination/offset.rs#paginate_all -->
 ```rust
-PageLimit::Prefix(n)
-PageLimit::CompleteWithin(non_zero_n)
+pub async fn collect_all(client: &PaginationApi) -> Result<Vec<u32>, concord::ApiError> {
+    client
+        .offset(
+            0,
+            std::num::NonZeroU32::new(50).expect("positive page size"),
+        )
+        .paginate(PageLimit::CompleteWithin(
+            std::num::NonZeroU32::new(100).expect("positive completion limit"),
+        ))
+        .await
+}
 ```
 
 - `Prefix(n)` intentionally returns at most `n` accepted pages even when continuation exists;

@@ -33,7 +33,7 @@ Emitters never infer semantics from syntax tokens or generated strings.
 
 Conceptually:
 
-```rust
+```text
 struct ApiContractIr {
     client: ClientIr,
     symbols: SymbolTable,
@@ -71,7 +71,7 @@ No `ValueShape::Option`, `ValueShape::Vec`, stream-token detection, or equivalen
 
 ## Resolved references and atoms
 
-```rust
+```text
 struct ResolvedValueRef {
     value: ValueId,
     owner: ValueOwnerRef,
@@ -114,7 +114,7 @@ Every effective item retains source owner/span and inheritance operation.
 
 One surface description generates direct, unbound, docs, and collision analysis:
 
-```rust
+```text
 struct EndpointSurface {
     direct_required_inputs: Vec<ValueId>,
     configurable_inputs: Vec<ValueControl>,

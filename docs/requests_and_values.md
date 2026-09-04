@@ -17,7 +17,7 @@ Aliases and qualification do not change behavior.
 
 ## Initializers and defaults
 
-```rust
+```concord-pseudocode
 #[default]
 page_size: PageSize;
 
@@ -39,7 +39,7 @@ Evaluation occurs once at the narrowest owner snapshot:
 
 ## Sensitivity
 
-```rust
+```concord-pseudocode
 #[sensitive]
 tenant: TenantId;
 ```
@@ -50,7 +50,7 @@ Body and credential data already have stronger separate information classes; `#[
 
 ## Owner-qualified references
 
-```rust
+```concord-pseudocode
 client.tenant
 regional.region
 endpoint.item_id
@@ -60,7 +60,7 @@ A named scope reference points to that exact visible owner. No generic `scope.*`
 
 ## `RequestAtom`
 
-```rust
+```text
 pub trait RequestAtom {
     fn write_atom(
         &self,
@@ -137,7 +137,7 @@ Optional/spread path segments, raw/pre-encoded paths, templates, wildcards, and 
 
 `each` requires a semantic `OrderedValues` capability. It expands a present ordered sequence only in query/header emission positions.
 
-```rust
+```text
 pub trait OrderedValues {
     type Item;
     type Iter<'a>: Iterator<Item = &'a Self::Item>

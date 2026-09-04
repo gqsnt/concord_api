@@ -37,7 +37,7 @@ Some(Some(patch))      body present; representation receives the patch
 
 Generated controls:
 
-```rust
+```text
 .set_patch(Option<Option<ItemPatch>>)
 .omit_patch()
 ```
@@ -48,7 +48,7 @@ Do not flatten the outer Concord presence and inner Rust payload.
 
 Conceptually:
 
-```rust
+```text
 pub trait RequestRepresentation<Input>: Send + Sync + 'static {
     type Prepared: PreparedRequestBody;
 
@@ -112,12 +112,16 @@ The third capability is deferred. Do not infer it from page stability. The v2.1 
 
 First-party caller carriers may include:
 
+<!-- concord-source: crates/concord-examples/src/request_response/bodies.rs#streaming_requests -->
 ```rust
-Bytes
-Vec<u8>
-RequestStream<Bytes>
-RequestStream<Event>
-ManagedMultipart
+    let _: body_api::UploadRequest = client.upload(RequestStream::from_bytes(Bytes::from_static(
+        b"stream payload",
+    )));
+    let _: body_api::DownloadRequest = client.download();
+    let _: body_api::ExactUploadRequest = client.exact_upload(RequestStream::from_bytes(
+        Bytes::from_static(b"binary payload"),
+    ));
+    let _: body_api::ExactDownloadRequest = client.exact_download();
 ```
 
 A request stream is one-shot unless an explicit factory/representation proves independent reconstruction. `Clone` never implies replayability.

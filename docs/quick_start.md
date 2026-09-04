@@ -16,22 +16,28 @@ Concord v2.1 keeps the workspace MSRV at Rust 1.86 unless the representation pro
 
 ## Domain types
 
+<!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_types -->
 ```rust
-use concord::{api, Json};
-use serde::{Deserialize, Serialize};
+use std::num::NonZeroU32;
 
-#[derive(Debug, Clone, Serialize)]
-pub struct CreateItem {
-    pub title: String,
-}
+use concord::pagination::PaginatedRequest;
+use concord::{Json, PageLimit, api};
+use serde::Deserialize;
 
+/// Default page size retained by each endpoint snapshot.
+pub const DEFAULT_PAGE_SIZE: NonZeroU32 = match NonZeroU32::new(25) {
+    Some(value) => value,
+    None => unreachable!(),
+};
+
+/// One item returned by the example catalog API.
 #[derive(Debug, Deserialize)]
-pub struct Item {
+pub struct ItemSummary {
+    /// Stable item identifier.
     pub id: String,
+    /// Human-readable title.
     pub title: String,
 }
-
-pub type ItemId = String;
 ```
 
 `RequestAtom` is a stable public-protocol role. Concord does not silently use a human-facing `Display` implementation.
@@ -80,39 +86,80 @@ Read the declaration in layers:
 
 ## Build the client
 
+<!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_usage -->
 ```rust
-let client = CatalogApi::builder()
-    .set_tenant("acme".to_owned())
-    .build()?;
+pub fn construct() -> Result<(), concord::ClientBuildError> {
+    let client = CatalogApi::builder()
+        .set_tenant("acme".to_owned())
+        .build()?;
+
+    let _: PaginatedRequest<_> = client
+        .regional("eu".to_owned())
+        .item_summaries()
+        .set_category(Some("hardware".to_owned()))
+        .set_count(NonZeroU32::new(50).expect("positive page size"))
+        .paginate(PageLimit::Prefix(2));
+    Ok(())
+}
 ```
 
 Construction is inert. No provider, limiter, body encoder, observer, request, or HTTP work begins.
 
 ## Call an endpoint
 
+<!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_execution -->
 ```rust
-let item: Item = client.item(item_id).await?;
+pub async fn execute(client: &CatalogApi) -> Result<(usize, usize), concord::ApiError> {
+    let one_page: Vec<ItemSummary> = client
+        .regional("eu".to_owned())
+        .item_summaries()
+        .set_category(Some("hardware".to_owned()))
+        .await?;
+
+    let first_two_pages: Vec<ItemSummary> = client
+        .regional("eu".to_owned())
+        .item_summaries()
+        .paginate(PageLimit::Prefix(2))
+        .await?;
+
+    Ok((one_page.len(), first_two_pages.len()))
+}
 ```
 
 The caller does not mention JSON because representation is a stable contract default.
 
 ## Send a body
 
+<!-- concord-source: crates/concord-examples/src/request_response/bodies.rs#buffered_requests -->
 ```rust
-let created: Item = client.create(CreateItem {
-    title: "System Design".to_owned(),
-}).await?;
+    let _: body_api::JsonRoundTripRequest = client.json_round_trip(vec![1, 2, 3]);
+    let _: body_api::TextRoundTripRequest = client.text_round_trip("bounded text".to_owned());
+    let _: body_api::CustomRoundTripRequest = client.custom_round_trip("custom payload".to_owned());
 ```
 
-The body parameter type is exactly `CreateItem`. The result type is exactly `Item`.
+The body parameter type remains the exact declared Rust type (`Vec<u32>`,
+`String`, or the custom codec's `String` here); there is no generated payload
+wrapper.
 
 ## Inspect without executing
 
+<!-- concord-source: crates/concord-examples/src/contracts/catalog_v2.rs#catalog_planning -->
 ```rust
-let request = client.item(item_id);
-let description = request.description();
-let plan = request.plan()?;
-let item = request.await?;
+    let _plan = request.plan()?;
+    let _pagination = request.paginate(PageLimit::CompleteWithin(
+        NonZeroU32::new(20).expect("positive"),
+    ));
+    let _accepted: concord::endpoint::AcceptedBytesRequest<_> =
+        regional.item("item-42".to_owned()).accepted_bytes();
+
+    let endpoint = CatalogApi::unbound()
+        .regional("eu-west".to_owned())
+        .item("item-42".to_owned());
+    let _description = endpoint.description();
+    let _unbound_plan = client.plan(&endpoint)?;
+    let request = client.request(endpoint);
+    let _response: concord::endpoint::ResponseRequest<_> = request.response();
+    let _metadata_shape: Option<ApiResponse<Bytes>> = None;
 ```
 
 Planning performs bounded public shaping but does not invoke body preparation, credentials, rate admission, retry, observers, or HTTP. Sensitive values remain structurally redacted in automatic formatting.
@@ -129,16 +176,20 @@ GET items(category?: String) -> Vec<Item> {
 
 Generated usage:
 
+<!-- concord-source: crates/concord-examples/src/contracts/full_dsl.rs#request_controls -->
 ```rust
-let request = client
-    .items()
-    .set_category(category_from_config) // Option<String>
-    .set_category(Some("books".to_owned()))
-    .omit_category();
+    let _: reference_api::StatusRequest = client
+        .status()
+        .set_verbose(Some(true))
+        .omit_verbose()
+        .reset_verbose()
+        .set_tags(Some(vec!["stable", "documented"]))
+        .omit_tags()
+        .reset_tags();
 ```
 
-- `set_category` accepts the exact effective `Option<String>`.
-- `omit_category` selects outer absence.
+- `set_verbose` accepts the exact effective `Option<bool>`.
+- `omit_verbose` selects outer absence; `reset_verbose` restores its declaration default.
 
 ## Repeated values are explicit
 

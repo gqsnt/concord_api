@@ -21,10 +21,13 @@ $removedDocs = @(
 
 # Source anchors may resolve only inside these roots. Both are compiled: `src`
 # by the `concord-examples` lib target, `tests` by its integration test targets.
-# Adding a root requires a documented reason and a compiled Cargo target.
+# `crates/concord/tests` contains the compile-checked focused inheritance and UI
+# integration fixtures used by normative language documentation. Adding any
+# further root requires a documented reason and a compiled Cargo target.
 $anchorRoots = @(
     'crates/concord-examples/src',
-    'crates/concord-examples/tests'
+    'crates/concord-examples/tests',
+    'crates/concord/tests'
 )
 $anchorExtension = '.rs'
 $anchorRegionCache = @{}
@@ -309,6 +312,10 @@ foreach ($file in $markdownFiles | Sort-Object FullName -Unique) {
         $looksLikeDsl = $firstCodeLine -match $dslStart
         $location = "${relative}:$($block.Start)"
 
+        if ($block.Language -eq '') {
+            $errors.Add("${location}: fenced block must declare its language/classification")
+        }
+
         # Source-anchored blocks quote compiled Rust and intentionally retain
         # the `rust` fence language. Only standalone DSL snippets use the
         # dedicated `concord` language marker.
@@ -328,6 +335,10 @@ foreach ($file in $markdownFiles | Sort-Object FullName -Unique) {
                 $errors.Add("${location}: anchor ${anchorRef}: $($_.Exception.Message)")
             }
             continue
+        }
+
+        if ($block.Language -eq 'rust') {
+            $errors.Add("${location}: normative Rust fence must be source-anchored to a compiled example")
         }
 
         if ($block.Language -eq $dslLanguage) {

@@ -14,23 +14,25 @@ terminal capability    → inherent method only on matching request
 
 ## Client construction
 
+<!-- concord-source: crates/concord-examples/src/contracts/full_dsl.rs#configured_client -->
 ```rust
-let client = CatalogApi::builder()
-    .set_tenant(tenant)
-    .set_locale(locale_from_config)
-    .bootstrap_key(secret)
-    .retry(retry_policy)
-    .rate_limiter(shared_limiter)
-    .configure_http(|http| {
-        http.require_https();
-    })
-    .configure_provider_http(|provider| {
-        provider.response_body_limit(provider_limit);
-    })
-    .configure_runtime(|runtime| {
-        runtime.pagination_max_pages(max_pages);
-    })
-    .build()?;
+    let client = ReferenceApi::builder()
+        .set_tenant("tenant-a".to_owned())
+        .set_locale(Some("fr".to_owned()))
+        .omit_locale()
+        .reset_locale()
+        .set_page_size(50)
+        .reset_page_size()
+        .set_client_label(Some("client-override"))
+        .omit_client_label()
+        .reset_client_label()
+        .api_key(
+            concord::SecretString::try_new("example-api-key").expect("bounded example API key"),
+        )
+        // This construction-only example selects an explicit test limiter so a
+        // rate-declaring client can never build through an implicit bypass.
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
+        .build()?;
 ```
 
 `new()` is generated only when no required value, secret/provider, limiter, or other construction decision remains.
@@ -39,12 +41,23 @@ A client with effective rate policies cannot build without an explicit limiter c
 
 ## Scope snapshots
 
+<!-- concord-source: crates/concord-examples/src/contracts/full_dsl.rs#direct_and_explicit -->
 ```rust
-let regional = client
-    .regional(region)
-    .set_language(language_from_config)
-    .set_language(Some(Language::Fr))
-    .omit_language();
+    let _: reference_api::regions::FetchRequest = client
+        .regions("eu-west".to_owned())
+        .set_language(Some("fr".to_owned()))
+        .set_scope_label(Some("scope-override"))
+        .omit_scope_label()
+        .reset_scope_label()
+        .fetch("42".to_owned(), vec!["stable".to_owned()]);
+    let endpoint = ReferenceApi::unbound()
+        .regions("eu-west".to_owned())
+        .set_language(Some("fr".to_owned()))
+        .set_scope_label(Some("scope-override"))
+        .omit_scope_label()
+        .reset_scope_label()
+        .fetch("42".to_owned(), vec!["stable".to_owned()]);
+    let _: reference_api::regions::FetchRequest = client.request(endpoint);
 ```
 
 Scopes are inert immutable snapshots. They expose controls only for values they own and navigation only to their children.
@@ -53,14 +66,16 @@ Scopes are inert immutable snapshots. They expose controls only for values they 
 
 Required non-initialized ordinary values and required bodies are direct arguments in source order. Optional/defaulted values become controls.
 
+<!-- concord-source: crates/concord-examples/src/contracts/full_dsl.rs#request_controls -->
 ```rust
-let request = regional
-    .item_summaries(tags)
-    .set_category(category_from_config)
-    .set_category(Some(category))
-    .omit_category()
-    .set_count(PageSize::new(100)?)
-    .reset_count();
+    let _: reference_api::StatusRequest = client
+        .status()
+        .set_verbose(Some(true))
+        .omit_verbose()
+        .reset_verbose()
+        .set_tags(Some(vec!["stable", "documented"]))
+        .omit_tags()
+        .reset_tags();
 ```
 
 Do not generate generic path/query/header/body/auth/native mutation methods for declared endpoints.
@@ -80,11 +95,12 @@ For `x?: Option<U>`, `set_x` accepts `Option<Option<U>>`, and `omit_x` selects t
 
 Every endpoint request supports:
 
+<!-- concord-source: crates/concord-examples/src/request_response/acquisition.rs#metadata_response -->
 ```rust
-let output: Output = request.await?;
-let response: ApiResponse<Output> = request.response().await?;
-let plan = request.plan()?;
-let description = request.description();
+/// Returns the decoded value together with accepted response metadata.
+pub async fn with_metadata(client: &ResponseApi) -> Result<ApiResponse<String>, ApiError> {
+    client.message().response().await
+}
 ```
 
 `ApiResponse<T>` is a managed accepted response with bounded explicit metadata access. It is not a native response escape.
@@ -93,10 +109,23 @@ let description = request.description();
 
 Generated only when the contract proves the capability:
 
+<!-- concord-source: crates/concord-examples/src/contracts/catalog_v2.rs#catalog_planning -->
 ```rust
-request.accepted_bytes().await?;
-request.paginate(PageLimit::CompleteWithin(limit)).await?;
-request.store_as_session().await?;
+    let _plan = request.plan()?;
+    let _pagination = request.paginate(PageLimit::CompleteWithin(
+        NonZeroU32::new(20).expect("positive"),
+    ));
+    let _accepted: concord::endpoint::AcceptedBytesRequest<_> =
+        regional.item("item-42".to_owned()).accepted_bytes();
+
+    let endpoint = CatalogApi::unbound()
+        .regional("eu-west".to_owned())
+        .item("item-42".to_owned());
+    let _description = endpoint.description();
+    let _unbound_plan = client.plan(&endpoint)?;
+    let request = client.request(endpoint);
+    let _response: concord::endpoint::ResponseRequest<_> = request.response();
+    let _metadata_shape: Option<ApiResponse<Bytes>> = None;
 ```
 
 - `accepted_bytes` is endpoint-declared and bypasses representation validation/conversion while retaining auth, status, negotiation, and finite acquisition.
@@ -105,23 +134,43 @@ request.store_as_session().await?;
 
 ## Streams
 
+<!-- concord-source: crates/concord-examples/src/request_response/records.rs#consume_records -->
 ```rust
-let bytes: ByteStream = client.download(id).await?;
-let items: ItemStream<Event> = client.watch().await?;
+pub async fn read_csv_rows(
+    client: &RecordsApi,
+) -> Result<Vec<(String, u32)>, Box<dyn std::error::Error>> {
+    let mut stream = client.csv_stream().await?;
+    let mut rows = Vec::new();
+    while let Some(row) =
+        std::future::poll_fn(|context| Pin::new(&mut stream).poll_next(context)).await
+    {
+        rows.push(row?);
+    }
+    Ok(rows)
+}
 ```
 
 The initial operation completes when the accepted stream handle is acquired. Later failures belong to the stream. Neither stream type is `Clone` without real replay/multicast semantics.
 
 ## Unbound generated intents
 
+<!-- concord-source: crates/concord-examples/src/contracts/full_dsl.rs#direct_and_explicit -->
 ```rust
-let intent = CatalogApi::unbound()
-    .regional(region)
-    .item_summaries(tags)
-    .set_category(Some(category));
-
-let plan = client.plan(&intent)?;
-let request = client.request(intent); // statically matching and infallible
+    let _: reference_api::regions::FetchRequest = client
+        .regions("eu-west".to_owned())
+        .set_language(Some("fr".to_owned()))
+        .set_scope_label(Some("scope-override"))
+        .omit_scope_label()
+        .reset_scope_label()
+        .fetch("42".to_owned(), vec!["stable".to_owned()]);
+    let endpoint = ReferenceApi::unbound()
+        .regions("eu-west".to_owned())
+        .set_language(Some("fr".to_owned()))
+        .set_scope_label(Some("scope-override"))
+        .omit_scope_label()
+        .reset_scope_label()
+        .fetch("42".to_owned(), vec!["stable".to_owned()]);
+    let _: reference_api::regions::FetchRequest = client.request(endpoint);
 ```
 
 The unbound tree uses the same navigation, values, representation, and capabilities. It carries no client runtime, credentials, limiter, observer, or operation identity.
@@ -132,8 +181,24 @@ Binding a generated intent through another client type is a compile-time error.
 
 Runtime endpoints use an explicit fallible path:
 
+<!-- concord-source: crates/concord-examples/src/runtime_endpoints/generated_and_runtime.rs#runtime_endpoint -->
 ```rust
-let request = runtime_endpoint.try_bind(&client_or_scope)?;
+pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
+    let client = PreparedApi::builder().build()?;
+    let endpoint = RuntimeEndpoint::builder(EndpointId::new("prepared_api.lookup")?, Method::POST)
+        .path("records")
+        .path("42")
+        .query("view", "summary")
+        .header(HeaderName::from_static("x-example"), "canonical")
+        .timeout(Duration::from_secs(5))
+        .body_codec::<crate::request_response::specifications::ExampleCodec>(
+            "request body".to_owned(),
+        )
+        .response::<crate::request_response::specifications::ExampleCodec, String>()
+        .build()?;
+    let _: Request<_> = endpoint.try_bind(&client)?;
+    Ok(())
+}
 ```
 
 Do not weaken generated binding merely to unify it with dynamic validation.
@@ -142,7 +207,7 @@ Do not weaken generated binding merely to unify it with dynamic validation.
 
 Generated docs should teach callers to combine stable category and dispatch knowledge:
 
-```rust
+```text
 match request.await {
     Ok(value) => use_value(value),
     Err(error) if error.dispatch_knowledge() == DispatchKnowledge::PossiblyDispatched => {

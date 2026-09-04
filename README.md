@@ -28,29 +28,46 @@ api! {
 }
 ```
 
-The authored tree is the caller tree:
+The authored tree is the caller tree. This complete example is compiled as part
+of the maintained examples crate:
 
+<!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_usage -->
 ```rust
-let client = CatalogApi::builder()
-    .set_tenant("acme".to_owned())
-    .build()?;
+pub fn construct() -> Result<(), concord::ClientBuildError> {
+    let client = CatalogApi::builder()
+        .set_tenant("acme".to_owned())
+        .build()?;
 
-let item: Item = client.item("42".to_owned()).await?;
-
-let intent = CatalogApi::unbound().item("42".to_owned());
-let plan = client.plan(&intent)?;
-let request = client.request(intent);
+    let _: PaginatedRequest<_> = client
+        .regional("eu".to_owned())
+        .item_summaries()
+        .set_category(Some("hardware".to_owned()))
+        .set_count(NonZeroU32::new(50).expect("positive page size"))
+        .paginate(PageLimit::Prefix(2));
+    Ok(())
+}
 ```
 
 Runtime-discovered relative operations retain separate, fallible proof:
 
+<!-- concord-source: crates/concord-examples/src/runtime_endpoints/generated_and_runtime.rs#runtime_endpoint -->
 ```rust
-let endpoint = RuntimeEndpoint::builder(endpoint_id, Method::GET)
-    .path("items")
-    .path_value(RuntimeValue::sensitive(record_id))
-    .response::<Json, Item>()
-    .build()?;
-let item = endpoint.try_bind(&client)?.await?;
+pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
+    let client = PreparedApi::builder().build()?;
+    let endpoint = RuntimeEndpoint::builder(EndpointId::new("prepared_api.lookup")?, Method::POST)
+        .path("records")
+        .path("42")
+        .query("view", "summary")
+        .header(HeaderName::from_static("x-example"), "canonical")
+        .timeout(Duration::from_secs(5))
+        .body_codec::<crate::request_response::specifications::ExampleCodec>(
+            "request body".to_owned(),
+        )
+        .response::<crate::request_response::specifications::ExampleCodec, String>()
+        .build()?;
+    let _: Request<_> = endpoint.try_bind(&client)?;
+    Ok(())
+}
 ```
 
 Core guarantees include opaque Rust payload types, explicit outer presence and repetition, fixed logical origins, endpoint-owned status/effect, one absolute operation deadline, managed retry/auth/rate/pagination lifecycles, and sanitized bounded evidence.

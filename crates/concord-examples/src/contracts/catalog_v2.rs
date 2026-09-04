@@ -236,6 +236,7 @@ api! {
 
 /// Compile-checks representative direct and unbound usage without polling any
 /// execution terminal.
+// ANCHOR: catalog_usage
 pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
     let client = CatalogApi::builder()
         .set_tenant("tenant-a".to_owned())
@@ -263,6 +264,7 @@ pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
         .item_summaries(vec!["stable".to_owned()])
         .set_category(Some("featured".to_owned()))
         .reset_count();
+    // ANCHOR: catalog_planning
     let _plan = request.plan()?;
     let _pagination = request.paginate(PageLimit::CompleteWithin(
         NonZeroU32::new(20).expect("positive"),
@@ -278,5 +280,7 @@ pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
     let request = client.request(endpoint);
     let _response: concord::endpoint::ResponseRequest<_> = request.response();
     let _metadata_shape: Option<ApiResponse<Bytes>> = None;
+    // ANCHOR_END: catalog_planning
     Ok(())
 }
+// ANCHOR_END: catalog_usage

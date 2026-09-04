@@ -40,6 +40,7 @@ impl ResponseRepresentation<String> for ParentDiscard {
     }
 }
 
+// ANCHOR: representation_inheritance_contract
 api! {
     client RepresentationInheritanceApi {
         base "https://inheritance.example.test/";
@@ -64,6 +65,7 @@ api! {
         }
     }
 }
+// ANCHOR_END: representation_inheritance_contract
 
 api! {
     client BeforeParentRepresentationApi {

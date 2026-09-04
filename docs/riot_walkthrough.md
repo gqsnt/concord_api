@@ -81,8 +81,15 @@ Audit every collection/optional query:
 
 Example repeated IDs:
 
+<!-- concord-source: crates/concord-examples/src/riot/usage.rs#riot_paginated_request -->
 ```rust
-append "id" = each endpoint.ids;
+    let _: concord::pagination::PaginatedRequest<_> = riot
+        .regional(super::domain::RegionalRoute::Europe)
+        .match_v5()
+        .match_ids_by_puuid("example-puuid".to_owned())
+        .set_match_type(Some(MatchType::Ranked))
+        .set_count(NonZeroU32::new(10).expect("positive page size"))
+        .paginate(PageLimit::Prefix(2));
 ```
 
 ## Rate policy migration

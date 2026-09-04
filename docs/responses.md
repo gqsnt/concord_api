@@ -4,7 +4,7 @@ Response design separates endpoint success semantics, representation/media valid
 
 ## Endpoint-owned accepted status
 
-```rust
+```concord-pseudocode
 status success;                // final 2xx
 status 200;
 status [200, 201, 204];
@@ -29,7 +29,7 @@ The representation receives an already accepted status/head and returns a domain
 
 Conceptually:
 
-```rust
+```text
 pub trait ResponseRepresentation<Output>: Send + Sync + 'static {
     type Driver: SealedResponseDriver<Output = Output>;
 
@@ -57,7 +57,7 @@ The arrow is exactly ordinary `.await` output.
 
 ### Complete values
 
-```rust
+```text
 -> Item
 -> Vec<Item>
 -> Bytes
@@ -70,7 +70,7 @@ The operation does not return until the complete semantic value exists or fails.
 
 ### Lazy bytes
 
-```rust
+```text
 -> ByteStream
 ```
 
@@ -78,7 +78,7 @@ The operation does not return until the complete semantic value exists or fails.
 
 ### Lazy semantic items
 
-```rust
+```text
 -> ItemStream<Event>
 ```
 
@@ -130,8 +130,12 @@ Accepted representation validation/decode failure is terminal by default; repeat
 
 ## `ApiResponse<T>`
 
+<!-- concord-source: crates/concord-examples/src/request_response/acquisition.rs#metadata_response -->
 ```rust
-let response: ApiResponse<Item> = request.response().await?;
+/// Returns the decoded value together with accepted response metadata.
+pub async fn with_metadata(client: &ResponseApi) -> Result<ApiResponse<String>, ApiError> {
+    client.message().response().await
+}
 ```
 
 `headers()` deliberately gives the caller the actual accepted header map. That
@@ -144,14 +148,18 @@ receive this map. The wrapper never returns native response ownership.
 
 Endpoint declaration:
 
-```rust
+```concord-pseudocode
 expose accepted_bytes;
 ```
 
 Generated:
 
+<!-- concord-source: crates/concord-examples/src/request_response/acquisition.rs#accepted_bytes -->
 ```rust
-let response: ApiResponse<Bytes> = request.accepted_bytes().await?;
+/// Preserves declared acceptance and `Accept` while returning bounded bytes.
+pub async fn as_bytes(client: &ResponseApi) -> Result<ApiResponse<Bytes>, ApiError> {
+    client.message().accepted_bytes().await
+}
 ```
 
 Semantics:
