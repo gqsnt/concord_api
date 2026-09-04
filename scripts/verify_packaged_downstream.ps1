@@ -8,6 +8,7 @@ $metadata = & cargo metadata --manifest-path (Join-Path $root 'Cargo.toml') --no
 if ($LASTEXITCODE -ne 0) {
     throw 'cargo metadata failed'
 }
+$cargoTarget = [System.IO.Path]::GetFullPath([string]$metadata.target_directory)
 function PackageAt([string]$RelativeManifest) {
     $manifest = (Resolve-Path -LiteralPath (Join-Path $root $RelativeManifest)).Path
     $package = $metadata.packages | Where-Object {
@@ -89,7 +90,7 @@ $downstreamRoot = Join-Path $runRoot 'downstream'
 [System.IO.Directory]::CreateDirectory((Join-Path $downstreamRoot 'src')) | Out-Null
 
 foreach ($packageName in $packages) {
-    $archive = Join-Path $root "target/package/$packageName-$version.crate"
+    $archive = Join-Path $cargoTarget "package/$packageName-$version.crate"
     if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
         throw "missing package archive $archive"
     }
