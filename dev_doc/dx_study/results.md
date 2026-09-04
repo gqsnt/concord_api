@@ -1,6 +1,6 @@
 # Gate 3 anonymized results
 
-- Exact candidate full SHA: **TO BE RECORDED BY FACILITATOR**
+- Exact candidate full SHA: `0f72e8653ee0fc08ea7de0e606f01c8d130b53c2`
 - Facilitator: **pending; do not record identifying data here**
 - Human participants completed: **0**
 - Qualifying minimum: **3 unfamiliar Rust-reading humans**
