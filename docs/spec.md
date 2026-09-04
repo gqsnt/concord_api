@@ -462,7 +462,7 @@ It retains auth, negotiation, status, deadline, and finite complete acquisition,
 
 ```text
 credentials_block := credentials { credential_decl* }
-credential_decl   := attrs secret ident [ ? ] ;
+credential_decl   := attrs secret ident ;
                    | attrs credential ident = credential_source ;
 
 credential_source := api_key ( secret_ref )
@@ -475,8 +475,7 @@ secret_ref        := secret . ident
 endpoint_path     := ident (:: ident)*
 ```
 
-- required secret is a protected builder input;
-- optional secret may be initially absent; a derived slot is unavailable;
+- every static secret is a required protected builder input;
 - custom provider object is required, though acquisition may report unavailable;
 - endpoint-backed source starts empty by source semantics;
 - endpoint paths are client-root-relative and may forward-reference a later endpoint;
@@ -602,7 +601,7 @@ Rules:
 The compiler must validate generated names before emission, including:
 
 - child methods/types/modules;
-- `set_`, `with_`, `omit_`, `reset_` controls;
+- `set_`, `omit_`, `reset_` controls;
 - terminals and planning/description helpers;
 - endpoint-backed credential storage methods;
 - internal bridge names.
@@ -613,6 +612,7 @@ Diagnostics identify the semantic owner, violated rule, conflicting declaration,
 
 The active grammar does not contain:
 
+- optional static-secret declarations (postfix `?` after a secret name);
 - generic native request/response mutation;
 - arbitrary absolute runtime origin;
 - redirects;

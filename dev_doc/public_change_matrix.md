@@ -7,7 +7,7 @@
 | optionality | exact `Option<T>` token recognized | postfix `?`; type opaque | alias transparency; breaking declarations |
 | collection repetition | inferred/trait/wrapper behavior | explicit `each` at placement | cardinality visible |
 | defaults | `= default` | `#[default]` | explicit trait-default policy |
-| optional control | inner `.set_x(T)`, `.clear_x()` | exact `.set_x(Option<T>)`, `.with_x(T)`, `.omit_x()` | nested optional truth, renamed method |
+| optional control | inner `.set_x(T)`, `.clear_x()` | exact `.set_x(Option<T>)`, `.omit_x()`, plus initialized `.reset_x()` | nested optional truth, explicit omission/reset, released `with_x` namespace |
 | owner refs | `vars`, `scope`, `ep` | `client`, exact scope name, `endpoint` | no search rebinding |
 | scalar composition | `fmt[...]` | `concat [...]` | one bounded atom |
 | scalar wire text | implicit `Display` | `RequestAtom` or `via Adapter` | stable protocol role |
@@ -33,4 +33,3 @@
 | unbound | flat/explicit endpoint forms | isomorphic `Client::unbound()` tree | same domain language |
 | runtime endpoint | dynamic builder under old semantics | full v2.1 patch/representation/status/effect, fallible `try_bind` | same executor, no authority escape |
 | public version | 1.0.0 internal v1 | 2.1.0 target | breaking release |
-

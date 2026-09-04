@@ -246,7 +246,7 @@ Do not retain broad aliases indefinitely.
 
 Preserve the source/slot/private-placement model. Migrate:
 
-- typed secret declarations to protected `secret name;` or optional `secret name?;`;
+- typed secret declarations to required protected `secret name;`;
 - repeated leaf auth clauses into one grouped `auth { ... }` block;
 - challenge policy remains attribution, not automatic refresh;
 - endpoint-backed source path becomes client-root-relative semantic path;

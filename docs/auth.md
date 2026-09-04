@@ -22,28 +22,29 @@ These are separate concepts and must not be collapsed into a header setter.
 ```concord-pseudocode
 credentials {
     secret bootstrap_key;
-    secret optional_api_key?;
 
     credential bootstrap = api_key(secret.bootstrap_key);
-    credential optional_key = api_key(secret.optional_api_key);
     credential oauth = custom OAuthClientCredentials;
     credential session = endpoint authenticate;
 }
 ```
 
 - `secret name;` is a required protected client-builder input.
-- `secret name?;` is optional initial protected input; a derived credential slot begins unavailable when absent.
 - a custom provider object is required; its acquisition may report unavailable;
-- an endpoint-backed source begins empty because of source kind and does not need `?` on the credential declaration;
+- an endpoint-backed source begins empty because of its source kind;
 - credential dependency order is resolved from the complete graph, not source order;
 - endpoint paths are client-root-relative semantic paths and may be forward references;
 - unknown references and cycles are compile errors.
 
-Optional static secrets are prototype-gated. Keep them unless the client-construction task study shows separate client/profile construction is materially clearer.
+Optional static-secret syntax is deferred from v2.1. Use an endpoint-backed
+slot that naturally begins unavailable, or a required custom provider that can
+return `AuthErrorKind::Unavailable`. A separate least-authority client/profile
+design remains deferred until a representative multi-auth API justifies it.
 
 ## Build the client
 
-Required secrets/providers are direct builder inputs. Optional secret uses exact optional controls appropriate to secret wrappers. Secret-bearing values never implement revealing `Debug` or public `Display`.
+Required secrets/providers are direct builder inputs. Secret-bearing values
+never implement revealing `Debug` or public `Display`.
 
 A declared auth placement is not optional merely because material may be unavailable. Execution fails before dispatch with a credential-unavailable category rather than silently omitting the placement.
 

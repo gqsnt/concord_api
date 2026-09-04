@@ -103,12 +103,6 @@ pub(super) fn validate_setter_namespace(
             if value.accepts_absence() {
                 insert_name(
                     &mut names,
-                    format!("with_{}", canonical_ident(&value.name)),
-                    value.name.span(),
-                    owner,
-                )?;
-                insert_name(
-                    &mut names,
                     format!("omit_{}", canonical_ident(&value.name)),
                     value.name.span(),
                     owner,
@@ -156,12 +150,6 @@ pub(super) fn validate_child_methods(
             owner,
         )?;
         if value.accepts_absence() {
-            insert_name(
-                &mut names,
-                format!("with_{}", canonical_ident(&value.name)),
-                value.name.span(),
-                owner,
-            )?;
             insert_name(
                 &mut names,
                 format!("omit_{}", canonical_ident(&value.name)),

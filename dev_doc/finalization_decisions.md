@@ -10,7 +10,7 @@ The following decisions must be resolved from prototype evidence before release 
 | query words | `when_present`, `append`, `each` | Gate 3 | publish one spelling only |
 | stream erasure | private boxed stream carriers | Gate 8 comparative evidence passed | retained: one construction allocation, zero polling allocations, throughput and size budgets met |
 | observer events | attempt started, response head, operation finished, pagination finished, stream finished | Gates 5 and 9 passed mechanically; operator task review unavailable | retain minimum read-only set for prototype; no mutation authority |
-| optional static secret | permit `secret x?` | auth construction task and security tests | keep or replace with explicit profiles; never silently omit placement |
+| optional static secret | deferred from v2.1 | no owner requirement, implementation, or human/product evidence; ADR 0010 | reject with alternatives; revisit only for a representative multi-auth API |
 | contract metadata size | static/effective runtime-accessible descriptions | Gate 10 machine evidence passed through 1,000 endpoints; independent human first-screen review unavailable | retain for the RC; stable freeze remains blocked with the rest of Gate 10 |
 | project license | no license grant exists in repository or observed history | `cargo deny` rejects all four public packages; package archives otherwise pass downstream checks | project owner must select and supply the license; do not invent a grant or self-waive the check |
 | aggregate body reuse | deferred | pagination/body benchmark | do not add unless explicit capability earns measured value |

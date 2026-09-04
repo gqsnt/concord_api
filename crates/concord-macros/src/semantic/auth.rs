@@ -237,12 +237,6 @@ pub(super) fn validate_credential_names(
         if value.accepts_absence() {
             insert_name(
                 &mut builder,
-                format!("with_{}", canonical_ident(&value.name)),
-                value.name.span(),
-                "generated client builder method",
-            )?;
-            insert_name(
-                &mut builder,
                 format!("omit_{}", canonical_ident(&value.name)),
                 value.name.span(),
                 "generated client builder method",

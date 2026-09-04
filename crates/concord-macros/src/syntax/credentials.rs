@@ -31,6 +31,12 @@ pub(super) fn parse_credentials(input: ParseStream<'_>) -> syn::Result<Credentia
                     "v1 typed secrets were removed; write `secret NAME;` (the builder accepts `SecretString`)",
                 ));
             }
+            if body.peek(Token![?]) {
+                let marker: Token![?] = body.parse()?;
+                return Err(marker.span().error(
+                    "optional static secrets are deferred for v2.1; use an endpoint-backed credential slot that naturally begins unavailable, or a required custom provider that can return credential-unavailable (`AuthErrorKind::Unavailable`); separate client/profile design is deferred until a representative multi-auth API justifies it",
+                ));
+            }
             body.parse::<Token![;]>()?;
             let canonical = canonical_ident(&name);
             if !secret_names.insert(canonical.clone()) {

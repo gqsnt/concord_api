@@ -12,7 +12,7 @@ This map is based on the supplied v1 repository. Paths may be split/renamed duri
 | `syntax/declaration.rs` | child containment/order, methods, endpoint result/body grammar |
 | `syntax/values.rs` | postfix `?`, defaults, sensitivity; delete type-name semantics |
 | `syntax/request.rs` | atom/adapter/concat, subdomain/path/query/header patch grammar |
-| `syntax/credentials.rs` | optional secret, grouped auth, endpoint-source path |
+| `syntax/credentials.rs` | required static secrets, focused deferred-optional diagnostic, grouped auth, endpoint-source path |
 | `syntax/pagination.rs` | `paginate via`, bindings and initializer syntax |
 | `syntax/rate_limits.rs` | policy/id/key/cost/allow/bind syntax |
 | `syntax/keyword.rs` | remove old vocabulary, add v2.1 words |
@@ -120,4 +120,3 @@ This map is based on the supplied v1 repository. Paths may be split/renamed duri
 - `tools/perf`: representation driver, large expansion, shaping, retry/rate/pagination benchmarks;
 - `scripts/check_docs_examples.ps1`: new anchors/vocabulary;
 - CI/just: retain full gates, update package names/features/version only as required.
-

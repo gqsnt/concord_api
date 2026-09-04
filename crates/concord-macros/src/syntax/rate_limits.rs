@@ -586,7 +586,7 @@ fn parse_definition_dimension(
             .map_err(|_| input.error("invalid reusable rate-limit dimension"))?
             .span();
         return Err(span.error(
-            "reusable `key` dimensions accept only `host`, `endpoint`, or declared bare formal names",
+            "reusable `key` dimensions accept only `origin`, `endpoint`, or declared bare formal names",
         ));
     }
     if input.peek(keyword::fmt) {
@@ -969,6 +969,25 @@ mod tests {
             }
         });
         assert!(captured_value.contains("cannot capture lexical values"));
+
+        let literal_dimension = parse_error(quote! {
+            client Api {
+                timeout 30s;
+                base "https://example.test";
+                rate_limits {
+                    policy shared() {
+                        id "concord.rate_limits.literal";
+                        key ["tenant"];
+                        cost 1;
+                        allow 1 per 1s;
+                    }
+                }
+            }
+        });
+        assert!(literal_dimension.contains(
+            "reusable `key` dimensions accept only `origin`, `endpoint`, or declared bare formal names"
+        ));
+        assert!(!literal_dimension.contains("only `host`"));
 
         let duplicate_binding = parse_error(quote! {
             client Api {
