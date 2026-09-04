@@ -135,7 +135,8 @@ Use Riot to measure:
 ## Completion criteria
 
 - no retired declaration surface or implicit optional/repetition behavior;
-- every endpoint has a stable ID or an explicit documented reason for derived identity during prototype only;
+- every endpoint has a stable ID or an explicit documented reason for retaining
+  derived identity in the unpublished integration candidate;
 - effective docs show inherited representation and policy origins;
 - all illustrative quota/auth statements remain clearly labeled;
 - contract compiles under no-default and required feature combinations;

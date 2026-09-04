@@ -66,7 +66,7 @@ pub trait RequestRepresentation<Input>: Send + Sync + 'static {
 }
 ```
 
-The exact trait shape is prototype-gated. The authority division is fixed:
+This trait shape and authority division are selected for v2.1:
 
 - representation sees the exact body input and bounded body context;
 - it owns encoding, request media, structural metadata, and mechanical capabilities;

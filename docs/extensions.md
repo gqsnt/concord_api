@@ -112,7 +112,9 @@ Receives bounded borrowed sanitized events and returns unit. It cannot mutate, v
 - `Csv<Cfg>`
 - managed multipart and request-stream roles where features are enabled
 
-Use zero-sized generic markers where Rust coherence/diagnostics pass the prototype gate. Do not expose decoder/driver wrapper towers in caller signatures.
+Use the selected zero-sized generic markers whose Rust coherence, MSRV, and
+diagnostic checks pass mechanically. Do not expose decoder/driver wrapper towers
+in caller signatures.
 
 ### Streams
 
@@ -120,7 +122,9 @@ Use zero-sized generic markers where Rust coherence/diagnostics pass the prototy
 - `ItemStream<T>`
 - `RequestStream<T>`
 
-Keep decoder/driver internals private. Benchmark boxed versus enum/static erasure before freezing.
+Keep decoder/driver internals private. The maintained boxed/enum/static
+comparison selects private boxed erasure while its allocation, throughput,
+lifecycle, compile-cost, and size budgets continue to pass.
 
 ### Safe JSON diagnostics
 

@@ -6,7 +6,7 @@
 2. Selected target behavior not yet implemented is marked explicitly and should remain in the implementation kit or feature branch, not active release docs.
 3. `docs/design_invariants.md`, `docs/spec.md`, and `docs/execution_policy.md` are the highest normative in-repository documents.
 4. Generated Rustdoc, static descriptions, semantic diff, and hand-written docs consume the same vocabulary and semantic graph.
-5. A public example is compile checked or clearly labeled pseudocode/prototype.
+5. A public example is compile checked or clearly labeled conceptual pseudocode.
 6. A claim that depends on Rust coherence, performance, user cognition, or operation remains provisional until its gate passes.
 7. No doc calls a plan “safe,” a local limiter “distributed,” a timeout “operation-wide,” or a response “complete” unless the exact guarantee is implemented.
 8. Secrets, body values, sensitive public values, and raw rate keys never appear in example diagnostic output.

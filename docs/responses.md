@@ -43,7 +43,7 @@ pub trait ResponseRepresentation<Output>: Send + Sync + 'static {
 }
 ```
 
-The exact trait/driver shape is prototype-gated. Fixed authority:
+This trait/driver shape and authority boundary are selected for v2.1:
 
 - representation receives only an accepted bounded head and chooses/configures a supported core driver;
 - it owns response media negotiation/validation and conversion semantics;

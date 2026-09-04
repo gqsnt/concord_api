@@ -22,7 +22,7 @@ Required owner inputs and proof:
 Gate 0 is mandatory. Engineering may prepare the packet and archives, but only
 the project owner can supply the legal and product decisions.
 
-## Gate 1 — Representation trait and driver prototype
+## Gate 1 — Representation trait and driver proof
 
 Implement and compare at least:
 

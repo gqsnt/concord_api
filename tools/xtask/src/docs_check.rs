@@ -709,6 +709,47 @@ fn check_release_truth(
             ));
         }
     }
+    check_claim_states(root, errors)?;
+    Ok(())
+}
+
+fn check_claim_states(root: &Path, errors: &mut Vec<String>) -> Result<(), String> {
+    const ALLOWED: &[&str] = &[
+        "Observed",
+        "Inferred",
+        "Assumed",
+        "Desired",
+        "Candidate",
+        "Selected",
+        "Supported",
+        "Disconfirmed",
+        "Unknown",
+        "Deferred",
+    ];
+
+    let ledger = read(&root.join("dev_doc/claim_evidence_ledger.md"))?;
+    let mut claims = 0;
+    for (index, line) in ledger.lines().enumerate() {
+        let columns = line.split('|').map(str::trim).collect::<Vec<_>>();
+        let Some(id) = columns.get(1).filter(|id| {
+            id.strip_prefix('C').is_some_and(|number| {
+                !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
+            })
+        }) else {
+            continue;
+        };
+        claims += 1;
+        let state = columns.get(3).copied().unwrap_or_default();
+        if !ALLOWED.contains(&state) {
+            errors.push(format!(
+                "dev_doc/claim_evidence_ledger.md:{}: claim {id} uses non-canonical state `{state}`",
+                index + 1
+            ));
+        }
+    }
+    if claims == 0 {
+        errors.push("claim/evidence ledger contains no numbered claims".to_owned());
+    }
     Ok(())
 }
 
