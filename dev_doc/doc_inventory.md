@@ -24,14 +24,17 @@
 | `docs/runtime_endpoints.md` | advanced callers | dynamic pressure valve | normative subsystem | runtime endpoint tests |
 | `docs/extensions.md` | extension authors | public semantic traits/extras | normative subsystem | public API/extension tests |
 | `docs/riot_walkthrough.md` | authors/maintainers | large real-shaped contract | evidence/example | Riot fixture/bench |
-| `docs/migration_v2_1.md` | migrating users | v1 → v2.1 | migration policy | migration/UI searches |
+| `docs/migration_v2_1.md` | migrating users | v2.0.0 / earlier v1 forms → v2.1 | migration policy | migration/UI searches |
 | `docs/evidence_and_release_gates.md` | maintainers | proof and freeze gates | **yes** | CI/xtask/perf/user protocol |
 | `dev_doc/internals.md` | maintainers | responsibility/IR map | implementation normative | module/architecture review |
-| `dev_doc/implementation_v2_1.md` | implementation agent | phase order | implementation normative | phase exit checks |
-| `dev_doc/repository_change_map.md` | maintainers | path impact | no | repository state |
+| `dev_doc/release_gate_status.md` | owners/release maintainers | sole lifecycle and gate decision | **yes for release state** | `docs-check` + exact evidence |
+| `dev_doc/owner_release_decisions.md` | project owner | unresolved legal/package/product authority | authoritative only when owner-completed | Gate 0 |
+| `dev_doc/implementation_v2_1.md` | maintainers | historical phase order | no; historical | release status |
+| `dev_doc/repository_change_map.md` | maintainers | historical planned path impact | no; historical | repository state |
 | `dev_doc/public_change_matrix.md` | reviewers/migrators | breaking surface inventory | no | public API diff |
 | `dev_doc/decision_record.md` | maintainers | selected decision | **yes** | ADR review |
 | `dev_doc/adrs/*` | maintainers | contentious decisions/revisit triggers | **yes per status** | named gates |
+| `dev_doc/history/*` | maintainers | retained audit/rationale input | no; historical | explicit header + package exclusion |
 
 Rules:
 
@@ -40,3 +43,5 @@ Rules:
 - one document owns each detailed fact; others link rather than silently restate different behavior;
 - obsolete v1 documents are rewritten or removed, not left beside v2.1;
 - every doc states target/freeze status while release gates remain open.
+- exactly one file carries the `concord-release-status-owner` marker;
+  `cargo run --locked -p concord-xtask -- docs-check --locked` enforces it.

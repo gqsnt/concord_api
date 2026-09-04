@@ -76,6 +76,7 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-docs
+      - run: cargo run --locked -p concord-xtask -- docs-check --locked
       - run: cargo test --workspace --doc --all-features --locked
       - run: cargo rustdoc -p concord-core --no-default-features --locked -- -D warnings
       - run: cargo rustdoc -p concord-extras --no-default-features --locked -- -D warnings

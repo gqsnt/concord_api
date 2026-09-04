@@ -1,18 +1,22 @@
 # Concord v2.1 quick start
 
 - **Audience:** first-time API authors and callers
-- **Status:** target syntax; release freeze follows the evidence gates
+- **Status:** `2.1.0-beta.1` integration-candidate syntax; release freeze follows the evidence gates
 - **Normative references:** [DSL specification](spec.md), [generated client](generated_client.md)
 
 ## Add dependencies
 
 ```toml
 [dependencies]
-concord = { path = "../concord_api/crates/concord", features = ["json"] }
+concord = { path = "../concord_api2/crates/concord", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 ```
 
-Concord v2.1 keeps the workspace MSRV at Rust 1.86 unless the representation prototype proves that impossible and the change is recorded explicitly.
+This path form is the truthful checkout-only beta example. A registry install
+line cannot be finalized until the owner approves and secures the public
+package namespace in Gate 0; the Rust import remains `concord`.
+
+Concord v2.1 keeps the workspace MSRV at Rust 1.86.
 
 ## Domain types
 

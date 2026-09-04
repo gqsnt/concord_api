@@ -87,6 +87,12 @@ It may include:
 - pagination and terminals;
 - local/effective provenance.
 
+The exact logical URL and sanitized public header values are deliberate caller
+authority available only through explicit accessors. They can still contain
+personal or operational application data. `RequestPlan`'s `Debug`
+implementation omits the URL and every header name/value; automatic logs,
+observers, and rate feedback do not inherit those accessors.
+
 Planning performs bounded public atom encoding/validation. It does not invoke body preparation, provider, limiter, retry, observer, native HTTP, endpoint-backed storage, or completion.
 
 ## Plan versus execution
@@ -125,9 +131,12 @@ Properties:
 - returns unit;
 - cannot mutate or veto request/result/retry/auth/rate;
 - prompt, finite, non-blocking, no external I/O, no panic by contract;
-- event views are bounded and sanitized;
+- request event views are bounded and value-free;
 - core contains observer panics and checks the deadline before and after every
   intermediate callback, but cannot preempt synchronous Rust code;
+- each contained panic saturatingly increments a private process counter without
+  retaining event or panic data; v2.1 has no public observer-health surface, so
+  applications must not claim that observer failure is externally observable;
 - time spent in an intermediate callback consumes the remaining budget after
   it returns; if the deadline expired, no later remote work starts;
 - completion observation runs after the semantic result is fixed, so a slow
@@ -154,17 +163,19 @@ not independent visible attempts.
 Events may expose:
 
 - endpoint/operation/page/attempt identities;
-- method and effect;
-- credential-sanitized logical URL and sanitized public request headers on
-  `AttemptStarted`;
+- method;
+- a value-free `RequestTarget` containing only path-segment, query-occurrence,
+  and public-header-occurrence counts;
 - request body category and known length;
 - status, safely parsed content length, and standard server delay on
   `ResponseHeadObserved`;
 - final outcome, timing, attempt/retry/recovery counts, and stream lifecycle.
 
-They never expose response-header values, bodies, output values, credentials,
-private auth, raw rate keys, or native objects. `DebugLevel::Headers` adds only
-sanitized public request headers; response output remains typed and value-free.
+They never expose a complete URL, path/query names or values, request/response
+header names or values, bodies, output values, credentials, private auth, raw
+rate keys, or native objects. The compatibility-named `DebugLevel::Headers`
+adds only value-free target counts plus typed content-length/server-delay facts;
+it does not print headers.
 
 ## Error model
 

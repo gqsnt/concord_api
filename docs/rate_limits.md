@@ -107,9 +107,16 @@ Do not silently install a process-local limiter because a Cargo feature is enabl
 
 ## Whole-plan admission
 
-For one visible attempt, core supplies the complete effective policy plan to the limiter. A local implementation can apply several windows/keys atomically where possible.
+For one visible attempt, core supplies the complete effective conjunctive policy
+plan to the limiter. A returned `RateLimitPermit` represents admission of that
+whole plan. The bundled process-local limiter evaluates and reserves every
+policy/window atomically: a wait or rejection causes no partial local
+reservation, and its state lock is released before waiting.
 
-A distributed implementation documents whether failed multi-key admission can conservatively debit an earlier reservation. Concord does not promise universal transactional rollback across independent authorities.
+An external/distributed implementation owns and documents whether failed
+multi-policy evaluation is atomic or conservatively debits an earlier
+reservation. Concord cannot promise or perform rollback across authority it
+does not own.
 
 Every policy retry, auth-recovery replay, and page visible attempt reacquires the complete plan. Protocol-proven physical transport recovery does not.
 
@@ -128,9 +135,14 @@ trait RateLimiter {
 
 Only admission can fail the current attempt. Response feedback is synchronous, prompt, bounded, and non-result-determining.
 
-Feedback contains only request identity/plan, status, the standard server delay
-parsed once by core, and the configured cooldown cap. It contains no response
-header map and offers no vendor-header iteration. It may:
+`RateLimitRequest` contains endpoint and method, page/visible-attempt identity,
+the complete canonical plan, and normalized logical origin only when that plan
+uses the `origin` dimension. It contains no complete URL, path/query values, or
+request headers.
+
+Feedback adds only status, the standard server delay parsed once by core, and
+the configured cooldown cap. It contains no response header map and offers no
+vendor-header iteration. It may:
 
 - update cooldown/not-before state for future acquisitions;
 - mark the limiter degraded;

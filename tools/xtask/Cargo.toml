@@ -10,6 +10,7 @@ publish = false
 cargo_metadata.workspace = true
 concord_core = { package = "concord-core", version = "=2.1.0-beta.1", path = "../../crates/concord-core", default-features = false, features = ["multipart"] }
 concord_extras = { package = "concord-extras", version = "=2.1.0-beta.1", path = "../../crates/concord-extras", default-features = false, features = ["oauth2-client"] }
+regex.workspace = true
 serde_json.workspace = true
 
 [lints]

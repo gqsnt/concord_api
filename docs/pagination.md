@@ -73,7 +73,7 @@ pub enum PageStep<C, T> {
 }
 ```
 
-The exact signature is prototype-gated. The authority is fixed:
+The public trait signature and this authority boundary are selected for v2.1:
 
 - controller owns item extraction, completion, and next controller state;
 - item and continuation return atomically;
@@ -97,6 +97,10 @@ Returning a concrete `Vec<T>` bounds/eagerly materializes the controller contrib
 - only requested bounded header values;
 - current public logical page URI when requested;
 - page/operation correlation.
+
+Requesting header interests or the current URI makes the controller an explicit
+owner of those potentially sensitive public values. Interests, names, values,
+and bytes remain bounded; reserved credential/cookie headers are rejected.
 
 No native response, unrestricted header map, cookies, private auth, or credentials.
 
@@ -165,4 +169,7 @@ Partial/resumable or page-stream output is a separate deferred capability with e
 
 ## Observation
 
-Public operation observation distinguishes aggregate, page, and visible attempts. It may emit bounded `PageFinished` events linked to the aggregate. It does not grant a result-determining page callback.
+Public operation observation distinguishes aggregate, page, and visible
+attempts. It emits a bounded `PaginationFinished` aggregate event and correlated
+ordinary page-operation events. It does not grant a result-determining page
+callback.

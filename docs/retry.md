@@ -116,24 +116,34 @@ Cancellation during backoff consumes no shared retry capacity.
 
 ## Server delay
 
-Parse `Retry-After` and supported vendor rate-reset data once at response head into a bounded core fact such as:
+The immutable client runtime owns a private wall-clock source. Production uses
+the system clock only inside that default implementation; deterministic core
+tests inject a fixed source. When a response head arrives, execution captures
+wall time once and parses the standard `Retry-After` header once into the exact
+private typed fact:
 
 ```text
 ServerDelayHint {
-    not_before: Instant,
-    source: RetryAfter | VendorRateReset,
-    scope: CurrentOperation | Origin | Buckets,
+    delay: Duration,
+    source: RetryAfter,
 }
 ```
 
-- use one injected/core clock;
 - delta seconds and valid HTTP date are supported;
 - malformed/past hints are ignored by one documented rule;
 - retry waits `max(backoff, applicable not-before)`, not the sum;
-- limiter records cooldown for future admission;
+- limiter feedback, observer summaries, and rejected-status diagnostics receive
+  the same parsed delay value;
+- limiter/status retention clamps over-cap hints, and retry refuses a delay that
+  cannot fit policy willingness or the remaining absolute deadline;
+- limiter records cooldown for future admission only;
 - the next admission waits only the remaining interval;
 - auth recovery uses no policy backoff but respects cooldown/deadline;
 - if the minimum cannot fit, deny retry rather than retry early.
+
+Vendor-specific reset headers are not exposed or parsed in v2.1. A future
+provider contract must add a finite purpose-specific fact rather than generic
+header iteration.
 
 ## Transport-private recovery
 

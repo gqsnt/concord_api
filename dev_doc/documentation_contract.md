@@ -10,6 +10,8 @@
 6. A claim that depends on Rust coherence, performance, user cognition, or operation remains provisional until its gate passes.
 7. No doc calls a plan “safe,” a local limiter “distributed,” a timeout “operation-wide,” or a response “complete” unless the exact guarantee is implemented.
 8. Secrets, body values, sensitive public values, and raw rate keys never appear in example diagnostic output.
+9. `dev_doc/release_gate_status.md` is the only lifecycle/gate owner. Historical
+   plans, audits, and exact-SHA evidence must identify their limited scope.
 
 ## Vocabulary
 
@@ -64,7 +66,12 @@ The common caller should understand the first screen without seeing bridge gener
 
 ## Source anchors
 
-Use compile-checked example anchors for quick start, value matrix, representation, auth, retry, pagination, runtime endpoint, and Riot walkthrough. `scripts/check_docs_examples.ps1` or replacement tooling must fail on drift.
+Use compile-checked example anchors for quick start, value matrix,
+representation, auth, retry, pagination, runtime endpoint, and Riot
+walkthrough. `cargo run --locked -p concord-xtask -- docs-check --locked` is the
+single canonical checker used by `just docs`, local release verification, and
+the GitHub Actions documentation job. The PowerShell entry point is only a thin
+compatibility wrapper around that Rust command.
 
 ## Documentation completion
 

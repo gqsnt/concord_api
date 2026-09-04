@@ -9,7 +9,8 @@ use crate::operation::OperationId;
 ///
 /// Exact path segments, query names and values, header names and values, and
 /// the complete URL are deliberately absent. Callers that explicitly need
-/// credential-free response metadata can use `ApiResponse` instead.
+/// credential-free public metadata can use `RequestPlan` or `ApiResponse`
+/// accessors instead and must protect application-sensitive public values.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RequestTarget {
     path_segment_count: usize,

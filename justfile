@@ -51,7 +51,7 @@ fixtures:
     cargo run  -p concord-xtask -- fixtures
 
 docs:
-    pwsh -NoLogo -NoProfile -File scripts/check_docs_examples.ps1
+    cargo run --locked -p concord-xtask -- docs-check --locked
     cargo test --workspace --doc --all-features
     cargo rustdoc -p concord-core --no-default-features  -- -D warnings
     cargo rustdoc -p concord-extras --no-default-features  -- -D warnings
@@ -68,7 +68,10 @@ docs:
     cargo rustdoc -p concord-extras --all-features  -- -D warnings
 
 docs-check:
-    pwsh -NoLogo -NoProfile -File scripts/check_docs_examples.ps1
+    cargo run --locked -p concord-xtask -- docs-check --locked
+
+release-audit:
+    cargo run --locked -p concord-xtask -- release-audit --locked
 
 deny:
     cargo deny check

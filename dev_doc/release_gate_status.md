@@ -1,5 +1,7 @@
 # Concord v2.1 release-gate status
 
+<!-- concord-release-status-owner -->
+
 - **Canonical lifecycle status:** Concord v2.1 integration candidate / beta
 - **Workspace version:** `2.1.0-beta.1`
 - **Publication:** disabled in every intended public package manifest
