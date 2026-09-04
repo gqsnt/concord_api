@@ -2,9 +2,10 @@ use super::*;
 
 #[tokio::test]
 async fn synchronous_attempt_observation_consumes_the_operation_deadline() {
+    let _clock = crate::operation::TestClockGuard::reset();
     let executor = DeterministicExecutor::new();
     let hooks = Arc::new(ProbeHooks {
-        attempt_delay: Some(Duration::from_millis(20)),
+        attempt_clock_advance: Some(Duration::from_millis(20)),
         ..ProbeHooks::new()
     });
     let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
@@ -29,14 +30,18 @@ async fn synchronous_attempt_observation_consumes_the_operation_deadline() {
     assert_eq!(hooks.completion_returned.load(Ordering::SeqCst), 1);
 }
 
-#[tokio::test(start_paused = true)]
-async fn synchronous_completion_observation_cannot_transform_success_or_status() {
+#[tokio::test]
+async fn slow_synchronous_completion_observation_cannot_transform_fixed_success() {
+    let _clock = crate::operation::TestClockGuard::reset();
     let success_executor = DeterministicExecutor::new();
     success_executor
         .application()
         .queue_response(ScriptedResponse::success(Bytes::from_static(b"fixed")))
         .expect("success script");
-    let success_hooks = Arc::new(ProbeHooks::new());
+    let success_hooks = Arc::new(ProbeHooks {
+        completion_clock_advance: Some(Duration::from_secs(20)),
+        ..ProbeHooks::new()
+    });
     let success_core = development_core(
         &success_executor,
         Arc::clone(&success_hooks),
@@ -53,7 +58,12 @@ async fn synchronous_completion_observation_cannot_transform_success_or_status()
         completion(&success_hooks.records()).1,
         CompletionOutcome::Success
     );
+    assert_eq!(success_hooks.completion_returned.load(Ordering::SeqCst), 1);
+}
 
+#[tokio::test]
+async fn slow_synchronous_completion_observation_cannot_transform_fixed_status() {
+    let _clock = crate::operation::TestClockGuard::reset();
     let status_executor = DeterministicExecutor::new();
     status_executor
         .application()
@@ -62,7 +72,10 @@ async fn synchronous_completion_observation_cannot_transform_success_or_status()
             Bytes::from_static(b"status"),
         ))
         .expect("status script");
-    let status_hooks = Arc::new(ProbeHooks::new());
+    let status_hooks = Arc::new(ProbeHooks {
+        completion_clock_advance: Some(Duration::from_secs(20)),
+        ..ProbeHooks::new()
+    });
     let status_core = development_core(
         &status_executor,
         Arc::clone(&status_hooks),
@@ -78,6 +91,7 @@ async fn synchronous_completion_observation_cannot_transform_success_or_status()
         completion(&status_hooks.records()).1,
         CompletionOutcome::HttpStatus
     );
+    assert_eq!(status_hooks.completion_returned.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]

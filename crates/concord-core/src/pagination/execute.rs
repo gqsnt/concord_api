@@ -39,7 +39,7 @@ where
             return Ok(Vec::new());
         }
         let meta = endpoint.request_meta();
-        let aggregate_started = tokio::time::Instant::now();
+        let aggregate_started = OperationDeadline::now();
         let timeout = options.resolve_timeout(
             meta.resolve_inherited_timeout(core.default_runtime_endpoint_timeout()),
         );
@@ -105,7 +105,7 @@ where
             }
         };
 
-        let elapsed = tokio::time::Instant::now().saturating_duration_since(aggregate_started);
+        let elapsed = OperationDeadline::now().saturating_duration_since(aggregate_started);
         let outcome = match &result {
             Ok(_) => CompletionOutcome::Success,
             Err(error) => CompletionOutcome::from_error_category(error.category()),

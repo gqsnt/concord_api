@@ -1176,7 +1176,8 @@ struct ProbeHooks {
     trace: Option<Arc<Mutex<Vec<String>>>>,
     panic_on_attempt: AtomicBool,
     panic_on_response: bool,
-    attempt_delay: Option<Duration>,
+    attempt_clock_advance: Option<Duration>,
+    completion_clock_advance: Option<Duration>,
     completion_returned: AtomicUsize,
 }
 
@@ -1456,7 +1457,8 @@ impl ProbeHooks {
             trace: None,
             panic_on_attempt: AtomicBool::new(false),
             panic_on_response: false,
-            attempt_delay: None,
+            attempt_clock_advance: None,
+            completion_clock_advance: None,
             completion_returned: AtomicUsize::new(0),
         }
     }
@@ -1490,8 +1492,8 @@ impl OperationObserver for ProbeHooks {
     fn observe(&self, event: OperationEvent<'_>) {
         match event {
             OperationEvent::AttemptStarted(context) => {
-                if let Some(delay) = self.attempt_delay {
-                    std::thread::sleep(delay);
+                if let Some(duration) = self.attempt_clock_advance {
+                    crate::operation::TestClockGuard::advance(duration);
                 }
                 self.push_trace("attempt_started");
                 self.records
@@ -1525,6 +1527,9 @@ impl OperationObserver for ProbeHooks {
                         status: context.final_status,
                         elapsed: context.elapsed,
                     });
+                if let Some(duration) = self.completion_clock_advance {
+                    crate::operation::TestClockGuard::advance(duration);
+                }
                 self.completion_returned.fetch_add(1, Ordering::SeqCst);
             }
             OperationEvent::PaginationFinished(_) => {}

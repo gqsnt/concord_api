@@ -35,11 +35,18 @@ pub enum DebugLevel {
 ///
 /// An observer receives bounded credential-free/redacted events, returns no
 /// decision, and cannot directly transform the caller's result. Calls are
-/// synchronous, may overlap across threads, and must be prompt and bounded.
+/// synchronous, may overlap across threads, and must be prompt, finite,
+/// nonblocking, and non-panicking. Core contains a panic but cannot preempt a
+/// synchronous callback that blocks or runs forever. Time spent in an
+/// intermediate callback reduces the operation's remaining budget; core checks
+/// that budget after the callback before starting more remote work. A final
+/// callback runs after result fixation and may delay delivery beyond the
+/// nominal deadline without changing that result.
 /// Applications that export asynchronously must close over a separately owned
 /// bounded queue/sink with an explicit backpressure and shutdown policy.
 pub trait OperationObserver: Send + Sync + 'static {
     /// Observes one sanitized event. Panics are contained by the core runtime.
+    /// Core never creates a detached task for this callback.
     fn observe(&self, _event: OperationEvent<'_>) {}
 }
 

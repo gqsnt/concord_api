@@ -531,7 +531,7 @@ where
     }
     .await;
 
-    let fixed_at = tokio::time::Instant::now();
+    let fixed_at = OperationDeadline::now();
     let elapsed = deadline.elapsed_at(fixed_at);
     let result = deliver_completion(
         &core,

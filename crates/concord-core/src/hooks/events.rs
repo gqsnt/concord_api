@@ -79,8 +79,9 @@ pub struct ResponseHeadObserved<'a> {
 
 /// Inline observation of one already-fixed request or page result.
 ///
-/// Observer time contributes to caller latency and consumes remaining
-/// deadline capacity, but cannot change the already-fixed result.
+/// Observer time contributes to caller latency. Because this callback begins
+/// after semantic result fixation, it can delay delivery beyond the nominal
+/// deadline but cannot change the already-fixed result.
 #[derive(Debug)]
 pub struct OperationFinished<'a> {
     /// Identity of this request or page operation.
@@ -112,8 +113,9 @@ pub struct OperationFinished<'a> {
 
 /// Inline observation of one already-fixed pagination result.
 ///
-/// Observer time contributes to caller latency and consumes remaining
-/// aggregate deadline capacity, but cannot change the already-fixed result.
+/// Observer time contributes to caller latency. Because this callback begins
+/// after semantic result fixation, it can delay delivery beyond the nominal
+/// aggregate deadline but cannot change the already-fixed result.
 #[derive(Debug)]
 pub struct PaginationFinished<'a> {
     /// Identity of the aggregate pagination operation.

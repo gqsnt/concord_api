@@ -53,7 +53,7 @@ where
         endpoint,
         options,
     } = request;
-    let started = tokio::time::Instant::now();
+    let started = OperationDeadline::now();
     let meta = endpoint.request_meta();
     let operation_id = core.allocate_operation_id(meta.endpoint_id(), meta.method())?;
     let safe_base_url = core.safe_base_url();
@@ -274,7 +274,7 @@ fn failure(
         meta,
         observed_url,
         debug,
-        elapsed: tokio::time::Instant::now().saturating_duration_since(started),
+        elapsed: OperationDeadline::now().saturating_duration_since(started),
         error,
     }
 }
