@@ -15,7 +15,7 @@ Do not conflate them or call all of them “request metadata.”
 
 Generated entry points:
 
-<!-- concord-source: crates/concord-examples/src/contracts/catalog_v2.rs#catalog_planning -->
+<!-- concord-source: crates/concord-examples/src/contracts/catalog_contract.rs#catalog_planning -->
 ```rust
     let _plan = request.plan()?;
     let _pagination = request.paginate(PageLimit::CompleteWithin(
@@ -50,7 +50,7 @@ Because representation defaults are inherited, the effective representation and 
 
 ## Request plan
 
-<!-- concord-source: crates/concord-examples/src/contracts/catalog_v2.rs#catalog_planning -->
+<!-- concord-source: crates/concord-examples/src/contracts/catalog_contract.rs#catalog_planning -->
 ```rust
     let _plan = request.plan()?;
     let _pagination = request.paginate(PageLimit::CompleteWithin(

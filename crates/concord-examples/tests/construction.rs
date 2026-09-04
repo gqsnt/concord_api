@@ -52,7 +52,8 @@ fn imports_and_constructs_every_enabled_canonical_declaration() {
     }
 
     #[cfg(all(feature = "json", feature = "rate-limit", feature = "default-tls"))]
-    concord_examples::contracts::catalog_v2::construct().expect("complete v2 catalog construction");
+    concord_examples::contracts::catalog_contract::construct()
+        .expect("complete current catalog construction");
 
     #[cfg(feature = "json")]
     {

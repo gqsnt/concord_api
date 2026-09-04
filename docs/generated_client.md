@@ -109,7 +109,7 @@ pub async fn with_metadata(client: &ResponseApi) -> Result<ApiResponse<String>, 
 
 Generated only when the contract proves the capability:
 
-<!-- concord-source: crates/concord-examples/src/contracts/catalog_v2.rs#catalog_planning -->
+<!-- concord-source: crates/concord-examples/src/contracts/catalog_contract.rs#catalog_planning -->
 ```rust
     let _plan = request.plan()?;
     let _pagination = request.paginate(PageLimit::CompleteWithin(

@@ -1,4 +1,4 @@
-//! One compile-checked vertical reference for the Concord v2 language.
+//! One compile-checked vertical reference for the current Concord language.
 //!
 //! Required features: `json`, `rate-limit`, and `default-tls`. Construction is
 //! inert; the example creates plans and pending terminals but performs no I/O.
@@ -100,7 +100,7 @@ impl<'de> serde::Deserialize<'de> for SessionToken {
     }
 }
 
-// ANCHOR: catalog_v2_contract
+// ANCHOR: catalog_contract
 api! {
     /// Typed client for the catalog service.
     client CatalogApi {
@@ -232,7 +232,7 @@ api! {
         }
     }
 }
-// ANCHOR_END: catalog_v2_contract
+// ANCHOR_END: catalog_contract
 
 /// Compile-checks representative direct and unbound usage without polling any
 /// execution terminal.

@@ -9,7 +9,7 @@ pub mod explicit_endpoints;
 pub mod full_dsl;
 
 #[cfg(all(feature = "json", feature = "rate-limit", feature = "default-tls"))]
-pub mod catalog_v2;
+pub mod catalog_contract;
 
 #[cfg(feature = "json")]
 pub mod regional_scopes;

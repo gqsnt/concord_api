@@ -3,13 +3,13 @@ use concord::{Bytes, Text, api};
 type MaybeString = Option<String>;
 
 api! {
-    client V2Api {
+    client CurrentApi {
         timeout 5s;
         values {
             tenant: String = crate::DEFAULT_TENANT;
         }
-        base "http://v2.example.test/";
-        headers { "X-Contract" = "v2"; }
+        base "http://current.example.test/";
+        headers { "X-Contract" = "current"; }
 
 
     scope http_status() {
@@ -36,7 +36,7 @@ api! {
 const DEFAULT_TENANT: String = String::new();
 
 fn main() {
-    let client = V2Api::new().expect("zero-input client");
+    let client = CurrentApi::new().expect("zero-input client");
     let _: v2_api::http_status::TypeRequest = client.http_status().r#type();
     let _: v2_api::http_status::SubmitRequest = client.http_status().submit(
         "first".to_owned(),
@@ -45,7 +45,7 @@ fn main() {
         None,
         true,
     );
-    let endpoint = V2Api::unbound()
+    let endpoint = CurrentApi::unbound()
         .http_status()
         .submit(
             "first".to_owned(),

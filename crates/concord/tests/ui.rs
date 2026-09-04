@@ -1,5 +1,5 @@
 #[test]
-fn v2_language_surface_and_diagnostics() {
+fn current_language_surface_and_diagnostics() {
     let cases = trybuild::TestCases::new();
     cases.pass("tests/ui/pass/construction/*.rs");
     cases.pass("tests/ui/pass/language/*.rs");

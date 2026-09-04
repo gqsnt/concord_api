@@ -3,8 +3,8 @@ use concord::{Bytes, Text, api};
 const DEFAULT_COUNT: u64 = 25;
 
 api! {
-    /// Compile-checked v2 language surface.
-    client V2LanguageApi {
+    /// Compile-checked current language surface.
+    client CurrentLanguageApi {
         base "https://example.test/root/";
         timeout 20s;
 
@@ -91,7 +91,7 @@ api! {
 
 #[test]
 fn exact_value_and_capability_surface_compiles() {
-    let client = V2LanguageApi::builder()
+    let client = CurrentLanguageApi::builder()
         .set_tenant("tenant".to_owned())
         .set_locale(Some("fr".to_owned()))
         .omit_locale()
@@ -108,13 +108,13 @@ fn exact_value_and_capability_surface_compiles() {
     let _: concord::endpoint::RequestPlan = list.plan().expect("plan");
     let _bytes = list.accepted_bytes();
 
-    let intent = V2LanguageApi::unbound()
+    let intent = CurrentLanguageApi::unbound()
         .regional("eu".to_owned())
         .set_language(Some("French".to_owned()))
         .list(None, vec!["one".to_owned()]);
     assert_eq!(intent.description().id(), "v2.language.list");
     let _ = client.plan(&intent).expect("unbound plan");
-    let _bound: v2_language_api::regional::ListRequest = client.request(intent);
+    let _bound: current_language_api::regional::ListRequest = client.request(intent);
 
     let _update = regional
         .update("id".to_owned(), "body".to_owned())
@@ -130,11 +130,11 @@ fn contract_reflection_preserves_the_domain_tree_and_exact_semantics() {
         ValuePresence,
     };
 
-    let contract = V2LanguageApi::contract();
-    assert_eq!(contract.declaration().name(), "V2LanguageApi");
+    let contract = CurrentLanguageApi::contract();
+    assert_eq!(contract.declaration().name(), "CurrentLanguageApi");
     assert_eq!(
         contract.declaration().docs(),
-        [" Compile-checked v2 language surface."]
+        [" Compile-checked current language surface."]
     );
     assert_eq!(contract.base_origin(), "https://example.test/root/");
     assert_eq!(contract.values().len(), 3);
