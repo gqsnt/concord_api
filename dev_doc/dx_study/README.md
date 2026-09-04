@@ -1,28 +1,40 @@
-# Concord v2.1 unfamiliar-developer comprehension study
+# Gate 3 unfamiliar-human final-surface comprehension packet
 
-This package is ready for a facilitator who is not the primary implementer.
-Recruit at least three Rust developers who have never used Concord; five is
-preferred. Do not coach participants on Concord semantics. Record anonymized
-participant IDs only and obtain consent under the facilitator's applicable
-policy before collecting screen, audio, or telemetry data.
+This packet is ready for a facilitator who is not scoring their own Concord
+implementation work. It does not compare syntax variants: `with_x` is absent
+from v2.1, and reopening it requires a separate paired, counterbalanced study
+with four to six qualifying participants.
 
-## Run protocol
+## Qualifying participants
 
-1. Check out the exact candidate commit and record it in `results.md`.
-2. Give each participant a fresh copy of one counterbalanced variant from
-   `variants.md` and the task sheet from `tasks.md`.
-3. Permit normal compiler, Rustdoc, repository search, and editor use. Do not
-   answer semantic questions during a timed task.
-4. Record correctness, elapsed time, files/doc pages opened, compiler cycles,
-   corrections, misconceptions, confidence, and confidence calibration using
-   `rubric.md`.
-5. Rotate variant order. Do not let one participant see another's work.
-6. An independent reviewer scores the artifacts, then appends anonymized rows
-   to `results.md`.
-7. Apply the stop/decision rule in `decision_record.md`. Commit raw anonymized
-   worksheets only when consent and repository policy permit; never commit
-   names, emails, recordings, or screen captures.
+Recruit at least three consenting humans who can read ordinary Rust and
+generics, have not implemented or deeply reviewed Concord, have not read the
+complete v2.1 design study, and plausibly represent endpoint-author, caller, or
+reviewer roles. Record only an anonymized ID and a coarse Rust background band.
+The primary implementer, maintainers trained by the design process, AI agents,
+and generated personas do not count.
 
-The primary implementer may facilitate logistics but cannot be the sole
-participant or sole scorer. AI cold reads may be appended as supplementary
-evidence and never count toward the human minimum.
+One participant may complete the independent first-contact Rustdoc review
+before receiving this packet. A participant's later trained understanding
+cannot be reused as Gate 10 first-contact evidence.
+
+## Run order
+
+1. Check out one exact candidate and record its full SHA and toolchain in
+   `results.md`.
+2. Obtain consent for anonymized timing and notes. Do not commit names, contact
+   details, audio, video, or screen recordings.
+3. Give the participant `tasks.md`, public/generated documentation, a normal
+   editor, and compiler access. Do not give them this README, `rubric.md`, or an
+   answer key during scored work.
+4. Do not coach during a scored task. Record the participant's initial answer,
+   correctness, elapsed seconds, confidence, documentation/pages opened,
+   searches, compiler cycles, wrong model/terminology, recovery, and
+   abandonment.
+5. Have an independent scorer apply `rubric.md`. Append anonymized per-task raw
+   rows and aggregates to `results.md`.
+6. Classify findings as Critical, Major, or Minor. Fix every Critical and every
+   release-relevant Major finding, then rerun the affected tasks with qualifying
+   humans before passing Gate 3.
+
+The empty results record is evidence that the gate has not run, not a waiver.

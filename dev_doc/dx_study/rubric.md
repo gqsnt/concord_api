@@ -1,30 +1,54 @@
-# Scoring rubric
+# Gate 3 scoring and decision rubric
 
-Score each task 0–2:
+## Per-task score
 
-- 2: correct result and correct ownership/reasoning without material prompt;
-- 1: correct after one self-correction or with an incomplete explanation;
-- 0: incorrect, abandoned, or facilitator-supplied answer.
+- `2`: correct result and correct ownership/reasoning without coaching;
+- `1`: correct only after compiler/public-documentation feedback or with a
+  materially incomplete explanation;
+- `0`: incorrect, abandoned, implementation source required, or a
+  facilitator-supplied answer.
 
-Record these measures per task:
+Record one row per participant and task with:
 
-| Field | Unit |
+| Field | Value |
 |---|---|
-| correctness | 0, 1, or 2 |
+| anonymized participant | `P1`, `P2`, or `P3` (and higher if recruited) |
+| role/background band | endpoint author, caller, or reviewer; coarse Rust experience |
+| score/correctness | 0–2 plus expected/observed answer |
 | elapsed | seconds |
-| files/docs opened | count and paths |
-| compiler cycles | count |
-| corrections | count |
-| misconception codes | list |
-| confidence | 1–5 before reveal |
-| calibration error | absolute difference between confidence-normalized score and correctness-normalized score |
+| confidence | 1–5 before feedback |
+| documentation/context | exact public pages/types opened |
+| search/compiler behavior | queries and compiler cycles |
+| wrong model/terminology | concise code from the list below or new code |
+| recovery | none, docs, compiler, or abandoned |
+| severity | Critical, Major, Minor, or none |
 
-Misconception codes: `presence-option`, `set-omit`, `with-ambiguity`,
+Suggested misconception codes: `presence-option`, `set-omit-reset`,
 `collection-cardinality`, `patch-operation`, `representation-provenance`,
-`fence`, `semantic-diff`, `pagination-completeness`, `generated-error`,
-`stream-lifecycle`, and `observer-authority`.
+`directionality`, `explicit-fence`, `effect-retry`,
+`pagination-completeness`, `stream-lifecycle`, `generated-error`,
+`observer-authority`, and `semantic-diff`.
 
-Minimum comprehension threshold: every participant scores at least 18/24, at
-least 80% of participants score task 2 and tasks 6–12 correctly, and no
-high-confidence (4–5) misconception repeats across two participants. Report
-medians and ranges; do not replace individual failure analysis with averages.
+## Severity
+
+- **Critical:** causes wrong wire, security, retry, completeness, or lifecycle
+  behavior.
+- **Major:** blocks a normal task or requires implementation reading.
+- **Minor:** naming/search friction without semantic error.
+
+## Pass rule
+
+Gate 3 passes only if all of these are observed with at least three qualifying
+humans:
+
+- no Critical misconception is shared by two or more participants;
+- every Critical task is completed correctly by at least two of three
+  participants without coaching;
+- aggregate scored correctness is at least 80% of available points;
+- confidence is not systematically high (4–5) on wrong answers;
+- normal tasks do not require macro/core implementation source;
+- every Critical and release-relevant Major finding is fixed and the affected
+  task is retested successfully.
+
+Report individual results, medians, ranges, confidence calibration, and
+abandonments. Do not replace failure analysis with an average.

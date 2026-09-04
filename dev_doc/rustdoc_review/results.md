@@ -1,13 +1,24 @@
-# Anonymized generated-documentation review results
+# Gate 10 anonymized documentation-review results
 
-- Candidate commit for the ready review packet: `9470e24`
+- Exact candidate full SHA: **TO BE RECORDED BY REVIEWER/FACILITATOR**
 - Human reviewers completed: **0**
-- Required: **at least 1 relevant reviewer other than the primary implementer**
-- Status: **not run; external reviewer access unavailable in this environment**
+- Qualifying minimum: **1 independent first-contact Rust reviewer**
+- Status: **Blocked — no independent human review has been run**
 
-| Reviewer | Rust background band | Tasks correct /4 | Median seconds | Corrections | High-confidence errors | Problems found/fix commits |
-|---|---|---:|---:|---:|---|---|
-| — | — | — | — | — | — | No human result may be inferred from mechanical Rustdoc checks |
+| Reviewer | Rust background band | Task | Correct | Seconds | Confidence /5 | Public path/pages/types | Incorrect interpretation / correction | Implementation source used | Severity |
+|---|---|---:|---|---:|---:|---|---|---|---|
+| — | — | — | — | — | — | — | No human result may be inferred from Rustdoc generation or AI review | — | — |
 
-Append an anonymized row and reviewer sign-off only after actual completion.
-The empty table is evidence of absence, not a waiver.
+## Gate observations
+
+| Required observation | Actual result |
+|---|---|
+| all ten facts found through public docs/descriptions | unknown |
+| no remaining Critical misunderstanding | unknown |
+| provenance and parent consequences penetrable without macro source | unknown |
+| release-relevant Major fixes independently rereviewed | unknown |
+
+## Findings, fixes, and rereview
+
+No findings, fixes, or rereview evidence exist because reviewer count is zero.
+Append only actual anonymized observations and exact fix/rereview SHAs.

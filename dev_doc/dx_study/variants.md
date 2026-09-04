@@ -1,22 +1,14 @@
-# Counterbalanced variants
+# Surface under study
 
-Use the same contract and task inputs in both variants. Randomize starting
-variant by participant and switch variants after task 3.
+The Gate 3 final-surface study uses only the exact v2.1 candidate:
 
-## Variant E — exact candidate surface
+- `set_x(Option<T>)` for a Concord-present value;
+- `omit_x()` for Concord-owned absence;
+- `reset_x()` only for initialized/defaulted slots;
+- no generated `with_x` or `clear_x` method;
+- explicit `PageLimit::Prefix` or `PageLimit::CompleteWithin`.
 
-- `set_x(Option<T>)`
-- `omit_x()`
-- `reset_x()` only for initialized slots
-- explicit `PageLimit::Prefix(n)` and `PageLimit::CompleteWithin(non_zero_n)`
-
-This is the release-candidate surface.
-
-## Variant W — controlled `with_x` comparison
-
-On an isolated study-only branch, add `with_x(T)` beside the Variant E methods.
-Do not merge this branch. It exists only to measure tasks 1–3 and autocomplete
-noise. All other syntax and generated docs must match Variant E.
-
-Record the two commit IDs. A participant must not be told which is preferred.
-The comparison is invalid if error text, examples, or unrelated behavior differs.
+This is not a variant comparison. Reopening `with_x` requires a separate
+study-only branch and a paired, counterbalanced protocol with at least four to
+six qualifying humans, identical unrelated docs/errors, complete regeneration,
+and scale/API evidence. One anecdote or friction report cannot change v2.1.
