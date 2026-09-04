@@ -20,13 +20,15 @@ impl OperationDeadline {
         let now = tokio::time::Instant::now();
         #[cfg(test)]
         {
-            return TEST_CLOCK_OFFSET.with(|offset| {
+            TEST_CLOCK_OFFSET.with(|offset| {
                 now.checked_add(offset.get())
                     .expect("test operation-clock offset must fit")
-            });
+            })
         }
         #[cfg(not(test))]
-        now
+        {
+            now
+        }
     }
 
     pub(crate) fn new(
