@@ -1,6 +1,6 @@
 # ADR 0002 — Canonical request atoms, not implicit `Display`
 
-- **Status:** Selected; trait ergonomics gate pending
+- **Status:** Selected and mechanically supported on Windows/Linux; human ergonomics remains unknown for public freeze
 
 ## Decision
 

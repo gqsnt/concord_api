@@ -1,10 +1,14 @@
 # Exact beta-candidate evidence — `0f72e865`
 
+**Status:** Historical prior-candidate evidence; superseded for final integration
+
 **Evidence date:** 2026-09-04
 **Claim boundary:** Observed command results for the exact code/documentation
 candidate `0f72e8653ee0fc08ea7de0e606f01c8d130b53c2`. This is not a stable
 release claim. Owner authority, unfamiliar-human evidence, independent human
-review, and macOS execution remain unavailable.
+review, and macOS execution were unavailable. The missing macOS run is a
+historical fact and is not relevant to the current Windows/Linux support
+boundary.
 
 ## Candidate and repository state
 
@@ -133,19 +137,21 @@ byte ratios `0.995, 0.993, 0.995`, item ratios `0.995, 0.971`, the same
 `pending,item,pending,error,end` lifecycle and early-drop result, and a passing
 budget decision.
 
-## Unavailable mandatory evidence
+## Evidence unavailable under the then-current policy
 
 - **Gate 0:** no authorized license, package namespace, registry control,
   product-history answer, or official metadata decision. Registry facts are in
   `package_namespace_2026-09-04.md`.
 - **Gate 3:** zero qualifying unfamiliar-human participants; correctness,
   timing, confidence, findings, and retests are not measured.
-- **Gate 8/10 macOS:** zero macOS runs. Docker, Podman, Multipass, Vagrant,
+- **Historical Gate 8/10 macOS:** zero macOS runs. Docker, Podman, Multipass, Vagrant,
   QEMU, Lima, Colima, and Tart were not installed; no macOS host was supplied;
   remote push authorization remains an unanswered owner decision.
 - **Gate 10 human review:** zero qualifying independent Rustdoc/semantic-diff
   reviewers; penetrability is not established by generated docs or AI review.
 
-Therefore the strongest supported lifecycle is `2.1.0-beta.1` integration
-candidate with publication disabled. Stable finalization and local merge are
-forbidden by policy.
+At this SHA, the strongest supported lifecycle was a `2.1.0-beta.1`
+integration candidate with publication disabled. The then-current policy also
+forbade a local merge. That merge restriction and the macOS requirement were
+later superseded by the owner's Windows/Linux unpublished-beta integration
+decision; the missing owner and human evidence still blocks stable publication.

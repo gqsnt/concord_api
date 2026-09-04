@@ -1,6 +1,6 @@
 # ADR 0012 — Freeze the exact optional control surface
 
-- **Status:** Selected for the v2.1 integration candidate; Gate 3 human study remains externally blocked
+- **Status:** Selected for the v2.1 integration candidate; human comprehension remains unknown for public freeze
 - **Supersedes:** ADR 0009
 
 ## Decision
@@ -15,13 +15,12 @@ opaque Rust payload.
 
 ## Evidence state
 
-The release mandate requires unfamiliar-human task evidence before Gate 3 can
-pass. No human participants are accessible from this environment. The mandate
-also says mixed or unavailable evidence must select the smaller exact surface,
-so the integration candidate removes `with_x` now rather than carrying a
-provisional alias. Compile-fail fixtures prove both retired conveniences are
-absent. The ready-to-run study package must still test whether the exact surface
-is understood; this ADR does not claim the missing human evidence.
+No unfamiliar-human participants have completed the Gate 3 task protocol. The
+selected conservative fallback therefore removes `with_x` rather than carrying
+a provisional alias. Compile-fail fixtures prove both retired conveniences are
+absent. The ready-to-run study package may inform public compatibility freeze,
+but its missing evidence does not block local beta integration and this ADR
+does not claim human comprehension.
 
 ## Property earned
 

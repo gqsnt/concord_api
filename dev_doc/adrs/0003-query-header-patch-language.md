@@ -1,6 +1,6 @@
 # ADR 0003 — Word-visible patch operations and explicit `each`
 
-- **Status:** Selected; human gate pending
+- **Status:** Selected and mechanically supported on Windows/Linux; human comprehension remains unknown for public freeze
 
 ## Decision
 

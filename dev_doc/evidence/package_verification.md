@@ -1,5 +1,7 @@
 # Package and downstream-artifact verification
 
+**Status:** Historical technical rehearsal; superseded for exact final-candidate evidence
+
 > **Historical technical rehearsal — not current package/legal evidence.** The
 > archive names/version below precede Gate 0 discovery and do not establish an
 > approved namespace, registry control, or license authority.

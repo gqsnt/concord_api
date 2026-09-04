@@ -1,6 +1,6 @@
 # ADR — Concord v2.1 implementation target
 
-- **Status:** Selected for the v2.1 integration candidate / beta; release freeze pending evidence gates
+- **Status:** Selected implementation for the v2.1 integration candidate / beta; stable publication pending owner and human-freeze decisions
 - **Decision owner:** Concord project owner
 - **Date:** September 2026
 
@@ -38,18 +38,22 @@ v2.0.0 baseline at `f7464c5`.
 - broad deterministic/security/DX/performance evidence;
 - migration of every codec, record, body, response, hook, and example.
 
-## Unsupported claims
+## Evidence state
 
-Implementation has not yet proven:
+The selected implementation is mechanically supported on Windows and Linux for
+representation coherence and diagnostics, inheritance, request atoms, patch
+semantics, custom representations, runtime behavior, pagination, stream
+erasure, information-flow boundaries, and compile/binary description budgets.
+The final convergence SHA must still rerun the complete beta-integration suite.
 
-- final representation trait coherence/diagnostics;
+The repository does not claim:
+
 - inherited representation cognitive superiority;
 - optimal optional convenience methods;
-- stream erasure cost;
-- full custom-representation sufficiency;
 - operational value of the complete observer event set;
 - prevalence/usability of optional static credentials;
-- compile/binary cost of descriptions.
+- unfamiliar-human comprehension or independent Rustdoc penetrability;
+- license authority, public package control, or stable publication readiness.
 
 ## Revisit triggers
 

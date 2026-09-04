@@ -1,6 +1,6 @@
 # ADR 0013 — Observer panic diagnostics
 
-- **Status:** Selected for v2.1; public reporting deferred
+- **Status:** Selected and mechanically supported on Windows/Linux; public reporting deferred
 
 ## Decision
 

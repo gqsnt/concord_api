@@ -1,6 +1,6 @@
 # ADR 0007 — Read-only operation observation
 
-- **Status:** Selected for v2.1; human penetrability gate pending
+- **Status:** Selected and mechanically supported on Windows/Linux; human operator comprehension remains unknown for public freeze
 
 ## Decision
 

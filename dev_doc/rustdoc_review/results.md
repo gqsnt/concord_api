@@ -3,7 +3,7 @@
 - Exact candidate full SHA: `0f72e8653ee0fc08ea7de0e606f01c8d130b53c2`
 - Human reviewers completed: **0**
 - Qualifying minimum: **1 independent first-contact Rust reviewer**
-- Status: **Blocked — no independent human review has been run**
+- Status: **Unknown/Blocked for public freeze — no independent human review has been run**
 
 | Reviewer | Rust background band | Task | Correct | Seconds | Confidence /5 | Public path/pages/types | Incorrect interpretation / correction | Implementation source used | Severity |
 |---|---|---:|---|---:|---:|---|---|---|---|

@@ -1,10 +1,12 @@
 # Concord v2.1 owner release decision packet
 
-**Status:** REQUIRED OWNER DECISION
+**Status:** REQUIRED OWNER DECISION FOR STABLE PUBLICATION
 
 No repository file, task input, or observed Git history supplies the decisions
-below. Technical work may continue, but Gate 0 cannot pass and stable merge is
-forbidden until an authorized project owner completes this packet.
+below. Gate 0 cannot pass and stable release/publication is forbidden until an
+authorized project owner completes this packet. Local integration of the
+unpublished `2.1.0-beta.1` is allowed after its technical, documentation,
+Windows, and Linux gates pass.
 
 ## Required decisions
 

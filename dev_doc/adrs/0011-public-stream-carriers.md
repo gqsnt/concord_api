@@ -1,6 +1,6 @@
 # ADR 0011 — Separate `ByteStream` and `ItemStream<T>`
 
-- **Status:** Selected and supported by comparative lifecycle, allocation, throughput, compile, and size evidence
+- **Status:** Selected and supported on Windows/Linux by comparative lifecycle, allocation, throughput, compile, and size evidence
 
 ## Decision
 

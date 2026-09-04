@@ -5,37 +5,58 @@
 - **Canonical lifecycle status:** Concord v2.1 integration candidate / beta
 - **Workspace version:** `2.1.0-beta.1`
 - **Publication:** disabled in every intended public package manifest
+- **Supported-platform boundary:** Windows and Linux are supported and mandatory. macOS is not currently a supported or release-gated platform.
 
-**Decision:** NOT MERGEABLE while Gate 0, Gate 3, or Gate 10 is blocked
+**Beta integration decision:** PENDING — mergeable after the active language,
+generated API, runtime/security, documentation, no-retrocompatibility,
+Windows, Linux, exact-candidate, and merge-commit checks pass.
 
-This is the repository's one authoritative lifecycle and gate-status document.
-README files and `FINAL.md` may summarize and link here, but do not define a
-second status. `Passed on the exact beta candidate` means only that the cited
-machine evidence supports its scoped claim at `0f72e865...`; it does not turn
-the beta into a stable candidate or replace an owner, human, or macOS gate.
+**Stable publication decision:** BLOCKED — owner package/license authority and
+unobtained human-freeze evidence remain open. Stable `2.1.0`, tags, final public
+package names, registry publication, and publication claims are not authorized.
 
-| Gate | Status | Exact evidence | Remaining boundary |
-|---|---|---|---|
-| 0 — package identity, legal authority, and release namespace | **Blocked — owner authority required** | Official Cargo and crates.io API queries at 2026-09-04T10:45:42Z disconfirm the current façade identity: registry `concord` is an unrelated Discord TUI owned by `chojs23`. Candidate `concord-api*` names returned no records but are neither approved nor secured. No license grant exists. See `dev_doc/evidence/package_namespace_2026-09-04.md`. | Owner must complete `dev_doc/owner_release_decisions.md`; final names must be reverified/controlled, license and metadata implemented, and final archives rehearsed. |
-| 1 — representation trait/driver | **Passed on the exact beta candidate** | `0f72e865...`: Windows `just verify`, Rust 1.86 checks, UI, warning-denied docs, extracted-package downstream; Linux all-feature check and 910/910 tests. | No mechanical residual at this beta SHA; final stable inputs would require a fresh final-candidate run. |
-| 2 — representation inheritance | **Passed mechanically on the exact beta candidate** | `0f72e865...`: client/scope defaults, directional overrides, local exceptions, explicit fences, invalid pairs, provenance descriptions, and semantic-diff suites passed on Windows and Linux. | Human discoverability is not inferred; Gates 3 and 10 remain independently blocked. |
-| 3 — unfamiliar-human final-surface comprehension | **Blocked — external participants required** | Zero qualifying unfamiliar humans have completed the final-surface protocol. The packet exists under `dev_doc/dx_study/`; AI and implementer review do not count. | At least three qualifying humans, required scores, fixes, and retests. |
-| 4 — query/header/atom properties | **Passed on the exact beta candidate** | `b2a88d4` removed false `with_*` reservations and added pass/fail fixtures; `246dc5d` corrected reflected `origin`; `0f72e865...` UI, property, docs-truth, Windows, and Linux suites passed. | Gate 3 remains human-only; a later final stable input requires rerun. |
-| 5 — normative runtime trace | **Passed on the exact beta candidate** | `0f72e865...`: Windows full aggregate and Linux 910/910 all-feature tests passed. Observer panics increment a private saturating counter and cannot change results. | Public observer-health reporting is explicitly Deferred by ADR 0013; no result-integrity limitation. |
-| 6 — pagination proof suite | **Passed on the exact beta candidate** | `0f72e865...`: controller, safety/completeness, explicit-limit, identity, retry, cancellation, and all-or-error suites passed on Windows and Linux. Controller header/URI authority is explicit. | No mechanical residual at this beta SHA. |
-| 7 — rate/server-delay behavior | **Passed on the exact beta candidate** | `0f72e865...`: controlled-clock full path, one typed `ServerDelayHint`, shared 7-second observer/limiter/status fact, whole-plan atomic local admission, extension contract, Windows aggregate, and Linux all-feature tests passed. | No mechanical residual at this beta SHA. |
-| 8 — stream lifecycle/performance | **Blocked — macOS portability execution unavailable** | `0f72e865...`: Windows and Linux each observed `(1,0)` boxed construction/poll allocations, complete lifecycle/early drop, and all throughput budgets passing; Linux 910/910 tests included stream coverage. | Required macOS execution is zero; private erasure remains selected, not redesign-open. |
-| 9 — information-flow security | **Passed on the exact beta candidate** | `0f72e865...`: value-free observer target, limiter negative space, unknown-value sentinels, explicit caller authority, Debug redaction, Windows full aggregate, and Linux all-feature tests passed. | No mechanical residual at this beta SHA. |
-| 10 — docs, scale, hygiene, independent review, and supported platforms | **Blocked — independent human reviewer and macOS execution required** | `0f72e865...`: Windows `just verify`; Linux CI smoke plus 910/910 all-feature tests, docs, Rustdoc, packages; scale through 1,000 endpoints; analyzer 3,196 MiB; exact branch diff and clean tree. Human reviewers: zero. macOS runs: zero. See `dev_doc/evidence/beta_candidate_0f72e865.md`. | One qualifying first-contact reviewer and an actual macOS run remain mandatory. |
+This is the repository's only authoritative lifecycle and gate-status document.
+README files, `FINAL.md`, the claim ledger, ADRs, and evidence records may
+summarize it but do not define another status.
 
-## Current evidence boundary
+## Beta integration gates
 
-The current command record is
-`dev_doc/evidence/beta_candidate_0f72e865.md`. The older
-`dev_doc/release_verification_2_1.md` records a historical implementation state
-and is not evidence for this beta. A complete Windows aggregate and real Linux
-execution now exist for `0f72e865...`; no command can substitute for the open
-owner, human, and macOS inputs.
+| Integration gate | Current state | Evidence boundary |
+|---|---|---|
+| Active language and generated API | **Pending exact final-candidate verification** | The selected v2.1 parser, semantic graph, generated controls, descriptions, and UI negative space are implemented. The final convergence commit still requires the complete maintained suite. |
+| Runtime and information-flow security | **Pending exact final-candidate verification** | Gates 5–9 previously passed mechanically on Windows and Linux at `0f72e865...`; no prior SHA is reused as final evidence. |
+| Documentation and canonical examples | **Pending exact final-candidate verification** | README, quick start, overview, and Riot walkthrough are owned by compiled source anchors; the strengthened Rust `docs-check` remains the final authority. |
+| No compatibility path | **Pending exact final-candidate verification** | Retired spellings remain only in focused migration diagnostics, compile-fail fixtures, migration tooling/docs, and explicit history. Successful aliases or parser modes are forbidden. |
+| Windows | **Pending exact final-candidate execution** | A prior candidate passed the aggregate on Windows; the final convergence SHA must be rerun. |
+| Linux | **Pending exact final-candidate execution** | A prior candidate passed Linux checks; the final convergence SHA must be rerun. |
+| Exact candidate, clean tree, branch diff, and source export | **Pending** | Required before advancing `release/v2.1-readiness`. |
+| Exact local merge commit | **Pending** | Required after the local `--no-ff` merge into `main`. |
+
+The absence of a macOS run is retained as a historical fact in older evidence.
+It is not missing evidence for this support boundary and does not block beta
+integration or stable publication.
+
+## Stable-publication gates
+
+| Stable gate | State | Required evidence or authority |
+|---|---|---|
+| Gate 0 — package identity, legal authority, and release namespace | **Blocked — owner authority required** | Owner-selected license, approved and controlled package names, official metadata, and final-name package rehearsal. Registry `concord` was observed to identify an unrelated project; unoccupied-at-query candidate names are not reservations. |
+| Gate 3 — unfamiliar-human comprehension | **Unknown/Blocked for public freeze** | Zero qualifying external participants have completed the maintained study. No comprehension claim is made. The owner must decide whether and how this evidence gates public compatibility freeze. |
+| Independent Rustdoc/semantic-diff review | **Unknown/Blocked for public freeze** | Zero qualifying independent reviews have completed the packet. Implementer or AI review is not substituted. The owner must decide whether this evidence is mandatory for public freeze. |
+| Stable lifecycle and publication mechanics | **Blocked** | Gate 0 and the owner-selected human-freeze policy must close before stable `2.1.0`, final names/metadata, tag, publication rehearsal, or registry action. |
+
+Mechanical Gates 1, 2, and 4–9 have selected implementations supported by the
+prior Windows/Linux beta evidence. Gate 10's machine portion is part of the
+beta integration table above; its independent-human portion remains explicitly
+unknown for public freeze. Every affected check is rerun on the exact final
+candidate and merge commit before beta integration is marked complete.
+
+## Evidence boundary
+
+`dev_doc/evidence/beta_candidate_0f72e865.md` is historical prior-candidate
+evidence. New exact-candidate and merge evidence will be recorded without
+claiming macOS, legal authority, package control, publication readiness, or
+human comprehension.
 
 No push, tag, publication, license selection, registry ownership, human result,
-or platform execution may be inferred from this table.
+or unsupported platform execution may be inferred from this status.

@@ -35,7 +35,7 @@ Classify a finding as:
   implementation reading;
 - **Minor:** navigation or naming friction without semantic error.
 
-Gate 10's human review passes only when all ten facts are findable through
+Gate 10's optional public-freeze human review passes only when all ten facts are findable through
 public docs/descriptions, no Critical misunderstanding remains, provenance and
 parent-change consequences require no macro-source reading, and every
 release-relevant Major finding has been fixed and reviewed again.

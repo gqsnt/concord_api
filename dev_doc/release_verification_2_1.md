@@ -1,5 +1,7 @@
 # Concord v2.1 release verification
 
+**Status:** Historical candidate evidence; superseded for exact final-candidate evidence
+
 > **Historical candidate evidence — not current exact-HEAD evidence.** This
 > record is scoped to the SHA below and does not establish the current beta or
 > final release state.

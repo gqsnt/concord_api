@@ -1,6 +1,6 @@
 # ADR 0005 — Pagination controller owns page interpretation
 
-- **Status:** Selected; trait and real-API gates pending
+- **Status:** Selected and mechanically supported on Windows/Linux by controller, real-API, safety, completion, and limit evidence
 
 ## Decision
 

@@ -41,7 +41,9 @@ Concord v2.1 is a typed HTTP client contract language. It projects one client-sh
 ## Status
 
 These documents specify the `2.1.0-beta.1` integration candidate. Publication
-is disabled. The canonical lifecycle and gate state is maintained only in
+is disabled. Windows and Linux are the supported integration platforms; macOS
+is not release-gated. Beta integration and stable publication are separate
+decisions. The canonical lifecycle and gate state is maintained only in
 [release-gate status](../dev_doc/release_gate_status.md); the claim ledger
 records the evidence state behind it. No alternative public spellings are
 retained as a compromise.

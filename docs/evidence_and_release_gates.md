@@ -2,9 +2,18 @@
 
 The v2.1 integration candidate is selected for implementation, not yet for
 public compatibility freeze. The canonical current disposition is
-[`dev_doc/release_gate_status.md`](../dev_doc/release_gate_status.md). Release
-requires evidence in legal/package, mechanical, behavioral, security,
-cognitive, platform, and performance dimensions.
+[`dev_doc/release_gate_status.md`](../dev_doc/release_gate_status.md).
+
+Two decisions are intentionally separate:
+
+- local beta integration requires one coherent active language/API/runtime/docs
+  projection, no compatibility path, clean exact-candidate evidence, and
+  Windows/Linux verification;
+- stable release and publication additionally require owner package/license
+  authority, final metadata/names, stable-version mechanics, and whatever human
+  evidence the owner requires for public freeze.
+
+Windows and Linux are supported and mandatory. macOS is not currently a supported or release-gated platform.
 
 ## Gate 0 — Package identity, legal authority, and release namespace
 
@@ -19,7 +28,9 @@ Required owner inputs and proof:
   `cargo deny` evidence;
 - `publish = false` retained unless a separate task authorizes publication.
 
-Gate 0 is mandatory. Engineering may prepare the packet and archives, but only
+Gate 0 is mandatory for stable release and publication. It does not block a
+local unpublished beta merge while every intended public package retains
+`publish = false`. Engineering may prepare the packet and archives, but only
 the project owner can supply the legal and product decisions.
 
 ## Gate 1 — Representation trait and driver proof
@@ -70,6 +81,9 @@ Compile/test:
 Pass condition: effective origin is immediately visible in generated docs/errors and a scope move reports every affected leaf.
 
 ## Gate 3 — Unfamiliar-human final-surface comprehension
+
+**Current decision scope:** Unknown/Blocked for public freeze; not a local beta
+integration gate.
 
 Use at least three unfamiliar but relevant Rust users on the one selected final
 surface. The maintained protocol and scoring packet lives under
@@ -235,22 +249,26 @@ Use Riot and generated 1/10/100/500/1,000 endpoint fixtures. Measure:
 - generated Rustdoc first-screen clarity;
 - parent-change semantic diff.
 
-Release hygiene:
+Beta-integration hygiene:
 
 - one canonical language across code/docs/examples;
 - provisional aliases removed;
-- version bumped to 2.1.0;
+- version remains `2.1.0-beta.1` with publication disabled;
 - MSRV/feature matrix passes;
 - no native escape or unbounded path;
 - migration guide complete;
 - all selected ADRs accepted or revised with evidence.
 
-Supported-platform execution on Windows, Linux, and macOS is mandatory. An
-independent Rustdoc/semantic-diff reviewer must also find construction,
+Windows and Linux are the required supported platforms. macOS is outside the
+current support and gate boundary. The exact branch candidate and local merge
+commit must pass the maintained supported-platform checks.
+
+Independent Rustdoc/semantic-diff review remains Unknown/Blocked for public
+freeze. A qualifying reviewer would need to find construction,
 optional/default controls, directional representation provenance/fences,
 parent-change consequences, semantic-diff classifications, pagination and
 stream completeness, and metadata-authority boundaries without macro-source
-reading. AI and the primary implementer do not count.
+reading. AI and the primary implementer do not count, and no review is claimed.
 
 ## Repository verification
 
@@ -265,17 +283,25 @@ just ui
 just msrv
 just fixtures
 just docs
+just package
 just deny
 just workflow
 just analyzer
 just bench
+just source-export
+just release-audit
 just verify
 ```
 
 Report exact commands and results. Do not claim unavailable checks passed.
 
-## Release decision
+## Decisions
 
-Freeze only when Gate 0 through Gate 10 all pass. A failed gate is not solved by
-adding compatibility aliases, prose without evidence, or an unauthorized
-waiver.
+The beta integration decision passes only when its technical, documentation,
+no-retrocompatibility, Windows, Linux, exact-branch, and exact-merge checks pass
+with a clean tree at `2.1.0-beta.1` and `publish = false`.
+
+Stable `2.1.0`, tags, final public names, and publication remain blocked until
+Gate 0 and the owner-selected human-freeze policy pass. A blocked stable gate is
+not solved by compatibility aliases, prose without evidence, or an
+unauthorized waiver.

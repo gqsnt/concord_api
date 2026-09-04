@@ -1,6 +1,6 @@
 # ADR 0001 — Inherited directional representations with inline exceptions
 
-- **Status:** Selected; trait/driver and inheritance mechanical gates supported; human gate pending
+- **Status:** Selected and mechanically supported on Windows/Linux; human comprehension remains unknown for public freeze
 
 ## Decision
 
@@ -58,8 +58,9 @@ semantic diff are covered by the macro/UI/runtime suites.
 
 Inherited representation remains a hidden dependency. Preamble ordering,
 provenance in descriptions/docs/diff, explicit fences, and focused pair
-diagnostics are implemented; unfamiliar-user evidence is still blocked.
-Stream erasure/performance remains Gate 8 work and is not decided by this ADR.
+diagnostics are implemented; unfamiliar-user comprehension remains unknown and
+is not inferred from machine evidence. Private stream erasure is supported by
+the comparative Windows/Linux evidence recorded by ADR 0011.
 
 ## Revisit
 

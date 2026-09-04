@@ -1,7 +1,8 @@
 # Gate 10 independent Rustdoc and semantic-diff review packet
 
-This packet closes only the human documentation portion of Gate 10. It
-requires at least one consenting human who understands Rust library usage and
+This packet addresses only the human documentation portion of Gate 10 for
+public freeze; it is not a local beta-integration gate. It requires at least
+one consenting human who understands Rust library usage and
 generated documentation, is not the primary implementer, and has not been
 trained with the complete Gate 3 packet before this first-contact review. AI or
 implementer review does not count.

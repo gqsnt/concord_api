@@ -5,7 +5,7 @@
 - Human participants completed: **0**
 - Qualifying minimum: **3 unfamiliar Rust-reading humans**
 - Overall scored correctness: **not measured**
-- Status: **Blocked — no human study has been run**
+- Status: **Unknown/Blocked for public freeze — no human study has been run**
 
 | Participant | Background band / plausible role | Task | Score /2 | Seconds | Confidence /5 | Public pages/types opened | Search/compiler cycles | Wrong model / recovery | Severity |
 |---|---|---:|---:|---:|---:|---|---|---|---|
