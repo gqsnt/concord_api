@@ -24,7 +24,9 @@ and worktree check must be rerun on that later HEAD.
 
 The first post-evidence release-audit run correctly rejected the Markdown
 hard-break whitespace originally present on the evidence-date line. A focused
-follow-up removed it; that failed run is not counted as a pass.
+follow-up removed it. On `1019dda0dcd55227799f19077fbaf37fbbc41c63`,
+`just docs` and `release-audit` then exited 0; the failed run is not counted as
+a pass.
 
 ## Windows execution
 
