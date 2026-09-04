@@ -37,7 +37,6 @@ fn v2_language_surface_and_diagnostics() {
         "tests/ui/fail/capabilities/bare_value_setter_absent.rs",
         "tests/ui/fail/capabilities/clear_optional_control_absent.rs",
         "tests/ui/fail/capabilities/flat_endpoint_constructor_absent.rs",
-        "tests/ui/fail/capabilities/generated_accept_override_absent.rs",
         "tests/ui/fail/capabilities/ancestor_control_on_endpoint_absent.rs",
         "tests/ui/fail/capabilities/any_media_is_not_media_type.rs",
         "tests/ui/fail/capabilities/non_clone_body_endpoint.rs",
@@ -53,6 +52,10 @@ fn v2_language_surface_and_diagnostics() {
     ] {
         cases.compile_fail(path);
     }
+    #[cfg(not(feature = "records"))]
+    cases.compile_fail("tests/ui/fail/capabilities/generated_accept_override_absent.rs");
+    #[cfg(feature = "records")]
+    cases.compile_fail("tests/ui/fail/capabilities/generated_accept_override_absent_records.rs");
     #[cfg(feature = "csv")]
     cases.compile_fail("tests/ui/fail/capabilities/csv_policy_traits_sealed.rs");
     #[cfg(feature = "json")]
