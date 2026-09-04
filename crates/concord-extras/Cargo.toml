@@ -4,6 +4,7 @@ description = "First-party implementations of Concord semantic extension contrac
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+publish = false
 
 [features]
 default = []
@@ -15,7 +16,7 @@ oauth2-client = ["dep:bytes", "dep:http", "dep:serde_json", "dep:url"]
 
 [dependencies]
 bytes = { workspace = true, optional = true }
-concord_core = { package = "concord-core", version = "=2.1.0-rc.1", path = "../concord-core", default-features = false }
+concord_core = { package = "concord-core", version = "=2.1.0-beta.1", path = "../concord-core", default-features = false }
 csv = { workspace = true, optional = true }
 http = { workspace = true, optional = true }
 mime = { workspace = true, optional = true }

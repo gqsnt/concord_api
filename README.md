@@ -2,7 +2,10 @@
 
 Concord compiles one client-shaped API contract into a domain-shaped Rust API, inert plans and descriptions, and one bounded managed runtime.
 
-This checkout is a **v2.1 implementation prototype**. It is not a release candidate until every applicable gate in [evidence_and_release_gates.md](docs/evidence_and_release_gates.md) passes, including the human usability gate.
+This checkout is the **Concord v2.1 integration candidate / beta**, version
+`2.1.0-beta.1`. Publication is disabled. It is not a release candidate or a
+stable release while any mandatory gate is open. The single current gate
+decision is [release-gate status](dev_doc/release_gate_status.md).
 
 ```concord-pseudocode
 api! {
@@ -72,7 +75,7 @@ pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
 
 Core guarantees include opaque Rust payload types, explicit outer presence and repetition, fixed logical origins, endpoint-owned status/effect, one absolute operation deadline, managed retry/auth/rate/pagination lifecycles, and sanitized bounded evidence.
 
-Start with the [documentation index](docs/README.md), [quick start](docs/quick_start.md), [normative DSL specification](docs/spec.md), or [v2.1 migration guide](docs/migration_v2_1.md). Maintainers should also read the [implementation plan](dev_doc/implementation_v2_1.md) and [claim/evidence ledger](dev_doc/claim_evidence_ledger.md).
+Start with the [documentation index](docs/README.md), [quick start](docs/quick_start.md), [normative DSL specification](docs/spec.md), or [v2.1 migration guide](docs/migration_v2_1.md). Maintainers should also read the [release-gate status](dev_doc/release_gate_status.md) and [claim/evidence ledger](dev_doc/claim_evidence_ledger.md).
 
 The complete maintained gate is:
 
@@ -80,7 +83,7 @@ The complete maintained gate is:
 just verify
 ```
 
-The workspace targets Rust 1.86. The four public crate manifests are locally
-packageable so their archives can be tested outside workspace paths; no crate
-is published by this repository workflow. Stable release remains blocked by
-the release-gate status, including an owner-selected project license.
+The workspace targets Rust 1.86. All intended public package manifests retain
+`publish = false`. Historical packaging rehearsals do not establish a final
+package name, registry ownership, or a license grant; those decisions and the
+remaining external evidence are named in the canonical release-gate status.

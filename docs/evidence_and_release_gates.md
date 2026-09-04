@@ -1,6 +1,26 @@
 # Evidence and release gates
 
-The v2.1 candidate is selected for implementation, not yet for public compatibility freeze. Release requires evidence in mechanical, behavioral, security, cognitive, and performance dimensions.
+The v2.1 integration candidate is selected for implementation, not yet for
+public compatibility freeze. The canonical current disposition is
+[`dev_doc/release_gate_status.md`](../dev_doc/release_gate_status.md). Release
+requires evidence in legal/package, mechanical, behavioral, security,
+cognitive, platform, and performance dimensions.
+
+## Gate 0 — Package identity, legal authority, and release namespace
+
+Required owner inputs and proof:
+
+- explicit license policy implemented without a self-invented waiver;
+- approved and currently viable public package names, with registry control
+  distinguished from mere absence;
+- first-publication and v2.0 external-consumer history;
+- official repository/homepage/readme metadata;
+- final archive, dependency-order, local-registry, downstream, Rustdoc, and
+  `cargo deny` evidence;
+- `publish = false` retained unless a separate task authorizes publication.
+
+Gate 0 is mandatory. Engineering may prepare the packet and archives, but only
+the project owner can supply the legal and product decisions.
 
 ## Gate 1 — Representation trait and driver prototype
 
@@ -49,29 +69,21 @@ Compile/test:
 
 Pass condition: effective origin is immediately visible in generated docs/errors and a scope move reports every affected leaf.
 
-## Gate 3 — DSL and generated-DX study
+## Gate 3 — Unfamiliar-human final-surface comprehension
 
-Compare:
+Use at least three unfamiliar but relevant Rust users on the one selected final
+surface. The maintained protocol and scoring packet lives under
+`dev_doc/dx_study/`. It covers exact/nested optional controls, repeated atoms
+and patch operations, representation provenance and fences, effect/retry,
+pagination completeness, stream lifecycle, diagnostics, authority boundaries,
+and semantic diff. Measure correctness, time, confidence, documentation/search
+path, wrong models, recovery, and abandonment without coaching.
 
-- symbolic patch operators versus `when_present`/`append`;
-- `each` versus punctuation spread;
-- optional controls with and without `with_x`;
-- leaf-local representation versus inherited default plus inline exception.
-
-Tasks for unfamiliar but relevant Rust users:
-
-1. predict exact generated type/control matrix including nested `Option`;
-2. add repeated query values without changing domain type;
-3. preserve an inherited optional query value;
-4. explicitly clear inherited repeated values with a present empty sequence;
-5. locate effective representation and change one endpoint to binary;
-6. move an endpoint and identify semantic changes;
-7. encode one value differently in path/query/header;
-8. diagnose an inherited representation trait failure;
-9. distinguish no body from JSON null;
-10. explain retry and pagination effect gates.
-
-Measure correctness, time, backtracking, docs/code opened, confidence calibration, autocomplete burden, and error recovery. Do not use preference alone.
+Pass only when no critical misconception is shared by two participants, every
+critical task is correct for at least two of three, overall correctness is at
+least 80%, and all release-relevant Critical/Major findings are fixed and
+retested. `with_x` remains deferred; reopening it requires a separate paired,
+counterbalanced study with at least four to six participants.
 
 ## Gate 4 — Query/header/atom properties
 
@@ -208,7 +220,7 @@ Prove authorized-only appearance across:
 
 Sensitive public values must still affect the real request/internal identity.
 
-## Gate 10 — Large contract, docs, and release hygiene
+## Gate 10 — Large contract, docs, release hygiene, and independent review
 
 Use Riot and generated 1/10/100/500/1,000 endpoint fixtures. Measure:
 
@@ -232,6 +244,13 @@ Release hygiene:
 - no native escape or unbounded path;
 - migration guide complete;
 - all selected ADRs accepted or revised with evidence.
+
+Supported-platform execution on Windows, Linux, and macOS is mandatory. An
+independent Rustdoc/semantic-diff reviewer must also find construction,
+optional/default controls, directional representation provenance/fences,
+parent-change consequences, semantic-diff classifications, pagination and
+stream completeness, and metadata-authority boundaries without macro-source
+reading. AI and the primary implementer do not count.
 
 ## Repository verification
 
@@ -257,4 +276,6 @@ Report exact commands and results. Do not claim unavailable checks passed.
 
 ## Release decision
 
-Freeze only when all ten gates pass or a documented ADR narrows/replaces a gate with evidence. A failed gate changes the design; it is not solved by adding compatibility aliases or more prose.
+Freeze only when Gate 0 through Gate 10 all pass. A failed gate is not solved by
+adding compatibility aliases, prose without evidence, or an unauthorized
+waiver.

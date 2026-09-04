@@ -1,6 +1,6 @@
 # ADR — Concord v2.1 implementation target
 
-- **Status:** Selected for implementation prototype; release freeze pending evidence gates
+- **Status:** Selected for the v2.1 integration candidate / beta; release freeze pending evidence gates
 - **Decision owner:** Concord project owner
 - **Date:** September 2026
 
@@ -67,4 +67,3 @@ Implementation has not yet proven:
 - Agent B inherited representation with `...`/symbolic patch surface;
 - current v1 contract and public API;
 - hypothetical v2.0 as a release target.
-

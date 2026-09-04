@@ -176,7 +176,7 @@ checksum = "cc14f565cf027a105f7a44ccf9e5b424348421a1d8952a8fc9d499d313107789"
 
 [[package]]
 name = "concord"
-version = "2.1.0-rc.1"
+version = "2.1.0-beta.1"
 dependencies = [
  "concord-core",
  "concord-extras",
@@ -191,7 +191,7 @@ dependencies = [
 
 [[package]]
 name = "concord-core"
-version = "2.1.0-rc.1"
+version = "2.1.0-beta.1"
 dependencies = [
  "bytes",
  "concord-test-support",
@@ -211,7 +211,7 @@ dependencies = [
 
 [[package]]
 name = "concord-examples"
-version = "2.1.0-rc.1"
+version = "2.1.0-beta.1"
 dependencies = [
  "concord",
  "concord-test-support",
@@ -223,7 +223,7 @@ dependencies = [
 
 [[package]]
 name = "concord-extras"
-version = "2.1.0-rc.1"
+version = "2.1.0-beta.1"
 dependencies = [
  "bytes",
  "concord-core",
@@ -238,7 +238,7 @@ dependencies = [
 
 [[package]]
 name = "concord-macros"
-version = "2.1.0-rc.1"
+version = "2.1.0-beta.1"
 dependencies = [
  "http",
  "proc-macro2",
@@ -249,7 +249,7 @@ dependencies = [
 
 [[package]]
 name = "concord-perf"
-version = "2.1.0-rc.1"
+version = "2.1.0-beta.1"
 dependencies = [
  "allocation-counter",
  "concord",
@@ -262,7 +262,7 @@ dependencies = [
 
 [[package]]
 name = "concord-test-support"
-version = "2.1.0-rc.1"
+version = "2.1.0-beta.1"
 dependencies = [
  "base64 0.23.0",
  "bytes",
@@ -273,7 +273,7 @@ dependencies = [
 
 [[package]]
 name = "concord-xtask"
-version = "2.1.0-rc.1"
+version = "2.1.0-beta.1"
 dependencies = [
  "cargo_metadata",
  "concord-core",

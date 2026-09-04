@@ -4,6 +4,7 @@ description = "Declaration compiler procedural macros for Concord"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+publish = false
 
 [lib]
 proc-macro = true

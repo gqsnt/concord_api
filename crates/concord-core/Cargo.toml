@@ -4,6 +4,7 @@ description = "Semantic runtime kernel and extension contracts for Concord"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+publish = false
 
 [features]
 default = []

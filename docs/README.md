@@ -40,4 +40,8 @@ Concord v2.1 is a typed HTTP client contract language. It projects one client-sh
 
 ## Status
 
-These documents specify the v2.1 implementation prototype. Mechanical gates support the selected representation relationship and current observer/stream surface; human comprehension and release-scale evidence remain pending as recorded in the claim ledger. No alternative public spellings are retained as a compromise.
+These documents specify the `2.1.0-beta.1` integration candidate. Publication
+is disabled. The canonical lifecycle and gate state is maintained only in
+[release-gate status](../dev_doc/release_gate_status.md); the claim ledger
+records the evidence state behind it. No alternative public spellings are
+retained as a compromise.
