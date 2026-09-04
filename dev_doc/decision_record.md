@@ -6,7 +6,8 @@
 
 ## Decision
 
-Implement the independent hybrid v2.1 candidate directly from the supplied v1 repository.
+Implement the independent hybrid v2.1 candidate directly from the supplied
+v2.0.0 baseline at `f7464c5`.
 
 ## Decisive properties
 

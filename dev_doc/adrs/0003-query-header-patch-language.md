@@ -28,4 +28,3 @@ Inheritance intent and occurrence cardinality are visible at the placement witho
 ## Revisit
 
 Only if unfamiliar-user tasks demonstrate another single spelling is materially more accurate/faster. Never publish equivalent aliases together.
-

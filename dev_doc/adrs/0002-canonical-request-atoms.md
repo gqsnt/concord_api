@@ -23,4 +23,3 @@ Atom produces one bounded scalar. DNS/path/query/header contexts validate and en
 ## Revisit
 
 If real domain types require excessive boilerplate and explicit adapters produce worse diagnostics than documented `Display`, evaluate derive/support tooling—not a silent blanket impl—using the DX and defect evidence.
-

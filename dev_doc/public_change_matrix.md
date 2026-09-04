@@ -1,6 +1,6 @@
 # Concord v2.1 public change matrix
 
-| Area | Supplied v1 | v2.1 target | Consequence |
+| Area | Supplied v2.0.0 / earlier v1-style surface | v2.1 target | Consequence |
 |---|---|---|---|
 | source tree | client then sibling scopes/endpoints | all children inside client | module/navigation/source symmetry |
 | client values | `vars` | `values` | clearer retained-fact vocabulary |
@@ -32,4 +32,4 @@
 | error | implementation/stage variants and hook errors | stable category/stage/dispatch/IDs + safe diagnostics | caller decision model |
 | unbound | flat/explicit endpoint forms | isomorphic `Client::unbound()` tree | same domain language |
 | runtime endpoint | dynamic builder under old semantics | full v2.1 patch/representation/status/effect, fallible `try_bind` | same executor, no authority escape |
-| public version | 1.0.0 internal v1 | 2.1.0 target | breaking release |
+| public version | local `main` at `f7464c5` is 2.0.0 | 2.1.0 target | intentional source/API break remains an owner/product-history decision |

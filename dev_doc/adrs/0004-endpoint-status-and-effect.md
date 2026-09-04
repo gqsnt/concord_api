@@ -24,4 +24,3 @@ Status, response conversion, body replay, retry, and pagination no longer share 
 - status callback in response spec;
 - binary `repeatability` as the complete effect model;
 - pagination on merely idempotent mutations.
-

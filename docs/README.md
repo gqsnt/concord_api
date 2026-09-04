@@ -31,7 +31,7 @@ Concord v2.1 is a typed HTTP client contract language. It projects one client-sh
 | Inspect and observe | [Planning and observation](planning_and_observation.md) |
 | Build a dynamic endpoint | [Runtime endpoints](runtime_endpoints.md) |
 | Implement an extension | [Extensions](extensions.md) |
-| Migrate from the supplied v1 | [Migration guide](migration_v2_1.md) |
+| Migrate from the supplied v2.0.0 / earlier v1-style surface | [Migration guide](migration_v2_1.md) |
 | Understand release evidence | [Evidence and release gates](evidence_and_release_gates.md) |
 
 ## Normative order

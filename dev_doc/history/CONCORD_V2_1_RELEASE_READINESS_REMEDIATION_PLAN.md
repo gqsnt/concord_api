@@ -1,7 +1,11 @@
 # Concord v2.1 — release-readiness remediation and local merge plan
 
-**Status:** authoritative remediation plan for the uploaded `concord_api2` workspace.  
-**Objective:** preserve the implemented v2.1 prototype, correct the remaining truth/security/API defects, close the mechanical, cognitive, performance, documentation, and packaging gates, then merge the finished work into the local `main` branch with a merge commit.  
+> **Historical input — not current source of truth.** This plan is retained for
+> remediation rationale only; current status is owned by
+> [`release_gate_status.md`](../release_gate_status.md).
+
+**Status:** historical remediation input for the uploaded `concord_api2` workspace.
+**Objective:** preserve the implemented v2.1 prototype, correct the remaining truth/security/API defects, close the mechanical, cognitive, performance, documentation, and packaging gates, then merge the finished work into the local `main` branch with a merge commit.
 **Non-objective:** another broad v2.2 redesign.
 
 ---

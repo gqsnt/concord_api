@@ -1,5 +1,9 @@
 # Concord v2.1 release verification
 
+> **Historical candidate evidence — not current exact-HEAD evidence.** This
+> record is scoped to the SHA below and does not establish the current beta or
+> final release state.
+
 - **Recorded:** 2026-09-04
 - **Implementation candidate:** `9470e24034c9d421d937c631adee1a4a67c4e212`
 - **Branch:** `release/v2.1-readiness`

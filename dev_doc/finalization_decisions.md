@@ -1,5 +1,9 @@
 # v2.1 finalization decisions
 
+> **Historical decision worksheet — not current source of truth.** Selected
+> meanings are owned by the active specification and ADRs; release state is
+> owned by [`release_gate_status.md`](release_gate_status.md).
+
 The following decisions must be resolved from prototype evidence before release freeze.
 
 | Decision | Initial target | Evidence | Finalization rule |

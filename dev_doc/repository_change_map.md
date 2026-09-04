@@ -1,6 +1,10 @@
 # Repository change map for v2.1
 
-This map is based on the supplied v1 repository. Paths may be split/renamed during implementation, but responsibilities must remain clear.
+> **Historical implementation map — not current source of truth.** It records
+> the planned responsibility split before release-truth remediation.
+
+This map is based on the supplied v2.0.0 baseline. Paths were expected to be
+split or renamed during implementation while responsibilities remained clear.
 
 ## `crates/concord-macros`
 

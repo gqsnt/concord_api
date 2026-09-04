@@ -1,5 +1,9 @@
 # Package and downstream-artifact verification
 
+> **Historical technical rehearsal — not current package/legal evidence.** The
+> archive names/version below precede Gate 0 discovery and do not establish an
+> approved namespace, registry control, or license authority.
+
 - **Recorded:** 2026-09-04
 - **Version under test:** `2.1.0-rc.1`
 - **Maintained command:** `pwsh -NoLogo -NoProfile -File scripts/verify_packaged_downstream.ps1`

@@ -1,5 +1,10 @@
 # Documentation refactor review for v2.1
 
+> **Historical refactor review — not current source of truth.** The canonical
+> active checker and lifecycle owner are recorded in
+> [`documentation_contract.md`](documentation_contract.md) and
+> [`release_gate_status.md`](release_gate_status.md).
+
 ## Objective
 
 Replace the v1 documentation set with one coherent v2.1 task-oriented set while code lands in semantic slices.

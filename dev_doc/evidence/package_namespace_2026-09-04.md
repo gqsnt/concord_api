@@ -2,9 +2,9 @@
 
 **Claim state:** Observed at the stated instant; registry state may change.
 
-**Query time:** 2026-09-04T10:45:42Z  
-**Host:** Windows x86_64  
-**Cargo:** 1.97.1 (`c980f4866`, 2026-06-30)  
+**Query time:** 2026-09-04T10:45:42Z
+**Host:** Windows x86_64
+**Cargo:** 1.97.1 (`c980f4866`, 2026-06-30)
 **Rustc:** 1.97.1 (`8bab26f4f`, 2026-07-14)
 
 ## Official Cargo results

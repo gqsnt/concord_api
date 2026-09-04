@@ -24,4 +24,3 @@ Pagination supports envelopes, body cursors, short pages, and Link/header cursor
 ## Revisit
 
 If several real controllers need another item collection or metadata role, add the smallest bounded semantic capability. Do not expose native response.
-

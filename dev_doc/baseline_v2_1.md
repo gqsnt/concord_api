@@ -1,5 +1,8 @@
 # Concord v2.1 implementation baseline
 
+> **Historical baseline evidence — not current source of truth.** This records
+> the pre-v2.1 repository state only.
+
 Recorded 2026-09-03 before v2.1 semantic edits.
 
 ## Observed repository state
@@ -56,4 +59,3 @@ These are evidence budgets, not semantic contracts:
   backpressure, and synchronous cancellation on drop.
 - Generated metadata remains static/shared unless Gate 10 demonstrates an
   unacceptable compile or binary-size cost.
-

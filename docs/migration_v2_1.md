@@ -1,6 +1,9 @@
 # Migration to Concord v2.1
 
-This guide targets the supplied v1 repository directly. Do not publish a hypothetical v2.0 compatibility layer first.
+This guide targets the supplied v2.0.0 baseline at `f7464c5` directly. Some
+retired forms originated in its earlier v1 language lineage; the headings below
+retain “v1” only when distinguishing those forms. Do not publish an intermediate
+compatibility layer first.
 
 ## Migration principles
 

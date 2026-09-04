@@ -1,6 +1,12 @@
 # Concord v2.1 implementation roadmap
 
-Implement v2.1 directly from the supplied v1 repository in coherent semantic slices. Do not land the full target docs ahead of behavior or retain a dual public language.
+> **Historical implementation plan — not current source of truth.** Consult
+> [`release_gate_status.md`](release_gate_status.md) for the current lifecycle
+> and gate decision.
+
+This roadmap proposed implementing v2.1 directly from the supplied v2.0.0
+baseline in coherent semantic slices. Do not read its older “v1” shorthand as
+the observed package version.
 
 ## Phase 0 — baseline and evidence controls
 
@@ -189,4 +195,3 @@ Do not open a new architecture branch unless:
 - the project owner changes the product objective.
 
 Record the counterexample and update the relevant ADR rather than silently redesigning.
-
