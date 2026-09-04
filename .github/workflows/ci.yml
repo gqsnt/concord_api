@@ -172,6 +172,7 @@ jobs:
         with:
           key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-platform
       - run: cargo check --workspace --all-targets --all-features --locked
+      - run: cargo run --locked -p concord-xtask -- source-export --locked
       - run: 'cargo nextest run --profile ci -p concord --test runtime --all-features --locked -E "test(runtime::deterministic::)"'
 
   analyzer:

@@ -120,7 +120,7 @@ split or renamed during implementation while responsibilities remained clear.
 
 ## Tools and CI
 
-- `xtask`: semantic descriptor diff, ambiguous migration report, expanded fixture generation, stale-vocabulary policy checks;
+- `xtask`: documentation truth, semantic descriptor diff, ambiguous migration report, expanded fixture generation, stale-vocabulary policy checks, release audit, and source export;
 - `tools/perf`: representation driver, large expansion, shaping, retry/rate/pagination benchmarks;
-- `scripts/check_docs_examples.ps1`: new anchors/vocabulary;
+- `scripts/check_docs_examples.ps1`: thin compatibility wrapper around Rust `xtask docs-check`;
 - CI/just: retain full gates, update package names/features/version only as required.
