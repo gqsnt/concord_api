@@ -74,7 +74,7 @@ Review owner-snapshot timing: client build, scope construction, or endpoint cons
 |---|---|
 | optional `.set_x(T)` | `.set_x(Option<T>)` |
 | `.clear_x()` | `.omit_x()` |
-| present convenience absent or v2.0 `.with_x(T)` | `.with_x(T)` retained pending DX gate |
+| v2.0 `.with_x(T)` | `.set_x(Some(value))`; convenience removed while human evidence is unavailable |
 | `.reset_x()` | retained for initialized slots |
 
 For nested optional values, update exact types rather than flattening.
@@ -362,4 +362,3 @@ implicit Vec repetition
 ```
 
 Migration-guide quotations are the only exception.
-

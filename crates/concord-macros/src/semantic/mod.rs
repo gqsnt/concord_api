@@ -13,24 +13,23 @@ use proc_macro2::Span;
 use syn::Ident;
 
 use self::model::{
-    AcceptedStatus, Api, AttachmentFamily, AttachmentIr, AttachmentOperation, Child, Client,
-    ContractId, Credential, DeclarationMetadata, Effect, Endpoint, NormalizedAuth,
-    NormalizedConfig, RequestBody, ResolvedAccept, ResolvedChallengePolicy, ResolvedMethod, Scope,
-    Value,
+    AcceptedStatus, Api, Child, Client, ContractId, Credential, DeclarationMetadata, Effect,
+    Endpoint, NormalizedAuth, NormalizedConfig, RequestBody, ResolvedChallengePolicy,
+    ResolvedMethod, Scope, Value,
 };
 use self::surface::{
     canonical_ident, client_surface, endpoint_surface, finalize_endpoint_surfaces, scope_surface,
     to_snake_case, validate_surface_modules,
 };
 use crate::syntax::ast::{
-    AcceptOperation, DeclarationAttributes, EffectDecl, MethodKind as SourceMethod, SourceApi,
-    SourceChild, SourceEndpoint, SourceScope, StatusDecl,
+    DeclarationAttributes, EffectDecl, MethodKind as SourceMethod, SourceApi, SourceChild,
+    SourceEndpoint, SourceScope, StatusDecl,
 };
 use auth::{
     convert_credentials, resolve_endpoint_credentials, validate_credential_cycles,
     validate_credential_names,
 };
-use inheritance::{ExpressionUse, local_attachment_ir};
+use inheritance::local_attachment_ir;
 use pagination::{pagination_bound_values, validate_pagination_binding_destinations};
 use rate_limits::{
     RateLimitDefinition, RateLimitResolutionContext, resolve_rate_limit_definitions,
@@ -285,19 +284,7 @@ impl Resolver<'_> {
                 .collect::<Vec<_>>()
                 .join("::")
         );
-        let mut local_attachments = local_attachment_ir(&source.attachment_site, &lexical_origin);
-        if let Some(accept) = &source.accept {
-            local_attachments.push(AttachmentIr {
-                family: AttachmentFamily::Accept,
-                operation: match &accept.value {
-                    AcceptOperation::Off => AttachmentOperation::Off,
-                    AcceptOperation::Value(_) => AttachmentOperation::Set,
-                },
-                origin: lexical_origin.clone(),
-                target: None,
-                item_count: usize::from(matches!(&accept.value, AcceptOperation::Value(_))),
-            });
-        }
+        let local_attachments = local_attachment_ir(&source.attachment_site, &lexical_origin);
         let config = self.normalize_attachment_site(
             &source.attachment_site,
             parent,
@@ -417,20 +404,6 @@ impl Resolver<'_> {
             validate_status_challenge_separation(&accepted_status, &config.auth, span)?;
         }
         let expose_accepted_bytes = source.expose_accepted_bytes.is_some();
-        let accept = source
-            .accept
-            .map(|clause| match clause.value {
-                AcceptOperation::Off => Ok(ResolvedAccept::Off),
-                AcceptOperation::Value(value) => self
-                    .resolve_expr(
-                        &value,
-                        visible_scopes,
-                        Some(&parameters),
-                        ExpressionUse::Single,
-                    )
-                    .map(|expression| ResolvedAccept::Value(Box::new(expression))),
-            })
-            .transpose()?;
         let surface = endpoint_surface(
             self.client_name,
             scope_path,
@@ -463,7 +436,6 @@ impl Resolver<'_> {
             status_explicit,
             effect,
             effect_explicit,
-            accept,
             expose_accepted_bytes,
         })
     }

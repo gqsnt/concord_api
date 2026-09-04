@@ -11,6 +11,7 @@ fn inspect_request(request: RateLimitRequest<'_>) {
 fn inspect_response(response: RateLimitResponse<'_>) {
     let _ = response.body;
     let _ = response.credentials;
+    let _ = response.headers;
     let _ = response.native_response;
 }
 

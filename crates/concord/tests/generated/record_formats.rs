@@ -208,7 +208,7 @@ async fn direct_streamed_runtime_raw_and_paginated_csv_have_one_engine_semantics
 
     let pages = client
         .csv_pages(0, NonZeroU32::new(2).expect("positive CSV page size"))
-        .paginate(4_u32)
+        .paginate(concord::PageLimit::Prefix(4))
         .await
         .expect("paginated CSV");
     assert_eq!(
@@ -469,7 +469,7 @@ async fn direct_streamed_runtime_raw_and_paginated_ndjson_have_one_engine_semant
 
     let pages = client
         .ndjson_pages(0, NonZeroU32::new(2).expect("positive NDJSON page size"))
-        .paginate(4_u32)
+        .paginate(concord::PageLimit::Prefix(4))
         .await
         .expect("paginated NDJSON");
     assert_eq!(

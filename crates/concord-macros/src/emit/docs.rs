@@ -78,7 +78,6 @@ enum EndpointDocInputKind {
 struct EndpointDocSetter {
     name: String,
     setter: String,
-    with: Option<String>,
     omit: Option<String>,
     reset: Option<String>,
     type_name: String,
@@ -196,7 +195,6 @@ fn projected_endpoint_docs(
             EndpointDocSetter {
                 name: canonical_ident(&value.name),
                 setter: canonical_ident(&setter.setter),
-                with: setter.with.as_ref().map(canonical_ident),
                 omit: setter.omit.as_ref().map(canonical_ident),
                 reset: setter.reset.as_ref().map(canonical_ident),
                 type_name: type_name(&value.effective_type),
@@ -207,7 +205,6 @@ fn projected_endpoint_docs(
         endpoint_setters.push(EndpointDocSetter {
             name: canonical_ident(&body.name),
             setter: canonical_ident(&setter.setter),
-            with: Some(canonical_ident(&setter.with)),
             omit: Some(canonical_ident(&setter.omit)),
             reset: None,
             type_name: type_name(&body.effective_input_type),
@@ -714,9 +711,6 @@ fn render_value_controls(setter: &EndpointDocSetter, separator: &str) -> String 
         setter.setter
     );
     controls.push(set);
-    if let Some(with) = &setter.with {
-        controls.push(format!("select a present payload with `.{with}(...)`"));
-    }
     if let Some(omit) = &setter.omit {
         controls.push(format!("select absence with `.{omit}()`"));
     }
@@ -1409,7 +1403,7 @@ mod tests {
         }});
         let endpoint_docs = endpoint_type_docs(&api, "read");
         assert!(endpoint_docs.contains(
-            "absence-capable; replace the exact effective value with `.set_cursor(...)`, select a present payload with `.with_cursor(...)`, select absence with `.omit_cursor()`"
+            "absence-capable; replace the exact effective value with `.set_cursor(...)`, select absence with `.omit_cursor()`"
         ));
         assert!(endpoint_docs.contains(
             "has a declaration default; replace the exact effective value with `.set_limit(...)`, restore the retained default with `.reset_limit()`"
@@ -1418,25 +1412,25 @@ mod tests {
             endpoint_docs.contains("`#[default]` invokes application-owned `Default::default()`")
         );
         assert!(endpoint_docs.contains(
-            "`endpoint.label: :: std :: option :: Option < Option < String > >` — absence-capable and has a declaration default; replace the exact effective value with `.set_label(...)`, select a present payload with `.with_label(...)`, select absence with `.omit_label()`, restore the retained default with `.reset_label()`"
+            "`endpoint.label: :: std :: option :: Option < Option < String > >` — absence-capable and has a declaration default; replace the exact effective value with `.set_label(...)`, select absence with `.omit_label()`, restore the retained default with `.reset_label()`"
         ));
         assert!(endpoint_docs.contains(
-            "`endpoint.values: :: std :: option :: Option < Option < Vec < String > > >` — absence-capable and has a declaration default; replace the exact effective value with `.set_values(...)`, select a present payload with `.with_values(...)`, select absence with `.omit_values()`, restore the retained default with `.reset_values()`"
+            "`endpoint.values: :: std :: option :: Option < Option < Vec < String > > >` — absence-capable and has a declaration default; replace the exact effective value with `.set_values(...)`, select absence with `.omit_values()`, restore the retained default with `.reset_values()`"
         ));
         assert!(!endpoint_docs.contains("Some(value)"));
 
         let request_docs = endpoint_request_docs(&api, "read");
         assert!(request_docs.contains(
-            "replace the exact effective value with `.set_cursor(...)`; select a present payload with `.with_cursor(...)`; select absence with `.omit_cursor()`"
+            "replace the exact effective value with `.set_cursor(...)`; select absence with `.omit_cursor()`"
         ));
         assert!(request_docs.contains(
             "replace the exact effective value with `.set_limit(...)`; restore the retained default with `.reset_limit()`"
         ));
         assert!(request_docs.contains(
-            "replace the exact effective value with `.set_label(...)`; select a present payload with `.with_label(...)`; select absence with `.omit_label()`; restore the retained default with `.reset_label()`"
+            "replace the exact effective value with `.set_label(...)`; select absence with `.omit_label()`; restore the retained default with `.reset_label()`"
         ));
         assert!(request_docs.contains(
-            "replace the exact effective value with `.set_values(...)`; select a present payload with `.with_values(...)`; select absence with `.omit_values()`; restore the retained default with `.reset_values()`"
+            "replace the exact effective value with `.set_values(...)`; select absence with `.omit_values()`; restore the retained default with `.reset_values()`"
         ));
         assert!(!request_docs.contains("Some(value)"));
     }

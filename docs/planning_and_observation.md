@@ -99,56 +99,66 @@ Properties:
 - cannot mutate or veto request/result/retry/auth/rate;
 - prompt, finite, non-blocking, no external I/O, no panic by contract;
 - event views are bounded and sanitized;
-- core checks deadline around calls but cannot preempt arbitrary blocking code;
-- final observation cannot change the already fixed result.
+- core contains observer panics and checks the deadline before and after every
+  intermediate callback, but cannot preempt synchronous Rust code;
+- time spent in an intermediate callback consumes the remaining budget after
+  it returns; if the deadline expired, no later remote work starts;
+- completion observation runs after the semantic result is fixed, so a slow
+  final callback can delay delivery beyond the nominal deadline but cannot
+  replace that result.
 
 Applications needing asynchronous export use an extras/application-owned bounded queue with explicit drop/backpressure/shutdown policy. Core does not own a telemetry worker.
 
 ## Event vocabulary
 
-Prototype minimum:
+The active event set is:
 
 ```text
-OperationStarted
 AttemptStarted
-AttemptFinished
-RetryScheduled
-AuthRecovery
-PageFinished
+ResponseHeadObserved
 OperationFinished
-StreamOpened
-StreamFinished | StreamFailed | StreamDropped
+PaginationFinished
+StreamFinished
 ```
 
-The release gate should remove events that do not answer a real operator decision. Transport-private physical retries appear as bounded counters inside attempt evidence, not full public attempts.
+Transport-private physical retries appear only as bounded structural evidence,
+not independent visible attempts.
 
 Events may expose:
 
 - endpoint/operation/page/attempt identities;
 - method and effect;
-- static/sanitized route structure;
-- timeout and elapsed stage durations;
-- body/representation/acquisition categories;
-- retry/auth/rate categories and waits;
-- status and dispatch knowledge;
-- bounded counts/byte categories.
+- credential-sanitized logical URL and sanitized public request headers on
+  `AttemptStarted`;
+- request body category and known length;
+- status, safely parsed content length, and standard server delay on
+  `ResponseHeadObserved`;
+- final outcome, timing, attempt/retry/recovery counts, and stream lifecycle.
 
-They never expose dynamic public values, bodies, output values, credentials, private auth, raw rate keys, native errors, or unrestricted headers.
+They never expose response-header values, bodies, output values, credentials,
+private auth, raw rate keys, or native objects. `DebugLevel::Headers` adds only
+sanitized public request headers; response output remains typed and value-free.
 
 ## Error model
 
 Stable top-level categories:
 
 ```rust
-pub enum ApiErrorCategory {
-    InvalidRequest,
-    Body,
-    Credential,
+pub enum ErrorCategory {
+    Configuration,
+    RequestEncoding,
+    RequestBody,
+    AuthenticationUnavailable,
+    AuthenticationProvider,
+    AuthenticationRejected,
     RateLimit,
+    Connect,
     Transport,
     Timeout,
-    RejectedStatus,
-    Response,
+    HttpStatus,
+    ResponseBody,
+    ResponseDecoding,
+    ResponseContract,
     Pagination,
     Internal,
 }
@@ -163,7 +173,7 @@ Each error exposes or permits bounded access to:
 - dispatch knowledge;
 - status when observed;
 - policy-retry/auth-recovery counts;
-- sanitized structured diagnostics;
+- bounded structural response-header names with every value redacted;
 - protected source only through explicit trusted access when safe.
 
 Do not mirror every dependency error type in the public enum.
@@ -186,7 +196,8 @@ Retry depends on effect, dispatch knowledge, body replayability, deadline, budge
 
 ## Codec and provider diagnostics
 
-Use stable codes and bounded structural locations. Raw third-party text may quote values/URLs/headers and remains protected.
+Use stable codes and bounded structural locations. Raw third-party text is not
+copied into public errors or automatic diagnostics.
 
 Example:
 

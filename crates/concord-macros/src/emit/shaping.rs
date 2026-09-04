@@ -483,25 +483,6 @@ pub(super) fn runtime_scope_head_statements(
     }
 }
 
-pub(super) fn accept_statements(
-    client: &Client,
-    scopes: &[&Scope],
-    endpoint: &Endpoint,
-) -> TokenStream {
-    let Some(accept) = &endpoint.accept else {
-        return quote!();
-    };
-    match accept {
-        ResolvedAccept::Off => quote!(__concord_builder.suppress_accept();),
-        ResolvedAccept::Value(expression) => {
-            let pagination_values = pagination_continuation_values(endpoint);
-            let redacted = resolved_expr_requires_redaction(expression, &pagination_values);
-            let encode = atom_closure(expression, client, scopes, endpoint);
-            quote!(__concord_builder.set_accept_atoms(#redacted, #encode)?;)
-        }
-    }
-}
-
 pub(super) fn auth_statements(
     client: &Client,
     endpoint: &Endpoint,

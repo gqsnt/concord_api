@@ -358,8 +358,6 @@ pub struct HeadBuilder {
     appended_segment: bool,
     auth: Arc<AuthPlan>,
     rate_limit_policies: Vec<RateLimitPolicy>,
-    accept_override: Option<Option<HeaderValue>>,
-    accept_redacted: bool,
     budget: RequestHeadBudget,
 }
 
@@ -392,8 +390,6 @@ impl HeadBuilder {
             appended_segment: false,
             auth: Arc::new(AuthPlan::default()),
             rate_limit_policies: Vec::new(),
-            accept_override: None,
-            accept_redacted: false,
             budget: RequestHeadBudget::new(),
         }
     }
@@ -1188,69 +1184,6 @@ impl HeadBuilder {
         Ok(())
     }
 
-    /// Replaces the response-specification default `Accept` value through the
-    /// response-owned endpoint syntax.
-    #[doc(hidden)]
-    pub fn set_accept_value<T>(&mut self, value: &T) -> Result<(), ApiError>
-    where
-        T: RequestAtom + ?Sized,
-    {
-        self.set_accept_value_with_observation(value, false)
-    }
-
-    /// Replaces `Accept` while marking its observed header value redacted.
-    #[doc(hidden)]
-    pub fn set_redacted_accept_value<T>(&mut self, value: &T) -> Result<(), ApiError>
-    where
-        T: RequestAtom + ?Sized,
-    {
-        self.set_accept_value_with_observation(value, true)
-    }
-
-    fn set_accept_value_with_observation<T>(
-        &mut self,
-        value: &T,
-        redacted: bool,
-    ) -> Result<(), ApiError>
-    where
-        T: RequestAtom + ?Sized,
-    {
-        let value = encode_atom(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
-            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
-        crate::response::validate_accept(&value)
-            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
-        let value = HeaderValue::from_str(&value)
-            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
-        self.accept_override = Some(Some(value));
-        self.accept_redacted = redacted;
-        Ok(())
-    }
-
-    /// Encodes one possibly concatenated `Accept` atom in one bounded pass.
-    #[doc(hidden)]
-    pub fn set_accept_atoms<F>(&mut self, redacted: bool, encode: F) -> Result<(), ApiError>
-    where
-        F: FnOnce(&mut BoundedAtomWriter<'_>) -> Result<(), AtomError>,
-    {
-        let value = encode_atoms(encode)
-            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
-        crate::response::validate_accept(&value)
-            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
-        let value = HeaderValue::from_str(&value)
-            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
-        self.accept_override = Some(Some(value));
-        self.accept_redacted = redacted;
-        Ok(())
-    }
-
-    /// Suppresses both the response specification's default `Accept` and any
-    /// inherited selection.
-    #[doc(hidden)]
-    pub fn suppress_accept(&mut self) {
-        self.accept_override = Some(None);
-        self.accept_redacted = false;
-    }
-
     /// Finishes one immutable body-free public head.
     #[doc(hidden)]
     pub fn finish(self) -> Result<PreparedHead, ApiError> {
@@ -1276,8 +1209,6 @@ impl HeadBuilder {
             rate_limit_plan: Arc::new(RateLimitPlan::from_validated_policies(
                 self.rate_limit_policies,
             )),
-            accept_override: self.accept_override,
-            accept_redacted: self.accept_redacted,
             budget: self.budget,
         })
     }
@@ -1295,8 +1226,6 @@ pub struct PreparedHead {
     debug: DebugLevel,
     auth: Arc<AuthPlan>,
     rate_limit_plan: Arc<RateLimitPlan>,
-    accept_override: Option<Option<HeaderValue>>,
-    accept_redacted: bool,
     budget: RequestHeadBudget,
 }
 
@@ -1326,25 +1255,19 @@ impl PreparedHead {
 
         let mut headers = self.public_headers.clone();
         let mut budget = self.budget;
-        let selected_accept = match &self.accept_override {
-            Some(value) => value.clone(),
-            None => accept
-                .map(|value| {
-                    crate::response::validate_accept(value)
-                        .map_err(|_| invalid_header(self.meta.endpoint_id(), self.method()))?;
-                    HeaderValue::from_str(value)
-                        .map_err(|_| invalid_header(self.meta.endpoint_id(), self.method()))
-                })
-                .transpose()?,
-        };
+        let selected_accept = accept
+            .map(|value| {
+                crate::response::validate_accept(value)
+                    .map_err(|_| invalid_header(self.meta.endpoint_id(), self.method()))?;
+                HeaderValue::from_str(value)
+                    .map_err(|_| invalid_header(self.meta.endpoint_id(), self.method()))
+            })
+            .transpose()?;
         if let Some(value) = selected_accept {
             budget
                 .try_insert_header(&headers, &ACCEPT, &value)
                 .map_err(|_| invalid_header(self.meta.endpoint_id(), self.method()))?;
             headers.insert(ACCEPT, value);
-            if self.accept_redacted {
-                self.pagination_sensitive_headers.insert(ACCEPT);
-            }
         }
         if let Some(content_type) = content_type {
             budget

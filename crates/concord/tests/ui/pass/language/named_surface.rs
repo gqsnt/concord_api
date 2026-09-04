@@ -28,10 +28,10 @@ fn main() {
     let client = SurfaceApi::new().expect("zero-input generated client");
     let _: surface_api::resources::FetchRequest = client
         .resources("tenant".to_owned())
-        .with_region("eu".to_owned())
+        .set_region(Some("eu".to_owned()))
         .omit_region()
         .fetch("resource".to_owned())
-        .with_verbose(true)
+        .set_verbose(Some(true))
         .omit_verbose()
         .set_limit(50)
         .reset_limit();

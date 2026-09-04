@@ -10,7 +10,7 @@ $docsIndex = Join-Path $docs 'README.md'
 $fixture = Join-Path $root 'crates/concord-examples/src/docs_spec.rs'
 $dslLanguage = 'concord'
 $dslPseudocodeLanguage = 'concord-pseudocode'
-$dslStart = '^\s*(?:api!|client\s|scope\s|(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s|METHOD\s*\(|values\s*\{|credentials\s*\{|subdomain\s|path\s|query(?:\s+replace)?\s*\{|query\s+off|headers(?:\s+replace)?\s*\{|headers\s+off|auth(?:\s+replace)?\s*\{|auth\s+off|accept\s|timeout\s|repeatability\s|paginate\s+with\s|rate_limits\s*\{|rate_limit\s|concat\s*\[)'
+$dslStart = '^\s*(?:api!|client\s|scope\s|(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s|METHOD\s*\(|values\s*\{|credentials\s*\{|subdomain\s|path\s|query(?:\s+replace)?\s*\{|query\s+off|headers(?:\s+replace)?\s*\{|headers\s+off|auth(?:\s+replace)?\s*\{|auth\s+off|timeout\s|repeatability\s|paginate\s+with\s|rate_limits\s*\{|rate_limit\s|concat\s*\[)'
 $sourceMarker = '^\s*<!--\s*concord-source:\s*([^#\s]+)#([A-Za-z0-9_-]+)\s*-->\s*$'
 $removedDocs = @(
     'docs/advanced_endpoints.md',
@@ -290,6 +290,7 @@ $checkedDslPseudocode = 0
 $checkedAnchors = 0
 $checkedLinks = 0
 $checkedFragments = 0
+$checkedRetiredVocabularyFiles = 0
 
 $markdownFiles = @(
     Get-Item -LiteralPath (Join-Path $root 'README.md')
@@ -392,6 +393,44 @@ foreach ($file in $markdownFiles | Sort-Object FullName -Unique) {
     }
 }
 
+# Active public docs and source-anchored examples must not teach retired public
+# spellings. Migration/history and compile-fail fixtures are intentionally not
+# in this set.
+$retiredVocabularyFiles = @(
+    Get-Item -LiteralPath (Join-Path $root 'README.md')
+) + @(
+    Get-Item -LiteralPath (Join-Path $root 'FINAL.md')
+) + @(
+    Get-ChildItem -LiteralPath $docs -Recurse -File -Filter '*.md' |
+        Where-Object Name -ne 'migration_v2_1.md'
+) + @(
+    Get-Item -LiteralPath (Join-Path $root 'crates/concord/src/lib.rs')
+) + @(
+    Get-ChildItem -LiteralPath (Join-Path $root 'crates/concord-examples/src') -Recurse -File -Filter '*.rs'
+) + @(
+    Get-ChildItem -LiteralPath (Join-Path $root 'fixtures') -Recurse -File -Filter '*.rs'
+)
+
+$retiredPatterns = [ordered]@{
+    'retired clear_* control' = '\.clear_[A-Za-z_][A-Za-z0-9_]*\s*\('
+    'retired with_* optional control' = '\.with_(?!header\b)[A-Za-z_][A-Za-z0-9_]*\s*\('
+    'retired endpoint/runtime accept override' = '\.accept(?:_off)?\s*\(\s*(?:"|String::|[A-Za-z_])'
+    'retired endpoint accept DSL clause' = '(?m)^\s*accept\s+(?:off\s*;|"[^\r\n]*"\s*;)'
+    'implicit numeric/bare pagination limit' = '\.paginate\s*\(\s*(?![A-Za-z0-9_:]*PageLimit::)[A-Za-z0-9_]+'
+}
+
+foreach ($file in $retiredVocabularyFiles | Sort-Object FullName -Unique) {
+    $relative = [System.IO.Path]::GetRelativePath($root, $file.FullName)
+    $raw = Get-Content -LiteralPath $file.FullName -Raw
+    foreach ($entry in $retiredPatterns.GetEnumerator()) {
+        foreach ($match in [regex]::Matches($raw, $entry.Value)) {
+            $line = 1 + ([regex]::Matches($raw.Substring(0, $match.Index), "`n")).Count
+            $errors.Add("${relative}:${line}: $($entry.Key)")
+        }
+    }
+    $checkedRetiredVocabularyFiles++
+}
+
 if (-not (Test-Path -LiteralPath $docsIndex -PathType Leaf)) {
     $errors.Add('docs/README.md: canonical documentation index is missing')
 } else {
@@ -429,3 +468,4 @@ Write-Output "validated ${checkedDslPseudocode} explicitly labeled DSL pseudocod
 Write-Output "validated ${checkedAnchors} source-anchored examples in $($anchorRoots -join ', ')"
 Write-Output "validated ${checkedLinks} local Markdown links and ${checkedFragments} heading fragments"
 Write-Output 'validated canonical docs/README.md inventory coverage'
+Write-Output "validated retired public vocabulary across ${checkedRetiredVocabularyFiles} active files"

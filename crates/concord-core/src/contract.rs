@@ -256,8 +256,6 @@ pub enum AttachmentFamily {
     Timeout,
     /// Additive rate policies.
     RateLimit,
-    /// Endpoint-owned response negotiation.
-    Accept,
 }
 
 /// The semantic patch operation represented by one attachment record.
@@ -368,6 +366,7 @@ pub struct BodyDescription {
     argument: &'static str,
     input_type: &'static str,
     specification_type: &'static str,
+    representation_origin: &'static str,
     docs: Box<[&'static str]>,
 }
 
@@ -379,12 +378,14 @@ impl BodyDescription {
         argument: &'static str,
         input_type: &'static str,
         specification_type: &'static str,
+        representation_origin: &'static str,
         docs: Vec<&'static str>,
     ) -> Self {
         Self {
             argument,
             input_type,
             specification_type,
+            representation_origin,
             docs: docs.into_boxed_slice(),
         }
     }
@@ -407,6 +408,12 @@ impl BodyDescription {
         self.specification_type
     }
 
+    /// Returns the lexical source of the effective request representation.
+    #[must_use]
+    pub const fn representation_origin(&self) -> &'static str {
+        self.representation_origin
+    }
+
     /// Returns body-parameter documentation.
     #[must_use]
     pub fn docs(&self) -> &[&'static str] {
@@ -420,6 +427,8 @@ impl BodyDescription {
 pub struct ResponseDescription {
     output_type: &'static str,
     specification_type: &'static str,
+    representation_origin: &'static str,
+    negotiation_media_type: Option<&'static str>,
     acquisition_class: ContractFactClass,
 }
 
@@ -427,10 +436,17 @@ impl ResponseDescription {
     /// Constructs generated response signature metadata.
     #[doc(hidden)]
     #[must_use]
-    pub const fn generated(output_type: &'static str, specification_type: &'static str) -> Self {
+    pub const fn generated(
+        output_type: &'static str,
+        specification_type: &'static str,
+        representation_origin: &'static str,
+        negotiation_media_type: Option<&'static str>,
+    ) -> Self {
         Self {
             output_type,
             specification_type,
+            representation_origin,
+            negotiation_media_type,
             acquisition_class: ContractFactClass::TraitCapability,
         }
     }
@@ -445,6 +461,18 @@ impl ResponseDescription {
     #[must_use]
     pub const fn specification_type(&self) -> &'static str {
         self.specification_type
+    }
+
+    /// Returns the lexical source of the effective response representation.
+    #[must_use]
+    pub const fn representation_origin(&self) -> &'static str {
+        self.representation_origin
+    }
+
+    /// Returns representation-owned response negotiation metadata.
+    #[must_use]
+    pub const fn negotiation_media_type(&self) -> Option<&'static str> {
+        self.negotiation_media_type
     }
 
     /// Returns how acquisition precision is obtained.
@@ -1445,6 +1473,15 @@ fn endpoints_snapshot(output: &mut String, endpoints: &[EndpointDescription]) {
         let Some(details) = endpoint.contract() else {
             continue;
         };
+        record(
+            output,
+            "WIRE",
+            &[
+                "response-negotiation",
+                endpoint.source_path(),
+                details.response.negotiation_media_type.unwrap_or(""),
+            ],
+        );
         declaration_snapshot(output, &details.declaration);
         record(
             output,
@@ -1453,6 +1490,7 @@ fn endpoints_snapshot(output: &mut String, endpoints: &[EndpointDescription]) {
                 "response",
                 details.response.output_type,
                 details.response.specification_type,
+                details.response.representation_origin,
             ],
         );
         if let Some(body) = &details.body {
@@ -1464,6 +1502,7 @@ fn endpoints_snapshot(output: &mut String, endpoints: &[EndpointDescription]) {
                     body.argument,
                     body.input_type,
                     body.specification_type,
+                    body.representation_origin,
                 ],
             );
         }
@@ -1582,8 +1621,7 @@ fn attachments_snapshot(output: &mut String, attachments: &[AttachmentDescriptio
             | AttachmentFamily::Subdomain
             | AttachmentFamily::Path
             | AttachmentFamily::Query
-            | AttachmentFamily::Headers
-            | AttachmentFamily::Accept => "WIRE",
+            | AttachmentFamily::Headers => "WIRE",
         };
         record(
             output,

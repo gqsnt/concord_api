@@ -14,5 +14,8 @@ api! {
 
 fn main() {
     let client = StreamingApi::new().unwrap();
-    let _ = client.transfers().download().paginate(1_u32);
+    let _ = client
+        .transfers()
+        .download()
+        .paginate(concord::PageLimit::Prefix(1));
 }

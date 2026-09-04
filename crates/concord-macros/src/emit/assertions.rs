@@ -185,17 +185,6 @@ pub(super) fn endpoint_where_clause(
         facade_path,
         &mut atom_bounds,
     );
-    if let Some(ResolvedAccept::Value(expression)) = &endpoint.accept {
-        collect_expression_atom_bounds(
-            expression,
-            QueryCardinality::One,
-            client,
-            scopes,
-            endpoint,
-            facade_path,
-            &mut atom_bounds,
-        );
-    }
     bounds.extend(atom_bounds);
     for placement in &endpoint.config.auth {
         if matches!(placement.kind, ResolvedAuthPlacement::Authorization(_)) {

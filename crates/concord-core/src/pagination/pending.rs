@@ -20,12 +20,6 @@ pub enum PageLimit {
     CompleteWithin(NonZeroU32),
 }
 
-impl From<u32> for PageLimit {
-    fn from(value: u32) -> Self {
-        Self::Prefix(value)
-    }
-}
-
 /// An opaque directly awaitable sequential pagination operation.
 ///
 /// Construction has no execution side effects. Controller construction,

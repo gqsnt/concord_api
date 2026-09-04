@@ -113,7 +113,11 @@ No generic response-head veto hook exists.
 2. call non-fallible bounded `OperationFinished` observer event inline;
 3. return the already fixed result.
 
-Observer time contributes to caller latency and remaining deadline. Observer failure/panic must be contained and diagnosed but cannot change the endpoint result.
+Intermediate observer time contributes to the remaining budget and is checked
+after return. Completion observation begins only after the semantic result is
+fixed. A slow synchronous completion callback can therefore delay caller
+delivery past the nominal deadline, but its return or contained panic cannot
+change the fixed result.
 
 ## Stream outcome
 

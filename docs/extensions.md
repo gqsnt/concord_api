@@ -80,13 +80,13 @@ No application client, endpoint body/output, limiter, observer, native request, 
 
 ## Retry classifier
 
-Receives bounded semantic failure facts and recommends whether a policy retry is useful. It cannot grant authority. Core still applies effect, dispatch, body, count, load-budget, and deadline gates.
+Receives bounded semantic failure facts and recommends whether a policy retry is useful. Rejected-status input contains status and the standard parsed server delay, never arbitrary response headers. It cannot grant authority. Core still applies effect, dispatch, body, count, load-budget, and deadline gates.
 
 ## Rate limiter
 
-Receives complete effective policy plan, protected canonical keys, cost/windows, IDs, and deadline/cancellation. Admission may wait/reject/fail. Feedback is non-fallible for the current result and only influences future policy state.
+Receives complete effective policy plan, protected canonical keys, cost/windows, IDs, and deadline/cancellation. Admission may wait/reject/fail. Feedback is limited to typed status/server-delay/plan/attempt facts, is non-fallible for the current result, and only influences future policy state.
 
-No body, credentials, native request, or unrestricted response.
+No body, credentials, native request, response-header map, or unrestricted response.
 
 ## Pagination controller
 

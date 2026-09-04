@@ -133,12 +133,11 @@ Generated usage:
 let request = client
     .items()
     .set_category(category_from_config) // Option<String>
-    .with_category("books".to_owned())
+    .set_category(Some("books".to_owned()))
     .omit_category();
 ```
 
 - `set_category` accepts the exact effective `Option<String>`.
-- `with_category` is the common present-value convenience retained until the DX gate disproves its value.
 - `omit_category` selects outer absence.
 
 ## Repeated values are explicit

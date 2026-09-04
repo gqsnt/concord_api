@@ -71,7 +71,7 @@ pub(super) fn generate_endpoint_description(
     } else {
         quote!(#facade_path::endpoint::EffectSource::MethodDefault)
     };
-    let details = endpoint_contract_tokens(endpoint, facade_path);
+    let details = endpoint_contract_tokens(endpoint, response, output, facade_path);
     let tokens = quote! {
         pub(crate) static #description_static:
             ::std::sync::LazyLock<#facade_path::endpoint::EndpointDescription> =
@@ -106,7 +106,12 @@ pub(super) fn generate_endpoint_description(
     (description_static, tokens)
 }
 
-fn endpoint_contract_tokens(endpoint: &Endpoint, facade_path: &TokenStream) -> TokenStream {
+fn endpoint_contract_tokens(
+    endpoint: &Endpoint,
+    resolved_response: &TokenStream,
+    resolved_output: &TokenStream,
+    facade_path: &TokenStream,
+) -> TokenStream {
     let declaration = declaration_tokens(
         &endpoint.name,
         &endpoint.surface.docs_identity,
@@ -134,16 +139,22 @@ fn endpoint_contract_tokens(endpoint: &Endpoint, facade_path: &TokenStream) -> T
             let name = syn::LitStr::new(&canonical_ident(&body.name), body.name.span());
             let input = type_literal(&body.input_type);
             let specification = type_literal(&body.spec_type);
+            let representation_origin =
+                syn::LitStr::new(&body.representation_origin, body.name.span());
             let docs = string_slice(&body.docs, body.name.span());
             quote!(::std::option::Option::Some(
                 #facade_path::endpoint::BodyDescription::generated(
-                    #name, #input, #specification, #docs
+                    #name, #input, #specification, #representation_origin, #docs
                 )
             ))
         },
     );
     let output = type_literal(&endpoint.output);
     let response_spec = type_literal(&endpoint.response_spec);
+    let response_origin = syn::LitStr::new(
+        &endpoint.response_representation_origin,
+        endpoint.name.span(),
+    );
     let auth = endpoint.config.auth.iter().map(|auth| {
         let placement = syn::LitStr::new(&auth_placement_name(&auth.kind), auth.span);
         let recovery = syn::LitStr::new(challenge_name(auth.challenge), auth.span);
@@ -224,7 +235,12 @@ fn endpoint_contract_tokens(endpoint: &Endpoint, facade_path: &TokenStream) -> T
         ::std::vec![#(#local),*],
         ::std::vec![#(#effective),*],
         #body,
-        #facade_path::endpoint::ResponseDescription::generated(#output, #response_spec),
+        #facade_path::endpoint::ResponseDescription::generated(
+            #output,
+            #response_spec,
+            #response_origin,
+            <#resolved_response as #facade_path::response::ResponseRepresentation<#resolved_output>>::accept(),
+        ),
         ::std::vec![#(#auth),*],
         ::std::vec![#(#rates),*],
         #pagination,
@@ -325,30 +341,7 @@ pub(super) fn attachment_tokens(
 }
 
 fn effective_attachment_tokens(endpoint: &Endpoint, facade_path: &TokenStream) -> Vec<TokenStream> {
-    let mut output = effective_config_attachment_tokens(&endpoint.config, facade_path);
-    if endpoint.accept.is_some() {
-        let origin = format!(
-            "endpoint {}",
-            endpoint
-                .dsl_path
-                .iter()
-                .map(canonical_ident)
-                .collect::<Vec<_>>()
-                .join("::")
-        );
-        output.push(effective_attachment(
-            AttachmentFamily::Accept,
-            if matches!(endpoint.accept, Some(ResolvedAccept::Off)) {
-                AttachmentOperation::Off
-            } else {
-                AttachmentOperation::Set
-            },
-            &origin,
-            None,
-            facade_path,
-        ));
-    }
-    output
+    effective_config_attachment_tokens(&endpoint.config, facade_path)
 }
 
 pub(super) fn effective_config_attachment_tokens(
@@ -478,7 +471,6 @@ fn attachment_family_token(family: AttachmentFamily, facade_path: &TokenStream) 
         AttachmentFamily::Authentication => quote!(Authentication),
         AttachmentFamily::Timeout => quote!(Timeout),
         AttachmentFamily::RateLimit => quote!(RateLimit),
-        AttachmentFamily::Accept => quote!(Accept),
     };
     quote!(#facade_path::endpoint::AttachmentFamily::#variant)
 }

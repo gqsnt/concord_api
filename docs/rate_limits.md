@@ -112,22 +112,24 @@ trait RateLimiter {
         request: RateLimitRequest<'_>,
     ) -> Result<RateLimitPermit, RateLimitError>;
 
-    fn observe(&self, feedback: RateLimitFeedback<'_>);
+    fn observe(&self, feedback: RateLimitResponse<'_>);
 }
 ```
 
 Only admission can fail the current attempt. Response feedback is synchronous, prompt, bounded, and non-result-determining.
 
-Feedback may:
+Feedback contains only request identity/plan, status, the standard server delay
+parsed once by core, and the configured cooldown cap. It contains no response
+header map and offers no vendor-header iteration. It may:
 
 - update cooldown/not-before state for future acquisitions;
-- update remaining/capacity observations;
 - mark the limiter degraded;
 - emit bounded diagnostics.
 
 It must not hide or replace the current endpoint response. A distributed implementation that needs async storage owns a bounded handoff and applies its fail-open/closed policy on future `acquire` calls.
 
-The limiter declares a finite static set of vendor header interests. Core supplies only those plus standardized `ServerDelayHint`, not an unrestricted response header map.
+Provider-specific feedback requires a future finite purpose-specific contract;
+it is not obtained through arbitrary header access.
 
 ## Local limiter extra
 

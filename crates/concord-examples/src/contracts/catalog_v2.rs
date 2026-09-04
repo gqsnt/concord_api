@@ -239,7 +239,7 @@ api! {
 pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
     let client = CatalogApi::builder()
         .set_tenant("tenant-a".to_owned())
-        .with_locale("fr-FR".to_owned())
+        .set_locale(Some("fr-FR".to_owned()))
         .reset_api_version()
         .bootstrap_key(SecretString::try_new("example-bootstrap-key")?)
         .configure_http(|http| http.require_https().connect_timeout(Duration::from_secs(3)))
@@ -258,7 +258,7 @@ pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
 
     let regional = client
         .regional("eu-west".to_owned())
-        .with_language("fr".to_owned());
+        .set_language(Some("fr".to_owned()));
     let request = regional
         .item_summaries(vec!["stable".to_owned()])
         .set_category(Some("featured".to_owned()))

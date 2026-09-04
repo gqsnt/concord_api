@@ -36,9 +36,13 @@ One absolute deadline begins when the terminal is first polled and covers:
 - response status/acquisition/conversion;
 - retry backoff;
 - every pagination page/controller call;
-- final inline observer call.
+- all intermediate observer calls.
 
-It never restarts for an attempt, auth recovery, or page. Lazy streams own separate post-return limits.
+It never restarts for an attempt, auth recovery, or page. Final completion
+observation is post-fixation: it normally consumes caller time inside the
+budget, but synchronous Rust is not preemptible, so a slow final callback may
+return after nominal expiry without changing the result. Lazy streams own
+separate post-return limits.
 
 ## Dispatch knowledge
 

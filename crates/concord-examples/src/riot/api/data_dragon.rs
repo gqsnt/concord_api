@@ -18,13 +18,14 @@ api! {
 
         headers { "User-Agent" = "ConcordRiotExample/1.0"; }
         timeout 20s;
+        response Json;
 
 
-    GET versions() -> Vec<String> via Json {
+    GET versions() -> Vec<String> {
         path ["api", "versions.json"];
     }
 
-    GET realm(region: String) -> serde_json::Value via Json {
+    GET realm(region: String) -> serde_json::Value {
         path ["realms", concat [endpoint.region, ".json"]];
     }
 
@@ -34,23 +35,24 @@ api! {
         scope data() {
             path ["data", client.locale];
 
-            GET champions() -> serde_json::Value via Json {
+            GET champions() -> serde_json::Value {
                 path ["champion.json"];
             }
 
-            GET items() -> serde_json::Value via Json {
+            GET items() -> serde_json::Value {
                 path ["item.json"];
             }
         }
 
         scope assets() {
             path ["img"];
+            response Binary;
 
-            GET champion_image(filename: String) -> Bytes via Binary {
+            GET champion_image(filename: String) -> Bytes {
                 path ["champion", endpoint.filename];
             }
 
-            GET item_image(filename: String) -> Bytes via Binary {
+            GET item_image(filename: String) -> Bytes {
                 path ["item", endpoint.filename];
             }
         }

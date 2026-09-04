@@ -407,11 +407,11 @@ pub fn accepted_bytes_request<E>(request: crate::Request<E>) -> crate::AcceptedB
 /// Creates one side-effect-free stable pagination wrapper.
 #[doc(hidden)]
 #[must_use]
-pub fn paginate_request<E, L>(request: crate::Request<E>, limit: L) -> crate::PaginatedRequest<E>
-where
-    L: Into<crate::PageLimit>,
-{
-    crate::PaginatedRequest::new(request, limit.into())
+pub fn paginate_request<E>(
+    request: crate::Request<E>,
+    limit: crate::PageLimit,
+) -> crate::PaginatedRequest<E> {
+    crate::PaginatedRequest::new(request, limit)
 }
 
 /// Consumes a pending request, maps its endpoint value, and preserves every

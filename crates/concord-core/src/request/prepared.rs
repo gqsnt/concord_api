@@ -48,15 +48,8 @@ struct RuntimeEndpointParts {
     timeout: TimeoutSelection,
     accepted_status: Option<AcceptedStatus>,
     effect: Option<Effect>,
-    accept: RuntimeAccept,
     rate_limits: Vec<RateLimitPolicy>,
     budget: StructuralBudget,
-}
-
-enum RuntimeAccept {
-    Specification,
-    Value(String),
-    Off,
 }
 
 /// Builds one owned hand-written endpoint for execution by a generated client.
@@ -140,7 +133,6 @@ pub struct RuntimeEndpoint<R = Empty, Output = ()> {
     auth: Arc<AuthPlan>,
     auth_inherits: bool,
     rate_limit_plan: Arc<RateLimitPlan>,
-    accept: RuntimeAccept,
     head_prefix: Option<RuntimeHeadPrefix>,
     response: PhantomData<fn() -> (R, Output)>,
 }
@@ -289,7 +281,6 @@ impl RuntimeEndpoint<Empty> {
                 timeout: TimeoutSelection::InheritClient,
                 accepted_status: None,
                 effect: None,
-                accept: RuntimeAccept::Specification,
                 rate_limits: Vec::new(),
                 budget,
             }),
@@ -1094,65 +1085,6 @@ impl<R, Output> RuntimeEndpointBuilder<R, Output> {
         }
     }
 
-    /// Overrides the response specification's default `Accept` value.
-    #[must_use]
-    pub fn accept<T>(self, value: T) -> Self
-    where
-        T: RequestAtom,
-    {
-        self.update(move |mut parts| {
-            let previous_bytes = match &parts.accept {
-                RuntimeAccept::Value(value) => value.len(),
-                RuntimeAccept::Specification | RuntimeAccept::Off => 0,
-            };
-            let previous_components = usize::from(matches!(parts.accept, RuntimeAccept::Value(_)));
-            let mut budget = parts.budget;
-            budget
-                .try_replace(
-                    previous_components,
-                    previous_bytes,
-                    0,
-                    0,
-                    MAX_RUNTIME_ENDPOINT_COMPONENTS,
-                    MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
-                )
-                .map_err(|_| ConfigurationErrorKind::InvalidHeader)?;
-            let maximum =
-                runtime_format_limit(budget).map_err(|_| ConfigurationErrorKind::InvalidHeader)?;
-            let value =
-                encode_atom(&value, maximum).map_err(|_| ConfigurationErrorKind::InvalidHeader)?;
-            crate::response::validate_accept(&value)
-                .map_err(|_| ConfigurationErrorKind::InvalidHeader)?;
-            budget = reserve_runtime_structure(budget, 1, value.len())
-                .map_err(|_| ConfigurationErrorKind::InvalidHeader)?;
-            parts.accept = RuntimeAccept::Value(value);
-            parts.budget = budget;
-            Ok(parts)
-        })
-    }
-
-    /// Suppresses the response specification's default `Accept` value.
-    #[must_use]
-    pub fn accept_off(self) -> Self {
-        self.update(|mut parts| {
-            if let RuntimeAccept::Value(value) = &parts.accept {
-                parts
-                    .budget
-                    .try_replace(
-                        1,
-                        value.len(),
-                        0,
-                        0,
-                        MAX_RUNTIME_ENDPOINT_COMPONENTS,
-                        MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES,
-                    )
-                    .map_err(|_| ConfigurationErrorKind::InvalidHeader)?;
-            }
-            parts.accept = RuntimeAccept::Off;
-            Ok(parts)
-        })
-    }
-
     /// Appends one structurally validated rate-limit policy.
     #[must_use]
     pub fn rate_limit(self, policy: RateLimitPolicy) -> Self {
@@ -1227,7 +1159,6 @@ impl<R, Output> RuntimeEndpointBuilder<R, Output> {
             timeout,
             accepted_status,
             effect,
-            accept,
             rate_limits,
             budget: _,
         } = self.state.into_result().map_err(ConfigurationError::new)?;
@@ -1309,7 +1240,6 @@ impl<R, Output> RuntimeEndpointBuilder<R, Output> {
             auth: Arc::new(auth_plan),
             auth_inherits,
             rate_limit_plan: Arc::new(RateLimitPlan::from_validated_policies(rate_limits)),
-            accept,
             head_prefix: None,
             response: PhantomData,
         })
@@ -1389,11 +1319,6 @@ where
         }
         builder.append_prepared_auth_plan(&self.auth)?;
         builder.append_prepared_rate_limit_plan(&self.rate_limit_plan)?;
-        match &self.accept {
-            RuntimeAccept::Specification => {}
-            RuntimeAccept::Value(value) => builder.set_accept_value(value)?,
-            RuntimeAccept::Off => builder.suppress_accept(),
-        }
         builder.finish()
     }
 
@@ -1924,7 +1849,6 @@ mod tests {
         .header(removed.clone(), "discarded")
         .remove_header(removed)
         .header(retained.clone(), "kept")
-        .accept("application/vnd.concord.runtime")
         .effect(Effect::NonIdempotent)
         .build()
         .expect("valid runtime patch algebra");
@@ -1956,29 +1880,13 @@ mod tests {
         assert!(!prepared.public_headers().contains_key("x-removed"));
         prepared
             .apply_media_headers(Some("text/plain"), None, false)
-            .expect("response-owned accept override");
+            .expect("response representation negotiation");
         assert_eq!(
             prepared
                 .public_headers()
                 .get(http::header::ACCEPT)
                 .and_then(|value| value.to_str().ok()),
-            Some("application/vnd.concord.runtime")
-        );
-
-        let mut suppressed =
-            RuntimeEndpoint::builder(EndpointId::from_static("runtime.accept_off"), Method::GET)
-                .accept("application/json")
-                .accept_off()
-                .build()
-                .map(|endpoint| head(&endpoint, "https://example.test/"))
-                .expect("valid accept suppression");
-        suppressed
-            .apply_media_headers(Some("text/plain"), None, false)
-            .expect("suppressed response accept");
-        assert!(
-            !suppressed
-                .public_headers()
-                .contains_key(http::header::ACCEPT)
+            Some("text/plain")
         );
 
         let cleared =

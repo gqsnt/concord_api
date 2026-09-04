@@ -77,7 +77,7 @@ pub fn construct() -> Result<(), concord::ClientBuildError> {
     let _: PaginatedRequest<_> = client
         .regional("eu".to_owned())
         .item_summaries()
-        .with_category("hardware".to_owned())
+        .set_category(Some("hardware".to_owned()))
         .set_count(NonZeroU32::new(50).expect("positive page size"))
         .paginate(PageLimit::Prefix(2));
     Ok(())
@@ -93,7 +93,7 @@ pub async fn execute(client: &CatalogApi) -> Result<(usize, usize), concord::Api
     let one_page: Vec<ItemSummary> = client
         .regional("eu".to_owned())
         .item_summaries()
-        .with_category("hardware".to_owned())
+        .set_category(Some("hardware".to_owned()))
         .await?;
 
     let first_two_pages: Vec<ItemSummary> = client

@@ -8,7 +8,6 @@ use url::Url;
 
 use crate::error::{DispatchKnowledge, FailureStage};
 use crate::hooks::AttemptInfo;
-use crate::redaction::SanitizedHeaders;
 
 use super::budget::{FixedRatio, RetryBudget};
 
@@ -415,7 +414,7 @@ pub struct RetryAttempt<'a> {
     page_index: u32,
     attempt: AttemptInfo,
     retries_performed: u32,
-    failure: RetryFailure<'a>,
+    failure: RetryFailure,
 }
 
 impl<'a> RetryAttempt<'a> {
@@ -430,7 +429,7 @@ impl<'a> RetryAttempt<'a> {
         page_index: u32,
         attempt: AttemptInfo,
         retries_performed: u32,
-        failure: RetryFailure<'a>,
+        failure: RetryFailure,
     ) -> Self {
         Self {
             endpoint,
@@ -481,7 +480,7 @@ impl<'a> RetryAttempt<'a> {
 
     /// Returns the finite failure offered for classification.
     #[must_use]
-    pub const fn failure(&self) -> RetryFailure<'a> {
+    pub const fn failure(&self) -> RetryFailure {
         self.failure
     }
 }
@@ -504,7 +503,7 @@ impl fmt::Debug for RetryAttempt<'_> {
 /// Failures that an application classifier may consider for managed retry.
 #[non_exhaustive]
 #[derive(Clone, Copy)]
-pub enum RetryFailure<'a> {
+pub enum RetryFailure {
     /// Native connection establishment failed.
     Connect,
     /// Another native transport operation failed.
@@ -513,12 +512,12 @@ pub enum RetryFailure<'a> {
     RejectedStatus {
         /// Rejected final status.
         status: StatusCode,
-        /// Sanitized final response headers.
-        headers: SanitizedHeaders<'a>,
+        /// Standard server delay parsed once by core, when valid.
+        server_delay: Option<Duration>,
     },
 }
 
-impl RetryFailure<'_> {
+impl RetryFailure {
     /// Returns the managed failure stage represented by this classifier input.
     #[must_use]
     pub const fn stage(self) -> FailureStage {
@@ -540,15 +539,18 @@ impl RetryFailure<'_> {
     }
 }
 
-impl fmt::Debug for RetryFailure<'_> {
+impl fmt::Debug for RetryFailure {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Connect => formatter.write_str("Connect"),
             Self::Transport => formatter.write_str("Transport"),
-            Self::RejectedStatus { status, headers } => formatter
+            Self::RejectedStatus {
+                status,
+                server_delay,
+            } => formatter
                 .debug_struct("RejectedStatus")
                 .field("status", status)
-                .field("header_count", &headers.len())
+                .field("server_delay", server_delay)
                 .finish(),
         }
     }

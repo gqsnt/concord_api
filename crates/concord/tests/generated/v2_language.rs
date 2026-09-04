@@ -93,7 +93,7 @@ api! {
 fn exact_value_and_capability_surface_compiles() {
     let client = V2LanguageApi::builder()
         .set_tenant("tenant".to_owned())
-        .with_locale("fr".to_owned())
+        .set_locale(Some("fr".to_owned()))
         .omit_locale()
         .reset_retry_hint()
         .build()
@@ -101,7 +101,7 @@ fn exact_value_and_capability_surface_compiles() {
 
     let regional = client
         .regional("eu".to_owned())
-        .with_language("French".to_owned());
+        .set_language(Some("French".to_owned()));
     let list = regional
         .list(None, vec!["one".to_owned(), "two".to_owned()])
         .reset_count();
@@ -110,7 +110,7 @@ fn exact_value_and_capability_surface_compiles() {
 
     let intent = V2LanguageApi::unbound()
         .regional("eu".to_owned())
-        .with_language("French".to_owned())
+        .set_language(Some("French".to_owned()))
         .list(None, vec!["one".to_owned()]);
     assert_eq!(intent.description().id(), "v2.language.list");
     let _ = client.plan(&intent).expect("unbound plan");
@@ -119,7 +119,7 @@ fn exact_value_and_capability_surface_compiles() {
     let _update = regional
         .update("id".to_owned(), "body".to_owned())
         .set_mode(Some(None))
-        .with_mode(Some("replace".to_owned()))
+        .set_mode(Some(Some("replace".to_owned())))
         .omit_mode();
 }
 

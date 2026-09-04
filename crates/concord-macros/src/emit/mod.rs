@@ -9,8 +9,8 @@ use crate::semantic::model::{
     AcceptedStatus, Api, AttachmentFamily, AttachmentOperation, Child, Client, CloneEligibility,
     Credential, CredentialSource, Effect, Endpoint, NormalizedConfig, NormalizedRateLimitDimension,
     ObservationClass, PaginationInitializer, PaginationValue, QueryCardinality, RequiredArgument,
-    ResolvedAccept, ResolvedAuthPlacement, ResolvedChallengePolicy, ResolvedDefault, ResolvedExpr,
-    ResolvedMethod, ResolvedValue, Scope, Value, ValuePresence, ValueReference,
+    ResolvedAuthPlacement, ResolvedChallengePolicy, ResolvedDefault, ResolvedExpr, ResolvedMethod,
+    ResolvedValue, Scope, Value, ValuePresence, ValueReference,
 };
 use crate::semantic::surface::{canonical_ident, public_ident, to_snake_case, value_setter_ident};
 
@@ -177,12 +177,10 @@ mod tests {
         for method in [
             "set_required_client_value",
             "set_optional_client_value",
-            "with_optional_client_value",
             "omit_optional_client_value",
             "set_defaulted_client_value",
             "reset_defaulted_client_value",
             "set_defaulted_optional_client_value",
-            "with_defaulted_optional_client_value",
             "omit_defaulted_optional_client_value",
             "reset_defaulted_optional_client_value",
             "set_build",
@@ -191,25 +189,20 @@ mod tests {
             "reset_response",
             "set_debug",
             "set_optional_scope_value",
-            "with_optional_scope_value",
             "omit_optional_scope_value",
             "set_defaulted_scope_value",
             "reset_defaulted_scope_value",
             "set_defaulted_optional_scope_value",
-            "with_defaulted_optional_scope_value",
             "omit_defaulted_optional_scope_value",
             "reset_defaulted_optional_scope_value",
             "set_optional_endpoint_value",
-            "with_optional_endpoint_value",
             "omit_optional_endpoint_value",
             "set_defaulted_endpoint_value",
             "reset_defaulted_endpoint_value",
             "set_defaulted_optional_endpoint_value",
-            "with_defaulted_optional_endpoint_value",
             "omit_defaulted_optional_endpoint_value",
             "reset_defaulted_optional_endpoint_value",
             "set_defaulted_optional_vector_endpoint_value",
-            "with_defaulted_optional_vector_endpoint_value",
             "omit_defaulted_optional_vector_endpoint_value",
             "reset_defaulted_optional_vector_endpoint_value",
         ] {
@@ -218,6 +211,13 @@ mod tests {
         for absent in [
             "set_required_scope_value",
             "set_required_endpoint_value",
+            "with_optional_client_value",
+            "with_defaulted_optional_client_value",
+            "with_optional_scope_value",
+            "with_defaulted_optional_scope_value",
+            "with_optional_endpoint_value",
+            "with_defaulted_optional_endpoint_value",
+            "with_defaulted_optional_vector_endpoint_value",
             "omit_required_client_value",
             "reset_required_client_value",
             "reset_optional_client_value",
@@ -263,19 +263,6 @@ mod tests {
         assert!(output.contains(
             "pub fn set_defaulted_optional_vector_endpoint_value (mut self , value : :: std :: option :: Option < Option < Vec < String > > >)"
         ));
-        assert!(output.contains(
-            "pub fn with_defaulted_optional_client_value (mut self , value : Option < String >)"
-        ));
-        assert!(output.contains(
-            "pub fn with_defaulted_optional_scope_value (mut self , value : Option < String >)"
-        ));
-        assert!(output.contains(
-            "pub fn with_defaulted_optional_endpoint_value (mut self , value : Option < String >)"
-        ));
-        assert!(output.contains(
-            "pub fn with_defaulted_optional_vector_endpoint_value (mut self , value : Option < Vec < String > >)"
-        ));
-
         let endpoint = semantic::test_support::endpoint(&api.client.children, "item");
         let request = generate_request_wrapper(
             &api.client,

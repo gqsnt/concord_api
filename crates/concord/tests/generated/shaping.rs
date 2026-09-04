@@ -228,9 +228,8 @@ api! {
         }
     }
 
-    GET accept(accept: String) -> String via Text {
+    GET accept() -> String via Text {
         path ["accept"];
-        accept endpoint.accept;
     }
 
     POST text_body(body body: String via Text) -> Bytes via Binary {
@@ -430,7 +429,7 @@ fn shaped_client(server: &ScriptedServer) -> ShapeApi {
     let proxy = proxy(server);
     ShapeApi::builder()
         .set_tenant("tenant-a".to_owned())
-        .with_locale("fr".to_owned())
+        .set_locale(Some("fr".to_owned()))
         .set_client_marker(DropProbe::new("client-explicit", explicit_drops))
         .configure_http(move |http| http.proxy(proxy))
         .build()
@@ -503,7 +502,7 @@ fn defaulted_option_client_omit_and_reset_are_distinct_override_states() {
     assert!(default_url.contains("client_label=client-default"));
 
     let selected = OptionalControlApi::builder()
-        .with_client_label("client-chosen")
+        .set_client_label(Some("client-chosen"))
         .build()
         .expect("selected client label");
     let selected_url =
@@ -535,7 +534,7 @@ fn trait_default_evaluation_preserves_owner_and_reset_timing() {
 
     let overridden = TraitDefaultTimingApi::builder()
         .set_scalar(7)
-        .with_optional("chosen".to_owned())
+        .set_optional(Some("chosen".to_owned()))
         .set_vector(vec!["chosen".to_owned()])
         .set_client_probe(ClientTraitDefaultProbe)
         .build()
@@ -546,7 +545,7 @@ fn trait_default_evaluation_preserves_owner_and_reset_timing() {
     let reset = TraitDefaultTimingApi::builder()
         .set_scalar(7)
         .reset_scalar()
-        .with_optional("chosen".to_owned())
+        .set_optional(Some("chosen".to_owned()))
         .omit_optional()
         .reset_optional()
         .set_vector(vec!["chosen".to_owned()])
@@ -647,10 +646,10 @@ fn explicit_snapshots_restore_defaulted_option_and_option_vec_values() {
 
     let selected = OptionalControlApi::unbound()
         .groups()
-        .with_scope_label("scope-chosen")
+        .set_scope_label(Some("scope-chosen"))
         .inspect()
-        .with_endpoint_label("endpoint-chosen")
-        .with_values(vec!["first", "second"]);
+        .set_endpoint_label(Some("endpoint-chosen"))
+        .set_values(Some(vec!["first", "second"]));
     let selected_url = optional_control_url(&client, &selected);
     assert!(selected_url.contains("scope_label=scope-chosen"));
     assert!(selected_url.contains("endpoint_label=endpoint-chosen"));
@@ -674,7 +673,7 @@ fn explicit_snapshots_restore_defaulted_option_and_option_vec_values() {
         .inspect()
         .omit_endpoint_label()
         .reset_endpoint_label()
-        .with_values(vec!["discarded"])
+        .set_values(Some(vec!["discarded"]))
         .reset_values();
     let reset_url = optional_control_url(&client, &reset);
     assert!(reset_url.contains("scope_label=scope-default"));
@@ -700,7 +699,7 @@ async fn scope_and_request_controls_share_defaulted_option_snapshot_semantics() 
         .expect("default scope selection");
     client
         .groups()
-        .with_scope_label("scope-chosen")
+        .set_scope_label(Some("scope-chosen"))
         .inspect()
         .await
         .expect("selected scope value");
@@ -720,7 +719,7 @@ async fn scope_and_request_controls_share_defaulted_option_snapshot_semantics() 
     client
         .groups()
         .inspect()
-        .with_endpoint_label("endpoint-chosen")
+        .set_endpoint_label(Some("endpoint-chosen"))
         .await
         .expect("selected request value");
     client
@@ -739,7 +738,7 @@ async fn scope_and_request_controls_share_defaulted_option_snapshot_semantics() 
     client
         .groups()
         .inspect()
-        .with_values(vec!["first", "second"])
+        .set_values(Some(vec!["first", "second"]))
         .await
         .expect("selected request vector");
     client
@@ -751,7 +750,7 @@ async fn scope_and_request_controls_share_defaulted_option_snapshot_semantics() 
     client
         .groups()
         .inspect()
-        .with_values(vec!["discarded"])
+        .set_values(Some(vec!["discarded"]))
         .reset_values()
         .await
         .expect("reset request vector");
@@ -791,12 +790,12 @@ async fn nested_facade_extension_setters_and_explicit_endpoint_have_head_parity(
     let client = shaped_client(&server);
     let other_proxy = proxy(&server);
     let other = OtherApi::builder()
-        .with_label("chosen".to_owned())
+        .set_label(Some("chosen".to_owned()))
         .configure_http(move |http| http.proxy(other_proxy))
         .build()
         .expect("other client");
     let reset_other = OtherApi::builder()
-        .with_label("unused".to_owned())
+        .set_label(Some("unused".to_owned()))
         .omit_label()
         .build()
         .expect("cleared optional client value");
@@ -804,11 +803,11 @@ async fn nested_facade_extension_setters_and_explicit_endpoint_have_head_parity(
 
     let regions = client
         .regions("eu".to_owned())
-        .with_language("de".to_owned());
+        .set_language(Some("de".to_owned()));
     let users = regions.users("account-a".to_owned());
     let facade = users
         .fetch("42".to_owned())
-        .with_verbose(true)
+        .set_verbose(Some(true))
         .set_endpoint_marker(DropProbe::new("temporary", explicit_drops))
         .reset_endpoint_marker()
         .await
@@ -817,17 +816,17 @@ async fn nested_facade_extension_setters_and_explicit_endpoint_have_head_parity(
 
     let explicit = ShapeApi::unbound()
         .regions("eu".to_owned())
-        .with_language("de".to_owned())
+        .set_language(Some("de".to_owned()))
         .users("account-a".to_owned())
         .fetch("42".to_owned())
-        .with_verbose(true);
+        .set_verbose(Some(true));
     let explicit = client.request(explicit).await.expect("explicit endpoint");
     assert_eq!(explicit, b"explicit"[..]);
 
     let metadata: ApiResponse<Bytes> = client
         .root()
         .timeout(Duration::from_secs(1))
-        .with_verbose(true)
+        .set_verbose(Some(true))
         .reset_timeout()
         .response()
         .await
@@ -836,7 +835,7 @@ async fn nested_facade_extension_setters_and_explicit_endpoint_have_head_parity(
 
     let other_value = other
         .echo()
-        .with_verbose(true)
+        .set_verbose(Some(true))
         .await
         .expect("second-client prelude setter");
     assert_eq!(other_value, b"other"[..]);
@@ -914,8 +913,8 @@ async fn consuming_request_setters_keep_sibling_snapshots_isolated() {
     .expect("sibling server");
     let client = shaped_client(&server);
 
-    let selected = client.root().with_verbose(true);
-    let cleared = client.root().with_verbose(false).omit_verbose();
+    let selected = client.root().set_verbose(Some(true));
+    let cleared = client.root().set_verbose(Some(false)).omit_verbose();
     assert_eq!(selected.await.expect("selected sibling"), b"selected"[..]);
     assert_eq!(cleared.await.expect("cleared sibling"), b"cleared"[..]);
 
@@ -935,7 +934,7 @@ async fn facade_setters_leave_the_source_scope_snapshot_unchanged() {
     let client = shaped_client(&server);
     let source = client
         .regions("eu".to_owned())
-        .with_language("fr".to_owned());
+        .set_language(Some("fr".to_owned()));
     let cleared = source.clone().omit_language();
 
     assert_eq!(
@@ -971,7 +970,7 @@ async fn independently_built_clients_retain_independent_value_snapshots() {
     let first = ShapeApi::builder()
         .set_tenant("discarded".to_owned())
         .set_tenant("tenant-one".to_owned())
-        .with_locale("discarded".to_owned())
+        .set_locale(Some("discarded".to_owned()))
         .omit_locale()
         .set_client_marker(DropProbe::new("discarded", explicit_drops))
         .reset_client_marker()
@@ -981,8 +980,8 @@ async fn independently_built_clients_retain_independent_value_snapshots() {
     let second_proxy = proxy(&server);
     let second = ShapeApi::builder()
         .set_tenant("tenant-two".to_owned())
-        .with_locale("discarded".to_owned())
-        .with_locale("es".to_owned())
+        .set_locale(Some("discarded".to_owned()))
+        .set_locale(Some("es".to_owned()))
         .configure_http(move |http| http.proxy(second_proxy))
         .build()
         .expect("second client");
@@ -1018,7 +1017,7 @@ async fn collection_queries_and_every_standard_method_preserve_runtime_order() {
     assert_eq!(
         client
             .search(vec!["one two".to_owned(), "three".to_owned()])
-            .with_filters(vec!["x".to_owned(), "y".to_owned()])
+            .set_filters(Some(vec!["x".to_owned(), "y".to_owned()]))
             .await
             .expect("vector query"),
         b"search-values"[..]
@@ -1078,15 +1077,12 @@ async fn response_accept_and_body_specs_own_media_headers() {
     let client = shaped_client(&server);
 
     assert_eq!(
-        client
-            .accept("application/vnd.concord.request-shaping".to_owned())
-            .await
-            .expect("public Accept"),
+        client.accept().await.expect("representation-owned Accept"),
         "accepted"
     );
     let mut streamed: ByteStream = client
         .streamed()
-        .with_verbose(true)
+        .set_verbose(Some(true))
         .await
         .expect("direct stream await after generated setter");
     assert_eq!(
@@ -1123,10 +1119,7 @@ async fn response_accept_and_body_specs_own_media_headers() {
 
     let requests = server.requests();
     assert_eq!(requests.len(), 5);
-    assert_eq!(
-        requests[0].header("accept"),
-        Some("application/vnd.concord.request-shaping")
-    );
+    assert_eq!(requests[0].header("accept"), Some("text/plain"));
     assert_eq!(
         requests[2].header("content-type"),
         Some("text/plain; charset=utf-8")

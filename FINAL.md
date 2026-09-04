@@ -1,6 +1,6 @@
 # Concord v2.1 implementation status
 
-Concord v2.1 is the single active language target in this repository. The workspace version is `2.1.0` and the generated/core contract handshake is `33`; no public v2.0 language is implemented as an intermediate mode.
+Concord v2.1 is the single active language target in this repository. While release-readiness gates remain open, the workspace version is `2.1.0-rc.1`; the generated/core contract handshake is `33`, and no public v2.0 language is implemented as an intermediate mode.
 
 The normative contract lives in the [design invariants](docs/design_invariants.md), [DSL specification](docs/spec.md), and [execution policy](docs/execution_policy.md), and selected [ADRs](dev_doc/adrs/README.md). Old spellings remain only in rejection diagnostics, migration tooling/tests, and quoted migration documentation.
 

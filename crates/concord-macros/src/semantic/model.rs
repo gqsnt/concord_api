@@ -104,7 +104,6 @@ pub(crate) struct Endpoint {
     pub(crate) status_explicit: bool,
     pub(crate) effect: Effect,
     pub(crate) effect_explicit: bool,
-    pub(crate) accept: Option<ResolvedAccept>,
     pub(crate) expose_accepted_bytes: bool,
 }
 
@@ -112,12 +111,6 @@ pub(crate) struct Endpoint {
 pub(crate) enum AcceptedStatus {
     Success,
     Codes(Vec<u16>),
-}
-
-#[derive(Clone)]
-pub(crate) enum ResolvedAccept {
-    Value(Box<ResolvedExpr>),
-    Off,
 }
 
 #[derive(Clone, Default)]
@@ -168,7 +161,6 @@ pub(crate) struct EndpointSurface {
 #[derive(Clone)]
 pub(crate) struct BodySetter {
     pub(crate) setter: Ident,
-    pub(crate) with: Ident,
     pub(crate) omit: Ident,
 }
 
@@ -182,7 +174,6 @@ pub(crate) enum RequiredArgument {
 pub(crate) struct EndpointSetter {
     pub(crate) parameter: usize,
     pub(crate) setter: Ident,
-    pub(crate) with: Option<Ident>,
     pub(crate) omit: Option<Ident>,
     pub(crate) reset: Option<Ident>,
 }
@@ -302,10 +293,6 @@ impl Value {
         &self.effective_type
     }
 
-    pub(crate) fn with_argument_type(&self) -> &Type {
-        &self.payload_type
-    }
-
     pub(crate) fn client_builder_storage_type(&self) -> &Type {
         &self.effective_type
     }
@@ -393,7 +380,6 @@ pub(crate) enum AttachmentFamily {
     Authentication,
     Timeout,
     RateLimit,
-    Accept,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

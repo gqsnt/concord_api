@@ -71,8 +71,10 @@ pub struct ResponseHeadObserved<'a> {
     pub attempt: AttemptInfo,
     /// Final status for this Concord attempt.
     pub status: StatusCode,
-    /// Sanitized actual response headers.
-    pub headers: SanitizedHeaders<'a>,
+    /// Valid bounded content length parsed by core, when present.
+    pub content_length: Option<u64>,
+    /// Standard server delay parsed once by core, when valid.
+    pub server_delay: Option<Duration>,
 }
 
 /// Inline observation of one already-fixed request or page result.

@@ -16,7 +16,7 @@ provisional or blocked.
 | 7 — rate/server-delay behavior | Passed | Canonical framed keys, stable IDs, conjunctive whole-plan admission, explicit limiter selection, reacquisition boundaries, parsed server delay, future-only feedback, cooldown bounds/eviction, and redaction pass. |
 | 8 — stream lifecycle/performance | Provisional | Lazy lifecycle, post-return errors, bounds, backpressure, cancellation, and stream terminal evidence pass. The maintained 100-operation runtime probe passed, but it does not yet compare monomorphized, boxed, and enum-erased drivers or allocation/code-size across target workloads. |
 | 9 — information-flow security | Passed | Sentinel suites cover public/sensitive/private values, bodies, output, credentials/provider refresh, rate keys, pagination identities, errors/debug/plans/events, native target separation, and runtime binding/security-context constraints. |
-| 10 — large contract/docs/hygiene | Provisional | Version 2.1.0, one active language, MSRV/features/docs/analyzer/fixtures/migration checks pass. Expansion measurements passed for 1/10/100/500/1,000 endpoints (1,054/5,788/53,488/265,488/530,488 lines); clean/incremental memory, binary-size, generated-Rustdoc human clarity, and parent-change human review remain incomplete. |
+| 10 — large contract/docs/hygiene | Provisional | Version 2.1.0-rc.1, one active language, MSRV/features/docs/analyzer/fixtures/migration checks pass. Expansion measurements passed for 1/10/100/500/1,000 endpoints (1,054/5,788/53,488/265,488/530,488 lines); clean/incremental memory, binary-size, generated-Rustdoc human clarity, and parent-change human review remain incomplete. |
 
 ## Maintained verification
 

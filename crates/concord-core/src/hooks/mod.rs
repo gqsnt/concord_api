@@ -24,7 +24,10 @@ pub enum DebugLevel {
     None,
     /// Emits structural request and response metadata without headers.
     Basic,
-    /// Also emits sanitized request and response headers.
+    /// Also emits sanitized public request headers.
+    ///
+    /// Response-header values are never included; response diagnostics remain
+    /// limited to typed facts parsed by core.
     Headers,
 }
 
@@ -111,7 +114,8 @@ mod tests {
             page_index: 0,
             attempt: AttemptInfo::INITIAL,
             status: StatusCode::NO_CONTENT,
-            headers: SanitizedHeaders::new(&headers),
+            content_length: Some(0),
+            server_delay: None,
         }));
         observer.observe(OperationEvent::OperationFinished(OperationFinished {
             operation_id: id(),

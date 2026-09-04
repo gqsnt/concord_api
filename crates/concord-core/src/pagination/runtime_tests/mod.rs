@@ -572,7 +572,10 @@ impl OperationObserver for PaginationProbe {
                     context.page_index,
                     context.attempt,
                     context.status,
-                    format!("{} {:?}", context.observed_url, context.headers),
+                    format!(
+                        "{} content_length={:?} server_delay={:?}",
+                        context.observed_url, context.content_length, context.server_delay
+                    ),
                 ));
             }
             OperationEvent::OperationFinished(context) => {

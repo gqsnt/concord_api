@@ -134,7 +134,7 @@ fn generated_buffered_record_terminals_have_buffered_and_page_capabilities() {
     let _: AcceptedBytesRequest<_> = client.buffered_custom().accepted_bytes();
     let _: PaginatedRequest<_> = client
         .pages(0, NonZeroU32::new(2).expect("positive page size"))
-        .paginate(4_u32);
+        .paginate(concord::PageLimit::Prefix(4));
 
     fn assert_spec<S>()
     where
@@ -213,7 +213,7 @@ async fn generated_runtime_raw_and_paginated_buffered_records_share_the_public_a
 
     let pages = client
         .pages(0, NonZeroU32::new(2).expect("positive page size"))
-        .paginate(4_u32)
+        .paginate(concord::PageLimit::Prefix(4))
         .await
         .expect("paginated buffered records");
     assert_eq!(pages, [6, 7, 8]);

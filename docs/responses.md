@@ -35,7 +35,7 @@ pub trait ResponseRepresentation<Output>: Send + Sync + 'static {
 
     const DESCRIPTION: ResponseRepresentationDescription;
 
-    fn default_accept() -> Option<StaticHeaderValue>;
+    fn accept() -> Option<&'static str>;
 
     fn validate_accepted_head(
         head: AcceptedResponseHead<'_>,
@@ -134,7 +134,11 @@ Accepted representation validation/decode failure is terminal by default; repeat
 let response: ApiResponse<Item> = request.response().await?;
 ```
 
-Exposes managed accepted metadata through bounded explicit accessors. It does not return native response ownership or automatic unsanitized header maps.
+`headers()` deliberately gives the caller the actual accepted header map. That
+is explicit caller authority: application code owns any later logging or
+storage. `Debug` omits every header value, and general observers, debug output,
+retry classification, rate feedback, errors, descriptions, and plans do not
+receive this map. The wrapper never returns native response ownership.
 
 ## Accepted bytes
 

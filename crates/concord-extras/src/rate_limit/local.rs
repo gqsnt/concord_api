@@ -7,17 +7,28 @@ use std::time::Duration;
 
 use concord_core::contracts::{BoxFuture, RateLimitErrorKind};
 use concord_core::rate_limit::{
-    Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_BYTES,
-    RateLimitError, RateLimitObserver, RateLimitPermit, RateLimitPlan, RateLimitPolicy,
-    RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimitWindow, RateLimiter,
+    DEFAULT_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_BYTES, RateLimitError, RateLimitPermit,
+    RateLimitPlan, RateLimitPolicy, RateLimitRequest, RateLimitResponse, RateLimitWindow,
+    RateLimiter,
 };
-
-use super::RetryAfterObserver;
+use http::StatusCode;
 
 const DEFAULT_QUOTA_CAPACITY: usize = 4_096;
 const DEFAULT_COOLDOWN_CAPACITY: usize = 4_096;
 const DEFAULT_IDLE_TTL: Duration = Duration::from_secs(15 * 60);
 const NANOS_PER_SECOND: u128 = 1_000_000_000;
+
+enum CooldownScope {
+    CurrentBuckets,
+    Host,
+    #[cfg(test)]
+    Client,
+}
+
+struct Cooldown {
+    duration: Duration,
+    scope: CooldownScope,
+}
 
 /// A bounded process-local, limiter-object-local token-bucket limiter.
 ///
@@ -40,7 +51,6 @@ const NANOS_PER_SECOND: u128 = 1_000_000_000;
 /// ```
 pub struct LocalRateLimiter {
     config: LocalLimiterConfig,
-    observer: Arc<dyn RateLimitObserver>,
     state: Mutex<LocalLimiterState>,
     internal_failed: AtomicBool,
     #[cfg(test)]
@@ -72,22 +82,11 @@ impl LocalRateLimiter {
                 idle_ttl: DEFAULT_IDLE_TTL,
                 key_limit: DEFAULT_RATE_LIMIT_KEY_BYTES,
             },
-            observer: Arc::new(RetryAfterObserver),
             state: Mutex::new(LocalLimiterState::new()),
             internal_failed: AtomicBool::new(false),
             #[cfg(test)]
             acquisition_calls: AtomicUsize::new(0),
         }
-    }
-
-    /// Replaces the built-in [`RetryAfterObserver`].
-    ///
-    /// The custom observer must delegate to it when built-in `Retry-After`
-    /// behavior should be retained.
-    #[must_use]
-    pub fn observer(mut self, observer: Arc<dyn RateLimitObserver>) -> Self {
-        self.observer = observer;
-        self
     }
 
     /// Sets the positive finite quota-entry capacity.
@@ -202,34 +201,22 @@ impl LocalRateLimiter {
         let RateLimitResponse {
             request,
             status,
-            headers,
             server_delay,
             cooldown_cap,
         } = response;
-        let RateLimitRequest {
-            endpoint,
-            method,
-            observed_url,
-            host,
-            page_index,
-            attempt,
-            plan,
-        } = request;
-        let response_head = RateLimitResponseHead {
-            endpoint,
-            method,
-            observed_url,
-            host,
-            page_index,
-            attempt,
-            plan,
-            status,
-            headers,
-            server_delay,
-        };
-        let Some(cooldown) = self.observer.observe(&response_head) else {
+        let RateLimitRequest { host, plan, .. } = request;
+        if status != StatusCode::TOO_MANY_REQUESTS {
+            return Ok(());
+        }
+        let Some(duration) = server_delay.filter(|delay| !delay.is_zero()) else {
             return Ok(());
         };
+        let scope = if plan.is_empty() {
+            CooldownScope::Host
+        } else {
+            CooldownScope::CurrentBuckets
+        };
+        let cooldown = Cooldown { duration, scope };
         self.apply_cooldown(host, plan, cooldown, cooldown_cap)
     }
 
@@ -258,6 +245,7 @@ impl LocalRateLimiter {
         };
         state.prune_expired_cooldowns(now);
         let result = match cooldown.scope {
+            #[cfg(test)]
             CooldownScope::Client => {
                 state.extend_client_cooldown(expiration);
                 Ok(())
@@ -589,6 +577,7 @@ impl LocalLimiterState {
         Ok(())
     }
 
+    #[cfg(test)]
     fn extend_client_cooldown(&mut self, expiration: tokio::time::Instant) {
         self.client_cooldown = Some(
             self.client_cooldown

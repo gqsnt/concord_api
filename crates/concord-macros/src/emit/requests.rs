@@ -40,10 +40,8 @@ pub(super) fn generate_request_wrapper(
             .body
             .as_ref()
             .expect("optional body setter has a body");
-        let input = &body.input_type;
         let effective = &body.effective_input_type;
         let set = &setter.setter;
-        let with = &setter.with;
         let omit = &setter.omit;
         quote! {
             /// Replaces the optional request body with its exact outer presence value.
@@ -52,16 +50,6 @@ pub(super) fn generate_request_wrapper(
                 self.__concord_inner = #generated_core::__private::map_endpoint(
                     self.__concord_inner,
                     |endpoint| endpoint.#set(value),
-                );
-                self
-            }
-
-            /// Selects a present optional request body.
-            #[must_use]
-            pub fn #with(mut self, value: #input) -> Self {
-                self.__concord_inner = #generated_core::__private::map_endpoint(
-                    self.__concord_inner,
-                    |endpoint| endpoint.#with(value),
                 );
                 self
             }
@@ -124,12 +112,10 @@ pub(super) fn generate_request_wrapper(
         quote! {
             /// Consumes this request and creates one directly awaitable bounded sequential pagination operation.
             #[must_use]
-            pub fn paginate<L>(
+            pub fn paginate(
                 self,
-                limit: L,
+                limit: #facade_path::PageLimit,
             ) -> #facade_path::pagination::PaginatedRequest<#endpoint_name>
-            where
-                L: ::std::convert::Into<#facade_path::PageLimit>,
             {
                 #generated_core::__private::paginate_request(self.__concord_inner, limit)
             }
@@ -263,43 +249,17 @@ pub(super) fn request_wrapper_setters(
     generated_core: &TokenStream,
 ) -> TokenStream {
     let ty = value.setter_argument_type();
-    let with_method = value.accepts_absence().then(|| {
-        let method = helper_ident("with", &value.name);
-        let payload_type = value.with_argument_type();
-        quote! {
-            #[must_use]
-            pub fn #method(mut self, value: #payload_type) -> Self {
-                self.__concord_inner = #generated_core::__private::map_endpoint(
-                    self.__concord_inner,
-                    |endpoint| endpoint.#method(value),
-                );
-                self
-            }
-        }
-    });
-    let setter_doc = if value.accepts_absence() && value.has_default() {
-        format!(
-            "Consumes this request and selects a present value for defaulted absence-capable endpoint value `{}`.",
-            canonical_ident(&value.name)
-        )
-    } else if value.accepts_absence() {
-        format!(
-            "Consumes this request and selects a present value for absence-capable endpoint value `{}`.",
-            canonical_ident(&value.name)
-        )
-    } else {
-        format!(
-            "Consumes this request and overrides defaulted endpoint value `{}`.",
-            canonical_ident(&value.name)
-        )
-    };
-    let clear_method = omit.map(|omit| {
-        let clear_doc = format!(
+    let setter_doc = format!(
+        "Consumes this request and replaces endpoint value `{}` with its exact effective type.",
+        canonical_ident(&value.name)
+    );
+    let omit_method = omit.map(|omit| {
+        let omit_doc = format!(
             "Consumes this request and explicitly selects absence for absence-capable endpoint value `{}`.",
             canonical_ident(&value.name)
         );
         quote! {
-            #[doc = #clear_doc]
+            #[doc = #omit_doc]
             #[must_use]
             pub fn #omit(mut self) -> Self {
                 self.__concord_inner = #generated_core::__private::map_endpoint(
@@ -338,8 +298,7 @@ pub(super) fn request_wrapper_setters(
             self
         }
 
-        #with_method
-        #clear_method
+        #omit_method
         #reset_method
     }
 }

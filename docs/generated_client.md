@@ -43,7 +43,7 @@ A client with effective rate policies cannot build without an explicit limiter c
 let regional = client
     .regional(region)
     .set_language(language_from_config)
-    .with_language(Language::Fr)
+    .set_language(Some(Language::Fr))
     .omit_language();
 ```
 
@@ -57,7 +57,7 @@ Required non-initialized ordinary values and required bodies are direct argument
 let request = regional
     .item_summaries(tags)
     .set_category(category_from_config)
-    .with_category(category)
+    .set_category(Some(category))
     .omit_category()
     .set_count(PageSize::new(100)?)
     .reset_count();
@@ -70,13 +70,11 @@ Do not generate generic path/query/header/body/auth/native mutation methods for 
 | Declaration | Construction | Controls |
 |---|---|---|
 | `x: T` | required argument/builder field | none after scope/endpoint construction |
-| `x?: T` | initially absent | `set_x(Option<T>)`, `with_x(T)`, `omit_x()` |
+| `x?: T` | initially absent | `set_x(Option<T>)`, `omit_x()` |
 | `x: T = V` / `#[default] x: T` | retained initialized value | `set_x(T)`, `reset_x()` |
-| initialized `x?: T` | retained present default | `set_x(Option<T>)`, `with_x(T)`, `omit_x()`, `reset_x()` |
+| initialized `x?: T` | retained present default | `set_x(Option<T>)`, `omit_x()`, `reset_x()` |
 
-For `x?: Option<U>`, `set_x` accepts `Option<Option<U>>`, `with_x` accepts `Option<U>`, and `omit_x` selects the outer absence.
-
-`with_x` remains prototype-gated. Do not publish both a retained and removed spelling. Keep it if the DX study supports it; otherwise remove it before release.
+For `x?: Option<U>`, `set_x` accepts `Option<Option<U>>`, and `omit_x` selects the outer absence. The smaller exact surface avoids a second assignment operation that can obscure outer Concord presence.
 
 ## Ordinary terminals
 
@@ -120,7 +118,7 @@ The initial operation completes when the accepted stream handle is acquired. Lat
 let intent = CatalogApi::unbound()
     .regional(region)
     .item_summaries(tags)
-    .with_category(category);
+    .set_category(Some(category));
 
 let plan = client.plan(&intent)?;
 let request = client.request(intent); // statically matching and infallible

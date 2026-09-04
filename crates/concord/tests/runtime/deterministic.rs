@@ -130,7 +130,7 @@ async fn direct_and_explicit_named_wrappers_preserve_inertness_and_lifecycle_equ
                 encodes: Arc::clone(&encodes),
             },
         )
-        .with_verbose(true)
+        .set_verbose(Some(true))
         .set_limit(50)
         .timeout(Duration::from_secs(5));
     let endpoint = RuntimeApi::unbound()
@@ -142,7 +142,7 @@ async fn direct_and_explicit_named_wrappers_preserve_inertness_and_lifecycle_equ
                 encodes: Arc::clone(&encodes),
             },
         )
-        .with_verbose(true)
+        .set_verbose(Some(true))
         .set_limit(50);
     let explicit = client.request(endpoint).timeout(Duration::from_secs(5));
 

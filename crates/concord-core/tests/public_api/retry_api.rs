@@ -20,8 +20,11 @@ impl RetryClassifier for GetFailures {
         );
         match attempt.failure() {
             RetryFailure::Connect | RetryFailure::Transport => RetryDecision::Retry,
-            RetryFailure::RejectedStatus { status, headers } => {
-                let _ = (status, headers.len(), headers.is_empty());
+            RetryFailure::RejectedStatus {
+                status,
+                server_delay,
+            } => {
+                let _ = (status, server_delay);
                 RetryDecision::Stop
             }
             _ => RetryDecision::Stop,

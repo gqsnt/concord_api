@@ -257,7 +257,7 @@ impl HttpResponseFailure {
             .get(CONTENT_TYPE)
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned);
-        let headers = SanitizedHeaderMap::from_headers(&headers);
+        let headers = SanitizedHeaderMap::from_response_headers(&headers);
         Self {
             endpoint,
             method,
@@ -284,7 +284,7 @@ impl HttpResponseFailure {
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned);
         let retry_after = parse_retry_after(&headers, retry_after_cap, now);
-        let headers = SanitizedHeaderMap::from_headers(&headers);
+        let headers = SanitizedHeaderMap::from_response_headers(&headers);
         Self {
             endpoint,
             method,
@@ -320,7 +320,11 @@ impl HttpResponseFailure {
         self.status
     }
 
-    /// Returns owned sanitized response headers.
+    /// Returns a bounded structural response-header view.
+    ///
+    /// Names may be present, but every remote value is redacted. Use a
+    /// successful explicit [`crate::response::ApiResponse`] when caller-owned
+    /// access to actual response values is required.
     #[must_use]
     pub const fn headers(&self) -> &SanitizedHeaderMap {
         &self.headers
@@ -459,6 +463,30 @@ mod tests {
             failure.into_body().into_bytes().as_deref(),
             Some(BODY_SENTINEL.as_bytes())
         );
+    }
+
+    #[test]
+    fn unknown_response_header_values_never_enter_error_metadata_or_formatting() {
+        const UNKNOWN_SENTINEL: &str = "unknown-error-header-value-b8d41c";
+        let mut headers = HeaderMap::new();
+        let name = http::HeaderName::from_static("x-unknown-error-metadata");
+        headers.insert(&name, HeaderValue::from_static(UNKNOWN_SENTINEL));
+        let failure = HttpResponseFailure::new_at(
+            EndpointId::from_static("widgets.fetch"),
+            Method::GET,
+            StatusCode::BAD_GATEWAY,
+            headers,
+            StatusBody::empty(),
+            Duration::from_secs(60),
+            UNIX_EPOCH,
+        );
+
+        assert_eq!(
+            failure.headers().get(&name),
+            Some(crate::redaction::SanitizedHeaderValue::Redacted)
+        );
+        assert!(!failure.to_string().contains(UNKNOWN_SENTINEL));
+        assert!(!format!("{failure:?}").contains(UNKNOWN_SENTINEL));
     }
 
     #[test]

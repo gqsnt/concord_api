@@ -18,7 +18,6 @@ use crate::hooks::{
 };
 use crate::operation::{OperationDeadline, OperationId};
 use crate::rate_limit::{RateLimitRequest, RateLimitResponse};
-use crate::redaction::SanitizedHeaders;
 use crate::request::{
     AcceptedBytesRequest, EndpointSpec, OperationPreparation, PreparationFailure,
     PreparedOperation, PreparedPaginationPage, Request, ResponseRequest, prepare_operation,
@@ -417,7 +416,7 @@ where
 
             let failure = RetryFailure::RejectedStatus {
                 status,
-                headers: SanitizedHeaders::new(attempt.response.headers()),
+                server_delay: attempt.server_delay.map(ServerDelayHint::delay),
             };
             let retry_decision = classify_retry(
                 retry_policy.as_ref(),
@@ -573,7 +572,7 @@ fn classify_retry(
     context: ExecutionContext,
     attempt: AttemptInfo,
     policy_retries: u32,
-    failure: RetryFailure<'_>,
+    failure: RetryFailure,
 ) -> Result<RetryDecision, ApiError> {
     let Some(policy) = policy else {
         return Ok(RetryDecision::Stop);
@@ -954,19 +953,12 @@ async fn send_attempt(
         page_index: context.page_index,
         attempt,
         status,
-        headers: SanitizedHeaders::new(response.headers()),
+        content_length: parsed_content_length(response.headers()),
+        server_delay: server_delay.map(ServerDelayHint::delay),
     };
     core.debug_dispatcher(head.debug())
         .response_head(&response_event);
-    observe_rate_limit_response(
-        core,
-        context,
-        attempt,
-        head,
-        status,
-        response.headers(),
-        server_delay,
-    );
+    observe_rate_limit_response(core, context, attempt, head, status, server_delay);
     check_deadline(deadline, head.endpoint_id(), head.method())?;
     observe_response_head(core, deadline, head.endpoint_id(), response_event)?;
     Ok(AttemptResponse {
@@ -1041,7 +1033,6 @@ fn observe_rate_limit_response(
     attempt: AttemptInfo,
     head: &crate::request::PreparedHead,
     status: StatusCode,
-    headers: &http::HeaderMap,
     server_delay: Option<ServerDelayHint>,
 ) {
     let response = RateLimitResponse {
@@ -1055,11 +1046,20 @@ fn observe_rate_limit_response(
             plan: head.rate_limit_plan(),
         },
         status,
-        headers: SanitizedHeaders::new(headers),
         server_delay: server_delay.map(ServerDelayHint::delay),
         cooldown_cap: core.rate_limit_cooldown_cap(),
     };
     core.rate_limiter().observe(response);
+}
+
+fn parsed_content_length(headers: &http::HeaderMap) -> Option<u64> {
+    let value = headers.get(http::header::CONTENT_LENGTH)?.to_str().ok()?;
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    value.bytes().try_fold(0_u64, |length, byte| {
+        length.checked_mul(10)?.checked_add(u64::from(byte - b'0'))
+    })
 }
 
 fn check_deadline(

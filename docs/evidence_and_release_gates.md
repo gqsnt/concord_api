@@ -171,7 +171,7 @@ Prove:
 - retry uses max(backoff, server minimum);
 - feedback failure/degradation does not rewrite current result;
 - future acquire follows explicit fail-open/closed policy;
-- bounded vendor-header interests;
+- rate feedback contains only typed status/server-delay/plan/attempt facts;
 - local state eviction/fairness/cooldown;
 - no raw keys or private values in evidence.
 
@@ -192,6 +192,8 @@ Choose the private strategy based on measured target workloads. Do not alter pub
 ## Gate 9 — Information-flow security
 
 Use unique sentinels for secrets, refreshed tokens, private auth query/header, sensitive public path/query/header, body, output, rate key, cursor, and server body.
+Also use an unknown response-header-name/value sentinel so the test cannot pass
+only because of a sensitive-name denylist.
 
 Prove authorized-only appearance across:
 
@@ -256,4 +258,3 @@ Report exact commands and results. Do not claim unavailable checks passed.
 ## Release decision
 
 Freeze only when all ten gates pass or a documented ADR narrows/replaces a gate with evidence. A failed gate changes the design; it is not solved by adding compatibility aliases or more prose.
-

@@ -71,7 +71,7 @@ impl DebugDispatcher {
                 event.attempt.authentication_recovery
             )),
             DebugLevel::Headers => self.emit(format_args!(
-                "response-head endpoint={} method={} url={} status={} page={} attempt={} policy-retry={} authentication-recovery={} headers={:?}",
+                "response-head endpoint={} method={} url={} status={} page={} attempt={} policy-retry={} authentication-recovery={} content-length={:?} server-delay={:?}",
                 event.endpoint,
                 event.method,
                 event.observed_url,
@@ -80,7 +80,8 @@ impl DebugDispatcher {
                 event.attempt.index,
                 event.attempt.policy_retry_index,
                 event.attempt.authentication_recovery,
-                event.headers
+                event.content_length,
+                event.server_delay
             )),
         }
     }
@@ -187,7 +188,8 @@ mod tests {
             page_index: 0,
             attempt: AttemptInfo::INITIAL,
             status: StatusCode::OK,
-            headers: SanitizedHeaders::new(&headers),
+            content_length: Some(7),
+            server_delay: None,
         };
         let completion = OperationFinished {
             operation_id: id,
@@ -227,6 +229,7 @@ mod tests {
             if level == DebugLevel::Headers {
                 assert!(joined.contains("Redacted"));
                 assert!(joined.contains("visible"));
+                assert!(joined.contains("content-length=Some(7)"));
             }
         }
     }

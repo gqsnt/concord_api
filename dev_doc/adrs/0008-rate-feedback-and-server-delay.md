@@ -4,7 +4,7 @@
 
 ## Decision
 
-Only rate admission can fail the current attempt. Response feedback is synchronous/non-fallible for the current result and influences future acquisitions. Parse Retry-After/vendor reset once into one core not-before fact shared by retry and limiter.
+Only rate admission can fail the current attempt. Response feedback is synchronous/non-fallible for the current result and influences future acquisitions. Core parses standard `Retry-After` once into one server-delay fact shared by retry and limiter. Rate feedback contains typed status, delay, plan, and attempt context; it contains no generic response-header view.
 
 ## Property earned
 
@@ -18,4 +18,3 @@ A limiter persistence/update failure cannot hide a remote response or provoke un
 - retry/auth/page visible attempts reacquire;
 - physical transport recovery does not;
 - distributed async update is limiter-owned bounded handoff and future fail-open/closed policy.
-

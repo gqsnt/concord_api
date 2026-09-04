@@ -107,7 +107,7 @@ pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
         .reset_locale()
         .set_page_size(50)
         .reset_page_size()
-        .with_client_label("client-override")
+        .set_client_label(Some("client-override"))
         .omit_client_label()
         .reset_client_label()
         .api_key(
@@ -122,10 +122,10 @@ pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
     // ANCHOR: request_controls
     let _: reference_api::StatusRequest = client
         .status()
-        .with_verbose(true)
+        .set_verbose(Some(true))
         .omit_verbose()
         .reset_verbose()
-        .with_tags(vec!["stable", "documented"])
+        .set_tags(Some(vec!["stable", "documented"]))
         .omit_tags()
         .reset_tags();
     // ANCHOR_END: request_controls
@@ -133,15 +133,15 @@ pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
     // ANCHOR: direct_and_explicit
     let _: reference_api::regions::FetchRequest = client
         .regions("eu-west".to_owned())
-        .with_language("fr".to_owned())
-        .with_scope_label("scope-override")
+        .set_language(Some("fr".to_owned()))
+        .set_scope_label(Some("scope-override"))
         .omit_scope_label()
         .reset_scope_label()
         .fetch("42".to_owned(), vec!["stable".to_owned()]);
     let endpoint = ReferenceApi::unbound()
         .regions("eu-west".to_owned())
-        .with_language("fr".to_owned())
-        .with_scope_label("scope-override")
+        .set_language(Some("fr".to_owned()))
+        .set_scope_label(Some("scope-override"))
         .omit_scope_label()
         .reset_scope_label()
         .fetch("42".to_owned(), vec!["stable".to_owned()]);

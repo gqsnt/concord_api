@@ -30,6 +30,8 @@ api! {
         headers { "User-Agent" = "ConcordRiotExample/1.0"; }
         auth { header "X-Riot-Token" = riot_api_key; }
         timeout 20s;
+        request Json;
+        response Json;
 
     // ANCHOR_END: riot_client
 
@@ -49,20 +51,20 @@ api! {
                 allow 1200000 per 10m;
             }
 
-            GET masteries_by_puuid(puuid: String) -> Vec<ChampionMasteryDto> via Json {
+            GET masteries_by_puuid(puuid: String) -> Vec<ChampionMasteryDto> {
                 path ["champion-masteries", "by-puuid", endpoint.puuid];
             }
 
-            GET mastery_by_champion(puuid: String, champion_id: i64) -> ChampionMasteryDto via Json {
+            GET mastery_by_champion(puuid: String, champion_id: i64) -> ChampionMasteryDto {
                 path ["champion-masteries", "by-puuid", endpoint.puuid, "by-champion", endpoint.champion_id];
             }
 
-            GET top_masteries_by_puuid(puuid: String, count?: u32) -> Vec<ChampionMasteryDto> via Json {
+            GET top_masteries_by_puuid(puuid: String, count?: u32) -> Vec<ChampionMasteryDto> {
                 path ["champion-masteries", "by-puuid", endpoint.puuid, "top"];
                 query { "count" = endpoint.count; }
             }
 
-            GET mastery_score_by_puuid(puuid: String) -> i32 via Json {
+            GET mastery_score_by_puuid(puuid: String) -> i32 {
                 path ["scores", "by-puuid", endpoint.puuid];
             }
         }
@@ -70,7 +72,7 @@ api! {
         scope champion_v3() {
             path ["platform", "v3"];
 
-            GET champion_rotations() -> ChampionRotationsDto via Json {
+            GET champion_rotations() -> ChampionRotationsDto {
                 path ["champion-rotations"];
                 rate_limit { id "concord.riot.3"; key [origin]; cost 1;
                     allow 20000 per 10s;
@@ -82,7 +84,7 @@ api! {
         scope clash_v1() {
             path ["clash", "v1"];
 
-            GET clash_players_by_puuid(puuid: String) -> Vec<ClashPlayerDto> via Json {
+            GET clash_players_by_puuid(puuid: String) -> Vec<ClashPlayerDto> {
                 path ["players", "by-puuid", endpoint.puuid];
                 rate_limit { id "concord.riot.4"; key [origin]; cost 1;
                     allow 20000 per 10s;
@@ -90,22 +92,22 @@ api! {
                 }
             }
 
-            GET clash_team(team_id: String) -> ClashTeamDto via Json {
+            GET clash_team(team_id: String) -> ClashTeamDto {
                 path ["teams", endpoint.team_id];
                 rate_limit { id "concord.riot.5"; key [origin]; cost 1;  allow 200 per 1m; }
             }
 
-            GET clash_tournament_by_team(team_id: String) -> ClashTournamentDto via Json {
+            GET clash_tournament_by_team(team_id: String) -> ClashTournamentDto {
                 path ["tournaments", "by-team", endpoint.team_id];
                 rate_limit { id "concord.riot.6"; key [origin]; cost 1;  allow 200 per 1m; }
             }
 
-            GET clash_tournament(tournament_id: i64) -> ClashTournamentDto via Json {
+            GET clash_tournament(tournament_id: i64) -> ClashTournamentDto {
                 path ["tournaments", endpoint.tournament_id];
                 rate_limit { id "concord.riot.7"; key [origin]; cost 1;  allow 10 per 1m; }
             }
 
-            GET clash_tournaments() -> Vec<ClashTournamentDto> via Json {
+            GET clash_tournaments() -> Vec<ClashTournamentDto> {
                 path ["tournaments"];
                 rate_limit { id "concord.riot.8"; key [origin]; cost 1;  allow 10 per 1m; }
             }
@@ -114,7 +116,7 @@ api! {
         scope league_v4() {
             path ["league", "v4"];
 
-            GET challenger_by_queue(queue: crate::riot::domain::LeagueQueue) -> LeagueListDto via Json {
+            GET challenger_by_queue(queue: crate::riot::domain::LeagueQueue) -> LeagueListDto {
                 path ["challengerleagues", "by-queue", endpoint.queue];
                 rate_limit { id "concord.riot.9"; key [origin]; cost 1;
                     allow 30 per 10s;
@@ -122,7 +124,7 @@ api! {
                 }
             }
 
-            GET grandmaster_by_queue(queue: crate::riot::domain::LeagueQueue) -> LeagueListDto via Json {
+            GET grandmaster_by_queue(queue: crate::riot::domain::LeagueQueue) -> LeagueListDto {
                 path ["grandmasterleagues", "by-queue", endpoint.queue];
                 rate_limit { id "concord.riot.10"; key [origin]; cost 1;
                     allow 30 per 10s;
@@ -130,7 +132,7 @@ api! {
                 }
             }
 
-            GET master_by_queue(queue: crate::riot::domain::LeagueQueue) -> LeagueListDto via Json {
+            GET master_by_queue(queue: crate::riot::domain::LeagueQueue) -> LeagueListDto {
                 path ["masterleagues", "by-queue", endpoint.queue];
                 rate_limit { id "concord.riot.11"; key [origin]; cost 1;
                     allow 30 per 10s;
@@ -143,13 +145,13 @@ api! {
                 tier: crate::riot::domain::LeagueTier,
                 division: crate::riot::domain::LeagueDivision,
                 page: u32 = 1
-            ) -> Vec<LeagueEntryDto> via Json {
+            ) -> Vec<LeagueEntryDto> {
                 path ["entries", endpoint.queue, endpoint.tier, endpoint.division];
                 query { "page" = endpoint.page; }
                 rate_limit { id "concord.riot.12"; key [origin]; cost 1;  allow 50 per 10s; }
             }
 
-            GET league_entries_by_puuid(puuid: String) -> Vec<LeagueEntryDto> via Json {
+            GET league_entries_by_puuid(puuid: String) -> Vec<LeagueEntryDto> {
                 path ["entries", "by-puuid", endpoint.puuid];
                 rate_limit { id "concord.riot.13"; key [origin]; cost 1;
                     allow 20000 per 10s;
@@ -157,7 +159,7 @@ api! {
                 }
             }
 
-            GET league_by_id(league_id: String) -> LeagueListDto via Json {
+            GET league_by_id(league_id: String) -> LeagueListDto {
                 path ["leagues", endpoint.league_id];
             }
         }
@@ -170,7 +172,7 @@ api! {
                 tier: crate::riot::domain::LeagueTier,
                 division: crate::riot::domain::LeagueDivision,
                 page: u32 = 1
-            ) -> Vec<LeagueEntryDto> via Json {
+            ) -> Vec<LeagueEntryDto> {
                 path ["entries", endpoint.queue, endpoint.tier, endpoint.division];
                 query { "page" = endpoint.page; }
                 rate_limit { id "concord.riot.14"; key [origin]; cost 1;  allow 50 per 10s; }
@@ -184,15 +186,15 @@ api! {
                 allow 1200000 per 10m;
             }
 
-            GET challenge_configs() -> Vec<ChallengeConfigInfoDto> via Json {
+            GET challenge_configs() -> Vec<ChallengeConfigInfoDto> {
                 path ["challenges", "config"];
             }
 
-            GET challenge_percentiles() -> HashMap<String, HashMap<String, f64>> via Json {
+            GET challenge_percentiles() -> HashMap<String, HashMap<String, f64>> {
                 path ["challenges", "percentiles"];
             }
 
-            GET challenge_config(challenge_id: i64) -> ChallengeConfigInfoDto via Json {
+            GET challenge_config(challenge_id: i64) -> ChallengeConfigInfoDto {
                 path ["challenges", endpoint.challenge_id, "config"];
             }
 
@@ -200,24 +202,25 @@ api! {
                 challenge_id: i64,
                 level: crate::riot::domain::ChallengeLevel,
                 limit?: u32
-            ) -> Vec<ApexPlayerInfoDto> via Json {
+            ) -> Vec<ApexPlayerInfoDto> {
                 path ["challenges", endpoint.challenge_id, "leaderboards", "by-level", endpoint.level];
                 query { "limit" = endpoint.limit; }
             }
 
-            GET challenge_percentiles_by_id(challenge_id: i64) -> HashMap<String, f64> via Json {
+            GET challenge_percentiles_by_id(challenge_id: i64) -> HashMap<String, f64> {
                 path ["challenges", endpoint.challenge_id, "percentiles"];
             }
 
-            GET challenge_player_data(puuid: String) -> PlayerInfoDto via Json {
+            GET challenge_player_data(puuid: String) -> PlayerInfoDto {
                 path ["player-data", endpoint.puuid];
             }
         }
 
         scope status_v4() {
             path ["status", "v4"];
+            response Json;
 
-            GET platform_data() -> PlatformDataDto via Json {
+            GET platform_data() -> PlatformDataDto {
                 path ["platform-data"];
                 rate_limit { id "concord.riot.16"; key [origin]; cost 1;
                     allow 20000 per 10s;
@@ -229,7 +232,7 @@ api! {
         scope spectator_v5() {
             path ["spectator", "v5"];
 
-            GET active_game_by_puuid(puuid: String) -> CurrentGameInfo via Json {
+            GET active_game_by_puuid(puuid: String) -> CurrentGameInfo {
                 path ["active-games", "by-summoner", endpoint.puuid];
                 rate_limit { id "concord.riot.17"; key [origin]; cost 1;
                     allow 3000 per 10s;
@@ -241,12 +244,12 @@ api! {
         scope summoner_v4() {
             path ["summoner", "v4", "summoners"];
 
-            GET summoner_by_puuid(puuid: String) -> SummonerDto via Json {
+            GET summoner_by_puuid(puuid: String) -> SummonerDto {
                 path ["by-puuid", endpoint.puuid];
                 rate_limit { id "concord.riot.18"; key [origin]; cost 1;  allow 1600 per 1m; }
             }
 
-            GET summoner_by_id(summoner_id: String) -> SummonerDto via Json {
+            GET summoner_by_id(summoner_id: String) -> SummonerDto {
                 path [endpoint.summoner_id];
                 rate_limit { id "concord.riot.19"; key [origin]; cost 1;  allow 1600 per 1m; }
             }
@@ -265,17 +268,17 @@ api! {
         scope account_v1() {
             path ["riot", "account", "v1"];
 
-            GET account_by_riot_id(game_name: String, tag_line: String) -> AccountDto via Json {
+            GET account_by_riot_id(game_name: String, tag_line: String) -> AccountDto {
                 path ["accounts", "by-riot-id", endpoint.game_name, endpoint.tag_line];
                 rate_limit { id "concord.riot.21"; key [origin]; cost 1;  allow 1000 per 1m; }
             }
 
-            GET account_by_puuid(puuid: String) -> AccountDto via Json {
+            GET account_by_puuid(puuid: String) -> AccountDto {
                 path ["accounts", "by-puuid", endpoint.puuid];
                 rate_limit { id "concord.riot.22"; key [origin]; cost 1;  allow 1000 per 1m; }
             }
 
-            GET active_region(game: crate::riot::domain::RiotGame, puuid: String) -> AccountRegionDto via Json {
+            GET active_region(game: crate::riot::domain::RiotGame, puuid: String) -> AccountRegionDto {
                 path ["region", "by-game", endpoint.game, "by-puuid", endpoint.puuid];
                 rate_limit { id "concord.riot.23"; key [origin]; cost 1;
                     allow 20000 per 10s;
@@ -296,7 +299,7 @@ api! {
                 match_type?: crate::riot::domain::MatchType,
                 start: u64 = 0,
                 count: std::num::NonZeroU32 = crate::riot::domain::DEFAULT_MATCH_PAGE_SIZE
-            ) -> Vec<String> via Json {
+            ) -> Vec<String> {
                 path ["by-puuid", endpoint.puuid, "ids"];
                 query {
                     "startTime" = endpoint.start_time;
@@ -314,7 +317,7 @@ api! {
             }
             // ANCHOR_END: riot_match_ids_endpoint
 
-            GET replays_by_puuid(puuid: String) -> ReplayDto via Json {
+            GET replays_by_puuid(puuid: String) -> ReplayDto {
                 path ["by-puuid", endpoint.puuid, "replays"];
                 rate_limit { id "concord.riot.25"; key [origin]; cost 1;
                     allow 20000 per 10s;
@@ -322,12 +325,12 @@ api! {
                 }
             }
 
-            GET match_by_id(match_id: String) -> MatchDto via Json {
+            GET match_by_id(match_id: String) -> MatchDto {
                 path [endpoint.match_id];
                 rate_limit { id "concord.riot.26"; key [origin]; cost 1;  allow 2000 per 10s; }
             }
 
-            GET timeline_by_id(match_id: String) -> TimelineDto via Json {
+            GET timeline_by_id(match_id: String) -> TimelineDto {
                 path [endpoint.match_id, "timeline"];
                 rate_limit { id "concord.riot.27"; key [origin]; cost 1;  allow 2000 per 10s; }
             }
@@ -335,6 +338,7 @@ api! {
 
         scope tournament_stub_v5() {
             path ["lol", "tournament-stub", "v5"];
+            request Json;
             rate_limit { id "concord.riot.28"; key [origin]; cost 1;
                 allow 20000 per 10s;
                 allow 1200000 per 10m;
@@ -343,8 +347,8 @@ api! {
             POST create_stub_codes(
                 tournament_id: i64,
                 count?: u32,
-                body body: TournamentCodeParameters via Json
-            ) -> Vec<String> via Json {
+                body body: TournamentCodeParameters
+            ) -> Vec<String> {
                 path ["codes"];
                 query {
                     "tournamentId" = endpoint.tournament_id;
@@ -352,25 +356,27 @@ api! {
                 }
             }
 
-            GET stub_code(tournament_code: String) -> TournamentCodeDto via Json {
+            GET stub_code(tournament_code: String) -> TournamentCodeDto {
                 path ["codes", endpoint.tournament_code];
             }
 
-            GET stub_lobby_events(tournament_code: String) -> LobbyEventListDto via Json {
+            GET stub_lobby_events(tournament_code: String) -> LobbyEventListDto {
                 path ["lobby-events", "by-code", endpoint.tournament_code];
             }
 
-            POST register_stub_provider(body body: ProviderRegistrationParameters via Json) -> i32 via Json {
+            POST register_stub_provider(body body: ProviderRegistrationParameters) -> i32 {
                 path ["providers"];
             }
 
-            POST register_stub_tournament(body body: TournamentRegistrationParameters via Json) -> i32 via Json {
+            POST register_stub_tournament(body body: TournamentRegistrationParameters) -> i32 {
                 path ["tournaments"];
             }
         }
 
         scope tournament_v5() {
             path ["lol", "tournament", "v5"];
+            request explicit;
+            response explicit;
 
             POST create_tournament_codes(
                 tournament_id: i64,

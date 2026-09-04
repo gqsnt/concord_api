@@ -74,12 +74,12 @@ pub use crate::pagination::{
     PaginationError,
 };
 pub use crate::rate_limit::{
-    CanonicalKeyWriter, Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES,
-    MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES,
-    MAX_RATE_LIMIT_KEY_PARTS, MAX_RATE_LIMIT_POLICIES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_POLICY,
-    NoopRateLimiter, RateKeyPart, RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart,
-    RateLimitObserver, RateLimitPermit, RateLimitPlan, RateLimitPolicy, RateLimitRequest,
-    RateLimitResponse, RateLimitResponseHead, RateLimitWindow, RateLimiter,
+    CanonicalKeyWriter, DEFAULT_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_ID_BYTES,
+    MAX_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS,
+    MAX_RATE_LIMIT_POLICIES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_POLICY, NoopRateLimiter,
+    RateKeyPart, RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit,
+    RateLimitPlan, RateLimitPolicy, RateLimitRequest, RateLimitResponse, RateLimitWindow,
+    RateLimiter,
 };
 #[cfg(feature = "records")]
 pub use crate::records::{ItemBatches, ItemStream, RecordDecoder, RecordError, RecordErrorKind};

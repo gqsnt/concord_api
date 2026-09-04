@@ -3,12 +3,19 @@ use super::*;
 #[tokio::test]
 async fn limiter_observes_synchronously_before_user_response_observer() {
     const KEY_SENTINEL: &str = "controlled-custom-key-5e8c7f2b";
+    const RESPONSE_SENTINEL: &str = "unknown-response-header-value-9cc4e2";
     let executor = DeterministicExecutor::new();
     let body_polls = Arc::new(AtomicUsize::new(0));
+    let mut response_headers = http::HeaderMap::new();
+    response_headers.insert(
+        "x-unknown-observation-value",
+        http::HeaderValue::from_static(RESPONSE_SENTINEL),
+    );
     executor
         .application()
         .queue_response(
             ScriptedResponse::success(Bytes::from_static(b"limited"))
+                .headers(response_headers)
                 .body_poll_counter(Arc::clone(&body_polls)),
         )
         .expect("limited response");
@@ -80,12 +87,16 @@ async fn limiter_observes_synchronously_before_user_response_observer() {
         "{}\n{:?}\n{:?}",
         debug.lock().expect("debug output").join("\n"),
         hooks.records(),
-        trace.lock().expect("trace"),
+        (
+            trace.lock().expect("trace").clone(),
+            limiter.response_records()
+        ),
     );
     assert!(
         !ordinary_diagnostics.contains(KEY_SENTINEL),
         "resolved keys are visible only in the controlled custom-limiter capture"
     );
+    assert!(!ordinary_diagnostics.contains(RESPONSE_SENTINEL));
 }
 
 #[tokio::test]
@@ -194,7 +205,7 @@ async fn limiter_observation_is_non_result_determining() {
 }
 
 #[tokio::test]
-async fn limiter_observation_uses_sanitized_head() {
+async fn limiter_observation_uses_typed_feedback_without_headers() {
     const RESPONSE_SECRET: &str = "response-header-secret-a31d";
     const PUBLIC_VALUE: &str = "public-response-marker-920b";
     let executor = DeterministicExecutor::new();
@@ -214,16 +225,24 @@ async fn limiter_observation_uses_sanitized_head() {
         )
         .expect("sanitized response");
     let limiter = Arc::new(ProbeRateLimiter::new());
+    let debug = Arc::new(Mutex::new(Vec::new()));
+    let hooks = Arc::new(ProbeHooks::new());
     let core = development_core(
         &executor,
-        Arc::new(ProbeHooks::new()),
-        RuntimeConfigBuilder::new().rate_limiter(limiter.clone()),
-    );
+        hooks.clone(),
+        RuntimeConfigBuilder::new()
+            .rate_limiter(limiter.clone())
+            .debug(DebugLevel::Headers),
+    )
+    .with_debug_output(Arc::clone(&debug));
 
-    assert_eq!(
-        bytes_request(core).await.expect("sanitized response"),
-        Bytes::from_static(b"sanitized")
-    );
+    let response = bytes_request(core)
+        .response()
+        .await
+        .expect("explicit response");
+    assert_eq!(response.value(), &Bytes::from_static(b"sanitized"));
+    assert_eq!(response.headers()["x-observation-marker"], PUBLIC_VALUE);
+    assert!(!format!("{response:?}").contains(PUBLIC_VALUE));
     let responses = limiter.response_records();
     assert_eq!(responses.len(), 1);
     assert_eq!(
@@ -231,10 +250,17 @@ async fn limiter_observation_uses_sanitized_head() {
         "http://execution.example.test/v1/health/bytes"
     );
     assert_eq!(responses[0].status, StatusCode::OK);
-    assert!(responses[0].headers.contains("authorization"));
-    assert!(responses[0].headers.contains("Redacted"));
-    assert!(responses[0].headers.contains(PUBLIC_VALUE));
-    assert!(!responses[0].headers.contains(RESPONSE_SECRET));
+    assert_eq!(responses[0].server_delay, None);
+    let rendered = format!("{responses:?}");
+    assert!(!rendered.contains(PUBLIC_VALUE));
+    assert!(!rendered.contains(RESPONSE_SECRET));
+    let automatic_diagnostics = format!(
+        "{}\n{:?}",
+        debug.lock().expect("debug output").join("\n"),
+        hooks.records()
+    );
+    assert!(!automatic_diagnostics.contains(PUBLIC_VALUE));
+    assert!(!automatic_diagnostics.contains(RESPONSE_SECRET));
 }
 
 #[tokio::test]

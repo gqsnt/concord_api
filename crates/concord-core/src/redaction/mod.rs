@@ -5,6 +5,7 @@ mod names;
 mod url;
 
 pub use headers::{SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders};
+pub(crate) use names::is_sensitive_name;
 pub(crate) use url::render_observed_url;
 
 #[cfg(test)]

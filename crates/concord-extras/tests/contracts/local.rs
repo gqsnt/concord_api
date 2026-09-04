@@ -2,28 +2,15 @@
 
 use std::future::Future as _;
 use std::num::NonZeroU32;
-use std::sync::Arc;
 use std::time::Duration;
 
-use concord_core::contracts::{AttemptInfo, HeaderMap, Method, SanitizedHeaders};
+use concord_core::contracts::{AttemptInfo, Method};
 use concord_core::rate_limit::{
-    Cooldown, CooldownScope, RateLimitId, RateLimitKey, RateLimitObserver, RateLimitPlan,
-    RateLimitPolicy, RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimitWindow,
-    RateLimiter,
+    RateLimitId, RateLimitKey, RateLimitPlan, RateLimitPolicy, RateLimitRequest, RateLimitResponse,
+    RateLimitWindow, RateLimiter,
 };
 use concord_extras::rate_limit::LocalRateLimiter;
 use http::StatusCode;
-
-struct LongCooldown;
-
-impl RateLimitObserver for LongCooldown {
-    fn observe(&self, _response: &RateLimitResponseHead<'_>) -> Option<Cooldown> {
-        Some(Cooldown {
-            duration: Duration::from_secs(30),
-            scope: CooldownScope::Host,
-        })
-    }
-}
 
 fn one_per_minute() -> RateLimitPlan {
     let window = RateLimitWindow::new(NonZeroU32::MIN, Duration::from_secs(60))
@@ -40,7 +27,7 @@ fn one_per_minute() -> RateLimitPlan {
 
 #[tokio::test(start_paused = true)]
 async fn downstream_local_limiter_uses_public_contracts_and_core_cooldown_cap() {
-    let limiter = LocalRateLimiter::new().observer(Arc::new(LongCooldown));
+    let limiter = LocalRateLimiter::new();
     assert_eq!(limiter.preparation_key_limit(), 1_024);
     assert_eq!(one_per_minute().policies().len(), 1);
 
@@ -58,11 +45,9 @@ async fn downstream_local_limiter_uses_public_contracts_and_core_cooldown_cap() 
         },
         plan: &plan,
     };
-    let headers = HeaderMap::new();
     limiter.observe(RateLimitResponse {
         request: request(),
         status: StatusCode::TOO_MANY_REQUESTS,
-        headers: SanitizedHeaders::new(&headers),
         server_delay: Some(Duration::from_secs(7)),
         cooldown_cap: Duration::from_secs(3),
     });

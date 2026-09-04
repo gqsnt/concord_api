@@ -242,10 +242,6 @@ pub(super) fn parse_timeout(input: ParseStream<'_>) -> syn::Result<TimeoutOperat
     }))
 }
 
-pub(super) fn parse_total_public_expr(input: ParseStream<'_>) -> syn::Result<PublicExpr> {
-    parse_public_expr(input, 0)
-}
-
 fn parse_public_expr(input: ParseStream<'_>, depth: usize) -> syn::Result<PublicExpr> {
     if input.peek(syn::token::Bracket) {
         return Err(input.error(

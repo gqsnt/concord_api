@@ -75,7 +75,7 @@ fn semantic_domains_are_available_without_implementation_crate_imports() {
         public_type::<response::Empty>(),
         public_type::<retry::RetryPolicy>(),
         public_type::<retry::RetryAttempt<'static>>(),
-        public_type::<retry::RetryFailure<'static>>(),
+        public_type::<retry::RetryFailure>(),
         public_type::<runtime::OperationId>(),
         public_type::<runtime::RuntimeConfigBuilder>(),
     ];
@@ -197,5 +197,4 @@ fn oauth_provider_is_exposed_by_the_auth_domain() {
 #[test]
 fn local_limiter_is_exposed_by_the_rate_limit_domain() {
     assert!(!public_type::<concord::rate_limit::LocalRateLimiter>().is_empty());
-    assert!(!public_type::<concord::rate_limit::RetryAfterObserver>().is_empty());
 }

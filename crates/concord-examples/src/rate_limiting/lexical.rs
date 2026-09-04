@@ -60,8 +60,7 @@ api! {
 /// Installs the first-party limiter explicitly and constructs both plan shapes.
 // ANCHOR: configured_rate_limiter
 pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
-    let limiter =
-        LocalRateLimiter::new().observer(Arc::new(super::observer::DelegatingRetryAfterObserver));
+    let limiter = LocalRateLimiter::new();
     let client = RateLimitApi::builder()
         .set_tenant("example-tenant".to_owned())
         .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(limiter)))

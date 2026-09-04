@@ -1,6 +1,6 @@
 # ADR 0009 — Exact optional setter, `with`, `omit`, and `reset`
 
-- **Status:** Selected for prototype; human/compile-cost gate pending
+- **Status:** Superseded by ADR 0012 before release
 
 ## Decision
 
@@ -20,4 +20,3 @@ For `x?: T`, generate `set_x(Option<T>)`, `with_x(T)`, and `omit_x()`. Add `rese
 ## Revisit
 
 Use the 10–20 optional-field DX and large-contract method-count study. Keep or remove `with` before release; do not publish aliases indefinitely.
-

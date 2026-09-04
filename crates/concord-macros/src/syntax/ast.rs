@@ -58,7 +58,6 @@ pub(crate) struct SourceEndpoint {
     pub(crate) contract_id: Option<Clause<LitStr>>,
     pub(crate) status: Option<Clause<StatusDecl>>,
     pub(crate) effect: Option<Clause<EffectDecl>>,
-    pub(crate) accept: Option<Clause<AcceptOperation>>,
     pub(crate) expose_accepted_bytes: Option<Span>,
 }
 
@@ -73,12 +72,6 @@ pub(crate) enum EffectDecl {
     Safe,
     Idempotent,
     NonIdempotent,
-}
-
-#[derive(Clone)]
-pub(crate) enum AcceptOperation {
-    Value(Box<PublicExpr>),
-    Off,
 }
 
 #[derive(Clone)]

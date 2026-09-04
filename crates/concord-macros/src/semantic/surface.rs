@@ -91,9 +91,6 @@ pub(crate) fn endpoint_surface(
         .map(|(parameter, value)| EndpointSetter {
             parameter,
             setter: value_setter_ident(&value.name),
-            with: value
-                .accepts_absence()
-                .then(|| helper_ident("with", &value.name)),
             omit: value
                 .accepts_absence()
                 .then(|| helper_ident("omit", &value.name)),
@@ -122,7 +119,6 @@ pub(crate) fn endpoint_surface(
             let name = body_name.expect("optional body has a name");
             BodySetter {
                 setter: value_setter_ident(name),
-                with: helper_ident("with", name),
                 omit: helper_ident("omit", name),
             }
         }),
@@ -196,14 +192,6 @@ fn validate_request_surface(endpoint: &Endpoint) -> syn::Result<()> {
                 "named request wrapper methods",
             )?;
         }
-        if let Some(with) = &setter.with {
-            insert_name(
-                &mut names,
-                canonical_ident(with),
-                with.span(),
-                "named request wrapper methods",
-            )?;
-        }
         if let Some(reset) = &setter.reset {
             insert_name(
                 &mut names,
@@ -214,7 +202,7 @@ fn validate_request_surface(endpoint: &Endpoint) -> syn::Result<()> {
         }
     }
     if let Some(setter) = &endpoint.surface.body_setter {
-        for method in [&setter.setter, &setter.with, &setter.omit] {
+        for method in [&setter.setter, &setter.omit] {
             insert_name(
                 &mut names,
                 canonical_ident(method),

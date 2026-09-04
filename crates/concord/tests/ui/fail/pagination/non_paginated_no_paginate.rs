@@ -11,5 +11,5 @@ api! {
 
 fn main() {
     let client = PlainApi::new().unwrap();
-    let _ = client.read().paginate(1_u32);
+    let _ = client.read().paginate(concord::PageLimit::Prefix(1));
 }

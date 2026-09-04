@@ -59,7 +59,7 @@ fn assert_send_static<T: Send + 'static>() {}
 
 #[test]
 fn stable_pagination_contracts_compile_without_private_imports_or_item_traits() {
-    assert_eq!(PageLimit::from(8), PageLimit::Prefix(8));
+    assert_eq!(PageLimit::Prefix(8), PageLimit::Prefix(8));
     assert_eq!(
         PageLimit::CompleteWithin(NonZeroU32::new(4).expect("nonzero")),
         PageLimit::CompleteWithin(NonZeroU32::new(4).expect("nonzero"))

@@ -912,10 +912,10 @@ impl OperationObserver for PaginationHooks {
                     .push(format!("{} {:?}", context.observed_url, context.headers));
             }
             OperationEvent::ResponseHeadObserved(context) => {
-                self.response
-                    .lock()
-                    .expect("response lock")
-                    .push(format!("{} {:?}", context.observed_url, context.headers));
+                self.response.lock().expect("response lock").push(format!(
+                    "{} content_length={:?} server_delay={:?}",
+                    context.observed_url, context.content_length, context.server_delay
+                ));
             }
             OperationEvent::OperationFinished(context) => {
                 self.completion
@@ -993,7 +993,7 @@ async fn repeatable_json_body_is_prepared_once_per_page_and_reused_for_policy_re
                 encodes: Arc::clone(&encodes),
             },
         )
-        .paginate(3_u32)
+        .paginate(concord::PageLimit::Prefix(3))
         .await
         .expect("body pagination including accepted non-2xx page");
 
@@ -1055,7 +1055,7 @@ async fn custom_page_body_factory_opts_in_and_reconstructs_once_per_visible_atte
                 create_calls: Arc::clone(&create_calls),
             },
         )
-        .paginate(2_u32)
+        .paginate(concord::PageLimit::Prefix(2))
         .await
         .expect("custom repeatable factory page");
 
@@ -1087,7 +1087,7 @@ async fn stable_body_does_not_hide_repeated_public_page_identity() {
 
     let error = client
         .stable_cycle("same".to_owned(), "stable request body".to_owned())
-        .paginate(2_u32)
+        .paginate(concord::PageLimit::Prefix(2))
         .await
         .expect_err("repeated public page identity must be rejected");
 
@@ -1113,7 +1113,7 @@ async fn generated_offset_pagination_is_directly_awaitable_and_stops_on_short_pa
 
     let items = client
         .items(0, nz32(2))
-        .paginate(10_u32)
+        .paginate(concord::PageLimit::Prefix(10))
         .await
         .expect("paginated items");
     assert_eq!(items, [1, 2, 3]);
@@ -1141,7 +1141,7 @@ async fn downstream_page_response_capability_requires_no_macro_semantics() {
 
     let items = client
         .items(0, nz32(2))
-        .paginate(10_u32)
+        .paginate(concord::PageLimit::Prefix(10))
         .await
         .expect("downstream page response specification");
     assert_eq!(items, [1, 2, 3]);
@@ -1169,7 +1169,9 @@ async fn application_controller_selects_the_same_count_termination_without_macro
         .build()
         .expect("application count client");
 
-    let pagination = client.items(CountedOffset(0), nz32(2)).paginate(10_u32);
+    let pagination = client
+        .items(CountedOffset(0), nz32(2))
+        .paginate(concord::PageLimit::Prefix(10));
     APPLICATION_BOUND_CLONES.store(0, Ordering::SeqCst);
     APPLICATION_STABLE_CLONES.store(0, Ordering::SeqCst);
     let items = pagination
@@ -1198,7 +1200,7 @@ async fn generated_page_number_soft_and_hard_limits_are_deterministic() {
         .expect("page client");
     let items = soft_client
         .items(nz64(1), nz32(2))
-        .paginate(2_u32)
+        .paginate(concord::PageLimit::Prefix(2))
         .await
         .expect("soft limit succeeds");
     assert_eq!(items, [1, 2, 3, 4]);
@@ -1243,7 +1245,7 @@ async fn cursor_and_custom_empty_pages_follow_controller_authority_and_redact_co
         .expect("cursor client");
     let cursor_items = cursor_client
         .items()
-        .paginate(5_u32)
+        .paginate(concord::PageLimit::Prefix(5))
         .await
         .expect("cursor pages");
     assert_eq!(cursor_items, [2]);
@@ -1276,7 +1278,7 @@ async fn cursor_and_custom_empty_pages_follow_controller_authority_and_redact_co
         .expect("custom client");
     let custom_items = custom_client
         .items("region-header-sentinel-b17".to_owned())
-        .paginate(5_u32)
+        .paginate(concord::PageLimit::Prefix(5))
         .await
         .expect("custom pages");
     assert_eq!(custom_items, [4]);
@@ -1320,7 +1322,11 @@ async fn prefix_zero_skips_all_runtime_work_and_observation() {
         })
         .build()
         .expect("zero client");
-    let items = client.items().paginate(0_u32).await.expect("zero pages");
+    let items = client
+        .items()
+        .paginate(concord::PageLimit::Prefix(0))
+        .await
+        .expect("zero pages");
     assert!(items.is_empty());
     assert!(hooks.before.lock().expect("before capture").is_empty());
     assert!(
@@ -1345,7 +1351,7 @@ async fn built_in_overflow_is_ignored_on_short_stop_and_hard_cap_can_end_natural
         .expect("offset overflow client");
     let items = offset_client
         .items(u64::MAX, nz32(2))
-        .paginate(2_u32)
+        .paginate(concord::PageLimit::Prefix(2))
         .await
         .expect("short page overrides speculative offset overflow");
     assert_eq!(items, [5]);
@@ -1390,7 +1396,7 @@ async fn empty_present_cursor_is_distinct_and_items_need_not_clone() {
         .expect("empty cursor client");
     let items = cursor_client
         .items()
-        .paginate(3_u32)
+        .paginate(concord::PageLimit::Prefix(3))
         .await
         .expect("empty present cursor continues");
     assert_eq!(items, [1, 2]);
@@ -1408,7 +1414,7 @@ async fn empty_present_cursor_is_distinct_and_items_need_not_clone() {
         .expect("non-clone item client");
     let items = item_client
         .items()
-        .paginate(1_u32)
+        .paginate(concord::PageLimit::Prefix(1))
         .await
         .expect("non-clone items");
     assert_eq!(
@@ -1431,7 +1437,7 @@ async fn explicit_endpoint_nested_scope_alias_and_repeated_helpers_have_parity()
     let endpoint = OffsetApi::unbound().items(0, nz32(2));
     let explicit_items = explicit_client
         .request(endpoint)
-        .paginate(1_u32)
+        .paginate(concord::PageLimit::Prefix(1))
         .await
         .expect("explicit paginated endpoint");
     assert_eq!(explicit_items, [9]);
@@ -1463,13 +1469,13 @@ async fn explicit_endpoint_nested_scope_alias_and_repeated_helpers_have_parity()
         .repositories("repository-b".to_owned());
     let nested_items = repositories
         .fetch()
-        .paginate(3_u32)
+        .paginate(concord::PageLimit::Prefix(3))
         .await
         .expect("nested aliased pagination");
     assert_eq!(nested_items, [11]);
     let original_snapshot_items = repositories
         .fetch()
-        .paginate(1_u32)
+        .paginate(concord::PageLimit::Prefix(1))
         .await
         .expect("original scope snapshot remains unchanged");
     assert_eq!(original_snapshot_items, [12]);
@@ -1496,17 +1502,20 @@ async fn explicit_endpoint_nested_scope_alias_and_repeated_helpers_have_parity()
     assert!(nested_safe[0].contains("repository-b"));
 
     let collision_client = CollisionPaginationApi::new().expect("collision client");
-    let _: concord::pagination::PaginatedRequest<_> =
-        collision_client.left().items(0, nz32(1)).paginate(1_u32);
+    let _: concord::pagination::PaginatedRequest<_> = collision_client
+        .left()
+        .items(0, nz32(1))
+        .paginate(concord::PageLimit::Prefix(1));
     let _: concord::pagination::PaginatedRequest<_> = collision_client
         .right()
         .items(nz64(1), nz32(1))
-        .paginate(1_u32);
+        .paginate(concord::PageLimit::Prefix(1));
 
     let nested_macro_client =
         repeated_nested_expansion::NestedMacroPaginationApi::new().expect("nested macro client");
-    let _: concord::pagination::PaginatedRequest<_> =
-        nested_macro_client.items(0, nz32(1)).paginate(1_u32);
+    let _: concord::pagination::PaginatedRequest<_> = nested_macro_client
+        .items(0, nz32(1))
+        .paginate(concord::PageLimit::Prefix(1));
 }
 
 #[tokio::test]
@@ -1536,7 +1545,7 @@ async fn generated_pagination_reuses_lexical_global_rate_plan_and_actual_hosts()
         .expect("rate pagination client");
     let items = client
         .items(INITIAL.parse().expect("offset"), nz32(2))
-        .paginate(5_u32)
+        .paginate(concord::PageLimit::Prefix(5))
         .await
         .expect("rate pagination");
     assert_eq!(items, [1, 2, 3]);

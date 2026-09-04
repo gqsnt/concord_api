@@ -5,7 +5,6 @@ use http::{Method, StatusCode};
 
 use crate::error::RateLimitErrorKind;
 use crate::hooks::{AttemptInfo, BoxFuture};
-use crate::redaction::SanitizedHeaders;
 
 use super::{RateLimitError, RateLimitPermit, RateLimitPlan};
 
@@ -31,14 +30,12 @@ pub struct RateLimitRequest<'a> {
     pub plan: &'a RateLimitPlan,
 }
 
-/// Sanitized response-head metadata supplied to a selected rate limiter.
+/// Typed response feedback supplied to a selected rate limiter.
 pub struct RateLimitResponse<'a> {
     /// The matching body-free request context.
     pub request: RateLimitRequest<'a>,
     /// Final response status for this Concord attempt.
     pub status: StatusCode,
-    /// Sanitized response headers.
-    pub headers: SanitizedHeaders<'a>,
     /// Standard server delay parsed once by core from the response head.
     pub server_delay: Option<Duration>,
     /// Centrally configured maximum duration for server-directed cooldown state.
@@ -80,66 +77,11 @@ pub trait RateLimiter: Send + Sync + 'static {
         request: RateLimitRequest<'a>,
     ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>>;
 
-    /// Observes one sanitized response head for future admission only.
+    /// Observes typed response feedback for future admission only.
+    ///
+    /// Arbitrary response-header names and values are deliberately absent.
+    /// Implementations cannot replace the current attempt result.
     fn observe(&self, _response: RateLimitResponse<'_>) {}
-}
-
-/// The future-acquisition scope of an observed cooldown.
-pub enum CooldownScope {
-    /// Every exact policy/key pair in the current plan, or the host for an empty plan.
-    CurrentBuckets,
-    /// Every later request to the current logical host through this limiter.
-    Host,
-    /// Every later request through this limiter object.
-    Client,
-}
-
-/// One observer-proposed future-acquisition cooldown.
-pub struct Cooldown {
-    /// Proposed duration before runtime clamping.
-    pub duration: Duration,
-    /// Affected future-acquisition scope.
-    pub scope: CooldownScope,
-}
-
-/// Sanitized response-head context supplied to a rate-limit observer.
-pub struct RateLimitResponseHead<'a> {
-    /// Stable generated endpoint identity.
-    pub endpoint: &'a str,
-    /// Application HTTP method.
-    pub method: &'a Method,
-    /// Credential-sanitized logical URL. Public values may still contain
-    /// operational identifiers or personally identifiable information.
-    pub observed_url: &'a str,
-    /// Final logical host when one exists.
-    pub host: Option<&'a str>,
-    /// Zero-based page index; direct endpoint execution uses zero.
-    pub page_index: u32,
-    /// Structural identity of the attempt that produced this head.
-    pub attempt: AttemptInfo,
-    /// Canonical immutable effective plan.
-    pub plan: &'a RateLimitPlan,
-    /// Final response status for this Concord attempt.
-    pub status: StatusCode,
-    /// Sanitized response headers.
-    pub headers: SanitizedHeaders<'a>,
-    /// Standard server delay parsed once by core from the response head.
-    pub server_delay: Option<Duration>,
-}
-
-/// Synchronous policy for translating a response head into a future cooldown.
-///
-/// Calls for independent responses may overlap and receive resolved rate keys,
-/// logical hosts, and sanitized response metadata. Implementations own logging
-/// and storage and must bound synchronous CPU, memory, retries, maps, queues,
-/// spawned tasks, metric cardinality, and external I/O. Concord cannot preempt
-/// this callback. Observation is awaited before body processing but cannot
-/// replace the current result, so the implementation must self-bound its work;
-/// Concord checks the operation deadline after return. Cancellation prevents
-/// later work only, and custom observer state is not automatically bounded.
-pub trait RateLimitObserver: Send + Sync + 'static {
-    /// Returns a future-acquisition cooldown, or `None` for no state change.
-    fn observe(&self, response: &RateLimitResponseHead<'_>) -> Option<Cooldown>;
 }
 
 /// An explicit limiter that authorizes every plan and ignores observation.

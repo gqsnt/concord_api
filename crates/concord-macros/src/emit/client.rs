@@ -29,7 +29,7 @@ pub(super) fn generate_client(client: &Client, facade_path: &TokenStream) -> Tok
         client.base.value()
     );
     let builder_doc = format!(
-        "Builder for [`{client_name}`].\n\n# Inputs\n\n{value_summary} {credential_summary}\n\n# Value controls\n\n`set_*` replaces the exact effective type. Concord-optional values also expose `with_*` and `omit_*`; defaulted values expose `reset_*`. A builder reset discards the override so the next successful `build` evaluates the declaration default once.\n\n# Defaults\n\nBase URL: `{}`. {timeout_summary} {rate_summary} `#[default]` invokes application-owned `Default::default()` for the written payload type; explicit stable initializers are evaluated at the same owner boundary. Concord performs no managed I/O during construction.\n\n# Configuration\n\nUse `retry` for a Concord-managed retry policy, `configure_http` for transport policy, and `configure_runtime` for gates, completion observation, finite limits, limiter selection, and runtime policy. Transformations apply immediately in call order.",
+        "Builder for [`{client_name}`].\n\n# Inputs\n\n{value_summary} {credential_summary}\n\n# Value controls\n\n`set_*` replaces the exact effective type. Concord-optional values expose `omit_*`; defaulted values expose `reset_*`. A builder reset discards the override so the next successful `build` evaluates the declaration default once.\n\n# Defaults\n\nBase URL: `{}`. {timeout_summary} {rate_summary} `#[default]` invokes application-owned `Default::default()` for the written payload type; explicit stable initializers are evaluated at the same owner boundary. Concord performs no managed I/O during construction.\n\n# Configuration\n\nUse `retry` for a Concord-managed retry policy, `configure_http` for transport policy, and `configure_runtime` for gates, completion observation, finite limits, limiter selection, and runtime policy. Transformations apply immediately in call order.",
         client.base.value()
     );
     let support_doc = format!(
@@ -739,27 +739,14 @@ pub(super) fn generate_builder_value_methods(index: usize, value: &Value) -> Tok
     let field = builder_value_field(index, value);
     let setter_type = value.setter_argument_type();
     let selected_value = quote!(__concord_generated::__core::__private::Override::Set(value));
-    let with = value.accepts_absence().then(|| {
-        let method = helper_ident("with", &value.name);
-        let payload_type = value.with_argument_type();
-        quote! {
-            #[must_use]
-            pub fn #method(mut self, value: #payload_type) -> Self {
-                self.#field = __concord_generated::__core::__private::Override::Set(
-                    ::std::option::Option::Some(value),
-                );
-                self
-            }
-        }
-    });
     let omit = value.accepts_absence().then(|| {
         let omit = helper_ident("omit", &value.name);
-        let clear_doc = format!(
+        let omit_doc = format!(
             "Explicitly selects absence for the absence-capable client value `{}`.",
             canonical_ident(&value.name)
         );
         quote! {
-            #[doc = #clear_doc]
+            #[doc = #omit_doc]
             #[must_use]
             pub fn #omit(mut self) -> Self {
                 self.#field = __concord_generated::__core::__private::Override::Set(
@@ -796,7 +783,6 @@ pub(super) fn generate_builder_value_methods(index: usize, value: &Value) -> Tok
             self
         }
 
-        #with
         #omit
         #reset
     }

@@ -161,7 +161,6 @@ pub(super) fn generate_endpoint(
     let path_statements = path_statements(client, scopes, endpoint);
     let query_statements = query_statements(client, scopes, endpoint);
     let header_statements = header_statements(client, scopes, endpoint);
-    let accept_statements = accept_statements(client, scopes, endpoint);
     let auth_statements = auth_statements(client, endpoint, facade_path);
     let rate_limit_statements =
         rate_limit_statements(client, scopes, endpoint, facade_path, &invocation_path);
@@ -254,7 +253,6 @@ pub(super) fn generate_endpoint(
                 #path_statements
                 #query_statements
                 #header_statements
-                #accept_statements
                 #auth_statements
                 #rate_limit_statements
                 __concord_builder.finish()
@@ -730,23 +728,14 @@ pub(super) fn generate_endpoint_setters(endpoint: &Endpoint) -> TokenStream {
             .body
             .as_ref()
             .expect("optional body setter has a body");
-        let input = &body.input_type;
         let effective = &body.effective_input_type;
         let set = &setter.setter;
-        let with = &setter.with;
         let omit = &setter.omit;
         quote! {
             /// Replaces the optional body slot with its exact outer presence value.
             #[must_use]
             pub fn #set(mut self, value: #effective) -> Self {
                 self.__concord_body = value;
-                self
-            }
-
-            /// Selects a present optional request body.
-            #[must_use]
-            pub fn #with(mut self, value: #input) -> Self {
-                self.__concord_body = ::std::option::Option::Some(value);
                 self
             }
 
@@ -769,41 +758,18 @@ pub(super) fn generate_endpoint_snapshot_setters(
     let setter = value_setter_ident(&value.name);
     let ty = value.setter_argument_type();
     let selected_value = quote!(value);
-    let with = value.accepts_absence().then(|| {
-        let method = helper_ident("with", &value.name);
-        let payload_type = value.with_argument_type();
-        quote! {
-            #[must_use]
-            pub fn #method(mut self, value: #payload_type) -> Self {
-                self.#field = ::std::sync::Arc::new(::std::option::Option::Some(value));
-                self
-            }
-        }
-    });
-    let setter_doc = if value.accepts_absence() && value.has_default() {
-        format!(
-            "Returns a new unbound endpoint intent selecting a present value for defaulted absence-capable value `{}`.",
-            canonical_ident(&value.name)
-        )
-    } else if value.accepts_absence() {
-        format!(
-            "Returns a new unbound endpoint intent selecting a present value for absence-capable value `{}`.",
-            canonical_ident(&value.name)
-        )
-    } else {
-        format!(
-            "Returns a new unbound endpoint intent overriding defaulted value `{}`.",
-            canonical_ident(&value.name)
-        )
-    };
+    let setter_doc = format!(
+        "Returns a new unbound endpoint intent replacing value `{}` with its exact effective type.",
+        canonical_ident(&value.name)
+    );
     let omit = value.accepts_absence().then(|| {
         let omit = helper_ident("omit", &value.name);
-        let clear_doc = format!(
+        let omit_doc = format!(
             "Returns a new unbound endpoint intent explicitly selecting absence for absence-capable value `{}`.",
             canonical_ident(&value.name)
         );
         quote! {
-            #[doc = #clear_doc]
+            #[doc = #omit_doc]
             #[must_use]
             pub fn #omit(mut self) -> Self {
                 self.#field = ::std::sync::Arc::new(::std::option::Option::None);
@@ -835,7 +801,6 @@ pub(super) fn generate_endpoint_snapshot_setters(
             self
         }
 
-        #with
         #omit
         #reset
     }

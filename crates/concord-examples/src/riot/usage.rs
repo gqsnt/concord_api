@@ -9,54 +9,11 @@ use std::error::Error;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
-use concord::http::HeaderName;
-use concord::observation::SanitizedHeaderValue;
 use concord::prelude::PageLimit;
-use concord::rate_limit::{
-    Cooldown, CooldownScope, LocalRateLimiter, RateLimitObserver, RateLimitResponseHead,
-    RetryAfterObserver,
-};
+use concord::rate_limit::LocalRateLimiter;
 
 use super::api::{DDragonApi, RiotApi, d_dragon_api, riot_api};
 use super::domain::MatchType;
-
-/// Illustratively interprets final `429` response headers for future acquisitions.
-///
-/// Static Concord buckets pace ordinary bursts. This example lets
-/// `Retry-After` and `X-Rate-Limit-Type` refine a cooldown after a rejection;
-/// it is not a verified statement of Riot's current header contract. Method
-/// cooldowns conservatively cool the current lexical plan.
-// ANCHOR: riot_observer
-#[derive(Default)]
-pub struct RiotRateLimitObserver;
-
-impl RateLimitObserver for RiotRateLimitObserver {
-    fn observe(&self, response: &RateLimitResponseHead<'_>) -> Option<Cooldown> {
-        let default = RetryAfterObserver.observe(response)?;
-        let rate_limit_type = HeaderName::from_static("x-rate-limit-type");
-
-        let scope = match response.headers.get(&rate_limit_type) {
-            Some(SanitizedHeaderValue::Text(value))
-                if value.eq_ignore_ascii_case("application") =>
-            {
-                CooldownScope::Host
-            }
-            Some(SanitizedHeaderValue::Text(value)) if value.eq_ignore_ascii_case("service") => {
-                CooldownScope::Host
-            }
-            Some(SanitizedHeaderValue::Text(value)) if value.eq_ignore_ascii_case("method") => {
-                CooldownScope::CurrentBuckets
-            }
-            _ => return Some(default),
-        };
-
-        Some(Cooldown {
-            duration: default.duration,
-            scope,
-        })
-    }
-}
-// ANCHOR_END: riot_observer
 
 /// Constructs representative platform, regional, paginated, and Data Dragon requests.
 // ANCHOR: riot_composition
@@ -77,7 +34,7 @@ pub fn construct() -> Result<(), concord::ClientBuildError> {
         .regional(super::domain::RegionalRoute::Europe)
         .match_v5()
         .match_ids_by_puuid("example-puuid".to_owned())
-        .with_match_type(MatchType::Ranked)
+        .set_match_type(Some(MatchType::Ranked))
         .set_count(NonZeroU32::new(10).expect("positive page size"))
         .paginate(PageLimit::Prefix(2));
     // ANCHOR_END: riot_paginated_request
@@ -100,7 +57,7 @@ pub async fn run_live_from_environment() -> Result<(), Box<dyn Error>> {
     let game_name = std::env::var("RIOT_GAME_NAME")?;
     let tag_line = std::env::var("RIOT_TAG_LINE")?;
 
-    let limiter = LocalRateLimiter::new().observer(Arc::new(RiotRateLimitObserver));
+    let limiter = LocalRateLimiter::new();
     let riot = RiotApi::builder()
         .api_key(concord::SecretString::try_from(api_key)?)
         .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(limiter)))
@@ -147,7 +104,7 @@ pub async fn run_live_from_environment() -> Result<(), Box<dyn Error>> {
         .platform(crate::riot::domain::PlatformRoute::Euw1)
         .champion_mastery_v4()
         .top_masteries_by_puuid(account.puuid.clone())
-        .with_count(5)
+        .set_count(Some(5))
         .await?;
 
     println!("Top champion masteries: {}", top_masteries.len());
@@ -156,7 +113,7 @@ pub async fn run_live_from_environment() -> Result<(), Box<dyn Error>> {
         .regional(crate::riot::domain::RegionalRoute::Europe)
         .match_v5()
         .match_ids_by_puuid(account.puuid.clone())
-        .with_match_type(MatchType::Ranked)
+        .set_match_type(Some(MatchType::Ranked))
         .set_count(NonZeroU32::new(20).expect("20 is non-zero"))
         .paginate(PageLimit::Prefix(2))
         .await?;

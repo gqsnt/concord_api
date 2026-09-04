@@ -1,5 +1,5 @@
 error[E0599]: no method named `paginate` found for struct `RuntimeEndpointBuilder<R, Output>` in the current scope
  --> tests/ui/fail/capabilities/runtime_endpoint_builder_capabilities_absent.rs:9:21
   |
-9 |     let _ = builder.paginate(1_u32);
+9 |     let _ = builder.paginate(concord::PageLimit::Prefix(1));
   |                     ^^^^^^^^ method not found in `RuntimeEndpointBuilder`

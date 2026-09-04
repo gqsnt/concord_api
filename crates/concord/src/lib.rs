@@ -7,7 +7,7 @@
 //!
 //! Generated construction and navigation use declaration-domain method names.
 //! Public value mutation uses `set_*`; absence-capable values additionally use
-//! `with_*` and `clear_*`, and values with declaration defaults use `reset_*`.
+//! `omit_*`, and values with declaration defaults use `reset_*`.
 //! These capabilities follow Concord's explicit `?` marker, never Rust type spelling.
 
 #![forbid(unsafe_code)]
@@ -16,7 +16,7 @@
 /// Declares a generated Concord client and its typed endpoints.
 ///
 /// Generated constructors and navigation retain declaration-domain names.
-/// Public value mutations use `set_*`, with `clear_*` for absence-capable
+/// Public value mutations use `set_*`, with `omit_*` for absence-capable
 /// values and `reset_*` for values with declaration defaults. `set_*` always
 /// accepts the exact effective type, including nested optionality.
 #[macro_export]
@@ -114,8 +114,9 @@ pub mod endpoint {
         PaginationFieldDescription, RateLimitWindowDescription, RatePolicyDescription,
         RateProfileDescription, RequestBodyCategory, RequestPlan, ResponseAcquisition,
         ResponseDescription, RuntimeEndpoint, RuntimeEndpointBinding, RuntimeEndpointBuilder,
-        RuntimeValue, ScopeDescription, SecretDescription, StatusSource, TimeoutSelection,
-        ValueDescription, ValueInitializer, ValueOwnerKind, ValuePresence,
+        RuntimeValue, ScopeDescription, SecretDescription, SemanticChangeClass, StatusSource,
+        TimeoutSelection, ValueDescription, ValueInitializer, ValueOwnerKind, ValuePresence,
+        contract_tool_snapshot, diff_contract_tool_snapshots,
     };
     pub use concord_core::{AcceptedBytesRequest, Request, ResponseRequest};
 }
@@ -168,7 +169,7 @@ pub mod pagination {
 ///
 /// A declaration's lexical location selects applicability; ordered `key [...]`
 /// dimensions select bucket partitioning. With the `rate-limit` feature,
-/// `LocalRateLimiter` and `RetryAfterObserver` are available here. Any generated
+/// `LocalRateLimiter` is available here. Any generated
 /// client with an effective policy still requires explicit limiter selection.
 ///
 /// Policy IDs are authored stable identities. Sharing one limiter across
@@ -177,16 +178,15 @@ pub mod pagination {
 pub mod rate_limit {
     pub use concord_core::contracts::{BoxFuture, RateLimitErrorKind};
     pub use concord_core::rate_limit::{
-        CanonicalKeyWriter, Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES,
-        MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES,
-        MAX_RATE_LIMIT_KEY_PARTS, MAX_RATE_LIMIT_POLICIES_PER_PLAN,
-        MAX_RATE_LIMIT_WINDOWS_PER_POLICY, NoopRateLimiter, RateKeyPart, RateLimitError,
-        RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitObserver, RateLimitPermit,
-        RateLimitPlan, RateLimitPolicy, RateLimitRequest, RateLimitResponse, RateLimitResponseHead,
-        RateLimitWindow, RateLimiter,
+        CanonicalKeyWriter, DEFAULT_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_ID_BYTES,
+        MAX_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS,
+        MAX_RATE_LIMIT_POLICIES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_POLICY, NoopRateLimiter,
+        RateKeyPart, RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit,
+        RateLimitPlan, RateLimitPolicy, RateLimitRequest, RateLimitResponse, RateLimitWindow,
+        RateLimiter,
     };
     #[cfg(feature = "rate-limit")]
-    pub use concord_extras::rate_limit::{LocalRateLimiter, RetryAfterObserver};
+    pub use concord_extras::rate_limit::LocalRateLimiter;
 }
 
 /// Common imports for declarations and ordinary generated-client use.

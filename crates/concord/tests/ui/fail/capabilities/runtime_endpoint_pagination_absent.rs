@@ -18,5 +18,5 @@ fn main() {
         .build()
         .unwrap();
     let request = endpoint.try_bind(&client).unwrap();
-    let _ = request.paginate(1_u32);
+    let _ = request.paginate(concord::PageLimit::Prefix(1));
 }

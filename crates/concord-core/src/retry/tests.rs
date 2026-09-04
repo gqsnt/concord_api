@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use http::{HeaderMap, HeaderValue, Method, StatusCode};
+use http::{Method, StatusCode};
 use url::Url;
 
 use super::budget::FixedRatio;
@@ -12,7 +12,6 @@ use super::policy::{
     RetryFailure, RetryJitter, RetryPolicy, RetryPolicyBuildError, RetryPolicyBuildErrorKind,
 };
 use crate::hooks::AttemptInfo;
-use crate::redaction::SanitizedHeaders;
 
 const INITIAL_ATTEMPT: AttemptInfo = AttemptInfo {
     index: 0,
@@ -149,7 +148,6 @@ fn classifier_receives_only_the_finite_semantic_context() {
         .classify(InspectingClassifier)
         .build()
         .expect("classifier policy");
-    let headers = HeaderMap::new();
     let attempt = RetryAttempt::new(
         "retry_api.get",
         &Method::GET,
@@ -159,7 +157,7 @@ fn classifier_receives_only_the_finite_semantic_context() {
         0,
         RetryFailure::RejectedStatus {
             status: StatusCode::SERVICE_UNAVAILABLE,
-            headers: SanitizedHeaders::new(&headers),
+            server_delay: None,
         },
     );
     assert_eq!(policy.classify(attempt), RetryDecision::Retry);
@@ -410,7 +408,6 @@ fn concurrent_reservation_never_exceeds_the_allowed_count() {
 #[test]
 fn debug_and_build_error_formatting_exclude_host_header_and_classifier_state() {
     const HOST_SECRET: &str = "retry-host-private-sentinel-9ef213";
-    const HEADER_SECRET: &str = "retry-header-private-sentinel-719c8e";
     const CLASSIFIER_SECRET: &str = "retry-classifier-private-sentinel-28bc41";
 
     let captured_classifier_state = CLASSIFIER_SECRET.to_owned();
@@ -426,8 +423,6 @@ fn debug_and_build_error_formatting_exclude_host_header_and_classifier_state() {
         let _ = captured_builder_state.len();
         RetryDecision::Stop
     });
-    let mut headers = HeaderMap::new();
-    headers.insert("x-public", HeaderValue::from_static(HEADER_SECRET));
     let attempt = RetryAttempt::new(
         "retry_api.safe",
         &Method::GET,
@@ -437,7 +432,7 @@ fn debug_and_build_error_formatting_exclude_host_header_and_classifier_state() {
         0,
         RetryFailure::RejectedStatus {
             status: StatusCode::SERVICE_UNAVAILABLE,
-            headers: SanitizedHeaders::new(&headers),
+            server_delay: None,
         },
     );
     let error = RetryPolicy::builder()
@@ -450,7 +445,7 @@ fn debug_and_build_error_formatting_exclude_host_header_and_classifier_state() {
         attempt.failure(),
         error
     );
-    for forbidden in [HOST_SECRET, HEADER_SECRET, CLASSIFIER_SECRET, "NaN"] {
+    for forbidden in [HOST_SECRET, CLASSIFIER_SECRET, "NaN"] {
         assert!(
             !rendered.contains(forbidden),
             "retry formatting leaked {forbidden}"

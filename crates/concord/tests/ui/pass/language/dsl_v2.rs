@@ -54,7 +54,7 @@ fn main() {
             None,
             true,
         )
-        .with_optional(7)
+        .set_optional(Some(7))
         .omit_optional();
     let _: v2_api::http_status::SubmitRequest = client.request(endpoint);
 }

@@ -182,21 +182,21 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
     let _ = client.credentials().application_key().credential();
     let request = client
         .resources("renamed-scope".to_owned())
-        .with_region("eu".to_owned())
+        .set_region(Some("eu".to_owned()))
         .set_scope_limit(20)
         .reset_scope_limit()
         .by_id("renamed-endpoint".to_owned(), "renamed-body".to_owned())
-        .with_verbose(true)
+        .set_verbose(Some(true))
         .set_limit(20)
         .reset_limit();
     let _: renamed_api::resources::ByIdRequest = request;
     let endpoint = RenamedApi::unbound()
         .resources("renamed-scope".to_owned())
-        .with_region("eu".to_owned())
+        .set_region(Some("eu".to_owned()))
         .set_scope_limit(20)
         .reset_scope_limit()
         .by_id("renamed-endpoint".to_owned(), "renamed-body".to_owned())
-        .with_verbose(true)
+        .set_verbose(Some(true))
         .set_limit(20)
         .reset_limit();
     let _: renamed_api::resources::ByIdRequest = client.request(endpoint);

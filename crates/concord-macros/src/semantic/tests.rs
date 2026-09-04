@@ -498,7 +498,6 @@ fn absence_and_default_capabilities_are_independent_and_syntactic() {
         type_name(absence.client_builder_storage_type()),
         ":: std :: option :: Option < String >"
     );
-    assert_eq!(type_name(absence.with_argument_type()), "String");
 
     assert!(!defaulted.accepts_absence());
     assert!(defaulted.has_default());
@@ -511,7 +510,6 @@ fn absence_and_default_capabilities_are_independent_and_syntactic() {
         type_name(both.setter_argument_type()),
         ":: std :: option :: Option < Option < String > >"
     );
-    assert_eq!(type_name(both.with_argument_type()), "Option < String >");
     assert_eq!(
         type_name(both.client_builder_storage_type()),
         ":: std :: option :: Option < Option < String > >"

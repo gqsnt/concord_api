@@ -1,0 +1,7 @@
+error[E0609]: no field `headers` on type `concord_core::contracts::ResponseHeadObserved<'_>`
+ --> tests/ui/fail/response_observer_header_values_absent.rs:8:30
+  |
+8 |             let _ = response.headers;
+  |                              ^^^^^^^ unknown field
+  |
+  = note: available fields are: `operation_id`, `parent_operation_id`, `endpoint`, `method`, `observed_url` ... and 5 others

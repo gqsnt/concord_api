@@ -5,6 +5,7 @@ use url::Url;
 
 use crate::error::PaginationErrorKind;
 use crate::operation::OperationId;
+use crate::redaction::is_sensitive_name;
 use crate::response::ApiResponse;
 
 use super::PaginationError;
@@ -103,7 +104,7 @@ impl<Page> PageResponse<Page> {
             let name = HeaderName::from_bytes(raw_name.as_bytes()).map_err(|_| {
                 PaginationError::new(PaginationErrorKind::InvalidControllerDescription)
             })?;
-            if parsed_names.contains(&name) {
+            if is_sensitive_name(name.as_str()) || parsed_names.contains(&name) {
                 return Err(PaginationError::new(
                     PaginationErrorKind::InvalidControllerDescription,
                 ));
@@ -348,6 +349,19 @@ mod tests {
         .expect_err("duplicate normalized interests");
         assert_eq!(
             duplicate.kind(),
+            PaginationErrorKind::InvalidControllerDescription
+        );
+
+        let private = PageResponse::from_accepted(
+            accepted("page", HeaderMap::new()),
+            PaginationDescription::new(&["set-cookie"], false),
+            operation,
+            operation,
+            0,
+        )
+        .expect_err("private header interest");
+        assert_eq!(
+            private.kind(),
             PaginationErrorKind::InvalidControllerDescription
         );
 

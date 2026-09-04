@@ -1205,7 +1205,7 @@ struct LimiterRequestRecord {
 struct LimiterResponseRecord {
     observed_url: String,
     status: StatusCode,
-    headers: String,
+    server_delay: Option<Duration>,
 }
 
 struct ProbeRateLimiter {
@@ -1323,13 +1323,13 @@ impl RateLimiter for AutomaticSurfaceLimiter {
             .lock()
             .expect("automatic limiter entries")
             .push(format!(
-                "observe endpoint={} method={} url={} page={} status={} headers={:?}",
+                "observe endpoint={} method={} url={} page={} status={} server-delay={:?}",
                 response.request.endpoint,
                 response.request.method,
                 response.request.observed_url,
                 response.request.page_index,
                 response.status,
-                response.headers,
+                response.server_delay,
             ));
     }
 }
@@ -1416,8 +1416,7 @@ impl RateLimiter for ProbeRateLimiter {
     fn observe(&self, response: RateLimitResponse<'_>) {
         self.observations.fetch_add(1, Ordering::SeqCst);
         if response.status == StatusCode::TOO_MANY_REQUESTS
-            && response.headers.get(&http::header::RETRY_AFTER)
-                == Some(crate::redaction::SanitizedHeaderValue::Text("5"))
+            && response.server_delay == Some(Duration::from_secs(5))
         {
             self.learned_cooldown.store(true, Ordering::SeqCst);
         }
@@ -1427,7 +1426,7 @@ impl RateLimiter for ProbeRateLimiter {
             .push(LimiterResponseRecord {
                 observed_url: response.request.observed_url.to_owned(),
                 status: response.status,
-                headers: format!("{:?}", response.headers),
+                server_delay: response.server_delay,
             });
         self.response_cooldown_caps
             .lock()

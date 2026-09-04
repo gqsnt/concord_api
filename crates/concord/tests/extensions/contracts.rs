@@ -33,8 +33,7 @@ use concord::pagination::{
     PaginationDescription, PaginationError, PaginationErrorKind,
 };
 use concord::rate_limit::{
-    Cooldown, CooldownScope, RateLimitError, RateLimitObserver, RateLimitPermit, RateLimitRequest,
-    RateLimitResponse, RateLimitResponseHead, RateLimiter,
+    RateLimitError, RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimiter,
 };
 #[cfg(feature = "ndjson")]
 use concord::records::NdJson;
@@ -547,19 +546,6 @@ impl RateLimiter for ExtensionLimiter {
     }
 }
 
-#[derive(Default)]
-pub struct ExtensionObserver;
-
-impl RateLimitObserver for ExtensionObserver {
-    fn observe(&self, response: &RateLimitResponseHead<'_>) -> Option<Cooldown> {
-        let _attempt = response.attempt;
-        (response.status == StatusCode::TOO_MANY_REQUESTS).then_some(Cooldown {
-            duration: Duration::from_secs(1),
-            scope: CooldownScope::CurrentBuckets,
-        })
-    }
-}
-
 pub struct ExtensionHooks;
 
 impl OperationObserver for ExtensionHooks {
@@ -703,7 +689,6 @@ concord::api! {
 
 /// Compiles every stable extension workflow without private or native integration imports.
 pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
-    let _: Arc<dyn RateLimitObserver> = Arc::new(ExtensionObserver);
     let client = ExtensionApi::builder()
         .set_construction(ExtensionConstructionProbe::new())
         .session_provider(ExtensionProvider)
@@ -881,8 +866,8 @@ async fn downstream_generated_controller_constructs_binds_and_collects_two_pages
         .expect("downstream generated client");
     let pagination = client
         .pages()
-        .with_cursor("initial".to_owned())
-        .paginate(10_u32);
+        .set_cursor(Some("initial".to_owned()))
+        .paginate(concord::PageLimit::Prefix(10));
 
     reset_extension_pagination_probes();
     let items = pagination

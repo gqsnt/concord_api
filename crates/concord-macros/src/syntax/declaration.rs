@@ -6,8 +6,8 @@ use syn::parse::{Parse, ParseStream};
 use syn::{Attribute, Ident, LitStr, Token, braced, parenthesized};
 
 use super::ast::{
-    AcceptOperation, AttachmentSite, Clause, EffectDecl, MethodKind, RepresentationOperation,
-    SourceApi, SourceChild, SourceClient, SourceEndpoint, SourceScope, StatusDecl,
+    AttachmentSite, Clause, EffectDecl, MethodKind, RepresentationOperation, SourceApi,
+    SourceChild, SourceClient, SourceEndpoint, SourceScope, StatusDecl,
 };
 use super::credentials::{parse_auth, parse_credentials};
 use super::diagnostics::{
@@ -306,7 +306,6 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
             contract_id: None,
             status: None,
             effect: None,
-            accept: None,
             expose_accepted_bytes: None,
         })
     } else {
@@ -318,7 +317,6 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
         let mut contract_id = None;
         let mut status = None;
         let mut effect = None;
-        let mut accept = None;
         let mut expose_accepted_bytes: Option<proc_macro2::Span> = None;
         while !clauses.is_empty() {
             if clauses.peek(keyword::paginate) {
@@ -361,19 +359,9 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
                 continue;
             }
             if clauses.peek(keyword::accept) {
-                let key_span = clauses.span();
-                clauses.parse::<keyword::accept>()?;
-                let value = if clauses.peek(keyword::off) {
-                    clauses.parse::<keyword::off>()?;
-                    AcceptOperation::Off
-                } else {
-                    AcceptOperation::Value(Box::new(super::request::parse_total_public_expr(
-                        &clauses,
-                    )?))
-                };
-                clauses.parse::<Token![;]>()?;
-                insert_clause(&mut accept, Clause { key_span, value }, "accept", &owner)?;
-                continue;
+                return Err(clauses.error(
+                    "v2.1 removed endpoint `accept`; select response negotiation with `-> Output via ResponseRepresentation` or an inherited `response ResponseRepresentation;`",
+                ));
             }
             if clauses.peek(keyword::expose) {
                 let span = clauses.span();
@@ -423,7 +411,7 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
                 return Err(error);
             }
             return Err(clauses.error(
-                "unsupported endpoint clause; expected `id`, an attachment, `accept`, `effect`, `paginate`, or `expose accepted_bytes`",
+                "unsupported endpoint clause; expected `id`, an attachment, `effect`, `paginate`, or `expose accepted_bytes`",
             ));
         }
         Ok(SourceEndpoint {
@@ -439,7 +427,6 @@ fn parse_endpoint(input: ParseStream<'_>) -> syn::Result<SourceEndpoint> {
             contract_id,
             status,
             effect,
-            accept,
             expose_accepted_bytes,
         })
     }

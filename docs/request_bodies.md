@@ -39,7 +39,6 @@ Generated controls:
 
 ```rust
 .set_patch(Option<Option<ItemPatch>>)
-.with_patch(Option<ItemPatch>)
 .omit_patch()
 ```
 

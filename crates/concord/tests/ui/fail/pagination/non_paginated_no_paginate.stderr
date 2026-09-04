@@ -10,5 +10,5 @@ error[E0599]: no method named `paginate` found for struct `ReadRequest` in the c
 10 | | }}
    | |__- method `paginate` not found for this struct
 ...
-14 |       let _ = client.read().paginate(1_u32);
+14 |       let _ = client.read().paginate(concord::PageLimit::Prefix(1));
    |                             ^^^^^^^^ method not found in `ReadRequest`

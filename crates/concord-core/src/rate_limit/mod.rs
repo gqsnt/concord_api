@@ -17,8 +17,7 @@ pub use crate::limits::{
 };
 pub use error::RateLimitError;
 pub use limiter::{
-    Cooldown, CooldownScope, DEFAULT_RATE_LIMIT_KEY_BYTES, NoopRateLimiter, RateLimitObserver,
-    RateLimitRequest, RateLimitResponse, RateLimitResponseHead, RateLimiter,
+    DEFAULT_RATE_LIMIT_KEY_BYTES, NoopRateLimiter, RateLimitRequest, RateLimitResponse, RateLimiter,
 };
 pub use types::{
     RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitPlan, RateLimitPolicy,
