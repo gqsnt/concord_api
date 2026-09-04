@@ -2,10 +2,13 @@
 
 Concord v2.1 is the single active language target. This checkout is an
 **integration candidate / beta** at `2.1.0-beta.1`, with publication disabled.
-Beta integration is mergeable after the technical, documentation, Windows,
-Linux, and exact-candidate gates pass. Stable release and publication remain
-blocked by owner package/license authority and unobtained human-freeze
-evidence. macOS is outside the current support and release-gate boundary.
+The complete technical, documentation, Windows, and Linux matrix passed on the
+exact implementation candidate. Beta integration is mergeable after the
+documentation-only evidence-seal commit receives the same exact-HEAD repeat;
+the local merge commit is then verified independently. Stable release and
+publication remain blocked by owner package/license authority and unobtained
+human-freeze evidence. macOS is outside the current support and release-gate
+boundary.
 
 The normative contract lives in the [design invariants](docs/design_invariants.md),
 [DSL specification](docs/spec.md), [execution policy](docs/execution_policy.md),

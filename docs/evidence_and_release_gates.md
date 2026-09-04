@@ -15,6 +15,10 @@ Two decisions are intentionally separate:
 
 Windows and Linux are supported and mandatory. macOS is not currently a supported or release-gated platform.
 
+The complete maintained Windows/Linux matrix passed on exact implementation
+candidate `6967c378...`. The canonical status defines the required terminal
+evidence-seal repeat and independent local merge-commit verification.
+
 ## Gate 0 — Package identity, legal authority, and release namespace
 
 Required owner inputs and proof:

@@ -7,9 +7,12 @@
 - **Publication:** disabled in every intended public package manifest
 - **Supported-platform boundary:** Windows and Linux are supported and mandatory. macOS is not currently a supported or release-gated platform.
 
-**Beta integration decision:** PENDING — mergeable after the active language,
-generated API, runtime/security, documentation, no-retrocompatibility,
-Windows, Linux, exact-candidate, and merge-commit checks pass.
+**Beta integration decision:** MERGEABLE AFTER TERMINAL EVIDENCE-SEAL RERUN —
+the active language, generated API, runtime/security, documentation,
+no-retrocompatibility, Windows, and Linux gates passed on exact implementation
+commit `6967c378...`. The documentation-only commit containing this status and
+its evidence record must receive the same complete Windows/Linux matrix before
+branch movement. The exact local merge commit must then pass it again.
 
 **Stable publication decision:** BLOCKED — owner package/license authority and
 unobtained human-freeze evidence remain open. Stable `2.1.0`, tags, final public
@@ -23,13 +26,13 @@ summarize it but do not define another status.
 
 | Integration gate | Current state | Evidence boundary |
 |---|---|---|
-| Active language and generated API | **Pending exact final-candidate verification** | The selected v2.1 parser, semantic graph, generated controls, descriptions, and UI negative space are implemented. The final convergence commit still requires the complete maintained suite. |
-| Runtime and information-flow security | **Pending exact final-candidate verification** | Gates 5–9 previously passed mechanically on Windows and Linux at `0f72e865...`; no prior SHA is reused as final evidence. |
-| Documentation and canonical examples | **Pending exact final-candidate verification** | README, quick start, overview, and Riot walkthrough are owned by compiled source anchors; the strengthened Rust `docs-check` remains the final authority. |
-| No compatibility path | **Pending exact final-candidate verification** | Retired spellings remain only in focused migration diagnostics, compile-fail fixtures, migration tooling/docs, and explicit history. Successful aliases or parser modes are forbidden. |
-| Windows | **Pending exact final-candidate execution** | A prior candidate passed the aggregate on Windows; the final convergence SHA must be rerun. |
-| Linux | **Pending exact final-candidate execution** | A prior candidate passed Linux checks; the final convergence SHA must be rerun. |
-| Exact candidate, clean tree, branch diff, and source export | **Pending** | Required before advancing `release/v2.1-readiness`. |
+| Active language and generated API | **Passed on `6967c378...`; terminal repeat required** | Default/all-feature nextest, 190 macro tests, and no-default/all-feature/core UI configurations passed on Windows and Linux. The exact evidence-seal HEAD is rerun before branch movement. |
+| Runtime and information-flow security | **Passed on `6967c378...`; terminal repeat required** | Both complete maintained aggregates and explicit locked workspace tests passed on Windows and Linux. No prior SHA is substituted for the terminal evidence seal. |
+| Documentation and canonical examples | **Passed on `6967c378...`; terminal repeat required** | README, quick start, overview, and Riot walkthrough are owned by compiled source anchors; docs-check validated six machine-owned canonical anchors on both platforms. |
+| No compatibility path | **Passed on `6967c378...`; terminal repeat required** | The 107-file active scan and focused compile-fail fixtures passed. Retired spellings remain only in migration diagnostics/tooling/docs, negative fixtures, and explicit history. |
+| Windows | **Passed on `6967c378...`; terminal repeat required** | `just verify` and the explicit locked terminal commands exited 0 on Windows AMD64. |
+| Linux | **Passed on `6967c378...`; terminal repeat required** | The same commands exited 0 as native x86_64 Linux binaries on Ubuntu 26.04.1 under WSL2. |
+| Exact candidate, clean tree, branch diff, and source export | **Passed on `6967c378...`; evidence-seal repeat required** | Release audit reported the exact SHA and empty status; source export extracted and audited 887 entries. The documentation-only evidence seal is the final pre-merge candidate and receives the full repeat. |
 | Exact local merge commit | **Pending** | Required after the local `--no-ff` merge into `main`. |
 
 The absence of a macOS run is retained as a historical fact in older evidence.
@@ -53,8 +56,10 @@ candidate and merge commit before beta integration is marked complete.
 
 ## Evidence boundary
 
-`dev_doc/evidence/beta_candidate_0f72e865.md` is historical prior-candidate
-evidence. New exact-candidate and merge evidence will be recorded without
+`dev_doc/evidence/final_integration_candidate_6967c378.md` records the current
+implementation-candidate matrix and the evidence-seal rule.
+`dev_doc/evidence/beta_candidate_0f72e865.md` remains historical
+prior-candidate evidence. Exact terminal and merge evidence is recorded without
 claiming macOS, legal authority, package control, publication readiness, or
 human comprehension.
 
