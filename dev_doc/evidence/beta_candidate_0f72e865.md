@@ -1,6 +1,6 @@
 # Exact beta-candidate evidence — `0f72e865`
 
-**Evidence date:** 2026-09-04  
+**Evidence date:** 2026-09-04
 **Claim boundary:** Observed command results for the exact code/documentation
 candidate `0f72e8653ee0fc08ea7de0e606f01c8d130b53c2`. This is not a stable
 release claim. Owner authority, unfamiliar-human evidence, independent human
@@ -21,6 +21,10 @@ review, and macOS execution remain unavailable.
 The evidence-record commit that contains this file changes maintained evidence
 only. The canonical documentation checker, release audit, branch-diff check,
 and worktree check must be rerun on that later HEAD.
+
+The first post-evidence release-audit run correctly rejected the Markdown
+hard-break whitespace originally present on the evidence-date line. A focused
+follow-up removed it; that failed run is not counted as a pass.
 
 ## Windows execution
 
