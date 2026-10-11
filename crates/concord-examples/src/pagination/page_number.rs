@@ -4,17 +4,18 @@
 //! Documentation owner: `docs/pagination.md`.
 //! Proving test: `tests/construction.rs`.
 
-use concord::PageLimit;
-use concord::pagination::PaginatedRequest;
+use std::num::{NonZeroU32, NonZeroU64};
+
+use concord::pagination::CollectPrefix;
 
 use super::PaginationApi;
 
-/// Constructs a two-page page-number request.
+/// Constructs a two-page page-number prefix request.
 pub fn construct(client: &PaginationApi) {
-    let _: PaginatedRequest<_> = client
+    let _: CollectPrefix<u32> = client
         .page(
-            std::num::NonZeroU64::MIN,
-            std::num::NonZeroU32::new(50).expect("positive page size"),
+            NonZeroU64::MIN,
+            NonZeroU32::new(50).expect("positive page size"),
         )
-        .paginate(PageLimit::Prefix(2));
+        .collect_prefix(2);
 }

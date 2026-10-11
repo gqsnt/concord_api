@@ -48,8 +48,13 @@ impl H2RefusedServer {
                         .expect("HTTP/2 response should send");
                 }
                 if attempt >= expected_attempts {
-                    let _ =
-                        tokio::time::timeout(Duration::from_millis(500), connection.accept()).await;
+                    // Any unexpected extra physical try is still counted.
+                    if let Ok(Some(Ok((_, mut respond)))) =
+                        tokio::time::timeout(Duration::from_millis(500), connection.accept()).await
+                    {
+                        counter.fetch_add(1, Ordering::SeqCst);
+                        respond.send_reset(Reason::REFUSED_STREAM);
+                    }
                     break;
                 }
             }

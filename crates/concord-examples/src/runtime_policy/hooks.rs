@@ -8,17 +8,17 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use concord::api;
 use concord::observation::{DebugLevel, OperationEvent, OperationObserver};
+use concord::{Empty, api};
 
 api! {
     client ObservedApi {
-        timeout 30s;
         base "http://observed.example.test/";
+        timeout 30s;
 
-
-    GET health() -> () via Empty;
-}}
+        GET health() -> () via Empty;
+    }
+}
 
 /// A bounded counter-only observer suitable for one client snapshot.
 // ANCHOR: hooks_implementation

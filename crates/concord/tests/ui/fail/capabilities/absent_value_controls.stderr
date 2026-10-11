@@ -1,0 +1,383 @@
+error[E0599]: no method named `omit_tenant` found for struct `ControlMatrixApiBuilder` in the current scope
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:29:41
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_- method `omit_tenant` not found for this struct
+...
+29 |       let _ = ControlMatrixApi::builder().omit_tenant();
+   |                                           ^^^^^^^^^^^
+   |
+help: there is a method `set_tenant` with a similar name, but with different arguments
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:11:1
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_^
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no method named `reset_tenant` found for struct `ControlMatrixApiBuilder` in the current scope
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:30:41
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_- method `reset_tenant` not found for this struct
+...
+30 |       let _ = ControlMatrixApi::builder().reset_tenant();
+   |                                           ^^^^^^^^^^^^
+   |
+help: there is a method `set_tenant` with a similar name, but with different arguments
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:11:1
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_^
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no method named `replace_tenant` found for struct `ControlMatrixApiBuilder` in the current scope
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:31:41
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_- method `replace_tenant` not found for this struct
+...
+31 |       let _ = ControlMatrixApi::builder().replace_tenant(Some("t".to_owned()));
+   |                                           ^^^^^^^^^^^^^^
+   |
+help: there is a method `set_tenant` with a similar name
+   |
+31 -     let _ = ControlMatrixApi::builder().replace_tenant(Some("t".to_owned()));
+31 +     let _ = ControlMatrixApi::builder().set_tenant(Some("t".to_owned()));
+   |
+
+error[E0599]: no method named `omit_region` found for struct `ControlMatrixApiBuilder` in the current scope
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:33:41
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_- method `omit_region` not found for this struct
+...
+33 |       let _ = ControlMatrixApi::builder().omit_region();
+   |                                           ^^^^^^^^^^^
+   |
+help: there is a method `set_region` with a similar name, but with different arguments
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:11:1
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_^
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no method named `replace_region` found for struct `ControlMatrixApiBuilder` in the current scope
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:34:41
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_- method `replace_region` not found for this struct
+...
+34 |       let _ = ControlMatrixApi::builder().replace_region(Some("us"));
+   |                                           ^^^^^^^^^^^^^^
+   |
+help: there is a method `reset_region` with a similar name, but with different arguments
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:11:1
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_^
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no method named `reset_locale` found for struct `ControlMatrixApiBuilder` in the current scope
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:36:41
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_- method `reset_locale` not found for this struct
+...
+36 |       let _ = ControlMatrixApi::builder().reset_locale();
+   |                                           ^^^^^^^^^^^^
+   |
+help: there is a method `set_locale` with a similar name, but with different arguments
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:11:1
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_^
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no method named `set_id` found for struct `ReadRequest` in the current scope
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:40:30
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_- method `set_id` not found for this struct
+...
+40 |       let _ = client.read("1").set_id("2");
+   |                                ^^^^^^ method not found in `ReadRequest`
+
+error[E0599]: no method named `set_id_if_some` found for struct `ReadRequest` in the current scope
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:41:30
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_- method `set_id_if_some` not found for this struct
+...
+41 |       let _ = client.read("1").set_id_if_some(None);
+   |                                ^^^^^^^^^^^^^^
+   |
+help: there is a method `set_limit_if_some` with a similar name
+   |
+41 -     let _ = client.read("1").set_id_if_some(None);
+41 +     let _ = client.read("1").set_limit_if_some(None);
+   |
+
+error[E0599]: no method named `replace_id` found for struct `ReadRequest` in the current scope
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:42:30
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_- method `replace_id` not found for this struct
+...
+42 |       let _ = client.read("1").replace_id(None);
+   |                                ^^^^^^^^^^ method not found in `ReadRequest`
+
+error[E0599]: no method named `omit_id` found for struct `ReadRequest` in the current scope
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:43:30
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_- method `omit_id` not found for this struct
+...
+43 |       let _ = client.read("1").omit_id();
+   |                                ^^^^^^^ method not found in `ReadRequest`
+
+error[E0599]: no method named `reset_id` found for struct `ReadRequest` in the current scope
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:44:30
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_- method `reset_id` not found for this struct
+...
+44 |       let _ = client.read("1").reset_id();
+   |                                ^^^^^^^^ method not found in `ReadRequest`
+
+error[E0599]: no method named `omit_limit` found for struct `ReadRequest` in the current scope
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:47:30
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_- method `omit_limit` not found for this struct
+...
+47 |       let _ = client.read("1").omit_limit();
+   |                                ^^^^^^^^^^
+   |
+help: there is a method `set_limit` with a similar name, but with different arguments
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:11:1
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_^
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no method named `replace_limit` found for struct `ReadRequest` in the current scope
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:48:30
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_- method `replace_limit` not found for this struct
+...
+48 |       let _ = client.read("1").replace_limit(Some(5));
+   |                                ^^^^^^^^^^^^^
+   |
+help: there is a method `reset_limit` with a similar name, but with different arguments
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:11:1
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_^
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no method named `reset_verbose` found for struct `ReadRequest` in the current scope
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:50:30
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_- method `reset_verbose` not found for this struct
+...
+50 |       let _ = client.read("1").reset_verbose();
+   |                                ^^^^^^^^^^^^^
+   |
+help: there is a method `set_verbose` with a similar name, but with different arguments
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:11:1
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_^
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no method named `set_payload` found for struct `WriteRequest` in the current scope
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:52:42
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_- method `set_payload` not found for this struct
+...
+52 |       let _ = client.write("x".to_owned()).set_payload("y".to_owned());
+   |                                            ^^^^^^^^^^^ method not found in `WriteRequest`
+
+error[E0599]: no method named `omit_payload` found for struct `WriteRequest` in the current scope
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:53:42
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_- method `omit_payload` not found for this struct
+...
+53 |       let _ = client.write("x".to_owned()).omit_payload();
+   |                                            ^^^^^^^^^^^^ method not found in `WriteRequest`
+
+error[E0308]: mismatched types
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:56:38
+   |
+56 |     let _ = client.put().set_payload("y");
+   |                          ----------- ^^^ expected `String`, found `&str`
+   |                          |
+   |                          arguments to this method are incorrect
+   |
+note: method defined here
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:22:22
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+22 | |         PUT put(body payload?: String via Text) -> Bytes via Binary;
+   | |                      ^^^^^^^
+23 | |     }
+24 | | }
+   | |_-
+help: try using a conversion method
+   |
+56 |     let _ = client.put().set_payload("y".to_string());
+   |                                         ++++++++++++
+
+error[E0599]: no method named `reset_payload` found for struct `PutRequest` in the current scope
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:57:26
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_- method `reset_payload` not found for this struct
+...
+57 |       let _ = client.put().reset_payload();
+   |                            ^^^^^^^^^^^^^
+   |
+help: there is a method `set_payload` with a similar name, but with different arguments
+  --> tests/ui/fail/capabilities/absent_value_controls.rs:11:1
+   |
+11 | / api! {
+12 | |     client ControlMatrixApi {
+13 | |         base "https://matrix.example.test";
+14 | |         values {
+...  |
+24 | | }
+   | |_^
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

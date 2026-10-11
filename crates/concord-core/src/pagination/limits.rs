@@ -4,6 +4,17 @@ use super::PaginationError;
 use super::identity::{CanonicalIdentity, deterministic_digest};
 use crate::error::PaginationErrorKind;
 
+/// Default aggregate application-handoff ceiling for one traversal. The
+/// trusted builder can select another positive ceiling with
+/// `RuntimeConfigBuilder::aggregate_max_sends`; a caller send cap
+/// (`CallOptions::cap_sends`) can only narrow the selected ceiling.
+pub const DEFAULT_TRAVERSAL_MAX_HANDOFFS: u32 = 2_000;
+
+/// Maximum visible application attempts for one page before aggregate
+/// intersection: the initial attempt, at most 16 policy retries and at most one
+/// authentication-recovery replay.
+pub const MAX_PAGE_ATTEMPTS: u32 = 18;
+
 pub(crate) struct CycleDetector {
     buckets: HashMap<u64, Vec<Vec<u8>>>,
     retained_identity_count: usize,
@@ -101,7 +112,6 @@ impl CycleDetector {
         self.retained_identity_count
     }
 
-    #[cfg(test)]
     pub(crate) fn retained_identity_bytes(&self) -> usize {
         self.retained_identity_bytes
     }

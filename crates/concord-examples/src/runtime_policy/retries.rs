@@ -4,16 +4,16 @@
 //! `docs/retry.md`.
 
 use concord::retry::{RetryDecision, RetryFailure, RetryPolicy};
-use concord::{Bytes, api};
+use concord::{Binary, Bytes, api};
 
 api! {
     client RetryApi {
-        timeout 30s;
         base "http://retry.example.test/";
+        timeout 30s;
 
-
-    GET health() -> Bytes via Binary;
-}}
+        GET health() -> Bytes via Binary;
+    }
+}
 
 /// Builds a finite policy for transient connection, transport, and selected
 /// rejected-status failures.

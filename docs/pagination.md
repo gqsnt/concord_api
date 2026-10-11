@@ -1,179 +1,307 @@
-# Pagination
+# Pagination and traversal
 
-Pagination is an explicit safe aggregate operation, not syntactic sugar for an unbounded loop.
+Ordinary `.await` on a paginated endpoint returns **one** page. More pages are
+always an explicit terminal with an explicit bound, under one aggregate
+deadline, and the result never pretends a page bound is exhaustion (§14).
 
-## Declaration
+## Declaring a traversal
 
-This is a partial endpoint fragment. Its surrounding compiled contract must
-define `PageSize`, `DEFAULT_PAGE_SIZE`, `ItemPage`, the effective response
-representation, and the `OffsetPages` controller implementation.
-
-```concord-pseudocode
-GET item_summaries(
-    offset: u64 = 0,
-    count: PageSize = DEFAULT_PAGE_SIZE,
-) -> ItemPage {
-    effect safe;
-    paginate via OffsetPages {
-        offset -> endpoint.offset;
-        page_size -> endpoint.count;
+<!-- concord-source: crates/concord-examples/src/pagination/mod.rs#offset_endpoint -->
+```concord
+GET offset(query offset: u64, query limit: NonZeroU32) -> Vec<u32> via Json {
+    paginate via OffsetPagination {
+        init OffsetInit { offset: offset, page_size: limit };
+        cursor -> offset;
     }
 }
 ```
 
-The one-page endpoint output remains `ItemPage`. The pagination controller owns extraction of aggregate items and continuation.
+- `paginate via Controller` names a `PaginationController` for the endpoint's
+  page type.
+- `init InitType { field: value, ... };` constructs the controller's **public**
+  initialization type from stable values or references; all required fields
+  are supplied, and `..Default::default()` or method calls are not DSL syntax.
+  The controller's private state is separate and can evolve without a DSL edit.
+- `cursor -> slot;` maps the controller's **entire** `Cursor` value onto the
+  endpoint's entire slot (PAGE-01). For `after?: String` the cursor is
+  `Option<String>`; a tuple destination `(a, b)` maps a tuple cursor of exactly
+  that arity and types. There is no hidden field extraction, `Option` wrapping
+  or conversion.
+- Destinations are unique, endpoint-owned scalar slots: never bodies, client or
+  scope values, credentials, `each` sources, or values in an effective rate key.
+  Their sensitivity carries over to continuation requests.
 
-## Capability gates
+A paginated endpoint must be `effect safe`, use a buffered response
+representation, and, when it declares a body, use a `PageRequestRepresentation`
+so each page can prepare the same captured body. A `POST` search can qualify by
+asserting `effect safe`:
 
-Generate `.paginate(...)` only when:
-
-- pagination is declared;
-- endpoint effect is `safe`;
-- response output is complete, not `ByteStream` or `ItemStream<T>`;
-- representation/output pair is page-capable;
-- body is page-stable when present;
-- controller and bindings satisfy generated Rust obligations.
-
-An idempotent mutating operation is not enough. An all-or-error convenience loop must not hide partial mutation across pages.
-
-## Bindings
-
-Live destinations are endpoint-owned ordinary scalar values only.
-
-Reject:
-
-- client or scope values;
-- body inputs;
-- secrets/credentials;
-- timeout/effect/policy controls;
-- repeated/multi-value destinations;
-- duplicate fields/destinations;
-- values used in an effective rate-key dimension.
-
-Each page is a fresh immutable endpoint/request snapshot. The original request remains reusable.
-
-## Controller contract
-
-Conceptually:
-
-```text
-pub trait PaginationController<Page>: Sized + Send + 'static {
-    type Item: Send + 'static;
-
-    const DESCRIPTION: PaginationDescription;
-
-    fn validate(&self) -> Result<(), PaginationError>;
-
-    fn advance(
-        self,
-        page: PageResponse<Page>,
-        limits: PageDecisionLimits,
-    ) -> Result<PageStep<Self, Self::Item>, PaginationError>;
-}
-
-pub enum PageStep<C, T> {
-    Done { items: Vec<T> },
-    Continue { items: Vec<T>, next: C },
+<!-- concord-source: crates/concord-examples/src/pagination/mod.rs#post_search_endpoint -->
+```concord
+POST search(
+    query offset: u64,
+    query limit: NonZeroU32,
+    body filter: SearchFilter via Json,
+) -> Vec<u32> via Json {
+    effect safe;
+    path "search";
+    paginate via OffsetPagination {
+        init OffsetInit { offset: offset, page_size: limit };
+        cursor -> offset;
+    }
 }
 ```
 
-The public trait signature and this authority boundary are selected for v2.1:
+No `IntoIterator` marker on the page type is required: the controller owns item
+extraction, so an envelope decoded by `Json` is pageable (see the
+[envelope controller](extensions.md#pagination-controllers)).
 
-- controller owns item extraction, completion, and next controller state;
-- item and continuation return atomically;
-- controller sees no client, credentials, limiter, native request/response, or arbitrary mutation;
-- core owns sequence, bindings, request execution, auth/retry/rate/deadline, limits, identity, aggregation, and errors.
-
-Returning a concrete `Vec<T>` bounds/eagerly materializes the controller contribution and prevents effectful/infinite iterators. Core still checks count before retaining.
-
-## Bounded response metadata
-
-`PaginationDescription` declares:
-
-- a finite static set of response header names;
-- whether current public page URI is required for resolving relative links;
-- any structural page identity contribution.
-
-`PageResponse<Page>` contains:
-
-- exact complete decoded page value;
-- accepted status;
-- only requested bounded header values;
-- current public logical page URI when requested;
-- page/operation correlation.
-
-Requesting header interests or the current URI makes the controller an explicit
-owner of those potentially sensitive public values. Interests, names, values,
-and bytes remain bounded; reserved credential/cookie headers are rejected.
-
-No native response, unrestricted header map, cookies, private auth, or credentials.
-
-For `Link` pagination, relative links resolve against the current logical page URL; cross-origin continuation is rejected before dispatch.
-
-## Page body
-
-Baseline:
+## Terminals
 
 ```text
-prepare once per page
-replay prepared state only within that page’s attempts
+request.pages(maximum_pages: u32) -> Pages<Item>
+request.collect_prefix(maximum_pages: u32) -> CollectPrefix<Item>    // resolves to Prefix<Item>
+request.collect_all(maximum_pages: NonZeroU32) -> CollectAll<Item>   // resolves to Vec<Item>
 ```
 
-`PageStableInput` allows independent page preparation after page-bound values change. It does not imply one prepared body can live across the entire aggregate. Aggregate reusable prepared bodies remain deferred pending a stronger contract and benchmark.
+All construction is inert. `CollectPrefix` and `CollectAll` implement
+`RequestControls` and the timeout/cancellation controls. `Pages` does not:
+apply controls to the request before calling `.pages()`; its captured
+cancellation tokens can still be cancelled externally. There is no generic
+`paginate(limit)` selector.
 
-## Caller limits
+### Complete collection
 
 <!-- concord-source: crates/concord-examples/src/pagination/offset.rs#paginate_all -->
 ```rust
 pub async fn collect_all(client: &PaginationApi) -> Result<Vec<u32>, concord::ApiError> {
     client
-        .offset(
-            0,
-            std::num::NonZeroU32::new(50).expect("positive page size"),
-        )
-        .paginate(PageLimit::CompleteWithin(
-            std::num::NonZeroU32::new(100).expect("positive completion limit"),
-        ))
+        .offset(0, NonZeroU32::new(50).expect("positive page size"))
+        .collect_all(NonZeroU32::new(100).expect("positive completion limit"))
         .await
 }
 ```
 
-- `Prefix(n)` intentionally returns at most `n` accepted pages even when continuation exists;
-- `Prefix(0)` performs no operation allocation, shaping, body/provider/limiter/controller/observer/HTTP work;
-- `CompleteWithin(n)` fails if natural completion needs more pages.
+`collect_all` returns a `Vec` only after the controller proved exhaustion
+(`Done`). Reaching the bound while the controller still offers continuation is
+a pagination completion-limit error carrying the traversal summary, never a
+success `Vec` holding an undisclosed prefix.
 
-Do not accept a bare integer that hides truncation semantics.
+### Explicit prefix
 
-## Aggregate lifecycle
+<!-- concord-source: crates/concord-examples/src/pagination/offset.rs#execute_pagination -->
+```rust
+pub async fn collect(client: &PaginationApi) -> Result<Prefix<u32>, concord::ApiError> {
+    client
+        .offset(0, NonZeroU32::new(50).expect("positive page size"))
+        .collect_prefix(2)
+        .await
+}
+```
 
-One pagination terminal has:
+`Prefix<Item>` has `items()`, `into_items()` and `summary()`, so the caller can
+tell exhaustion from the page bound.
 
-- one aggregate operation ID;
-- one absolute deadline;
-- one shared retry-load budget;
-- page operation IDs;
-- per-page visible attempt ceilings;
-- aggregate send ceiling;
-- page/item/accepted-page-byte/controller-identity/cycle/progress bounds;
-- one final aggregate result and event.
+### Lazy pages
 
-No page receives a fresh deadline or shared retry budget.
+`Pages<Item>::next_page()` resolves to `Result<Option<Page<Item>>, ApiError>`;
+`summary()` snapshots the traversal and `finish()` ends it. A `Page<Item>` has
+`index()` (zero-based), `items()`, `into_items()` and `metadata()`, a fixed
+snapshot as of that page's acquisition. The canonical application search stops
+early without claiming the item does not exist:
 
-## Cycle and progress identity
+<!-- concord-source: crates/concord-examples/src/application/search.rs#find_summary -->
+```rust
+use concord::pagination::{StopReason, TraversalSummary};
+use concord::{ApiError, CallOptions};
 
-Use actual canonical credential-free public request semantics and declared controller contributions. Sensitive values participate internally but are redacted in diagnostics. Credentials and credential versions never create progress.
+use crate::contracts::catalog_v3::{ItemSummary, catalog_api};
 
-Reject repeated identity, oversized identity, and non-progress under finite history bounds.
+/// The truthful outcome of a bounded search.
+#[derive(Debug)]
+pub enum SearchResult<T> {
+    /// The item was found; the traversal was stopped by the application.
+    Found {
+        /// The matching item.
+        item: T,
+        /// The traversal summary at the application stop.
+        traversal: TraversalSummary,
+    },
+    /// The provider proved exhaustion without a match.
+    Exhausted {
+        /// The exhausted traversal summary.
+        traversal: TraversalSummary,
+    },
+    /// The traversal stopped for another reason (for example the page bound);
+    /// the item may still exist.
+    Stopped {
+        /// The traversal summary, including its stop reason.
+        traversal: TraversalSummary,
+    },
+}
 
-## Output and partiality
+/// Searches the feed for `wanted` over at most `maximum_pages` pages.
+///
+/// # Errors
+///
+/// A page fetch failure (returned once by the traversal).
+pub async fn find_summary_within(
+    scope: &catalog_api::regional::Regional,
+    wanted: &str,
+    limits: &CallOptions,
+    maximum_pages: u32,
+) -> Result<SearchResult<ItemSummary>, ApiError> {
+    let mut pages = scope.feed().with_options(limits).pages(maximum_pages);
+    while let Some(page) = pages.next_page().await? {
+        for item in page.into_items() {
+            if item.id == wanted {
+                return Ok(SearchResult::Found {
+                    item,
+                    traversal: pages.finish(),
+                });
+            }
+        }
+    }
+    let summary = pages.finish();
+    if summary.stop_reason() == StopReason::Exhausted {
+        Ok(SearchResult::Exhausted { traversal: summary })
+    } else {
+        Ok(SearchResult::Stopped { traversal: summary })
+    }
+}
 
-Ordinary `.paginate()` is all-or-error locally. A failed page or completeness failure returns no partial aggregate collection. Remote earlier pages may already have been observed; the endpoint must be safe so those observations are not hidden mutation.
+/// The §23.4 search with its canonical 100-page bound.
+///
+/// # Errors
+///
+/// A page fetch failure.
+pub async fn find_summary(
+    scope: &catalog_api::regional::Regional,
+    wanted: &str,
+    limits: &CallOptions,
+) -> Result<SearchResult<ItemSummary>, ApiError> {
+    find_summary_within(scope, wanted, limits, 100).await
+}
+```
 
-Partial/resumable or page-stream output is a separate deferred capability with explicit partiality, cancellation, resume, and resource semantics.
+Processing time between loop iterations counts against the aggregate deadline,
+and stopping early never requires reconstructing auth, quota or retry state.
 
-## Observation
+## Summary facts
 
-Public operation observation distinguishes aggregate, page, and visible
-attempts. It emits a bounded `PaginationFinished` aggregate event and correlated
-ordinary page-operation events. It does not grant a result-determining page
-callback.
+`TraversalSummary` is owned and cloneable: `operation_id()`, `stop_reason()`,
+`continuation()`, `requested_page_bound()`, `effective_page_bound()`,
+`pages_received()`, `pages_delivered()`, `items_delivered()`,
+`application_attempts()`, `automatic_replays()`, `quota_admissions()`,
+`acquired_response_bytes()`, `retained_identity_bytes()` and
+`dispatch_knowledge()`.
+
+| `StopReason` | Meaning |
+|---|---|
+| `NotStarted` | nothing ran |
+| `Active` | the traversal can continue |
+| `Exhausted` | the controller returned `Done` (provider-contract proof of exhaustion) |
+| `PageBound` | the page bound was reached |
+| `Application` | the application stopped (`finish()`) |
+| `Cancelled` | a started fetch was dropped or a token fired |
+| `Failed` | a fetch failed; the error was returned once |
+
+`ContinuationKnowledge` is `Unknown`, `NextRequestKnown` (a valid next request
+can be constructed; not a promise that another item exists) or `Exhausted`. A
+`Done` on the last permitted page yields `Exhausted` without an extra fetch;
+reaching the bound while continuation is offered yields
+`PageBound`/`NextRequestKnown`.
+
+`collect_prefix(0)` and `pages(0)` perform no shaping, body work, controller
+start, credentials, quota or transport and allocate no operation; their summary
+is `PageBound`/`Unknown` with no operation ID. An unstarted nonzero
+`pages(n).finish()` records `Application`/`Unknown` (PAGE-02).
+
+## Page atomicity and progress
+
+The first polled fetch starts one aggregate deadline and finite budgets covering
+controller start, all pages and attempts, and time spent in application code
+between polls; there is no per-page reset and no background prefetch
+(PAGE-03). At most one page fetch is active.
+
+Before the first dispatch, core checks that the controller's initial cursor,
+applied to a copy of the selected slots, produces the same public request as the
+current request (`InvalidInitialCursor` otherwise). For each accepted page, core
+completely acquires and decodes it, calls `advance`, enforces item and byte
+bounds and validates the proposed next cursor and progress identity **before**
+delivering the current page. A controller error or an invalid or cyclic
+continuation withholds the current batch but still records that the page was
+received. Eager collectors fail as a whole.
+
+The progress identity covers the method, logical origin and path, ordered
+public query/header occurrences and the body contract, never credential bytes.
+Immediate repeats and longer cycles are rejected, and every next cursor passes
+the same public shaping and ownership rules as the initial request, so a
+controller cannot mutate auth, origins, rate dimensions, effect, status,
+timeouts or unmapped inputs.
+
+## Resources and cancellation
+
+| Traversal limit | Default | Runtime setter |
+|---|---|---|
+| Pages (intersected with the requested bound) | 1,000 | `pagination_max_pages(u32)` |
+| Delivered items | 100,000 | `pagination_max_items(usize)` |
+| Acquired response bytes, all attempts | 64 MiB | `pagination_total_response_body_limit(usize)` |
+| Retained progress identity | 4 MiB | `pagination_identity_limit(usize)` |
+| Application handoffs | 2,000 (intersected with `cap_sends`) | `aggregate_max_sends(u32)` |
+
+Acquired bytes count every attempt in the traversal, including rejected
+statuses, retry responses and failed partial acquisitions (PAGE-04). The item
+ceiling applies to the whole current batch; no page is silently truncated.
+
+Dropping an **unpolled** `next_page()` future changes nothing. Dropping a
+**started** one cancels the whole traversal and records `Cancelled`; it cannot
+resume. A fetch error is returned once, then `next_page()` returns `Ok(None)`
+with `Failed` retained. `finish()` preserves an already terminal state and
+otherwise records `Application`. Dropping a started traversal records
+cancellation, never EOF or rollback. (Stream reads differ: see
+[Streams](streams.md).)
+
+## Built-in controllers
+
+<!-- concord-source: crates/concord-examples/src/pagination/mod.rs#page_endpoint -->
+```concord
+GET page(query page: NonZeroU64, query per_page: NonZeroU32) -> Vec<u32> via Json {
+    paginate via PagePagination {
+        init PageInit { page: page, page_size: per_page };
+        cursor -> page;
+    }
+}
+```
+
+<!-- concord-source: crates/concord-examples/src/pagination/mod.rs#cursor_endpoints -->
+```concord
+GET cursor(query cursor?: String) -> ExamplePage via ExamplePageCodec {
+    paginate via CursorPagination<String> {
+        init CursorInit { cursor: cursor };
+        cursor -> cursor;
+    }
+}
+
+GET custom(query cursor?: String) -> ExamplePage via ExamplePageCodec {
+    paginate via ExampleController {
+        init ExampleStart { cursor: cursor };
+        cursor -> cursor;
+    }
+}
+```
+
+| Controller | Init and Cursor | Continuation |
+|---|---|---|
+| `OffsetPagination` | `OffsetInit { offset: u64, page_size: NonZeroU32 }`; `u64` | a short page is `Done`; otherwise offset + page size (checked) |
+| `PagePagination` | `PageInit { page: NonZeroU64, page_size: NonZeroU32 }`; `NonZeroU64` | a short page is `Done`; otherwise page + 1 (checked) |
+| `CursorPagination<C>` | `CursorInit<C> { cursor: Option<C> }`; `Option<C>` | page implements `HasNextCursor<C>`; an absent cursor is `Done` |
+| `NextHeaderPagination` | `CursorInit<String>`; `Option<String>` | reads `X-Next-Cursor`; absent is `Done`; duplicates or invalid text are `InvalidContinuation` |
+| `LinkCursorPagination` | `CursorInit<String>`; `Option<String>` | one `rel=next` link on the same origin and path with exactly one `cursor` query value and no other change |
+
+Link parsing handles commas inside angle brackets and quotes. A next link that
+changes the path, carries userinfo or a fragment, or changes any non-cursor
+query occurrence is rejected: the controller owns only the cursor slot and never
+uses a link as an arbitrary request URL. Controllers may declare at most 16
+header interests with 64 KiB of retained evidence. For a provider-specific
+contract, write a narrow custom controller ([Extensions](extensions.md)).

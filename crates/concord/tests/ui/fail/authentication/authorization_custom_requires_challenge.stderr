@@ -1,5 +1,0 @@
-error[E0425]: cannot find type `SessionProvider` in the crate root
- --> tests/ui/fail/authentication/authorization_custom_requires_challenge.rs:8:48
-  |
-8 |             credential session = custom crate::SessionProvider;
-  |                                                ^^^^^^^^^^^^^^^ not found in the crate root

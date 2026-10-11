@@ -1,7 +1,24 @@
-//! Built-in policies for core's generic sequential pagination engine.
+//! Built-in pagination controllers for core's single traversal engine.
+//!
+//! Every controller has a public initialization type (built by the
+//! declaration's `init` clause) and private state, and maps one whole cursor
+//! value onto the declared cursor slot:
+//!
+//! | Controller | Init | Cursor | Completion |
+//! |---|---|---|---|
+//! | [`OffsetPagination`] | [`OffsetInit`] | `u64` | short page is `Done`; else checked `offset + page_size` |
+//! | [`PagePagination`] | [`PageInit`] | `NonZeroU64` | short page is `Done`; else checked `page + 1` |
+//! | [`CursorPagination<C>`] | [`CursorInit<C>`] | `Option<C>` | absent [`HasNextCursor`] cursor is `Done` |
+//! | [`NextHeaderPagination`] | [`CursorInit<String>`] | `Option<String>` | absent `X-Next-Cursor` is `Done` |
+//! | [`LinkCursorPagination`] | [`CursorInit<String>`] | `Option<String>` | absent `rel=next` is `Done` |
+//!
+//! Controllers never truncate a page: a batch larger than the remaining item
+//! budget fails with `CollectedItemCeilingExceeded`. Core independently
+//! validates every continuation (shaping, fixed facts, cycles and budgets).
 
 use std::num::{NonZeroU32, NonZeroU64};
 
+use concord_core::contracts::{HeaderName, Url};
 use concord_core::pagination::{
     PageDecisionLimits, PageResponse, PageStep, PaginationController, PaginationDescription,
     PaginationError, PaginationErrorKind,
@@ -9,43 +26,55 @@ use concord_core::pagination::{
 
 /// A decoded page that exposes an optional next cursor by reference.
 ///
-/// The cursor and page may be sensitive. Implementations own logging and
-/// storage and must keep synchronous CPU, memory, retries, maps, queues, tasks,
-/// and metric cardinality finite. The callback must be non-blocking and perform
-/// no external I/O.
+/// [`CursorPagination`] calls `next_cursor` once per decoded page inside its
+/// controller `advance` step and clones the returned cursor into the next
+/// continuation; an absent cursor completes the traversal.
+///
+/// # Extension contract
+///
+/// * **Ownership.** The page is borrowed for one call; the returned reference
+///   borrows from the page and is cloned by the controller, never retained.
+/// * **Concurrency.** Each traversal calls it on its own page value; no
+///   state is shared between traversals.
+/// * **Cancellation.** The callback is synchronous, must be non-blocking and
+///   perform no external I/O; it runs under the traversal's aggregate
+///   deadline checks.
+/// * **Input sensitivity.** The cursor and page may be sensitive.
+///   Implementations own logging and storage; core never prints cursors or
+///   pages.
+/// * **Errors.** The callback cannot fail; an absent cursor (`None`) is
+///   exhaustion, distinct from a present empty cursor.
+/// * **Resource obligations.** Implementations must keep synchronous CPU,
+///   memory, retries, maps, queues, tasks and metric cardinality finite.
+/// * **Negative capabilities.** The page only exposes a cursor: it cannot
+///   choose the destination slot, send requests or change any other
+///   endpoint value, and core re-validates every continuation.
+#[diagnostic::on_unimplemented(
+    message = "[C3-PAGE] page type `{Self}` does not expose a next cursor of type `{C}`",
+    label = "`CursorPagination<{C}>` reads the next cursor from this page",
+    note = "implement `HasNextCursor<{C}>` for the decoded page, returning `None` when the provider reports no further page",
+    note = "or select a controller that matches this page shape with `paginate via Controller {{ ... }}`"
+)]
 pub trait HasNextCursor<C> {
     /// Returns the next cursor, distinguishing an absent cursor from a present
     /// cursor whose value is empty.
     fn next_cursor(&self) -> Option<&C>;
 }
 
-/// Checked offset pagination state.
-#[derive(Clone, Copy, Eq, PartialEq)]
-pub struct OffsetPagination {
-    /// Current zero-based offset.
+/// Public initialization of [`OffsetPagination`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OffsetInit {
+    /// Zero-based offset of the first requested page.
     pub offset: u64,
-    /// Exact requested page size.
+    /// Exact page size requested from the provider; a shorter page proves
+    /// exhaustion.
     pub page_size: NonZeroU32,
 }
 
-impl OffsetPagination {
-    /// Creates offset pagination at `offset` with a positive page size.
-    #[must_use]
-    pub const fn new(offset: u64, page_size: NonZeroU32) -> Self {
-        Self { offset, page_size }
-    }
-
-    /// Returns the current offset.
-    #[must_use]
-    pub const fn offset(&self) -> u64 {
-        self.offset
-    }
-
-    /// Returns the requested page size.
-    #[must_use]
-    pub const fn page_size(&self) -> NonZeroU32 {
-        self.page_size
-    }
+/// Checked offset pagination. `Cursor = u64` (the offset slot).
+pub struct OffsetPagination {
+    offset: u64,
+    page_size: NonZeroU32,
 }
 
 impl<Page> PaginationController<Page> for OffsetPagination
@@ -54,8 +83,21 @@ where
     Page::Item: Send + 'static,
 {
     type Item = Page::Item;
+    type Init = OffsetInit;
+    type Cursor = u64;
 
     const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
+
+    fn start(init: OffsetInit) -> Result<Self, PaginationError> {
+        Ok(Self {
+            offset: init.offset,
+            page_size: init.page_size,
+        })
+    }
+
+    fn cursor(&self) -> u64 {
+        self.offset
+    }
 
     fn advance(
         self,
@@ -63,10 +105,7 @@ where
         limits: PageDecisionLimits,
     ) -> Result<PageStep<Self, Self::Item>, PaginationError> {
         let items = collect_items(page.into_page(), limits)?;
-        if items.len()
-            < usize::try_from(self.page_size.get())
-                .expect("u32 page sizes fit the supported usize targets")
-        {
+        if is_short(items.len(), self.page_size) {
             return Ok(PageStep::Done { items });
         }
         let offset = self
@@ -74,42 +113,29 @@ where
             .checked_add(u64::from(self.page_size.get()))
             .ok_or_else(|| PaginationError::new(PaginationErrorKind::Overflow))?;
         Ok(PageStep::Continue {
-            items,
             next: Self {
                 offset,
                 page_size: self.page_size,
             },
+            items,
         })
     }
 }
 
-/// Checked one-based page-number pagination state.
-#[derive(Clone, Copy, Eq, PartialEq)]
-pub struct PagePagination {
-    /// Current one-based page number.
+/// Public initialization of [`PagePagination`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PageInit {
+    /// One-based number of the first requested page.
     pub page: NonZeroU64,
-    /// Exact requested page size.
+    /// Exact page size requested from the provider; a shorter page proves
+    /// exhaustion.
     pub page_size: NonZeroU32,
 }
 
-impl PagePagination {
-    /// Creates page-number pagination at `page` with a positive page size.
-    #[must_use]
-    pub const fn new(page: NonZeroU64, page_size: NonZeroU32) -> Self {
-        Self { page, page_size }
-    }
-
-    /// Returns the current page number.
-    #[must_use]
-    pub const fn page(&self) -> NonZeroU64 {
-        self.page
-    }
-
-    /// Returns the requested page size.
-    #[must_use]
-    pub const fn page_size(&self) -> NonZeroU32 {
-        self.page_size
-    }
+/// Checked one-based page-number pagination. `Cursor = NonZeroU64`.
+pub struct PagePagination {
+    page: NonZeroU64,
+    page_size: NonZeroU32,
 }
 
 impl<Page> PaginationController<Page> for PagePagination
@@ -118,8 +144,21 @@ where
     Page::Item: Send + 'static,
 {
     type Item = Page::Item;
+    type Init = PageInit;
+    type Cursor = NonZeroU64;
 
     const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
+
+    fn start(init: PageInit) -> Result<Self, PaginationError> {
+        Ok(Self {
+            page: init.page,
+            page_size: init.page_size,
+        })
+    }
+
+    fn cursor(&self) -> NonZeroU64 {
+        self.page
+    }
 
     fn advance(
         self,
@@ -127,48 +166,91 @@ where
         limits: PageDecisionLimits,
     ) -> Result<PageStep<Self, Self::Item>, PaginationError> {
         let items = collect_items(response.into_page(), limits)?;
-        if items.len()
-            < usize::try_from(self.page_size.get())
-                .expect("u32 page sizes fit the supported usize targets")
-        {
+        if is_short(items.len(), self.page_size) {
             return Ok(PageStep::Done { items });
         }
         let page = self
             .page
-            .get()
             .checked_add(1)
-            .and_then(NonZeroU64::new)
             .ok_or_else(|| PaginationError::new(PaginationErrorKind::Overflow))?;
         Ok(PageStep::Continue {
-            items,
             next: Self {
                 page,
                 page_size: self.page_size,
             },
+            items,
         })
     }
 }
 
-/// Typed cursor pagination state.
-#[derive(Clone, Eq, PartialEq)]
-pub struct CursorPagination<C> {
-    /// Current optional cursor value.
+/// Public initialization shared by the cursor controllers.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CursorInit<C> {
+    /// Cursor of the first request; `None` requests the first page without a
+    /// cursor.
     pub cursor: Option<C>,
 }
 
-/// Cursor pagination driven by the declared `X-Next-Cursor` response header.
-#[derive(Clone, Eq, PartialEq)]
-pub struct NextHeaderPagination {
-    /// Current optional cursor bound into the next endpoint snapshot.
-    pub cursor: Option<String>,
+/// Typed cursor pagination driven by the page's [`HasNextCursor`] contract.
+/// `Cursor = Option<C>`.
+///
+/// An absent next cursor proves exhaustion. A present empty cursor remains a
+/// present candidate and is validated by core like any other continuation.
+pub struct CursorPagination<C> {
+    cursor: Option<C>,
 }
 
-impl NextHeaderPagination {
-    /// Creates header pagination with an optional initial cursor.
-    #[must_use]
-    pub const fn new(cursor: Option<String>) -> Self {
-        Self { cursor }
+impl<Page, C> PaginationController<Page> for CursorPagination<C>
+where
+    Page: HasNextCursor<C> + IntoIterator + Send + 'static,
+    Page::Item: Send + 'static,
+    C: Clone + Send + Sync + 'static,
+{
+    type Item = Page::Item;
+    type Init = CursorInit<C>;
+    type Cursor = Option<C>;
+
+    const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
+
+    fn start(init: CursorInit<C>) -> Result<Self, PaginationError> {
+        Ok(Self {
+            cursor: init.cursor,
+        })
     }
+
+    fn cursor(&self) -> Option<C> {
+        self.cursor.clone()
+    }
+
+    fn advance(
+        self,
+        page: PageResponse<Page>,
+        limits: PageDecisionLimits,
+    ) -> Result<PageStep<Self, Self::Item>, PaginationError> {
+        let next = page.page().next_cursor().cloned();
+        let items = collect_items(page.into_page(), limits)?;
+        Ok(match next {
+            Some(cursor) => PageStep::Continue {
+                next: Self {
+                    cursor: Some(cursor),
+                },
+                items,
+            },
+            None => PageStep::Done { items },
+        })
+    }
+}
+
+/// The response header read by [`NextHeaderPagination`].
+pub const NEXT_CURSOR_HEADER: &str = "x-next-cursor";
+
+/// Cursor pagination driven by the declared `X-Next-Cursor` response header.
+/// `Cursor = Option<String>`.
+///
+/// An absent header proves exhaustion; more than one field value or a value
+/// that is not visible ASCII text is `InvalidContinuation`.
+pub struct NextHeaderPagination {
+    cursor: Option<String>,
 }
 
 impl<Page> PaginationController<Page> for NextHeaderPagination
@@ -177,16 +259,28 @@ where
     Page::Item: Send + 'static,
 {
     type Item = Page::Item;
+    type Init = CursorInit<String>;
+    type Cursor = Option<String>;
 
     const DESCRIPTION: PaginationDescription =
-        PaginationDescription::new(&["x-next-cursor"], false);
+        PaginationDescription::new(&[NEXT_CURSOR_HEADER], false);
+
+    fn start(init: CursorInit<String>) -> Result<Self, PaginationError> {
+        Ok(Self {
+            cursor: init.cursor,
+        })
+    }
+
+    fn cursor(&self) -> Option<String> {
+        self.cursor.clone()
+    }
 
     fn advance(
         self,
         page: PageResponse<Page>,
         limits: PageDecisionLimits,
     ) -> Result<PageStep<Self, Self::Item>, PaginationError> {
-        let name = concord_core::contracts::HeaderName::from_static("x-next-cursor");
+        let name = HeaderName::from_static(NEXT_CURSOR_HEADER);
         let next = {
             let mut values = page.header_values(&name);
             let next = values
@@ -195,40 +289,41 @@ where
                     value
                         .to_str()
                         .map(str::to_owned)
-                        .map_err(|_| PaginationError::new(PaginationErrorKind::InvalidContinuation))
+                        .map_err(|_| invalid_continuation())
                 })
                 .transpose()?;
             if values.next().is_some() {
-                return Err(PaginationError::new(
-                    PaginationErrorKind::InvalidContinuation,
-                ));
+                return Err(invalid_continuation());
             }
             next
         };
         let items = collect_items(page.into_page(), limits)?;
         Ok(match next {
             Some(cursor) => PageStep::Continue {
+                next: Self {
+                    cursor: Some(cursor),
+                },
                 items,
-                next: Self::new(Some(cursor)),
             },
             None => PageStep::Done { items },
         })
     }
 }
 
-/// Same-origin RFC Link-header cursor pagination using the `cursor` query key.
-#[derive(Clone, Eq, PartialEq)]
+/// Same-origin RFC 8288 `Link` cursor pagination owning only the `cursor`
+/// query slot. `Cursor = Option<String>`.
+///
+/// The controller declares the `Link` header and the current logical URI. It
+/// parses exactly one `rel=next` link (commas inside `<...>` and quoted
+/// parameters are handled), resolves it against the current logical URI and
+/// requires the same origin ([`PaginationErrorKind::CrossOriginContinuation`]
+/// otherwise). It rejects, as `InvalidContinuation`, a next link that changes
+/// the path, carries userinfo or a fragment, changes any non-cursor query
+/// occurrence, or does not carry exactly one `cursor` query value. The link is
+/// never used as an arbitrary request URL: only the cursor value is mapped.
+/// An absent `rel=next` proves exhaustion.
 pub struct LinkCursorPagination {
-    /// Current optional cursor bound into the next endpoint snapshot.
-    pub cursor: Option<String>,
-}
-
-impl LinkCursorPagination {
-    /// Creates Link pagination with an optional initial cursor.
-    #[must_use]
-    pub const fn new(cursor: Option<String>) -> Self {
-        Self { cursor }
-    }
+    cursor: Option<String>,
 }
 
 impl<Page> PaginationController<Page> for LinkCursorPagination
@@ -237,8 +332,20 @@ where
     Page::Item: Send + 'static,
 {
     type Item = Page::Item;
+    type Init = CursorInit<String>;
+    type Cursor = Option<String>;
 
     const DESCRIPTION: PaginationDescription = PaginationDescription::new(&["link"], true);
+
+    fn start(init: CursorInit<String>) -> Result<Self, PaginationError> {
+        Ok(Self {
+            cursor: init.cursor,
+        })
+    }
+
+    fn cursor(&self) -> Option<String> {
+        self.cursor.clone()
+    }
 
     fn advance(
         self,
@@ -248,69 +355,90 @@ where
         let current = page.current_uri().ok_or_else(|| {
             PaginationError::new(PaginationErrorKind::InvalidControllerDescription)
         })?;
-        let name = concord_core::contracts::HeaderName::from_static("link");
+        let name = HeaderName::from_static("link");
         let values = page
             .header_values(&name)
-            .map(|value| {
-                value
-                    .to_str()
-                    .map_err(|_| PaginationError::new(PaginationErrorKind::InvalidContinuation))
-            })
+            .map(|value| value.to_str().map_err(|_| invalid_continuation()))
             .collect::<Result<Vec<_>, _>>()?;
         let next_cursor = resolve_link_cursor(current, values)?;
 
         let items = collect_items(page.into_page(), limits)?;
         Ok(match next_cursor {
             Some(cursor) => PageStep::Continue {
+                next: Self {
+                    cursor: Some(cursor),
+                },
                 items,
-                next: Self::new(Some(cursor)),
             },
             None => PageStep::Done { items },
         })
     }
 }
 
+const fn invalid_continuation() -> PaginationError {
+    PaginationError::new(PaginationErrorKind::InvalidContinuation)
+}
+
+fn is_short(items: usize, page_size: NonZeroU32) -> bool {
+    u32::try_from(items).is_ok_and(|items| items < page_size.get())
+}
+
 fn resolve_link_cursor<'a>(
-    current: &concord_core::contracts::Url,
+    current: &Url,
     values: impl IntoIterator<Item = &'a str>,
 ) -> Result<Option<String>, PaginationError> {
-    let mut next_cursor = None;
+    let mut next_target = None;
     for value in values {
         for entry in split_link_entries(value)? {
+            if entry.is_empty() {
+                continue;
+            }
             let Some(target) = next_link_target(entry)? else {
                 continue;
             };
-            if next_cursor.is_some() {
-                return Err(PaginationError::new(
-                    PaginationErrorKind::InvalidContinuation,
-                ));
+            if next_target.is_some() {
+                return Err(invalid_continuation());
             }
-            let resolved = current
-                .join(target)
-                .map_err(|_| PaginationError::new(PaginationErrorKind::InvalidContinuation))?;
-            if resolved.origin() != current.origin() {
-                return Err(PaginationError::new(
-                    PaginationErrorKind::CrossOriginContinuation,
-                ));
-            }
-            let mut cursors = resolved
-                .query_pairs()
-                .filter(|(name, _)| name == "cursor")
-                .map(|(_, value)| value.into_owned());
-            let cursor = cursors
-                .next()
-                .ok_or_else(|| PaginationError::new(PaginationErrorKind::InvalidContinuation))?;
-            if cursors.next().is_some() {
-                return Err(PaginationError::new(
-                    PaginationErrorKind::InvalidContinuation,
-                ));
-            }
-            next_cursor = Some(cursor);
+            next_target = Some(target);
         }
     }
-    Ok(next_cursor)
+    let Some(target) = next_target else {
+        return Ok(None);
+    };
+    let resolved = current.join(target).map_err(|_| invalid_continuation())?;
+    if resolved.origin() != current.origin() {
+        return Err(PaginationError::new(
+            PaginationErrorKind::CrossOriginContinuation,
+        ));
+    }
+    if !resolved.username().is_empty()
+        || resolved.password().is_some()
+        || resolved.fragment().is_some()
+        || resolved.path() != current.path()
+    {
+        return Err(invalid_continuation());
+    }
+    let other_pairs = |url: &Url| {
+        url.query_pairs()
+            .filter(|(name, _)| name != "cursor")
+            .map(|(name, value)| (name.into_owned(), value.into_owned()))
+            .collect::<Vec<_>>()
+    };
+    if other_pairs(&resolved) != other_pairs(current) {
+        return Err(invalid_continuation());
+    }
+    let mut cursors = resolved
+        .query_pairs()
+        .filter(|(name, _)| name == "cursor")
+        .map(|(_, value)| value.into_owned());
+    let cursor = cursors.next().ok_or_else(invalid_continuation)?;
+    if cursors.next().is_some() {
+        return Err(invalid_continuation());
+    }
+    Ok(Some(cursor))
 }
 
+/// Splits one `Link` field value into entries at top-level commas only.
 fn split_link_entries(value: &str) -> Result<Vec<&str>, PaginationError> {
     let mut entries = Vec::new();
     let mut start = 0_usize;
@@ -335,78 +463,84 @@ fn split_link_entries(value: &str) -> Result<Vec<&str>, PaginationError> {
         }
     }
     if escaped || quoted || in_angle {
-        return Err(PaginationError::new(
-            PaginationErrorKind::InvalidContinuation,
-        ));
+        return Err(invalid_continuation());
     }
     entries.push(value[start..].trim());
     Ok(entries)
 }
 
+/// Returns the target of one link entry when its `rel` parameter contains the
+/// `next` relation type.
 fn next_link_target(entry: &str) -> Result<Option<&str>, PaginationError> {
-    let Some(target_end) = entry.strip_prefix('<').and_then(|value| value.find('>')) else {
-        return Err(PaginationError::new(
-            PaginationErrorKind::InvalidContinuation,
-        ));
-    };
-    let target = &entry[1..=target_end];
-    let parameters = &entry[target_end + 2..];
-    let is_next = parameters.split(';').skip(1).any(|parameter| {
-        let Some((name, value)) = parameter.trim().split_once('=') else {
-            return false;
+    let rest = entry.strip_prefix('<').ok_or_else(invalid_continuation)?;
+    let target_end = rest.find('>').ok_or_else(invalid_continuation)?;
+    let target = &rest[..target_end];
+    let parameters = &rest[target_end + 1..];
+    let mut is_next = false;
+    for parameter in split_parameters(parameters)? {
+        let parameter = parameter.trim();
+        if parameter.is_empty() {
+            continue;
+        }
+        let Some((name, value)) = parameter.split_once('=') else {
+            continue;
         };
-        name.eq_ignore_ascii_case("rel")
-            && value
-                .trim()
-                .trim_matches('"')
-                .split_ascii_whitespace()
-                .any(|relation| relation.eq_ignore_ascii_case("next"))
-    });
+        if !name.trim().eq_ignore_ascii_case("rel") {
+            continue;
+        }
+        let value = value.trim();
+        let value = value
+            .strip_prefix('"')
+            .and_then(|value| value.strip_suffix('"'))
+            .unwrap_or(value);
+        if value
+            .split_ascii_whitespace()
+            .any(|relation| relation.eq_ignore_ascii_case("next"))
+        {
+            is_next = true;
+        }
+    }
     Ok(is_next.then_some(target))
 }
 
-impl<C> CursorPagination<C> {
-    /// Creates cursor pagination with an optional initial cursor.
-    #[must_use]
-    pub const fn new(cursor: Option<C>) -> Self {
-        Self { cursor }
+/// Splits link parameters at `;` outside quoted strings.
+fn split_parameters(parameters: &str) -> Result<Vec<&str>, PaginationError> {
+    let mut parts = Vec::new();
+    let mut start = 0_usize;
+    let mut quoted = false;
+    let mut escaped = false;
+    for (index, byte) in parameters.bytes().enumerate() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match byte {
+            b'\\' if quoted => escaped = true,
+            b'"' => quoted = !quoted,
+            b';' if !quoted => {
+                parts.push(&parameters[start..index]);
+                start = index + 1;
+            }
+            _ => {}
+        }
     }
-
-    /// Returns the current cursor by reference.
-    #[must_use]
-    pub const fn cursor(&self) -> Option<&C> {
-        self.cursor.as_ref()
+    if quoted || escaped {
+        return Err(invalid_continuation());
     }
+    parts.push(&parameters[start..]);
+    let mut parts = parts.into_iter();
+    // Anything between `>` and the first `;` must be whitespace.
+    if parts
+        .next()
+        .is_some_and(|leading| !leading.trim().is_empty())
+    {
+        return Err(invalid_continuation());
+    }
+    Ok(parts.collect())
 }
 
-impl<Page, C> PaginationController<Page> for CursorPagination<C>
-where
-    Page: HasNextCursor<C> + IntoIterator + Send + 'static,
-    Page::Item: Send + 'static,
-    C: Clone + Send + 'static,
-{
-    type Item = Page::Item;
-
-    const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
-
-    fn advance(
-        self,
-        page: PageResponse<Page>,
-        limits: PageDecisionLimits,
-    ) -> Result<PageStep<Self, Self::Item>, PaginationError> {
-        let next = page
-            .page()
-            .next_cursor()
-            .cloned()
-            .map(|cursor| Self::new(Some(cursor)));
-        let items = collect_items(page.into_page(), limits)?;
-        Ok(match next {
-            Some(next) => PageStep::Continue { items, next },
-            None => PageStep::Done { items },
-        })
-    }
-}
-
+/// Collects a page's complete batch, failing (never truncating) when it would
+/// exceed the remaining item budget.
 fn collect_items<Page>(
     page: Page,
     limits: PageDecisionLimits,
@@ -427,72 +561,4 @@ where
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[derive(Clone)]
-    struct CursorPage {
-        items: Vec<u8>,
-        next: Option<String>,
-    }
-
-    impl IntoIterator for CursorPage {
-        type Item = u8;
-        type IntoIter = std::vec::IntoIter<u8>;
-
-        fn into_iter(self) -> Self::IntoIter {
-            self.items.into_iter()
-        }
-    }
-
-    impl HasNextCursor<String> for CursorPage {
-        fn next_cursor(&self) -> Option<&String> {
-            self.next.as_ref()
-        }
-    }
-
-    #[test]
-    fn controllers_expose_exact_initial_state_and_controller_contracts() {
-        let offset = OffsetPagination::new(7, NonZeroU32::new(4).expect("nonzero"));
-        assert_eq!(offset.offset(), 7);
-        assert_eq!(offset.page_size().get(), 4);
-
-        let page = PagePagination::new(
-            NonZeroU64::new(9).expect("nonzero"),
-            NonZeroU32::new(2).expect("nonzero"),
-        );
-        assert_eq!(page.page().get(), 9);
-        assert_eq!(page.page_size().get(), 2);
-
-        let cursor = CursorPagination::new(None::<String>);
-        assert!(cursor.cursor().is_none());
-
-        fn assert_controller<Page, C: PaginationController<Page>>() {}
-        assert_controller::<Vec<u8>, OffsetPagination>();
-        assert_controller::<Vec<u8>, PagePagination>();
-        assert_controller::<CursorPage, CursorPagination<String>>();
-    }
-
-    #[test]
-    fn link_cursor_resolution_accepts_relative_same_origin_and_rejects_cross_origin() {
-        let current = concord_core::contracts::Url::parse(
-            "https://catalog.example.test/items?cursor=current",
-        )
-        .expect("current URL");
-        assert_eq!(
-            resolve_link_cursor(
-                &current,
-                ["</items?cursor=next%20page>; rel=\"next\", </items>; rel=prev"],
-            )
-            .expect("same-origin Link"),
-            Some("next page".to_owned())
-        );
-
-        let error = resolve_link_cursor(
-            &current,
-            ["<https://attacker.example/items?cursor=stolen>; rel=next"],
-        )
-        .expect_err("cross-origin Link");
-        assert_eq!(error.kind(), PaginationErrorKind::CrossOriginContinuation);
-    }
-}
+mod tests;

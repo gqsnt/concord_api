@@ -1,5 +1,5 @@
-error: v1 `scope.NAME` was removed; use the actual scope identifier
- --> tests/ui/fail/rate_limits/rate_limit_client_scope_dimension.rs:7:86
-  |
-7 |         rate_limit { id "concord.rate_limit_client_scope_dimension.1"; cost 1;  key [scope.region]; allow 1 per 1s; }
-  |                                                                                      ^^^^^
+error: [C3-NAME] `regional` is not the client or a visible ancestor scope of client `Api`; qualify with `client.` or the name of an enclosing scope
+  --> tests/ui/fail/rate_limits/rate_limit_client_scope_dimension.rs:12:29
+   |
+12 |             key ["region" = regional.region];
+   |                             ^^^^^^^^

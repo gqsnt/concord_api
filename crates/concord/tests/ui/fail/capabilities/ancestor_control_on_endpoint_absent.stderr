@@ -1,13 +1,29 @@
-error[E0599]: no method named `set_language` found for struct `Item` in the current scope
-  --> tests/ui/fail/capabilities/ancestor_control_on_endpoint_absent.rs:18:22
+error[E0599]: no method named `set_language` found for struct `ItemEndpoint` in the current scope
+  --> tests/ui/fail/capabilities/ancestor_control_on_endpoint_absent.rs:30:22
    |
- 3 | / api! {
- 4 | |     client TreeControlApi {
- 5 | |         timeout 30s;
- 6 | |         base "https://tree-controls.example.test";
+ 6 | / api! {
+ 7 | |     client TreeControlApi {
+ 8 | |         timeout 30s;
+ 9 | |         base "https://tree-controls.example.test";
 ...  |
-12 | | }
+20 | | }
    | |_- method `set_language` not found for this struct
 ...
-18 |       let _ = endpoint.set_language(Some("fr".to_owned()));
-   |                        ^^^^^^^^^^^^ method not found in `Item`
+30 |       let _ = endpoint.set_language("fr");
+   |                        ^^^^^^^^^^^^ method not found in `ItemEndpoint`
+
+error[E0599]: no method named `set_language` found for struct `ItemRequest` in the current scope
+  --> tests/ui/fail/capabilities/ancestor_control_on_endpoint_absent.rs:32:46
+   |
+ 6 | / api! {
+ 7 | |     client TreeControlApi {
+ 8 | |         timeout 30s;
+ 9 | |         base "https://tree-controls.example.test";
+...  |
+20 | | }
+   | |_- method `set_language` not found for this struct
+...
+32 |       let _ = client.regional("eu").item("42").set_language("fr");
+   |                      --------------            ^^^^^^^^^^^^ method not found in `ItemRequest`
+   |                      |
+   |                      method `set_language` is available on `&Regional`

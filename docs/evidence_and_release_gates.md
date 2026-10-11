@@ -1,282 +1,132 @@
 # Evidence and release gates
 
-The v2.1 unpublished beta is locally integrated, but is not selected for
-public compatibility freeze. The canonical current disposition is
-[`dev_doc/release_gate_status.md`](../dev_doc/release_gate_status.md).
+The Concord v3 unpublished beta (`3.0.0-beta.1`) is judged by executable
+evidence, not by prose. The canonical current disposition, including which
+gates have passed on which exact commit, is
+[`dev_doc/release_gate_status.md`](../dev_doc/release_gate_status.md); this page
+explains what the gates are and how evidence is produced.
 
 Two decisions are intentionally separate:
 
-- local beta integration requires one coherent active language/API/runtime/docs
-  projection, no compatibility path, clean exact-candidate evidence, and
-  Windows/Linux verification;
-- stable release and publication additionally require owner package/license
-  authority, final metadata/names, stable-version mechanics, and whatever human
-  evidence the owner requires for public freeze.
+- **beta integration** requires one coherent active language, API, runtime and
+  documentation projection, no compatibility path, clean exact-candidate
+  evidence, and Windows/Linux verification;
+- **stable release and publication** additionally require owner package and
+  license authority, final metadata and names, stable-version mechanics, and
+  whatever human evidence the owner requires for a public freeze.
 
 Windows and Linux are supported and mandatory. macOS is not currently a supported or release-gated platform.
 
-The complete maintained Windows/Linux matrix passed on exact release candidate
-`bc4efb03...`. The canonical status defines the exact local merge-commit
-terminal verification that makes this integration result valid.
+## Evidence rules
 
-## Gate 0 — Package identity, legal authority, and release namespace
+The implementation specification's acceptance matrix (§27) lists stable
+obligation IDs (`V3-L*` language and values, `V3-S*` public shaping and privacy,
+`V3-E*` bodies, responses, auth and failure truth, `V3-R*` quotas, identity and
+runtime projection, `V3-P*` traversal and streams, `V3-O*` tools, docs and final
+build). Evidence follows these rules (TEST-01):
 
-Required owner inputs and proof:
+- an obligation is evidenced only by tests through the actual generated and
+  core public paths; an uncompiled probe, a same-crate mock, printed
+  observation, a normalized-token comparison or a model cannot stand in for a
+  native regression;
+- a stale test is updated to the selected contract and run; a known failing
+  assertion is never marked expected and omitted;
+- a single test may cover several obligations when its assertions genuinely
+  do, but failures must stay locatable;
+- every report maps obligations to test names, commands, platforms and exit
+  codes.
 
-- explicit license policy implemented without a self-invented waiver;
-- approved and currently viable public package names, with registry control
-  distinguished from mere absence;
-- first-publication and v2.0 external-consumer history;
-- official repository/homepage/readme metadata;
-- final archive, dependency-order, local-registry, downstream, Rustdoc, and
-  `cargo deny` evidence;
-- `publish = false` retained unless a separate task authorizes publication.
+## Where evidence lives
 
-Gate 0 is mandatory for stable release and publication. It does not block a
-local unpublished beta merge while every intended public package retains
-`publish = false`. Engineering may prepare the packet and archives, but only
-the project owner can supply the legal and product decisions.
+| Area | Evidence |
+|---|---|
+| Language, diagnostics and generated names | macro semantic tests (`crates/concord-macros/src/semantic/tests.rs`), the facade UI suites (`crates/concord/tests/ui/{pass,fail}`), `crates/concord/tests/v3_*.rs` |
+| Canonical Catalog and application jobs | `crates/concord-examples/tests/catalog_v3.rs`, `tests/application.rs` (TLS loopback) |
+| Two-crate downstream contract | `tests/downstream/concord-downstream-api` and `concord-downstream-app` |
+| Runtime endpoints | `crates/concord-core/src/request/runtime_endpoint/tests.rs`, `crates/concord/tests/runtime/` |
+| Riot migration and state equivalence | `crates/concord-examples/tests/riot_contract.rs`, `tests/baseline_recording.rs` |
+| Contract format, check and diff | `crates/concord-inspect` tests and `concord-xtask contract` |
+| Migration tool | `tools/xtask/src/migration/tests.rs`, `tools/xtask/tests/migrated_v3.rs` |
+| Documentation truth | `cargo run -p concord-xtask -- docs-check` and its unit tests; the plan tables in `docs/requests_and_values.md` are asserted by `crates/concord-examples/src/docs_spec.rs` tests |
+| Rendered rustdoc | `cargo run -p concord-xtask -- doc-audit` renders the canonical Catalog (and a deprecation fixture) with rustdoc and checks the visible caller contract text (V3-O01) |
 
-## Gate 1 — Representation trait and driver proof
+## Documentation is a tested product surface
 
-Implement and compare at least:
+`docs-check` (§19.2, DOC-01, V3-O05) fails when:
 
-- generic representation with sealed mode;
-- generic representation with sealed driver;
-- representation constructing an erased core driver.
+- a `concord` DSL block is not a normalized excerpt of the compiled
+  `crates/concord-examples/src/docs_spec.rs`, or an anchored excerpt of a
+  compiled example;
+- a Rust block is not an anchored excerpt of compiled code, or an anchored
+  excerpt drifted from its source;
+- a local link or heading fragment is broken, or `docs/README.md` does not link
+  every document exactly once (including the v2.1 to v3 migration guide);
+- the tutorial shows unbound, runtime or control internals before an ordinary
+  awaited result;
+- user documentation uses a retired v2 form outside an explicit migration
+  context, or names a retired version as current;
+- the grammar in `docs/spec.md` does not quote every keyword the parser
+  declares, a parser fallback diagnostic does not list every legal clause, or
+  generated value/credential control names disagree with the macro;
+- a retired v2 surface is not rejected by a pinned UI fixture;
+- the facade does not re-export the §7.2 root names, or the README feature
+  matrix disagrees with the facade manifest;
+- `docs/migration_v3.md` does not document every `C3-MIGRATE-*` code with its
+  exact severity and the exact tool usage, or the contract tooling usage in
+  `docs/planning_and_observation.md` drifted;
+- release banners disagree with the workspace version.
 
-Required pair matrix:
+Generated rustdoc is checked by running rustdoc (`just docs` includes
+`cargo rustdoc -- -D warnings` across feature sets) and by a macro unit test
+that inspects the documentation attached to a generated Catalog method.
 
-- JSON complete input/output;
-- text and binary complete;
-- `ByteStream`;
-- NDJSON/CSV collected `Vec<T>`;
-- NDJSON/CSV `ItemStream<T>`;
-- `Empty` and `Discard`;
-- optional body with nested `Option`;
-- custom local representation marker;
-- endpoint-backed credential output;
-- accepted bytes;
-- pageable complete output.
+## Gates
 
-Pass conditions:
+**Gate 0: package identity, legal authority and release namespace.** Explicit
+license policy, approved and viable public package names, official metadata,
+final archive, downstream, rustdoc and `cargo deny` evidence. Mandatory for
+stable release and publication; it does not block a local unpublished beta
+while every intended public package keeps `publish = false`. Only the project
+owner can supply the legal and product decisions.
 
-- declared MSRV compiles;
-- no overlapping/coherence trap;
-- no decoder/driver type leaks into ordinary caller output;
-- trait errors point to endpoint, effective representation, origin, exact type, and missing role;
-- downstream custom representation is possible without native response authority;
-- generated token/diagnostic size stays within declared budget.
+**Gate 1: language and generated surface** (`V3-L01`-`V3-L16`). Both canonical
+declarations compile with the §22.3 signatures; local-name, placement,
+normalization, value-control, initialization, conversion, clone, unbound and
+liveness rules hold; downstream named requests implement `RequestControls`
+themselves in two real crates.
 
-## Gate 2 — Representation inheritance
+**Gate 2: shaping and privacy** (`V3-S01`-`V3-S12`). Patch laws and order,
+suppressed-encoder non-evaluation, templates and DNS labels, header ownership,
+sticky sensitivity and a sentinel corpus absent from every automatic surface,
+first-error latching, and planning without body, credential, limiter or
+transport work.
 
-Compile/test:
+**Gate 3: bodies, responses, auth and failure truth** (`V3-E01`-`V3-E21`).
+Truthful dispatch knowledge at every boundary, body preparation and replay,
+multipart boundaries, head-only versus buffered absence, complete-only status
+bodies, credential ordering under concurrency, provider origin enforcement,
+replay authorities, retry budget and server delay, observer containment.
 
-- client default;
-- independent request/response defaults;
-- scope override;
-- inline body/result override;
-- `explicit` fence;
-- missing representation;
-- valid-but-wrong `()`/Empty/Discard cases;
-- endpoint move between scopes;
-- local/effective description and semantic diff.
+**Gate 4: quotas, identity and runtime projection** (`V3-R01`-`V3-R13`). All
+46 Riot policies and sharing groups preserved, label and schema continuity,
+atomic admission, local limiter accounting, runtime owner projection with
+plan/send agreement, and typed rate-key encoding.
 
-Pass condition: effective origin is immediately visible in generated docs/errors and a scope move reports every affected leaf.
+**Gate 5: traversal, streams, tools and final build** (`V3-P01`-`V3-P11`,
+`V3-O01`-`V3-O08`). Controllers, initial-cursor and cycle checks, zero-page
+and bound semantics, aggregate deadlines and budgets, cancellation, stream
+leases and cancel-safe reads; generated docs, snapshot and diff tooling,
+migration fixtures, docs/feature/anchor alignment, the platform matrix,
+measurements and a delivery audit.
 
-## Gate 3 — Unfamiliar-human final-surface comprehension
-
-**Current decision scope:** Unknown/Blocked for public freeze; not a local beta
-integration gate.
-
-Use at least three unfamiliar but relevant Rust users on the one selected final
-surface. The maintained protocol and scoring packet lives under
-`dev_doc/dx_study/`. It covers exact/nested optional controls, repeated atoms
-and patch operations, representation provenance and fences, effect/retry,
-pagination completeness, stream lifecycle, diagnostics, authority boundaries,
-and semantic diff. Measure correctness, time, confidence, documentation/search
-path, wrong models, recovery, and abandonment without coaching.
-
-Pass only when no critical misconception is shared by two participants, every
-critical task is correct for at least two of three, overall correctness is at
-least 80%, and all release-relevant Critical/Major findings are fixed and
-retested. `with_x` remains deferred; reopening it requires a separate paired,
-counterbalanced study with at least four to six participants.
-
-## Gate 4 — Query/header/atom properties
-
-- alias/qualification does not change presence/cardinality;
-- `RequestAtom` deterministic one-atom behavior;
-- one pass invokes each atom encoder once and derives actual/sanitized forms together;
-- assignment/conditional/append/remove/replace/off properties against a reference model;
-- optional absence versus present empty sequence;
-- case-insensitive header identity;
-- reserved/public/private/media collision rejection;
-- ordered sequence only; unordered types rejected;
-- count and byte first-excess behavior;
-- sensitive derived atom noninterference.
-
-## Gate 5 — Normative runtime trace
-
-Deterministic spies must prove exact order for:
-
-### Direct success
-
-```text
-operation/deadline
-public shaping
-body metadata
-body prepare
-credential ready
-attempt body
-rate admission
-private auth/native request
-dispatch
-response head
-server delay/rate future feedback
-auth challenge
-status
-representation validation/acquisition/conversion
-result fixed
-observer final event
-result delivered
-```
-
-### Local body failure
-
-No provider, limiter, auth placement, native request, or dispatch; `NotDispatched`.
-
-### Retry
-
-Pre-dispatch retry, ambiguous non-idempotent denial, safe/idempotent replay, one-shot denial, server minimum/backoff, budget timing, cancellation.
-
-### Auth recovery
-
-Feedback first, exact challenge/version, one source-specific recovery, new rate admission, no policy backoff/counter.
-
-### Transport-private recovery
-
-One visible attempt; no representation/provider/limiter/observer attempt re-entry; finite physical tries.
-
-### Observer
-
-Read-only/non-fallible result, bounded event cardinality, stream-open/termination separation.
-
-## Gate 6 — Pagination proof suite
-
-Implement:
-
-- offset/page number with vector and envelope page;
-- body cursor envelope;
-- relative `Link: rel="next"`;
-- custom bounded response-header cursor;
-- short-page termination.
-
-Prove:
-
-- effect must be safe;
-- complete page only;
-- controller owns items/continuation atomically;
-- only declared endpoint slots and response headers are available;
-- cross-origin Link rejected;
-- sensitive cursor internal identity/redacted evidence;
-- cycle/non-progress detection;
-- Prefix(0) no work/events;
-- Prefix versus CompleteWithin;
-- one aggregate deadline and send ceiling;
-- per-page body prepare once and within-page replay;
-- no inferred aggregate body reuse;
-- all-or-error local result;
-- malicious controller returned items/state are bounded after callback.
-
-## Gate 7 — Rate and server-delay behavior
-
-- canonical framed key and stable policy IDs;
-- conjunctive windows;
-- explicit limiter selection;
-- additive inheritance and duplicate policy rejection;
-- retry/auth/page attempts reacquire;
-- physical recovery does not;
-- Retry-After parsed once using injected time;
-- retry uses max(backoff, server minimum);
-- feedback failure/degradation does not rewrite current result;
-- future acquire follows explicit fail-open/closed policy;
-- rate feedback contains only typed status/server-delay/plan/attempt facts;
-- local state eviction/fairness/cooldown;
-- no raw keys or private values in evidence.
-
-## Gate 8 — Stream lifecycle and performance
-
-Benchmark:
-
-- monomorphized, boxed, and enum-erased internal drivers;
-- `ByteStream` and `ItemStream<T>` wrapper overhead;
-- small/large chunks and records;
-- allocation count, throughput, latency;
-- compile/code size;
-- backpressure/cancellation;
-- post-return limits and events.
-
-Choose the private strategy based on measured target workloads. Do not alter public carrier semantics.
-
-## Gate 9 — Information-flow security
-
-Use unique sentinels for secrets, refreshed tokens, private auth query/header, sensitive public path/query/header, body, output, rate key, cursor, and server body.
-Also use an unknown response-header-name/value sentinel so the test cannot pass
-only because of a sensitive-name denylist.
-
-Prove authorized-only appearance across:
-
-- clients/scopes/intents/requests/plans/errors/streams `Debug`/`Display`;
-- descriptions and semantic diff;
-- observer/tracing;
-- retry/rate contexts;
-- pagination identity errors;
-- body/codec/provider/transport errors;
-- runtime endpoint builder/bind;
-- endpoint-backed storage result.
-
-Sensitive public values must still affect the real request/internal identity.
-
-## Gate 10 — Large contract, docs, release hygiene, and independent review
-
-Use Riot and generated 1/10/100/500/1,000 endpoint fixtures. Measure:
-
-- authored representation lines;
-- generated method count with/without `with_x`;
-- token/expanded source size;
-- clean/incremental compile time and memory;
-- invalid-pair diagnostic size/time;
-- rust-analyzer responsiveness;
-- descriptor/binary size;
-- request shaping and retry/pagination overhead;
-- generated Rustdoc first-screen clarity;
-- parent-change semantic diff.
-
-Beta-integration hygiene:
-
-- one canonical language across code/docs/examples;
-- provisional aliases removed;
-- version remains `2.1.0-beta.1` with publication disabled;
-- MSRV/feature matrix passes;
-- no native escape or unbounded path;
-- migration guide complete;
-- all selected ADRs accepted or revised with evidence.
-
-Windows and Linux are the required supported platforms. macOS is outside the
-current support and gate boundary. The exact branch candidate and local merge
-commit must pass the maintained supported-platform checks.
-
-Independent Rustdoc/semantic-diff review remains Unknown/Blocked for public
-freeze. A qualifying reviewer would need to find construction,
-optional/default controls, directional representation provenance/fences,
-parent-change consequences, semantic-diff classifications, pagination and
-stream completeness, and metadata-authority boundaries without macro-source
-reading. AI and the primary implementer do not count, and no review is claimed.
+**Gate 6: unfamiliar-human comprehension.** Unknown/Blocked for public freeze;
+not a local beta integration gate. The maintained protocol lives under
+`dev_doc/dx_study/`. Lacking a human study does not authorize leaving the
+implementation incomplete.
 
 ## Repository verification
 
-Run where available:
+Run where available and record every exit status:
 
 ```text
 just fmt
@@ -287,6 +137,7 @@ just ui
 just msrv
 just fixtures
 just docs
+just docs-check
 just package
 just deny
 just workflow
@@ -295,17 +146,30 @@ just bench
 just source-export
 just release-audit
 just verify
+just verify-implementation
 ```
 
-Report exact commands and results. Do not claim unavailable checks passed.
+`just verify-implementation` runs the machine validation owned by the
+unpublished beta implementation (format, the check/clippy/test matrix, the
+explicitly named UI suites, MSRV, fixtures, docs and `doc-audit`, the two-crate
+downstream package, xtask tools, benchmark compilation and the source export).
+External license, registry, tag and human release gates (`deny`, `workflow`,
+`package`, `release-audit`) stay in the separate release report.
+
+Individual gates can be run directly, for example
+`cargo test --workspace --all-features`, `cargo test --workspace --doc --all-features`
+and `cargo run -p concord-xtask -- docs-check`. A pipeline that logs a failure
+and still exits zero is not an acceptance gate; do not claim unavailable or
+unfinished checks passed. The MSRV (Rust 1.86) and the pinned toolchain checks
+run only where those toolchains are installed.
 
 ## Decisions
 
 The beta integration decision passes only when its technical, documentation,
-no-retrocompatibility, Windows, Linux, exact-branch, and exact-merge checks pass
-with a clean tree at `2.1.0-beta.1` and `publish = false`.
+no-retrocompatibility, Windows, Linux, exact-branch and exact-merge checks pass
+with a clean tree at `3.0.0-beta.1` and `publish = false`.
 
-Stable `2.1.0`, tags, final public names, and publication remain blocked until
+A stable release, tags, final public names and publication remain blocked until
 Gate 0 and the owner-selected human-freeze policy pass. A blocked stable gate is
-not solved by compatibility aliases, prose without evidence, or an
-unauthorized waiver.
+not solved by compatibility aliases, prose without evidence, or an unauthorized
+waiver.

@@ -1,0 +1,5 @@
+error: [C3-RATE] formal `region` of policy `per_tenant` of client `Api` is unused; an unused formal falsely advertises a key relation, so remove it or use it in `key [...]`
+  --> tests/ui/fail/rate_limits/rate_limit_unused_formal.rs:14:39
+   |
+14 |             policy per_tenant(tenant, region) {
+   |                                       ^^^^^^

@@ -1,19 +1,18 @@
 error[E0599]: no method named `label` found for struct `BuilderSetterApiBuilder` in the current scope
-  --> tests/ui/fail/capabilities/bare_client_builder_value_setter_absent.rs:17:41
+  --> tests/ui/fail/capabilities/bare_client_builder_value_setter_absent.rs:19:41
    |
- 4 | / api! {
- 5 | |     client BuilderSetterApi {
- 6 | |         timeout 30s;
- 7 | |         values {
+ 5 | / api! {
+ 6 | |     client BuilderSetterApi {
+ 7 | |         timeout 30s;
+ 8 | |         values {
 ...  |
-13 | |     GET read() -> Bytes via Binary;
-14 | | }}
-   | |__- method `label` not found for this struct
+16 | | }
+   | |_- method `label` not found for this struct
 ...
-17 |       let _ = BuilderSetterApi::builder().label("selected".to_owned());
+19 |       let _ = BuilderSetterApi::builder().label("selected".to_owned());
    |                                           ^^^^^
    |
 help: there is a method `set_label` with a similar name
    |
-17 |     let _ = BuilderSetterApi::builder().set_label("selected".to_owned());
+19 |     let _ = BuilderSetterApi::builder().set_label("selected".to_owned());
    |                                         ++++

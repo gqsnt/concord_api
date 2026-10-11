@@ -1,11 +1,31 @@
-error: endpoint contract ID `identity.same` is not unique within this client
-  --> tests/ui/fail/names/duplicate_contract_id.rs:15:12
+error: [C3-NAME] endpoint ID `identity.same` of endpoint `DuplicateIdApi::second` is used by two endpoints of client `DuplicateIdApi`; declare a distinct `id "...";` on one of them
+  --> tests/ui/fail/names/duplicate_contract_id.rs:12:16
    |
-15 |         id "identity.same";
-   |            ^^^^^^^^^^^^^^^
+12 |             id "identity.same";
+   |                ^^^^^^^^^^^^^^^
 
-error: the first endpoint via this contract ID is here
-  --> tests/ui/fail/names/duplicate_contract_id.rs:12:12
+error: note: the other endpoint with this ID is here
+ --> tests/ui/fail/names/duplicate_contract_id.rs:9:16
+  |
+9 |             id "identity.same";
+  |                ^^^^^^^^^^^^^^^
+
+error: [C3-NAME] endpoint ID `derived_collision_api.users.list` of endpoint `DerivedCollisionApi::pinned` is used by two endpoints of client `DerivedCollisionApi`; declare a distinct `id "...";` on one of them
+  --> tests/ui/fail/names/duplicate_contract_id.rs:26:16
    |
-12 |         id "identity.same";
-   |            ^^^^^^^^^^^^^^^
+26 |             id "derived_collision_api.users.list";
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: note: the other endpoint with this ID is here
+  --> tests/ui/fail/names/duplicate_contract_id.rs:23:17
+   |
+23 |             GET list() -> Bytes via Binary;
+   |                 ^^^^
+
+warning: unused imports: `Binary` and `Bytes`
+ --> tests/ui/fail/names/duplicate_contract_id.rs:2:15
+  |
+2 | use concord::{Binary, Bytes, api};
+  |               ^^^^^^  ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

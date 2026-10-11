@@ -177,11 +177,13 @@ impl HttpConfigBuilder {
         self
     }
 
-    /// Enables or disables Reqwest's private known-safe protocol recovery.
+    /// Enables or disables private known-safe protocol recovery.
     ///
     /// Protocol recovery is enabled by default. It never enables status retry,
     /// exposes no native policy type, and remains inside one visible Concord
-    /// attempt.
+    /// attempt with at most two physical tries in total, and only for an
+    /// HTTP/2 stream the protocol proves unprocessed (`REFUSED_STREAM` or a
+    /// graceful `GOAWAY`). Without HTTP/2 support it has no effect.
     #[must_use]
     pub fn protocol_recovery(mut self, enabled: bool) -> Self {
         self.config.protocol_recovery = enabled;

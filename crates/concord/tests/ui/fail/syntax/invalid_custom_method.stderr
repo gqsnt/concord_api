@@ -1,5 +1,17 @@
-error: custom endpoint method must be a valid HTTP method token
- --> tests/ui/fail/syntax/invalid_custom_method.rs:9:12
-  |
-9 |     METHOD("BAD METHOD") item() -> Bytes via Binary;
-  |            ^^^^^^^^^^^^
+error: [C3-OWNER] a custom method must be a valid HTTP token of at most 128 bytes (endpoint in client `MethodApi`); write a token such as `METHOD("PURGE")`
+  --> tests/ui/fail/syntax/invalid_custom_method.rs:11:16
+   |
+11 |         METHOD("BAD METHOD") item() -> Bytes via Binary;
+   |                ^^^^^^^^^^^^
+
+error: [C3-OWNER] CONNECT and TRACE are unsupported, including custom spelling (endpoint in client `ConnectApi`); declare a supported method
+  --> tests/ui/fail/syntax/invalid_custom_method.rs:19:16
+   |
+19 |         METHOD("connect") tunnel() -> Bytes via Binary;
+   |                ^^^^^^^^^
+
+error: [C3-OWNER] CONNECT and TRACE are unsupported; Concord does not expose tunnel, trace or upgrade semantics (endpoint in client `TraceApi`); declare GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS or `METHOD("...")`
+  --> tests/ui/fail/syntax/invalid_custom_method.rs:27:9
+   |
+27 |         TRACE trace_route() -> Bytes via Binary;
+   |         ^^^^^

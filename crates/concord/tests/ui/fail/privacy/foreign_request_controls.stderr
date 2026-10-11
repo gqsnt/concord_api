@@ -1,0 +1,95 @@
+error[E0277]: the trait bound `ForeignDriver: concord_core::response::spec::private::Sealed` is not satisfied
+  --> tests/ui/fail/privacy/foreign_request_controls.rs:47:25
+   |
+47 | impl ResponseDriver for ForeignDriver {
+   |                         ^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `concord_core::response::spec::private::Sealed` is not implemented for `ForeignDriver`
+  --> tests/ui/fail/privacy/foreign_request_controls.rs:45:1
+   |
+45 | pub struct ForeignDriver;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+help: the following other types implement trait `concord_core::response::spec::private::Sealed`
+  --> $WORKSPACE/crates/concord-core/src/response/spec.rs
+   |
+   | impl private::Sealed for Buffered {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::response::Buffered`
+...
+   | impl private::Sealed for Streaming {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::response::Streaming`
+...
+   | impl private::Sealed for DiscardDriver {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `DiscardDriver`
+note: required by a bound in `ResponseDriver`
+  --> $WORKSPACE/crates/concord-core/src/response/spec.rs
+   |
+   | pub trait ResponseDriver: private::Sealed + Send + Sync + 'static {
+   |                           ^^^^^^^^^^^^^^^ required by this bound in `ResponseDriver`
+   = note: `ResponseDriver` is a "sealed trait", because to implement it you also need to implement `concord_core::response::spec::private::Sealed`, which is not accessible; this is usually done to force you to use one of the provided types that already implement it
+   = help: the following types implement the trait:
+             concord::response::Buffered
+             concord::response::Streaming
+             concord::response::DiscardDriver
+
+error[E0277]: the trait bound `Wrapped: GeneratedEndpoint` is not satisfied
+  --> tests/ui/fail/privacy/foreign_request_controls.rs:58:28
+   |
+58 |     let _ = client.request(wrapped);
+   |                    ------- ^^^^^^^ unsatisfied trait bound
+   |                    |
+   |                    required by a bound introduced by this call
+   |
+help: the trait `GeneratedEndpoint` is not implemented for `Wrapped`
+  --> tests/ui/fail/privacy/foreign_request_controls.rs:25:1
+   |
+25 | pub struct Wrapped(controls_api::ReadRequest);
+   | ^^^^^^^^^^^^^^^^^^
+help: the trait `GeneratedEndpoint` is implemented for `ReadEndpoint`
+  --> tests/ui/fail/privacy/foreign_request_controls.rs:17:1
+   |
+17 | / api! {
+18 | |     client ControlsApi {
+19 | |         base "https://controls.example.test";
+...  |
+23 | | }
+   | |_^
+note: required by a bound in `controls_api::<impl ControlsApi>::request`
+  --> tests/ui/fail/privacy/foreign_request_controls.rs:17:1
+   |
+17 | / api! {
+18 | |     client ControlsApi {
+19 | |         base "https://controls.example.test";
+...  |
+23 | | }
+   | |_^ required by this bound in `controls_api::<impl ControlsApi>::request`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: `Wrapped` is not a future
+  --> tests/ui/fail/privacy/foreign_request_controls.rs:59:44
+   |
+25 | pub struct Wrapped(controls_api::ReadRequest);
+   | ------------------ method `into_future` not found for this struct because it doesn't satisfy `Wrapped: Future` or `Wrapped: IntoFuture`
+...
+59 |     let _ = narrow(Wrapped(client.read())).into_future();
+   |                                            ^^^^^^^^^^^ `Wrapped` is not a future
+   |
+   = note: the following trait bounds were not satisfied:
+           `Wrapped: Future`
+           which is required by `Wrapped: IntoFuture`
+           `&Wrapped: Future`
+           which is required by `&Wrapped: IntoFuture`
+           `&mut Wrapped: Future`
+           which is required by `&mut Wrapped: IntoFuture`
+note: the trait `Future` must be implemented
+  --> $RUST/core/src/future/future.rs
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following traits define an item `into_future`, perhaps you need to implement one of them:
+           candidate #1: `IntoFuture`
+           candidate #2: `futures_util::future::try_future::TryFutureExt`
+           candidate #3: `futures_util::stream::stream::StreamExt`
+
+error[E0616]: field `__inner` of struct `ReadRequest` is private
+  --> tests/ui/fail/privacy/foreign_request_controls.rs:60:38
+   |
+60 |     let _ = Wrapped(client.read()).0.__inner;
+   |                                      ^^^^^^^ private field

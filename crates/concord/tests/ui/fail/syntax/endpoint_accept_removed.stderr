@@ -1,5 +1,5 @@
-error: v2.1 removed endpoint `accept`; select response negotiation with `-> Output via ResponseRepresentation` or an inherited `response ResponseRepresentation;`
- --> tests/ui/fail/syntax/endpoint_accept_removed.rs:9:13
-  |
-9 |             accept "application/json";
-  |             ^^^^^^
+error: [C3-MIGRATE] endpoint `accept` was removed from endpoint `RemovedAcceptApi::read`; negotiation comes from the response representation's static `ACCEPT`, so select it with `-> Output via Representation`
+  --> tests/ui/fail/syntax/endpoint_accept_removed.rs:12:13
+   |
+12 |             accept "application/json";
+   |             ^^^^^^

@@ -1,26 +1,35 @@
-use std::time::Duration;
-
-use super::{EndpointSpec, HeadBuilder, PreparedHead, Request, RequestMeta};
-use crate::body::{RequestBodyContext, RequestBodyMetadata, RequestContentType};
+use super::{EndpointSpec, HeadBuilder, PreparedHead, Request, RequestMeta, RequestOptions};
 use crate::client::ClientCore;
-use crate::error::{ApiError, ConfigurationErrorKind, ErrorCategory};
+use crate::controls::RequestControlState;
+use crate::endpoint::AbsentStatus;
+use crate::error::{
+    ApiError, ConfigurationErrorKind, DispatchKnowledge, ErrorCategory, FailureStage,
+};
 use crate::hooks::DebugLevel;
 use crate::operation::{OperationDeadline, OperationId};
+use crate::response::{ExpectedAbsence, ResponseRepresentation};
 
-pub(crate) struct PreparedOperation<E> {
+pub(crate) struct PreparedOperation<E>
+where
+    E: EndpointSpec,
+{
     pub(crate) core: ClientCore,
     pub(crate) endpoint: E,
     pub(crate) operation_id: OperationId,
     pub(crate) deadline: OperationDeadline,
     pub(crate) head: PreparedHead,
-    pub(crate) body_metadata: RequestBodyMetadata,
+    pub(crate) absence: Option<ExpectedAbsence<E::Output, E::Response>>,
+    /// Aggregate traversal accounting; `None` for direct operations.
+    pub(crate) meter: Option<std::sync::Arc<crate::pagination::TraversalMeter>>,
+    /// Caller cancellation signals raced by the executor. `None` for a
+    /// traversal page, whose cancellation the traversal owns.
+    pub(crate) controls: Option<RequestControlState>,
 }
 
 pub(crate) struct PreparedPaginationPage<E> {
     pub(crate) core: ClientCore,
     pub(crate) endpoint: E,
     pub(crate) head: PreparedHead,
-    pub(crate) body_metadata: RequestBodyMetadata,
 }
 
 pub(crate) struct PreparationFailure {
@@ -29,14 +38,17 @@ pub(crate) struct PreparationFailure {
     pub(crate) meta: RequestMeta,
     pub(crate) target: crate::hooks::RequestTarget,
     pub(crate) debug: DebugLevel,
-    pub(crate) elapsed: Duration,
+    pub(crate) started: tokio::time::Instant,
     pub(crate) error: ApiError,
 }
 
 // Every request creates this value. Keeping both bounded outcomes inline avoids
 // an allocation on the successful preparation path.
 #[allow(clippy::large_enum_variant)]
-pub(crate) enum OperationPreparation<E> {
+pub(crate) enum OperationPreparation<E>
+where
+    E: EndpointSpec,
+{
     Ready(PreparedOperation<E>),
     Failed(PreparationFailure),
 }
@@ -52,9 +64,14 @@ where
         endpoint,
         options,
     } = request;
-    let started = OperationDeadline::now();
     let meta = endpoint.request_meta();
-    let operation_id = core.allocate_operation_id(meta.endpoint_id(), meta.method())?;
+    // Phase 0: controls and cancellation are validated before identity
+    // allocation or any preparation (the zero-send fast path).
+    precheck_controls(&options, &meta)?;
+    let started = OperationDeadline::now();
+    let operation_id = core
+        .allocate_operation_id(meta.endpoint_id(), meta.method())
+        .map_err(ApiError::before_operation)?;
     let base_target = crate::hooks::RequestTarget::from_url(core.base_url(), 0);
     let debug = options.resolve_debug(core.default_debug());
     let timeout = options
@@ -123,30 +140,13 @@ where
             error,
         )));
     }
-    let body_metadata = match endpoint.body_metadata(RequestBodyContext {
-        endpoint: meta.endpoint(),
-        method: meta.method(),
-        body_limit: core.request_body_limit(),
-    }) {
-        Ok(metadata) => metadata,
-        Err(error) => {
-            let category = if error.kind() == crate::body::BodyErrorKind::Producer {
-                ErrorCategory::RequestEncoding
-            } else {
-                ErrorCategory::RequestBody
-            };
-            return Ok(OperationPreparation::Failed(failure(
-                core,
-                operation_id,
-                meta.clone(),
-                head.request_target(),
-                debug,
-                started,
-                ApiError::classified(meta.endpoint_id().clone(), meta.method().clone(), category),
-            )));
-        }
-    };
-    if let Err(error) = validate_prepared_head::<E>(&core, &meta, &mut head, &body_metadata) {
+    let absence = endpoint.expected_absence();
+    if let Err(error) = validate_prepared_head::<E>(
+        &core,
+        &meta,
+        &mut head,
+        absence.as_ref().map(ExpectedAbsence::statuses),
+    ) {
         return Ok(OperationPreparation::Failed(failure(
             core,
             operation_id,
@@ -175,8 +175,41 @@ where
         operation_id,
         deadline,
         head,
-        body_metadata,
+        absence,
+        meter: None,
+        controls: Some(options.controls().clone()),
     }))
+}
+
+/// Phase-0 control validation at first poll, before operation identity,
+/// head shaping, body preparation, credential preflight, installation-intent
+/// reservation or any other effect.
+///
+/// * A cancellation signal already observed prevents the operation.
+/// * A zero send cap prevents application dispatch without running any
+///   unrelated preparation.
+///
+/// The error carries no operation identity, `NotDispatched` and
+/// `BeforeDispatch`; no observation is emitted because no operation started.
+pub(crate) fn precheck_controls(
+    options: &RequestOptions,
+    meta: &RequestMeta,
+) -> Result<(), ApiError> {
+    let category = if options.controls().is_cancelled() {
+        ErrorCategory::Cancelled
+    } else if options.controls().caps().send_cap() == Some(0) {
+        ErrorCategory::SendCapExhausted
+    } else {
+        return Ok(());
+    };
+    Err(
+        ApiError::classified(meta.endpoint_id().clone(), meta.method().clone(), category)
+            .with_stage(
+                FailureStage::BeforeDispatch,
+                DispatchKnowledge::NotDispatched,
+            )
+            .before_operation(),
+    )
 }
 
 pub(crate) fn prepare_pagination_page<E>(
@@ -200,26 +233,20 @@ where
     );
     let mut head = endpoint.prepare_head(builder)?;
     head.validate_auth_context(core.credential_context())?;
-    let body_metadata = endpoint
-        .body_metadata(RequestBodyContext {
-            endpoint: meta.endpoint(),
-            method: meta.method(),
-            body_limit: core.request_body_limit(),
-        })
-        .map_err(|error| {
-            let category = if error.kind() == crate::body::BodyErrorKind::Producer {
-                ErrorCategory::RequestEncoding
-            } else {
-                ErrorCategory::RequestBody
-            };
-            ApiError::classified(meta.endpoint_id().clone(), meta.method().clone(), category)
-        })?;
-    validate_prepared_head::<E>(&core, &meta, &mut head, &body_metadata)?;
+    // Head-only absence cannot combine with pagination: a page must be a
+    // complete accepted page, never a fabricated absent value.
+    if endpoint.expected_absence().is_some() {
+        return Err(ApiError::configuration(
+            meta.endpoint_id().clone(),
+            meta.method().clone(),
+            ConfigurationErrorKind::InvalidValue,
+        ));
+    }
+    validate_prepared_head::<E>(&core, &meta, &mut head, None)?;
     Ok(PreparedPaginationPage {
         core,
         endpoint,
         head,
-        body_metadata,
     })
 }
 
@@ -227,33 +254,47 @@ fn validate_prepared_head<E>(
     core: &ClientCore,
     meta: &RequestMeta,
     head: &mut PreparedHead,
-    body_metadata: &RequestBodyMetadata,
+    absence: Option<&AbsentStatus>,
 ) -> Result<(), ApiError>
 where
     E: EndpointSpec,
 {
-    if let Err(error) = body_metadata.validate_limit(core.request_body_limit()) {
-        drop(error);
-        return Err(ApiError::classified(
-            meta.endpoint_id().clone(),
-            meta.method().clone(),
-            ErrorCategory::RequestBody,
-        ));
-    }
     head.validate_rate_limit_key_limit(core.rate_limit_key_limit())?;
-    let (content_type, owns_content_type) = match &body_metadata.content_type {
-        RequestContentType::None => (None, false),
-        RequestContentType::Exact(value) => (Some(value), true),
-        RequestContentType::Generated => (None, true),
-    };
-    let accept = <E::Response as crate::response::ResponseRepresentation<E::Output>>::accept();
-    head.apply_media_headers(accept, content_type, owns_content_type)?;
+    // The response representation's static Accept constant is placed here;
+    // the body-owned Content-Type is placed only after the one prepared body
+    // exists (phase 3), from that prepared body.
+    let accept = <E::Response as ResponseRepresentation<E::Output>>::ACCEPT;
+    head.apply_media_headers(accept, None, false)?;
+    if let Some(absence) = absence {
+        validate_absence(meta, head, absence)?;
+    }
     head.validate_auth()?;
     ensure_matching_meta(meta, head)?;
     if head.auth().is_empty() {
         core.preflight_url(meta.endpoint_id(), meta.method(), head.logical_url())?;
     } else {
         core.preflight_protected_url(meta.endpoint_id(), meta.method(), head.logical_url())?;
+    }
+    Ok(())
+}
+
+/// Keeps a declared absence set disjoint from accepted statuses and from
+/// effective authentication challenges.
+fn validate_absence(
+    meta: &RequestMeta,
+    head: &PreparedHead,
+    absence: &AbsentStatus,
+) -> Result<(), ApiError> {
+    let overlaps_challenge = absence
+        .as_slice()
+        .iter()
+        .any(|status| head.auth().classifies_challenge(*status));
+    if absence.overlaps(head.accepted_status()) || overlaps_challenge {
+        return Err(ApiError::configuration(
+            meta.endpoint_id().clone(),
+            meta.method().clone(),
+            ConfigurationErrorKind::InvalidValue,
+        ));
     }
     Ok(())
 }
@@ -273,7 +314,7 @@ fn failure(
         meta,
         target,
         debug,
-        elapsed: OperationDeadline::now().saturating_duration_since(started),
+        started,
         error,
     }
 }

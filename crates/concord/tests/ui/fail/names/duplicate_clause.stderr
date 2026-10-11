@@ -1,11 +1,215 @@
-error: duplicate `timeout` clause for endpoint `read`
-  --> tests/ui/fail/names/duplicate_clause.rs:14:9
+error: [C3-OWNER] duplicate `timeout` clause for endpoint `DuplicateEndpointTimeout::read`; singleton clauses are not last-writer-wins, so keep exactly one `timeout` clause
+  --> tests/ui/fail/names/duplicate_clause.rs:15:13
    |
-14 |         timeout 2s;
+15 |             timeout 2s;
+   |             ^^^^^^^
+
+error: note: the first `timeout` clause is here
+  --> tests/ui/fail/names/duplicate_clause.rs:13:13
+   |
+13 |             timeout 1s;
+   |             ^^^^^^^
+
+error: [C3-OWNER] duplicate `base` clause for client `DuplicateBase`; singleton clauses are not last-writer-wins, so keep exactly one `base` clause
+  --> tests/ui/fail/names/duplicate_clause.rs:23:9
+   |
+23 |         base "http://two.example.test/";
+   |         ^^^^
+
+error: note: the first `base` clause is here
+  --> tests/ui/fail/names/duplicate_clause.rs:22:9
+   |
+22 |         base "http://one.example.test/";
+   |         ^^^^
+
+error: [C3-OWNER] duplicate `values` clause for client `DuplicateValues`; singleton clauses are not last-writer-wins, so keep exactly one `values` clause
+  --> tests/ui/fail/names/duplicate_clause.rs:31:9
+   |
+31 |         values { query b: String; }
+   |         ^^^^^^
+
+error: note: the first `values` clause is here
+  --> tests/ui/fail/names/duplicate_clause.rs:30:9
+   |
+30 |         values { query a: String; }
+   |         ^^^^^^
+
+error: [C3-OWNER] duplicate `credentials` clause for client `DuplicateCredentials`; singleton clauses are not last-writer-wins, so keep exactly one `credentials` clause
+  --> tests/ui/fail/names/duplicate_clause.rs:39:9
+   |
+39 |         credentials { secret b; credential y = api_key(secret.b); }
+   |         ^^^^^^^^^^^
+
+error: note: the first `credentials` clause is here
+  --> tests/ui/fail/names/duplicate_clause.rs:38:9
+   |
+38 |         credentials { secret a; credential x = api_key(secret.a); }
+   |         ^^^^^^^^^^^
+
+error: [C3-OWNER] duplicate `rate_limits` clause for client `DuplicateRegistry`; singleton clauses are not last-writer-wins, so keep exactly one `rate_limits` clause
+  --> tests/ui/fail/names/duplicate_clause.rs:47:9
+   |
+47 |         rate_limits { windows second { allow 2 per 1s; } }
+   |         ^^^^^^^^^^^
+
+error: note: the first `rate_limits` clause is here
+  --> tests/ui/fail/names/duplicate_clause.rs:46:9
+   |
+46 |         rate_limits { windows first { allow 1 per 1s; } }
+   |         ^^^^^^^^^^^
+
+error: [C3-OWNER] duplicate `path` clause for scope `DuplicateScopePath::s`; singleton clauses are not last-writer-wins, so keep exactly one `path` clause
+  --> tests/ui/fail/names/duplicate_clause.rs:57:13
+   |
+57 |             path "b";
+   |             ^^^^
+
+error: note: the first `path` clause is here
+  --> tests/ui/fail/names/duplicate_clause.rs:56:13
+   |
+56 |             path "a";
+   |             ^^^^
+
+error: [C3-OWNER] duplicate `query` clause for scope `DuplicateScopeQuery::s`; singleton clauses are not last-writer-wins, so keep exactly one `query` clause
+  --> tests/ui/fail/names/duplicate_clause.rs:69:13
+   |
+69 |             query { "b" = "2"; }
+   |             ^^^^^
+
+error: note: the first `query` clause is here
+  --> tests/ui/fail/names/duplicate_clause.rs:68:13
+   |
+68 |             query { "a" = "1"; }
+   |             ^^^^^
+
+error: [C3-OWNER] duplicate `headers` clause for client `DuplicateClientHeaders`; singleton clauses are not last-writer-wins, so keep exactly one `headers` clause
+  --> tests/ui/fail/names/duplicate_clause.rs:79:9
+   |
+79 |         headers off;
    |         ^^^^^^^
 
-error: the first `timeout` clause is here
-  --> tests/ui/fail/names/duplicate_clause.rs:12:9
+error: note: the first `headers` clause is here
+  --> tests/ui/fail/names/duplicate_clause.rs:78:9
    |
-12 |         timeout 1s;
+78 |         headers { "X-A" = "1"; }
    |         ^^^^^^^
+
+error: [C3-OWNER] duplicate `auth` clause for endpoint `DuplicateEndpointAuth::read`; singleton clauses are not last-writer-wins, so keep exactly one `auth` clause
+  --> tests/ui/fail/names/duplicate_clause.rs:90:13
+   |
+90 |             auth off;
+   |             ^^^^
+
+error: note: the first `auth` clause is here
+  --> tests/ui/fail/names/duplicate_clause.rs:89:13
+   |
+89 |             auth { header "X-Key" = key; }
+   |             ^^^^
+
+error: [C3-OWNER] duplicate `subdomain` clause for scope `DuplicateScopeSubdomain::s`; singleton clauses are not last-writer-wins, so keep exactly one `subdomain` clause
+   --> tests/ui/fail/names/duplicate_clause.rs:101:13
+    |
+101 |             subdomain replace ["b"];
+    |             ^^^^^^^^^
+
+error: note: the first `subdomain` clause is here
+   --> tests/ui/fail/names/duplicate_clause.rs:100:13
+    |
+100 |             subdomain ["a"];
+    |             ^^^^^^^^^
+
+error: [C3-OWNER] duplicate `response` clause for client `DuplicateResponseDefault`; singleton clauses are not last-writer-wins, so keep exactly one `response` clause
+   --> tests/ui/fail/names/duplicate_clause.rs:111:9
+    |
+111 |         response Binary;
+    |         ^^^^^^^^
+
+error: note: the first `response` clause is here
+   --> tests/ui/fail/names/duplicate_clause.rs:110:9
+    |
+110 |         response Text;
+    |         ^^^^^^^^
+
+error: [C3-OWNER] duplicate `request` clause for scope `DuplicateRequestDefault::s`; singleton clauses are not last-writer-wins, so keep exactly one `request` clause
+   --> tests/ui/fail/names/duplicate_clause.rs:121:13
+    |
+121 |             request explicit;
+    |             ^^^^^^^
+
+error: note: the first `request` clause is here
+   --> tests/ui/fail/names/duplicate_clause.rs:120:13
+    |
+120 |             request Text;
+    |             ^^^^^^^
+
+error: [C3-OWNER] duplicate `id` clause for endpoint `DuplicateEndpointId::read`; singleton clauses are not last-writer-wins, so keep exactly one `id` clause
+   --> tests/ui/fail/names/duplicate_clause.rs:133:13
+    |
+133 |             id "duplicate.two";
+    |             ^^
+
+error: note: the first `id` clause is here
+   --> tests/ui/fail/names/duplicate_clause.rs:132:13
+    |
+132 |             id "duplicate.one";
+    |             ^^
+
+error: [C3-OWNER] duplicate `status` clause for endpoint `DuplicateEndpointStatus::read`; singleton clauses are not last-writer-wins, so keep exactly one `status` clause
+   --> tests/ui/fail/names/duplicate_clause.rs:144:13
+    |
+144 |             status success;
+    |             ^^^^^^
+
+error: note: the first `status` clause is here
+   --> tests/ui/fail/names/duplicate_clause.rs:143:13
+    |
+143 |             status 200;
+    |             ^^^^^^
+
+error: [C3-OWNER] duplicate `effect` clause for endpoint `DuplicateEndpointEffect::write`; singleton clauses are not last-writer-wins, so keep exactly one `effect` clause
+   --> tests/ui/fail/names/duplicate_clause.rs:155:13
+    |
+155 |             effect safe;
+    |             ^^^^^^
+
+error: note: the first `effect` clause is here
+   --> tests/ui/fail/names/duplicate_clause.rs:154:13
+    |
+154 |             effect idempotent;
+    |             ^^^^^^
+
+error: [C3-OWNER] duplicate `absent on` clause for endpoint `DuplicateEndpointAbsence::find`; singleton clauses are not last-writer-wins, so keep exactly one `absent on` clause
+   --> tests/ui/fail/names/duplicate_clause.rs:166:13
+    |
+166 |             absent on 410;
+    |             ^^^^^^
+
+error: note: the first `absent on` clause is here
+   --> tests/ui/fail/names/duplicate_clause.rs:165:13
+    |
+165 |             absent on 404;
+    |             ^^^^^^
+
+error: [C3-OWNER] duplicate `paginate` clause for endpoint `DuplicateEndpointPagination::list`; singleton clauses are not last-writer-wins, so keep exactly one `paginate` clause
+   --> tests/ui/fail/names/duplicate_clause.rs:182:13
+    |
+182 |             paginate via PagePagination {
+    |             ^^^^^^^^
+
+error: note: the first `paginate` clause is here
+   --> tests/ui/fail/names/duplicate_clause.rs:178:13
+    |
+178 |             paginate via OffsetPagination {
+    |             ^^^^^^^^
+
+error: [C3-OWNER] duplicate `expose accepted_bytes` clause for endpoint `DuplicateEndpointExposure::read`; singleton clauses are not last-writer-wins, so keep exactly one
+   --> tests/ui/fail/names/duplicate_clause.rs:196:13
+    |
+196 |             expose accepted_bytes;
+    |             ^^^^^^
+
+error: note: the first exposure is here
+   --> tests/ui/fail/names/duplicate_clause.rs:195:13
+    |
+195 |             expose accepted_bytes;
+    |             ^^^^^^

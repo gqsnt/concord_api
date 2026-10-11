@@ -1,11 +1,11 @@
-error[E0277]: `Rc<String>` cannot be sent between threads safely
- --> tests/ui/fail/request_spec_non_send_input.rs:9:6
+error[E0277]: `Rc<std::string::String>` cannot be sent between threads safely
+ --> tests/ui/fail/request_spec_non_send_input.rs:7:6
   |
-9 | impl RequestRepresentation<Rc<String>> for NonSendInputSpec {
-  |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<String>` cannot be sent between threads safely
+7 | impl RequestRepresentation<Rc<String>> for NonSendInputSpec {
+  |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<std::string::String>` cannot be sent between threads safely
   |
-  = help: the trait `Send` is not implemented for `Rc<String>`
-note: required by a bound in `concord_core::contracts::RequestRepresentation`
+  = help: the trait `Send` is not implemented for `Rc<std::string::String>`
+note: required by a bound in `RequestRepresentation`
  --> src/body/spec.rs
   |
   | pub trait RequestRepresentation<Input>: Send + Sync + 'static

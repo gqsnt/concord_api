@@ -151,16 +151,38 @@ impl fmt::Debug for SecretString {
 
 /// Credential material retained by a Concord credential slot.
 ///
-/// Values are shared immutably behind core-owned reference counting and may be
-/// read by overlapping credential operations. They are sensitive
-/// application-owned state: implementations are responsible for safe
-/// `Debug`/`Display`, logging, storage, retention, and destruction behavior.
-/// Synchronous methods cannot be preempted; implementations must bound CPU,
-/// memory, maps, queues, tasks, metric cardinality, retries, and external I/O
-/// and must not assume Concord supplies automatic limits for custom state.
-/// Concord checks operation deadlines around the credential lifecycle, while
-/// cancellation prevents later Concord work without rolling back completed
-/// extension effects.
+/// Core reads [`expires_at`](Self::expires_at) once, when the material is
+/// installed into a slot and before any slot lock is taken.
+///
+/// # Extension contract
+///
+/// * **Ownership.** A slot takes ownership of installed material and shares
+///   it immutably behind core-owned reference counting; replaced, cleared or
+///   rejected material is dropped when its last in-flight reader finishes.
+/// * **Concurrency.** Values may be read by overlapping credential operations
+///   on different threads, so every method takes `&self`.
+/// * **Cancellation.** Methods are synchronous and cannot be preempted.
+///   Concord checks operation deadlines around the credential lifecycle;
+///   cancellation prevents later Concord work without rolling back completed
+///   extension effects.
+/// * **Input sensitivity.** Material is sensitive application-owned state:
+///   implementations are responsible for safe `Debug`/`Display`, logging,
+///   storage, retention and destruction. Concord never formats material.
+/// * **Errors.** Methods cannot fail. An expiration instant that has passed
+///   only marks the material unusable: core does not send it and handles it
+///   like missing material of the owning credential source.
+/// * **Resource obligations.** Implementations must bound CPU, memory, maps,
+///   queues, tasks, metric cardinality, retries and external I/O and must not
+///   assume Concord supplies automatic limits for custom state.
+/// * **Negative capabilities.** Material cannot choose its placement, header
+///   or origin, cannot select another credential slot, and cannot trigger
+///   acquisition, refresh or replay by itself.
+#[diagnostic::on_unimplemented(
+    message = "[C3-AUTH] `{Self}` is not credential material",
+    label = "a credential slot retains this value",
+    note = "credential material implements `CredentialMaterial` (`Send + Sync + 'static`, with an optional expiry) and owns its own confidentiality",
+    note = "use the built-in `AccessToken`, `ApiKey` or `BasicCredential`, or implement `CredentialMaterial` for a protected type"
+)]
 pub trait CredentialMaterial: Send + Sync + 'static {
     /// Returns the provider-declared expiration instant, when present.
     fn expires_at(&self) -> Option<Instant> {
@@ -170,11 +192,34 @@ pub trait CredentialMaterial: Send + Sync + 'static {
 
 /// Single-string credential material suitable for bearer, header, or query placement.
 ///
-/// `expose_secret` is invoked only at the native authentication boundary, but the
-/// implementation remains responsible for protecting the returned value in its
-/// own memory, logging, storage, metrics, and synchronous work. The concurrency,
-/// cancellation, deadline, and boundedness obligations of [`CredentialMaterial`]
-/// continue to apply.
+/// # Extension contract
+///
+/// * **Ownership.** The returned string is borrowed from the material for the
+///   duration of native request construction; core copies it only into the
+///   native authentication header or query value of one attempt.
+/// * **Concurrency.** `expose_secret` may be called concurrently for
+///   overlapping attempts that share the same material.
+/// * **Cancellation.** The call is synchronous and cannot be preempted; the
+///   deadline and cancellation obligations of [`CredentialMaterial`] apply.
+/// * **Input sensitivity.** `expose_secret` is invoked only at the native
+///   authentication boundary, but the implementation remains responsible for
+///   protecting the value in its own memory, logging, storage, metrics and
+///   synchronous work.
+/// * **Errors.** The call cannot fail. Core validates the exposed value
+///   against the placement's byte limit (65,536 bytes for a single
+///   credential) and header syntax, and reports a violation as a value-free
+///   authentication failure before dispatch.
+/// * **Resource obligations.** Returning the borrowed string must be prompt
+///   and side-effect free; the boundedness obligations of
+///   [`CredentialMaterial`] continue to apply.
+/// * **Negative capabilities.** The secret cannot choose where it is placed,
+///   add headers, or observe the request it authenticates.
+#[diagnostic::on_unimplemented(
+    message = "[C3-AUTH] `{Self}` is not single-secret credential material",
+    label = "a bearer, authorization, header or query placement applies exactly one secret string",
+    note = "only `SecretCredential` material can be placed as one bearer/authorization/header/query value; Basic username/password material needs a `basic` placement",
+    note = "write a `basic` placement for Basic material, or produce material that implements `SecretCredential`"
+)]
 pub trait SecretCredential: CredentialMaterial {
     /// Explicitly exposes the value at the native authentication boundary.
     fn expose_secret(&self) -> &str;

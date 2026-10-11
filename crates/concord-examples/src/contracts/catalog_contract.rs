@@ -1,34 +1,55 @@
-//! One compile-checked vertical reference for the current Concord language.
+//! The meaning-preserving v3 migration of the baseline v2.1 Catalog.
 //!
 //! Required features: `json`, `rate-limit`, and `default-tls`. Construction is
 //! inert; the example creates plans and pending terminals but performs no I/O.
+//!
+//! This is the migration fixture compared against the captured v2.1 recording
+//! (§24): it keeps the original explicit query/header blocks and their order,
+//! the pinned endpoint IDs, `X-Client-Version: 2`, the redundant-looking
+//! authentication replacement on `authenticate`, and the legacy rate labels
+//! (`"tenant"` for the named policy formal, `"client.tenant"` for the inline
+//! write key). The canonical extended v3 showcase is
+//! [`super::catalog_v3`]; the two are intentionally different declarations.
 
 use std::fmt;
-use std::num::{NonZeroU32, NonZeroUsize};
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 
 use concord::auth::{CredentialMaterial, SecretCredential};
+use concord::pagination::{OffsetInit, OffsetPagination};
 use concord::rate_limit::LocalRateLimiter;
 use concord::{
-    ApiResponse, AtomError, BoundedAtomWriter, Bytes, PageLimit, RequestAtom, SecretString, api,
+    ApiResponse, AtomError, BoundedAtomWriter, Bytes, Json, RequestAtom, SecretString, api,
 };
 
+/// Tenant identifier alias; aliases keep their target's role.
 pub type TenantId = String;
+/// Locale alias.
 pub type Locale = String;
+/// Region alias.
 pub type Region = String;
+/// Language alias.
 pub type Language = String;
+/// Category alias.
 pub type Category = String;
+/// Tag alias.
 pub type Tag = String;
+/// Item identifier alias.
 pub type ItemId = String;
+/// Durable command identifier alias.
 pub type CommandId = String;
+/// Page size alias.
 pub type PageSize = NonZeroU32;
 
+/// Default page size retained by each list request.
 pub const DEFAULT_PAGE_SIZE: PageSize = match NonZeroU32::new(25) {
     Some(value) => value,
     None => unreachable!(),
 };
 
+/// The provider's wire API version path segment (independent of Concord's
+/// own major version).
 #[derive(Clone)]
 pub struct ApiVersion(&'static str);
 
@@ -50,27 +71,37 @@ impl RequestAtom for ApiVersion {
     }
 }
 
+/// Login body.
 #[derive(serde::Serialize)]
 pub struct LoginInput {
+    /// User name.
     pub user: String,
 }
 
+/// Update body.
 #[derive(serde::Serialize)]
 pub struct UpdateInput {
+    /// New title.
     pub title: String,
 }
 
+/// One list entry.
 #[derive(serde::Deserialize)]
 pub struct ItemSummary {
+    /// Item identifier.
     pub id: String,
 }
 
+/// One item.
 #[derive(serde::Deserialize)]
 pub struct Item {
+    /// Item identifier.
     pub id: String,
+    /// Title.
     pub title: String,
 }
 
+/// Session credential material returned by `authenticate`.
 #[derive(Clone)]
 pub struct SessionToken(SecretString);
 
@@ -126,12 +157,22 @@ api! {
             credential session = endpoint authenticate;
         }
 
+        rate_limits {
+            policy tenant_reads(tenant) {
+                id "catalog.tenant.read";
+                key [origin, "tenant" = tenant];
+                cost 1;
+                allow 120 per 1m;
+                allow 5_000 per 1h;
+            }
+        }
+
         subdomain ["api"];
-        path [client.api_version];
+        path "{api_version}";
 
         query {
-            "tenant" = client.tenant;
-            "locale" = client.locale;
+            "tenant" = tenant;
+            "locale" = locale;
         }
 
         headers {
@@ -142,22 +183,12 @@ api! {
             header "X-Bootstrap-Key" = application_key;
         }
 
-        rate_limits {
-            policy tenant_reads(tenant) {
-                id "catalog.tenant.read";
-                key [origin, tenant];
-                cost 1;
-                allow 120 per 1m;
-                allow 5_000 per 1h;
-            }
-        }
-
         /// Creates a session credential.
         POST authenticate(
             body input: LoginInput via Json,
         ) -> SessionToken via Json {
             id "catalog.auth.login";
-            path ["auth", "session"];
+            path "auth/session";
             auth replace {
                 header "X-Bootstrap-Key" = application_key;
             }
@@ -168,11 +199,11 @@ api! {
             region: Region,
             language?: Language,
         ) {
-            subdomain [regional.region];
-            path ["regions", regional.region];
+            subdomain [region];
+            path "regions/{region}";
 
             headers {
-                "Accept-Language" = regional.language;
+                "Accept-Language" = language;
             }
 
             auth replace {
@@ -189,23 +220,23 @@ api! {
                 tags: Vec<Tag>,
             ) -> Vec<ItemSummary> via Json {
                 id "catalog.items.list";
-                path ["items"];
+                path "items";
                 query {
-                    "category" = endpoint.category;
-                    "offset" = endpoint.offset;
-                    "count" = endpoint.count;
-                    "tag" = each endpoint.tags;
+                    "category" = category;
+                    "offset" = offset;
+                    "count" = count;
+                    "tag" = each tags;
                 }
-                paginate via concord::pagination::OffsetPagination {
-                    offset -> endpoint.offset;
-                    page_size -> endpoint.count;
+                paginate via OffsetPagination {
+                    init OffsetInit { offset: offset, page_size: count };
+                    cursor -> offset;
                 }
             }
 
             /// Returns one item.
             GET item(id: ItemId) -> Item via Json {
                 id "catalog.item.get";
-                path ["items", endpoint.id];
+                path "items/{id}";
                 expose accepted_bytes;
             }
 
@@ -217,14 +248,14 @@ api! {
                 body update: UpdateInput via Json,
             ) -> Item via Json {
                 id "catalog.item.update";
-                path ["items", endpoint.id];
+                path "items/{id}";
                 headers {
-                    "Idempotency-Key" = endpoint.command_id;
+                    "Idempotency-Key" = command_id;
                 }
                 effect idempotent;
                 rate_limit {
                     id "catalog.item.write";
-                    key [origin, endpoint, client.tenant];
+                    key [origin, endpoint, "client.tenant" = client.tenant];
                     cost 5;
                     allow 30 per 1m;
                 }
@@ -239,15 +270,15 @@ api! {
 // ANCHOR: catalog_usage
 pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
     let client = CatalogApi::builder()
-        .set_tenant("tenant-a".to_owned())
-        .set_locale(Some("fr-FR".to_owned()))
+        .set_tenant("tenant-a")
+        .set_locale("fr-FR")
         .reset_api_version()
         .bootstrap_key(SecretString::try_new("example-bootstrap-key")?)
         .configure_http(|http| http.require_https().connect_timeout(Duration::from_secs(3)))
         .configure_runtime(|runtime| {
             runtime
-                .response_body_limit(NonZeroUsize::new(8 * 1024 * 1024).expect("positive"))
-                .pagination_max_pages(NonZeroU32::new(100).expect("positive"))
+                .response_body_limit(8 * 1024 * 1024)
+                .pagination_max_pages(100)
                 .rate_limiter(Arc::new(LocalRateLimiter::new()))
         })
         .build()?;
@@ -255,30 +286,25 @@ pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
     let login = LoginInput {
         user: "catalog-reader".to_owned(),
     };
-    let _store_session = client.authenticate(login).store_as_session();
+    let _store_session: concord::auth::StoreRequest = client.authenticate(login).store_as_session();
 
-    let regional = client
-        .regional("eu-west".to_owned())
-        .set_language(Some("fr".to_owned()));
+    let regional = client.regional("eu-west").set_language("fr");
     let request = regional
         .item_summaries(vec!["stable".to_owned()])
-        .set_category(Some("featured".to_owned()))
+        .set_category("featured")
         .reset_count();
     // ANCHOR: catalog_planning
     let _plan = request.plan()?;
-    let _pagination = request.paginate(PageLimit::CompleteWithin(
-        NonZeroU32::new(20).expect("positive"),
-    ));
-    let _accepted: concord::endpoint::AcceptedBytesRequest<_> =
-        regional.item("item-42".to_owned()).accepted_bytes();
+    let _complete: concord::pagination::CollectAll<ItemSummary> =
+        request.collect_all(NonZeroU32::new(20).expect("positive"));
+    let _accepted: concord::endpoint::AcceptedBytesRequest =
+        regional.item("item-42").accepted_bytes();
 
-    let endpoint = CatalogApi::unbound()
-        .regional("eu-west".to_owned())
-        .item("item-42".to_owned());
+    let endpoint = CatalogApi::unbound().regional("eu-west").item("item-42");
     let _description = endpoint.description();
     let _unbound_plan = client.plan(&endpoint)?;
     let request = client.request(endpoint);
-    let _response: concord::endpoint::ResponseRequest<_> = request.response();
+    let _response: concord::endpoint::ResponseRequest<Item> = request.response();
     let _metadata_shape: Option<ApiResponse<Bytes>> = None;
     // ANCHOR_END: catalog_planning
     Ok(())

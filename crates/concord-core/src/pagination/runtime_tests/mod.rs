@@ -1,3 +1,8 @@
+//! Deterministic traversal tests over the development transport.
+//!
+//! Pages use the test wire format `item,item|next` where `-` means "no next
+//! cursor" and an empty body is an empty terminal page.
+
 use std::cell::Cell;
 use std::error::Error as _;
 use std::num::{NonZeroU32, NonZeroUsize};
@@ -13,20 +18,24 @@ use concord_test_support::script::{
 };
 use http::{Method, StatusCode};
 
-use super::execute::paginate_with;
 use super::{
-    PageDecisionLimits, PageLimit, PageResponse, PageStep, PaginatedEndpoint, PaginationController,
-    PaginationDescription, PaginationError,
+    CollectAll, CollectPrefix, ContinuationKnowledge, ControllerCursor, ControllerInit,
+    PageDecisionLimits, PageResponse, PageStep, PageableEndpoint, Pages, PaginationController,
+    PaginationDescription, PaginationError, Prefix, StopReason, TraversalSummary,
+    collect_all_request, collect_prefix_request, pages_request,
 };
 #[cfg(feature = "default-tls")]
 use crate::auth::{
     AccessToken, Auth, CredentialProvider, CredentialRef, CredentialRequest, SlotSelector,
 };
-use crate::body::{EmptyBody, RequestBodyContext, RequestBodyMetadata, RequestRepresentation};
+use crate::body::EmptyBody;
 use crate::client::ClientCore;
 use crate::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};
-use crate::endpoint::AcceptedStatus;
-use crate::error::{ApiError, ErrorCategory, PaginationErrorKind, RateLimitErrorKind};
+use crate::controls::{CallOptions, CancellationToken};
+use crate::endpoint::{AcceptedStatus, Effect};
+use crate::error::{
+    ApiError, DispatchKnowledge, ErrorCategory, PaginationErrorKind, RateLimitErrorKind,
+};
 use crate::hooks::{
     AttemptInfo, BoxFuture, CompletionOutcome, DebugLevel, OperationEvent, OperationObserver,
 };
@@ -37,13 +46,13 @@ use crate::rate_limit::{
 };
 use crate::request::{EndpointSpec, HeadBuilder, PreparedHead, Request, RequestMeta};
 use crate::response::{
-    Buffered, PageResponseRepresentation, ResponseBodyError, ResponseBodyErrorKind, ResponseHead,
-    ResponseRepresentation,
+    Buffered, ResponseBodyError, ResponseBodyErrorKind, ResponseHead, ResponseRepresentation,
 };
 use crate::retry::{RetryDecision, RetryFailure, RetryPolicy};
 use crate::runtime::RuntimeConfigBuilder;
 
 const ENDPOINT: &str = "pagination_runtime_api.items.list";
+const BASE: &str = "http://pagination-runtime.example.test/v1/";
 const INITIAL_ATTEMPT: AttemptInfo = AttemptInfo {
     index: 0,
     policy_retry_index: 0,
@@ -57,15 +66,6 @@ struct TestPage {
     next: Option<String>,
 }
 
-impl IntoIterator for TestPage {
-    type Item = String;
-    type IntoIter = std::vec::IntoIter<String>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.items.into_iter()
-    }
-}
-
 impl DecodeBody for PageCodec {
     type Output = TestPage;
 
@@ -76,12 +76,12 @@ impl DecodeBody for PageCodec {
     }
 
     fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
-        decode_test_page(body)
+        decode_test_page(&body)
     }
 }
 
-fn decode_test_page(body: Bytes) -> Result<TestPage, CodecError> {
-    let text = std::str::from_utf8(&body).map_err(|_| CodecError::new(CodecErrorKind::Decode))?;
+fn decode_test_page(body: &[u8]) -> Result<TestPage, CodecError> {
+    let text = std::str::from_utf8(body).map_err(|_| CodecError::new(CodecErrorKind::Decode))?;
     if text.is_empty() {
         return Ok(TestPage {
             items: Vec::new(),
@@ -100,56 +100,159 @@ fn decode_test_page(body: Bytes) -> Result<TestPage, CodecError> {
     Ok(TestPage { items, next })
 }
 
+/// A buffered representation that is not a `DecodeBody` codec and has no
+/// iterable/page marker.
 struct AcceptedPageSpec;
 
 impl ResponseRepresentation<TestPage> for AcceptedPageSpec {
     type Driver = Buffered;
 
     fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<TestPage, ResponseBodyError> {
-        decode_test_page(body).map_err(|_| ResponseBodyError::new(ResponseBodyErrorKind::Decode))
+        decode_test_page(&body).map_err(|_| ResponseBodyError::new(ResponseBodyErrorKind::Decode))
     }
 }
 
-impl PageResponseRepresentation<TestPage> for AcceptedPageSpec {}
+/// Shared counters proving which extension calls happened.
+#[derive(Clone, Default)]
+struct Calls {
+    starts: Arc<AtomicUsize>,
+    advances: Arc<AtomicUsize>,
+    cursors: Arc<AtomicUsize>,
+    inits: Arc<AtomicUsize>,
+    applies: Arc<AtomicUsize>,
+    clones: Arc<AtomicUsize>,
+}
 
+impl Calls {
+    fn get(counter: &AtomicUsize) -> usize {
+        counter.load(Ordering::SeqCst)
+    }
+}
+
+/// Public initialization of the test controller.
+struct CursorInit {
+    cursor: String,
+    calls: Calls,
+    fail_start: bool,
+    fail_advance: bool,
+    short_page_size: Option<NonZeroUsize>,
+    /// Replaces a provider cursor before it is proposed (to force invalid,
+    /// repeated or cyclic continuations).
+    rewrite: Option<fn(&str) -> String>,
+}
+
+/// Non-`Clone`, non-`Sync` controller with private state.
+struct CursorController {
+    state: String,
+    calls: Calls,
+    fail_advance: bool,
+    short_page_size: Option<NonZeroUsize>,
+    rewrite: Option<fn(&str) -> String>,
+    _not_sync: Cell<()>,
+}
+
+impl PaginationController<TestPage> for CursorController {
+    type Item = String;
+    type Init = CursorInit;
+    type Cursor = String;
+
+    const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
+
+    fn start(init: CursorInit) -> Result<Self, PaginationError> {
+        init.calls.starts.fetch_add(1, Ordering::SeqCst);
+        if init.fail_start {
+            return Err(PaginationError::new(PaginationErrorKind::Controller));
+        }
+        Ok(Self {
+            state: init.cursor,
+            calls: init.calls,
+            fail_advance: init.fail_advance,
+            short_page_size: init.short_page_size,
+            rewrite: init.rewrite,
+            _not_sync: Cell::new(()),
+        })
+    }
+
+    fn cursor(&self) -> String {
+        self.calls.cursors.fetch_add(1, Ordering::SeqCst);
+        self.state.clone()
+    }
+
+    fn advance(
+        self,
+        page: PageResponse<TestPage>,
+        limits: PageDecisionLimits,
+    ) -> Result<PageStep<Self, Self::Item>, PaginationError> {
+        self.calls.advances.fetch_add(1, Ordering::SeqCst);
+        let TestPage { items, next } = page.into_page();
+        if items.len() > limits.remaining_items() {
+            return Err(PaginationError::new(
+                PaginationErrorKind::CollectedItemCeilingExceeded,
+            ));
+        }
+        if self
+            .short_page_size
+            .is_some_and(|size| items.len() < size.get())
+        {
+            return Ok(PageStep::Done { items });
+        }
+        if self.fail_advance {
+            return Err(PaginationError::new(PaginationErrorKind::Controller));
+        }
+        Ok(match next {
+            Some(next) => PageStep::Continue {
+                next: Self {
+                    state: self.rewrite.map_or(next.clone(), |rewrite| rewrite(&next)),
+                    calls: self.calls.clone(),
+                    fail_advance: false,
+                    short_page_size: self.short_page_size,
+                    rewrite: self.rewrite,
+                    _not_sync: Cell::new(()),
+                },
+                items,
+            },
+            None => PageStep::Done { items },
+        })
+    }
+}
+
+/// Bodyless test endpoint with one query and one header cursor slot.
 #[derive(Clone)]
 struct PageEndpoint {
     endpoint: &'static str,
-    method: Method,
+    effect: Effect,
     timeout: Option<Duration>,
+    accepted: Option<AcceptedStatus>,
     cursor: String,
-    validate_calls: Arc<AtomicUsize>,
-    next_calls: Arc<AtomicUsize>,
-    construction_calls: Arc<AtomicUsize>,
-    binding_calls: Arc<AtomicUsize>,
-    fail_construction: bool,
-    fail_validate: bool,
-    fail_next: bool,
+    /// When set, the controller starts from this cursor instead of the slot.
+    init_cursor: Option<String>,
+    calls: Calls,
+    fail_start: bool,
+    fail_advance: bool,
     short_page_size: Option<NonZeroUsize>,
+    rewrite: Option<fn(&str) -> String>,
 }
 
 impl PageEndpoint {
-    fn get(timeout: Option<Duration>, controller: CursorController) -> Self {
+    fn new(cursor: &str) -> Self {
         Self {
             endpoint: ENDPOINT,
-            method: Method::GET,
-            timeout,
-            cursor: controller.state,
-            validate_calls: controller.validate_calls,
-            next_calls: controller.next_calls,
-            construction_calls: Arc::new(AtomicUsize::new(0)),
-            binding_calls: Arc::new(AtomicUsize::new(0)),
-            fail_construction: false,
-            fail_validate: controller.fail_validate,
-            fail_next: controller.fail_next,
-            short_page_size: controller.short_page_size,
+            effect: Effect::Safe,
+            timeout: Some(Duration::from_secs(30)),
+            accepted: None,
+            cursor: cursor.to_owned(),
+            init_cursor: None,
+            calls: Calls::default(),
+            fail_start: false,
+            fail_advance: false,
+            short_page_size: None,
+            rewrite: None,
         }
     }
 
-    fn failing_construction(timeout: Option<Duration>) -> Self {
-        let mut endpoint = Self::get(timeout, CursorController::new("unused"));
-        endpoint.fail_construction = true;
-        endpoint
+    fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
     }
 }
 
@@ -160,7 +263,18 @@ impl EndpointSpec for PageEndpoint {
     type Response = PageCodec;
 
     fn request_meta(&self) -> RequestMeta {
-        RequestMeta::new(self.endpoint, self.method.clone(), self.timeout)
+        let method = if self.effect == Effect::Safe {
+            Method::GET
+        } else {
+            Method::POST
+        };
+        RequestMeta::new_with_contract(
+            self.endpoint,
+            method,
+            self.timeout,
+            self.accepted.clone().unwrap_or(AcceptedStatus::Success),
+            self.effect,
+        )
     }
 
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
@@ -171,45 +285,44 @@ impl EndpointSpec for PageEndpoint {
         builder.finish()
     }
 
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, crate::body::BodyError> {
-        EmptyBody::metadata(&(), context)
-    }
-
     fn into_body(self) {}
 }
 
-impl PaginatedEndpoint for PageEndpoint {
+impl PageableEndpoint for PageEndpoint {
     type Controller = CursorController;
 
-    fn initial_controller(&self) -> Result<Self::Controller, PaginationError> {
-        self.construction_calls.fetch_add(1, Ordering::SeqCst);
-        if self.fail_construction {
-            return Err(PaginationError::new(PaginationErrorKind::Controller));
-        }
-        Ok(CursorController {
-            state: self.cursor.clone(),
-            validate_calls: Arc::clone(&self.validate_calls),
-            next_calls: Arc::clone(&self.next_calls),
-            fail_validate: self.fail_validate,
-            fail_next: self.fail_next,
+    fn controller_init(&self) -> ControllerInit<Self> {
+        self.calls.inits.fetch_add(1, Ordering::SeqCst);
+        CursorInit {
+            cursor: self
+                .init_cursor
+                .clone()
+                .unwrap_or_else(|| self.cursor.clone()),
+            calls: self.calls.clone(),
+            fail_start: self.fail_start,
+            fail_advance: self.fail_advance,
             short_page_size: self.short_page_size,
-            _not_sync: Cell::new(()),
-        })
+            rewrite: self.rewrite,
+        }
     }
 
-    fn bind_controller(
-        endpoint: &mut Self,
-        controller: &Self::Controller,
-    ) -> Result<(), PaginationError> {
-        endpoint.binding_calls.fetch_add(1, Ordering::SeqCst);
-        endpoint.cursor.clone_from(&controller.state);
-        Ok(())
+    fn apply_cursor(&mut self, cursor: ControllerCursor<Self>) {
+        self.calls.applies.fetch_add(1, Ordering::SeqCst);
+        self.cursor = cursor;
+    }
+
+    fn page_clone(&self) -> Self {
+        self.calls.clones.fetch_add(1, Ordering::SeqCst);
+        self.clone()
+    }
+
+    fn page_body_present(&self) -> bool {
+        false
     }
 }
 
+/// The same endpoint decoded through a non-codec buffered representation
+/// with an explicit accepted-status set.
 #[derive(Clone)]
 struct AcceptedPageEndpoint(PageEndpoint);
 
@@ -229,37 +342,41 @@ impl EndpointSpec for AcceptedPageEndpoint {
         self.0.prepare_head(builder)
     }
 
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, crate::body::BodyError> {
-        self.0.body_metadata(context)
-    }
-
     fn into_body(self) {}
 }
 
-impl PaginatedEndpoint for AcceptedPageEndpoint {
+impl PageableEndpoint for AcceptedPageEndpoint {
     type Controller = CursorController;
 
-    fn initial_controller(&self) -> Result<Self::Controller, PaginationError> {
-        self.0.initial_controller()
+    fn controller_init(&self) -> ControllerInit<Self> {
+        self.0.controller_init()
     }
 
-    fn bind_controller(
-        endpoint: &mut Self,
-        controller: &Self::Controller,
-    ) -> Result<(), PaginationError> {
-        PageEndpoint::bind_controller(&mut endpoint.0, controller)
+    fn apply_cursor(&mut self, cursor: ControllerCursor<Self>) {
+        self.0.apply_cursor(cursor);
+    }
+
+    fn page_clone(&self) -> Self {
+        Self(self.0.page_clone())
+    }
+
+    fn page_body_present(&self) -> bool {
+        false
     }
 }
 
+/// An endpoint whose cursor destination illegally feeds the host label and a
+/// rate-limit key dimension (forbidden in v3; the macro rejects it, and core
+/// rejects it at runtime as defense in depth).
 #[derive(Clone)]
-struct HostRateEndpoint {
+struct ForbiddenDestinationEndpoint {
     host: String,
+    rate_dimension: String,
+    move_host: bool,
+    calls: Calls,
 }
 
-impl EndpointSpec for HostRateEndpoint {
+impl EndpointSpec for ForbiddenDestinationEndpoint {
     type Input = ();
     type Body = EmptyBody;
     type Output = TestPage;
@@ -267,7 +384,7 @@ impl EndpointSpec for HostRateEndpoint {
 
     fn request_meta(&self) -> RequestMeta {
         RequestMeta::new(
-            "pagination_runtime_api.items.host_rate_key",
+            "pagination_runtime_api.items.forbidden_destination",
             Method::GET,
             Some(Duration::from_secs(30)),
         )
@@ -277,44 +394,48 @@ impl EndpointSpec for HostRateEndpoint {
         builder.push_pagination_host_value(&self.host)?;
         builder.push_static("host-rate-items")?;
         builder.push_query_value("stable", &"public")?;
-        builder.push_pagination_query_value("cursor", &self.host)?;
-        builder.insert_pagination_header_value("x-page-cursor", &self.host)?;
-        let rate_limit_origin = builder.rate_limit_origin();
-        builder.push_rate_limit_policy(
-            "PaginationRuntimeApi::rate_limit::host_page_key",
-            [
-                ("origin", rate_limit_origin.as_str()),
-                ("endpoint.host", self.host.as_str()),
-            ],
-            1,
-            [(100, Duration::from_secs(60))],
+        builder.push_pagination_query_value("cursor", &self.rate_dimension)?;
+        builder.push_rate_limit(
+            crate::rate_limit::RateLimitDeclaration::new(
+                "PaginationRuntimeApi::rate_limit::host_page_key",
+            )
+            .window(100, Duration::from_secs(60))
+            .origin()
+            .part("endpoint.cursor", self.rate_dimension.as_str()),
         )?;
         builder.finish()
-    }
-
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, crate::body::BodyError> {
-        EmptyBody::metadata(&(), context)
     }
 
     fn into_body(self) {}
 }
 
-impl PaginatedEndpoint for HostRateEndpoint {
+impl PageableEndpoint for ForbiddenDestinationEndpoint {
     type Controller = CursorController;
 
-    fn initial_controller(&self) -> Result<Self::Controller, PaginationError> {
-        Ok(CursorController::new(self.host.clone()))
+    fn controller_init(&self) -> ControllerInit<Self> {
+        CursorInit {
+            cursor: self.rate_dimension.clone(),
+            calls: self.calls.clone(),
+            fail_start: false,
+            fail_advance: false,
+            short_page_size: None,
+            rewrite: None,
+        }
     }
 
-    fn bind_controller(
-        endpoint: &mut Self,
-        controller: &Self::Controller,
-    ) -> Result<(), PaginationError> {
-        endpoint.host.clone_from(&controller.state);
-        Ok(())
+    fn apply_cursor(&mut self, cursor: ControllerCursor<Self>) {
+        if self.move_host {
+            self.host.clone_from(&cursor);
+        }
+        self.rate_dimension = cursor;
+    }
+
+    fn page_clone(&self) -> Self {
+        self.clone()
+    }
+
+    fn page_body_present(&self) -> bool {
+        false
     }
 }
 
@@ -323,6 +444,7 @@ impl PaginatedEndpoint for HostRateEndpoint {
 struct RateKeyEndpoint {
     key: String,
     credential: CredentialRef<AccessToken>,
+    calls: Calls,
 }
 
 #[cfg(feature = "default-tls")]
@@ -346,39 +468,44 @@ impl EndpointSpec for RateKeyEndpoint {
         builder.push_pagination_query_value("cursor", &self.key)?;
         builder.insert_pagination_header_value("x-page-cursor", &self.key)?;
         builder.push_auth(Auth::bearer(self.credential.clone()))?;
-        builder.push_rate_limit_policy(
-            "PaginationRuntimeApi::rate_limit::page_key",
-            [("endpoint.cursor", self.key.as_str())],
-            1,
-            [(1, Duration::from_secs(60))],
+        builder.push_rate_limit(
+            crate::rate_limit::RateLimitDeclaration::new(
+                "PaginationRuntimeApi::rate_limit::page_key",
+            )
+            .window(1, Duration::from_secs(60))
+            .part("endpoint.cursor", self.key.as_str()),
         )?;
         builder.finish()
-    }
-
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, crate::body::BodyError> {
-        EmptyBody::metadata(&(), context)
     }
 
     fn into_body(self) {}
 }
 
 #[cfg(feature = "default-tls")]
-impl PaginatedEndpoint for RateKeyEndpoint {
+impl PageableEndpoint for RateKeyEndpoint {
     type Controller = CursorController;
 
-    fn initial_controller(&self) -> Result<Self::Controller, PaginationError> {
-        Ok(CursorController::new(self.key.clone()))
+    fn controller_init(&self) -> ControllerInit<Self> {
+        CursorInit {
+            cursor: self.key.clone(),
+            calls: self.calls.clone(),
+            fail_start: false,
+            fail_advance: false,
+            short_page_size: None,
+            rewrite: None,
+        }
     }
 
-    fn bind_controller(
-        endpoint: &mut Self,
-        controller: &Self::Controller,
-    ) -> Result<(), PaginationError> {
-        endpoint.key.clone_from(&controller.state);
-        Ok(())
+    fn apply_cursor(&mut self, cursor: ControllerCursor<Self>) {
+        self.key = cursor;
+    }
+
+    fn page_clone(&self) -> Self {
+        self.clone()
+    }
+
+    fn page_body_present(&self) -> bool {
+        false
     }
 }
 
@@ -405,110 +532,6 @@ impl CredentialProvider for CountingRateKeyProvider {
     }
 }
 
-struct CursorController {
-    state: String,
-    validate_calls: Arc<AtomicUsize>,
-    next_calls: Arc<AtomicUsize>,
-    fail_validate: bool,
-    fail_next: bool,
-    short_page_size: Option<NonZeroUsize>,
-    _not_sync: Cell<()>,
-}
-
-impl CursorController {
-    fn new(state: impl Into<String>) -> Self {
-        Self {
-            state: state.into(),
-            validate_calls: Arc::new(AtomicUsize::new(0)),
-            next_calls: Arc::new(AtomicUsize::new(0)),
-            fail_validate: false,
-            fail_next: false,
-            short_page_size: None,
-            _not_sync: Cell::new(()),
-        }
-    }
-
-    fn failing_validate(state: impl Into<String>) -> Self {
-        Self {
-            state: state.into(),
-            validate_calls: Arc::new(AtomicUsize::new(0)),
-            next_calls: Arc::new(AtomicUsize::new(0)),
-            fail_validate: true,
-            fail_next: false,
-            short_page_size: None,
-            _not_sync: Cell::new(()),
-        }
-    }
-
-    fn failing_next(state: impl Into<String>) -> Self {
-        Self {
-            state: state.into(),
-            validate_calls: Arc::new(AtomicUsize::new(0)),
-            next_calls: Arc::new(AtomicUsize::new(0)),
-            fail_validate: false,
-            fail_next: true,
-            short_page_size: None,
-            _not_sync: Cell::new(()),
-        }
-    }
-
-    fn with_short_page_size(mut self, value: NonZeroUsize) -> Self {
-        self.short_page_size = Some(value);
-        self
-    }
-}
-
-impl PaginationController<TestPage> for CursorController {
-    type Item = String;
-
-    const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
-
-    fn validate(&self) -> Result<(), PaginationError> {
-        self.validate_calls.fetch_add(1, Ordering::SeqCst);
-        if self.fail_validate {
-            return Err(PaginationError::new(PaginationErrorKind::Controller));
-        }
-        Ok(())
-    }
-
-    fn advance(
-        self,
-        page: PageResponse<TestPage>,
-        limits: PageDecisionLimits,
-    ) -> Result<PageStep<Self, Self::Item>, PaginationError> {
-        self.next_calls.fetch_add(1, Ordering::SeqCst);
-        let next_state = page.page().next.clone();
-        let items = page.into_page().items;
-        if items.len() > limits.remaining_items() {
-            return Err(PaginationError::new(
-                PaginationErrorKind::CollectedItemCeilingExceeded,
-            ));
-        }
-        if self
-            .short_page_size
-            .is_some_and(|size| items.len() < size.get())
-        {
-            return Ok(PageStep::Done { items });
-        }
-        if self.fail_next {
-            return Err(PaginationError::new(PaginationErrorKind::Controller));
-        }
-        let next = next_state.map(|state| Self {
-            state,
-            validate_calls: Arc::clone(&self.validate_calls),
-            next_calls: Arc::clone(&self.next_calls),
-            fail_validate: false,
-            fail_next: false,
-            short_page_size: self.short_page_size,
-            _not_sync: Cell::new(()),
-        });
-        Ok(match next {
-            Some(next) => PageStep::Continue { items, next },
-            None => PageStep::Done { items },
-        })
-    }
-}
-
 #[derive(Clone)]
 struct BeforeRecord {
     operation_id: OperationId,
@@ -531,6 +554,7 @@ struct AggregateRecord {
     recovered_authentication: bool,
     final_status: Option<StatusCode>,
     outcome: CompletionOutcome,
+    stop_reason: StopReason,
     attempts_started: u32,
     policy_retries: u32,
     elapsed: Duration,
@@ -551,6 +575,16 @@ struct PaginationProbe {
     response: Mutex<Vec<ResponseRecord>>,
     completion: Mutex<Vec<CompletionRecord>>,
     aggregate: Mutex<Vec<AggregateRecord>>,
+}
+
+impl PaginationProbe {
+    fn aggregate(&self) -> Vec<AggregateRecord> {
+        self.aggregate.lock().expect("aggregate lock").clone()
+    }
+
+    fn before_count(&self) -> usize {
+        self.before.lock().expect("before lock").len()
+    }
 }
 
 impl OperationObserver for PaginationProbe {
@@ -597,6 +631,7 @@ impl OperationObserver for PaginationProbe {
                         recovered_authentication: context.recovered_authentication,
                         final_status: context.final_status,
                         outcome: context.outcome,
+                        stop_reason: context.stop_reason,
                         attempts_started: context.attempts_started,
                         policy_retries: context.policy_retries,
                         elapsed: context.elapsed,
@@ -613,7 +648,26 @@ struct LimiterProbe {
     observations: Mutex<Vec<(u32, StatusCode)>>,
 }
 
+impl LimiterProbe {
+    fn acquisition_pages(&self) -> Vec<u32> {
+        self.acquisitions
+            .lock()
+            .expect("acquisition lock")
+            .iter()
+            .map(|(page, _)| *page)
+            .collect()
+    }
+}
+
 impl RateLimiter for LimiterProbe {
+    fn capability(&self) -> crate::rate_limit::LimiterCapability {
+        crate::rate_limit::LimiterCapability::new(
+            crate::rate_limit::Enforcement::Local,
+            "test.limiter-probe",
+            1,
+        )
+    }
+
     fn acquire<'a>(
         &'a self,
         request: RateLimitRequest<'a>,
@@ -638,51 +692,15 @@ struct RejectingLimiter {
     acquisitions: AtomicUsize,
 }
 
-type OriginLimiterContext = (u32, Option<String>, Vec<(String, Vec<u8>)>);
-
-#[derive(Default)]
-struct HostLimiterProbe {
-    acquisitions: Mutex<Vec<OriginLimiterContext>>,
-    observations: Mutex<Vec<OriginLimiterContext>>,
-}
-
-impl HostLimiterProbe {
-    fn capture(request: &RateLimitRequest<'_>) -> OriginLimiterContext {
-        (
-            request.page_index,
-            request.logical_origin.map(str::to_owned),
-            request
-                .plan
-                .policies()
-                .iter()
-                .flat_map(|rule| rule.key().parts())
-                .map(|part| (part.name().to_owned(), part.value().to_owned()))
-                .collect(),
+impl RateLimiter for RejectingLimiter {
+    fn capability(&self) -> crate::rate_limit::LimiterCapability {
+        crate::rate_limit::LimiterCapability::new(
+            crate::rate_limit::Enforcement::Local,
+            "test.rejecting-limiter",
+            1,
         )
     }
-}
 
-impl RateLimiter for HostLimiterProbe {
-    fn acquire<'a>(
-        &'a self,
-        request: RateLimitRequest<'a>,
-    ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
-        self.acquisitions
-            .lock()
-            .expect("host limiter acquisitions")
-            .push(Self::capture(&request));
-        Box::pin(async { Ok(RateLimitPermit::granted()) })
-    }
-
-    fn observe(&self, response: RateLimitResponse<'_>) {
-        self.observations
-            .lock()
-            .expect("host limiter observations")
-            .push(Self::capture(&response.request));
-    }
-}
-
-impl RateLimiter for RejectingLimiter {
     fn acquire<'a>(
         &'a self,
         _request: RateLimitRequest<'a>,
@@ -700,6 +718,14 @@ struct KeyBoundLimiter {
 
 #[cfg(feature = "default-tls")]
 impl RateLimiter for KeyBoundLimiter {
+    fn capability(&self) -> crate::rate_limit::LimiterCapability {
+        crate::rate_limit::LimiterCapability::new(
+            crate::rate_limit::Enforcement::Local,
+            "test.key-bound-limiter",
+            1,
+        )
+    }
+
     fn preparation_key_limit(&self) -> usize {
         self.key_limit
     }
@@ -713,6 +739,68 @@ impl RateLimiter for KeyBoundLimiter {
     }
 }
 
+/// One deterministic client plus its probes.
+struct Harness {
+    executor: DeterministicExecutor,
+    hooks: Arc<PaginationProbe>,
+    limiter: Arc<LimiterProbe>,
+    core: ClientCore,
+}
+
+impl Harness {
+    fn new() -> Self {
+        Self::configured(|runtime| runtime)
+    }
+
+    fn configured(configure: impl FnOnce(RuntimeConfigBuilder) -> RuntimeConfigBuilder) -> Self {
+        let executor = DeterministicExecutor::new();
+        let hooks = Arc::new(PaginationProbe::default());
+        let limiter = Arc::new(LimiterProbe::default());
+        let core = core(
+            &executor,
+            Arc::clone(&hooks),
+            Arc::clone(&limiter),
+            configure,
+        );
+        Self {
+            executor,
+            hooks,
+            limiter,
+            core,
+        }
+    }
+
+    fn queue(&self, body: &'static str) {
+        self.executor
+            .application()
+            .queue_response(ScriptedResponse::success(Bytes::from_static(
+                body.as_bytes(),
+            )))
+            .expect("queued page");
+    }
+
+    fn queue_status(&self, status: StatusCode, body: &'static str) {
+        self.executor
+            .application()
+            .queue_response(ScriptedResponse::status(
+                status,
+                Bytes::from_static(body.as_bytes()),
+            ))
+            .expect("queued status page");
+    }
+
+    fn requests(&self) -> usize {
+        self.executor
+            .application()
+            .request_count()
+            .expect("request count")
+    }
+
+    fn request(&self, endpoint: PageEndpoint) -> Request<PageEndpoint> {
+        Request::new(self.core.clone(), endpoint)
+    }
+}
+
 fn core(
     executor: &DeterministicExecutor,
     hooks: Arc<PaginationProbe>,
@@ -721,7 +809,7 @@ fn core(
 ) -> ClientCore {
     let limiter: Arc<dyn RateLimiter> = limiter;
     ClientCore::build_with_development(
-        "http://pagination-runtime.example.test/v1/",
+        BASE,
         HttpConfigBuilder::new().http1_only(),
         configure(
             RuntimeConfigBuilder::new()
@@ -735,23 +823,41 @@ fn core(
     .expect("pagination development core")
 }
 
-fn collect(
+fn prefix(
     core: ClientCore,
-    limit: PageLimit,
-    controller: CursorController,
-    timeout: Option<Duration>,
+    endpoint: PageEndpoint,
+    maximum_pages: u32,
+) -> BoxFuture<'static, Result<Prefix<String>, ApiError>> {
+    Box::pin(collect_prefix_request(Request::new(core, endpoint), maximum_pages).into_future())
+}
+
+fn all(
+    core: ClientCore,
+    endpoint: PageEndpoint,
+    maximum_pages: u32,
 ) -> BoxFuture<'static, Result<Vec<String>, ApiError>> {
-    paginate_with(
-        Request::new(core, PageEndpoint::get(timeout, controller)),
-        limit,
+    Box::pin(
+        collect_all_request(
+            Request::new(core, endpoint),
+            NonZeroU32::new(maximum_pages).expect("nonzero test bound"),
+        )
+        .into_future(),
     )
 }
 
-fn pagination_error(result: Result<Vec<String>, ApiError>) -> ApiError {
-    result.expect_err("pagination operation should fail")
+fn summary_of(error: &ApiError) -> &TraversalSummary {
+    error
+        .traversal_summary()
+        .expect("traversal errors carry their summary")
 }
 
+use std::future::IntoFuture as _;
+
+mod bodies;
 mod completion;
+mod envelope;
 mod identity;
+mod journal;
 mod limits;
 mod sequence;
+mod terminals;

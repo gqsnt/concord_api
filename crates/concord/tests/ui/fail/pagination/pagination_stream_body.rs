@@ -1,43 +1,35 @@
-use concord::api;
+// §9.3: one-shot streams do not obtain the page-body promise by default.
+use concord::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};
+use concord::pagination::{OffsetInit, OffsetPagination};
+use concord::{Binary, Bytes, RequestStream, api};
 
-#[path = "../../../support/mod.rs"]
-mod support;
+pub struct Lines;
 
-pub struct Controller {}
+impl DecodeBody for Lines {
+    type Output = Vec<String>;
 
-impl<Page> concord::pagination::PaginationController<Page> for Controller
-where
-    Page: Send + 'static,
-{
-    type Item = ();
+    const ACCEPT: Option<&'static str> = Some("text/plain");
 
-    const DESCRIPTION: concord::pagination::PaginationDescription =
-        concord::pagination::PaginationDescription::NONE;
-
-    fn advance(
-        self,
-        _page: concord::pagination::PageResponse<Page>,
-        _limits: concord::pagination::PageDecisionLimits,
-    ) -> Result<
-        concord::pagination::PageStep<Self, Self::Item>,
-        concord::pagination::PaginationError,
-    > {
-        Ok(concord::pagination::PageStep::Done { items: Vec::new() })
+    fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
+        let text = String::from_utf8(body.to_vec()).map_err(|_| CodecError::new(CodecErrorKind::Decode))?;
+        Ok(text.lines().map(str::to_owned).collect())
     }
 }
 
+pub const PAGE_SIZE: std::num::NonZeroU32 = std::num::NonZeroU32::MIN;
+
 api! {
     client StreamPageBodyApi {
-        timeout 30s;
         base "https://example.test";
 
-
-    POST read(
-        body body: ::concord::body::RequestStream via Binary,
-    ) -> Vec<u8> via crate::support::Json {
-        effect safe;
-        paginate via crate::Controller {}
+        POST read(body upload: RequestStream via Binary, query offset: u64 = 0) -> Vec<String> via crate::Lines {
+            effect safe;
+            paginate via OffsetPagination {
+                init OffsetInit { offset: offset, page_size: crate::PAGE_SIZE };
+                cursor -> offset;
+            }
+        }
     }
-}}
+}
 
 fn main() {}

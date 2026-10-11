@@ -1,21 +1,20 @@
-use concord::{Binary, api};
+// CALL-03: a streaming endpoint has no page terminals; ordinary `.await`
+// acquires one stream and never paginates.
+use concord::{Binary, ByteStream, api};
 
 api! {
     client StreamingApi {
-        timeout 30s;
         base "http://streaming.example.test";
 
-
-    scope transfers() {
-        path ["transfers"];
-        GET download() -> ::concord::response::ByteStream via Binary;
+        scope transfers() {
+            path "transfers";
+            GET download() -> ByteStream via Binary;
+        }
     }
-}}
+}
 
 fn main() {
     let client = StreamingApi::new().unwrap();
-    let _ = client
-        .transfers()
-        .download()
-        .paginate(concord::PageLimit::Prefix(1));
+    let _ = client.transfers().download().pages(1);
+    let _ = client.transfers().download().collect_prefix(1);
 }

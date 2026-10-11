@@ -1,0 +1,41 @@
+error: [C3-PLACE] `Content-Type` is not a generic public-header target of endpoint `OptionalContentTypeApi::write`; it is owned by transport, authentication, representation negotiation, body media, cookies or proxy handling (place credentials with `auth { ... }`; representations own media and negotiation)
+  --> tests/ui/fail/authentication/header_ownership_optional_sources.rs:16:20
+   |
+16 |             header("Content-Type") media?: String,
+   |                    ^^^^^^^^^^^^^^
+
+error: [C3-PLACE] `content-length` is not a generic public-header target of endpoint `OptionalContentLengthApi::write`; it is owned by transport, authentication, representation negotiation, body media, cookies or proxy handling (place credentials with `auth { ... }`; representations own media and negotiation)
+  --> tests/ui/fail/authentication/header_ownership_optional_sources.rs:28:30
+   |
+28 |             headers { append "content-length" = length; }
+   |                              ^^^^^^^^^^^^^^^^
+
+error: [C3-PLACE] `Accept-Encoding` is not a generic public-header target of endpoint `OptionalAcceptEncodingApi::read`; it is owned by transport, authentication, representation negotiation, body media, cookies or proxy handling (place credentials with `auth { ... }`; representations own media and negotiation)
+  --> tests/ui/fail/authentication/header_ownership_optional_sources.rs:39:23
+   |
+39 |             headers { "Accept-Encoding" = each encodings; }
+   |                       ^^^^^^^^^^^^^^^^^
+
+error: [C3-PLACE] `Host` is not a generic public-header target of scope `OptionalHostApi::tenant`; it is owned by transport, authentication, representation negotiation, body media, cookies or proxy handling (place credentials with `auth { ... }`; representations own media and negotiation)
+  --> tests/ui/fail/authentication/header_ownership_optional_sources.rs:49:29
+   |
+49 |         scope tenant(header("Host") host?: String) {
+   |                             ^^^^^^
+
+error: [C3-PLACE] `Transfer-Encoding` is not a generic public-header target of client `OptionalTransferEncodingApi`; it is owned by transport, authentication, representation negotiation, body media, cookies or proxy handling (place credentials with `auth { ... }`; representations own media and negotiation)
+  --> tests/ui/fail/authentication/header_ownership_optional_sources.rs:60:32
+   |
+60 |         headers { when_present "Transfer-Encoding" = coding; }
+   |                                ^^^^^^^^^^^^^^^^^^^
+
+error: [C3-AUTH] private auth target `x-api-key` of endpoint `OptionalAppendAuthApi::read` collides with a public header writer (OptionalAppendAuthApi::read block statement `x-api-key`); public and private-auth targets have distinct owners, so rename or remove the public writer
+  --> tests/ui/fail/authentication/header_ownership_optional_sources.rs:77:20
+   |
+77 |             auth { header "X-Api-Key" = key; }
+   |                    ^^^^^^
+
+error: note: the public writer is here
+  --> tests/ui/fail/authentication/header_ownership_optional_sources.rs:76:43
+   |
+76 |             headers { remove "X-Api-Key"; append "x-api-key" = hint; }
+   |                                           ^^^^^^

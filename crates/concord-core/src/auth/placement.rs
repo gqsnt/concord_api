@@ -147,6 +147,7 @@ impl Auth {
         1
     }
 
+    #[cfg(test)]
     pub(crate) fn public_name_bytes(&self) -> usize {
         match &self.kind {
             PlacementKind::Bearer | PlacementKind::Basic | PlacementKind::Authorization => {
@@ -172,6 +173,127 @@ impl Auth {
             }),
             challenge: ChallengePolicy::Never,
         }
+    }
+
+    /// The safe, value-free target identity this placement owns.
+    pub(crate) fn target(&self) -> AuthTarget {
+        match &self.kind {
+            PlacementKind::Bearer
+            | PlacementKind::Basic
+            | PlacementKind::Authorization
+            | PlacementKind::AuthorizationWithScheme(_) => AuthTarget(TargetKind::Authorization),
+            PlacementKind::Header(name) => AuthTarget(TargetKind::Header(name.clone())),
+            PlacementKind::Query(name) => AuthTarget(TargetKind::Query(name.as_str().into())),
+        }
+    }
+}
+
+/// The safe descriptor identity of one effective private authentication
+/// placement: the request target it owns, never its credential or material.
+///
+/// Placement targets are exclusive (AUTH-01), so a target identifies at most
+/// one effective placement: every Bearer, Basic and Authorization placement
+/// owns the `Authorization` header, a private header placement owns its
+/// header name (compared case-insensitively) and a private query placement
+/// owns its exact query key. A runtime endpoint can remove an inherited
+/// placement by this identity (RUNTIME-02); no API accepts a target to
+/// *create* a placement.
+#[derive(Clone, Eq, Hash, PartialEq)]
+pub struct AuthTarget(TargetKind);
+
+#[derive(Clone, Eq, Hash, PartialEq)]
+enum TargetKind {
+    Authorization,
+    Header(HeaderName),
+    Query(Box<str>),
+}
+
+impl AuthTarget {
+    /// The `Authorization` header owned by a Bearer, Basic or Authorization
+    /// placement.
+    #[must_use]
+    pub const fn authorization() -> Self {
+        Self(TargetKind::Authorization)
+    }
+
+    /// A private custom header placement target such as `X-Api-Key`.
+    ///
+    /// # Errors
+    ///
+    /// [`ConfigurationErrorKind::InvalidAuthentication`] when the name is not
+    /// a valid HTTP field name of at most [`MAX_AUTH_PLACEMENT_NAME_BYTES`]
+    /// bytes or names a request-owned field (`Authorization` is addressed by
+    /// [`Self::authorization`]).
+    ///
+    /// [`ConfigurationErrorKind::InvalidAuthentication`]: crate::error::ConfigurationErrorKind::InvalidAuthentication
+    pub fn header(name: &str) -> Result<Self, crate::error::ConfigurationError> {
+        let invalid = || {
+            crate::error::ConfigurationError::new(
+                crate::error::ConfigurationErrorKind::InvalidAuthentication,
+            )
+        };
+        if name.is_empty() || name.len() > MAX_AUTH_PLACEMENT_NAME_BYTES {
+            return Err(invalid());
+        }
+        let name = HeaderName::from_bytes(name.as_bytes()).map_err(|_| invalid())?;
+        validate_auth_header_name(&name).map_err(|_| invalid())?;
+        Ok(Self(TargetKind::Header(name)))
+    }
+
+    /// A private query placement target with this exact key.
+    ///
+    /// # Errors
+    ///
+    /// [`ConfigurationErrorKind::InvalidAuthentication`] for an empty key or
+    /// one longer than [`MAX_AUTH_PLACEMENT_NAME_BYTES`] bytes.
+    ///
+    /// [`ConfigurationErrorKind::InvalidAuthentication`]: crate::error::ConfigurationErrorKind::InvalidAuthentication
+    pub fn query(name: &str) -> Result<Self, crate::error::ConfigurationError> {
+        validate_placement_name(name).map_err(|_| {
+            crate::error::ConfigurationError::new(
+                crate::error::ConfigurationErrorKind::InvalidAuthentication,
+            )
+        })?;
+        Ok(Self(TargetKind::Query(name.into())))
+    }
+
+    /// Returns whether a public query key would collide with this target.
+    pub(crate) fn claims_query(&self, key: &str) -> bool {
+        matches!(&self.0, TargetKind::Query(name) if name.as_ref() == key)
+    }
+
+    /// Returns whether a public header name would collide with this target.
+    pub(crate) fn claims_header(&self, name: &str) -> bool {
+        match &self.0 {
+            TargetKind::Authorization => name.eq_ignore_ascii_case(AUTHORIZATION.as_str()),
+            TargetKind::Header(header) => name.eq_ignore_ascii_case(header.as_str()),
+            TargetKind::Query(_) => false,
+        }
+    }
+
+    /// Number of library-retained descriptor bytes.
+    pub(crate) fn retained_bytes(&self) -> usize {
+        match &self.0 {
+            TargetKind::Authorization => AUTHORIZATION.as_str().len(),
+            TargetKind::Header(name) => name.as_str().len(),
+            TargetKind::Query(name) => name.len(),
+        }
+    }
+}
+
+impl std::fmt::Display for AuthTarget {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.0 {
+            TargetKind::Authorization => formatter.write_str("authorization header"),
+            TargetKind::Header(name) => write!(formatter, "private header `{}`", name.as_str()),
+            TargetKind::Query(name) => write!(formatter, "private query `{name}`"),
+        }
+    }
+}
+
+impl std::fmt::Debug for AuthTarget {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "AuthTarget({self})")
     }
 }
 
@@ -217,12 +339,12 @@ trait ErasedCredential: Send + Sync {
         prepared: &'a ErasedPrepared,
         http: ProviderHttp<'a>,
     ) -> BoxFuture<'a, Result<Option<ErasedPrepared>, AuthError>>;
-    fn reject_exact(&self, prepared: &ErasedPrepared) -> Result<(), AuthError>;
-    fn clear_exact(&self, prepared: &ErasedPrepared) -> Result<(), AuthError>;
+    fn reject_installed(&self, prepared: &ErasedPrepared, retain: bool) -> Result<(), AuthError>;
     fn materialize<'a>(
         &self,
         prepared: &'a ErasedPrepared,
     ) -> Result<NativeMaterial<'a>, AuthError>;
+    fn applied_identity(&self, prepared: &ErasedPrepared) -> Result<(usize, u64), AuthError>;
 }
 
 struct TypedCredential<M> {
@@ -306,12 +428,9 @@ where
         })
     }
 
-    fn reject_exact(&self, prepared: &ErasedPrepared) -> Result<(), AuthError> {
-        self.selector.reject_static_exact(Self::typed(prepared)?)
-    }
-
-    fn clear_exact(&self, prepared: &ErasedPrepared) -> Result<(), AuthError> {
-        self.selector.clear_exact(Self::typed(prepared)?)
+    fn reject_installed(&self, prepared: &ErasedPrepared, retain: bool) -> Result<(), AuthError> {
+        self.selector
+            .reject_installed(Self::typed(prepared)?, retain)
     }
 
     fn materialize<'a>(
@@ -319,6 +438,10 @@ where
         prepared: &'a ErasedPrepared,
     ) -> Result<NativeMaterial<'a>, AuthError> {
         (self.materialize)(Self::typed(prepared)?.value())
+    }
+
+    fn applied_identity(&self, prepared: &ErasedPrepared) -> Result<(usize, u64), AuthError> {
+        Ok(Self::typed(prepared)?.applied_identity())
     }
 }
 
@@ -391,12 +514,38 @@ impl AuthPlan {
         self.placements.is_empty()
     }
 
+    #[cfg(test)]
     pub(crate) fn placement_count(&self) -> usize {
         self.placements.len()
     }
 
-    pub(crate) fn cloned_placements(&self) -> impl Iterator<Item = Auth> + '_ {
-        self.placements.iter().cloned()
+    /// Returns whether an effective placement classifies `status` as an
+    /// authentication challenge. Used to keep expected-absence statuses
+    /// disjoint from challenges.
+    pub(crate) fn classifies_challenge(&self, status: StatusCode) -> bool {
+        self.placements.iter().any(|placement| {
+            matches!(
+                (placement.challenge, status),
+                (ChallengePolicy::Unauthorized, StatusCode::UNAUTHORIZED)
+                    | (
+                        ChallengePolicy::UnauthorizedOrForbidden,
+                        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
+                    )
+            )
+        })
+    }
+
+    /// The safe target identities of the effective placements, in order.
+    pub(crate) fn targets(&self) -> Vec<AuthTarget> {
+        self.placements.iter().map(Auth::target).collect()
+    }
+
+    /// Removes the one placement owning `target`; returns whether one existed.
+    pub(crate) fn remove_target(&mut self, target: &AuthTarget) -> bool {
+        let before = self.placements.len();
+        self.placements
+            .retain(|placement| placement.target() != *target);
+        self.placements.len() != before
     }
 
     pub(crate) fn validate_public(
@@ -559,24 +708,38 @@ impl PreparedAuthPlan {
             && placement.credential.recovery_mode()? == RecoveryMode::Refresh)
     }
 
+    /// Applies a final attributed challenge to exactly the installed version
+    /// used by this attempt.
+    ///
+    /// Static material is rejected for future calls; an endpoint-backed
+    /// installed version is rejected without ever invoking its source
+    /// endpoint and without touching pending installation intents; a provider
+    /// follows its recovery mode. A newer installed version is never
+    /// affected.
     pub(crate) fn apply_terminal_challenge(&self, index: usize) -> Result<(), AuthError> {
         let placement = self
             .placements
             .get(index)
             .ok_or_else(|| AuthError::new(AuthErrorKind::Internal))?;
         match placement.credential.source()? {
-            CredentialSource::Static => placement.credential.reject_exact(&placement.prepared),
-            CredentialSource::Endpoint => placement.credential.clear_exact(&placement.prepared),
+            CredentialSource::Static | CredentialSource::Endpoint => placement
+                .credential
+                .reject_installed(&placement.prepared, false),
             CredentialSource::Provider => match placement.credential.recovery_mode()? {
                 RecoveryMode::None => Ok(()),
-                RecoveryMode::InvalidateOnly => {
-                    placement.credential.clear_exact(&placement.prepared)
-                }
-                RecoveryMode::Refresh => placement.credential.reject_exact(&placement.prepared),
+                RecoveryMode::InvalidateOnly => placement
+                    .credential
+                    .reject_installed(&placement.prepared, false),
+                RecoveryMode::Refresh => placement
+                    .credential
+                    .reject_installed(&placement.prepared, true),
             },
         }
     }
 
+    /// Runs source-authorized recovery for the attributed placement and
+    /// reports whether it yielded usable material. Static and endpoint-backed
+    /// sources never recover here (they are rejected by the caller instead).
     pub(crate) async fn recover_attributed(
         &self,
         index: usize,
@@ -617,6 +780,24 @@ impl PreparedAuthPlan {
             });
         }
         Ok(Self { placements })
+    }
+
+    /// Phase-6 freshness comparison: whether `other` applies exactly the same
+    /// installed material versions as this plan, placement by placement. It
+    /// performs no provider, limiter or transport work.
+    pub(crate) fn applies_same_material(&self, other: &Self) -> Result<bool, AuthError> {
+        if self.placements.len() != other.placements.len() {
+            return Ok(false);
+        }
+        for (left, right) in self.placements.iter().zip(&other.placements) {
+            if left.credential.key() != right.credential.key()
+                || left.credential.applied_identity(&left.prepared)?
+                    != right.credential.applied_identity(&right.prepared)?
+            {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     pub(crate) async fn finalize(

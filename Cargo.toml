@@ -3,11 +3,14 @@ members = [
     "crates/concord",
     "crates/concord-core",
     "crates/concord-extras",
+    "crates/concord-inspect",
     "crates/concord-macros",
     "crates/concord-test-support",
     "crates/concord-examples",
     "tools/xtask",
     "tools/perf",
+    "tests/downstream/concord-downstream-api",
+    "tests/downstream/concord-downstream-app",
 ]
 default-members = [
     "crates/concord",
@@ -15,12 +18,14 @@ default-members = [
     "crates/concord-extras",
     "crates/concord-macros",
     "crates/concord-examples",
+    "tests/downstream/concord-downstream-api",
+    "tests/downstream/concord-downstream-app",
 ]
 exclude = ["fixtures"]
 resolver = "3"
 
 [workspace.package]
-version = "2.1.0-beta.1"
+version = "3.0.0-beta.1"
 edition = "2024"
 rust-version = "1.86"
 

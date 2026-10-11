@@ -1,56 +1,61 @@
+//! `Binary` as the exact request-stream and managed response-stream
+//! representation for generated and runtime endpoints (§9.5, §15).
+
 use std::pin::Pin;
 
 use concord::api;
 use concord::body::{RequestRepresentation, RequestStream};
 use concord::endpoint::{EndpointId, RuntimeEndpoint};
 use concord::error::ErrorCategory;
-use concord::http::{Method, SafeProxy};
+use concord::http::Method;
 use concord::response::{ByteStream, ResponseRepresentation, Streaming};
 use concord::{ApiError, Binary, Bytes};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 use futures_core::Stream as _;
 
+use crate::support::loopback_proxy;
+
 api! {
     client AnyStreamApi {
-        timeout 30s;
         base "http://any-stream.example.test/root/";
+        timeout 30s;
 
+        POST upload(body input: ::concord::body::RequestStream via Binary) -> Bytes via Binary {
+            path "upload";
+        }
 
-    POST upload(body body: ::concord::body::RequestStream via Binary) -> Bytes via Binary {
-        path ["upload"];
+        POST exact_upload(body input: ::concord::body::RequestStream via Binary) -> Bytes via Binary {
+            path "exact-upload";
+        }
+
+        GET missing_media() -> ::concord::response::ByteStream via Binary {
+            path "missing-media";
+        }
+
+        GET malformed_media() -> ::concord::response::ByteStream via Binary {
+            path "malformed-media";
+        }
+
+        GET arbitrary_media() -> ::concord::response::ByteStream via Binary {
+            path "arbitrary-media";
+        }
+
+        GET empty() -> ::concord::response::ByteStream via Binary {
+            path "empty";
+        }
+
+        GET exact() -> ::concord::response::ByteStream via Binary {
+            path "exact";
+        }
+
+        GET exact_mismatch() -> ::concord::response::ByteStream via Binary {
+            path "exact-mismatch";
+        }
     }
-
-    POST exact_upload(body body: ::concord::body::RequestStream via Binary) -> Bytes via Binary {
-        path ["exact-upload"];
-    }
-
-    GET missing_media() -> ::concord::response::ByteStream via Binary {
-        path ["missing-media"];
-    }
-
-    GET malformed_media() -> ::concord::response::ByteStream via Binary {
-        path ["malformed-media"];
-    }
-
-    GET arbitrary_media() -> ::concord::response::ByteStream via Binary {
-        path ["arbitrary-media"];
-    }
-
-    GET empty() -> ::concord::response::ByteStream via Binary {
-        path ["empty"];
-    }
-
-    GET exact() -> ::concord::response::ByteStream via Binary {
-        path ["exact"];
-    }
-
-    GET exact_mismatch() -> ::concord::response::ByteStream via Binary {
-        path ["exact-mismatch"];
-    }
-}}
+}
 
 fn client(server: &ScriptedServer) -> AnyStreamApi {
-    let proxy = SafeProxy::parse(server.url("")).expect("any-stream loopback proxy");
+    let proxy = loopback_proxy(server);
     AnyStreamApi::builder()
         .configure_http(move |http| http.proxy(proxy))
         .build()
@@ -71,7 +76,7 @@ async fn collect(mut stream: ByteStream) -> Result<Bytes, ApiError> {
 fn binary_is_the_exact_public_request_and_response_stream_representation() {
     fn assert_request<S>()
     where
-        S: RequestRepresentation<RequestStream>,
+        S: RequestRepresentation<RequestStream<Bytes>>,
     {
     }
 
@@ -84,7 +89,7 @@ fn binary_is_the_exact_public_request_and_response_stream_representation() {
     assert_request::<Binary>();
     assert_response::<Binary>();
     assert_eq!(
-        <Binary as ResponseRepresentation<ByteStream>>::accept(),
+        <Binary as ResponseRepresentation<ByteStream>>::ACCEPT,
         Some("application/octet-stream")
     );
 }
@@ -172,8 +177,8 @@ async fn generated_and_runtime_binary_streams_preserve_bounded_wire_semantics() 
     .expect("runtime bare stream response");
     assert_eq!(
         collect(
-            runtime
-                .try_bind(&client)
+            client
+                .bind(runtime)
                 .expect("runtime binding")
                 .await
                 .expect("runtime bare stream")
@@ -205,6 +210,11 @@ async fn generated_and_runtime_binary_streams_preserve_bounded_wire_semantics() 
     assert_eq!(
         requests[6].header("accept"),
         Some("application/octet-stream")
+    );
+    assert!(
+        requests[7].target().ends_with("/root/runtime"),
+        "{}",
+        requests[7].target()
     );
     assert_eq!(
         requests[8].header("accept"),

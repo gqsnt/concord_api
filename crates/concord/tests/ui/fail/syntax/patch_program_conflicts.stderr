@@ -1,0 +1,83 @@
+error: [C3-OVERRIDE] query key `locale` introduced by InheritedIntroduction::read block statement `locale` already has a potential writer: InheritedIntroduction block statement `locale`; select explicitly: `replace` (drop earlier occurrences), `when_present` (replace only when the source is present), `append` (keep both) or `remove`
+  --> tests/ui/fail/syntax/patch_program_conflicts.rs:18:21
+   |
+18 |             query { "locale" = locale; }
+   |                     ^^^^^^^^
+
+error: note: the earlier potential writer is here
+  --> tests/ui/fail/syntax/patch_program_conflicts.rs:15:17
+   |
+15 |         query { "locale" = "fr"; }
+   |                 ^^^^^^^^
+
+error: [C3-OVERRIDE] query key `page` introduced by DirectThenExplicit::read block statement `page` already has a potential writer: DirectThenExplicit::read direct placement `page`; select explicitly: `replace` (drop earlier occurrences), `when_present` (replace only when the source is present), `append` (keep both) or `remove`
+  --> tests/ui/fail/syntax/patch_program_conflicts.rs:29:21
+   |
+29 |             query { "page" = 1; }
+   |                     ^^^^^^
+
+error: note: the earlier potential writer is here
+  --> tests/ui/fail/syntax/patch_program_conflicts.rs:28:18
+   |
+28 |         GET read(query page: u32) -> Bytes via Binary {
+   |                  ^^^^^
+
+error: [C3-OVERRIDE] header `x-trace` introduced by HeaderCaseIntroduction::read block statement `x-trace` already has a potential writer: HeaderCaseIntroduction block statement `X-Trace`; select explicitly: `replace` (drop earlier occurrences), `when_present` (replace only when the source is present), `append` (keep both) or `remove`
+  --> tests/ui/fail/syntax/patch_program_conflicts.rs:41:23
+   |
+41 |             headers { "x-trace" = "endpoint"; }
+   |                       ^^^^^^^^^
+
+error: note: the earlier potential writer is here
+  --> tests/ui/fail/syntax/patch_program_conflicts.rs:38:19
+   |
+38 |         headers { "X-Trace" = "client"; }
+   |                   ^^^^^^^^^
+
+error: [C3-OVERRIDE] `replace "lcoale"` in endpoint `ReplaceWithoutWriter::read` has no earlier potential writer of this query key in the inherited program; check the key spelling or introduce it with `"lcoale" = ...`
+  --> tests/ui/fail/syntax/patch_program_conflicts.rs:53:21
+   |
+53 |             query { replace "lcoale" = "de"; }
+   |                     ^^^^^^^
+
+error: [C3-OVERRIDE] `when_present "locale"` in endpoint `WhenPresentWithoutWriter::read` has no earlier potential writer of this query key in the inherited program; check the key spelling or introduce it with `"locale" = ...`
+  --> tests/ui/fail/syntax/patch_program_conflicts.rs:64:21
+   |
+64 |             query { when_present "locale" = locale; }
+   |                     ^^^^^^^^^^^^
+
+error: [C3-OVERRIDE] `remove "x-trace"` in endpoint `RemoveWithoutWriter::read` has no earlier potential writer of this header in the inherited program; check the key spelling or introduce it with `"x-trace" = ...`
+  --> tests/ui/fail/syntax/patch_program_conflicts.rs:75:23
+   |
+75 |             headers { remove "x-trace"; }
+   |                       ^^^^^^
+
+error: [C3-OVERRIDE] `when_present "locale"` in endpoint `WhenPresentTotalSource::read` requires an outer-optional source; a total source always replaces — write `replace "locale" = ...` instead
+  --> tests/ui/fail/syntax/patch_program_conflicts.rs:87:21
+   |
+87 |             query { when_present "locale" = locale; }
+   |                     ^^^^^^^^^^^^
+
+error: [C3-PLACE] `query off` in endpoint `QueryOffWithDirectPlacement::read` cannot coexist with the direct query placement of `page`; choose a replacement block (`query replace { ... }`) instead
+  --> tests/ui/fail/syntax/patch_program_conflicts.rs:98:13
+   |
+98 |             query off;
+   |             ^^^^^
+
+error: note: the direct placement is here
+  --> tests/ui/fail/syntax/patch_program_conflicts.rs:97:18
+   |
+97 |         GET read(query page: u32) -> Bytes via Binary {
+   |                  ^^^^^
+
+error: [C3-PLACE] `headers off` in scope `HeadersOffWithDirectPlacement::traced` cannot coexist with the direct headers placement of `trace`; choose a replacement block (`headers replace { ... }`) instead
+   --> tests/ui/fail/syntax/patch_program_conflicts.rs:109:13
+    |
+109 |             headers off;
+    |             ^^^^^^^
+
+error: note: the direct placement is here
+   --> tests/ui/fail/syntax/patch_program_conflicts.rs:108:22
+    |
+108 |         scope traced(header("x-trace") trace: String) {
+    |                      ^^^^^^

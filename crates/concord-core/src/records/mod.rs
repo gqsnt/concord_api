@@ -12,6 +12,6 @@ pub(crate) use buffered::BufferedRecords;
 pub use buffered::{decode_complete_records, validate_record_decoder};
 pub use decoder::RecordDecoder;
 pub use error::{RecordError, RecordErrorKind};
-#[cfg(test)]
-pub(crate) use stream::{DecodedRecordStream as RecordStream, RecordBatches, Records};
 pub use stream::{ItemBatches, ItemStream};
+#[cfg(test)]
+pub(crate) use stream::{RecordStream, Records};

@@ -1,5 +1,17 @@
-error: rate-limit cost must not exceed any window capacity
- --> tests/ui/fail/rate_limits/rate_limit_invalid_cost.rs:7:97
+error: [C3-RATE] inline policy `concord.rate_limit_invalid_cost.1` of client `Api` has cost 2, greater than a window capacity of 1; it could never be admitted, so lower the cost or raise the capacity
+ --> tests/ui/fail/rate_limits/rate_limit_invalid_cost.rs:9:9
   |
-7 |         rate_limit { id "concord.rate_limit_invalid_cost.1"; key [origin];  cost 2; allow 1 per 1s; }
-  |                                                                                                 ^^
+9 |         rate_limit { id "concord.rate_limit_invalid_cost.1"; key [origin]; cost 2; allow 1 per 1s; }
+  |         ^^^^^^^^^^
+
+error: [C3-RATE] attachment of policy `reads` in endpoint `AttachmentCostApi::read` has cost 6, greater than a window capacity of 5; it could never be admitted, so lower the cost or raise the capacity
+  --> tests/ui/fail/rate_limits/rate_limit_invalid_cost.rs:23:13
+   |
+23 |             rate_limit reads() { cost 6; }
+   |             ^^^^^^^^^^
+
+error: [C3-RATE] cost must be positive in the inline rate policy of client `ZeroCostApi`; write a value of at least 1
+  --> tests/ui/fail/rate_limits/rate_limit_invalid_cost.rs:31:81
+   |
+31 |         rate_limit { id "concord.rate_limit_invalid_cost.3"; key [origin]; cost 0; allow 1 per 1s; }
+   |                                                                                 ^

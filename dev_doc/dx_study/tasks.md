@@ -1,5 +1,7 @@
 # Gate 3 participant tasks
 
+**Status:** Part of the v2.1 Gate 3 packet described in [`README.md`](README.md); not revised for v3.
+
 Use only public/generated documentation, supplied normal examples, compiler
 feedback, and ordinary editor/repository search. Do not inspect macro or core
 implementation source. Record an answer and confidence from 1 (guessing) to 5

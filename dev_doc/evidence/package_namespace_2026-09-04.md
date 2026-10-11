@@ -1,5 +1,8 @@
 # Package namespace observation — 2026-09-04
 
+**Status:** Historical observation made during the v2.1 lifecycle; not
+repeated for v3.
+
 **Claim state:** Observed at the stated instant; registry state may change.
 
 **Query time:** 2026-09-04T10:45:42Z

@@ -6,9 +6,11 @@
 //! policy exposed as `rate_limit::LocalRateLimiter`.
 //!
 //! Generated construction and navigation use declaration-domain method names.
-//! Public value mutation uses `set_*`; absence-capable values additionally use
-//! `omit_*`, and values with declaration defaults use `reset_*`.
-//! These capabilities follow Concord's explicit `?` marker, never Rust type spelling.
+//! Value controls follow the declared shape, never Rust type spelling:
+//! `set_*` selects a payload (`impl IntoValue<T>`), `set_*_if_some` takes an
+//! exact `Option<T>` whose `None` means "no new opinion", optional (`?`) values
+//! add the exact slot replacement `replace_*(Option<T>)` and `omit_*`, and
+//! initialized values add `reset_*`.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -16,9 +18,11 @@
 /// Declares a generated Concord client and its typed endpoints.
 ///
 /// Generated constructors and navigation retain declaration-domain names.
-/// Public value mutations use `set_*`, with `omit_*` for absence-capable
-/// values and `reset_*` for values with declaration defaults. `set_*` always
-/// accepts the exact effective type, including nested optionality.
+/// `set_*` selects a payload through the closed `IntoValue<T>` conversions;
+/// optional values add the exact `replace_*(Option<T>)` and `omit_*`,
+/// `set_*_if_some(Option<T>)` keeps the current selection for `None`, and
+/// initialized values add `reset_*`. See the generated method docs of each
+/// client for its exact controls.
 #[macro_export]
 macro_rules! api {
     ($($declaration:tt)*) => {
@@ -32,13 +36,13 @@ macro_rules! api {
 #[doc(hidden)]
 pub use concord_macros::__api as __concord_api;
 
-pub use concord_core::PageLimit;
 #[cfg(feature = "records")]
 pub use concord_core::contracts::ItemStream;
 pub use concord_core::contracts::{
     ApiError, ApiResponse, AtomEncoder, AtomError, AtomErrorKind, Binary, BoundedAtomWriter,
-    ByteStream, Bytes, ClientBuildError, Discard, Empty, OrderedValues, RequestAtom, RequestStream,
-    SecretString, Text,
+    ByteStream, Bytes, CallOptions, CancellationToken, ClientBuildError, ControlError,
+    ControlSummary, Discard, DispatchKnowledge, Empty, ExecutionMeta, IntoValue, OperationId,
+    OrderedValues, RequestAtom, RequestControls, RequestStream, SecretString, StoreOutcome, Text,
 };
 pub use concord_extras::atom::DisplayAtom;
 
@@ -56,7 +60,7 @@ pub use concord_extras::codec::Json;
 pub mod auth {
     pub use concord_core::contracts::{AccessToken, ApiKey, BasicCredential, SecretString};
     pub use concord_core::contracts::{
-        Auth, AuthError, AuthErrorKind, BoxFuture, ChallengePolicy, CredentialHandle,
+        Auth, AuthError, AuthErrorKind, AuthTarget, BoxFuture, ChallengePolicy, CredentialHandle,
         CredentialMaterial, CredentialMaterialError, CredentialMaterialErrorKind,
         CredentialProvider, CredentialReason, CredentialRef, CredentialRequest,
         MAX_AUTH_PLACEMENT_NAME_BYTES, MAX_AUTH_PLACEMENTS, MAX_AUTH_QUERY_VALUE_BYTES,
@@ -64,6 +68,11 @@ pub mod auth {
         MAX_BASIC_USERNAME_BYTES, MAX_CREDENTIAL_SECRET_BYTES, MAX_SECRET_STRING_BYTES,
         ProviderBody, ProviderBodyFactory, ProviderHttp, ProviderRequest, ProviderResponse,
         ProviderRetry, RecoveryMode, SecretCredential,
+    };
+    pub use concord_core::contracts::{
+        ChallengeRecovery, CredentialVersion, MAX_CREDENTIAL_FLIGHT_WAITERS,
+        MAX_PROVIDER_ORIGIN_BYTES, MAX_PROVIDER_ORIGINS, MAX_PROVIDER_SENDS, ProviderOrigin,
+        ProviderOriginError, ProviderOriginErrorKind, StoreOutcome, StoreRequest,
     };
     #[cfg(feature = "oauth2-client")]
     pub use concord_extras::auth::{
@@ -74,12 +83,16 @@ pub mod auth {
     };
 }
 
-/// Request-body specifications, factories, metadata, and bounded streaming primitives.
+/// Request representations, the one prepared body, factories, and bounded
+/// streaming primitives.
 pub mod body {
+    pub use concord_core::body::BodyDescription;
+    #[allow(deprecated)]
+    pub use concord_core::contracts::RequestBody;
     pub use concord_core::contracts::{
-        BodyError, BodyErrorKind, BodyFactory, BodyKind, LengthHint, MAX_EMPTY_REQUEST_CHUNKS,
-        PageRequestRepresentation, RequestBody, RequestBodyContext, RequestBodyMetadata,
-        RequestContentType, RequestRepresentation, RequestStream,
+        BodyError, BodyErrorKind, BodyFactory, BodyKind, LengthHint, MAX_BODY_MEDIA_HINT_BYTES,
+        MAX_EMPTY_REQUEST_CHUNKS, MAX_REQUEST_CONTENT_TYPE_BYTES, PageRequestRepresentation,
+        PreparedBody, RequestBodyContext, RequestRepresentation, RequestStream,
     };
     #[cfg(feature = "multipart")]
     pub use concord_core::contracts::{
@@ -98,38 +111,50 @@ pub mod codec {
     pub use concord_core::contracts::{Bytes, BytesMut};
     #[cfg(feature = "json")]
     pub use concord_extras::codec::Json;
+    pub use concord_extras::codec::NotFound;
 }
 
 /// Explicit endpoint values and typed pending request contracts.
 pub mod endpoint {
     pub use concord_core::contracts::{
-        AcceptedStatus, AttachmentDescription, AttachmentFamily, AttachmentOperation,
-        AttachmentView, AuthenticationDescription, BodyDescription, ContractDescription,
-        ContractFactClass, CredentialDescription, CredentialSourceKind, DeclarationDescription,
-        DeclarationKind, Effect, EffectSource, EndpointCapabilities, EndpointContractDescription,
+        AbsentStatus, AcceptedStatus, Effect, EffectSource, EndpointCapabilities,
         EndpointDescription, EndpointId, MAX_ENDPOINT_ID_BYTES, MAX_FORMATTED_PUBLIC_VALUE_BYTES,
         MAX_REQUEST_HEAD_COMPONENTS, MAX_REQUEST_HEADER_BYTES, MAX_REQUEST_HEADER_COUNT,
         MAX_REQUEST_URL_BYTES, MAX_RUNTIME_ENDPOINT_COMPONENTS, MAX_RUNTIME_ENDPOINT_METHOD_BYTES,
-        MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, ObservationClass, PaginationContractDescription,
-        PaginationFieldDescription, RateLimitWindowDescription, RatePolicyDescription,
-        RateProfileDescription, RequestBodyCategory, RequestPlan, ResponseAcquisition,
-        ResponseDescription, RuntimeEndpoint, RuntimeEndpointBinding, RuntimeEndpointBuilder,
-        RuntimeValue, ScopeDescription, SecretDescription, SemanticChangeClass, StatusSource,
-        TimeoutSelection, ValueDescription, ValueInitializer, ValueOwnerKind, ValuePresence,
-        contract_tool_snapshot, diff_contract_tool_snapshots,
+        MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, RequestBodyCategory, RequestPlan, ResponseAcquisition,
+        StatusSource, TimeoutSelection,
     };
-    pub use concord_core::{AcceptedBytesRequest, Request, ResponseRequest};
+    pub use concord_core::contracts::{
+        BoundRuntimeRequest, MAX_RUNTIME_KEY_BYTES, RuntimeAuthDisposition, RuntimeBindingFacts,
+        RuntimeEndpoint, RuntimeEndpointBuilder, RuntimeFamily, RuntimeFamilyMode,
+        RuntimeOperation, RuntimeOperationFact, RuntimeRouteMode,
+    };
+    pub use concord_core::{AcceptedBytesRequest, Request, ResponseRequest, StoreRequest};
+}
+
+/// Complete, value-free effective contract descriptions (§18).
+///
+/// `Client::contract()` returns a `&'static ContractDescription` without an
+/// executable client, secret or network. Descriptions are immutable,
+/// `Send + Sync` and built once; constructing one never evaluates defaults,
+/// converters or encoders, and sensitive literals are held only as redacted
+/// markers. The versioned JSON format `concord.contract/3`, semantic diffing
+/// and the `contract export|check|diff` tooling live in the `concord-inspect`
+/// companion crate so this facade carries no JSON dependency.
+pub mod inspection {
+    pub use concord_core::inspection::*;
 }
 
 /// Sanitized runtime, configuration, lifecycle, and decoding errors.
 pub mod error {
     pub use concord_core::contracts::{
-        ApiError, AuthError, AuthErrorKind, BodyError, BodyErrorKind, ClientBuildError,
-        ClientBuildErrorKind, ClientInputKind, CodecError, CodecErrorKind, ConfigurationError,
-        ConfigurationErrorKind, DispatchKnowledge, ErrorCategory, FailureStage,
-        HttpResponseFailure, PaginationError, PaginationErrorKind, RateLimitError,
-        RateLimitErrorKind, ResponseBodyError, ResponseBodyErrorKind, StatusBody,
-        StatusBodyDecodeError, StatusBodyState,
+        ApiError, AttemptFacts, AuthError, AuthErrorKind, BodyError, BodyErrorKind,
+        ClientBuildError, ClientBuildErrorKind, ClientInputKind, CodecError, CodecErrorKind,
+        ConfigurationError, ConfigurationErrorKind, DispatchKnowledge, ErrorCategory, FailureStage,
+        HttpResponseFailure, OperationCounts, PaginationError, PaginationErrorKind,
+        ProviderAcquisitionFacts, ProviderAcquisitionOutcome, RateLimitError, RateLimitErrorKind,
+        ResponseBodyError, ResponseBodyErrorKind, StatusBody, StatusBodyDecodeError,
+        StatusBodyDecodeErrorKind, StatusBodyState,
     };
 }
 
@@ -137,9 +162,9 @@ pub mod error {
 pub mod observation {
     pub use concord_core::contracts::{
         AttemptInfo, AttemptStarted, BodyKind, CompletionOutcome, DebugLevel, OperationEvent,
-        OperationFinished, OperationObserver, PaginationFinished, RequestTarget,
-        ResponseHeadObserved, SanitizedHeaderMap, SanitizedHeaderValue, SanitizedHeaders,
-        StreamFinished, StreamKind, StreamOutcome,
+        OperationFinished, OperationObserver, PaginationFinished, ProviderAcquisitionFinished,
+        RequestTarget, ResponseHeadObserved, SanitizedHeaderMap, SanitizedHeaderValue,
+        SanitizedHeaders, StreamFinished, StreamKind, StreamOutcome,
     };
 }
 
@@ -152,16 +177,19 @@ pub mod http {
     };
 }
 
-/// Generic pagination contracts and built-in controller policies.
+/// Pagination contracts, traversal terminals and summaries, and built-in
+/// controllers.
 pub mod pagination {
     pub use concord_core::pagination::{
-        MAX_PAGINATION_HEADER_BYTES, MAX_PAGINATION_HEADER_INTERESTS, PageCorrelation,
-        PageDecisionLimits, PageLimit, PageResponse, PageStep, PaginatedRequest,
-        PaginationController, PaginationDescription, PaginationError, PaginationErrorKind,
+        CollectAll, CollectPrefix, ContinuationKnowledge, DEFAULT_TRAVERSAL_MAX_HANDOFFS,
+        MAX_PAGE_ATTEMPTS, MAX_PAGINATION_HEADER_BYTES, MAX_PAGINATION_HEADER_INTERESTS, Page,
+        PageCorrelation, PageDecisionLimits, PageResponse, PageStep, Pages, PaginationController,
+        PaginationDescription, PaginationError, PaginationErrorKind, Prefix, StopReason,
+        TraversalSummary,
     };
     pub use concord_extras::pagination::{
-        CursorPagination, HasNextCursor, LinkCursorPagination, NextHeaderPagination,
-        OffsetPagination, PagePagination,
+        CursorInit, CursorPagination, HasNextCursor, LinkCursorPagination, NEXT_CURSOR_HEADER,
+        NextHeaderPagination, OffsetInit, OffsetPagination, PageInit, PagePagination,
     };
 }
 
@@ -178,12 +206,17 @@ pub mod pagination {
 pub mod rate_limit {
     pub use concord_core::contracts::{BoxFuture, RateLimitErrorKind};
     pub use concord_core::rate_limit::{
-        CanonicalKeyWriter, DEFAULT_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_ID_BYTES,
-        MAX_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS,
-        MAX_RATE_LIMIT_POLICIES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_POLICY, NoopRateLimiter,
-        RateKeyPart, RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit,
+        CanonicalKeyWriter, DEFAULT_RATE_LIMIT_KEY_BYTES, DEFAULT_RATE_SCHEMA_REGISTRATIONS,
+        ENDPOINT_LABEL, EncodedKeyPart, Enforcement, LimiterCapability,
+        MAX_RATE_KEY_ENCODING_ID_BYTES, MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_BYTES,
+        MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS,
+        MAX_RATE_LIMIT_POLICIES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_POLICY,
+        MAX_RATE_LIMITER_NAMESPACE_BYTES, NoopRateLimiter, ORIGIN_LABEL, RATE_KEY_FRAMING_VERSION,
+        RateDimensionKind, RateDimensionSchema, RateKeyEncoder, RateKeyPart, RateLimitDeclaration,
+        RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit,
         RateLimitPlan, RateLimitPolicy, RateLimitRequest, RateLimitResponse, RateLimitWindow,
-        RateLimiter,
+        RateLimiter, RatePlanSummary, RatePolicySchema, RatePolicySummary, RateWindowSchema,
+        UTF8_ENCODING_ID, encode_canonical, encode_canonical_with, is_valid_encoding_id,
     };
     #[cfg(feature = "rate-limit")]
     pub use concord_extras::rate_limit::LocalRateLimiter;
@@ -204,8 +237,8 @@ pub mod prelude {
     #[cfg(feature = "ndjson")]
     pub use crate::records::NdJson;
     pub use crate::{
-        ApiError, ApiResponse, ByteStream, Bytes, ClientBuildError, Discard, Empty, PageLimit,
-        SecretString, Text, api,
+        ApiError, ApiResponse, ByteStream, Bytes, ClientBuildError, Discard, Empty, SecretString,
+        Text, api,
     };
 }
 
@@ -229,10 +262,12 @@ pub mod records {
 /// Bounded response specifications, acquisition modes, and response metadata.
 pub mod response {
     pub use concord_core::contracts::{
-        AcceptedBytesDriver, ApiResponse, Buffered, ByteStream, Discard, DiscardDriver, Empty,
-        ExecutionMeta, MAX_EMPTY_RESPONSE_CHUNKS, PageResponseRepresentation, ResponseBodyError,
-        ResponseBodyErrorKind, ResponseDriver, ResponseHead, ResponseRepresentation, Streaming,
+        AcceptedBytesDriver, ApiResponse, BodyDisposition, Buffered, ByteStream, Discard,
+        DiscardDriver, Empty, ExecutionMeta, MAX_ACCEPT_BYTES, MAX_EMPTY_RESPONSE_CHUNKS,
+        OptionalOutcome, ResponseBodyError, ResponseBodyErrorKind, ResponseDriver, ResponseHead,
+        ResponseRepresentation, StreamErrorKind, StreamState, StreamSummary, Streaming,
     };
+    pub use concord_extras::codec::NotFound;
 }
 
 /// Concord-managed application retry policy and classifier contracts.
@@ -253,24 +288,7 @@ pub mod runtime {
 #[doc(hidden)]
 pub mod __private {
     #[doc(hidden)]
-    pub use concord_core::__private::accepted_bytes_request;
-    #[doc(hidden)]
-    pub use concord_core::__private::{
-        AcceptedStatus, ApiError, ApiResponse, Auth, ClientBuildError, ClientCore, ClientInputKind,
-        DebugLevel, Effect, EffectSource, EmptyBody, EndpointCapabilities, EndpointDescription,
-        EndpointId, EndpointSpec, GENERATED_CONTRACT_VERSION, GeneratedCredential, HeadBuilder,
-        HeaderName, MAX_REQUEST_HEAD_COMPONENTS, MAX_REQUEST_HEADER_BYTES,
-        MAX_REQUEST_HEADER_COUNT, MAX_REQUEST_URL_BYTES, Method, Override,
-        PageRequestRepresentation, PageResponseRepresentation, PaginatedEndpoint, PreparedHead,
-        RateKeyPart, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPolicy, RateLimitWindow,
-        RequestBodyCategory, RequestBodyContext, RequestBodyMetadata, RequestMeta, RequestOptions,
-        RequestPlan, RequestRepresentation, ResponseAcquisition, ResponseRepresentation,
-        TimeoutOverride, TimeoutSelection, Url, assert_generated_contract,
-        basic_credential_input_error, build_client_core, credential_input_error,
-        credential_store_error, default_http_config, endpoint_id_from_static, inspect_endpoint,
-        map_endpoint, missing_input_error, paginate_request, plan_unbound_request, request,
-        request_plan, response_request,
-    };
+    pub use concord_core::__private::*;
     /// Creates the façade-owned generated-client runtime baseline.
     #[doc(hidden)]
     #[must_use]

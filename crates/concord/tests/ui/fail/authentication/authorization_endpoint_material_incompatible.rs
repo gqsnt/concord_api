@@ -1,22 +1,20 @@
-use concord::api;
+// AUTH-01: an endpoint-backed credential's material is the source endpoint's
+// declared output; a scheme-prefixed Authorization placement requires that
+// material to be a `SecretCredential`.
 use concord::auth::CredentialMaterial;
 use concord::codec::{CodecError, DecodeBody, DecodeContext};
-use concord::Bytes;
+use concord::{Binary, Bytes, api};
 
-struct NonSecretMaterial;
+pub struct NonSecretMaterial;
 
 impl CredentialMaterial for NonSecretMaterial {}
 
-struct NonSecretCodec;
+pub struct NonSecretCodec;
 
 impl DecodeBody for NonSecretCodec {
     type Output = NonSecretMaterial;
 
     const ACCEPT: Option<&'static str> = None;
-
-    fn validate_content_type(_content_type: Option<&str>) -> Result<(), CodecError> {
-        Ok(())
-    }
 
     fn decode(_body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
         Ok(NonSecretMaterial)
@@ -25,17 +23,16 @@ impl DecodeBody for NonSecretCodec {
 
 api! {
     client Api {
-        timeout 30s;
         base "https://example.test";
         credentials {
             credential session = endpoint acquire;
         }
 
-
-    GET acquire() -> crate::NonSecretMaterial via crate::NonSecretCodec;
-    GET protected() -> Bytes via Binary {
-        auth { authorization "Session" = session; }
+        POST acquire() -> crate::NonSecretMaterial via crate::NonSecretCodec;
+        GET protected() -> Bytes via Binary {
+            auth { authorization "Session" = session; }
+        }
     }
-}}
+}
 
 fn main() {}

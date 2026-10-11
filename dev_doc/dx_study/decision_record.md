@@ -1,5 +1,7 @@
 # Gate 3 decision record
 
+**Status:** Part of the v2.1 Gate 3 packet described in [`README.md`](README.md); not revised for v3.
+
 ## Selected v2.1 surface
 
 ADR 0012 selects `set_x(Option<T>)`, `omit_x()`, and initialized-only

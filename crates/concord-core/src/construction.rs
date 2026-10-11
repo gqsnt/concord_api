@@ -55,15 +55,6 @@ impl StructuralBudget {
         self.public_bytes
     }
 
-    pub(crate) fn remaining_public_bytes(
-        self,
-        maximum: usize,
-    ) -> Result<usize, StructuralLimitError> {
-        maximum
-            .checked_sub(self.public_bytes)
-            .ok_or(StructuralLimitError::PublicByteLimitExceeded)
-    }
-
     pub(crate) fn try_add(
         &mut self,
         components: usize,
@@ -90,6 +81,7 @@ impl StructuralBudget {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) fn try_replace(
         &mut self,
         previous_components: usize,

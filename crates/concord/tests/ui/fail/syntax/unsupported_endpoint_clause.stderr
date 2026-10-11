@@ -1,5 +1,5 @@
-error: unsupported endpoint clause; expected `id`, an attachment, `status`, `effect`, `paginate`, or `expose accepted_bytes`
- --> tests/ui/fail/syntax/unsupported_endpoint_clause.rs:9:13
-  |
-9 |             unsupported;
-  |             ^^^^^^^^^^^
+error: [C3-OWNER] unsupported endpoint clause in endpoint `UnsupportedEndpointClauseApi::item`; expected `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `id`, `status`, `effect`, `absent on`, `paginate` or `expose accepted_bytes`
+  --> tests/ui/fail/syntax/unsupported_endpoint_clause.rs:11:13
+   |
+11 |             unsupported;
+   |             ^^^^^^^^^^^

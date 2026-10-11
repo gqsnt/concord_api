@@ -1,14 +1,13 @@
-error[E0599]: no method named `verbose` found for struct `SecondRequest` in the current scope
-  --> tests/ui/fail/capabilities/wrong_endpoint_setter_absent.rs:16:29
+error[E0599]: no method named `set_verbose` found for struct `SecondRequest` in the current scope
+  --> tests/ui/fail/capabilities/wrong_endpoint_setter_absent.rs:19:29
    |
- 4 | / api! {
- 5 | |     client SetterApi {
- 6 | |         timeout 30s;
- 7 | |         base "http://setter.example.test";
+ 6 | / api! {
+ 7 | |     client SetterApi {
+ 8 | |         timeout 30s;
+ 9 | |         base "http://setter.example.test";
 ...  |
-11 | |     GET second() -> Bytes via Binary;
-12 | | }}
-   | |__- method `verbose` not found for this struct
+14 | | }
+   | |_- method `set_verbose` not found for this struct
 ...
-16 |       let _ = client.second().verbose(true);
-   |                               ^^^^^^^ method not found in `SecondRequest`
+19 |       let _ = client.second().set_verbose(true);
+   |                               ^^^^^^^^^^^ method not found in `SecondRequest`

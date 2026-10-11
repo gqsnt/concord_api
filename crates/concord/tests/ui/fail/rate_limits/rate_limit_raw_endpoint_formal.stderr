@@ -1,5 +1,11 @@
-error: `origin` and `endpoint` are built-in key dimensions and cannot be policy formals
- --> tests/ui/fail/rate_limits/rate_limit_raw_endpoint_formal.rs:8:27
-  |
-8 |             policy shared(r#endpoint) { id "concord.rate_limit_raw_endpoint_formal.1"; cost 1;
-  |                           ^^^^^^^^^^
+error: [C3-RATE] `origin` and `endpoint` are reserved built-in dimension labels (policy `shared` of client `RawEndpointFormalApi`); write the bare `endpoint` dimension or choose another label
+  --> tests/ui/fail/rate_limits/rate_limit_raw_endpoint_formal.rs:14:22
+   |
+14 |                 key ["endpoint" = r#endpoint];
+   |                      ^^^^^^^^^^
+
+error: [C3-RATE] `origin` and `endpoint` are reserved built-in dimension labels (the inline rate policy of client `OriginLabelApi`); write the bare `origin` dimension or choose another label
+  --> tests/ui/fail/rate_limits/rate_limit_raw_endpoint_formal.rs:31:18
+   |
+31 |             key ["origin" = value];
+   |                  ^^^^^^^^

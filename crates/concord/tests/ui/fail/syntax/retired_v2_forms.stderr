@@ -1,0 +1,77 @@
+error: [C3-MIGRATE] `vars { ... }` was removed; write `values { ... }` in client `VarsBlockApi`
+  --> tests/ui/fail/syntax/retired_v2_forms.rs:11:9
+   |
+11 |         vars { tenant: String; }
+   |         ^^^^
+
+error: [C3-MIGRATE] `host [...]` was removed; use `subdomain [...]` in client `HostListApi`
+  --> tests/ui/fail/syntax/retired_v2_forms.rs:18:9
+   |
+18 |         host ["api"];
+   |         ^^^^
+
+error: [C3-MIGRATE] v2 path atom lists were replaced by a relative template string: `path ["items", endpoint.id]` becomes `path "items/{id}";` (in endpoint `PathListApi::read`)
+  --> tests/ui/fail/syntax/retired_v2_forms.rs:27:18
+   |
+27 |             path ["items", id];
+   |                  ^
+
+error: [C3-MIGRATE] result `using Representation` was replaced by `via Representation` in endpoint `UsingRepresentationApi::read`
+  --> tests/ui/fail/syntax/retired_v2_forms.rs:36:30
+   |
+36 |         GET read() -> String using Text;
+   |                              ^^^^^
+
+error: [C3-MIGRATE] v2 `using Representation` was replaced by `via Representation` in endpoint `UsingBodyRepresentationApi::write`
+  --> tests/ui/fail/syntax/retired_v2_forms.rs:44:38
+   |
+44 |         POST write(body text: String using Text) -> Bytes via Binary;
+   |                                      ^^^^^
+
+error: [C3-MIGRATE] `fmt[...]` was removed; write `concat [...]` in endpoint `FmtAtomApi::read`
+  --> tests/ui/fail/syntax/retired_v2_forms.rs:53:34
+   |
+53 |             headers { "X-Item" = fmt["items-", id]; }
+   |                                  ^^^
+
+error: [C3-MIGRATE] `+=` was removed; write `append "K" = value;` in endpoint `AppendOperatorApi::read`
+  --> tests/ui/fail/syntax/retired_v2_forms.rs:63:26
+   |
+63 |             query { "id" += id; }
+   |                          ^
+
+error: [C3-MIGRATE] `#[redact]` was renamed; write `#[sensitive]` on client value of client `RedactAttributeApi`
+  --> tests/ui/fail/syntax/retired_v2_forms.rs:71:18
+   |
+71 |         values { #[redact] query tenant: String; }
+   |                  ^
+
+error: [C3-MIGRATE] `vars.NAME` was removed; use `client.NAME` in client `VarsReferenceApi`
+  --> tests/ui/fail/syntax/retired_v2_forms.rs:79:32
+   |
+79 |         headers { "X-Tenant" = vars.tenant; }
+   |                                ^^^^
+
+error: [C3-MIGRATE] `ep.NAME` was removed; use the bare local name in endpoint `EpReferenceApi::read`
+  --> tests/ui/fail/syntax/retired_v2_forms.rs:88:32
+   |
+88 |             headers { "X-Id" = ep.id; }
+   |                                ^^
+
+error: [C3-MIGRATE] typed secrets were removed; write `secret token;` in client `TypedSecretApi` (the builder accepts `SecretString`)
+  --> tests/ui/fail/syntax/retired_v2_forms.rs:97:25
+   |
+97 |             secret token: String;
+   |                         ^
+
+error: [C3-MIGRATE] rate key labels are explicit in v3: write `"tenant" = tenant` to preserve the legacy label (the inline rate policy of client `LegacyRateLabelApi`)
+   --> tests/ui/fail/syntax/retired_v2_forms.rs:108:26
+    |
+108 |             key [origin, tenant];
+    |                          ^^^^^^
+
+error: [C3-MIGRATE] v2 public controller-field bindings were replaced: write `init InitType { field: value, ... }; cursor -> slot;` in endpoint `LegacyPaginationApi::read`
+   --> tests/ui/fail/syntax/retired_v2_forms.rs:120:17
+    |
+120 |                 offset -> offset;
+    |                 ^^^^^^

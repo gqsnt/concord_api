@@ -309,6 +309,12 @@ fn handle_connection(mut stream: TcpStream, connection_id: u64, shared: Arc<Shar
     stream
         .set_read_timeout(Some(IO_POLL))
         .expect("failed to set loopback read timeout");
+    // The response head is written in several small writes; without
+    // TCP_NODELAY, Nagle's algorithm and delayed ACKs stall every keep-alive
+    // response by tens of milliseconds, hiding client overhead in benches.
+    stream
+        .set_nodelay(true)
+        .expect("failed to disable Nagle on the loopback connection");
     let mut buffered = Vec::new();
     loop {
         if shared.stop.load(Ordering::Acquire) {

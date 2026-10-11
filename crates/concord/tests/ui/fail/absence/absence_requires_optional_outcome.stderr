@@ -1,0 +1,77 @@
+error[E0277]: [C3-REP] `concord::__private::HeadAbsence<concord::Binary>` is not a response representation for result type `concord::Bytes`
+  --> tests/ui/fail/absence/absence_requires_optional_outcome.rs:13:13
+   |
+13 |             absent on 404;
+   |             ^^^^^^ selected as the response representation of a `concord::Bytes` result
+   |
+   = help: the trait `ResponseRepresentation<concord::Bytes>` is not implemented for `concord::__private::HeadAbsence<concord::Binary>`
+   = note: a result needs `ResponseRepresentation<concord::Bytes>` or a complete buffered `DecodeBody` decoder whose `Output` is `concord::Bytes`; a request-only representation cannot decode a response, and with `absent on` the result is `Option<T>` decoded by a buffered representation of `T`
+   = note: write `-> concord::Bytes via R` with a representation producing this result, or select a direction default with `response R;` on an owner
+help: the trait `ResponseRepresentation<O>` is implemented for `concord::__private::HeadAbsence<R>`
+  --> $WORKSPACE/crates/concord-core/src/response/absence.rs
+   |
+   | / impl<R, O> ResponseRepresentation<O> for HeadAbsence<R>
+   | | where
+   | |     O: OptionalOutcome,
+   | |     R: ResponseRepresentation<O::Present, Driver = Buffered>,
+   | |_____________________________________________________________^
+note: required by a bound in `concord::__private::EndpointSpec::Response`
+  --> $WORKSPACE/crates/concord-core/src/request/endpoint.rs
+   |
+   |     type Response: ResponseRepresentation<Self::Output>;
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `EndpointSpec::Response`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [C3-REP] `concord::Bytes` cannot carry expected absence
+  --> tests/ui/fail/absence/absence_requires_optional_outcome.rs:11:33
+   |
+11 |         GET find(id: String) -> Bytes via Binary {
+   |                                 ^^^^^ `absent on` requires an `Option<T>` result
+   |
+   = help: the trait `OptionalOutcome` is not implemented for `concord::Bytes`
+   = note: head-only expected absence is sealed to `Option<T>` results (aliases included): the present payload is `T` and a declared absent status yields `None`
+   = note: write `-> Option<T> via R` on an endpoint with `absent on`, or remove the `absent on` clause
+help: the trait `OptionalOutcome` is implemented for `Option<T>`
+  --> $WORKSPACE/crates/concord-core/src/response/absence.rs
+   |
+   | / impl<T> OptionalOutcome for Option<T>
+   | | where
+   | |     T: Send + 'static,
+   | |______________________^
+
+error[E0277]: [C3-REP] `concord::__private::HeadAbsence<concord::Binary>` is not a response representation for result type `concord::Bytes`
+  --> tests/ui/fail/absence/absence_requires_optional_outcome.rs:13:13
+   |
+13 |             absent on 404;
+   |             ^^^^^^ selected as the response representation of a `concord::Bytes` result
+   |
+   = help: the trait `ResponseRepresentation<concord::Bytes>` is not implemented for `concord::__private::HeadAbsence<concord::Binary>`
+   = note: a result needs `ResponseRepresentation<concord::Bytes>` or a complete buffered `DecodeBody` decoder whose `Output` is `concord::Bytes`; a request-only representation cannot decode a response, and with `absent on` the result is `Option<T>` decoded by a buffered representation of `T`
+   = note: write `-> concord::Bytes via R` with a representation producing this result, or select a direction default with `response R;` on an owner
+help: the trait `ResponseRepresentation<O>` is implemented for `concord::__private::HeadAbsence<R>`
+  --> $WORKSPACE/crates/concord-core/src/response/absence.rs
+   |
+   | / impl<R, O> ResponseRepresentation<O> for HeadAbsence<R>
+   | | where
+   | |     O: OptionalOutcome,
+   | |     R: ResponseRepresentation<O::Present, Driver = Buffered>,
+   | |_____________________________________________________________^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [C3-REP] `concord::Bytes` cannot carry expected absence
+  --> tests/ui/fail/absence/absence_requires_optional_outcome.rs:13:13
+   |
+13 |             absent on 404;
+   |             ^^^^^^ `absent on` requires an `Option<T>` result
+   |
+   = help: the trait `OptionalOutcome` is not implemented for `concord::Bytes`
+   = note: head-only expected absence is sealed to `Option<T>` results (aliases included): the present payload is `T` and a declared absent status yields `None`
+   = note: write `-> Option<T> via R` on an endpoint with `absent on`, or remove the `absent on` clause
+help: the trait `OptionalOutcome` is implemented for `Option<T>`
+  --> $WORKSPACE/crates/concord-core/src/response/absence.rs
+   |
+   | / impl<T> OptionalOutcome for Option<T>
+   | | where
+   | |     T: Send + 'static,
+   | |______________________^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

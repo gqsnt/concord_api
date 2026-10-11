@@ -1,17 +1,17 @@
-error: a stable rate-policy ID must be 1-256 ASCII bytes in dot-separated segments; each segment begins and ends with a lowercase letter or digit and may also contain `_` or `-`
- --> tests/ui/fail/rate_limits/rate_limit_explicit_id_invalid.rs:8:16
-  |
-8 |             id "";
-  |                ^^
-
-error: a stable rate-policy ID must be 1-256 ASCII bytes in dot-separated segments; each segment begins and ends with a lowercase letter or digit and may also contain `_` or `-`
-  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_invalid.rs:19:16
+error: [C3-RATE] a policy ID must be 1..=256 UTF-8 bytes (the inline rate policy of client `EmptyIdApi`); write a stable ID such as `"service.reads"`
+  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_invalid.rs:11:25
    |
-19 |             id "Service..quota-";
-   |                ^^^^^^^^^^^^^^^^^
+11 |         rate_limit { id ""; key [origin]; allow 1 per 1s; }
+   |                         ^^
 
-error: a stable rate-policy ID must be 1-256 ASCII bytes in dot-separated segments; each segment begins and ends with a lowercase letter or digit and may also contain `_` or `-`
-  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_invalid.rs:30:16
+error: [C3-RATE] a policy ID must be 1..=256 UTF-8 bytes (the inline rate policy of client `OversizedIdApi`); write a stable ID such as `"service.reads"`
+  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_invalid.rs:18:25
    |
-30 | ...id "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+18 | ...id "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"; k...
    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: [C3-RATE] a policy ID must be 1..=256 UTF-8 bytes (the short rate attachment of client `ShortFormEmptyIdApi`); write a stable ID such as `"service.reads"`
+  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_invalid.rs:26:20
+   |
+26 |         rate_limit "" key [origin] using standard;
+   |                    ^^

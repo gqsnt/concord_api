@@ -1,22 +1,36 @@
+//! Every public extension role (§17) implemented downstream through the
+//! facade only: request/response representations, record decoders, buffered
+//! codecs, body factories, credential providers with the bounded provider
+//! helper, a pagination controller with public Init and Cursor, limiters and
+//! observers; downstream-generated named requests implement the open common
+//! controls themselves (V3-L14) and the provider helper enforces its exact
+//! origin allowlist (V3-E16).
+
 #![forbid(unsafe_code)]
+// The runtime-probe helpers and some imports serve only the TLS-gated
+// execution tests below; without `default-tls` they are intentionally unused.
+#![cfg_attr(not(feature = "default-tls"), allow(unused_imports, dead_code))]
 
 use std::collections::VecDeque;
+use std::future::IntoFuture;
+use std::num::NonZeroU32;
+#[cfg(feature = "records")]
 use std::num::NonZeroUsize;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
 #[cfg(feature = "json")]
 use concord::Json;
 use concord::auth::{
-    Auth, AuthError, AuthErrorKind, BoxFuture, CredentialMaterial, CredentialProvider,
-    CredentialRequest, ProviderBody, ProviderBodyFactory, ProviderRequest, SecretCredential,
+    AuthError, AuthErrorKind, BoxFuture, CredentialMaterial, CredentialProvider, CredentialRequest,
+    ProviderBody, ProviderBodyFactory, ProviderOrigin, ProviderRequest, SecretCredential,
 };
 use concord::body::{
-    BodyError, BodyFactory, BodyKind, LengthHint, RequestBody, RequestBodyContext,
-    RequestBodyMetadata, RequestContentType, RequestRepresentation, RequestStream,
+    BodyDescription, BodyError, BodyFactory, BodyKind, PreparedBody, RequestBodyContext,
+    RequestRepresentation, RequestStream,
 };
 #[cfg(feature = "multipart")]
 use concord::body::{MultipartBody, MultipartFactory, MultipartPart};
@@ -25,15 +39,19 @@ use concord::codec::BytesMut;
 use concord::codec::{
     CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext,
 };
-use concord::endpoint::{EndpointId, Request, RuntimeEndpoint};
+use concord::endpoint::{
+    BoundRuntimeRequest, EndpointId, ResponseRequest, RuntimeEndpoint, RuntimeEndpointBuilder,
+};
+use concord::error::{ErrorCategory, FailureStage};
 use concord::http::{HeaderName, HeaderValue, Method, SafeProxy, StatusCode, Url};
 use concord::observation::{OperationEvent, OperationObserver};
 use concord::pagination::{
-    HasNextCursor, PageDecisionLimits, PageResponse, PageStep, PaginationController,
-    PaginationDescription, PaginationError, PaginationErrorKind,
+    CollectAll, CollectPrefix, HasNextCursor, PageDecisionLimits, PageResponse, PageStep,
+    PaginationController, PaginationDescription, PaginationError, PaginationErrorKind, StopReason,
 };
 use concord::rate_limit::{
-    RateLimitError, RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimiter,
+    Enforcement, LimiterCapability, RateLimitError, RateLimitErrorKind, RateLimitPermit,
+    RateLimitRequest, RateLimitResponse, RateLimiter,
 };
 #[cfg(feature = "ndjson")]
 use concord::records::NdJson;
@@ -41,38 +59,47 @@ use concord::records::NdJson;
 use concord::records::{Csv, HasHeader, NoHeader, SemicolonDelimiter, TabDelimiter};
 #[cfg(feature = "records")]
 use concord::records::{ItemStream, RecordDecoder, RecordError};
-#[cfg(feature = "csv")]
-use concord::response::PageResponseRepresentation;
 use concord::response::{
     Buffered, ByteStream, DiscardDriver, ResponseBodyError, ResponseHead, ResponseRepresentation,
     Streaming,
 };
-use concord::{Bytes, ClientBuildError, SecretString};
+use concord::{
+    ApiError, Binary, Bytes, CallOptions, ClientBuildError, RequestControls, SecretString, api,
+};
 use futures_core::Stream;
 
 fn runtime_id(value: &str) -> EndpointId {
     EndpointId::try_from(value).expect("valid runtime endpoint ID")
 }
 
+/// The single runtime body-selection call site of this module.
+fn runtime_body<B, T, R, O>(
+    builder: RuntimeEndpointBuilder<R, O>,
+    input: T,
+) -> RuntimeEndpointBuilder<R, O>
+where
+    B: RequestRepresentation<T>,
+    T: Send + 'static,
+{
+    builder.body_repr::<B, T>(input)
+}
+
+// ---------------------------------------------------------------------------
+// Request representations.
+// ---------------------------------------------------------------------------
+
+/// Prepares complete bytes without owning a media type.
 pub struct ExtensionRequestSpec;
 
 impl RequestRepresentation<Bytes> for ExtensionRequestSpec {
-    fn metadata(
-        input: &Bytes,
-        _context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        Ok(RequestBodyMetadata {
-            length: LengthHint::Exact(u64::try_from(input.len()).unwrap_or(u64::MAX)),
-            content_type: RequestContentType::None,
-            kind: BodyKind::Buffered,
-        })
-    }
+    const DESCRIPTION: BodyDescription = BodyDescription::buffered(None);
 
-    fn prepare(input: Bytes, _context: RequestBodyContext<'_>) -> Result<RequestBody, BodyError> {
-        Ok(RequestBody::bytes(input))
+    fn prepare(input: Bytes, _context: RequestBodyContext<'_>) -> Result<PreparedBody, BodyError> {
+        Ok(PreparedBody::bytes(input))
     }
 }
 
+/// Prepares a one-shot stream whose empty transport chunks core suppresses.
 pub struct EmptyChunkRequestSpec;
 
 struct ExtensionEmptyChunkStream {
@@ -88,18 +115,9 @@ impl Stream for ExtensionEmptyChunkStream {
 }
 
 impl RequestRepresentation<Bytes> for EmptyChunkRequestSpec {
-    fn metadata(
-        input: &Bytes,
-        _context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        Ok(RequestBodyMetadata {
-            length: LengthHint::Exact(u64::try_from(input.len()).unwrap_or(u64::MAX)),
-            content_type: RequestContentType::None,
-            kind: BodyKind::Stream,
-        })
-    }
+    const DESCRIPTION: BodyDescription = BodyDescription::new(BodyKind::Stream);
 
-    fn prepare(input: Bytes, _context: RequestBodyContext<'_>) -> Result<RequestBody, BodyError> {
+    fn prepare(input: Bytes, _context: RequestBodyContext<'_>) -> Result<PreparedBody, BodyError> {
         let exact_length = u64::try_from(input.len()).unwrap_or(u64::MAX);
         let stream = RequestStream::from_stream(ExtensionEmptyChunkStream {
             chunks: [Ok(Bytes::new()), Ok(input), Ok(Bytes::new())]
@@ -107,9 +125,13 @@ impl RequestRepresentation<Bytes> for EmptyChunkRequestSpec {
                 .collect(),
         })
         .exact_length(exact_length);
-        Ok(RequestBody::stream(stream))
+        Ok(PreparedBody::stream(stream))
     }
 }
+
+// ---------------------------------------------------------------------------
+// Response representations and record decoders.
+// ---------------------------------------------------------------------------
 
 pub struct ExtensionBufferedSpec;
 
@@ -235,6 +257,10 @@ impl ResponseRepresentation<ItemStream<Bytes>> for InvalidRecords {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Buffered codec convenience roles and body factories.
+// ---------------------------------------------------------------------------
+
 pub struct ExtensionCodec;
 
 impl EncodeBody for ExtensionCodec {
@@ -253,7 +279,7 @@ impl DecodeBody for ExtensionCodec {
     const ACCEPT: Option<&'static str> = Some("application/x-concord-extension");
 
     fn validate_content_type(content_type: Option<&str>) -> Result<(), CodecError> {
-        if content_type == Self::ACCEPT {
+        if content_type == <Self as DecodeBody>::ACCEPT {
             Ok(())
         } else {
             Err(CodecError::new(CodecErrorKind::Decode))
@@ -265,13 +291,11 @@ impl DecodeBody for ExtensionCodec {
     }
 }
 
+/// Reconstructible stream factory. It cannot choose the media type (the
+/// prepared body owns it once).
 pub struct ExtensionBodyFactory;
 
 impl BodyFactory for ExtensionBodyFactory {
-    fn content_type(&self) -> Option<HeaderValue> {
-        Some(HeaderValue::from_static("application/x-concord-extension"))
-    }
-
     fn create(&self) -> Result<RequestStream, BodyError> {
         Ok(RequestStream::from_bytes(Bytes::from_static(b"factory")))
     }
@@ -286,6 +310,10 @@ impl MultipartFactory for ExtensionMultipartFactory {
         MultipartBody::new().part("extension", MultipartPart::text("multipart")?)
     }
 }
+
+// ---------------------------------------------------------------------------
+// Credential material and providers.
+// ---------------------------------------------------------------------------
 
 pub struct ExtensionCredential(SecretString);
 
@@ -311,7 +339,28 @@ impl ProviderBodyFactory for ExtensionProviderBody {
     }
 }
 
-pub struct ExtensionProvider;
+/// Provider using the bounded provider helper against its one declared
+/// origin (AUTH-02).
+pub struct ExtensionProvider {
+    origins: Vec<ProviderOrigin>,
+}
+
+impl ExtensionProvider {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            origins: vec![
+                ProviderOrigin::parse("https://provider.example.test").expect("provider origin"),
+            ],
+        }
+    }
+}
+
+impl Default for ExtensionProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl CredentialProvider for ExtensionProvider {
     type Material = ExtensionCredential;
@@ -341,8 +390,13 @@ impl CredentialProvider for ExtensionProvider {
             ))
         })
     }
+
+    fn http_origins(&self) -> &[ProviderOrigin] {
+        &self.origins
+    }
 }
 
+/// Provider returning owned local material without helper HTTP.
 pub struct DirectExtensionProvider {
     material: SecretString,
 }
@@ -370,7 +424,8 @@ impl CredentialProvider for DirectExtensionProvider {
         context: CredentialRequest<'a>,
     ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
         EXTENSION_PROVIDER_ACQUIRES.fetch_add(1, Ordering::SeqCst);
-        let _bounded_provider_capability = context.http;
+        // An undeclared helper grants no destinations at all.
+        assert!(context.http.allowed_origins().is_empty());
         Box::pin(async move { Ok(ExtensionCredential(self.material.clone())) })
     }
 }
@@ -396,20 +451,15 @@ pub fn extension_runtime_probe_counts() -> (usize, usize, usize, usize, usize, u
     )
 }
 
+// ---------------------------------------------------------------------------
+// Pagination: public Init and Cursor, private controller state (§14, §17.2).
+// ---------------------------------------------------------------------------
+
 pub struct ExtensionPageCodec;
 
 pub struct ExtensionPage {
     items: Vec<u8>,
     next: Option<String>,
-}
-
-impl IntoIterator for ExtensionPage {
-    type Item = u8;
-    type IntoIter = std::vec::IntoIter<u8>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.items.into_iter()
-    }
 }
 
 impl HasNextCursor<String> for ExtensionPage {
@@ -448,9 +498,11 @@ impl DecodeBody for ExtensionPageCodec {
 }
 
 static EXTENSION_CONSTRUCTION_EVALUATIONS: AtomicUsize = AtomicUsize::new(0);
-static EXTENSION_VALIDATION_CALLS: AtomicUsize = AtomicUsize::new(0);
+static EXTENSION_START_CALLS: AtomicUsize = AtomicUsize::new(0);
 static EXTENSION_NEXT_CALLS: AtomicUsize = AtomicUsize::new(0);
 
+/// A root value whose clones are counted: pagination initialization reads it
+/// through the controller's public `Init`.
 pub struct ExtensionConstructionProbe;
 
 impl ExtensionConstructionProbe {
@@ -475,7 +527,7 @@ impl Clone for ExtensionConstructionProbe {
 
 pub fn reset_extension_pagination_probes() {
     EXTENSION_CONSTRUCTION_EVALUATIONS.store(0, Ordering::SeqCst);
-    EXTENSION_VALIDATION_CALLS.store(0, Ordering::SeqCst);
+    EXTENSION_START_CALLS.store(0, Ordering::SeqCst);
     EXTENSION_NEXT_CALLS.store(0, Ordering::SeqCst);
 }
 
@@ -483,24 +535,40 @@ pub fn reset_extension_pagination_probes() {
 pub fn extension_pagination_probe_counts() -> (usize, usize, usize) {
     (
         EXTENSION_CONSTRUCTION_EVALUATIONS.load(Ordering::SeqCst),
-        EXTENSION_VALIDATION_CALLS.load(Ordering::SeqCst),
+        EXTENSION_START_CALLS.load(Ordering::SeqCst),
         EXTENSION_NEXT_CALLS.load(Ordering::SeqCst),
     )
 }
 
-pub struct ExtensionController {
+/// Public initialization data of [`ExtensionController`].
+pub struct ExtensionInit {
     pub cursor: Option<String>,
     pub construction: ExtensionConstructionProbe,
 }
 
+/// Downstream controller with private state.
+pub struct ExtensionController {
+    cursor: Option<String>,
+    _construction: ExtensionConstructionProbe,
+}
+
 impl PaginationController<ExtensionPage> for ExtensionController {
     type Item = u8;
+    type Init = ExtensionInit;
+    type Cursor = Option<String>;
 
     const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
 
-    fn validate(&self) -> Result<(), PaginationError> {
-        EXTENSION_VALIDATION_CALLS.fetch_add(1, Ordering::SeqCst);
-        Ok(())
+    fn start(init: Self::Init) -> Result<Self, PaginationError> {
+        EXTENSION_START_CALLS.fetch_add(1, Ordering::SeqCst);
+        Ok(Self {
+            cursor: init.cursor,
+            _construction: init.construction,
+        })
+    }
+
+    fn cursor(&self) -> Self::Cursor {
+        self.cursor.clone()
     }
 
     fn advance(
@@ -511,7 +579,7 @@ impl PaginationController<ExtensionPage> for ExtensionController {
         EXTENSION_NEXT_CALLS.fetch_add(1, Ordering::SeqCst);
         let next = page.page().next_cursor().cloned().map(|cursor| Self {
             cursor: Some(cursor),
-            construction: self.construction,
+            _construction: self._construction,
         });
         let items = page.into_page().items;
         if items.len() > limits.remaining_items() {
@@ -526,9 +594,17 @@ impl PaginationController<ExtensionPage> for ExtensionController {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Limiter and observer roles.
+// ---------------------------------------------------------------------------
+
 pub struct ExtensionLimiter;
 
 impl RateLimiter for ExtensionLimiter {
+    fn capability(&self) -> LimiterCapability {
+        LimiterCapability::new(Enforcement::Local, "concord.tests.extension", 1)
+    }
+
     fn acquire<'a>(
         &'a self,
         request: RateLimitRequest<'a>,
@@ -571,64 +647,76 @@ impl OperationObserver for ExtensionHooks {
     }
 }
 
-concord::api! {
+// ---------------------------------------------------------------------------
+// Declarations.
+// ---------------------------------------------------------------------------
+
+api! {
     client ExtensionApi {
         timeout 30s;
         base "http://extension.example.test/v1/";
         values {
-            construction: crate::ExtensionConstructionProbe;
+            construction: ExtensionConstructionProbe;
         }
         credentials {
-            credential session = custom crate::ExtensionProvider;
+            credential session = custom ExtensionProvider;
         }
-        rate_limit { id "concord.contracts.1"; key [origin]; cost 1;  allow 10 per 1s; }
+        rate_limit { id "concord.contracts.1"; key [origin]; cost 1; allow 10 per 1s; }
 
+        GET protected() -> Bytes via Binary {
+            path "protected";
+            auth { header "X-Session" = session challenge unauthorized; }
+        }
 
-    GET protected() -> Bytes via Binary {
-        auth { header "X-Session" = session challenge unauthorized; }
-    }
+        GET pages(query cursor?: String) -> ExtensionPage via ExtensionPageCodec {
+            path "pages";
+            paginate via ExtensionController {
+                init ExtensionInit { cursor: cursor, construction: client.construction };
+                cursor -> cursor;
+            }
+        }
 
-    GET pages(cursor?: String) -> crate::extensions::contracts::ExtensionPage via crate::ExtensionPageCodec {
-        query { "cursor" = endpoint.cursor; }
-        paginate via crate::ExtensionController {
-            cursor -> endpoint.cursor;
-            construction = client.construction;
+        POST generic_body(body body: Bytes via ExtensionRequestSpec) -> usize via ExtensionBufferedSpec {
+            path "generic";
+            status [200..=299, 404];
+        }
+        POST empty_chunk_body(body body: Bytes via EmptyChunkRequestSpec) -> Bytes via Binary {
+            path "empty-chunk";
+        }
+        GET generic_stream() -> ByteStream via ExtensionStreamingSpec {
+            path "stream";
+        }
+        GET generic_discard() -> () via ExtensionDiscardSpec {
+            path "discard";
         }
     }
+}
 
-    POST generic_body(body body: Bytes via crate::ExtensionRequestSpec) -> usize via crate::ExtensionBufferedSpec {
-        status [200..=299, 404];
-    }
-    POST empty_chunk_body(body body: Bytes via crate::EmptyChunkRequestSpec) -> Bytes via Binary;
-    GET generic_stream() -> ::concord::response::ByteStream via crate::ExtensionStreamingSpec;
-    GET generic_discard() -> () via crate::ExtensionDiscardSpec;
-}}
-
-concord::api! {
+api! {
     client SecureExtensionApi {
         timeout 30s;
         base "https://localhost/";
         credentials {
-            credential session = custom crate::ExtensionProvider;
+            credential session = custom DirectExtensionProvider;
         }
-        rate_limit { id "concord.contracts.2"; key [origin]; cost 1;  allow 10 per 1s; }
+        rate_limit { id "concord.contracts.2"; key [origin]; cost 1; allow 10 per 1s; }
 
-
-    GET protected() -> Bytes via Binary {
-        auth { header "X-Session" = session challenge unauthorized; }
+        GET protected() -> Bytes via Binary {
+            auth { header "X-Session" = session challenge unauthorized; }
+        }
     }
-}}
+}
 
 #[cfg(feature = "records")]
-concord::api! {
+api! {
     client RecordExtensionApi {
         timeout 30s;
         base "http://record-extension.example.test/";
 
-
-    GET custom() -> ItemStream<Bytes> via crate::extensions::contracts::ExtensionRecords;
-    GET invalid_decoder() -> ItemStream<Bytes> via crate::extensions::contracts::InvalidRecords;
-}}
+        GET custom() -> ItemStream<Bytes> via ExtensionRecords;
+        GET invalid_decoder() -> ItemStream<Bytes> via InvalidRecords;
+    }
+}
 
 #[cfg(feature = "csv")]
 pub type ConfCsv = Csv<HasHeader, SemicolonDelimiter>;
@@ -640,18 +728,18 @@ pub type HeaderlessTsv = Csv<NoHeader, TabDelimiter>;
 pub type Row = (String, u32);
 
 #[cfg(feature = "csv")]
-concord::api! {
+api! {
     client CsvExtensionApi {
         timeout 30s;
         base "http://csv-extension.example.test/";
 
-
-    GET rows() -> Vec<Vec<String>> via Csv;
-    GET rows_stream() -> ItemStream<Vec<String>> via Csv;
-    GET configured_rows() -> Vec<Row> via ConfCsv;
-    GET configured_rows_stream() -> ItemStream<Row> via ConfCsv;
-    GET headerless_rows() -> Vec<Row> via HeaderlessTsv;
-}}
+        GET rows() -> Vec<Vec<String>> via Csv;
+        GET rows_stream() -> ItemStream<Vec<String>> via Csv;
+        GET configured_rows() -> Vec<Row> via ConfCsv;
+        GET configured_rows_stream() -> ItemStream<Row> via ConfCsv;
+        GET headerless_rows() -> Vec<Row> via HeaderlessTsv;
+    }
+}
 
 #[cfg(feature = "csv")]
 #[test]
@@ -660,10 +748,11 @@ fn facade_reexports_the_complete_csv_policy_surface() {
 
     fn header_mode<H: CsvHeaderMode>() {}
     fn delimiter<D: CsvDelimiter>() {}
-    fn complete_page<S>()
+    // REP-02: page eligibility is a complete buffered driver plus a typed
+    // controller, not a representation-level page marker.
+    fn complete_buffered<S>()
     where
-        S: ResponseRepresentation<Vec<Row>, Driver = Buffered>
-            + PageResponseRepresentation<Vec<Row>>,
+        S: ResponseRepresentation<Vec<Row>, Driver = Buffered>,
     {
     }
 
@@ -672,32 +761,29 @@ fn facade_reexports_the_complete_csv_policy_surface() {
     delimiter::<CommaDelimiter>();
     delimiter::<SemicolonDelimiter>();
     delimiter::<TabDelimiter>();
-    complete_page::<ConfCsv>();
-    complete_page::<HeaderlessTsv>();
+    complete_buffered::<ConfCsv>();
+    complete_buffered::<HeaderlessTsv>();
 }
 
 #[cfg(feature = "ndjson")]
-concord::api! {
+api! {
     client NdJsonExtensionApi {
         timeout 30s;
         base "http://ndjson-extension.example.test/";
 
+        GET values() -> Vec<u32> via NdJson;
+        GET values_stream() -> ItemStream<u32> via NdJson;
+    }
+}
 
-    GET values() -> Vec<u32> via NdJson;
-    GET values_stream() -> ItemStream<u32> via NdJson;
-}}
-
-/// Compiles every stable extension workflow without private or native integration imports.
-pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
-    let client = ExtensionApi::builder()
+fn extension_client(proxy: Option<SafeProxy>) -> Result<ExtensionApi, ClientBuildError> {
+    let proxy = proxy.unwrap_or_else(|| {
+        SafeProxy::parse("http://127.0.0.1:43119").expect("fixed credential-free proxy origin")
+    });
+    ExtensionApi::builder()
         .set_construction(ExtensionConstructionProbe::new())
-        .session_provider(ExtensionProvider)
-        .configure_http(|http| {
-            http.proxy(
-                SafeProxy::parse("http://127.0.0.1:43119")
-                    .expect("fixed credential-free proxy origin"),
-            )
-        })
+        .session(ExtensionProvider::new())
+        .configure_http(|http| http.proxy(proxy))
         .configure_runtime(|runtime| {
             let observation = Arc::new(ExtensionHooks);
             runtime
@@ -706,9 +792,14 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
                 .operation_observer(observation.clone())
                 .operation_observer(observation)
         })
-        .build()?;
+        .build()
+}
 
-    let credential = client.credentials().session().credential();
+/// Compiles every stable extension workflow without private or native
+/// integration imports.
+pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
+    let client = extension_client(None)?;
+
     let _: extension_api::ProtectedRequest = client.protected();
     let _: extension_api::GenericBodyRequest =
         client.generic_body(Bytes::from_static(b"generic extension input"));
@@ -716,40 +807,42 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
         client.empty_chunk_body(Bytes::from_static(b"empty chunk extension input"));
     let _: extension_api::GenericStreamRequest = client.generic_stream();
     let _: extension_api::GenericDiscardRequest = client.generic_discard();
-    let _: Auth = Auth::header(
-        HeaderName::from_static("x-prepared-session"),
-        credential.clone(),
-    )
-    .expect("valid header placement");
+    let _: CollectPrefix<u8> = client.pages().collect_prefix(2);
 
-    let buffered =
+    let buffered = runtime_body::<ExtensionCodec, _, _, _>(
         RuntimeEndpoint::builder(runtime_id("extension_api.runtime_buffered"), Method::POST)
-            .path("buffered")
-            .body_codec::<ExtensionCodec>("bounded-input".to_owned())
-            .response::<ExtensionCodec, String>()
-            .build()
-            .expect("valid buffered runtime endpoint");
-    let _: Request<_> = buffered
-        .try_bind(&client)
+            .path("buffered"),
+        "bounded-input".to_owned(),
+    )
+    .response::<ExtensionCodec, String>()
+    .build()
+    .expect("valid buffered runtime endpoint");
+    let _: BoundRuntimeRequest<_, String> = client
+        .bind(buffered)
         .expect("runtime endpoint binds to extension client");
 
-    let bytes = RuntimeEndpoint::builder(runtime_id("extension_api.runtime_bytes"), Method::POST)
-        .path("bytes")
-        .body(RequestBody::factory(ExtensionBodyFactory))
-        .accepted_bytes()
-        .build()
-        .expect("valid bytes runtime endpoint");
-    let _: Request<_> = bytes
-        .try_bind(&client)
+    let bytes = runtime_body::<PreparedBody, _, _, _>(
+        RuntimeEndpoint::builder(runtime_id("extension_api.runtime_bytes"), Method::POST)
+            .path("bytes"),
+        PreparedBody::factory(ExtensionBodyFactory)
+            .content_type("application/x-concord-extension")
+            .expect("one exact media type"),
+    )
+    .response::<Binary, Bytes>()
+    .build()
+    .expect("valid bytes runtime endpoint");
+    let _: BoundRuntimeRequest<_, Bytes> = client
+        .bind(bytes)
         .expect("runtime endpoint binds to extension client");
 
     let no_content =
         RuntimeEndpoint::builder(runtime_id("extension_api.runtime_none"), Method::DELETE)
             .path("none")
+            .response::<concord::Empty, ()>()
             .build()
             .expect("valid no-content runtime endpoint");
-    let _: Request<_> = no_content
-        .try_bind(&client)
+    let _: BoundRuntimeRequest<_, ()> = client
+        .bind(no_content)
         .expect("runtime endpoint binds to extension client");
 
     let stream = RuntimeEndpoint::builder(runtime_id("extension_api.runtime_stream"), Method::GET)
@@ -757,19 +850,20 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
         .response::<ExtensionStreamingSpec, ByteStream>()
         .build()
         .expect("valid streaming runtime endpoint");
-    let _: Request<_> = stream
-        .try_bind(&client)
+    let _: BoundRuntimeRequest<_, ByteStream> = client
+        .bind(stream)
         .expect("runtime endpoint binds to extension client");
 
-    let generic =
+    let generic = runtime_body::<ExtensionRequestSpec, _, _, _>(
         RuntimeEndpoint::builder(runtime_id("extension_api.runtime_generic"), Method::POST)
-            .path("generic")
-            .body_spec::<ExtensionRequestSpec, _>(Bytes::from_static(b"prepared generic input"))
-            .response::<ExtensionBufferedSpec, usize>()
-            .build()
-            .expect("valid generic runtime endpoint");
-    let _: Request<_> = generic
-        .try_bind(&client)
+            .path("generic"),
+        Bytes::from_static(b"prepared generic input"),
+    )
+    .response::<ExtensionBufferedSpec, usize>()
+    .build()
+    .expect("valid generic runtime endpoint");
+    let _: BoundRuntimeRequest<_, usize> = client
+        .bind(generic)
         .expect("runtime endpoint binds to extension client");
 
     let page = ExtensionPage {
@@ -777,30 +871,43 @@ pub fn certify_public_extensions() -> Result<(), ClientBuildError> {
         next: Some("next".to_owned()),
     };
     let _next_cursor: Option<&String> = page.next_cursor();
-    fn assert_controller<C: PaginationController<ExtensionPage, Item = u8>>() {}
+    fn assert_controller<C>()
+    where
+        C: PaginationController<
+                ExtensionPage,
+                Item = u8,
+                Init = ExtensionInit,
+                Cursor = Option<String>,
+            >,
+    {
+    }
     assert_controller::<ExtensionController>();
 
     #[cfg(feature = "json")]
     {
-        let json = RuntimeEndpoint::builder(runtime_id("extension_api.runtime_json"), Method::POST)
-            .body_spec::<Json, _>(vec![1, 2, 3])
-            .response::<Json, Vec<u32>>()
-            .build()
-            .expect("valid JSON runtime endpoint");
-        let _: Request<_> = json
-            .try_bind(&client)
+        let json = runtime_body::<Json, _, _, _>(
+            RuntimeEndpoint::builder(runtime_id("extension_api.runtime_json"), Method::POST),
+            vec![1_u32, 2, 3],
+        )
+        .response::<Json, Vec<u32>>()
+        .build()
+        .expect("valid JSON runtime endpoint");
+        let _: BoundRuntimeRequest<_, Vec<u32>> = client
+            .bind(json)
             .expect("runtime endpoint binds to extension client");
     }
 
     #[cfg(feature = "multipart")]
     {
-        let multipart =
-            RuntimeEndpoint::builder(runtime_id("extension_api.runtime_multipart"), Method::POST)
-                .body(RequestBody::multipart_factory(ExtensionMultipartFactory))
-                .build()
-                .expect("valid multipart runtime endpoint");
-        let _: Request<_> = multipart
-            .try_bind(&client)
+        let multipart = runtime_body::<PreparedBody, _, _, _>(
+            RuntimeEndpoint::builder(runtime_id("extension_api.runtime_multipart"), Method::POST),
+            PreparedBody::multipart_factory(ExtensionMultipartFactory).expect("generated boundary"),
+        )
+        .response::<concord::Empty, ()>()
+        .build()
+        .expect("valid multipart runtime endpoint");
+        let _: BoundRuntimeRequest<_, ()> = client
+            .bind(multipart)
             .expect("runtime endpoint binds to extension client");
     }
 
@@ -856,34 +963,29 @@ async fn downstream_generated_controller_constructs_binds_and_collects_two_pages
     ])
     .expect("bounded loopback pagination server");
     let proxy = SafeProxy::parse(server.url("")).expect("credential-free loopback proxy URL");
+    let client = extension_client(Some(proxy)).expect("downstream generated client");
 
-    let client = ExtensionApi::builder()
-        .set_construction(ExtensionConstructionProbe::new())
-        .session_provider(ExtensionProvider)
-        .configure_http(move |http| http.proxy(proxy))
-        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(ExtensionLimiter)))
-        .build()
-        .expect("downstream generated client");
-    let pagination = client
-        .pages()
-        .set_cursor(Some("initial".to_owned()))
-        .paginate(concord::PageLimit::Prefix(10));
+    // v2 `.paginate(PageLimit::Prefix(10))` is the explicit prefix terminal
+    // with a truthful summary in v3 (§25.2).
+    let pagination = client.pages().set_cursor("initial").collect_prefix(10);
 
     reset_extension_pagination_probes();
-    let items = pagination
+    let prefix = pagination
         .await
         .expect("public-only downstream pagination runtime");
-    server
-        .wait_for_requests(2, Duration::from_secs(10))
-        .expect("two bounded pagination requests");
     let requests = server.requests();
     let probe_counts = extension_pagination_probe_counts();
 
-    assert_eq!(items, [1, 2, 3]);
+    assert_eq!(prefix.items(), [1, 2, 3]);
+    assert_eq!(prefix.summary().stop_reason(), StopReason::Exhausted);
+    assert_eq!(prefix.summary().pages_delivered(), 2);
+    assert_eq!(prefix.summary().items_delivered(), 3);
     assert_eq!(requests.len(), 2);
     assert!(requests[0].target().contains("cursor=initial"));
     assert!(requests[1].target().contains("cursor=continuation"));
-    assert_eq!(probe_counts, (1, 2, 2));
+    // Init is evaluated once for the traversal (one clone of the root value),
+    // the controller starts once and advances once per page.
+    assert_eq!(probe_counts, (1, 1, 2));
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -900,13 +1002,7 @@ async fn public_request_body_spec_suppresses_empty_chunks_before_transport() {
     let server =
         ScriptedServer::start([ResponseScript::ok("ok")]).expect("bounded loopback body server");
     let proxy = SafeProxy::parse(server.url("")).expect("credential-free loopback proxy URL");
-    let client = ExtensionApi::builder()
-        .set_construction(ExtensionConstructionProbe::new())
-        .session_provider(ExtensionProvider)
-        .configure_http(move |http| http.proxy(proxy))
-        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(ExtensionLimiter)))
-        .build()
-        .expect("downstream generated client");
+    let client = extension_client(Some(proxy)).expect("downstream generated client");
 
     let output = client
         .empty_chunk_body(Bytes::from_static(b"public-body"))
@@ -919,6 +1015,8 @@ async fn public_request_body_spec_suppresses_empty_chunks_before_transport() {
     let requests = server.requests();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].body(), b"public-body");
+    // The representation owns no media type, so none is sent.
+    assert_eq!(requests[0].header("content-type"), None);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -935,13 +1033,7 @@ async fn endpoint_status_policy_can_accept_a_non_2xx_response() {
     let server = ScriptedServer::start([ResponseScript::status(404, b"accepted-missing".to_vec())])
         .expect("bounded accepted-status server");
     let proxy = SafeProxy::parse(server.url("")).expect("credential-free loopback proxy URL");
-    let client = ExtensionApi::builder()
-        .set_construction(ExtensionConstructionProbe::new())
-        .session_provider(ExtensionProvider)
-        .configure_http(move |http| http.proxy(proxy))
-        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(ExtensionLimiter)))
-        .build()
-        .expect("downstream generated client");
+    let client = extension_client(Some(proxy)).expect("downstream generated client");
 
     let response = client
         .generic_body(Bytes::from_static(b"request"))
@@ -955,7 +1047,7 @@ async fn endpoint_status_policy_can_accept_a_non_2xx_response() {
 #[cfg(feature = "records")]
 #[tokio::test(flavor = "current_thread")]
 async fn records_public_decoder_some_from_empty_buffer_fails() {
-    use concord::records::RecordErrorKind;
+    use concord::response::StreamErrorKind;
     use concord_test_support::server::{ResponseScript, ScriptedServer};
 
     let server =
@@ -974,7 +1066,16 @@ async fn records_public_decoder_some_from_empty_buffer_fails() {
         .await
         .expect("one terminal record error")
         .expect_err("empty-buffer record must violate progress");
-    assert_eq!(error.kind(), RecordErrorKind::Internal);
+    // v3 stream consumption failures are correlated `ApiError`s carrying the
+    // structural record failure in their stream summary (§15).
+    assert_eq!(error.failure_stage(), FailureStage::StreamConsumption);
+    assert_eq!(
+        error
+            .stream_summary()
+            .and_then(|summary| summary.error_kind()),
+        Some(StreamErrorKind::Internal)
+    );
+    assert_eq!(error.last_response_status(), Some(StatusCode::OK));
     let rendered = format!("{error} {error:?}");
     assert!(!rendered.contains("public-no-progress-record-sentinel"));
     assert!(
@@ -1006,7 +1107,7 @@ async fn downstream_credential_limiter_and_hooks_execute_through_generated_runti
 
     reset_extension_runtime_probes();
     let client = SecureExtensionApi::builder()
-        .session_provider(DirectExtensionProvider::new(
+        .session(DirectExtensionProvider::new(
             SecretString::try_new(CREDENTIAL_SENTINEL).expect("bounded extension credential"),
         ))
         .configure_http(move |http| http.proxy(safe_proxy).add_root_certificate_pem(certificate))
@@ -1037,4 +1138,371 @@ async fn downstream_credential_limiter_and_hooks_execute_through_generated_runti
     drop(client);
     tokio::task::yield_now().await;
     drop(proxy);
+}
+
+// ---------------------------------------------------------------------------
+// V3-L14: downstream-generated named requests implement the open common
+// controls themselves; one generic helper serves several distinct generated
+// endpoint types, a response terminal and collection terminals (§23.2).
+// ---------------------------------------------------------------------------
+
+/// The §23.2 shared execution helper, verbatim.
+pub async fn execute<R, T>(request: R, options: &CallOptions) -> Result<T, ApiError>
+where
+    R: RequestControls + IntoFuture<Output = Result<T, ApiError>>,
+{
+    request.with_options(options).await
+}
+
+fn assert_common_controls<R, T>()
+where
+    R: RequestControls + IntoFuture<Output = Result<T, ApiError>>,
+{
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[allow(
+    clippy::await_holding_lock,
+    reason = "the process-global extension probes require whole-test serialization"
+)]
+async fn v3_l14_downstream_named_requests_pass_the_generic_execute_helper() {
+    use concord_test_support::server::{ResponseScript, ScriptedServer};
+
+    // Compile-time: each downstream-generated named request type itself
+    // implements `RequestControls` and `IntoFuture` (no library stand-in).
+    assert_common_controls::<extension_api::GenericBodyRequest, usize>();
+    assert_common_controls::<extension_api::EmptyChunkBodyRequest, Bytes>();
+    assert_common_controls::<extension_api::PagesRequest, ExtensionPage>();
+    assert_common_controls::<extension_api::GenericDiscardRequest, ()>();
+    assert_common_controls::<ResponseRequest<usize>, concord::ApiResponse<usize>>();
+    assert_common_controls::<CollectAll<u8>, Vec<u8>>();
+
+    let _guard = EXTENSION_TEST_LOCK
+        .lock()
+        .expect("extension test lock poisoned");
+    let page = |body: &str| {
+        ResponseScript::ok(body.to_owned())
+            .with_header("content-type", "application/x-concord-page")
+    };
+    let server = ScriptedServer::start([
+        ResponseScript::ok("generic-helper"),
+        ResponseScript::ok("chunk-helper"),
+        ResponseScript::status(404, b"response-helper".to_vec()),
+        page("4,5|more"),
+        page("6|-"),
+        page("7|more"),
+    ])
+    .expect("helper server");
+    let proxy = SafeProxy::parse(server.url("")).expect("proxy");
+    let client = extension_client(Some(proxy)).expect("downstream generated client");
+    let options = CallOptions::new().cap_sends(4);
+
+    // Two distinct generated endpoint request types.
+    let generic: usize = execute(client.generic_body(Bytes::from_static(b"a")), &options)
+        .await
+        .expect("generic body endpoint");
+    assert_eq!(generic, "generic-helper".len());
+    let chunk: Bytes = execute(client.empty_chunk_body(Bytes::from_static(b"b")), &options)
+        .await
+        .expect("empty-chunk endpoint");
+    assert_eq!(chunk, Bytes::from_static(b"chunk-helper"));
+
+    // A response terminal.
+    let response = execute(
+        client.generic_body(Bytes::from_static(b"c")).response(),
+        &options,
+    )
+    .await
+    .expect("response terminal");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    // A collection terminal; the generated setters live on the named request.
+    let items: Vec<u8> = execute(
+        client
+            .pages()
+            .set_cursor("start")
+            .collect_all(NonZeroU32::new(5).expect("nonzero")),
+        &options,
+    )
+    .await
+    .expect("collection terminal");
+    assert_eq!(items, [4, 5, 6]);
+
+    // Helper caps propagate into the traversal and are never widened: one
+    // send cannot complete a two-page traversal.
+    let capped = execute(
+        client
+            .pages()
+            .replace_cursor(None)
+            .collect_all(NonZeroU32::new(5).expect("nonzero")),
+        &CallOptions::new().cap_sends(1),
+    )
+    .await
+    .expect_err("the send cap applies across pages");
+    assert!(
+        capped.category() == ErrorCategory::Pagination
+            || capped.category() == ErrorCategory::SendCapExhausted,
+        "{capped:?}"
+    );
+    let requests = server.requests();
+    assert_eq!(requests.len(), 6);
+    assert!(requests[3].target().contains("cursor=start"));
+    assert!(requests[4].target().contains("cursor=more"));
+    assert!(!requests[5].target().contains("cursor="));
+}
+
+// ---------------------------------------------------------------------------
+// V3-E16: the provider helper reaches only exact declared origins.
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "default-tls")]
+mod provider_http {
+    use super::*;
+    use concord_test_support::tls::TlsServer;
+
+    /// Provider scripted to probe the helper's authority, recording each
+    /// helper outcome by category only.
+    pub struct AllowlistProvider {
+        pub origins: Vec<ProviderOrigin>,
+        pub declared: String,
+        pub undeclared: String,
+        pub outcomes: Arc<Mutex<Vec<String>>>,
+        pub body: &'static [u8],
+        pub sends: usize,
+    }
+
+    impl CredentialProvider for AllowlistProvider {
+        type Material = ExtensionCredential;
+
+        fn acquire<'a>(
+            &'a self,
+            context: CredentialRequest<'a>,
+        ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
+            Box::pin(async move {
+                let record = |entry: String| self.outcomes.lock().expect("outcomes").push(entry);
+                // An undeclared origin is refused before any transport or
+                // body-factory work.
+                let undeclared = context
+                    .http
+                    .send(
+                        ProviderRequest::new(
+                            Method::POST,
+                            Url::parse(&self.undeclared).expect("undeclared URL"),
+                        )
+                        .body(ProviderBody::Bytes(Bytes::from_static(self.body))),
+                    )
+                    .await;
+                record(format!(
+                    "undeclared:{:?}",
+                    undeclared.err().map(|error| error.kind())
+                ));
+                let mut token = None;
+                for _ in 0..self.sends {
+                    let sent = context
+                        .http
+                        .send(
+                            ProviderRequest::new(
+                                Method::POST,
+                                Url::parse(&self.declared).expect("declared URL"),
+                            )
+                            .body(ProviderBody::Bytes(Bytes::from_static(self.body))),
+                        )
+                        .await;
+                    match sent {
+                        Ok(response) => {
+                            record(format!("declared:{}", response.status().as_u16()));
+                            if response.status() == StatusCode::OK {
+                                token = Some(response.into_body());
+                            }
+                        }
+                        Err(error) => record(format!("declared-error:{:?}", error.kind())),
+                    }
+                }
+                let token = token.ok_or_else(|| AuthError::new(AuthErrorKind::Acquisition))?;
+                let text = String::from_utf8(token.to_vec())
+                    .map_err(|_| AuthError::new(AuthErrorKind::Acquisition))?;
+                Ok(ExtensionCredential(
+                    SecretString::try_new(text).map_err(AuthError::from)?,
+                ))
+            })
+        }
+
+        fn http_origins(&self) -> &[ProviderOrigin] {
+            &self.origins
+        }
+    }
+
+    /// Stops every application attempt at admission, after credential
+    /// preflight, so provider behavior is observed without app traffic.
+    pub struct DenyingLimiter;
+
+    impl RateLimiter for DenyingLimiter {
+        fn capability(&self) -> LimiterCapability {
+            LimiterCapability::new(Enforcement::Local, "concord.tests.deny", 1)
+        }
+
+        fn acquire<'a>(
+            &'a self,
+            _request: RateLimitRequest<'a>,
+        ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
+            Box::pin(async { Err(RateLimitError::new(RateLimitErrorKind::Acquire)) })
+        }
+    }
+
+    api! {
+        client ProviderHttpApi {
+            timeout 30s;
+            base "https://application.invalid/";
+            credentials {
+                credential session = custom AllowlistProvider;
+            }
+            rate_limit { id "concord.contracts.provider"; key [origin]; cost 1; allow 10 per 1s; }
+
+            GET protected() -> Bytes via Binary {
+                path "protected";
+                auth { header "X-Session" = session; }
+            }
+        }
+    }
+
+    pub struct Fixture {
+        pub declared: TlsServer,
+        pub undeclared: TlsServer,
+        pub outcomes: Arc<Mutex<Vec<String>>>,
+    }
+
+    pub fn run(
+        fixture: &Fixture,
+        body: &'static [u8],
+        sends: usize,
+        configure: impl FnOnce(
+            concord::runtime::RuntimeConfigBuilder,
+        ) -> concord::runtime::RuntimeConfigBuilder,
+    ) -> ProviderHttpApi {
+        let origin = ProviderOrigin::parse(fixture.declared.url("localhost", ""))
+            .expect("declared loopback origin");
+        let certificate = fixture.declared.certificate_pem();
+        ProviderHttpApi::builder()
+            .session(AllowlistProvider {
+                origins: vec![origin],
+                declared: fixture.declared.url("localhost", "/token"),
+                undeclared: fixture.undeclared.url("localhost", "/stolen"),
+                outcomes: Arc::clone(&fixture.outcomes),
+                body,
+                sends,
+            })
+            .configure_http(move |http| http.http1_only().add_root_certificate_pem(certificate))
+            .configure_runtime(move |runtime| {
+                configure(runtime.rate_limiter(Arc::new(DenyingLimiter)))
+            })
+            .build()
+            .expect("provider helper client")
+    }
+
+    pub fn fixture() -> Fixture {
+        Fixture {
+            declared: TlsServer::start().expect("declared provider origin"),
+            undeclared: TlsServer::start().expect("undeclared provider origin"),
+            outcomes: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+}
+
+#[cfg(feature = "default-tls")]
+#[tokio::test]
+async fn v3_e16_provider_helper_reaches_only_declared_origins_and_never_redirects() {
+    let fixture = provider_http::fixture();
+    let undeclared_port = fixture.undeclared.address().port();
+    fixture
+        .declared
+        .queue_response_with_headers(
+            302,
+            &[(
+                "location",
+                &format!("https://localhost:{undeclared_port}/redirected"),
+            )],
+            b"moved".to_vec(),
+        )
+        .expect("redirect response");
+    fixture
+        .declared
+        .queue_response(200, b"helper-token-sentinel".to_vec())
+        .expect("token response");
+    let client = provider_http::run(&fixture, b"grant=fake", 2, |runtime| runtime);
+
+    let error = client
+        .protected()
+        .await
+        .expect_err("admission stops the application request");
+    assert_eq!(error.category(), ErrorCategory::RateLimit);
+    assert_eq!(error.failure_stage(), FailureStage::RateAdmission);
+    assert_eq!(
+        fixture.outcomes.lock().expect("outcomes").as_slice(),
+        [
+            "undeclared:Some(InvalidConfiguration)".to_owned(),
+            "declared:302".to_owned(),
+            "declared:200".to_owned(),
+        ]
+    );
+    assert!(
+        fixture.undeclared.requests().is_empty(),
+        "neither the denied origin nor the redirect target was contacted"
+    );
+    let requests = fixture.declared.requests();
+    assert_eq!(requests.len(), 2);
+    for request in &requests {
+        assert_eq!(request.method(), "POST");
+        assert_eq!(request.target(), "/token");
+        assert_eq!(request.body(), b"grant=fake");
+        // No application credential placement or cookie identity.
+        assert_eq!(request.header("x-session"), None);
+        assert_eq!(request.header("authorization"), None);
+        assert_eq!(request.header("cookie"), None);
+    }
+    assert!(!format!("{error} {error:?}").contains("helper-token-sentinel"));
+}
+
+#[cfg(feature = "default-tls")]
+#[tokio::test]
+async fn v3_e16_provider_helper_send_and_body_caps_stop_before_transport() {
+    let fixture = provider_http::fixture();
+    fixture
+        .declared
+        .queue_response(200, b"first-token".to_vec())
+        .expect("token response");
+    let client = provider_http::run(&fixture, b"grant=fake", 2, |runtime| {
+        runtime.provider_max_sends(1)
+    });
+    let error = client.protected().await.expect_err("admission stops");
+    assert_eq!(error.category(), ErrorCategory::RateLimit);
+    assert_eq!(
+        fixture.outcomes.lock().expect("outcomes").as_slice(),
+        [
+            "undeclared:Some(InvalidConfiguration)".to_owned(),
+            "declared:200".to_owned(),
+            "declared-error:Acquisition".to_owned(),
+        ],
+        "the refused undeclared request consumed no send; the cap stops the next"
+    );
+    assert_eq!(fixture.declared.requests().len(), 1);
+
+    let fixture = provider_http::fixture();
+    let client = provider_http::run(&fixture, b"grant=oversized-provider-body", 1, |runtime| {
+        runtime.provider_request_limit(8)
+    });
+    let error = client
+        .protected()
+        .await
+        .expect_err("provider cannot obtain material");
+    assert_eq!(error.category(), ErrorCategory::AuthenticationProvider);
+    assert_eq!(error.failure_stage(), FailureStage::CredentialPreflight);
+    assert_eq!(
+        fixture.outcomes.lock().expect("outcomes").as_slice(),
+        [
+            "undeclared:Some(InvalidConfiguration)".to_owned(),
+            "declared-error:RequestTooLarge".to_owned(),
+        ]
+    );
+    assert!(fixture.declared.requests().is_empty());
+    assert!(fixture.undeclared.requests().is_empty());
 }

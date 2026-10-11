@@ -7,9 +7,9 @@ use std::time::Duration;
 
 use concord_core::contracts::{BoxFuture, RateLimitErrorKind};
 use concord_core::rate_limit::{
-    DEFAULT_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_BYTES, RateLimitError, RateLimitPermit,
-    RateLimitPlan, RateLimitPolicy, RateLimitRequest, RateLimitResponse, RateLimitWindow,
-    RateLimiter,
+    DEFAULT_RATE_LIMIT_KEY_BYTES, Enforcement, LimiterCapability, MAX_RATE_LIMIT_KEY_BYTES,
+    RateLimitError, RateLimitPermit, RateLimitPlan, RateLimitPolicy, RateLimitRequest,
+    RateLimitResponse, RateLimitWindow, RateLimiter,
 };
 use http::StatusCode;
 
@@ -32,18 +32,41 @@ struct Cooldown {
 
 /// A bounded process-local, limiter-object-local token-bucket limiter.
 ///
-/// New local limiters hold at most 4,096 quota entries and 4,096 cooldown entries,
-/// prune fully replenished quota entries after 15 idle minutes, and accept
-/// resolved keys up to 1,024 bytes. Builder methods can replace each bound.
+/// **Enforcement.** Its capability is [`Enforcement::Local`]
+/// ([`LocalRateLimiter::CAPABILITY`]): state belongs to this object in this
+/// process and resets on restart. One bucket is identified by
+/// `(policy ID, ordered (label, canonical value bytes), capacity, duration)`
+/// (RATE-03); cost is charged against every window and is not part of bucket
+/// identity. Clients share state only when explicitly given the same limiter
+/// object; separately built limiters are independent even for identical IDs.
 ///
-/// Capacity pressure fails with [`RateLimitErrorKind::StateCapacity`] rather
-/// than evicting active quota or cooldown history. Use an application-supplied
-/// custom limiter when distributed or exact remote-policy enforcement is
-/// required.
+/// **Algorithm.** Each window refills continuously at `capacity / duration`
+/// with checked fixed-point integer accounting (nanosecond resolution) and
+/// never overshoots its capacity. All windows of all policies are conjunctive.
 ///
-/// Each successful acquisition reserves the complete conjunctive plan
-/// atomically. A plan that must wait or fails validation/capacity consumes no
-/// partial quota reservation, and the state lock is released before waiting.
+/// **Bounds.** New local limiters hold at most 4,096 quota entries and 4,096
+/// cooldown entries, prune fully replenished quota entries after 15 idle
+/// minutes, and accept resolved keys up to 1,024 bytes. Builder methods can
+/// replace each bound. Capacity pressure fails with
+/// [`RateLimitErrorKind::StateCapacity`] rather than evicting active quota debt
+/// or an unexpired cooldown; a complete admission's missing state is checked
+/// against capacity before any insertion or debit. Overflow, lock poison or an
+/// internal inconsistency makes the limiter fail closed. Use an
+/// application-supplied adapter when distributed or exact remote-policy
+/// enforcement is required.
+///
+/// **Atomic conjunctive admission (RATE-04).** Each successful acquisition
+/// debits the complete conjunctive plan atomically under one lock. A plan that
+/// must wait, fails validation, or hits state capacity debits nothing. A
+/// blocked plan releases the lock before sleeping, re-evaluates the whole plan
+/// on wake, and stays cancellable by dropping the future; a cancelled wait
+/// leaves no debit. A committed admission is non-refundable. There is no strict
+/// FIFO fairness promise: concurrent waiters re-evaluate independently and may
+/// compete under the scheduler, and no hidden waiter queue exists.
+///
+/// **Feedback.** A final `429` with a positive server delay records a
+/// cooldown (clamped by core's cooldown cap) for the current buckets, or the
+/// logical origin for an empty plan, affecting future admission only.
 ///
 /// Internal quota and cooldown state is not exposed:
 ///
@@ -73,6 +96,10 @@ struct LocalLimiterConfig {
     reason = "the normative contract specifies an explicit constructor without a Default contract"
 )]
 impl LocalRateLimiter {
+    /// Structural capability of every local limiter.
+    pub const CAPABILITY: LimiterCapability =
+        LimiterCapability::new(Enforcement::Local, "concord.local", 1);
+
     /// Creates an independent local limiter with the normative finite defaults.
     ///
     /// Share the same `Arc<dyn RateLimiter>` explicitly when independently
@@ -132,8 +159,9 @@ impl LocalRateLimiter {
 
     /// Sets the maximum aggregate byte length of one resolved key.
     ///
-    /// Zero permits only a global key. Values above
-    /// [`MAX_RATE_LIMIT_KEY_BYTES`] are rejected.
+    /// Every key has at least one dimension, so zero admits no policy and a
+    /// generated client that declares policies refuses to build with it.
+    /// Values above [`MAX_RATE_LIMIT_KEY_BYTES`] are rejected.
     pub fn key_limit(mut self, bytes: usize) -> Result<Self, RateLimitError> {
         if bytes > MAX_RATE_LIMIT_KEY_BYTES {
             return Err(invalid_configuration());
@@ -296,6 +324,10 @@ impl LocalRateLimiter {
 }
 
 impl RateLimiter for LocalRateLimiter {
+    fn capability(&self) -> LimiterCapability {
+        Self::CAPABILITY
+    }
+
     fn preparation_key_limit(&self) -> usize {
         self.config.key_limit
     }

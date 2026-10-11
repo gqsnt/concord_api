@@ -1,42 +1,44 @@
 use super::*;
 
+async fn later_page_failure(configure: impl FnOnce(&Harness)) -> (ApiError, Vec<AggregateRecord>) {
+    let harness = Harness::new();
+    harness.queue("one|next");
+    configure(&harness);
+    let error = prefix(harness.core.clone(), PageEndpoint::new("first"), 5)
+        .await
+        .expect_err("later page fails");
+    (error, harness.hooks.aggregate())
+}
+
 #[tokio::test]
-async fn later_page_errors_keep_ordinary_categories_and_aggregate_status() {
-    let status_executor = DeterministicExecutor::new();
-    status_executor
-        .application()
-        .queue_response(ScriptedResponse::success(Bytes::from_static(b"one|next")))
-        .expect("first page");
-    status_executor
-        .application()
-        .queue_response(ScriptedResponse::status(
-            StatusCode::TOO_MANY_REQUESTS,
-            Bytes::from_static(b"status-body-sentinel"),
-        ))
-        .expect("status page");
-    let status_hooks = Arc::new(PaginationProbe::default());
-    let status_core = core(
-        &status_executor,
-        Arc::clone(&status_hooks),
-        Arc::new(LimiterProbe::default()),
-        |runtime| runtime,
-    );
-    let error = pagination_error(
-        collect(
-            status_core,
-            PageLimit::Prefix(5),
-            CursorController::new("first"),
-            Some(Duration::from_secs(30)),
-        )
-        .await,
-    );
+async fn later_page_errors_keep_ordinary_categories_and_truthful_summaries() {
+    let (error, aggregate) = later_page_failure(|harness| {
+        harness.queue_status(StatusCode::TOO_MANY_REQUESTS, "status-body-sentinel");
+    })
+    .await;
     assert_eq!(error.category(), ErrorCategory::HttpStatus);
     assert_eq!(error.pagination_kind(), None);
-    let aggregate = status_hooks
-        .aggregate
-        .lock()
-        .expect("aggregate lock")
-        .clone();
+    let summary = summary_of(&error);
+    assert_eq!(summary.stop_reason(), StopReason::Failed);
+    assert_eq!(summary.pages_received(), 1);
+    assert_eq!(summary.pages_delivered(), 1);
+    assert_eq!(summary.items_delivered(), 1);
+    assert_eq!(summary.application_attempts(), 2);
+    // The fetch failure does not erase the previously validated continuation.
+    assert_eq!(
+        summary.continuation(),
+        ContinuationKnowledge::NextRequestKnown
+    );
+    // The captured rejected-status body counts as acquired traversal bytes.
+    assert_eq!(
+        summary.acquired_response_bytes(),
+        u64::try_from("one|next".len() + "status-body-sentinel".len()).expect("small")
+    );
+    assert_eq!(
+        summary.dispatch_knowledge(),
+        DispatchKnowledge::ResponseObserved
+    );
+    assert!(!format!("{error:?}").contains("status-body-sentinel"));
     assert_eq!(aggregate[0].pages_completed, 1);
     assert_eq!(aggregate[0].items_collected, 1);
     assert_eq!(
@@ -44,117 +46,77 @@ async fn later_page_errors_keep_ordinary_categories_and_aggregate_status() {
         Some(StatusCode::TOO_MANY_REQUESTS)
     );
     assert_eq!(aggregate[0].outcome, CompletionOutcome::HttpStatus);
+    assert_eq!(aggregate[0].stop_reason, StopReason::Failed);
 
-    let decode_executor = DeterministicExecutor::new();
-    decode_executor
-        .application()
-        .queue_response(ScriptedResponse::success(Bytes::from_static(b"one|next")))
-        .expect("first page");
-    decode_executor
-        .application()
-        .queue_response(ScriptedResponse::success(Bytes::from_static(
-            b"decoder-body-sentinel-without-structure",
-        )))
-        .expect("decode page");
-    let decode_hooks = Arc::new(PaginationProbe::default());
-    let decode_core = core(
-        &decode_executor,
-        Arc::clone(&decode_hooks),
-        Arc::new(LimiterProbe::default()),
-        |runtime| runtime,
-    );
-    let error = pagination_error(
-        collect(
-            decode_core,
-            PageLimit::Prefix(5),
-            CursorController::new("first"),
-            Some(Duration::from_secs(30)),
-        )
-        .await,
-    );
+    let (error, aggregate) = later_page_failure(|harness| {
+        harness.queue("decoder-body-sentinel-without-structure");
+    })
+    .await;
     assert_eq!(error.category(), ErrorCategory::ResponseDecoding);
     assert_eq!(error.pagination_kind(), None);
     let rendered = format!("{error}\n{error:?}");
     assert!(!rendered.contains("decoder-body-sentinel"));
-    let aggregate = decode_hooks
-        .aggregate
-        .lock()
-        .expect("aggregate lock")
-        .clone();
+    let summary = summary_of(&error);
+    assert_eq!(
+        summary.pages_received(),
+        1,
+        "an undecodable page is not received"
+    );
+    assert_eq!(
+        summary.acquired_response_bytes(),
+        u64::try_from("one|next".len() + "decoder-body-sentinel-without-structure".len())
+            .expect("small")
+    );
     assert_eq!(aggregate[0].final_status, Some(StatusCode::OK));
     assert_eq!(aggregate[0].outcome, CompletionOutcome::ResponseDecoding);
 
-    let timeout_executor = DeterministicExecutor::new();
-    timeout_executor
-        .application()
-        .queue_response(ScriptedResponse::success(Bytes::from_static(b"one|next")))
-        .expect("first page");
-    timeout_executor
-        .application()
-        .queue_failure(TransportFailure::Timeout)
-        .expect("timeout page");
-    let timeout_hooks = Arc::new(PaginationProbe::default());
-    let timeout_core = core(
-        &timeout_executor,
-        Arc::clone(&timeout_hooks),
-        Arc::new(LimiterProbe::default()),
-        |runtime| runtime,
-    );
-    let error = pagination_error(
-        collect(
-            timeout_core,
-            PageLimit::Prefix(5),
-            CursorController::new("first"),
-            Some(Duration::from_secs(30)),
-        )
-        .await,
-    );
+    let (error, aggregate) = later_page_failure(|harness| {
+        harness
+            .executor
+            .application()
+            .queue_failure(TransportFailure::Timeout)
+            .expect("timeout page");
+    })
+    .await;
     assert_eq!(error.category(), ErrorCategory::Timeout);
     assert_eq!(error.pagination_kind(), None);
-    let aggregate = timeout_hooks
-        .aggregate
-        .lock()
-        .expect("aggregate lock")
-        .clone();
     assert_eq!(aggregate[0].outcome, CompletionOutcome::Timeout);
+    assert_eq!(summary_of(&error).stop_reason(), StopReason::Failed);
+}
 
-    let rate_executor = DeterministicExecutor::new();
-    let rate_hooks = Arc::new(PaginationProbe::default());
+#[tokio::test]
+async fn rate_admission_failure_on_the_first_page_stops_before_dispatch() {
+    let executor = DeterministicExecutor::new();
+    let hooks = Arc::new(PaginationProbe::default());
     let rejecting_limiter = Arc::new(RejectingLimiter::default());
     let configured_limiter: Arc<dyn RateLimiter> = rejecting_limiter.clone();
-    let rate_core = ClientCore::build_with_development(
-        "http://pagination-runtime.example.test/v1/",
+    let core = ClientCore::build_with_development(
+        BASE,
         HttpConfigBuilder::new().http1_only(),
         RuntimeConfigBuilder::new()
-            .operation_observer(rate_hooks.clone())
-            .operation_observer(rate_hooks.clone())
-            .operation_observer(rate_hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
+            .operation_observer(hooks.clone())
             .rate_limiter(configured_limiter),
-        &rate_executor,
+        &executor,
     )
     .expect("rate-limit pagination core");
-    let error = pagination_error(
-        collect(
-            rate_core,
-            PageLimit::Prefix(1),
-            CursorController::new("rate-limit-page"),
-            Some(Duration::from_secs(30)),
-        )
-        .await,
-    );
+    let error = prefix(core, PageEndpoint::new("rate-limit-page"), 1)
+        .await
+        .expect_err("rate admission fails");
     assert_eq!(error.category(), ErrorCategory::RateLimit);
     assert_eq!(error.rate_limit_kind(), Some(RateLimitErrorKind::Acquire));
     assert_eq!(error.pagination_kind(), None);
     assert_eq!(rejecting_limiter.acquisitions.load(Ordering::SeqCst), 1);
+    assert_eq!(executor.application().request_count().expect("count"), 0);
+    let summary = summary_of(&error);
+    assert_eq!(summary.quota_admissions(), 0);
     assert_eq!(
-        rate_executor.application().request_count().expect("count"),
-        0
+        summary.dispatch_knowledge(),
+        DispatchKnowledge::NotDispatched
     );
-    assert_eq!(
-        rate_hooks.completion.lock().expect("completion lock").len(),
-        1
-    );
-    let aggregate = rate_hooks.aggregate.lock().expect("aggregate lock").clone();
+    assert_eq!(hooks.completion.lock().expect("completion lock").len(), 1);
+    let aggregate = hooks.aggregate();
     assert_eq!(aggregate.len(), 1);
     assert_eq!(aggregate[0].pages_completed, 0);
     assert_eq!(aggregate[0].items_collected, 0);
@@ -162,61 +124,19 @@ async fn later_page_errors_keep_ordinary_categories_and_aggregate_status() {
 }
 
 #[tokio::test]
-async fn pagination_emits_correlated_page_and_aggregate_terminal_observation() {
-    let executor = DeterministicExecutor::new();
-    executor
-        .application()
-        .queue_response(ScriptedResponse::success(Bytes::from_static(b"one|next")))
-        .expect("first page");
-    executor
-        .application()
-        .queue_response(ScriptedResponse::success(Bytes::from_static(b"two|-")))
-        .expect("second page");
-    let hooks = Arc::new(PaginationProbe::default());
-    let core = core(
-        &executor,
-        Arc::clone(&hooks),
-        Arc::new(LimiterProbe::default()),
-        |runtime| runtime,
-    );
-    let items = collect(
-        core,
-        PageLimit::Prefix(5),
-        CursorController::new("first"),
-        Some(Duration::from_secs(30)),
-    )
-    .await
-    .expect("pagination succeeds");
-    assert_eq!(items, ["one", "two"]);
-    assert_eq!(executor.application().request_count().expect("count"), 2);
-    assert_eq!(hooks.completion.lock().expect("completion lock").len(), 2);
-    assert_eq!(hooks.aggregate.lock().expect("aggregate lock").len(), 1);
-}
-
-#[tokio::test]
 async fn aggregate_completion_observes_one_fixed_result() {
-    let executor = DeterministicExecutor::new();
-    executor
-        .application()
-        .queue_response(ScriptedResponse::success(Bytes::from_static(b"one|-")))
-        .expect("page");
-    let hooks = Arc::new(PaginationProbe::default());
-    let core = core(
-        &executor,
-        Arc::clone(&hooks),
-        Arc::new(LimiterProbe::default()),
-        |runtime| runtime,
-    );
-    let items = collect(
-        core,
-        PageLimit::Prefix(1),
-        CursorController::new("first"),
-        Some(Duration::from_secs(1)),
+    let harness = Harness::new();
+    harness.queue("one|-");
+    let items = all(
+        harness.core.clone(),
+        PageEndpoint::new("first").timeout(Duration::from_secs(1)),
+        1,
     )
     .await
     .expect("fixed success");
     assert_eq!(items, ["one"]);
-    let aggregate = hooks.aggregate.lock().expect("aggregate lock");
+    let aggregate = harness.hooks.aggregate();
     assert_eq!(aggregate.len(), 1);
     assert_eq!(aggregate[0].outcome, CompletionOutcome::Success);
+    assert_eq!(aggregate[0].stop_reason, StopReason::Exhausted);
 }

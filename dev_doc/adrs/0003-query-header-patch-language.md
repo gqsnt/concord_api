@@ -1,6 +1,7 @@
 # ADR 0003 — Word-visible patch operations and explicit `each`
 
-- **Status:** Selected and mechanically supported on Windows/Linux; human comprehension remains unknown for public freeze
+- **Status:** Superseded for v3 by [ADR 0015](0015-direct-placement-and-checked-symbolic-patch-programs.md): the word operations and explicit `each` remain, but plain assignment over an inherited key is no longer a replacement, and direct placement plus structural preconditions are added.
+- **v2.1 status (historical):** Selected and mechanically supported on Windows/Linux; human comprehension remains unknown for public freeze.
 
 ## Decision
 

@@ -1,5 +1,11 @@
-error: pagination-controlled value `account` cannot partition a rate-limit policy
-  --> tests/ui/fail/rate_limits/rate_limit_named_pagination_binding.rs:16:53
+error: [C3-PAGE] cursor destination `account` of endpoint `Api::list` participates in the effective rate key of `concord.rate_limit_named_pagination_binding.1`; page-live values cannot be quota dimensions, so key the rate policy on a value the cursor does not change
+  --> tests/ui/fail/rate_limits/rate_limit_named_pagination_binding.rs:25:27
    |
-16 |         rate_limit account_reads(account = endpoint.account);
-   |                                                     ^^^^^^^
+25 |                 cursor -> account;
+   |                           ^^^^^^^
+
+error: note: the rate attachment is here
+  --> tests/ui/fail/rate_limits/rate_limit_named_pagination_binding.rs:22:13
+   |
+22 |             rate_limit account_reads(account = account);
+   |             ^^^^^^^^^^

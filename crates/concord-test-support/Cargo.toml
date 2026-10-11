@@ -21,5 +21,10 @@ tokio = { workspace = true, optional = true, features = ["sync"] }
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 
+[[test]]
+name = "deterministic"
+path = "tests/deterministic.rs"
+required-features = ["deterministic"]
+
 [lints]
 workspace = true

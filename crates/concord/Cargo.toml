@@ -22,11 +22,12 @@ brotli = ["concord_core/brotli"]
 deflate = ["concord_core/deflate"]
 
 [dependencies]
-concord_core = { package = "concord-core", version = "=2.1.0-beta.1", path = "../concord-core", default-features = false }
-concord_extras = { package = "concord-extras", version = "=2.1.0-beta.1", path = "../concord-extras", default-features = false }
-concord_macros = { package = "concord-macros", version = "=2.1.0-beta.1", path = "../concord-macros", default-features = false }
+concord_core = { package = "concord-core", version = "=3.0.0-beta.1", path = "../concord-core", default-features = false }
+concord_extras = { package = "concord-extras", version = "=3.0.0-beta.1", path = "../concord-extras", default-features = false }
+concord_macros = { package = "concord-macros", version = "=3.0.0-beta.1", path = "../concord-macros", default-features = false }
 
 [dev-dependencies]
+concord_inspect = { package = "concord-inspect", path = "../concord-inspect" }
 concord_test_support = { package = "concord-test-support", path = "../concord-test-support", default-features = false, features = ["loopback"] }
 futures-core.workspace = true
 serde = { workspace = true, features = ["derive"] }
@@ -38,6 +39,33 @@ trybuild = "1.0.118"
 name = "ui"
 path = "tests/ui.rs"
 test = false
+
+# The v3 end-to-end suites exercise JSON representations, the local limiter and
+# (for execution) TLS; without those features they are skipped, not broken.
+[[test]]
+name = "v3_smoke"
+path = "tests/v3_smoke.rs"
+required-features = ["json"]
+
+[[test]]
+name = "v3_catalog"
+path = "tests/v3_catalog.rs"
+required-features = ["json", "rate-limit"]
+
+[[test]]
+name = "v3_grammar"
+path = "tests/v3_grammar.rs"
+required-features = ["json", "rate-limit"]
+
+[[test]]
+name = "v3_execution"
+path = "tests/v3_execution.rs"
+required-features = ["json", "rate-limit", "default-tls"]
+
+[[test]]
+name = "current_language"
+path = "tests/current_language.rs"
+required-features = ["json", "rate-limit"]
 
 [lints]
 workspace = true

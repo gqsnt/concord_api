@@ -3,21 +3,25 @@
 //! Required feature: `oauth2-client`. Mode: deterministic extension example.
 //! Documentation owner: `docs/extensions.md`.
 //! Proving tests: `tests/construction.rs` and façade provider tests.
+//!
+//! The provider declares the exact origin its helper HTTP may reach
+//! ([`CredentialProvider::http_origins`], AUTH-02). Any other destination is
+//! rejected before transport; the empty default grants none.
 
 // ANCHOR: credential_provider_extension
 use std::fmt;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use concord::auth::{
     AuthError, AuthErrorKind, BoxFuture, CredentialMaterial, CredentialProvider, CredentialRequest,
-    ProviderBody, ProviderRequest, SecretCredential,
+    ProviderBody, ProviderOrigin, ProviderRequest, SecretCredential,
 };
 use concord::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};
 use concord::http::{HeaderName, HeaderValue, Method, Url};
 use concord::{Bytes, SecretString};
 
 /// Redacted credential material returned by the custom provider example.
-#[derive(Clone)]
 pub struct ExampleToken(SecretString);
 
 impl CredentialMaterial for ExampleToken {}
@@ -50,6 +54,12 @@ impl DecodeBody for ExampleTokenCodec {
         ))
     }
 }
+
+/// The only origin the example provider's helper HTTP may reach.
+static IDENTITY_ORIGIN: LazyLock<[ProviderOrigin; 1]> = LazyLock::new(|| {
+    [ProviderOrigin::parse("https://identity.example.test")
+        .expect("the fixed example identity origin is a valid HTTPS origin")]
+});
 
 /// A provider that demonstrates Concord's isolated provider HTTP capability.
 pub struct ExampleProvider;
@@ -85,6 +95,10 @@ impl CredentialProvider for ExampleProvider {
                 SecretString::try_new(token).map_err(AuthError::from)?,
             ))
         })
+    }
+
+    fn http_origins(&self) -> &[ProviderOrigin] {
+        IDENTITY_ORIGIN.as_slice()
     }
 }
 // ANCHOR_END: credential_provider_extension

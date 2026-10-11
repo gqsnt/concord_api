@@ -159,6 +159,7 @@ fn classifier_receives_only_the_finite_semantic_context() {
             status: StatusCode::SERVICE_UNAVAILABLE,
             server_delay: None,
         },
+        crate::error::DispatchKnowledge::ResponseObserved,
     );
     assert_eq!(policy.classify(attempt), RetryDecision::Retry);
 }
@@ -434,6 +435,7 @@ fn debug_and_build_error_formatting_exclude_host_header_and_classifier_state() {
             status: StatusCode::SERVICE_UNAVAILABLE,
             server_delay: None,
         },
+        crate::error::DispatchKnowledge::ResponseObserved,
     );
     let error = RetryPolicy::builder()
         .max_extra_load(f64::NAN)
@@ -507,4 +509,87 @@ fn server_minimum_is_combined_with_backoff_and_never_exceeds_willingness() {
         policy.retry_delay(1, 0, None),
         Some(Duration::from_millis(250))
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn v3_e19_load_window_is_ten_one_second_buckets_with_exact_boundaries() {
+    // Just inside the window: the initial dispatch still funds one retry.
+    let inside = policy(1.0);
+    let target = url("https://window-inside.example.test/data");
+    inside.record_initial_dispatch(&target);
+    tokio::time::advance(Duration::from_millis(9_999)).await;
+    assert!(inside.reserve_retry(&target));
+    assert!(!inside.reserve_retry(&target));
+
+    // Exactly ten seconds later the whole window has rotated out.
+    let expired = policy(1.0);
+    let target = url("https://window-expired.example.test/data");
+    expired.record_initial_dispatch(&target);
+    tokio::time::advance(Duration::from_secs(10)).await;
+    assert!(!expired.reserve_retry(&target));
+    assert_eq!(
+        expired
+            .budget()
+            .expect("budget")
+            .active_bucket_count(&target),
+        0
+    );
+
+    // ceil(r * initial) with the fixed 10^16 scale and no startup credit.
+    let default = policy(0.20);
+    let target = url("https://window-ceiling.example.test/data");
+    assert!(
+        !default.reserve_retry(&target),
+        "no invented startup credit"
+    );
+    record_initials(&default, &target, 6);
+    assert!(default.reserve_retry(&target));
+    assert!(default.reserve_retry(&target));
+    assert!(!default.reserve_retry(&target));
+}
+
+#[tokio::test(start_paused = true)]
+async fn v3_e19_zero_ratio_denies_and_invalid_ratios_are_rejected() {
+    let zero = policy(0.0);
+    let target = url("https://zero-ratio.example.test/data");
+    record_initials(&zero, &target, 1_000);
+    assert!(!zero.reserve_retry(&target));
+    for invalid in [-0.5, 1_000.5, f64::NAN, f64::INFINITY] {
+        assert_eq!(
+            RetryPolicy::builder()
+                .max_extra_load(invalid)
+                .classify_fn(|_| RetryDecision::Retry)
+                .build()
+                .expect_err("invalid ratio")
+                .kind(),
+            RetryPolicyBuildErrorKind::InvalidMaxExtraLoad
+        );
+    }
+    assert!(
+        RetryPolicy::builder()
+            .max_extra_load(1_000.0)
+            .classify_fn(|_| RetryDecision::Retry)
+            .build()
+            .is_ok()
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn v3_e19_capacity_exhaustion_and_poison_deny_extra_retries_only() {
+    let bounded = configured_policy(1.0, 1, Duration::from_secs(900)).expect("bounded policy");
+    let retained = url("https://retained-scope.example.test/data");
+    let untracked = url("https://untracked-scope.example.test/data");
+    bounded.record_initial_dispatch(&retained);
+    // Recording an initial dispatch for an untracked origin at capacity is a
+    // no-op, never a failure: initial requests are not budgeted.
+    bounded.record_initial_dispatch(&untracked);
+    assert!(!bounded.reserve_retry(&untracked));
+    assert!(bounded.reserve_retry(&retained));
+
+    let poisoned = policy(1.0);
+    let target = url("https://poisoned-scope.example.test/data");
+    poisoned.record_initial_dispatch(&target);
+    assert!(poisoned.poison_budget_state_for_test());
+    poisoned.record_initial_dispatch(&target);
+    assert!(!poisoned.reserve_retry(&target));
 }

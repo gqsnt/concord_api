@@ -66,7 +66,7 @@ pub(crate) fn run_all(root: &Path) -> Result<(), String> {
         "concord-fixture-contract-mismatch",
         "dependency/contract-mismatch",
         &[],
-        &["concord macro/facade contract mismatch: facade 999, generated 33"],
+        &["concord macro/facade contract mismatch: facade 999, generated 34"],
     )?;
 
     for (binary, features, expected) in [
@@ -101,10 +101,9 @@ pub(crate) fn run_all(root: &Path) -> Result<(), String> {
         (
             "rate_limit_absent",
             "fixture-absence",
-            &[
-                "could not find `LocalRateLimiter` in `rate_limit`",
-                "cannot find value `RetryAfterObserver` in module `runtime::rate_limit`",
-            ][..],
+            // v3 gates only `LocalRateLimiter` behind `rate-limit`; the v2.1
+            // `RetryAfterObserver` no longer exists in any configuration.
+            &["could not find `LocalRateLimiter` in `rate_limit`"][..],
         ),
         (
             "multipart_absent",

@@ -1,14 +1,13 @@
 #![allow(unused_imports)]
 
-use concord::{Bytes, api};
+use concord::{Binary, Bytes, api};
 
 api! {
     client PascalSourceApi {
-        timeout 30s;
         base "http://names.example.test/";
 
-
-    GET HTTPStatus() -> Bytes via Binary;
-}}
+        GET HTTPStatus() -> Bytes via Binary;
+    }
+}
 
 fn main() {}

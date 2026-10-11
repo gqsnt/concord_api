@@ -5,24 +5,30 @@
 //! loopback execution. Documentation owner: `docs/quick_start.md`.
 //! Proving tests: `tests/construction.rs` and
 //! `tests/local_runtime.rs`.
+//!
+//! The declaration omits `timeout`, so the root selects the visible v3 default
+//! of 30 seconds. `via Empty` is an ordinary imported Rust type: no response
+//! representation is guessed from the `()` output.
 
 // ANCHOR: first_api
-use concord::api;
+use concord::{Empty, api};
 
 api! {
     client MinimalApi {
-        timeout 30s;
         base "http://minimal.example.test/v1/";
 
-
-    GET health() -> () via Empty {
-        path ["health"];
+        GET health() -> () via Empty {
+            path "health";
+        }
     }
-}}
+}
 // ANCHOR_END: first_api
 
 // ANCHOR: build_client
 /// Builds the minimal client with Concord's default runtime components.
+///
+/// `new()` exists because nothing is required: no root value, secret,
+/// provider or limiter choice remains.
 pub fn build_client() -> Result<MinimalApi, concord::ClientBuildError> {
     MinimalApi::new()
 }

@@ -1,5 +1,5 @@
-error: v1 children after the `client` block were removed; move every scope and endpoint inside its owning `client { ... }` block
- --> tests/ui/fail/syntax/child_inside_client.rs:9:5
-  |
-9 |     scope users() {
-  |     ^^^^^
+error: [C3-OWNER] an `api!` invocation accepts exactly one closed `client` (client `NestedChildApi` is already declared); move scopes and endpoints inside it, or declare another client in a separate invocation
+  --> tests/ui/fail/syntax/child_inside_client.rs:12:5
+   |
+12 |     scope users() {
+   |     ^^^^^

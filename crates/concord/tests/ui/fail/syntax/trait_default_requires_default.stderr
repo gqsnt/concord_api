@@ -1,11 +1,11 @@
-error[E0277]: the trait bound `NoDefault: Default` is not satisfied
-  --> tests/ui/fail/syntax/trait_default_requires_default.rs:11:13
+error[E0277]: the trait bound `NoDefault: std::default::Default` is not satisfied
+  --> tests/ui/fail/syntax/trait_default_requires_default.rs:18:26
    |
-11 |             value: NoDefault;
-   |             ^^^^^ the trait `Default` is not implemented for `NoDefault`
+18 |             query value: NoDefault;
+   |                          ^^^^^^^^^ the trait `std::default::Default` is not implemented for `NoDefault`
    |
 help: consider annotating `NoDefault` with `#[derive(Default)]`
    |
- 3 + #[derive(Default)]
- 4 | pub struct NoDefault;
+ 5 + #[derive(Default)]
+ 6 | pub struct NoDefault;
    |

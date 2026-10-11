@@ -44,30 +44,35 @@ async fn multipart_aggregate_framing_limit_and_factory_failure_are_pre_native() 
     let core = development_core(
         &executor,
         Arc::clone(&hooks),
-        RuntimeConfigBuilder::new()
-            .request_body_limit(NonZeroUsize::new(64).expect("positive limit")),
+        RuntimeConfigBuilder::new().request_body_limit(64),
     );
-    let body = RequestBody::multipart(
+    let body = PreparedBody::multipart(
         MultipartBody::new()
             .part(
                 "field",
                 MultipartPart::text("x").expect("bounded multipart text"),
             )
             .expect("multipart part"),
-    );
+    )
+    .expect("prepared multipart body");
+    // The boundary and framing are generated during preparation, so the exact
+    // framed length is known and exceeds the limit before any attempt starts.
+    assert!(matches!(
+        body.length_hint(),
+        crate::body::LengthHint::Exact(length) if length > 64
+    ));
     let error = body_request(core, body)
         .await
         .expect_err("multipart framing exceeds the request limit");
     assert_eq!(error.category(), ErrorCategory::RequestBody);
     assert_eq!(executor.application().request_count().unwrap(), 0);
-    assert!(matches!(
-        hooks.records().first(),
-        Some(LifecycleRecord::Before {
-            body_kind: crate::hooks::BodyKind::Multipart,
-            known_body_length: Some(1),
-            ..
-        })
-    ));
+    assert!(
+        !hooks
+            .records()
+            .iter()
+            .any(|record| matches!(record, LifecycleRecord::Before { .. })),
+        "a known over-limit body fails before any attempt starts"
+    );
 
     let failing_executor = DeterministicExecutor::new();
     let failing_hooks = Arc::new(ProbeHooks::new());
@@ -79,10 +84,11 @@ async fn multipart_aggregate_framing_limit_and_factory_failure_are_pre_native() 
     let create_calls = Arc::new(AtomicUsize::new(0));
     let error = body_request(
         failing_core,
-        RequestBody::multipart_factory(ProbeMultipartFactory {
+        PreparedBody::multipart_factory(ProbeMultipartFactory {
             create_calls: Arc::clone(&create_calls),
             fail: true,
-        }),
+        })
+        .expect("multipart factory body"),
     )
     .await
     .expect_err("multipart factory failure");
@@ -104,11 +110,12 @@ async fn multipart_stream_failure_is_sanitized_and_request_body_primary() {
         [ProbeFrame::Failure("multipart-producer-error-secret-9b31")],
         &polls,
     ));
-    let body = RequestBody::multipart(
+    let body = PreparedBody::multipart(
         MultipartBody::new()
             .part("stream", MultipartPart::stream(stream))
             .expect("multipart stream part"),
-    );
+    )
+    .expect("prepared multipart body");
     let error = body_request(core, body)
         .await
         .expect_err("multipart producer failure");
@@ -126,8 +133,7 @@ async fn managed_request_stream_enforces_exact_length_and_aggregate_limit() {
     let success_core = development_core(
         &success_executor,
         Arc::clone(&success_hooks),
-        RuntimeConfigBuilder::new()
-            .request_body_limit(NonZeroUsize::new(5).expect("positive limit")),
+        RuntimeConfigBuilder::new().request_body_limit(5),
     );
     success_executor
         .application()
@@ -146,7 +152,7 @@ async fn managed_request_stream_enforces_exact_length_and_aggregate_limit() {
     ))
     .exact_length(5);
     assert_eq!(
-        body_request(success_core, RequestBody::stream(success_body))
+        body_request(success_core, PreparedBody::stream(success_body))
             .await
             .expect("exact stream success"),
         b"accepted"[..]
@@ -162,8 +168,7 @@ async fn managed_request_stream_enforces_exact_length_and_aggregate_limit() {
     let preflight_core = development_core(
         &preflight_executor,
         Arc::clone(&preflight_hooks),
-        RuntimeConfigBuilder::new()
-            .request_body_limit(NonZeroUsize::new(4).expect("positive limit")),
+        RuntimeConfigBuilder::new().request_body_limit(4),
     );
     let preflight_polls = Arc::new(AtomicUsize::new(0));
     let preflight_body = RequestStream::from_stream(BodyPollProbe::new(
@@ -171,7 +176,7 @@ async fn managed_request_stream_enforces_exact_length_and_aggregate_limit() {
         &preflight_polls,
     ))
     .exact_length(5);
-    let error = body_request(preflight_core, RequestBody::stream(preflight_body))
+    let error = body_request(preflight_core, PreparedBody::stream(preflight_body))
         .await
         .expect_err("known impossible stream size");
     assert_eq!(error.category(), ErrorCategory::RequestBody);
@@ -193,10 +198,9 @@ async fn managed_request_stream_enforces_exact_length_and_aggregate_limit() {
         let core = development_core(
             &executor,
             hooks,
-            RuntimeConfigBuilder::new()
-                .request_body_limit(NonZeroUsize::new(limit).expect("positive limit")),
+            RuntimeConfigBuilder::new().request_body_limit(limit),
         );
-        let error = body_request(core, RequestBody::stream(body))
+        let error = body_request(core, PreparedBody::stream(body))
             .await
             .expect_err("managed stream failure");
         assert_eq!(error.category(), ErrorCategory::RequestBody);
@@ -257,7 +261,7 @@ async fn producer_failure_is_request_body_primary_and_body_free() {
         ],
         &polls,
     ));
-    let error = body_request(core, RequestBody::stream(body))
+    let error = body_request(core, PreparedBody::stream(body))
         .await
         .expect_err("producer failure");
     assert_eq!(error.category(), ErrorCategory::RequestBody);
@@ -283,23 +287,19 @@ async fn body_factory_is_created_once_after_approval_and_failure_is_pre_native()
             ScriptedResponse::success("factory-ok"),
         )
         .expect("factory script");
-    let content_type_calls = Arc::new(AtomicUsize::new(0));
     let create_calls = Arc::new(AtomicUsize::new(0));
     let polls = Arc::new(AtomicUsize::new(0));
     let request = body_request(
         core,
-        RequestBody::factory(ProbeBodyFactory {
-            content_type_calls: Arc::clone(&content_type_calls),
+        PreparedBody::factory(ProbeBodyFactory {
             create_calls: Arc::clone(&create_calls),
             polls: Arc::clone(&polls),
             fail: false,
         }),
     );
-    assert_eq!(content_type_calls.load(Ordering::SeqCst), 1);
     assert_eq!(create_calls.load(Ordering::SeqCst), 0);
     assert_eq!(polls.load(Ordering::SeqCst), 0);
     assert_eq!(request.await.expect("factory request"), b"factory-ok"[..]);
-    assert_eq!(content_type_calls.load(Ordering::SeqCst), 1);
     assert_eq!(create_calls.load(Ordering::SeqCst), 1);
     assert_eq!(polls.load(Ordering::SeqCst), 2);
     assert_eq!(executor.application().request_count().unwrap(), 1);
@@ -312,13 +312,11 @@ async fn body_factory_is_created_once_after_approval_and_failure_is_pre_native()
         failing_hooks,
         RuntimeConfigBuilder::new(),
     );
-    let failing_content_type_calls = Arc::new(AtomicUsize::new(0));
     let failing_create_calls = Arc::new(AtomicUsize::new(0));
     let failing_polls = Arc::new(AtomicUsize::new(0));
     let error = body_request(
         failing_core,
-        RequestBody::factory(ProbeBodyFactory {
-            content_type_calls: Arc::clone(&failing_content_type_calls),
+        PreparedBody::factory(ProbeBodyFactory {
             create_calls: Arc::clone(&failing_create_calls),
             polls: Arc::clone(&failing_polls),
             fail: true,
@@ -327,7 +325,6 @@ async fn body_factory_is_created_once_after_approval_and_failure_is_pre_native()
     .await
     .expect_err("factory creation failure");
     assert_eq!(error.category(), ErrorCategory::RequestBody);
-    assert_eq!(failing_content_type_calls.load(Ordering::SeqCst), 1);
     assert_eq!(failing_create_calls.load(Ordering::SeqCst), 1);
     assert_eq!(failing_polls.load(Ordering::SeqCst), 0);
     assert_eq!(failing_executor.application().request_count().unwrap(), 0);
@@ -360,7 +357,7 @@ async fn bytes_reader_and_file_stream_constructors_use_the_same_native_path() {
     assert_eq!(
         body_request(
             core.clone(),
-            RequestBody::stream(RequestStream::from_bytes(Bytes::from_static(
+            PreparedBody::stream(RequestStream::from_bytes(Bytes::from_static(
                 b"bytes-source"
             ))),
         )
@@ -371,7 +368,7 @@ async fn bytes_reader_and_file_stream_constructors_use_the_same_native_path() {
     assert_eq!(
         body_request(
             core.clone(),
-            RequestBody::stream(
+            PreparedBody::stream(
                 RequestStream::from_reader(std::io::Cursor::new(b"reader-source".to_vec()))
                     .exact_length(13),
             ),
@@ -392,7 +389,7 @@ async fn bytes_reader_and_file_stream_constructors_use_the_same_native_path() {
     let file_body = RequestStream::from_file(&file_path)
         .await
         .expect("open stream fixture");
-    let file_result = body_request(core, RequestBody::stream(file_body)).await;
+    let file_result = body_request(core, PreparedBody::stream(file_body)).await;
     tokio::fs::remove_file(&file_path)
         .await
         .expect("remove stream fixture");

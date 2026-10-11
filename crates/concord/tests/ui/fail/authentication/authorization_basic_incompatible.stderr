@@ -1,5 +1,17 @@
-error: credential source is incompatible with this authentication placement
-  --> tests/ui/fail/authentication/authorization_basic_incompatible.rs:15:32
+error: [C3-AUTH] `login` is a Basic username/password source; only a `basic` placement can apply it, so write `basic login;` in endpoint `BasicAsAuthorizationApi::protected`
+  --> tests/ui/fail/authentication/authorization_basic_incompatible.rs:18:20
    |
-15 |         auth { authorization = login; }
-   |                                ^^^^^
+18 |             auth { authorization = login; }
+   |                    ^^^^^^^^^^^^^
+
+error: [C3-AUTH] `basic token` in endpoint `BearerAsBasicApi::protected` requires a Basic credential capability; `token` is a single-secret source, so write `bearer token`, `authorization = token`, `header "Name" = token` or `query "name" = token`
+  --> tests/ui/fail/authentication/authorization_basic_incompatible.rs:32:20
+   |
+32 |             auth { basic token; }
+   |                    ^^^^^
+
+error: [C3-AUTH] Basic credentials require two distinct secrets for username and password (credential `login` of client `SharedBasicSecretApi`); write `basic(secret.user, secret.password)` with two declared secrets
+  --> tests/ui/fail/authentication/authorization_basic_incompatible.rs:42:24
+   |
+42 |             credential login = basic(secret.both, secret.both);
+   |                        ^^^^^

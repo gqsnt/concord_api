@@ -23,9 +23,7 @@ use crate::error::{
 use crate::hooks::BodyKind;
 
 use super::build::TlsCapability;
-use super::response_progress::{
-    EmptyChunkAction, ResponseChunkError, ResponseChunkProgress, next_nonempty_chunk,
-};
+use super::response_progress::{ResponseChunkError, ResponseChunkProgress, next_nonempty_chunk};
 use super::status::{StatusCapture, StatusDisposition, collect_terminal_status};
 
 pub(crate) struct ApplicationRequest {
@@ -65,6 +63,29 @@ impl ApplicationRequest {
     }
 }
 
+/// A native application-transport failure after handoff, together with the
+/// only submission evidence core accepts.
+///
+/// `proven_not_submitted` is set exclusively by core-owned transport code
+/// that positively proves the handed-off application request was never
+/// submitted. The production Reqwest boundary cannot expose such proof, so it
+/// always reports `false`, and the operation journal then settles the attempt
+/// as `PossiblyDispatched`; an error category (for example `Connect`) is never
+/// treated as proof.
+pub(crate) struct DispatchFailure {
+    pub(crate) error: ApiError,
+    pub(crate) proven_not_submitted: bool,
+}
+
+impl DispatchFailure {
+    fn unproven(error: ApiError) -> Self {
+        Self {
+            error,
+            proven_not_submitted: false,
+        }
+    }
+}
+
 pub(crate) struct ApplicationResponse {
     native: Option<reqwest::Response>,
     endpoint: EndpointId,
@@ -95,6 +116,12 @@ impl ApplicationResponse {
         self.native().content_length()
     }
 
+    /// Charges every nonempty body chunk later acquired from this response
+    /// (buffered acquisition or terminal status capture) to `meter`.
+    pub(crate) fn meter_acquired_bytes(&mut self, meter: super::AcquiredByteMeter) {
+        self.progress.attach_meter(meter);
+    }
+
     pub(crate) async fn chunk(&mut self) -> Result<Option<Bytes>, ApiError> {
         let result = next_nonempty_chunk(
             self.native
@@ -120,19 +147,21 @@ impl ApplicationResponse {
         }
     }
 
-    pub(crate) fn into_byte_stream(mut self, limit: u64) -> ApplicationByteStream {
+    /// Hands the unpolled native body to a managed stream.
+    ///
+    /// The returned source only reduces native read failures to safe
+    /// category-only errors; empty-chunk suppression, byte limits, the lease
+    /// and idle accounting are owned by the managed stream handle.
+    pub(crate) fn into_byte_stream(mut self) -> ApplicationByteStream {
         let native = self
             .native
             .take()
             .expect("an active application response retains its native response");
-        let endpoint = self.endpoint.clone();
-        let method = self.method.clone();
-        let source: ApplicationByteStream = Box::pin(ReducedResponseStream {
+        Box::pin(ReducedResponseStream {
             inner: Box::pin(native.bytes_stream()),
-            endpoint: endpoint.clone(),
-            method: self.method,
-        });
-        bounded_byte_stream_with_progress(source, endpoint, method, limit, self.progress)
+            endpoint: self.endpoint.clone(),
+            method: self.method.clone(),
+        })
     }
 
     fn into_native(mut self) -> (reqwest::Response, ResponseChunkProgress) {
@@ -162,123 +191,6 @@ impl ApplicationResponse {
 pub(crate) type ApplicationByteStream =
     Pin<Box<dyn Stream<Item = Result<Bytes, ApiError>> + Send + 'static>>;
 
-#[cfg(test)]
-pub(crate) fn bounded_byte_stream(
-    source: ApplicationByteStream,
-    endpoint: EndpointId,
-    method: Method,
-    limit: u64,
-) -> ApplicationByteStream {
-    bounded_byte_stream_with_progress(
-        source,
-        endpoint,
-        method,
-        limit,
-        ResponseChunkProgress::default(),
-    )
-}
-
-fn bounded_byte_stream_with_progress(
-    source: ApplicationByteStream,
-    endpoint: EndpointId,
-    method: Method,
-    limit: u64,
-    progress: ResponseChunkProgress,
-) -> ApplicationByteStream {
-    Box::pin(BoundedResponseStream {
-        source: Some(source),
-        endpoint,
-        method,
-        limit,
-        observed: 0,
-        progress,
-        finished: false,
-    })
-}
-
-struct BoundedResponseStream {
-    source: Option<ApplicationByteStream>,
-    endpoint: EndpointId,
-    method: Method,
-    limit: u64,
-    observed: u64,
-    progress: ResponseChunkProgress,
-    finished: bool,
-}
-
-impl BoundedResponseStream {
-    fn finish(&mut self) {
-        self.finished = true;
-        self.source = None;
-    }
-
-    fn response_body_error(&mut self) -> Poll<Option<Result<Bytes, ApiError>>> {
-        self.finish();
-        Poll::Ready(Some(Err(ApiError::classified(
-            self.endpoint.clone(),
-            self.method.clone(),
-            crate::error::ErrorCategory::ResponseBody,
-        ))))
-    }
-}
-
-impl Stream for BoundedResponseStream {
-    type Item = Result<Bytes, ApiError>;
-
-    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let this = self.get_mut();
-        if this.finished {
-            return Poll::Ready(None);
-        }
-
-        this.progress.begin_turn();
-        loop {
-            let polled = this
-                .source
-                .as_mut()
-                .expect("an unfinished bounded response stream retains its source")
-                .as_mut()
-                .poll_next(context);
-            match polled {
-                Poll::Pending => return Poll::Pending,
-                Poll::Ready(None) => {
-                    this.finish();
-                    return Poll::Ready(None);
-                }
-                Poll::Ready(Some(Err(error))) => {
-                    this.finish();
-                    return Poll::Ready(Some(Err(error)));
-                }
-                Poll::Ready(Some(Ok(bytes))) if bytes.is_empty() => {
-                    match this.progress.observe_empty() {
-                        EmptyChunkAction::Continue => {}
-                        EmptyChunkAction::YieldExecutor => {
-                            context.waker().wake_by_ref();
-                            return Poll::Pending;
-                        }
-                        EmptyChunkAction::LimitExceeded => {
-                            return this.response_body_error();
-                        }
-                    }
-                }
-                Poll::Ready(Some(Ok(bytes))) => {
-                    let Some(next) = this
-                        .observed
-                        .checked_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX))
-                    else {
-                        return this.response_body_error();
-                    };
-                    if next > this.limit {
-                        return this.response_body_error();
-                    }
-                    this.observed = next;
-                    return Poll::Ready(Some(Ok(bytes)));
-                }
-            }
-        }
-    }
-}
-
 struct ReducedResponseStream<S> {
     inner: Pin<Box<S>>,
     endpoint: EndpointId,
@@ -297,10 +209,9 @@ where
             Poll::Ready(Some(Ok(bytes))) => Poll::Ready(Some(Ok(bytes))),
             Poll::Ready(Some(Err(error))) => {
                 drop(error);
-                Poll::Ready(Some(Err(ApiError::classified(
-                    this.endpoint.clone(),
-                    this.method.clone(),
-                    crate::error::ErrorCategory::ResponseBody,
+                Poll::Ready(Some(Err(stream_consumption_error(
+                    &this.endpoint,
+                    &this.method,
                 ))))
             }
             Poll::Ready(None) => Poll::Ready(None),
@@ -418,13 +329,11 @@ impl ApplicationHttp {
             .client
             .request(method.clone(), url.clone())
             .headers(public_headers.clone());
-        let (builder, body_failure, multipart_limit): (
-            _,
-            Option<BodyFailureState>,
-            Option<NonZeroUsize>,
-        ) = match body {
-            NativeBody::Empty => (builder, None, None),
-            NativeBody::Bytes(body) => (builder.body(body), None, None),
+        // Multipart bodies arrive here as core-serialized managed streams whose
+        // exact boundary media type is already in the public head.
+        let (builder, body_failure): (_, Option<BodyFailureState>) = match body {
+            NativeBody::Empty => (builder, None),
+            NativeBody::Bytes(body) => (builder.body(body), None),
             NativeBody::Stream {
                 body,
                 known_length,
@@ -434,10 +343,8 @@ impl ApplicationHttp {
                     Some(length) => builder.header(CONTENT_LENGTH, length),
                     None => builder,
                 };
-                (builder.body(body), Some(failure), None)
+                (builder.body(body), Some(failure))
             }
-            #[cfg(feature = "multipart")]
-            NativeBody::Multipart { form, limit } => (builder.multipart(form), None, Some(limit)),
         };
         let native = builder.build().map_err(|error| {
             drop(error);
@@ -447,42 +354,6 @@ impl ApplicationHttp {
                 crate::error::ErrorCategory::RequestEncoding,
             )
         })?;
-        #[cfg(feature = "multipart")]
-        let (native, body_failure) = match multipart_limit {
-            Some(limit) => {
-                let mut native = native;
-                let exact_length = native
-                    .headers()
-                    .get(CONTENT_LENGTH)
-                    .and_then(|value| value.to_str().ok())
-                    .and_then(|value| value.parse::<u64>().ok());
-                let limit_u64 = u64::try_from(limit.get()).unwrap_or(u64::MAX);
-                if exact_length.is_some_and(|length| length > limit_u64) {
-                    return Err(ApiError::classified(
-                        endpoint.clone(),
-                        method.clone(),
-                        crate::error::ErrorCategory::RequestBody,
-                    ));
-                }
-                let serialized = native.body_mut().take().ok_or_else(|| {
-                    ApiError::classified(
-                        endpoint.clone(),
-                        method.clone(),
-                        crate::error::ErrorCategory::RequestBody,
-                    )
-                })?;
-                let (managed, failure) =
-                    crate::body::wrap_multipart_native_body(serialized, exact_length, limit);
-                *native.body_mut() = Some(managed);
-                (native, Some(failure))
-            }
-            None => (native, body_failure),
-        };
-        #[cfg(not(feature = "multipart"))]
-        let (native, body_failure) = {
-            let _ = multipart_limit;
-            (native, body_failure)
-        };
         Ok(ApplicationRequest {
             native,
             body_failure,
@@ -503,7 +374,7 @@ impl ApplicationHttp {
         pagination_sensitive_headers: &std::collections::HashSet<http::HeaderName>,
         body_kind: BodyKind,
         known_body_length: Option<u64>,
-    ) -> Result<ApplicationResponse, ApiError> {
+    ) -> Result<ApplicationResponse, DispatchFailure> {
         #[cfg(test)]
         let _ = public_headers;
         #[cfg(test)]
@@ -515,11 +386,11 @@ impl ApplicationHttp {
                 } = request;
                 let boundary_body = match native.body_mut().take() {
                     Some(body) => collect_request_body(body).await.map_err(|()| {
-                        ApiError::classified(
+                        DispatchFailure::unproven(ApiError::classified(
                             endpoint.clone(),
                             method.clone(),
                             crate::error::ErrorCategory::RequestBody,
-                        )
+                        ))
                     })?,
                     None => Bytes::new(),
                 };
@@ -540,23 +411,26 @@ impl ApplicationHttp {
                     .__execute(boundary)
                     .await
                     .map(super::development::scripted_response)
-                    .map_err(|failure| {
-                        ApiError::classified(
+                    .map_err(|failure| DispatchFailure {
+                        error: ApiError::classified(
                             endpoint.clone(),
                             method.clone(),
                             super::development::failure_category(failure.kind()),
-                        )
+                        ),
+                        proven_not_submitted: super::development::failure_proves_no_submission(
+                            failure.kind(),
+                        ),
                     })?
             }
             None => {
                 let body_failure = request.body_failure.clone();
                 self.client.execute(request.native).await.map_err(|error| {
-                    ApiError::from_reqwest(
+                    DispatchFailure::unproven(ApiError::from_reqwest(
                         endpoint.clone(),
                         method.clone(),
                         error,
                         body_failure.as_ref().is_some_and(BodyFailureState::failed),
-                    )
+                    ))
                 })?
             }
         };
@@ -572,12 +446,12 @@ impl ApplicationHttp {
             );
             let body_failure = request.body_failure.clone();
             self.client.execute(request.native).await.map_err(|error| {
-                ApiError::from_reqwest(
+                DispatchFailure::unproven(ApiError::from_reqwest(
                     endpoint.clone(),
                     method.clone(),
                     error,
                     body_failure.as_ref().is_some_and(BodyFailureState::failed),
-                )
+                ))
             })?
         };
 
@@ -706,6 +580,9 @@ impl ApplicationHttp {
         .await
     }
 
+    /// Captures a terminal rejected status body. `limit_cap` (the caller's
+    /// response-byte cap) can only narrow the configured status-capture
+    /// ceiling; it never enables a disabled capture.
     pub(crate) async fn terminal_status_managed(
         &self,
         endpoint: EndpointId,
@@ -713,47 +590,31 @@ impl ApplicationHttp {
         response: ApplicationResponse,
         retry_after: Option<Duration>,
         deadline: Option<tokio::time::Instant>,
+        limit_cap: Option<NonZeroUsize>,
     ) -> HttpResponseFailure {
         let (native, progress) = response.into_native();
-        match self
-            .collect_terminal_status_with_progress(
-                endpoint,
-                method,
-                native,
-                retry_after,
-                deadline,
-                progress,
-            )
-            .await
-        {
-            StatusCapture::Terminal(failure) => failure,
-            StatusCapture::SkippedRecoverable => {
-                unreachable!("terminal status capture cannot be recoverable")
-            }
-        }
-    }
-
-    async fn collect_terminal_status_with_progress(
-        &self,
-        endpoint: EndpointId,
-        method: Method,
-        response: reqwest::Response,
-        retry_after: Option<Duration>,
-        deadline: Option<tokio::time::Instant>,
-        progress: ResponseChunkProgress,
-    ) -> StatusCapture {
-        collect_terminal_status(
+        let limit = match (self.status_body_limit, limit_cap) {
+            (Some(limit), Some(cap)) => Some(limit.min(cap)),
+            (limit, _) => limit,
+        };
+        match collect_terminal_status(
             endpoint,
             method,
-            response,
+            native,
             StatusDisposition::Terminal,
-            self.status_body_limit,
+            limit,
             self.retry_after_cap,
             retry_after,
             deadline,
             progress,
         )
         .await
+        {
+            StatusCapture::Terminal(failure) => failure,
+            StatusCapture::SkippedRecoverable => {
+                unreachable!("terminal status capture cannot be recoverable")
+            }
+        }
     }
 
     #[cfg(test)]
@@ -799,4 +660,19 @@ const fn boundary_body_category(kind: BodyKind) -> concord_test_support::script:
         BodyKind::Stream => concord_test_support::script::BodyCategory::Streaming,
         BodyKind::Multipart => concord_test_support::script::BodyCategory::Multipart,
     }
+}
+
+/// A failure while consuming an acquired stream. A response head was
+/// necessarily received, so the failure records that positive fact; it never
+/// claims the request was not dispatched.
+fn stream_consumption_error(endpoint: &EndpointId, method: &Method) -> ApiError {
+    ApiError::classified(
+        endpoint.clone(),
+        method.clone(),
+        crate::error::ErrorCategory::ResponseBody,
+    )
+    .with_stage(
+        crate::error::FailureStage::StreamConsumption,
+        crate::error::DispatchKnowledge::ResponseObserved,
+    )
 }

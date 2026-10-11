@@ -138,7 +138,7 @@ checksum = "6e8ccc4ea9f6acc32d102c0f6d471d11d913ad15f20c04de743374861fa1d414"
 
 [[package]]
 name = "concord"
-version = "2.1.0-beta.1"
+version = "3.0.0-beta.1"
 dependencies = [
  "concord-core",
  "concord-extras",
@@ -149,15 +149,16 @@ dependencies = [
 name = "concord"
 version = "99.0.0"
 dependencies = [
- "concord 2.1.0-beta.1",
+ "concord 3.0.0-beta.1",
 ]
 
 [[package]]
 name = "concord-core"
-version = "2.1.0-beta.1"
+version = "3.0.0-beta.1"
 dependencies = [
  "bytes",
  "futures-core",
+ "h2",
  "http",
  "http-body",
  "httpdate",
@@ -170,7 +171,7 @@ dependencies = [
 
 [[package]]
 name = "concord-extras"
-version = "2.1.0-beta.1"
+version = "3.0.0-beta.1"
 dependencies = [
  "bytes",
  "concord-core",
@@ -194,7 +195,7 @@ dependencies = [
 name = "concord-fixture-features"
 version = "0.0.0"
 dependencies = [
- "concord 2.1.0-beta.1",
+ "concord 3.0.0-beta.1",
  "concord-test-support",
  "tokio",
 ]
@@ -203,12 +204,12 @@ dependencies = [
 name = "concord-fixture-renamed-facade"
 version = "0.0.0"
 dependencies = [
- "concord 2.1.0-beta.1",
+ "concord 3.0.0-beta.1",
 ]
 
 [[package]]
 name = "concord-macros"
-version = "2.1.0-beta.1"
+version = "3.0.0-beta.1"
 dependencies = [
  "http",
  "proc-macro2",
@@ -228,12 +229,12 @@ dependencies = [
 name = "concord-msrv-facade"
 version = "0.0.0"
 dependencies = [
- "concord 2.1.0-beta.1",
+ "concord 3.0.0-beta.1",
 ]
 
 [[package]]
 name = "concord-test-support"
-version = "2.1.0-beta.1"
+version = "3.0.0-beta.1"
 dependencies = [
  "base64 0.23.1",
  "rustls",

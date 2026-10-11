@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,6 +12,7 @@ use crate::atom::{
     encode_atom_with,
 };
 use crate::auth::{Auth, AuthPlan};
+use crate::controls::{CallOptions, CancellationToken};
 use crate::endpoint::{AcceptedStatus, Effect, EndpointDescription, EndpointId, TimeoutSelection};
 use crate::error::{ApiError, ConfigurationErrorKind};
 use crate::hooks::DebugLevel;
@@ -20,9 +20,7 @@ use crate::limits::{
     MAX_FORMATTED_PUBLIC_VALUE_BYTES, MAX_REQUEST_HEAD_COMPONENTS, MAX_REQUEST_HEADER_BYTES,
     MAX_REQUEST_HEADER_COUNT, MAX_REQUEST_URL_BYTES,
 };
-use crate::rate_limit::{
-    RateKeyPart, RateLimitError, RateLimitId, RateLimitKey, RateLimitPlan, RateLimitPolicy,
-};
+use crate::rate_limit::{RateLimitDeclaration, RateLimitPlan};
 use crate::redaction::render_observed_url;
 
 /// Static generated metadata required before public-head preparation.
@@ -351,13 +349,18 @@ pub struct HeadBuilder {
     base_host: String,
     host_labels: Vec<String>,
     safe_host_labels: Vec<String>,
+    /// PRIVACY-01: a sensitive generated host component withholds the actual
+    /// full host from automatic classifiers.
+    host_withheld: bool,
     public_headers: HeaderMap,
     pagination_sensitive_headers: HashSet<HeaderName>,
     timeout: Option<Duration>,
     debug: DebugLevel,
+    call_caps: CallOptions,
+    call_cancellation: Vec<CancellationToken>,
     appended_segment: bool,
     auth: Arc<AuthPlan>,
-    rate_limit_policies: Vec<RateLimitPolicy>,
+    rate_limit_declarations: Vec<RateLimitDeclaration>,
     budget: RequestHeadBudget,
 }
 
@@ -379,17 +382,20 @@ impl HeadBuilder {
             timeout: options
                 .resolve_timeout(meta.resolve_inherited_timeout(runtime_endpoint_timeout)),
             debug: options.resolve_debug(inherited_debug),
+            call_caps: options.controls().caps().clone(),
+            call_cancellation: options.controls().cancellation().to_vec(),
             meta,
             logical_url: base.clone(),
             safe_logical_url: base.clone(),
             base_host,
             host_labels: Vec::new(),
             safe_host_labels: Vec::new(),
+            host_withheld: false,
             public_headers: HeaderMap::new(),
             pagination_sensitive_headers: HashSet::new(),
             appended_segment: false,
             auth: Arc::new(AuthPlan::default()),
-            rate_limit_policies: Vec::new(),
+            rate_limit_declarations: Vec::new(),
             budget: RequestHeadBudget::new(),
         }
     }
@@ -430,128 +436,90 @@ impl HeadBuilder {
         self.push_auth(auth)
     }
 
-    /// Appends one generated, structurally validated effective rate-limit policy.
+    /// Attaches one declared effective rate-limit policy (generated-code bridge).
     ///
-    /// Key names are validated and values are formatted into the remaining
-    /// aggregate key budget incrementally inside the builder. The first
-    /// excess or duplicate part stops iteration.
+    /// The `api!` macro lowers every resolved `rate_limit` attachment to one
+    /// [`RateLimitDeclaration`] and calls this method once per effective
+    /// attachment in effective declaration order. The declaration's latched
+    /// construction error, if any, is reported here. An exact repetition of an
+    /// already attached policy (same ID, cost, canonical windows and ordered
+    /// dimensions including custom value bytes) is deduplicated; any other
+    /// repetition of the ID is rejected. At most
+    /// [`crate::rate_limit::MAX_RATE_LIMIT_POLICIES_PER_PLAN`] distinct
+    /// policies are retained. The built-in `origin` and `endpoint` dimensions
+    /// are resolved from the finished head, so the logical origin always
+    /// includes every host label. Errors are safe configuration errors that
+    /// never contain IDs or key text. No limiter work happens here.
     #[doc(hidden)]
-    pub fn push_rate_limit_policy<I, N, V, W>(
-        &mut self,
-        id: &str,
-        parts: I,
-        cost: u32,
-        windows: W,
-    ) -> Result<(), ApiError>
-    where
-        I: IntoIterator<Item = (N, V)>,
-        N: AsRef<str>,
-        V: RateKeyPart,
-        W: IntoIterator<Item = (u32, Duration)>,
-    {
-        let policy = (|| -> Result<RateLimitPolicy, RateLimitError> {
-            RateLimitPlan::validate_policy_id_append(&self.rate_limit_policies, id)?;
-            let id = RateLimitId::new(id)?;
-            let cost = NonZeroU32::new(cost).ok_or_else(|| {
-                RateLimitError::new(crate::error::RateLimitErrorKind::InvalidConfiguration)
-            })?;
-            let key = RateLimitKey::from_canonical_values(parts)?;
-            RateLimitPolicy::from_window_values(id, key, cost, windows)
-        })()
-        .map_err(|error| {
-            drop(error);
-            ApiError::configuration(
-                self.meta.endpoint_id().clone(),
-                self.meta.method().clone(),
-                ConfigurationErrorKind::InvalidRateLimit,
-            )
-        })?;
-        RateLimitPlan::push_validated_policy(&mut self.rate_limit_policies, policy).map_err(
+    pub fn push_rate_limit(&mut self, declaration: RateLimitDeclaration) -> Result<(), ApiError> {
+        crate::rate_limit::push_declaration(&mut self.rate_limit_declarations, declaration).map_err(
             |error| {
                 drop(error);
-                ApiError::configuration(
-                    self.meta.endpoint_id().clone(),
-                    self.meta.method().clone(),
-                    ConfigurationErrorKind::InvalidRateLimit,
-                )
+                self.invalid_rate_limit()
             },
         )
     }
 
-    /// Adds one generated policy with a declaration-scoped global key.
-    #[doc(hidden)]
-    pub fn push_generated_rate_limit_policy<W>(
-        &mut self,
-        id: &str,
-        cost: u32,
-        windows: W,
-    ) -> Result<(), ApiError>
-    where
-        W: IntoIterator<Item = (u32, Duration)>,
-    {
-        let policy = (|| -> Result<RateLimitPolicy, RateLimitError> {
-            RateLimitPlan::validate_policy_id_append(&self.rate_limit_policies, id)?;
-            let id = RateLimitId::new(id)?;
-            let cost = NonZeroU32::new(cost).ok_or_else(|| {
-                RateLimitError::new(crate::error::RateLimitErrorKind::InvalidConfiguration)
-            })?;
-            RateLimitPolicy::from_window_values(id, RateLimitKey::global(), cost, windows)
-        })()
-        .map_err(|error| {
-            drop(error);
-            ApiError::configuration(
-                self.meta.endpoint_id().clone(),
-                self.meta.method().clone(),
-                ConfigurationErrorKind::InvalidRateLimit,
-            )
-        })?;
-        RateLimitPlan::push_validated_policy(&mut self.rate_limit_policies, policy).map_err(
-            |error| {
-                drop(error);
-                ApiError::configuration(
-                    self.meta.endpoint_id().clone(),
-                    self.meta.method().clone(),
-                    ConfigurationErrorKind::InvalidRateLimit,
-                )
-            },
+    fn invalid_rate_limit(&self) -> ApiError {
+        ApiError::configuration(
+            self.meta.endpoint_id().clone(),
+            self.meta.method().clone(),
+            ConfigurationErrorKind::InvalidRateLimit,
         )
     }
-
-    pub(crate) fn clear_auth(&mut self) -> Result<(), ApiError> {
-        let placements = self.auth.placement_count();
-        self.budget
-            .remove_components(placements)
-            .map_err(|_| invalid_auth(self.meta.endpoint_id(), self.meta.method()))?;
-        self.auth = Arc::new(AuthPlan::default());
-        Ok(())
+    /// The safe target identities of the effective authentication
+    /// placements composed so far (runtime binding validation).
+    pub(crate) fn auth_targets(&self) -> Vec<crate::auth::AuthTarget> {
+        self.auth.targets()
     }
 
-    pub(crate) fn append_prepared_auth_plan(&mut self, auth: &AuthPlan) -> Result<(), ApiError> {
-        for placement in auth.cloned_placements() {
-            self.push_auth(placement)?;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn append_prepared_rate_limit_plan(
-        &mut self,
-        plan: &RateLimitPlan,
+    /// Validates that every composed placement belongs to `expected`.
+    pub(crate) fn validate_auth_context(
+        &self,
+        expected: &crate::auth::CredentialContext,
     ) -> Result<(), ApiError> {
-        for policy in plan.policies().iter().cloned() {
-            RateLimitPlan::push_validated_policy(&mut self.rate_limit_policies, policy).map_err(
-                |error| {
-                    drop(error);
-                    ApiError::configuration(
-                        self.meta.endpoint_id().clone(),
-                        self.meta.method().clone(),
-                        ConfigurationErrorKind::InvalidRateLimit,
-                    )
-                },
-            )?;
+        self.auth.validate_context(expected).map_err(|error| {
+            drop(error);
+            invalid_auth(self.meta.endpoint_id(), self.meta.method())
+        })
+    }
+
+    /// Whether an effective placement attributes `status` as a challenge.
+    pub(crate) fn auth_classifies_challenge(&self, status: http::StatusCode) -> bool {
+        self.auth.classifies_challenge(status)
+    }
+
+    /// Removes the one inherited placement owning `target` (RUNTIME-02).
+    /// Returns whether a placement owned it.
+    pub(crate) fn remove_auth_target(
+        &mut self,
+        target: &crate::auth::AuthTarget,
+    ) -> Result<bool, ApiError> {
+        let removed = Arc::get_mut(&mut self.auth)
+            .ok_or_else(|| invalid_auth(self.meta.endpoint_id(), self.meta.method()))?
+            .remove_target(target);
+        if removed {
+            self.budget
+                .remove_components(1)
+                .map_err(|_| invalid_auth(self.meta.endpoint_id(), self.meta.method()))?;
+        }
+        Ok(removed)
+    }
+
+    /// Number of distinct effective rate-limit declarations composed so far.
+    pub(crate) fn rate_limit_declaration_count(&self) -> usize {
+        self.rate_limit_declarations.len()
+    }
+
+    pub(crate) fn append_rate_limit_declarations(
+        &mut self,
+        declarations: &[RateLimitDeclaration],
+    ) -> Result<(), ApiError> {
+        for declaration in declarations {
+            self.push_rate_limit(declaration.clone())?;
         }
         Ok(())
     }
-
     /// Adds one macro-validated static host-prefix label.
     #[doc(hidden)]
     pub fn push_host_static(&mut self, label: &str) -> Result<(), ApiError> {
@@ -590,7 +558,9 @@ impl HeadBuilder {
         let value = encode_atoms(encode)
             .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
         if redacted {
-            self.push_host_label_with_safe(&value, "x")
+            self.push_host_label_with_safe(&value, "x")?;
+            self.host_withheld = true;
+            Ok(())
         } else {
             self.push_host_label(&value)
         }
@@ -604,22 +574,16 @@ impl HeadBuilder {
     {
         let value = encode_atom(value, MAX_FORMATTED_PUBLIC_VALUE_BYTES)
             .map_err(|_| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
-        self.push_host_label_with_safe(&value, "x")
+        self.push_host_label_with_safe(&value, "x")?;
+        self.host_withheld = true;
+        Ok(())
     }
 
-    /// Returns the normalized logical origin for custom rate-key construction.
-    #[doc(hidden)]
-    pub fn rate_limit_origin(&self) -> String {
-        let host = match self.logical_url.host().expect("logical URLs retain a host") {
-            Host::Domain(domain) => domain.to_ascii_lowercase(),
-            Host::Ipv4(address) => address.to_string(),
-            Host::Ipv6(address) => format!("[{address}]"),
-        };
-        let port = self
-            .logical_url
-            .port_or_known_default()
-            .expect("generated logical URLs use HTTP or HTTPS");
-        format!("{}://{host}:{port}", self.logical_url.scheme())
+    /// Returns the canonical `scheme://host:effective_port` rate-key origin
+    /// of the current logical URL (the payload of the built-in `origin`
+    /// dimension).
+    pub(crate) fn rate_limit_origin(&self) -> Option<String> {
+        crate::rate_limit::normalized_origin(&self.logical_url)
     }
 
     fn push_host_label(&mut self, label: &str) -> Result<(), ApiError> {
@@ -750,19 +714,6 @@ impl HeadBuilder {
         Ok(())
     }
 
-    /// Appends one already-formatted, validated value as exactly one encoded path segment.
-    pub(crate) fn push_prepared_segment(
-        &mut self,
-        segment: &str,
-        sensitive: bool,
-    ) -> Result<(), ApiError> {
-        if sensitive {
-            self.push_segment_with_safe(segment, "<redacted>")
-        } else {
-            self.push_segment(segment)
-        }
-    }
-
     /// Appends one public query pair after formatting its value.
     #[doc(hidden)]
     pub fn push_query_value<T>(&mut self, key: &str, value: &T) -> Result<(), ApiError>
@@ -888,18 +839,6 @@ impl HeadBuilder {
         sensitive: bool,
     ) -> Result<(), ApiError> {
         self.push_query_atom(key, value, sensitive)
-    }
-
-    pub(crate) fn clear_query_values(&mut self) -> Result<(), ApiError> {
-        let keys = self
-            .logical_url
-            .query_pairs()
-            .map(|(key, _)| key.into_owned())
-            .collect::<HashSet<_>>();
-        for key in keys {
-            self.remove_query_values(&key)?;
-        }
-        Ok(())
     }
 
     /// Appends one pagination-sensitive public query pair.
@@ -1120,30 +1059,27 @@ impl HeadBuilder {
         Ok(())
     }
 
-    pub(crate) fn clear_header_values(&mut self) -> Result<(), ApiError> {
-        let names = self.public_headers.keys().cloned().collect::<Vec<_>>();
-        for name in names {
-            self.remove_header_values(name.as_str())?;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn append_prepared_header(
+    /// Validates and appends one already encoded public header occurrence
+    /// selected by a patch program.
+    pub(crate) fn append_prepared_header_value(
         &mut self,
-        name: HeaderName,
-        value: HeaderValue,
+        name: &str,
+        value: &str,
         sensitive: bool,
     ) -> Result<(), ApiError> {
-        let mut budget = self.budget;
-        budget
-            .try_append_header(&name, &value)
-            .map_err(|_| invalid_header(self.meta.endpoint_id(), self.meta.method()))?;
-        if sensitive {
-            self.pagination_sensitive_headers.insert(name.clone());
+        self.append_header_atom(name, value, sensitive)
+    }
+
+    /// The safe error for a failed public value encoder in one family.
+    pub(crate) fn invalid_public_value(&self, family: super::program::PatchFamily) -> ApiError {
+        match family {
+            super::program::PatchFamily::Query => {
+                invalid_route(self.meta.endpoint_id(), self.meta.method())
+            }
+            super::program::PatchFamily::Header => {
+                invalid_header(self.meta.endpoint_id(), self.meta.method())
+            }
         }
-        self.public_headers.append(name, value);
-        self.budget = budget;
-        Ok(())
     }
 
     /// Inserts one pagination-sensitive validated public header.
@@ -1184,6 +1120,28 @@ impl HeadBuilder {
         Ok(())
     }
 
+    fn resolve_rate_limits(&self) -> Result<(Arc<RateLimitPlan>, Option<Arc<str>>), ApiError> {
+        if self.rate_limit_declarations.is_empty() {
+            return Ok((Arc::new(RateLimitPlan::empty()), None));
+        }
+        let origin = self
+            .rate_limit_origin()
+            .ok_or_else(|| invalid_route(self.meta.endpoint_id(), self.meta.method()))?;
+        let mut policies = Vec::with_capacity(self.rate_limit_declarations.len());
+        for declaration in &self.rate_limit_declarations {
+            declaration
+                .resolve(&origin, self.meta.endpoint_id().as_str())
+                .and_then(|policy| RateLimitPlan::push_policy(&mut policies, policy))
+                .map_err(|error| {
+                    drop(error);
+                    self.invalid_rate_limit()
+                })?;
+        }
+        let plan = RateLimitPlan::from_validated_policies(policies);
+        let logical_origin = plan.uses_origin().then(|| Arc::from(origin));
+        Ok((Arc::new(plan), logical_origin))
+    }
+
     /// Finishes one immutable body-free public head.
     #[doc(hidden)]
     pub fn finish(self) -> Result<PreparedHead, ApiError> {
@@ -1197,29 +1155,19 @@ impl HeadBuilder {
             return Err(invalid_route(self.meta.endpoint_id(), self.meta.method()));
         }
         let observed_url: Arc<str> = observed_url.into();
-        let rate_limit_logical_origin = self
-            .rate_limit_policies
-            .iter()
-            .any(|policy| {
-                policy
-                    .key()
-                    .parts()
-                    .iter()
-                    .any(|part| part.name() == "origin")
-            })
-            .then(|| Arc::from(self.rate_limit_origin()));
-        let rate_limit_plan = Arc::new(RateLimitPlan::from_validated_policies(
-            self.rate_limit_policies,
-        ));
+        let (rate_limit_plan, rate_limit_logical_origin) = self.resolve_rate_limits()?;
         Ok(PreparedHead {
             meta: self.meta,
             logical_url: self.logical_url,
+            host_withheld: self.host_withheld,
             observed_url,
             rate_limit_logical_origin,
             public_headers: self.public_headers,
             pagination_sensitive_headers: self.pagination_sensitive_headers,
             timeout: self.timeout,
             debug: self.debug,
+            call_caps: self.call_caps,
+            call_cancellation: self.call_cancellation,
             auth: self.auth,
             rate_limit_plan,
             budget: self.budget,
@@ -1232,18 +1180,31 @@ impl HeadBuilder {
 pub struct PreparedHead {
     meta: RequestMeta,
     logical_url: Url,
+    host_withheld: bool,
     observed_url: Arc<str>,
     rate_limit_logical_origin: Option<Arc<str>>,
     public_headers: HeaderMap,
     pagination_sensitive_headers: HashSet<HeaderName>,
     timeout: Option<Duration>,
     debug: DebugLevel,
+    call_caps: CallOptions,
+    call_cancellation: Vec<CancellationToken>,
     auth: Arc<AuthPlan>,
     rate_limit_plan: Arc<RateLimitPlan>,
     budget: RequestHeadBudget,
 }
 
 impl PreparedHead {
+    /// The logical host offered to automatic classifiers: withheld entirely
+    /// when any generated host component is sensitive (PRIVACY-01).
+    pub(crate) fn classifier_host(&self) -> Option<&str> {
+        if self.host_withheld {
+            None
+        } else {
+            self.logical_url.host_str()
+        }
+    }
+
     pub(crate) fn validate_auth(&self) -> Result<(), ApiError> {
         self.auth
             .validate_public(&self.logical_url, &self.public_headers)
@@ -1265,6 +1226,12 @@ impl PreparedHead {
     ) -> Result<(), ApiError> {
         if body_owns_content_type && self.public_headers.contains_key(CONTENT_TYPE) {
             return Err(invalid_header(self.meta.endpoint_id(), self.method()));
+        }
+        if accept.is_none() && content_type.is_none() {
+            // Nothing to place (for example the body-media step of a
+            // body-free request): the headers and budget stay as they are,
+            // without copying the header map (V3-O07 attribution).
+            return Ok(());
         }
 
         let mut headers = self.public_headers.clone();
@@ -1294,6 +1261,19 @@ impl PreparedHead {
         Ok(())
     }
 
+    /// Places the one body-owned `Content-Type` taken from the prepared body.
+    ///
+    /// Called once per operation or page after body preparation and before
+    /// credentials, so every attempt of that page shares the same header.
+    /// A public head can never own `Content-Type` (it is reserved), so a
+    /// collision is an ownership error rather than an overwrite.
+    pub(crate) fn apply_body_content_type(
+        &mut self,
+        content_type: Option<&HeaderValue>,
+    ) -> Result<(), ApiError> {
+        self.apply_media_headers(None, content_type, content_type.is_some())
+    }
+
     #[doc(hidden)]
     pub const fn meta(&self) -> &RequestMeta {
         &self.meta
@@ -1306,6 +1286,19 @@ impl PreparedHead {
 
     pub(crate) const fn effect(&self) -> Effect {
         self.meta.effect()
+    }
+
+    /// Caller caps captured from the request controls when this head was
+    /// prepared (send/replay caps apply to this direct request or page).
+    pub(crate) const fn call_caps(&self) -> &CallOptions {
+        &self.call_caps
+    }
+
+    /// External cancellation signals captured from the request controls when
+    /// this head was prepared (bounded and deduplicated by the controls). A
+    /// managed stream opened by this request keeps observing them.
+    pub(crate) fn call_cancellation(&self) -> &[CancellationToken] {
+        &self.call_cancellation
     }
 
     pub(crate) const fn accepted_status(&self) -> &AcceptedStatus {
@@ -1499,18 +1492,16 @@ fn valid_dns_label(label: &str) -> bool {
         && bytes.last().is_some_and(u8::is_ascii_alphanumeric)
 }
 
+/// PATH §5.3: the complete unencoded segment is nonempty, neither `.` nor
+/// `..`, and contains no `/` or backslash. Percent signs are ordinary data,
+/// not a raw-encoding escape: a value such as `a%2Fb` is accepted and encoded
+/// exactly once (`a%252Fb`), never decoded into a slash nor preserved as a
+/// raw path fragment.
 fn valid_path_segment(segment: &str) -> bool {
     !segment.is_empty()
         && !matches!(segment, "." | "..")
         && !segment.contains('/')
         && !segment.contains('\\')
-        && !contains_percent_encoding(segment.as_bytes())
-}
-
-fn contains_percent_encoding(bytes: &[u8]) -> bool {
-    bytes.windows(3).any(|window| {
-        window[0] == b'%' && window[1].is_ascii_hexdigit() && window[2].is_ascii_hexdigit()
-    })
 }
 
 pub(crate) fn reserved_public_header(name: &HeaderName) -> bool {
@@ -1552,7 +1543,6 @@ pub(crate) fn validate_public_header_name(name: &HeaderName) -> Result<(), Confi
 #[cfg(test)]
 mod tests {
     use std::fmt;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
     use crate::error::{ConfigurationErrorKind, ErrorCategory};
@@ -1587,45 +1577,16 @@ mod tests {
         }
     }
 
-    impl RateKeyPart for FirstExcessDisplay {
+    impl crate::rate_limit::RateKeyPart for FirstExcessDisplay {
+        const ENCODING_ID: &'static str = "test.first-excess/1";
+
         fn write_canonical(
             &self,
             out: &mut crate::rate_limit::CanonicalKeyWriter,
-        ) -> Result<(), RateLimitError> {
+        ) -> Result<(), crate::rate_limit::RateLimitError> {
             let boundary = vec![b'x'; crate::rate_limit::MAX_RATE_LIMIT_KEY_BYTES];
             out.write_tagged_bytes("first-excess", &boundary)?;
             out.write_tagged_bytes("sentinel", FORMAT_SENTINEL.as_bytes())
-        }
-    }
-
-    struct GuardedRateWindows {
-        calls: Arc<AtomicUsize>,
-    }
-
-    impl Iterator for GuardedRateWindows {
-        type Item = (u32, Duration);
-
-        fn next(&mut self) -> Option<Self::Item> {
-            let call = self.calls.fetch_add(1, Ordering::SeqCst);
-            assert!(
-                call <= crate::rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_POLICY,
-                "generated window iterator consumed beyond the first excess"
-            );
-            Some((
-                1,
-                Duration::from_secs(u64::try_from(call + 1).expect("test index")),
-            ))
-        }
-    }
-
-    struct UnpolledRateWindows;
-
-    impl IntoIterator for UnpolledRateWindows {
-        type Item = (u32, Duration);
-        type IntoIter = std::iter::Empty<Self::Item>;
-
-        fn into_iter(self) -> Self::IntoIter {
-            panic!("rejected generated rule converted its window iterator")
         }
     }
 
@@ -1634,63 +1595,33 @@ mod tests {
         may_inspect: bool,
     }
 
-    impl AsRef<str> for GuardedRateText {
-        fn as_ref(&self) -> &str {
-            assert!(
-                self.may_inspect,
-                "generated key inspected the first excess part"
-            );
-            &self.text
-        }
-    }
+    impl crate::rate_limit::RateKeyPart for GuardedRateText {
+        const ENCODING_ID: &'static str = "test.guarded/1";
 
-    impl fmt::Display for GuardedRateText {
-        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-            assert!(
-                self.may_inspect,
-                "generated key formatted the first excess part"
-            );
-            formatter.write_str(&self.text)
-        }
-    }
-
-    impl RateKeyPart for GuardedRateText {
         fn write_canonical(
             &self,
             out: &mut crate::rate_limit::CanonicalKeyWriter,
-        ) -> Result<(), RateLimitError> {
+        ) -> Result<(), crate::rate_limit::RateLimitError> {
             assert!(
                 self.may_inspect,
-                "generated key encoded the first excess part"
+                "generated key encoded a part after the first excess"
             );
             out.write_tagged_bytes("guarded", self.text.as_bytes())
         }
     }
 
-    struct GuardedRateParts {
-        calls: Arc<AtomicUsize>,
+    fn one_window(id: &str) -> RateLimitDeclaration {
+        RateLimitDeclaration::new(id).window(1, Duration::from_secs(1))
     }
 
-    impl Iterator for GuardedRateParts {
-        type Item = (GuardedRateText, GuardedRateText);
-
-        fn next(&mut self) -> Option<Self::Item> {
-            let call = self.calls.fetch_add(1, Ordering::SeqCst);
-            assert!(
-                call <= crate::rate_limit::MAX_RATE_LIMIT_KEY_PARTS,
-                "generated key iterator consumed beyond the first excess"
-            );
-            let may_inspect = call < crate::rate_limit::MAX_RATE_LIMIT_KEY_PARTS;
-            Some((
-                GuardedRateText {
-                    text: format!("part-{call}"),
-                    may_inspect,
-                },
-                GuardedRateText {
-                    text: RATE_KEY_SENTINEL.to_owned(),
-                    may_inspect,
-                },
-            ))
+    fn assert_rate_error_is_safe(error: &ApiError, sentinels: &[&str]) {
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidRateLimit)
+        );
+        for sentinel in sentinels {
+            assert!(!error.to_string().contains(sentinel));
+            assert!(!format!("{error:?}").contains(sentinel));
         }
     }
 
@@ -1975,6 +1906,42 @@ mod tests {
     }
 
     #[test]
+    fn absent_media_headers_leave_the_head_unchanged() {
+        let mut builder = builder("https://example.test/");
+        builder
+            .insert_header_value("x-trace", "one")
+            .expect("public header");
+        let mut head = builder.finish().expect("head");
+        let before = head.public_headers().clone();
+        let budget = (head.budget.components(), head.budget.header_count());
+        // The body-media step of a body-free request places nothing.
+        head.apply_body_content_type(None).expect("no body media");
+        head.apply_media_headers(None, None, false)
+            .expect("no media headers");
+        assert_eq!(head.public_headers(), &before);
+        assert_eq!(
+            (head.budget.components(), head.budget.header_count()),
+            budget
+        );
+        // An existing Content-Type still conflicts with a body-owned one.
+        let mut owned = builder_with_content_type();
+        let error = owned
+            .apply_media_headers(None, None, true)
+            .expect_err("public Content-Type conflicts with a body-owned one");
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidHeader)
+        );
+    }
+
+    fn builder_with_content_type() -> PreparedHead {
+        let mut head = builder("https://example.test/").finish().expect("head");
+        head.public_headers
+            .insert(CONTENT_TYPE, HeaderValue::from_static("text/plain"));
+        head
+    }
+
+    #[test]
     fn pagination_mutation_respects_head_budget() {
         const SENTINEL: &str = "pagination-head-first-excess-sentinel-41a6";
         let mut builder = builder("https://example.test/");
@@ -1998,9 +1965,13 @@ mod tests {
 
     #[test]
     fn runtime_and_generated_head_limits_match() {
-        use crate::request::{EndpointSpec, RuntimeEndpoint};
+        use crate::request::{RuntimeEndpoint, test_owner};
         use crate::response::Empty;
 
+        // The method is charged as one recorded runtime operation, so 255
+        // runtime path atoms reach the runtime operation boundary; the bound
+        // plan then composes them through the same head budget (255 path
+        // components plus the representation's Accept header).
         let public_components = MAX_REQUEST_HEAD_COMPONENTS - 1;
         let mut runtime =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.head"), Method::GET);
@@ -2008,25 +1979,41 @@ mod tests {
             runtime = runtime.path("x");
         }
         let runtime: RuntimeEndpoint<Empty> = runtime
+            .response::<Empty, ()>()
             .build()
             .expect("runtime boundary after method charge");
-        let base = Url::parse("https://example.test/").expect("base URL");
-        let runtime_head = runtime
-            .prepare_head(HeadBuilder::new(
-                &base,
-                runtime.request_meta(),
-                &RequestOptions::new(),
-                DebugLevel::None,
-                None,
-            ))
+        let executor = concord_test_support::executor::DeterministicExecutor::new();
+        let core = crate::client::ClientCore::build_with_development(
+            "http://example.test/",
+            crate::http::HttpConfigBuilder::new().http1_only(),
+            crate::runtime::RuntimeConfigBuilder::new(),
+            &executor,
+        )
+        .expect("development core");
+        let runtime_plan = test_owner::root(&core, runtime)
+            .plan()
             .expect("runtime final head boundary");
 
-        let mut generated = builder("https://example.test/");
+        let mut generated = builder("http://example.test/");
         for _ in 0..public_components {
             generated.push_static("x").expect("generated component");
         }
         let generated_head = generated.finish().expect("matching generated head");
-        assert_eq!(runtime_head.logical_url(), generated_head.logical_url());
+        assert_eq!(runtime_plan.observed_url(), generated_head.observed_url());
+
+        let mut excessive =
+            RuntimeEndpoint::builder(EndpointId::from_static("runtime.head"), Method::GET);
+        for _ in 0..=public_components {
+            excessive = excessive.path("x");
+        }
+        assert_eq!(
+            excessive
+                .response::<Empty, ()>()
+                .build()
+                .expect_err("first excess runtime operation")
+                .kind(),
+            ConfigurationErrorKind::InvalidRoute
+        );
     }
 
     #[test]
@@ -2158,17 +2145,15 @@ mod tests {
     #[test]
     fn generated_rate_limits_obey_same_structural_limits() {
         let mut window_boundary = builder("https://example.test/");
-        window_boundary
-            .push_generated_rate_limit_policy(
-                "window-boundary",
+        let mut declaration = RateLimitDeclaration::new("window-boundary").origin();
+        for index in 0..crate::rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_POLICY {
+            declaration = declaration.window(
                 1,
-                (0..crate::rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_POLICY).map(|index| {
-                    (
-                        1,
-                        Duration::from_secs(u64::try_from(index + 1).expect("test index")),
-                    )
-                }),
-            )
+                Duration::from_secs(u64::try_from(index + 1).expect("test index")),
+            );
+        }
+        window_boundary
+            .push_rate_limit(declaration.clone())
             .expect("maximum generated window count");
         assert_eq!(
             window_boundary
@@ -2181,115 +2166,64 @@ mod tests {
             crate::rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_POLICY
         );
 
-        let calls = Arc::new(AtomicUsize::new(0));
         let mut excessive_windows = builder("https://example.test/");
         let error = excessive_windows
-            .push_generated_rate_limit_policy(
-                RATE_ID_SENTINEL,
-                1,
-                GuardedRateWindows {
-                    calls: Arc::clone(&calls),
-                },
-            )
+            .push_rate_limit(declaration.window(1, Duration::from_secs(10_000)))
             .expect_err("first excess generated window");
-        assert_eq!(
-            calls.load(Ordering::SeqCst),
-            crate::rate_limit::MAX_RATE_LIMIT_WINDOWS_PER_POLICY + 1
-        );
-        assert_eq!(
-            error.configuration_kind(),
-            Some(ConfigurationErrorKind::InvalidRateLimit)
-        );
-        assert!(!error.to_string().contains(RATE_ID_SENTINEL));
-        assert!(!format!("{error:?}").contains(RATE_ID_SENTINEL));
+        assert_rate_error_is_safe(&error, &[RATE_ID_SENTINEL]);
 
-        let calls = Arc::new(AtomicUsize::new(0));
         let mut excessive_parts = builder("https://example.test/");
-        let error = excessive_parts
-            .push_rate_limit_policy(
-                RATE_ID_SENTINEL,
-                GuardedRateParts {
-                    calls: Arc::clone(&calls),
+        let mut parts = one_window(RATE_ID_SENTINEL);
+        for index in 0..=crate::rate_limit::MAX_RATE_LIMIT_KEY_PARTS {
+            parts = parts.part(
+                &format!("part-{index}"),
+                &GuardedRateText {
+                    text: RATE_KEY_SENTINEL.to_owned(),
+                    may_inspect: index < crate::rate_limit::MAX_RATE_LIMIT_KEY_PARTS,
                 },
-                1,
-                UnpolledRateWindows,
-            )
+            );
+        }
+        let error = excessive_parts
+            .push_rate_limit(parts)
             .expect_err("first excess generated key part");
-        assert_eq!(
-            calls.load(Ordering::SeqCst),
-            crate::rate_limit::MAX_RATE_LIMIT_KEY_PARTS + 1
-        );
-        assert_eq!(
-            error.configuration_kind(),
-            Some(ConfigurationErrorKind::InvalidRateLimit)
-        );
-        assert!(!error.to_string().contains(RATE_ID_SENTINEL));
-        assert!(!error.to_string().contains(RATE_KEY_SENTINEL));
-        assert!(!format!("{error:?}").contains(RATE_ID_SENTINEL));
-        assert!(!format!("{error:?}").contains(RATE_KEY_SENTINEL));
+        assert_rate_error_is_safe(&error, &[RATE_ID_SENTINEL, RATE_KEY_SENTINEL]);
 
-        let first = "x".repeat(crate::rate_limit::MAX_RATE_LIMIT_KEY_BYTES - 1);
-        let second = RATE_KEY_SENTINEL.to_owned();
+        let first = "x".repeat(crate::rate_limit::MAX_RATE_LIMIT_KEY_BYTES / 2);
+        let second = format!(
+            "{}{RATE_KEY_SENTINEL}",
+            "y".repeat(crate::rate_limit::MAX_RATE_LIMIT_KEY_BYTES / 2)
+        );
         let mut excessive_key = builder("https://example.test/");
         let error = excessive_key
-            .push_rate_limit_policy(
-                RATE_ID_SENTINEL,
-                [("a", first), ("b", second)],
-                1,
-                [(1, Duration::from_secs(1))],
+            .push_rate_limit(
+                one_window(RATE_ID_SENTINEL)
+                    .part("a", &first)
+                    .part("b", &second),
             )
             .expect_err("aggregate generated key above the hard cap");
-        assert_eq!(
-            error.configuration_kind(),
-            Some(ConfigurationErrorKind::InvalidRateLimit)
-        );
-        assert!(!error.to_string().contains(RATE_ID_SENTINEL));
-        assert!(!error.to_string().contains(RATE_KEY_SENTINEL));
-        assert!(!format!("{error:?}").contains(RATE_ID_SENTINEL));
-        assert!(!format!("{error:?}").contains(RATE_KEY_SENTINEL));
+        assert_rate_error_is_safe(&error, &[RATE_ID_SENTINEL, RATE_KEY_SENTINEL]);
 
         let mut excessive_formatted_key = builder("https://example.test/");
         let error = excessive_formatted_key
-            .push_rate_limit_policy(
-                RATE_ID_SENTINEL,
-                [(
-                    "ep.resource",
-                    &FirstExcessDisplay {
-                        ignore_format_error: true,
-                    },
-                )],
-                1,
-                UnpolledRateWindows,
-            )
-            .expect_err("bounded generated key formatting must fail closed");
-        assert_eq!(
-            error.configuration_kind(),
-            Some(ConfigurationErrorKind::InvalidRateLimit)
-        );
-        assert!(!error.to_string().contains(RATE_ID_SENTINEL));
-        assert!(!error.to_string().contains(FORMAT_SENTINEL));
-        assert!(!format!("{error:?}").contains(RATE_ID_SENTINEL));
-        assert!(!format!("{error:?}").contains(FORMAT_SENTINEL));
+            .push_rate_limit(one_window(RATE_ID_SENTINEL).part(
+                "ep.resource",
+                &FirstExcessDisplay {
+                    ignore_format_error: true,
+                },
+            ))
+            .expect_err("bounded generated key encoding must fail closed");
+        assert_rate_error_is_safe(&error, &[RATE_ID_SENTINEL, FORMAT_SENTINEL]);
 
         let mut plan_boundary = builder("https://example.test/");
         for index in 0..crate::rate_limit::MAX_RATE_LIMIT_POLICIES_PER_PLAN {
             plan_boundary
-                .push_generated_rate_limit_policy(
-                    &format!("generated-rule-{index}"),
-                    1,
-                    [(1, Duration::from_secs(1))],
-                )
+                .push_rate_limit(one_window(&format!("generated-rule-{index}")).origin())
                 .expect("maximum generated rule count");
         }
         let error = plan_boundary
-            .push_generated_rate_limit_policy(RATE_ID_SENTINEL, 1, UnpolledRateWindows)
+            .push_rate_limit(one_window(RATE_ID_SENTINEL).origin())
             .expect_err("first excess generated rule");
-        assert_eq!(
-            error.configuration_kind(),
-            Some(ConfigurationErrorKind::InvalidRateLimit)
-        );
-        assert!(!error.to_string().contains(RATE_ID_SENTINEL));
-        assert!(!format!("{error:?}").contains(RATE_ID_SENTINEL));
+        assert_rate_error_is_safe(&error, &[RATE_ID_SENTINEL]);
         assert_eq!(
             plan_boundary
                 .finish()
@@ -2299,20 +2233,200 @@ mod tests {
                 .len(),
             crate::rate_limit::MAX_RATE_LIMIT_POLICIES_PER_PLAN
         );
+    }
 
-        let mut duplicate = builder("https://example.test/");
-        duplicate
-            .push_generated_rate_limit_policy(RATE_ID_SENTINEL, 1, [(1, Duration::from_secs(1))])
-            .expect("first generated policy ID");
-        let error = duplicate
-            .push_generated_rate_limit_policy(RATE_ID_SENTINEL, 1, UnpolledRateWindows)
-            .expect_err("duplicate generated policy ID");
+    #[test]
+    fn generated_rate_limit_repetition_dedups_only_exact_duplicates() {
+        let base = || {
+            RateLimitDeclaration::new(RATE_ID_SENTINEL)
+                .window(10, Duration::from_secs(1))
+                .window(100, Duration::from_secs(60))
+                .origin()
+                .part("tenant", RATE_KEY_SENTINEL)
+        };
+        let mut exact = builder("https://example.test/");
+        exact.push_rate_limit(base()).expect("first attachment");
+        exact
+            .push_rate_limit(base())
+            .expect("exact repeated attachment deduplicates");
+        let reordered = RateLimitDeclaration::new(RATE_ID_SENTINEL)
+            .window(100, Duration::from_secs(60))
+            .window(10, Duration::from_secs(1))
+            .origin()
+            .part("tenant", RATE_KEY_SENTINEL);
+        exact
+            .push_rate_limit(reordered)
+            .expect("canonical window order is the schema identity");
+        let head = exact.finish().expect("deduplicated head");
+        assert_eq!(head.rate_limit_plan().policies().len(), 1);
         assert_eq!(
-            error.configuration_kind(),
-            Some(ConfigurationErrorKind::InvalidRateLimit)
+            head.rate_limit_plan().policies()[0].windows()[0].duration(),
+            Duration::from_secs(1),
+            "the first attachment's source order is retained as provenance"
         );
-        assert!(!error.to_string().contains(RATE_ID_SENTINEL));
-        assert!(!format!("{error:?}").contains(RATE_ID_SENTINEL));
+
+        let conflicts = [
+            base().cost(2),
+            RateLimitDeclaration::new(RATE_ID_SENTINEL)
+                .window(10, Duration::from_secs(1))
+                .window(100, Duration::from_secs(60))
+                .origin()
+                .part("tenant", "a-different-tenant"),
+            RateLimitDeclaration::new(RATE_ID_SENTINEL)
+                .window(10, Duration::from_secs(1))
+                .window(100, Duration::from_secs(60))
+                .origin()
+                .part("client.tenant", RATE_KEY_SENTINEL),
+            RateLimitDeclaration::new(RATE_ID_SENTINEL)
+                .window(10, Duration::from_secs(1))
+                .window(100, Duration::from_secs(60))
+                .part("tenant", RATE_KEY_SENTINEL)
+                .origin(),
+            RateLimitDeclaration::new(RATE_ID_SENTINEL)
+                .window(10, Duration::from_secs(1))
+                .window(99, Duration::from_secs(60))
+                .origin()
+                .part("tenant", RATE_KEY_SENTINEL),
+            RateLimitDeclaration::new(RATE_ID_SENTINEL)
+                .window(10, Duration::from_secs(1))
+                .window(100, Duration::from_secs(60))
+                .origin()
+                .part("tenant", &RATE_KEY_SENTINEL.len()),
+        ];
+        for conflict in conflicts {
+            let mut conflicting = builder("https://example.test/");
+            conflicting
+                .push_rate_limit(base())
+                .expect("first attachment");
+            let error = conflicting
+                .push_rate_limit(conflict)
+                .expect_err("a differing repetition of one ID is a conflict");
+            assert_rate_error_is_safe(&error, &[RATE_ID_SENTINEL, RATE_KEY_SENTINEL]);
+        }
+    }
+
+    #[test]
+    fn generated_rate_limit_structural_validation_is_latched_and_safe() {
+        let invalid = [
+            RateLimitDeclaration::new(RATE_ID_SENTINEL).origin(),
+            RateLimitDeclaration::new(RATE_ID_SENTINEL).window(1, Duration::from_secs(1)),
+            one_window(RATE_ID_SENTINEL).origin().origin(),
+            one_window(RATE_ID_SENTINEL).endpoint().endpoint(),
+            one_window(RATE_ID_SENTINEL).part("origin", "reserved"),
+            one_window(RATE_ID_SENTINEL).part("endpoint", "reserved"),
+            one_window(RATE_ID_SENTINEL).part("", "empty"),
+            one_window(RATE_ID_SENTINEL)
+                .part("tenant", "a")
+                .part("tenant", "b"),
+            RateLimitDeclaration::new(RATE_ID_SENTINEL)
+                .window(0, Duration::from_secs(1))
+                .origin(),
+            RateLimitDeclaration::new(RATE_ID_SENTINEL)
+                .window(1, Duration::ZERO)
+                .origin(),
+            RateLimitDeclaration::new(RATE_ID_SENTINEL)
+                .window(1, Duration::from_secs(1))
+                .window(2, Duration::from_secs(1))
+                .origin(),
+            RateLimitDeclaration::new(RATE_ID_SENTINEL)
+                .window(5, Duration::from_secs(1))
+                .window(1, Duration::from_secs(2))
+                .cost(2)
+                .origin(),
+            one_window(RATE_ID_SENTINEL).cost(0).origin(),
+            one_window(RATE_ID_SENTINEL).cost(1).cost(1).origin(),
+            RateLimitDeclaration::new("").window(1, Duration::from_secs(1)),
+            RateLimitDeclaration::new("i".repeat(crate::rate_limit::MAX_RATE_LIMIT_ID_BYTES + 1))
+                .window(1, Duration::from_secs(1))
+                .origin(),
+            one_window(RATE_ID_SENTINEL).part(
+                &"l".repeat(crate::rate_limit::MAX_RATE_LIMIT_KEY_PART_NAME_BYTES + 1),
+                "overlong label",
+            ),
+        ];
+        for declaration in invalid {
+            let mut head = builder("https://example.test/");
+            let error = head
+                .push_rate_limit(declaration)
+                .expect_err("invalid generated declaration");
+            assert_rate_error_is_safe(&error, &[RATE_ID_SENTINEL]);
+            assert!(
+                head.finish()
+                    .expect("rejected declaration retains nothing")
+                    .rate_limit_plan()
+                    .is_empty()
+            );
+        }
+        let label = "l".repeat(crate::rate_limit::MAX_RATE_LIMIT_KEY_PART_NAME_BYTES);
+        let mut boundary = builder("https://example.test/");
+        boundary
+            .push_rate_limit(
+                RateLimitDeclaration::new("i".repeat(crate::rate_limit::MAX_RATE_LIMIT_ID_BYTES))
+                    .window(3, Duration::from_secs(1))
+                    .cost(3)
+                    .part(&label, "maximum label"),
+            )
+            .expect("maximum ID, label and admissible cost");
+    }
+
+    #[test]
+    fn rate_limit_origin_and_endpoint_resolve_from_the_finished_head() {
+        let mut head_builder = HeadBuilder::new(
+            &Url::parse("HTTPS://API.Example.TEST/root/").expect("base URL"),
+            RequestMeta::new("catalog.item.update", Method::PUT, None),
+            &RequestOptions::new(),
+            DebugLevel::None,
+            None,
+        );
+        // Attached before the host label: resolution must still observe the
+        // complete logical destination.
+        head_builder
+            .push_rate_limit(
+                one_window("catalog.item.write")
+                    .origin()
+                    .endpoint()
+                    .part("client.tenant", "tenant-a"),
+            )
+            .expect("origin/endpoint declaration");
+        head_builder.push_host_static("eu").expect("host label");
+        let head = head_builder.finish().expect("resolved head");
+        let origin = "https://eu.api.example.test:443";
+        assert_eq!(head.rate_limit_logical_origin(), Some(origin));
+        let policy = &head.rate_limit_plan().policies()[0];
+        let parts = policy.key().parts();
+        assert_eq!(parts[0].name(), "origin");
+        assert_eq!(
+            parts[0].kind(),
+            crate::rate_limit::RateDimensionKind::Origin
+        );
+        assert_eq!(parts[0].encoding_id(), "concord.utf8/1");
+        assert_eq!(
+            parts[0].value(),
+            crate::rate_limit::encode_canonical(origin, 1_024)
+                .expect("origin bytes")
+                .as_bytes()
+        );
+        assert_eq!(parts[1].name(), "endpoint");
+        assert_eq!(
+            parts[1].value(),
+            crate::rate_limit::encode_canonical("catalog.item.update", 1_024)
+                .expect("endpoint bytes")
+                .as_bytes()
+        );
+        assert_eq!(parts[2].name(), "client.tenant");
+
+        let mut no_origin = builder("https://example.test/");
+        no_origin
+            .push_rate_limit(one_window("tenant.only").part("tenant", "tenant-a"))
+            .expect("custom-only declaration");
+        assert_eq!(
+            no_origin
+                .finish()
+                .expect("custom-only head")
+                .rate_limit_logical_origin(),
+            None,
+            "the logical origin is disclosed only for an origin dimension"
+        );
     }
 
     #[test]
@@ -2338,7 +2452,7 @@ mod tests {
             .expect("pagination host label");
         assert_eq!(
             builder.rate_limit_origin(),
-            format!("https://{expected_host}:443")
+            Some(format!("https://{expected_host}:443"))
         );
 
         let head = builder.finish().expect("bounded pagination host head");
@@ -2350,6 +2464,32 @@ mod tests {
             Some("x.example.test")
         );
         assert!(!head.observed_url().contains(SENTINEL));
+        assert_eq!(head.classifier_host(), None);
+    }
+
+    /// PRIVACY-01 regression: a sensitive generated host component withholds
+    /// the actual full host from automatic retry classifiers, while public
+    /// labels keep the host available.
+    #[test]
+    fn sensitive_host_components_withhold_the_classifier_host() {
+        const SENTINEL: &str = "classifier-host-sentinel-5d2e";
+        let mut public = builder("https://example.test/v1/");
+        public.push_host_static("eu").expect("public label");
+        let public = public.finish().expect("public host head");
+        assert_eq!(public.classifier_host(), Some("eu.example.test"));
+
+        let mut sensitive = builder("https://example.test/v1/");
+        sensitive.push_host_static("eu").expect("public label");
+        sensitive
+            .push_host_atoms(true, |writer| writer.push_str(SENTINEL))
+            .expect("sensitive label");
+        let sensitive = sensitive.finish().expect("sensitive host head");
+        assert_eq!(
+            sensitive.logical_url().host_str(),
+            Some(format!("eu.{SENTINEL}.example.test").as_str())
+        );
+        assert_eq!(sensitive.classifier_host(), None);
+        assert!(!sensitive.observed_url().contains(SENTINEL));
     }
 
     #[test]
@@ -2405,6 +2545,32 @@ mod tests {
                 .logical_url()
                 .as_str(),
             "https://example.test/root/50%25done/tail"
+        );
+    }
+
+    #[test]
+    fn percent_triples_in_path_values_are_data_encoded_exactly_once() {
+        // Regression (PATH-01 / V3-S07): a `%XX`-shaped value was rejected as
+        // "pre-encoded" (a v2 rule). Percent signs are ordinary data: never
+        // decoded into a separator, never preserved raw, encoded once.
+        let mut builder = builder("https://example.test/root/");
+        builder
+            .push_value(&"team alpha%2F")
+            .expect("percent triple as data");
+        builder
+            .push_static("100%25")
+            .expect("static percent triple");
+        let head = builder.finish().expect("bounded path head");
+        assert_eq!(
+            head.logical_url().as_str(),
+            "https://example.test/root/team%20alpha%252F/100%2525"
+        );
+        assert_eq!(
+            head.logical_url()
+                .path_segments()
+                .expect("hierarchical URL")
+                .count(),
+            3
         );
     }
 

@@ -1,11 +1,13 @@
-use concord::api;
+// LANG-02 / §3.2 endpoint_clause: unknown endpoint clauses are rejected.
+#![allow(unused_imports)]
+
+use concord::{Binary, Bytes, api};
 
 api! {
     client UnsupportedEndpointClauseApi {
-        timeout 30s;
         base "https://unsupported.example.test";
 
-        GET item() -> concord::Bytes via concord::Binary {
+        GET item() -> Bytes via Binary {
             unsupported;
         }
     }

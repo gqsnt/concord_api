@@ -1,76 +1,73 @@
-use concord::{Binary, Bytes, Empty, Text, api};
+// REP-02 / §14.1: page eligibility depends on the complete `Buffered` driver
+// (plus the controller's own page constraint), not on an iterable-output
+// marker. Streaming and discard drivers cannot page. (v2 additionally
+// rejected buffered `Bytes`/`()` pages for lacking a page marker; v3 accepts
+// them with a compatible controller — see pass/language/buffered_page_modes.rs.)
+use concord::pagination::{
+    PageDecisionLimits, PageResponse, PageStep, PaginationController, PaginationDescription,
+    PaginationError,
+};
+use concord::{Binary, ByteStream, Discard, api};
 
-#[path = "../../../support/mod.rs"]
-mod support;
-#[allow(unused_imports)]
-use support::Json;
+pub struct Once {
+    page: u32,
+}
 
-pub struct Controller {}
+pub struct OnceInit {
+    pub page: u32,
+}
 
-impl<Page> concord::pagination::PaginationController<Page> for Controller
+impl<Page> PaginationController<Page> for Once
 where
     Page: Send + 'static,
 {
     type Item = ();
+    type Init = OnceInit;
+    type Cursor = u32;
 
-    const DESCRIPTION: concord::pagination::PaginationDescription =
-        concord::pagination::PaginationDescription::NONE;
+    const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
+
+    fn start(init: Self::Init) -> Result<Self, PaginationError> {
+        Ok(Self { page: init.page })
+    }
+
+    fn cursor(&self) -> Self::Cursor {
+        self.page
+    }
 
     fn advance(
         self,
-        _page: concord::pagination::PageResponse<Page>,
-        _limits: concord::pagination::PageDecisionLimits,
-    ) -> Result<
-        concord::pagination::PageStep<Self, Self::Item>,
-        concord::pagination::PaginationError,
-    > {
-        Ok(concord::pagination::PageStep::Done { items: Vec::new() })
+        _page: PageResponse<Page>,
+        _limits: PageDecisionLimits,
+    ) -> Result<PageStep<Self, Self::Item>, PaginationError> {
+        Ok(PageStep::Done { items: Vec::new() })
     }
 }
 
 api! {
-    client RequestBodyPagination {
-        timeout 30s;
-        base "https://example.test";
-
-
-    POST read(body body: String via Text) -> Vec<u8> via crate::support::Json {
-        effect safe;
-        paginate via crate::Controller {}
-    }
-}}
-
-api! {
-    client BytesPagination {
-        timeout 30s;
-        base "https://example.test";
-
-
-    GET read() -> Bytes via Binary {
-        paginate via crate::Controller {}
-    }
-}}
-
-api! {
-    client NoContentPagination {
-        timeout 30s;
-        base "https://example.test";
-
-
-    GET read() -> () via Empty {
-        paginate via crate::Controller {}
-    }
-}}
-
-api! {
     client StreamPagination {
-        timeout 30s;
         base "https://example.test";
 
-
-    GET read() -> ::concord::response::ByteStream via Binary {
-        paginate via crate::Controller {}
+        GET read(query page: u32 = 1) -> ByteStream via Binary {
+            paginate via crate::Once {
+                init crate::OnceInit { page: page };
+                cursor -> page;
+            }
+        }
     }
-}}
+}
+
+api! {
+    client DiscardPagination {
+        base "https://example.test";
+
+        GET read(query page: u32 = 1) -> () via Discard {
+            paginate via crate::Once {
+                init crate::OnceInit { page: page };
+                cursor -> page;
+            }
+        }
+    }
+}
 
 fn main() {}

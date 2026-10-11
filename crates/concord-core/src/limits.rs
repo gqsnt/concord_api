@@ -27,6 +27,12 @@ pub const MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES: usize = 65_536;
 /// Maximum authentication placements retained by one effective plan.
 pub const MAX_AUTH_PLACEMENTS: usize = 64;
 
+/// Hard maximum of provider-helper sends per credential acquisition.
+pub const MAX_PROVIDER_SENDS: u32 = 64;
+
+/// Hard maximum of exact origins one credential provider may declare.
+pub const MAX_PROVIDER_ORIGINS: usize = 32;
+
 /// Maximum UTF-8 bytes in one rate-limit policy identifier.
 pub const MAX_RATE_LIMIT_ID_BYTES: usize = 256;
 
@@ -38,6 +44,12 @@ pub const MAX_RATE_LIMIT_KEY_PART_NAME_BYTES: usize = 128;
 
 /// Maximum aggregate UTF-8 bytes in one resolved rate-limit key.
 pub const MAX_RATE_LIMIT_KEY_BYTES: usize = 65_536;
+
+/// Maximum ASCII bytes in one rate-key `ENCODING_ID` contract name.
+pub const MAX_RATE_KEY_ENCODING_ID_BYTES: usize = 128;
+
+/// Maximum ASCII bytes in one limiter capability namespace.
+pub const MAX_RATE_LIMITER_NAMESPACE_BYTES: usize = 128;
 
 /// Maximum empty transport chunks accepted while acquiring one response body.
 pub const MAX_EMPTY_RESPONSE_CHUNKS: usize = 1_024;

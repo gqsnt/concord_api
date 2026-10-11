@@ -1,5 +1,5 @@
-error: endpoint source identifier `HTTPStatus` must be snake_case; use `http_status`
-  --> tests/ui/fail/names/pascal_source_name.rs:11:9
-   |
-11 |     GET HTTPStatus() -> Bytes via Binary;
-   |         ^^^^^^^^^^
+error: [C3-GENERATED] endpoint source identifier `HTTPStatus` must be snake_case (declared in client `PascalSourceApi`); write `http_status`
+ --> tests/ui/fail/names/pascal_source_name.rs:9:13
+  |
+9 |         GET HTTPStatus() -> Bytes via Binary;
+  |             ^^^^^^^^^^

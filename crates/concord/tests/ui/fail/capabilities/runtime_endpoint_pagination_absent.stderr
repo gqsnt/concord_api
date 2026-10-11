@@ -1,5 +1,17 @@
-error[E0599]: no method named `paginate` found for struct `concord::endpoint::Request<E>` in the current scope
-  --> tests/ui/fail/capabilities/runtime_endpoint_pagination_absent.rs:21:21
+error[E0599]: no method named `pages` found for struct `BoundRuntimeRequest<R, O>` in the current scope
+  --> tests/ui/fail/capabilities/runtime_endpoint_pagination_absent.rs:27:60
    |
-21 |     let _ = request.paginate(concord::PageLimit::Prefix(1));
-   |                     ^^^^^^^^ method not found in `concord::endpoint::Request<RuntimeEndpoint<concord::Binary, concord::Bytes>>`
+27 |     let _ = client.bind(runtime("runtime.pages")).unwrap().pages(1);
+   |                                                            ^^^^^ method not found in `BoundRuntimeRequest<concord::Binary, concord::Bytes>`
+
+error[E0599]: no method named `collect_prefix` found for struct `BoundRuntimeRequest<R, O>` in the current scope
+  --> tests/ui/fail/capabilities/runtime_endpoint_pagination_absent.rs:28:61
+   |
+28 |     let _ = client.bind(runtime("runtime.prefix")).unwrap().collect_prefix(1);
+   |                                                             ^^^^^^^^^^^^^^ method not found in `BoundRuntimeRequest<concord::Binary, concord::Bytes>`
+
+error[E0599]: no method named `collect_all` found for struct `BoundRuntimeRequest<R, O>` in the current scope
+  --> tests/ui/fail/capabilities/runtime_endpoint_pagination_absent.rs:29:58
+   |
+29 |     let _ = client.bind(runtime("runtime.all")).unwrap().collect_all(std::num::NonZeroU32::MIN);
+   |                                                          ^^^^^^^^^^^ method not found in `BoundRuntimeRequest<concord::Binary, concord::Bytes>`

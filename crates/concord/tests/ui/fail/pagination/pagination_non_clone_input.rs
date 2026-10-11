@@ -1,11 +1,25 @@
+// §9.3: `PageRequestRepresentation<Input>` carries an actual `Input: Clone`
+// obligation; a representation's conditional page promise does not apply to
+// a non-Clone body input.
 use std::marker::PhantomData;
 
-use concord::api;
 use concord::body::PageRequestRepresentation;
-use concord::codec::{Bytes, CodecError, EncodeBody, EncodeContext};
+use concord::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext};
+use concord::pagination::{OffsetInit, OffsetPagination};
+use concord::{Bytes, api};
 
-#[path = "../../../support/mod.rs"]
-mod support;
+pub struct Lines;
+
+impl DecodeBody for Lines {
+    type Output = Vec<String>;
+
+    const ACCEPT: Option<&'static str> = Some("text/plain");
+
+    fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
+        let text = String::from_utf8(body.to_vec()).map_err(|_| CodecError::new(CodecErrorKind::Decode))?;
+        Ok(text.lines().map(str::to_owned).collect())
+    }
+}
 
 pub struct NonCloneInput;
 
@@ -24,47 +38,25 @@ where
     }
 }
 
-impl<T> PageRequestRepresentation<T> for ConditionalPageCodec<T>
-where
-    T: Clone + Send + 'static,
-{
-}
+impl<T> PageRequestRepresentation<T> for ConditionalPageCodec<T> where T: Clone + Send + 'static {}
 
-pub struct Controller {}
-
-impl<Page> concord::pagination::PaginationController<Page> for Controller
-where
-    Page: Send + 'static,
-{
-    type Item = ();
-
-    const DESCRIPTION: concord::pagination::PaginationDescription =
-        concord::pagination::PaginationDescription::NONE;
-
-    fn advance(
-        self,
-        _page: concord::pagination::PageResponse<Page>,
-        _limits: concord::pagination::PageDecisionLimits,
-    ) -> Result<
-        concord::pagination::PageStep<Self, Self::Item>,
-        concord::pagination::PaginationError,
-    > {
-        Ok(concord::pagination::PageStep::Done { items: Vec::new() })
-    }
-}
+pub const PAGE_SIZE: std::num::NonZeroU32 = std::num::NonZeroU32::MIN;
 
 api! {
     client NonClonePageInputApi {
-        timeout 30s;
         base "https://example.test";
 
-
-    POST read(
-        body body: crate::NonCloneInput via crate::ConditionalPageCodec<crate::NonCloneInput>,
-    ) -> Vec<u8> via crate::support::Json {
-        effect safe;
-        paginate via crate::Controller {}
+        POST read(
+            body input: crate::NonCloneInput via crate::ConditionalPageCodec<crate::NonCloneInput>,
+            query offset: u64 = 0,
+        ) -> Vec<String> via crate::Lines {
+            effect safe;
+            paginate via OffsetPagination {
+                init OffsetInit { offset: offset, page_size: crate::PAGE_SIZE };
+                cursor -> offset;
+            }
+        }
     }
-}}
+}
 
 fn main() {}

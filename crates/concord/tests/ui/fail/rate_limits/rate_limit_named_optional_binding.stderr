@@ -1,5 +1,5 @@
-error: rate-limit dimension `account` bound to `client.account` cannot use a Concord-optional slot
-  --> tests/ui/fail/rate_limits/rate_limit_named_optional_binding.rs:16:51
+error: [C3-RATE] rate key value `account` is outer-optional; a custom dimension of client `Api` uses a required ordinary value, so declare it total (`account: T` or `account: T = V`)
+  --> tests/ui/fail/rate_limits/rate_limit_named_optional_binding.rs:18:44
    |
-16 |         rate_limit account_reads(account = client.account);
-   |                                                   ^^^^^^^
+18 |         rate_limit account_reads(account = account);
+   |                                            ^^^^^^^

@@ -1,5 +1,5 @@
-error: `id`, `key`, and `cost` clauses must appear before rate-limit windows
- --> tests/ui/fail/rate_limits/rate_limit_late_by.rs:9:13
-  |
-9 |             key [origin];
-  |             ^^^
+error: [C3-RATE] the inline rate policy of client `Api` requires `key [...];` after its `id`
+  --> tests/ui/fail/rate_limits/rate_limit_late_by.rs:11:13
+   |
+11 |             allow 1 per 1s;
+   |             ^^^^^

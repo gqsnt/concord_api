@@ -1,286 +1,290 @@
 use super::*;
 
-#[tokio::test]
-async fn zero_page_and_configured_ceilings_cut_off_the_first_forbidden_work() {
-    let zero_executor = DeterministicExecutor::new();
-    let zero_hooks = Arc::new(PaginationProbe::default());
-    let zero_limiter = Arc::new(LimiterProbe::default());
-    let zero_core = core(
-        &zero_executor,
-        Arc::clone(&zero_hooks),
-        Arc::clone(&zero_limiter),
-        |runtime| runtime,
-    );
-    let zero_endpoint = PageEndpoint::get(
-        Some(Duration::from_secs(30)),
-        CursorController::new("unused"),
-    );
-    let zero_construction_calls = Arc::clone(&zero_endpoint.construction_calls);
-    let zero = paginate_with(Request::new(zero_core, zero_endpoint), PageLimit::Prefix(0))
-        .await
-        .expect("zero-page success");
-    assert!(zero.is_empty());
-    assert_eq!(zero_construction_calls.load(Ordering::SeqCst), 0);
-    assert_eq!(
-        zero_executor.application().request_count().expect("count"),
-        0
-    );
-    assert!(zero_hooks.before.lock().expect("before lock").is_empty());
+fn assert_no_work(harness: &Harness, calls: &Calls) {
+    assert_eq!(harness.requests(), 0);
+    assert_eq!(harness.hooks.before_count(), 0);
     assert!(
-        zero_limiter
+        harness
+            .limiter
             .acquisitions
             .lock()
             .expect("acquisition lock")
             .is_empty()
     );
-    let zero_aggregate = zero_hooks.aggregate.lock().expect("aggregate lock").clone();
-    assert!(zero_aggregate.is_empty());
+    assert_eq!(Calls::get(&calls.inits), 0);
+    assert_eq!(Calls::get(&calls.starts), 0);
+    assert_eq!(Calls::get(&calls.clones), 0);
+    assert_eq!(Calls::get(&calls.applies), 0);
+}
 
-    let page_executor = DeterministicExecutor::new();
-    let page_hooks = Arc::new(PaginationProbe::default());
-    let page_limiter = Arc::new(LimiterProbe::default());
-    let page_core = core(
-        &page_executor,
-        Arc::clone(&page_hooks),
-        Arc::clone(&page_limiter),
-        |runtime| runtime.pagination_max_pages(NonZeroU32::MIN),
+fn assert_zero_summary(summary: &TraversalSummary) {
+    assert_eq!(summary.stop_reason(), StopReason::PageBound);
+    assert_eq!(summary.continuation(), ContinuationKnowledge::Unknown);
+    assert_eq!(summary.operation_id(), None);
+    assert_eq!(summary.requested_page_bound(), 0);
+    assert_eq!(summary.effective_page_bound(), 0);
+    assert_eq!(summary.pages_received(), 0);
+    assert_eq!(summary.application_attempts(), 0);
+    assert_eq!(summary.quota_admissions(), 0);
+    assert_eq!(summary.acquired_response_bytes(), 0);
+    assert_eq!(summary.retained_identity_bytes(), 0);
+    assert_eq!(
+        summary.dispatch_knowledge(),
+        DispatchKnowledge::NotDispatched
     );
-    let page_endpoint = PageEndpoint::get(
-        Some(Duration::from_secs(30)),
-        CursorController::new("unused"),
+}
+
+/// V3-P04 / PAGE-02: zero bounds perform no shaping, body, controller,
+/// credential, quota, transport or operation-identity work.
+#[tokio::test]
+async fn zero_bounds_perform_no_work_and_report_page_bound_unknown() {
+    let harness = Harness::new();
+    let endpoint = PageEndpoint::new("unused");
+    let calls = endpoint.calls.clone();
+
+    let zero_prefix = prefix(harness.core.clone(), endpoint.clone(), 0)
+        .await
+        .expect("zero prefix succeeds without work");
+    assert!(zero_prefix.items().is_empty());
+    assert_zero_summary(zero_prefix.summary());
+
+    let mut pages: Pages<String> = pages_request(harness.request(endpoint), 0);
+    assert_zero_summary(&pages.summary());
+    assert!(pages.next_page().await.expect("zero pages").is_none());
+    assert!(pages.next_page().await.expect("still none").is_none());
+    let finished = pages.finish();
+    assert_zero_summary(&finished);
+
+    assert_no_work(&harness, &calls);
+    assert!(harness.hooks.aggregate().is_empty());
+}
+
+/// PAGE-02: a nonzero traversal that never fetched finishes as an
+/// application stop without identity or observation.
+#[tokio::test]
+async fn unstarted_nonzero_pages_finish_as_application_without_identity() {
+    let harness = Harness::new();
+    let endpoint = PageEndpoint::new("unused");
+    let calls = endpoint.calls.clone();
+    let pages: Pages<String> = pages_request(harness.request(endpoint), 3);
+    let summary = pages.summary();
+    assert_eq!(summary.stop_reason(), StopReason::NotStarted);
+    assert_eq!(summary.requested_page_bound(), 3);
+    assert_eq!(summary.effective_page_bound(), 3);
+    assert_eq!(summary.operation_id(), None);
+
+    let finished = pages.finish();
+    assert_eq!(finished.stop_reason(), StopReason::Application);
+    assert_eq!(finished.continuation(), ContinuationKnowledge::Unknown);
+    assert_eq!(finished.operation_id(), None);
+    assert_no_work(&harness, &calls);
+    assert!(harness.hooks.aggregate().is_empty());
+
+    // Dropping an unstarted traversal is equally inert.
+    drop(pages_request::<PageEndpoint>(
+        harness.request(PageEndpoint::new("unused")),
+        2,
+    ));
+    assert!(harness.hooks.aggregate().is_empty());
+}
+
+/// CONTROL-02: a traversal timeout that is a valid control value but cannot
+/// be represented as an absolute monotonic deadline from the first
+/// `next_page` poll is rejected at that poll, before any effect: no
+/// controller initialization or start, cursor application, shaping, limiter,
+/// attempt or transport work, and `NotDispatched`.
+#[tokio::test]
+async fn unrepresentable_traversal_deadline_is_rejected_at_first_poll_before_effects() {
+    let _clock = crate::operation::TestClockGuard::reset();
+    let harness = Harness::new();
+    let endpoint = PageEndpoint::new("unused");
+    let calls = endpoint.calls.clone();
+    let margin = Duration::from_secs(60 * 60);
+    let request = harness
+        .request(endpoint)
+        .timeout(margin * 2)
+        .expect("a representable control duration");
+    let mut pages: Pages<String> = pages_request(request, 3);
+    crate::operation::TestClockGuard::advance_to_representable_limit(margin);
+
+    let error = pages
+        .next_page()
+        .await
+        .expect_err("unrepresentable traversal deadline");
+    assert_eq!(error.category(), ErrorCategory::Configuration);
+    assert_eq!(
+        error.configuration_kind(),
+        Some(crate::error::ConfigurationErrorKind::InvalidValue)
     );
-    let page_construction_calls = Arc::clone(&page_endpoint.construction_calls);
-    let error = pagination_error(
-        paginate_with(Request::new(page_core, page_endpoint), PageLimit::Prefix(2)).await,
+    assert_eq!(error.dispatch_knowledge(), DispatchKnowledge::NotDispatched);
+    assert_eq!(
+        error.failure_stage(),
+        crate::error::FailureStage::Preparation
     );
+    let summary = summary_of(&error);
+    assert_eq!(summary.stop_reason(), StopReason::Failed);
+    assert_eq!(summary.pages_received(), 0);
+    assert_eq!(summary.application_attempts(), 0);
+    assert_eq!(summary.quota_admissions(), 0);
+    assert_eq!(
+        summary.dispatch_knowledge(),
+        DispatchKnowledge::NotDispatched
+    );
+    assert_no_work(&harness, &calls);
+    // The failure is returned once; the traversal then stays terminal.
+    assert!(pages.next_page().await.expect("terminal").is_none());
+    assert_eq!(pages.finish().stop_reason(), StopReason::Failed);
+    assert_no_work(&harness, &calls);
+}
+
+/// Requested bounds above the client ceiling are intersected and both numbers
+/// are disclosed; a complete collection cut by the ceiling is an error.
+#[tokio::test]
+async fn requested_bound_is_intersected_with_the_profile_ceiling_and_disclosed() {
+    let harness = Harness::configured(|runtime| runtime.pagination_max_pages(1));
+    harness.queue("first|second");
+    let prefix = prefix(harness.core.clone(), PageEndpoint::new("first"), 5)
+        .await
+        .expect("intersected prefix");
+    assert_eq!(prefix.items(), ["first"]);
+    let summary = prefix.summary();
+    assert_eq!(summary.requested_page_bound(), 5);
+    assert_eq!(summary.effective_page_bound(), 1);
+    assert_eq!(summary.stop_reason(), StopReason::PageBound);
+    assert_eq!(
+        summary.continuation(),
+        ContinuationKnowledge::NextRequestKnown
+    );
+    assert_eq!(harness.requests(), 1, "no fetch beyond the effective bound");
+
+    let complete = Harness::configured(|runtime| runtime.pagination_max_pages(1));
+    complete.queue("first|second");
+    let error = all(complete.core.clone(), PageEndpoint::new("first"), 5)
+        .await
+        .expect_err("ceiling-cut complete collection");
     assert_eq!(
         error.pagination_kind(),
-        Some(PaginationErrorKind::PageCeilingExceeded)
+        Some(PaginationErrorKind::CompletionLimitExceeded)
     );
-    assert_eq!(page_construction_calls.load(Ordering::SeqCst), 0);
-    assert_eq!(
-        page_executor.application().request_count().expect("count"),
-        0
-    );
-    assert!(page_hooks.before.lock().expect("before lock").is_empty());
-    assert!(
-        page_limiter
-            .acquisitions
-            .lock()
-            .expect("acquisition lock")
-            .is_empty()
-    );
-    let page_aggregate = page_hooks.aggregate.lock().expect("aggregate lock").clone();
-    assert_eq!(page_aggregate.len(), 1);
-    assert_eq!(page_aggregate[0].pages_completed, 0);
-    assert_eq!(page_aggregate[0].items_collected, 0);
-    assert_eq!(page_aggregate[0].final_status, None);
-    assert_eq!(page_aggregate[0].outcome, CompletionOutcome::Pagination);
+    let summary = summary_of(&error);
+    assert_eq!(summary.requested_page_bound(), 5);
+    assert_eq!(summary.effective_page_bound(), 1);
+    assert_eq!(summary.stop_reason(), StopReason::PageBound);
+    assert_eq!(complete.requests(), 1);
+}
 
-    let maximum_executor = DeterministicExecutor::new();
-    maximum_executor
-        .application()
-        .queue_response(ScriptedResponse::success(Bytes::from_static(
-            b"first|second",
-        )))
-        .expect("first maximum page");
-    maximum_executor
-        .application()
-        .queue_response(ScriptedResponse::success(Bytes::from_static(b"")))
-        .expect("natural maximum page");
-    let maximum_hooks = Arc::new(PaginationProbe::default());
-    let maximum_limiter = Arc::new(LimiterProbe::default());
-    let maximum_core = core(
-        &maximum_executor,
-        Arc::clone(&maximum_hooks),
-        maximum_limiter,
-        |runtime| runtime.pagination_max_pages(NonZeroU32::new(2).expect("positive page ceiling")),
-    );
-    let maximum = collect(
-        maximum_core,
-        PageLimit::CompleteWithin(NonZeroU32::new(2).expect("positive completion limit")),
-        CursorController::new("first"),
-        Some(Duration::from_secs(30)),
+#[tokio::test]
+async fn identity_ceiling_and_item_ceiling_cut_off_the_first_forbidden_work() {
+    let identity = Harness::configured(|runtime| runtime.pagination_identity_limit(1));
+    let error = prefix(
+        identity.core.clone(),
+        PageEndpoint::new("identity-first-excess-sentinel-6f11"),
+        1,
     )
     .await
-    .expect("configured maximum naturally terminates");
-    assert_eq!(maximum, ["first"]);
+    .expect_err("identity ceiling");
     assert_eq!(
-        maximum_executor
-            .application()
-            .request_count()
-            .expect("count"),
-        2
-    );
-    let maximum_aggregate = maximum_hooks
-        .aggregate
-        .lock()
-        .expect("aggregate lock")
-        .clone();
-    assert_eq!(maximum_aggregate.len(), 1);
-    assert_eq!(maximum_aggregate[0].pages_completed, 2);
-    assert_eq!(maximum_aggregate[0].items_collected, 1);
-    assert_eq!(maximum_aggregate[0].outcome, CompletionOutcome::Success);
-
-    let identity_executor = DeterministicExecutor::new();
-    let identity_hooks = Arc::new(PaginationProbe::default());
-    let identity_limiter = Arc::new(LimiterProbe::default());
-    let identity_core = core(
-        &identity_executor,
-        Arc::clone(&identity_hooks),
-        Arc::clone(&identity_limiter),
-        |runtime| runtime.pagination_identity_limit(NonZeroUsize::MIN),
-    );
-    let identity_error = pagination_error(
-        collect(
-            identity_core,
-            PageLimit::Prefix(1),
-            CursorController::new("identity-first-excess-sentinel-6f11"),
-            Some(Duration::from_secs(30)),
-        )
-        .await,
-    );
-    assert_eq!(
-        identity_error.pagination_kind(),
+        error.pagination_kind(),
         Some(PaginationErrorKind::IdentityStorageCeilingExceeded)
     );
-    assert_eq!(
-        identity_executor
-            .application()
-            .request_count()
-            .expect("count"),
-        0
-    );
+    assert!(!format!("{error:?}").contains("identity-first-excess-sentinel-6f11"));
+    assert_eq!(identity.requests(), 0);
+    assert_eq!(identity.hooks.before_count(), 0);
     assert!(
-        identity_hooks
-            .before
-            .lock()
-            .expect("before lock")
-            .is_empty()
-    );
-    assert!(
-        identity_limiter
+        identity
+            .limiter
             .acquisitions
             .lock()
             .expect("acquisition lock")
             .is_empty()
     );
+    assert_eq!(summary_of(&error).retained_identity_bytes(), 0);
 
-    let item_executor = DeterministicExecutor::new();
-    item_executor
+    let items = Harness::configured(|runtime| runtime.pagination_max_items(1));
+    items
+        .executor
         .application()
         .queue_response(ScriptedResponse::success(Bytes::from_static(
             b"accepted-item-sentinel-62a3,first-excess-item-sentinel-029c|-",
         )))
         .expect("item page");
-    let item_hooks = Arc::new(PaginationProbe::default());
-    let item_limiter = Arc::new(LimiterProbe::default());
-    let item_core = core(
-        &item_executor,
-        Arc::clone(&item_hooks),
-        item_limiter,
-        |runtime| runtime.pagination_max_items(NonZeroUsize::MIN),
-    );
-    let item_error = pagination_error(
-        collect(
-            item_core,
-            PageLimit::Prefix(1),
-            CursorController::new("item-page"),
-            Some(Duration::from_secs(30)),
-        )
-        .await,
-    );
+    let error = prefix(items.core.clone(), PageEndpoint::new("item-page"), 1)
+        .await
+        .expect_err("item ceiling");
     assert_eq!(
-        item_error.pagination_kind(),
+        error.pagination_kind(),
         Some(PaginationErrorKind::CollectedItemCeilingExceeded)
     );
+    assert_eq!(items.requests(), 1);
+    let summary = summary_of(&error);
+    assert_eq!(summary.pages_received(), 1);
+    assert_eq!(summary.pages_delivered(), 0, "no truncated partial batch");
+    assert_eq!(summary.items_delivered(), 0);
+    let aggregate = items.hooks.aggregate();
+    assert_eq!(aggregate.len(), 1);
+    assert_eq!(aggregate[0].items_collected, 0);
+    assert_eq!(aggregate[0].outcome, CompletionOutcome::Pagination);
+    assert_eq!(aggregate[0].final_status, Some(StatusCode::OK));
+}
+
+/// V3-P06: the identity budget accumulates across pages; a later
+/// continuation that no longer fits withholds its page.
+#[tokio::test]
+async fn identity_budget_persists_across_pages() {
+    let probe = Harness::new();
+    probe.queue("a|c1");
+    let mut pages: Pages<String> = pages_request(probe.request(PageEndpoint::new("c0")), 5);
+    assert!(pages.next_page().await.expect("probe page").is_some());
+    // Page 0 plus the validated page-1 continuation.
+    let two_identities = pages.summary().retained_identity_bytes();
+    assert!(two_identities > 0);
+    assert_eq!(pages.finish().stop_reason(), StopReason::Application);
+
+    let limited = Harness::configured(|runtime| runtime.pagination_identity_limit(two_identities));
+    limited.queue("a|c1");
+    limited.queue("b|c2");
+    limited.queue("unused|-");
+    let mut pages: Pages<String> = pages_request(limited.request(PageEndpoint::new("c0")), 5);
+    assert!(pages.next_page().await.expect("fits").is_some());
+    assert_eq!(pages.summary().retained_identity_bytes(), two_identities);
+    let error = pages.next_page().await.expect_err("third identity");
     assert_eq!(
-        item_executor.application().request_count().expect("count"),
-        1
+        error.pagination_kind(),
+        Some(PaginationErrorKind::IdentityStorageCeilingExceeded)
     );
-    let item_aggregate = item_hooks.aggregate.lock().expect("aggregate lock").clone();
-    assert_eq!(item_aggregate.len(), 1);
-    assert_eq!(item_aggregate[0].items_collected, 0);
-    assert_eq!(item_aggregate[0].outcome, CompletionOutcome::Pagination);
-    assert_eq!(item_aggregate[0].final_status, Some(StatusCode::OK));
+    let summary = summary_of(&error);
+    assert_eq!(summary.pages_received(), 2);
+    assert_eq!(summary.pages_delivered(), 1);
+    assert_eq!(summary.retained_identity_bytes(), two_identities);
+    assert_eq!(limited.requests(), 2);
 }
 
 #[tokio::test]
-async fn aggregate_response_body_budget_accepts_exact_total_and_drops_first_excess_page() {
-    const FIRST_PAGE: &[u8] = b"first-retained-item|second-state";
-    const SECOND_PAGE: &[u8] = b"second-boundary-item|-";
-    let exact_total = FIRST_PAGE
-        .len()
-        .checked_add(SECOND_PAGE.len())
-        .expect("small test response lengths");
+async fn aggregate_response_byte_budget_accepts_exact_total_and_rejects_first_excess() {
+    const FIRST_PAGE: &str = "first-retained-item|second-state";
+    const SECOND_PAGE: &str = "second-boundary-item|-";
+    let exact_total = FIRST_PAGE.len() + SECOND_PAGE.len();
 
-    let exact_executor = DeterministicExecutor::new();
-    for page in [FIRST_PAGE, SECOND_PAGE] {
-        exact_executor
-            .application()
-            .queue_response(ScriptedResponse::success(Bytes::from_static(page)))
-            .expect("exact aggregate response page");
-    }
-    let exact_hooks = Arc::new(PaginationProbe::default());
-    let exact_core = core(
-        &exact_executor,
-        Arc::clone(&exact_hooks),
-        Arc::new(LimiterProbe::default()),
-        |runtime| {
-            runtime.pagination_total_response_body_limit(
-                NonZeroUsize::new(exact_total).expect("positive exact aggregate limit"),
-            )
-        },
-    );
-    let exact = collect(
-        exact_core,
-        PageLimit::CompleteWithin(NonZeroU32::new(2).expect("two-page completion limit")),
-        CursorController::new("first-state"),
-        Some(Duration::from_secs(30)),
-    )
-    .await
-    .expect("exact aggregate response-byte boundary");
-    assert_eq!(exact, ["first-retained-item", "second-boundary-item"]);
-    assert_eq!(
-        exact_executor.application().request_count().expect("count"),
-        2
-    );
-    {
-        let exact_aggregate = exact_hooks.aggregate.lock().expect("aggregate lock");
-        assert_eq!(exact_aggregate[0].pages_completed, 2);
-        assert_eq!(exact_aggregate[0].items_collected, 2);
-        assert_eq!(exact_aggregate[0].outcome, CompletionOutcome::Success);
-    }
+    let exact =
+        Harness::configured(|runtime| runtime.pagination_total_response_body_limit(exact_total));
+    exact.queue(FIRST_PAGE);
+    exact.queue(SECOND_PAGE);
+    let items = all(exact.core.clone(), PageEndpoint::new("first-state"), 2)
+        .await
+        .expect("exact aggregate response-byte boundary");
+    assert_eq!(items, ["first-retained-item", "second-boundary-item"]);
+    assert_eq!(exact.requests(), 2);
 
-    let excess_executor = DeterministicExecutor::new();
-    for page in [FIRST_PAGE, SECOND_PAGE] {
-        excess_executor
-            .application()
-            .queue_response(ScriptedResponse::success(Bytes::from_static(page)))
-            .expect("first-excess aggregate response page");
-    }
-    let excess_hooks = Arc::new(PaginationProbe::default());
-    let excess_core = core(
-        &excess_executor,
-        Arc::clone(&excess_hooks),
-        Arc::new(LimiterProbe::default()),
-        |runtime| {
-            runtime.pagination_total_response_body_limit(
-                NonZeroUsize::new(exact_total - 1).expect("positive first-excess limit"),
-            )
-        },
-    );
-    let controller = CursorController::new("first-state");
-    let next_calls = Arc::clone(&controller.next_calls);
-    let error = pagination_error(
-        collect(
-            excess_core,
-            PageLimit::CompleteWithin(NonZeroU32::new(2).expect("two-page completion limit")),
-            controller,
-            Some(Duration::from_secs(30)),
-        )
-        .await,
-    );
+    let excess = Harness::configured(|runtime| {
+        runtime.pagination_total_response_body_limit(exact_total - 1)
+    });
+    excess.queue(FIRST_PAGE);
+    excess.queue(SECOND_PAGE);
+    let endpoint = PageEndpoint::new("first-state");
+    let calls = endpoint.calls.clone();
+    let error = all(excess.core.clone(), endpoint, 2)
+        .await
+        .expect_err("first excess aggregate byte");
     assert_eq!(
         error.pagination_kind(),
         Some(PaginationErrorKind::CollectedResponseByteCeilingExceeded)
@@ -288,255 +292,134 @@ async fn aggregate_response_body_budget_accepts_exact_total_and_drops_first_exce
     let rendered = format!("{error}\n{error:?}");
     assert!(!rendered.contains("first-retained-item"));
     assert!(!rendered.contains("second-boundary-item"));
+    assert_eq!(excess.requests(), 2);
     assert_eq!(
-        excess_executor
-            .application()
-            .request_count()
-            .expect("count"),
-        2
+        Calls::get(&calls.advances),
+        1,
+        "excess page is never interpreted"
     );
-    assert_eq!(next_calls.load(Ordering::SeqCst), 1);
+    let summary = summary_of(&error);
     assert_eq!(
-        excess_hooks
-            .completion
-            .lock()
-            .expect("completion lock")
-            .len(),
-        2
+        summary.acquired_response_bytes(),
+        u64::try_from(exact_total).expect("small"),
+        "the chunk that crossed the ceiling was actually read"
     );
-    let excess_aggregate = excess_hooks.aggregate.lock().expect("aggregate lock");
-    assert_eq!(excess_aggregate[0].pages_completed, 1);
-    assert_eq!(excess_aggregate[0].items_collected, 1);
-    assert_eq!(excess_aggregate[0].final_status, Some(StatusCode::OK));
-    assert_eq!(excess_aggregate[0].outcome, CompletionOutcome::Pagination);
-}
+    assert_eq!(summary.pages_received(), 1);
+    let aggregate = excess.hooks.aggregate();
+    assert_eq!(aggregate[0].pages_completed, 1);
+    assert_eq!(aggregate[0].items_collected, 1);
+    assert_eq!(aggregate[0].outcome, CompletionOutcome::Pagination);
 
-#[tokio::test]
-async fn controller_construction_and_validation_failures_are_page_side_effect_free() {
-    let factory_executor = DeterministicExecutor::new();
-    let factory_hooks = Arc::new(PaginationProbe::default());
-    let factory_limiter = Arc::new(LimiterProbe::default());
-    let factory_core = core(
-        &factory_executor,
-        Arc::clone(&factory_hooks),
-        Arc::clone(&factory_limiter),
-        |runtime| runtime,
-    );
-    let factory_error = pagination_error(
-        paginate_with(
-            Request::new(
-                factory_core,
-                PageEndpoint::failing_construction(Some(Duration::from_secs(30))),
-            ),
-            PageLimit::Prefix(1),
-        )
-        .await,
-    );
-    assert_eq!(factory_error.category(), ErrorCategory::Pagination);
+    // A caller response-byte cap narrows the traversal byte ceiling too.
+    let capped = Harness::new();
+    capped.queue(FIRST_PAGE);
+    capped.queue(SECOND_PAGE);
+    let error = collect_all_request(
+        capped.request(PageEndpoint::new("first-state")),
+        NonZeroU32::new(2).expect("nonzero"),
+    )
+    .with_options(
+        &CallOptions::new()
+            .cap_response_bytes(NonZeroUsize::new(FIRST_PAGE.len()).expect("positive cap")),
+    )
+    .await
+    .expect_err("caller byte cap");
     assert_eq!(
-        factory_error.pagination_kind(),
-        Some(PaginationErrorKind::Controller)
-    );
-    assert_eq!(
-        factory_executor
-            .application()
-            .request_count()
-            .expect("count"),
-        0
-    );
-    assert!(factory_hooks.before.lock().expect("before lock").is_empty());
-    assert!(
-        factory_hooks
-            .completion
-            .lock()
-            .expect("completion lock")
-            .is_empty()
-    );
-    assert_eq!(
-        factory_hooks.aggregate.lock().expect("aggregate lock")[0].outcome,
-        CompletionOutcome::Pagination
-    );
-    assert!(
-        factory_limiter
-            .acquisitions
-            .lock()
-            .expect("acquisition lock")
-            .is_empty()
-    );
-
-    let validate_executor = DeterministicExecutor::new();
-    let validate_hooks = Arc::new(PaginationProbe::default());
-    let validate_limiter = Arc::new(LimiterProbe::default());
-    let validate_core = core(
-        &validate_executor,
-        Arc::clone(&validate_hooks),
-        Arc::clone(&validate_limiter),
-        |runtime| runtime,
-    );
-    let controller = CursorController::failing_validate("private-controller-state-sentinel-287e");
-    let validate_calls = Arc::clone(&controller.validate_calls);
-    let validate_error = pagination_error(
-        collect(
-            validate_core,
-            PageLimit::Prefix(1),
-            controller,
-            Some(Duration::from_secs(30)),
-        )
-        .await,
-    );
-    assert_eq!(validate_calls.load(Ordering::SeqCst), 1);
-    assert_eq!(validate_error.category(), ErrorCategory::Pagination);
-    assert_eq!(
-        validate_error.pagination_kind(),
-        Some(PaginationErrorKind::Controller)
-    );
-    let rendered = format!("{validate_error}\n{validate_error:?}");
-    assert!(!rendered.contains("private-controller-state-sentinel-287e"));
-    assert_eq!(
-        validate_executor
-            .application()
-            .request_count()
-            .expect("count"),
-        0
-    );
-    assert!(
-        validate_hooks
-            .before
-            .lock()
-            .expect("before lock")
-            .is_empty()
-    );
-    assert!(
-        validate_hooks
-            .completion
-            .lock()
-            .expect("completion lock")
-            .is_empty()
-    );
-    assert_eq!(
-        validate_hooks.aggregate.lock().expect("aggregate lock")[0].outcome,
-        CompletionOutcome::Pagination
-    );
-    assert!(
-        validate_limiter
-            .acquisitions
-            .lock()
-            .expect("acquisition lock")
-            .is_empty()
+        error.pagination_kind(),
+        Some(PaginationErrorKind::CollectedResponseByteCeilingExceeded)
     );
 }
 
 #[tokio::test]
-async fn final_soft_and_controller_selected_count_pages_apply_exact_next_precedence() {
-    let soft_executor = DeterministicExecutor::new();
-    soft_executor
-        .application()
-        .queue_response(ScriptedResponse::success(Bytes::from_static(
-            b"item|unused-next",
-        )))
-        .expect("soft page");
-    let soft_hooks = Arc::new(PaginationProbe::default());
-    let soft_core = core(
-        &soft_executor,
-        soft_hooks,
-        Arc::new(LimiterProbe::default()),
-        |runtime| runtime,
-    );
-    let controller = CursorController::new("soft");
-    let next_calls = Arc::clone(&controller.next_calls);
-    let items = collect(
-        soft_core,
-        PageLimit::Prefix(1),
-        controller,
-        Some(Duration::from_secs(30)),
-    )
-    .await
-    .expect("final soft page");
-    assert_eq!(items, ["item"]);
-    assert_eq!(next_calls.load(Ordering::SeqCst), 1);
-
-    let empty_executor = DeterministicExecutor::new();
-    empty_executor
-        .application()
-        .queue_response(ScriptedResponse::success(Bytes::from_static(
-            b"|unused-next",
-        )))
-        .expect("empty page");
-    let empty_core = core(
-        &empty_executor,
-        Arc::new(PaginationProbe::default()),
-        Arc::new(LimiterProbe::default()),
-        |runtime| runtime,
-    );
-    let controller =
-        CursorController::failing_next("empty").with_short_page_size(NonZeroUsize::MIN);
-    let next_calls = Arc::clone(&controller.next_calls);
-    let items = collect(
-        empty_core,
-        PageLimit::CompleteWithin(NonZeroU32::MIN),
-        controller,
-        Some(Duration::from_secs(30)),
-    )
-    .await
-    .expect("controller-selected count stop overrides retained next error");
-    assert!(items.is_empty());
-    assert_eq!(next_calls.load(Ordering::SeqCst), 1);
-
-    let continuing_executor = DeterministicExecutor::new();
-    continuing_executor
-        .application()
-        .queue_response(ScriptedResponse::success(Bytes::from_static(b"|continued")))
-        .expect("empty continuing page");
-    continuing_executor
-        .application()
-        .queue_response(ScriptedResponse::success(Bytes::from_static(b"item|-")))
-        .expect("page after empty page");
-    let continuing_core = core(
-        &continuing_executor,
-        Arc::new(PaginationProbe::default()),
-        Arc::new(LimiterProbe::default()),
-        |runtime| runtime,
-    );
-    let items = collect(
-        continuing_core,
-        PageLimit::CompleteWithin(NonZeroU32::new(2).expect("two-page cap")),
-        CursorController::new("empty-first"),
-        Some(Duration::from_secs(30)),
-    )
-    .await
-    .expect("empty page continues when the controller selects no count termination");
-    assert_eq!(items, ["item"]);
-
-    let retained_error_executor = DeterministicExecutor::new();
-    retained_error_executor
-        .application()
-        .queue_response(ScriptedResponse::success(Bytes::from_static(
-            b"item|unused",
-        )))
-        .expect("non-count-terminated page");
-    let retained_error_core = core(
-        &retained_error_executor,
-        Arc::new(PaginationProbe::default()),
-        Arc::new(LimiterProbe::default()),
-        |runtime| runtime,
-    );
-    let error = pagination_error(
-        collect(
-            retained_error_core,
-            PageLimit::CompleteWithin(NonZeroU32::MIN),
-            CursorController::failing_next("retained-error"),
-            Some(Duration::from_secs(30)),
-        )
-        .await,
-    );
+async fn controller_start_failure_is_side_effect_free_and_redacted() {
+    let harness = Harness::new();
+    let mut endpoint = PageEndpoint::new("private-controller-state-sentinel-287e");
+    endpoint.fail_start = true;
+    let calls = endpoint.calls.clone();
+    let error = prefix(harness.core.clone(), endpoint, 1)
+        .await
+        .expect_err("controller start fails");
+    assert_eq!(error.category(), ErrorCategory::Pagination);
     assert_eq!(
         error.pagination_kind(),
         Some(PaginationErrorKind::Controller)
     );
+    assert_eq!(
+        error.stage(),
+        crate::error::FailureStage::PaginationDecision
+    );
+    let rendered = format!("{error}\n{error:?}");
+    assert!(!rendered.contains("private-controller-state-sentinel-287e"));
+    assert_eq!(Calls::get(&calls.starts), 1);
+    assert_eq!(harness.requests(), 0);
+    assert_eq!(harness.hooks.before_count(), 0);
+    assert!(
+        harness
+            .hooks
+            .completion
+            .lock()
+            .expect("completion lock")
+            .is_empty()
+    );
+    let aggregate = harness.hooks.aggregate();
+    assert_eq!(aggregate[0].outcome, CompletionOutcome::Pagination);
+    assert_eq!(aggregate[0].stop_reason, StopReason::Failed);
+    assert!(
+        harness
+            .limiter
+            .acquisitions
+            .lock()
+            .expect("acquisition lock")
+            .is_empty()
+    );
+    assert!(summary_of(&error).operation_id().is_some());
 }
 
 #[tokio::test]
-async fn immediate_two_state_and_long_cycles_stop_before_protected_page_work() {
+async fn controller_selected_completion_and_empty_pages_follow_the_controller() {
+    // A short page proves exhaustion even though the provider offered a cursor.
+    let short = Harness::new();
+    short.queue("|unused-next");
+    let mut endpoint = PageEndpoint::new("empty");
+    endpoint.short_page_size = Some(NonZeroUsize::MIN);
+    endpoint.fail_advance = true;
+    let items = all(short.core.clone(), endpoint, 1)
+        .await
+        .expect("controller-selected completion");
+    assert!(items.is_empty());
+    assert_eq!(short.requests(), 1);
+
+    // An empty page continues when the controller offers continuation.
+    let continuing = Harness::new();
+    continuing.queue("|continued");
+    continuing.queue("item|-");
+    let items = all(continuing.core.clone(), PageEndpoint::new("empty-first"), 2)
+        .await
+        .expect("empty page continues");
+    assert_eq!(items, ["item"]);
+
+    // A controller error withholds the page but records it as received.
+    let failing = Harness::new();
+    failing.queue("item|unused");
+    let mut endpoint = PageEndpoint::new("retained-error");
+    endpoint.fail_advance = true;
+    let error = all(failing.core.clone(), endpoint, 1)
+        .await
+        .expect_err("controller error");
+    assert_eq!(
+        error.pagination_kind(),
+        Some(PaginationErrorKind::Controller)
+    );
+    let summary = summary_of(&error);
+    assert_eq!(summary.pages_received(), 1);
+    assert_eq!(summary.pages_delivered(), 0);
+    assert_eq!(summary.continuation(), ContinuationKnowledge::Unknown);
+}
+
+/// V3-P03: immediate repeats and longer cycles are rejected before the page
+/// that proposed them is delivered, using full identity comparison.
+#[tokio::test]
+async fn immediate_two_state_and_long_cycles_are_withheld_before_delivery() {
     let cases: &[(&str, &[&str], &[&str])] = &[
         (
             "immediate-cycle-sentinel-8251",
@@ -567,49 +450,46 @@ async fn immediate_two_state_and_long_cycles_stop_before_protected_page_work() {
     ];
 
     for (initial, pages, forbidden) in cases {
-        let executor = DeterministicExecutor::new();
+        let harness = Harness::new();
         for page in *pages {
-            executor
+            harness
+                .executor
                 .application()
                 .queue_response(ScriptedResponse::success(Bytes::copy_from_slice(
                     page.as_bytes(),
                 )))
                 .expect("cycle page");
         }
-        let hooks = Arc::new(PaginationProbe::default());
-        let limiter = Arc::new(LimiterProbe::default());
-        let core = core(
-            &executor,
-            Arc::clone(&hooks),
-            Arc::clone(&limiter),
-            |runtime| runtime,
-        );
-        let error = pagination_error(
-            collect(
-                core,
-                PageLimit::Prefix(10),
-                CursorController::new(*initial),
-                Some(Duration::from_secs(30)),
-            )
-            .await,
-        );
+        let mut traversal: Pages<String> =
+            pages_request(harness.request(PageEndpoint::new(initial)), 10);
+        let mut delivered = Vec::new();
+        let error = loop {
+            match traversal.next_page().await {
+                Ok(Some(page)) => delivered.extend(page.into_items()),
+                Ok(None) => panic!("a cycle cannot end as exhaustion"),
+                Err(error) => break error,
+            }
+        };
         assert_eq!(
             error.pagination_kind(),
             Some(PaginationErrorKind::RepeatedRequest)
         );
+        assert_eq!(harness.requests(), pages.len());
+        assert_eq!(harness.hooks.before_count(), pages.len());
         assert_eq!(
-            executor.application().request_count().expect("count"),
-            pages.len()
+            delivered.len(),
+            pages.len() - 1,
+            "the cyclic page is withheld"
         );
-        assert_eq!(hooks.before.lock().expect("before lock").len(), pages.len());
-        assert_eq!(
-            limiter.acquisitions.lock().expect("acquisition lock").len(),
-            pages.len()
-        );
-        let aggregate = hooks.aggregate.lock().expect("aggregate lock").clone();
+        assert!(traversal.next_page().await.expect("after error").is_none());
+        let summary = traversal.finish();
+        assert_eq!(summary.stop_reason(), StopReason::Failed);
+        assert_eq!(summary.pages_received() as usize, pages.len());
+        assert_eq!(summary.pages_delivered() as usize, pages.len() - 1);
+        let aggregate = harness.hooks.aggregate();
         assert_eq!(aggregate.len(), 1);
         assert_eq!(aggregate[0].pages_completed as usize, pages.len());
-        assert_eq!(aggregate[0].items_collected, pages.len());
+        assert_eq!(aggregate[0].items_collected, pages.len() - 1);
         assert_eq!(aggregate[0].outcome, CompletionOutcome::Pagination);
 
         let mut rendered = vec![error.to_string(), format!("{error:?}")];

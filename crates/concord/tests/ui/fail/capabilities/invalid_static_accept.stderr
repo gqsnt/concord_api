@@ -1,0 +1,23 @@
+error[E0080]: evaluation panicked: invalid static response representation Accept value
+  --> tests/ui/fail/capabilities/invalid_static_accept.rs:19:1
+   |
+19 | / api! {
+20 | |     client InvalidAcceptApi {
+21 | |         timeout 30s;
+22 | |         base "http://invalid-accept.example.test/";
+...  |
+26 | | }
+   | |_^ evaluation of `invalid_accept_api::_` failed inside this call
+   |
+note: inside `concord::__private::assert_response_accept`
+  --> $RUST/core/src/panic.rs
+   |
+   = note: the failure occurred here
+   |
+  ::: $WORKSPACE/crates/concord-core/src/__private.rs
+   |
+   | /         assert!(
+   | |             crate::response::accept_is_valid(accept),
+   | |             "invalid static response representation Accept value"
+   | |         );
+   | |_________- in this macro invocation

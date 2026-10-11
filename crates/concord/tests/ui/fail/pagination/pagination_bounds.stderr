@@ -1,230 +1,158 @@
-error[E0277]: `Rc<()>` cannot be sent between threads safely
-  --> tests/ui/fail/pagination/pagination_bounds.rs:21:5
+error[E0277]: `Rc<u32>` cannot be sent between threads safely
+  --> tests/ui/fail/pagination/pagination_bounds.rs:39:5
    |
-21 | /     fn advance(
-22 | |         self,
-23 | |         _page: PageResponse<Vec<u8>>,
-24 | |         _limits: PageDecisionLimits,
-25 | |     ) -> Result<PageStep<Self, Self::Item>, PaginationError> {
-   | |____________________________________________________________^ `Rc<()>` cannot be sent between threads safely
+39 |     fn start(init: Self::Init) -> Result<Self, PaginationError> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<u32>` cannot be sent between threads safely
    |
-   = help: within `NonSendController`, the trait `Send` is not implemented for `Rc<()>`
+   = help: within `NonSendController`, the trait `Send` is not implemented for `Rc<u32>`
 note: required because it appears within the type `NonSendController`
-  --> tests/ui/fail/pagination/pagination_bounds.rs:12:12
+  --> tests/ui/fail/pagination/pagination_bounds.rs:24:12
    |
-12 | pub struct NonSendController {
+24 | pub struct NonSendController {
    |            ^^^^^^^^^^^^^^^^^
-note: required by a bound in `PaginationController`
+note: required by a bound in `concord::pagination::PaginationController`
   --> $WORKSPACE/crates/concord-core/src/pagination/controller.rs
    |
-   | pub trait PaginationController<Page>: Sized + Send + 'static {
-   |                                               ^^^^ required by this bound in `PaginationController`
+   | pub trait PaginationController<P>: Sized + Send + 'static {
+   |                                            ^^^^ required by this bound in `PaginationController`
 
-error[E0277]: `Rc<()>` cannot be sent between threads safely
-  --> tests/ui/fail/pagination/pagination_bounds.rs:16:40
+error[E0277]: `Rc<u32>` cannot be sent between threads safely
+  --> tests/ui/fail/pagination/pagination_bounds.rs:43:5
    |
-16 | impl PaginationController<Vec<u8>> for NonSendController {
-   |                                        ^^^^^^^^^^^^^^^^^ `Rc<()>` cannot be sent between threads safely
+43 |     fn cursor(&self) -> Self::Cursor {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<u32>` cannot be sent between threads safely
    |
-   = help: within `NonSendController`, the trait `Send` is not implemented for `Rc<()>`
+   = help: within `NonSendController`, the trait `Send` is not implemented for `Rc<u32>`
 note: required because it appears within the type `NonSendController`
-  --> tests/ui/fail/pagination/pagination_bounds.rs:12:12
+  --> tests/ui/fail/pagination/pagination_bounds.rs:24:12
    |
-12 | pub struct NonSendController {
+24 | pub struct NonSendController {
    |            ^^^^^^^^^^^^^^^^^
-note: required by a bound in `PaginationController`
+note: required by a bound in `concord::pagination::PaginationController`
   --> $WORKSPACE/crates/concord-core/src/pagination/controller.rs
    |
-   | pub trait PaginationController<Page>: Sized + Send + 'static {
-   |                                               ^^^^ required by this bound in `PaginationController`
+   | pub trait PaginationController<P>: Sized + Send + 'static {
+   |                                            ^^^^ required by this bound in `PaginationController`
 
-error[E0277]: the trait bound `Vec<u8>: NextCursor<std::string::String>` is not satisfied
-  --> tests/ui/fail/pagination/pagination_bounds.rs:30:1
+error[E0277]: `Rc<u32>` cannot be sent between threads safely
+  --> tests/ui/fail/pagination/pagination_bounds.rs:47:5
    |
-30 | / api! {
-31 | |     client MissingCursorExtraction {
-32 | |         timeout 30s;
-33 | |         base "https://example.test";
-...  |
-41 | | }}
-   | |__^ the trait `NextCursor<std::string::String>` is not implemented for `Vec<u8>`
+47 | /     fn advance(
+48 | |         self,
+49 | |         page: PageResponse<Vec<String>>,
+50 | |         _limits: PageDecisionLimits,
+51 | |     ) -> Result<PageStep<Self, Self::Item>, PaginationError> {
+   | |____________________________________________________________^ `Rc<u32>` cannot be sent between threads safely
    |
-help: this trait has no implementations, consider adding one
-  --> tests/ui/fail/pagination/../../../support/mod.rs
+   = help: within `NonSendController`, the trait `Send` is not implemented for `Rc<u32>`
+note: required because it appears within the type `NonSendController`
+  --> tests/ui/fail/pagination/pagination_bounds.rs:24:12
    |
-   | pub trait NextCursor<C> {
-   | ^^^^^^^^^^^^^^^^^^^^^^^
-note: required for `CursorController<std::string::String>` to implement `PaginationController<Vec<u8>>`
-  --> tests/ui/fail/pagination/../../../support/mod.rs
+24 | pub struct NonSendController {
+   |            ^^^^^^^^^^^^^^^^^
+note: required by a bound in `concord::pagination::PaginationController`
+  --> $WORKSPACE/crates/concord-core/src/pagination/controller.rs
    |
-   | impl<Page, C> PaginationController<Page> for CursorController<C>
-   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^     ^^^^^^^^^^^^^^^^^^^
-   | where
-   |     Page: NextCursor<C> + IntoIterator + Send + 'static,
-   |           ------------- unsatisfied trait bound introduced here
+   | pub trait PaginationController<P>: Sized + Send + 'static {
+   |                                            ^^^^ required by this bound in `PaginationController`
+
+error[E0277]: `Rc<u32>` cannot be sent between threads safely
+  --> tests/ui/fail/pagination/pagination_bounds.rs:32:44
+   |
+32 | impl PaginationController<Vec<String>> for NonSendController {
+   |                                            ^^^^^^^^^^^^^^^^^ `Rc<u32>` cannot be sent between threads safely
+   |
+   = help: within `NonSendController`, the trait `Send` is not implemented for `Rc<u32>`
+note: required because it appears within the type `NonSendController`
+  --> tests/ui/fail/pagination/pagination_bounds.rs:24:12
+   |
+24 | pub struct NonSendController {
+   |            ^^^^^^^^^^^^^^^^^
+note: required by a bound in `concord::pagination::PaginationController`
+  --> $WORKSPACE/crates/concord-core/src/pagination/controller.rs
+   |
+   | pub trait PaginationController<P>: Sized + Send + 'static {
+   |                                            ^^^^ required by this bound in `PaginationController`
+
+error[E0277]: [C3-PAGE] page type `Vec<std::string::String>` does not expose a next cursor of type `std::string::String`
+  --> tests/ui/fail/pagination/pagination_bounds.rs:63:26
+   |
+63 |             paginate via CursorPagination<String> {
+   |                          ^^^^^^^^^^^^^^^^^^^^^^^^ `CursorPagination<std::string::String>` reads the next cursor from this page
+   |
+   = help: the trait `HasNextCursor<std::string::String>` is not implemented for `Vec<std::string::String>`
+   = note: implement `HasNextCursor<std::string::String>` for the decoded page, returning `None` when the provider reports no further page
+   = note: or select a controller that matches this page shape with `paginate via Controller { ... }`
+help: the trait `concord::pagination::PaginationController<Page>` is implemented for `concord::pagination::CursorPagination<C>`
+  --> $WORKSPACE/crates/concord-extras/src/pagination.rs
+   |
+   | / impl<Page, C> PaginationController<Page> for CursorPagination<C>
+   | | where
+   | |     Page: HasNextCursor<C> + IntoIterator + Send + 'static,
+   | |     Page::Item: Send + 'static,
+   | |     C: Clone + Send + Sync + 'static,
+   | |_____________________________________^
+   = note: required for `concord::pagination::CursorPagination<std::string::String>` to implement `concord::pagination::PaginationController<Vec<std::string::String>>`
+note: required by a bound in `concord::__private::PageableEndpoint::Controller`
+  --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
+   |
+   |     type Controller: PaginationController<Self::Output>;
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `PageableEndpoint::Controller`
+
+error[E0277]: [C3-PAGE] page type `Vec<std::string::String>` does not expose a next cursor of type `std::string::String`
+  --> tests/ui/fail/pagination/pagination_bounds.rs:63:13
+   |
+63 |             paginate via CursorPagination<String> {
+   |             ^^^^^^^^ `CursorPagination<std::string::String>` reads the next cursor from this page
+   |
+   = help: the trait `HasNextCursor<std::string::String>` is not implemented for `Vec<std::string::String>`
+   = note: implement `HasNextCursor<std::string::String>` for the decoded page, returning `None` when the provider reports no further page
+   = note: or select a controller that matches this page shape with `paginate via Controller { ... }`
+help: the trait `concord::pagination::PaginationController<Page>` is implemented for `concord::pagination::CursorPagination<C>`
+  --> $WORKSPACE/crates/concord-extras/src/pagination.rs
+   |
+   | / impl<Page, C> PaginationController<Page> for CursorPagination<C>
+   | | where
+   | |     Page: HasNextCursor<C> + IntoIterator + Send + 'static,
+   | |     Page::Item: Send + 'static,
+   | |     C: Clone + Send + Sync + 'static,
+   | |_____________________________________^
+   = note: required for `concord::pagination::CursorPagination<std::string::String>` to implement `concord::pagination::PaginationController<Vec<std::string::String>>`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: `Rc<()>` cannot be shared between threads safely
-  --> tests/ui/fail/pagination/pagination_bounds.rs:43:1
+error[E0277]: [C3-PAGE] page type `Vec<std::string::String>` does not expose a next cursor of type `std::string::String`
+  --> tests/ui/fail/pagination/pagination_bounds.rs:63:13
    |
-43 | / api! {
-44 | |     client NonSendControllerApi {
-45 | |         timeout 30s;
-46 | |         base "https://example.test";
-...  |
-54 | | }}
-   | |__^ `Rc<()>` cannot be shared between threads safely
+63 |             paginate via CursorPagination<String> {
+   |             ^^^^^^^^ `CursorPagination<std::string::String>` reads the next cursor from this page
    |
-   = help: the trait `Sync` is not implemented for `Rc<()>`
-   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = help: the trait `HasNextCursor<std::string::String>` is not implemented for `Vec<std::string::String>`
+   = note: implement `HasNextCursor<std::string::String>` for the decoded page, returning `None` when the provider reports no further page
+   = note: or select a controller that matches this page shape with `paginate via Controller { ... }`
+help: the trait `concord::pagination::PaginationController<Page>` is implemented for `concord::pagination::CursorPagination<C>`
+  --> $WORKSPACE/crates/concord-extras/src/pagination.rs
+   |
+   | / impl<Page, C> PaginationController<Page> for CursorPagination<C>
+   | | where
+   | |     Page: HasNextCursor<C> + IntoIterator + Send + 'static,
+   | |     Page::Item: Send + 'static,
+   | |     C: Clone + Send + Sync + 'static,
+   | |_____________________________________^
+   = note: required for `concord::pagination::CursorPagination<std::string::String>` to implement `concord::pagination::PaginationController<Vec<std::string::String>>`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: `Rc<()>` cannot be sent between threads safely
-  --> tests/ui/fail/pagination/pagination_bounds.rs:43:1
+error[E0599]: the method `pages` exists for struct `ReadRequest`, but its trait bounds were not satisfied
+  --> tests/ui/fail/pagination/pagination_bounds.rs:73:27
    |
-43 | / api! {
-44 | |     client NonSendControllerApi {
-45 | |         timeout 30s;
-46 | |         base "https://example.test";
+58 | / api! {
+59 | |     client MissingCursorExtraction {
+60 | |         base "https://example.test";
 ...  |
-54 | | }}
-   | |__^ `Rc<()>` cannot be sent between threads safely
-   |
-   = help: the trait `Send` is not implemented for `Rc<()>`
-   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `Vec<u8>: NextCursor<std::string::String>` is not satisfied
-  --> tests/ui/fail/pagination/pagination_bounds.rs:30:1
-   |
-30 | / api! {
-31 | |     client MissingCursorExtraction {
-32 | |         timeout 30s;
-33 | |         base "https://example.test";
-...  |
-41 | | }}
-   | |__^ the trait `NextCursor<std::string::String>` is not implemented for `Vec<u8>`
-   |
-help: this trait has no implementations, consider adding one
-  --> tests/ui/fail/pagination/../../../support/mod.rs
-   |
-   | pub trait NextCursor<C> {
-   | ^^^^^^^^^^^^^^^^^^^^^^^
-note: required for `CursorController<std::string::String>` to implement `PaginationController<Vec<u8>>`
-  --> tests/ui/fail/pagination/../../../support/mod.rs
-   |
-   | impl<Page, C> PaginationController<Page> for CursorController<C>
-   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^     ^^^^^^^^^^^^^^^^^^^
-   | where
-   |     Page: NextCursor<C> + IntoIterator + Send + 'static,
-   |           ------------- unsatisfied trait bound introduced here
-note: required for `missing_cursor_extraction::Read` to implement `concord::__private::EndpointSpec`
-  --> tests/ui/fail/pagination/pagination_bounds.rs:30:1
-   |
-30 | / api! {
-31 | |     client MissingCursorExtraction {
-32 | |         timeout 30s;
-33 | |         base "https://example.test";
-...  |
-36 | |     GET read(cursor: Option<String>) -> Vec<u8> via crate::support::Json {
-   | |         ^^^^
-...  |
-41 | | }}
-   | |__^ unsatisfied trait bound introduced here
-note: required by a bound in `concord::__private::request_plan`
-  --> $WORKSPACE/crates/concord-core/src/__private.rs
-   |
-   | pub fn request_plan<E>(
-   |        ------------ required by a bound in this function
+69 | | }
+   | |_- method `pages` not found for this struct
 ...
-   |     E: EndpointSpec,
-   |        ^^^^^^^^^^^^ required by this bound in `request_plan`
-   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: `Rc<()>` cannot be sent between threads safely
-  --> tests/ui/fail/pagination/pagination_bounds.rs:43:1
+73 |       let _ = client.read().pages(1);
+   |                             ^^^^^ method cannot be called on `ReadRequest` due to unsatisfied trait bounds
    |
-43 | / api! {
-44 | |     client NonSendControllerApi {
-45 | |         timeout 30s;
-46 | |         base "https://example.test";
-...  |
-54 | | }}
-   | |__^ `Rc<()>` cannot be sent between threads safely
-   |
-   = help: the trait `Send` is not implemented for `Rc<()>`
-help: the trait `concord::__private::EndpointSpec` is implemented for `non_send_controller_api::Read`
-  --> tests/ui/fail/pagination/pagination_bounds.rs:43:1
-   |
-43 | / api! {
-44 | |     client NonSendControllerApi {
-45 | |         timeout 30s;
-46 | |         base "https://example.test";
-...  |
-54 | | }}
-   | |__^
-note: required for `non_send_controller_api::Read` to implement `concord::__private::EndpointSpec`
-  --> tests/ui/fail/pagination/pagination_bounds.rs:43:1
-   |
-43 | / api! {
-44 | |     client NonSendControllerApi {
-45 | |         timeout 30s;
-46 | |         base "https://example.test";
-...  |
-49 | |     GET read(state: std::rc::Rc<()>) -> Vec<u8> via crate::support::Json {
-   | |         ^^^^
-...  |
-54 | | }}
-   | |__^ unsatisfied trait bound introduced here
-note: required by a bound in `concord::__private::request_plan`
-  --> $WORKSPACE/crates/concord-core/src/__private.rs
-   |
-   | pub fn request_plan<E>(
-   |        ------------ required by a bound in this function
-...
-   |     E: EndpointSpec,
-   |        ^^^^^^^^^^^^ required by this bound in `request_plan`
-   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: `Rc<()>` cannot be shared between threads safely
-  --> tests/ui/fail/pagination/pagination_bounds.rs:43:1
-   |
-43 | / api! {
-44 | |     client NonSendControllerApi {
-45 | |         timeout 30s;
-46 | |         base "https://example.test";
-...  |
-54 | | }}
-   | |__^ `Rc<()>` cannot be shared between threads safely
-   |
-   = help: the trait `Sync` is not implemented for `Rc<()>`
-help: the trait `concord::__private::EndpointSpec` is implemented for `non_send_controller_api::Read`
-  --> tests/ui/fail/pagination/pagination_bounds.rs:43:1
-   |
-43 | / api! {
-44 | |     client NonSendControllerApi {
-45 | |         timeout 30s;
-46 | |         base "https://example.test";
-...  |
-54 | | }}
-   | |__^
-note: required for `non_send_controller_api::Read` to implement `concord::__private::EndpointSpec`
-  --> tests/ui/fail/pagination/pagination_bounds.rs:43:1
-   |
-43 | / api! {
-44 | |     client NonSendControllerApi {
-45 | |         timeout 30s;
-46 | |         base "https://example.test";
-...  |
-49 | |     GET read(state: std::rc::Rc<()>) -> Vec<u8> via crate::support::Json {
-   | |         ^^^^
-...  |
-54 | | }}
-   | |__^ unsatisfied trait bound introduced here
-note: required by a bound in `concord::__private::request_plan`
-  --> $WORKSPACE/crates/concord-core/src/__private.rs
-   |
-   | pub fn request_plan<E>(
-   |        ------------ required by a bound in this function
-...
-   |     E: EndpointSpec,
-   |        ^^^^^^^^^^^^ required by this bound in `request_plan`
-   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: the following trait bounds were not satisfied:
+           `Vec<std::string::String>: HasNextCursor<std::string::String>`

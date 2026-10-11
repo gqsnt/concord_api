@@ -1,126 +1,100 @@
-# Repository change map for v2.1
+# Repository change map — v2.1 → v3
 
-> **Historical implementation map — not current source of truth.** It records
-> the planned responsibility split before release-truth remediation.
-
-This map is based on the supplied v2.0.0 baseline. Paths were expected to be
-split or renamed during implementation while responsibilities remained clear.
+**Status:** Active v3 source map for `3.0.0-beta.1`, organized by the v3
+implementation specification §21.2. It records where each v3 responsibility
+lives in this tree relative to the v2.1 baseline (branch `baseline-v2.1`). The
+planned v2.0 → v2.1 map that previously occupied this file is historical and
+retrievable with `git show baseline-v2.1:dev_doc/repository_change_map.md`.
+Responsibility boundaries are described in [`internals.md`](internals.md).
 
 ## `crates/concord-macros`
 
-### Syntax
+The v2.1 file split was replaced; responsibilities moved as follows.
 
-| Current path | v2.1 work |
-|---|---|
-| `syntax/ast.rs` | new client-contained tree, value axes, representation defaults/fences, status/effect, word patches, `via`, optional body |
-| `syntax/declaration.rs` | child containment/order, methods, endpoint result/body grammar |
-| `syntax/values.rs` | postfix `?`, defaults, sensitivity; delete type-name semantics |
-| `syntax/request.rs` | atom/adapter/concat, subdomain/path/query/header patch grammar |
-| `syntax/credentials.rs` | required static secrets, focused deferred-optional diagnostic, grouped auth, endpoint-source path |
-| `syntax/pagination.rs` | `paginate via`, bindings and initializer syntax |
-| `syntax/rate_limits.rs` | policy/id/key/cost/allow/bind syntax |
-| `syntax/keyword.rs` | remove old vocabulary, add v2.1 words |
-| `syntax/diagnostics.rs` | migration and semantic diagnostics |
-
-### Semantic
-
-| Current path | v2.1 work |
-|---|---|
-| `semantic/model.rs` | canonical IR: owner IDs, exact types, presence/init/sensitivity, representation/status/effect/capabilities/provenance |
-| `semantic/symbols.rs` | explicit owner references, endpoint source paths, generated collision namespace |
-| `semantic/inheritance.rs` | family-specific effective contracts and representation fences |
-| `semantic/surface.rs` | one direct/unbound/control/terminal surface model |
-| `semantic/auth.rs` | source graph, one challenge, private target ownership |
-| `semantic/pagination.rs` | safe effect, complete page, live destinations/header interests |
-| `semantic/rate_limits.rs` | stable IDs, canonical dimensions, additive policy validation |
-| `semantic/head_limits.rs` | adjust static/dynamic head bounds and atom metadata |
-
-### Emit
-
-| Current path | v2.1 work |
-|---|---|
-| `emit/assertions.rs` | focused representation/atom/sequence/page/material/rate obligations |
-| `emit/bridge.rs` | static effective metadata and one core bridge |
-| `emit/client.rs`, `scopes.rs`, `endpoints.rs`, `requests.rs` | v2.1 generated tree, controls, capabilities, unbound parity |
-| `emit/shaping.rs` | atom/adapter/word patch program, real+sanitized one-pass output |
-| `emit/credentials.rs` | slot/source/store/facade changes |
-| `emit/descriptions.rs`, `docs.rs` | effective representation/status/effect/provenance and task-first Rustdoc |
+| v3 path | Responsibility | v2.1 predecessor |
+|---|---|---|
+| `syntax/ast.rs`, `syntax/declaration.rs` | Canonical v3 tokens and tree: client/scope/endpoint, parameter lists with direct placement, bodies, `via`, spans | same files |
+| `syntax/values.rs` | Attributes (`#[default]`, `#[sensitive]`, docs, deprecation), `?` presence, stable initializers | same file |
+| `syntax/request.rs` | Relative path templates, DNS atom lists, query/header blocks with `replace`/`when_present`/`append`/`remove`, timeouts, atoms | same file (path arrays retired) |
+| `syntax/credentials.rs` | Credential sources and placements; rejects `secret NAME?;` | same file |
+| `syntax/rate_limits.rs` | `windows` sets, `policy` with `id`/`key`/`cost`/`using`, attachments | same file |
+| `syntax/pagination.rs` | `paginate via C { init … ; cursor -> … ; }` | same file |
+| `syntax/diagnostics.rs`, `syntax/keyword.rs` | `[C3-…]` diagnostic codes, retired-form migration diagnostics | same files |
+| `semantic/tree.rs` | Owner/endpoint tree flattening and value registration | `semantic/symbols.rs` |
+| `semantic/head.rs` | Routes, DNS, normalized query/header programs, PATCH-02 preconditions, header ownership | `semantic/inheritance.rs` (in part) |
+| `semantic/auth.rs` | Credential graph and effective placements | same file |
+| `semantic/rates.rs` | Rate registry, attachments, deduplication, identity | `semantic/rate_limits.rs` |
+| `semantic/endpoint.rs` | Representations, status/effect/absence, accepted bytes, identity, pagination facts | `semantic/pagination.rs`, `semantic/inheritance.rs` (in part) |
+| `semantic/names.rs`, `semantic/surface.rs` | Liveness, value controls, generated names and collisions (CALL-01) | `semantic/surface.rs`, `semantic/symbols.rs` |
+| `semantic/limits.rs` | Statically certain head-structure bounds | `semantic/head_limits.rs` |
+| `semantic/model.rs` | The one resolved model | same file |
+| `emit/client.rs` | Client type, builder, credential façade | `emit/client.rs`, `emit/credentials.rs` |
+| `emit/owner.rs` | Scope/client owner modules, handles, unbound handles, projections, runtime `bind`/`plan_runtime` | `emit/scopes.rs`, `emit/unbound.rs` |
+| `emit/endpoint.rs` | Endpoint specs, named requests, unbound intents, terminals, `RequestControls` impls | `emit/endpoints.rs`, `emit/requests.rs` |
+| `emit/head.rs` | Route/DNS/patch-program tables, value readers, auth placements, rate declarations | `emit/shaping.rs`, `emit/bridge.rs` |
+| `emit/contract.rs` | Local-fact input to core's `ContractBuilder` | `emit/descriptions.rs` |
+| `emit/docs.rs` | Generated rustdoc cards (§19.2) | same file |
 
 ## `crates/concord-core`
 
-### Contracts and construction
+| v3 path | Responsibility | Change from v2.1 |
+|---|---|---|
+| `request/program.rs` | Symbolic query/header programs evaluated before encoding | new |
+| `request/owner.rs` | `OwnerProjection` shared by generated and runtime endpoints | new |
+| `request/runtime_endpoint/` (`mod.rs`, `bind.rs`, `emission.rs`, `facts.rs`) | Runtime endpoints as symbolic programs bound through the owner projection | replaces `request/prepared.rs` |
+| `request/head.rs`, `request/prepare.rs`, `request/pending.rs`, `request/options.rs` | Head composition and plans; `Request<E>`, erased `ResponseRequest<O>`, `AcceptedBytesRequest` | updated |
+| `controls.rs` | `RequestControls`, `CallOptions`, `CancellationToken`, `ControlSummary` | new |
+| `value.rs` | Closed `IntoValue<T>` conversions | new |
+| `inspection/` | `ContractDescription`, `ContractBuilder`, resolver, owner/endpoint/rate/auth/value views | replaces `contract.rs` |
+| `execute/mod.rs` | One managed engine for direct, page and storage operations: `execute_finalized_operation` with its synchronous `Finalization` step inside the journal (identity form `execute_prepared_operation` for direct requests and pages); `Executed<R>` (`ExecutedPage<T>` alias, no journal snapshot) | updated |
+| `execute/journal.rs`, `error/journal.rs` | Bounded operation journal and value-free error facts | new |
+| `execute/store.rs` | `StoreRequest` and explicit storage; installation as the finalization step (`install_material`: caps before and after the `expires_at()` read, then `install_with_expiry`), `SpentMaterial` released after the observed result | new |
+| `auth/slot.rs`, `auth/version.rs`, `auth/recovery.rs`, `auth/origin.rs` | Intent epoch versus installed version (`install_with_expiry` returning `ReleasedMaterial`; retired flights re-evaluate before retired material is dropped), `StoreOutcome`, source-aware recovery, provider helper origins | `version.rs`, `recovery.rs`, `origin.rs` new |
+| `body/spec.rs`, `body/prepared.rs`, `body/stream.rs`, `body/multipart.rs` | Single `prepare` → `PreparedBody` media authority; deprecated `RequestBody` alias | updated |
+| `response/absence.rs`, `response/lease.rs`, `response/summary.rs` | `absent on` and `OptionalOutcome`; finite stream leases (`StreamLease::check(now)`: total lease, then pending-read idle; `on_empty(now)`, `on_yield(now)`); `StreamSummary` (`acquired_bytes`, `StreamErrorKind`) | new |
+| `response/spec.rs`, `response/handler.rs`, `response/stream.rs`, `response/metadata.rs` | Static `ACCEPT`, sealed drivers, stream handoff (`StreamCore::precheck` and the completion check `reject_overdue_completion`), `BodyDisposition` | updated |
+| `records/stream.rs` | `ItemStream<T>` framing over the same `StreamCore` lease and idle checks | updated |
+| `pagination/controller.rs`, `engine.rs`, `terminals.rs`, `summary.rs`, `bridge.rs`, `meter.rs`, `identity.rs`, `limits.rs` | Init/Cursor controller contract; `Pages`/`CollectPrefix`/`CollectAll`; `TraversalSummary` | `engine.rs`, `terminals.rs`, `summary.rs`, `bridge.rs`, `meter.rs` new; `execute.rs`, `pending.rs` (`PageLimit`) removed |
+| `rate_limit/schema.rs`, `rate_limit/declaration.rs`, `rate_limit/canonical.rs`, `rate_limit/limiter.rs` | Policy schemas and limiter capability; typed key encoding with `ENCODING_ID`; atomic admission contract | `schema.rs`, `declaration.rs` new |
+| `retry/`, `runtime/config.rs`, `hooks/`, `redaction/`, `http/` | Replay authority, primitive-count configuration (§20.4), read-only observation, redaction, transport | updated |
+| `__private.rs`, `generated_contract.rs` | Versioned generated-code bridge (contract version 34) | updated |
 
-- `contracts.rs`, `generated_contract.rs`, `endpoint.rs`, `construction.rs`: new static/effective descriptors, status/effect, representation metadata, build errors.
-- `client.rs`: explicit limiter selection, security-context identity, clone semantics.
+## Other crates and tools
 
-### Request/head/atoms
-
-- `request/head.rs`, `request/prepare.rs`, `request/prepared.rs`: atom writer/adapters, patch program, real/sanitized views, logical URL, reserved ownership.
-- add/rename modules for `RequestAtom`, `AtomEncoder`, `OrderedValues`, `RequestPlan` as appropriate.
-
-### Body and response
-
-- `body/spec.rs`, `body/prepared.rs`, `body/stream.rs`, `body/multipart.rs`: generic request representation, per-page prepare, replay/page capabilities.
-- `response/spec.rs`, `response/handler.rs`, `response/stream.rs`, `records/*`: generic response representation, sealed drivers, exact streams, endpoint status externalization.
-
-### Execution
-
-- `execute/mod.rs`: one normative v2.1 state machine.
-- `operation/*`: IDs/deadline/dispatch knowledge and page/attempt topology.
-- `error/*`: stable categories/stages/context and safe structured diagnostics.
-
-### Auth/retry/rate/pagination
-
-- `auth/*`: preserve versioned slots/systematic model; update source availability/challenge/store/facade.
-- `retry/*`: effect-aware gates, jitter/backoff, shared load budget timing, central server delay.
-- `rate_limit/*`: whole-plan admission, canonical key, non-fallible current-result feedback.
-- `pagination/*`: controller page response/step/header interests/safe effect/aggregate limits/per-page prepare.
-
-### Hooks/observation
-
-- replace `hooks/*` broad veto model with minimal read-only operation and stream events;
-- migrate debug policy to bounded diagnostics/observer configuration.
-
-### HTTP/runtime
-
-- `http/*`: fixed origin, proxy separation, transport-private recovery, content decoding and phase limits;
-- `runtime/*`: three configuration owners, finite defaults, runtime endpoint limits;
-- remove automatic redirect/native escape behavior if any.
-
-## `crates/concord-extras`
-
-| Current path | v2.1 work |
+| Path | v3 work |
 |---|---|
-| `codec/json.rs` | zero-sized generic `Json`, safe path diagnostics |
-| `records/ndjson.rs`, `records/csv.rs` | collected/lazy representation pairs without public driver wrappers |
-| `pagination.rs` | controller-owned page interpretation, header/link variants |
-| `auth/oauth2_client.rs` | injected time, isolated provider HTTP, slot recovery contract |
-| `rate_limit/local.rs` | whole-plan admission, bounded state/fairness/clock |
-| `rate_limit/observer.rs` | remove/replace with non-result-determining feedback support |
-| new atom module | `DisplayAtom`, common canonical adapters |
-| new tracing module | `OperationObserver` adapter, no exporter/runtime queue in core |
+| `crates/concord-extras/src/codec/not_found.rs` | New buffered `NotFound<R>` adapter |
+| `crates/concord-extras/src/rate_limit/conformance.rs` | New deterministic shared-persistent limiter conformance fixture |
+| `crates/concord-extras/src/pagination.rs`, `codec/json.rs`, `records/`, `auth/oauth2_client.rs`, `rate_limit/local.rs` | Public `Init` types; Json media rule and static `ACCEPT`; atomic local admission; provider origin declaration |
+| `crates/concord/src/lib.rs` | §7.2 root re-exports and role modules |
+| `crates/concord-inspect/` | New crate: `concord.contract/3` export, canonical JSON, diff axes, explanations, fixtures |
+| `crates/concord-examples/src/contracts/catalog_v3.rs`, `src/application/`, `src/pagination/envelope.rs`, `src/riot/` | Canonical §22 Catalog, §23 application examples, §17.2 controller, meaning-preserving Riot conversion |
+| `crates/concord-examples/tests/baseline_recording.rs` | v2.1 → v3 state-equivalence recordings and edit battery |
+| `tests/downstream/` | New two-crate downstream package |
+| `tools/xtask/src/contract/` | New `contract export/check/diff/list` with an explicit target registry (replaces v2.1 `semantic_diff.rs`) |
+| `tools/xtask/src/migration/` | New `migrate-v3` source-aware migration tool (replaces the v2.1 `migration.rs` retired-pattern report) |
+| `tools/xtask/src/migration/resolve.rs` | New: bounded crate name-resolution model (`CrateModel`) — module tree from crate roots and `#[path]`, items, `use` imports and globs with visibility, generic parameters and shadowing, the v2.1 generated surface placed at each `api!`, fields through their owning struct, functions through the named path, wrappers kept, `#[cfg]` uncertainty, crate completeness and foreign traits in scope (MIGRATE-03, review F03) |
+| `tools/xtask/src/migration/callers.rs` | Caller rewrites behind one default-deny gate: setters (including raw `r#set_x`), `paginate` terminals, runtime `NonZero` arguments and `ClientBuilder` paths are edited only when proved to reach the generated item; macros, `#[cfg]`, dispatch completeness and cross-crate receivers are reported; setter candidates are discovered by v2.1 declared value and method role, with no `_if_some` suffix exemption (R3, B01); calls of names only v3 generates are reported (`C3-MIGRATE-GENERATED-NAME-SHADOW`, R3; bound-request `description` and the custom-provider builder setter, R4), with removed v2.1 members reported (`C3-MIGRATE-GENERATED-MEMBER-REMOVED`, R5) and the two-way inventory guarded by `migration::tests::surface_parity` against the generator's emitted members (`tools/xtask/fixtures/generated_surface/`, `crates/concord-macros/src/generated_surface.rs`, test-only; R4) |
+| `tools/xtask/src/migration/rust_file.rs` | `api!` proof (an `api`-named invocation is migrated only when proved to be Concord's macro, else `C3-MIGRATE-API-MACRO-UNRESOLVED`); iterative nesting check before parsing (`MAX_NESTING` = 256, `C3-MIGRATE-NESTING-LIMIT`) |
+| `tools/xtask/src/migration/mod.rs`, `report.rs`, `syntax.rs` | Per-crate `Layout` (package, library crate name, standalone file), the other crates' value names for cross-crate reports, the 256 MiB migration stack; manifest-based Concord dependency identity (`concord_identity`, shared `workspace_root`, R3); new codes `C3-MIGRATE-DEPENDENCY-IDENTITY`, `C3-MIGRATE-GENERATED-NAME-SHADOW`, `C3-MIGRATE-GENERATED-NAME-COLLISION` (R3), `C3-MIGRATE-PAGINATE-UNRESOLVED`, `C3-MIGRATE-BUILDER-PATH`, `C3-MIGRATE-BUILDER-PATH-UNRESOLVED`, `C3-MIGRATE-API-MACRO-UNRESOLVED`, `C3-MIGRATE-NESTING-LIMIT`; the declaration parser records `secret` names and `custom` credential sources |
+| `tools/xtask/src/migration/tests.rs`, `tools/xtask/src/migration/tests/default_deny.rs` | Receiver-identity unit tests (`review_f03_*`, `receiver_identity_*`, `postfix_f03_*`) and the new default-deny module (`round3_f03_*`), each checking the complete caller text and every diagnostic |
+| `tools/xtask/fixtures/migrate_v3/receiver_identity_v2_1.rs.txt`, `default_deny_v2_1.rs.txt` | New v2.1 compile-through fixtures in which unrelated types offer both `set_x` and `replace_x` (and `paginate`/`collect_prefix`) beside genuine generated calls; not baseline captures, so not listed in `SHA256SUMS` |
+| `tools/xtask/tests/migrated_v3_identity/receiver_identity.rs`, `default_deny.rs` | Goldens: the expected tool output for those fixtures, compiled and executed by `tools/xtask/tests/migrated_v3.rs` through the real v3 `api!` |
+| `tools/xtask/src/release_audit.rs` | Lifecycle check accepts `3.0.0-beta.N` and requires `dev_doc/release_gate_status.md` to name the exact version |
+| `tools/perf/` | Expansion-scale measurement for v3 (`measurements/expansion_scale_linux_2026-09-26.txt`) |
 
-## `crates/concord`
+## External review repairs (F01–F03)
 
-- re-export v2.1 macro, semantic types, representations, streams, errors, plans, policies;
-- remove old wrapper/trait/hook/response-bytes/safe-plan names;
-- keep normal generated use inherent without a mandatory prelude;
-- maintain additive feature semantics and no-default builds.
+Paths changed after the external review of the `fc3e4d1` return
+(`git diff fc3e4d1 HEAD -- crates tools docs`). Status of the reopened
+obligations: [`release_gate_status.md`](release_gate_status.md#external-review-of-the-fc3e4d1-return).
 
-## Tests and examples
-
-- migrate all `crates/concord/tests/generated/*` surface/runtime tests;
-- rewrite UI fixtures for new grammar/diagnostics and removed language;
-- extend `runtime/deterministic.rs`, core ordering/retry/status/stream tests;
-- preserve/extend auth systematic tests;
-- rewrite pagination/rate/record tests to new contracts;
-- rewrite all examples and docs anchors;
-- migrate Riot to inherited JSON and local representation exceptions;
-- add 500/1,000-endpoint fixtures and stream/driver benchmarks.
-
-## Tools and CI
-
-- `xtask`: documentation truth, semantic descriptor diff, ambiguous migration report, expanded fixture generation, stale-vocabulary policy checks, release audit, and source export;
-- `tools/perf`: representation driver, large expansion, shaping, retry/rate/pagination benchmarks;
-- `scripts/check_docs_examples.ps1`: thin compatibility wrapper around Rust `xtask docs-check`;
-- CI/just: retain full gates, update package names/features/version only as required.
+| Finding | Paths | Change |
+|---|---|---|
+| F01 — storage finalizes after local installation (V3-E15, V3-E21) | `crates/concord-core/src/execute/mod.rs`, `execute/store.rs`, `auth/slot.rs`, `auth/mod.rs` | Installation runs in the executor's finalization step inside the open journal; caps decided before installing; one final observation of the fixed storage result; spent material and the last store reference released afterwards; a cancelled leader publishes `Reevaluate` before dropping retired material (ADR 0021) |
+| F01 tests | `crates/concord-core/src/execute/auth_tests/store.rs`, `crates/concord-core/src/auth/slot/tests.rs`, `crates/concord/tests/generated/authentication.rs` | `review_f01_*`, corrected `deadline_applies_through_local_installation`, `slow_final_observer_cannot_change_*`, cancellation and drop-panic tests, `v3_e15_*` |
+| F02 — expired pending-read idle and lease end win at completion (V3-P10) | `crates/concord-core/src/response/lease.rs`, `response/stream.rs`, `response/summary.rs`, `records/stream.rs` | `StreamLease::check(now)` at precheck and at every observed completion; withheld chunks count as acquired; the empty-chunk yield keeps the acquisition pending (ADR 0011) |
+| F02 tests | `crates/concord-core/src/response/stream/tests.rs` (with the paused-clock `TimedSource` added to the `test_support` module of `response/stream.rs`), `crates/concord-core/src/records/stream/tests.rs`, `crates/concord-extras/tests/contracts/record_streams.rs` | `review_f02_*`, `review_postfix_f02_*`, `v3_p10_overdue_*`, `v3_p10_postfix_f02_*` |
+| F03 — migration receiver identity (V3-O04) | `tools/xtask/src/migration/resolve.rs` (new), `callers.rs`, `rust_file.rs`, `mod.rs`, `report.rs`, `syntax.rs` | Default-deny caller rewrites over a bounded name-resolution model (decision record, MIGRATE-03 receiver identity) |
+| F03 tests and fixtures | `tools/xtask/src/migration/tests.rs`, `tools/xtask/src/migration/tests/default_deny.rs` (new), `tools/xtask/fixtures/migrate_v3/receiver_identity_v2_1.rs.txt` and `default_deny_v2_1.rs.txt` (new), `tools/xtask/tests/migrated_v3_identity/` (new goldens), `tools/xtask/tests/migrated_v3.rs` | Unit tests over complete caller text and diagnostics; compiled controls in which unrelated calls keep their v2.1 results |
+| User documentation | `docs/auth.md`, `docs/execution_policy.md`, `docs/streams.md`, `docs/migration_v3.md` | The user-visible rules of the three repairs |

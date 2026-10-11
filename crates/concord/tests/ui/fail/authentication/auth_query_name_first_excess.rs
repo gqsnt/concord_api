@@ -1,8 +1,11 @@
-use concord::api;
+// AUTH-01 / §20.1: an authentication query name permits at most 256 UTF-8
+// bytes (boundary: pass/language/auth_placement_name_boundary.rs).
+#![allow(unused_imports)]
+
+use concord::{Empty, api};
 
 api! {
     client QueryNameApi {
-        timeout 30s;
         base "https://example.test/";
         credentials {
             secret key;
@@ -10,8 +13,8 @@ api! {
         }
         auth { query "abcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopabcdefghijklmnopq" = key; }
 
-
-    GET read() -> () via Empty;
-}}
+        GET read() -> () via Empty;
+    }
+}
 
 fn main() {}

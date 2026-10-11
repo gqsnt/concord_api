@@ -1,0 +1,38 @@
+Concord execution-future layout, r3 layout correction (V3-O07; review 3 section 7), deterministic size probe only.
+
+No timing was measured (timing is for a quiet host). Probe: tools/perf/src/bin/future_sizes.rs (dialect-neutral, includes
+src/head_cost/declaration.rs; the v2.1 run copies declaration_v2_1.rs.txt over it in a `git archive baseline-v2.1`
+export, exactly like head_cost). It prints size_of_val of the boxed `IntoFuture` operation future of
+`ExecApi::bounded()` and the client-thread allocation count/bytes of one warm keep-alive loopback execution
+(allocation-counter, 50 warm-up + 200 counted). Both numbers are deterministic for a tree + toolchain + target.
+
+Host:       Linux 6.18.44-fc-v37 x86_64, 2 CPUs (shared with one other compiling engineer; irrelevant for sizes)
+Toolchain:  rustc 1.95.0 (59807616e 2026-04-14), RUSTUP_TOOLCHAIN=stable, `--release`
+Env:        CARGO_TARGET_DIR=/home/claude/targets/r3layout CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2
+
+| tree                                   | boxed operation future | allocations/op | bytes/op |
+|----------------------------------------|-----------------------:|---------------:|---------:|
+| v2.1 (eefca26, baseline-v2.1 export)   |                4,624 B |             63 |   24,647 |
+| v3 before (e63e318 = 4c7b894 + probe)  |                7,616 B |             63 |   27,991 |
+| v3 corrected (5d3ba49)                 |                5,840 B |             63 |   26,215 |
+
+Recorded runs: /home/claude/evidence/r3/LAYOUT/{baseline_v2_1,before,after}/future_sizes.{log,result.json}.
+The v2.1 and "before" numbers reproduce the r2 attribution exactly (ATTRIBUTION.md, r2: 4,624 / 7,616 B,
+24,647 / 27,991 B/op).
+
+Step-by-step (same probe, unrecorded intermediate builds of the working tree while isolating each change):
+
+| change applied (cumulative)                                                        | boxed future | delta  |
+|------------------------------------------------------------------------------------|-------------:|-------:|
+| none (4c7b894)                                                                     |      7,616 B |        |
+| X2: `prepared` moved into the operation future inside the match arm               |      6,904 B |   −712 |
+| X3: `execute_prepared_operation` a plain fn returning the inner future             |      6,160 B |   −744 |
+| X1a: `execute_request` forwarding `async fn` removed (terminals call directly)     |      6,000 B |   −160 |
+| X1b: `IntoFuture` wrapping `async move` block replaced by a zero-sized output map  |      5,840 B |   −160 |
+| experiment (REVERTED): use `PreparedOperation` fields in place instead of          |      5,920 B |    +80 |
+|   destructuring them in `execute_finalized_operation`                              |              |        |
+
+The reverted experiment's diff: /home/claude/evidence/r3/LAYOUT/experiments/in_place_prepared_fields_REVERTED.diff.
+
+Execution bytes/op fall by exactly the boxed-future reduction (−1,776 B/op) at an unchanged count, so the total of
+the other 62 allocations (which include the 2,728 B buffered-acquisition future, X6, not changed here) is unchanged.

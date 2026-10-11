@@ -1,12 +1,12 @@
-error[E0599]: no method named `accept` found for struct `RuntimeEndpointBuilder<R, Output>` in the current scope
- --> tests/ui/fail/capabilities/runtime_accept_override_absent.rs:9:6
-  |
-5 |       let _ = RuntimeEndpoint::builder(
-  |  _____________-
-6 | |         EndpointId::new("runtime.accept-override").unwrap(),
-7 | |         Method::GET,
-8 | |     )
-9 | |     .accept("application/json");
-  | |     -^^^^^^ method not found in `RuntimeEndpointBuilder`
-  | |_____|
-  |
+error[E0599]: no method named `accept` found for struct `RuntimeEndpointBuilder<R, O>` in the current scope
+  --> tests/ui/fail/capabilities/runtime_accept_override_absent.rs:11:6
+   |
+ 7 |       let _ = RuntimeEndpoint::builder(
+   |  _____________-
+ 8 | |         EndpointId::new("runtime.accept-override").unwrap(),
+ 9 | |         Method::GET,
+10 | |     )
+11 | |     .accept("application/json");
+   | |     -^^^^^^ method not found in `RuntimeEndpointBuilder`
+   | |_____|
+   |

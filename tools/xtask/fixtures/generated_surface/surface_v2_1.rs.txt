@@ -1,0 +1,112 @@
+//! Generated-surface parity fixture (v2.1 source; migrate-v3 input).
+//!
+//! Each declaration exercises a capability condition under which a generator
+//! emits a different public member set: required, optional and initialized
+//! values of the client, a scope and an endpoint; a secret, a custom
+//! credential provider and an endpoint-sourced credential (its store
+//! terminal); required and optional request bodies; pagination; the
+//! accepted-bytes terminal; nested scopes; and a client with no required
+//! construction input (its `new()`).
+//! `tools/xtask/src/migration/tests/surface_parity.rs` migrates it to
+//! `surface_v3.rs.txt`; `crates/concord-macros/src/generated_surface.rs`
+//! expands that through the real v3 generator and records every public
+//! inherent member per generated type in `v3_members.txt`.
+
+use concord::api;
+use concord::prelude::Json;
+
+api! {
+    client Surface {
+        base "https://surface.example.test/";
+        timeout 5s;
+        response Json;
+
+        values {
+            tenant: String;
+            locale?: String;
+            #[default]
+            revision: u32;
+            trace: String = "root";
+        }
+
+        credentials {
+            secret bootstrap_key;
+            credential application_key = api_key(secret.bootstrap_key);
+            credential session = endpoint login;
+            credential delegated = custom crate::DelegatedProvider;
+        }
+
+        auth {
+            header "X-Bootstrap-Key" = application_key;
+        }
+
+        query {
+            "tenant" = client.tenant;
+            "locale" = client.locale;
+            "revision" = client.revision;
+        }
+
+        headers { "X-Trace" = client.trace; }
+
+        POST login(body input: String via Json) -> String via Json {
+            path ["login"];
+            effect non_idempotent;
+        }
+
+        scope region(code: String, zone?: String, tier: u32 = 1) {
+            path ["regions", region.code, region.tier];
+            query { "zone" = region.zone; }
+
+            auth replace {
+                bearer session;
+            }
+
+            scope shelf(label?: String) {
+                path ["shelves"];
+                query { "label" = shelf.label; }
+
+                GET listing(offset: u64 = 0, count: u32 = 10, filter?: String, id: String) -> Vec<u32> {
+                    path ["items", endpoint.id];
+                    query {
+                        "offset" = endpoint.offset;
+                        "count" = endpoint.count;
+                        "filter" = endpoint.filter;
+                    }
+                    paginate via concord::pagination::OffsetPagination {
+                        offset -> endpoint.offset;
+                        page_size -> endpoint.count;
+                    }
+                }
+            }
+
+            GET item(id: String) -> Vec<u32> {
+                path ["item", endpoint.id];
+                expose accepted_bytes;
+            }
+
+            PUT update(id: String, body patch?: String via Json) -> Vec<u32> {
+                path ["item", endpoint.id];
+                effect idempotent;
+            }
+
+            GET plain() -> Vec<u32> {
+                path ["plain"];
+                auth replace {
+                    bearer delegated;
+                }
+            }
+        }
+    }
+}
+
+api! {
+    client Minimal {
+        base "https://minimal.example.test/";
+        timeout 5s;
+        response Json;
+
+        GET ping() -> Vec<u32> {
+            path ["ping"];
+        }
+    }
+}

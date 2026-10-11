@@ -1,540 +1,492 @@
+//! Credential sources and effective authentication placements (§11).
+
 use std::collections::HashMap;
 
 use proc_macro2::Span;
-use syn::Ident;
-use syn::spanned::Spanned;
 
-use super::SpanError;
-use super::model::{
-    Child, Credential, CredentialSource, Endpoint, NormalizedConfig, ResolvedAuthPlacement,
-    ResolvedChallengePolicy, ResolvedExpr, Secret, Value, ValuePresence,
+use super::head::Potential;
+use super::surface::{canonical_ident, prefixed_ident};
+use super::{
+    AuthChallenge, Child, Credential, CredentialSource, LocalAuth, Placement, PlacementFamily,
+    PlacementKind, Resolver, Secret, Site, meta_from,
 };
-use super::surface::{
-    RESERVED_GENERATED_METHODS, canonical_ident, insert_name, to_snake_case, value_setter_ident,
-};
-use crate::MAX_AUTH_PLACEMENTS;
-use crate::syntax::ast::{
-    AuthPlacementKind as SourceAuthPlacement, CredentialSource as SourceCredentialSource,
-    CredentialsBlock,
-};
+use crate::syntax::ast::{AuthOperation, AuthPlacementKind, CredentialSource as SourceKind};
+use crate::syntax::diagnostics::{Code, coded, related};
 
-pub(super) fn convert_credentials(
-    block: Option<CredentialsBlock>,
-) -> syn::Result<(Vec<Secret>, Vec<Credential>)> {
-    let Some(block) = block else {
-        return Ok((Vec::new(), Vec::new()));
+pub(crate) fn resolve_credentials(resolver: &mut Resolver) -> syn::Result<()> {
+    let Some(block) = resolver.credentials_source.take() else {
+        return Ok(());
     };
-    let secrets = block
+    let client = resolver.model.owner_label(0);
+    let secrets: Vec<Secret> = block
         .secrets
-        .into_iter()
-        .map(|secret| Secret { name: secret.name })
-        .collect::<Vec<_>>();
-    let secret_index = secrets
         .iter()
-        .enumerate()
-        .map(|(index, secret)| (canonical_ident(&secret.name), index))
-        .collect::<HashMap<_, _>>();
-    let mut used_secrets = vec![false; secrets.len()];
-    let mut resolve_secret = |secret: &Ident| {
-        let index = secret_index[&canonical_ident(secret)];
-        used_secrets[index] = true;
-        index
-    };
-    let mut credentials = Vec::new();
-    for credential in block.credentials {
-        let source = match credential.source {
-            SourceCredentialSource::ApiKey { secret } => CredentialSource::ApiKey {
-                secret: resolve_secret(&secret),
-            },
-            SourceCredentialSource::Bearer { secret } => CredentialSource::Bearer {
-                secret: resolve_secret(&secret),
-            },
-            SourceCredentialSource::Basic { username, password } => CredentialSource::Basic {
-                username: resolve_secret(&username),
-                password: resolve_secret(&password),
-            },
-            SourceCredentialSource::Endpoint { path } => CredentialSource::Endpoint {
-                path,
-                endpoint_id: None,
-            },
-            SourceCredentialSource::Custom { provider } => CredentialSource::Custom { provider },
-        };
-        credentials.push(Credential {
-            name: credential.name,
-            source,
-        });
-    }
-    let mut unused = secrets
-        .iter()
-        .zip(used_secrets)
-        .filter(|(_, used)| !used)
-        .map(|(secret, _)| {
-            secret.name.span().error(format!(
-                "secret `{}` is never used by a credential source",
-                canonical_ident(&secret.name)
-            ))
-        });
-    if let Some(mut error) = unused.next() {
-        for additional in unused {
-            error.combine(additional);
-        }
-        return Err(error);
-    }
-    Ok((secrets, credentials))
-}
-
-pub(super) fn find_credential(credentials: &[Credential], name: &Ident) -> syn::Result<usize> {
-    credentials
-        .iter()
-        .position(|credential| canonical_ident(&credential.name) == canonical_ident(name))
-        .ok_or_else(|| {
-            name.span()
-                .error(format!("unknown credential `{}`", canonical_ident(name)))
+        .map(|secret| Secret {
+            name: secret.name.clone(),
+            logical: canonical_ident(&secret.name),
+            meta: meta_from(&secret.attrs),
+            field: prefixed_ident("s", &secret.name),
         })
-}
-
-pub(super) fn validate_auth_compatibility(
-    placement: &SourceAuthPlacement,
-    source: &CredentialSource,
-    span: &Ident,
-) -> syn::Result<()> {
-    let compatible = match source {
-        CredentialSource::ApiKey { .. } => {
-            matches!(
-                placement,
-                SourceAuthPlacement::Authorization(_)
-                    | SourceAuthPlacement::Header(_)
-                    | SourceAuthPlacement::Query(_)
-            )
-        }
-        CredentialSource::Bearer { .. } => matches!(
-            placement,
-            SourceAuthPlacement::Bearer | SourceAuthPlacement::Authorization(_)
-        ),
-        CredentialSource::Basic { .. } => matches!(placement, SourceAuthPlacement::Basic),
-        CredentialSource::Endpoint { .. } | CredentialSource::Custom { .. } => true,
-    };
-    if compatible {
-        Ok(())
-    } else {
-        Err(span
-            .span()
-            .error("credential source is incompatible with this authentication placement"))
-    }
-}
-
-pub(super) fn validate_effective_auth(config: &NormalizedConfig) -> syn::Result<()> {
-    if let Some(first_excess) = config.auth.get(MAX_AUTH_PLACEMENTS) {
-        return Err(first_excess.span.error(format!(
-            "an effective authentication plan permits at most {MAX_AUTH_PLACEMENTS} placements"
-        )));
-    }
-    let challenge_count = config
-        .auth
-        .iter()
-        .filter(|placement| placement.challenge != ResolvedChallengePolicy::Never)
-        .count();
-    if challenge_count > 1 {
-        let span = config
-            .auth
+        .collect();
+    let secret_index = |name: &syn::Ident| {
+        let logical = canonical_ident(name);
+        secrets
             .iter()
-            .find(|placement| placement.challenge != ResolvedChallengePolicy::Never)
-            .map(|placement| placement.span)
-            .unwrap_or_else(Span::call_site);
-        return Err(span.error(
-            "one effective authentication plan may contain at most one challenge-enabled placement",
-        ));
-    }
-    for (index, placement) in config.auth.iter().enumerate() {
-        match &placement.kind {
-            ResolvedAuthPlacement::Bearer
-            | ResolvedAuthPlacement::Basic
-            | ResolvedAuthPlacement::Authorization(_) => {
-                if config
-                    .auth
+            .position(|secret| secret.logical == logical)
+            .ok_or_else(|| {
+                coded(
+                    name.span(),
+                    Code::Auth,
+                    format!(
+                        "unknown secret `{logical}` in the credentials of {client}; declare `secret {logical};` first"
+                    ),
+                )
+            })
+    };
+    let mut credentials = Vec::with_capacity(block.credentials.len());
+    for declaration in &block.credentials {
+        let source = match &declaration.source {
+            SourceKind::ApiKey { secret } => CredentialSource::ApiKey {
+                secret: secret_index(secret)?,
+            },
+            SourceKind::Bearer { secret } => CredentialSource::Bearer {
+                secret: secret_index(secret)?,
+            },
+            SourceKind::Basic { username, password } => {
+                let username = secret_index(username)?;
+                let password = secret_index(password)?;
+                if username == password {
+                    return Err(coded(
+                        declaration.name.span(),
+                        Code::Auth,
+                        format!(
+                            "Basic credentials require two distinct secrets for username and password (credential `{}` of {client}); write `basic(secret.user, secret.password)` with two declared secrets",
+                            canonical_ident(&declaration.name)
+                        ),
+                    ));
+                }
+                CredentialSource::Basic { username, password }
+            }
+            SourceKind::Endpoint { path } => {
+                let context = format!(
+                    "credential `{}` of {client}",
+                    canonical_ident(&declaration.name)
+                );
+                let endpoint = find_endpoint(resolver, path, &context)?;
+                let path_text = path
+                    .segments
                     .iter()
-                    .enumerate()
-                    .any(|(other, candidate)| {
-                        other != index
-                            && (matches!(
-                                &candidate.kind,
-                                ResolvedAuthPlacement::Bearer
-                                    | ResolvedAuthPlacement::Basic
-                                    | ResolvedAuthPlacement::Authorization(_)
-                            ) || matches!(
-                                &candidate.kind,
-                                ResolvedAuthPlacement::Header(name)
-                                    if name.value().eq_ignore_ascii_case("authorization")
-                            ))
-                    })
-                {
-                    return Err(placement.span.error(
-                        "multiple effective authentication placements own `Authorization`; keep only one bearer, Basic, exact, or static-scheme placement",
-                    ));
-                }
-            }
-            ResolvedAuthPlacement::Header(name) => {
-                let canonical = name.value().to_ascii_lowercase();
-                if canonical == "authorization"
-                    || config.headers.iter().any(|header| {
-                        header.canonical_name == canonical
-                            && resolved_expr_is_guaranteed_present(&header.value)
-                    })
-                    || config.auth[..index].iter().any(|candidate| {
-                        matches!(&candidate.kind, ResolvedAuthPlacement::Header(other) if other.value().eq_ignore_ascii_case(&name.value()))
-                    })
-                {
-                    return Err(name.span().error(
-                        "an effective public or authentication header already owns this authentication target; remove one placement or use a distinct header name",
-                    ));
-                }
-            }
-            ResolvedAuthPlacement::Query(name) => {
-                if config.query.iter().any(|query| {
-                    query.key.value() == name.value()
-                        && resolved_expr_is_guaranteed_present(&query.value)
-                }) || config.auth[..index].iter().any(|candidate| {
-                    matches!(&candidate.kind, ResolvedAuthPlacement::Query(other) if other.value() == name.value())
-                }) {
-                    return Err(name.span().error(
-                        "an effective public or authentication query already owns this authentication target; remove one placement or use a distinct query name",
-                    ));
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-fn resolved_expr_is_guaranteed_present(value: &ResolvedExpr) -> bool {
-    match value {
-        ResolvedExpr::Value(value) => matches!(value.presence, ValuePresence::Required),
-        ResolvedExpr::Adapted { value, .. } => resolved_expr_is_guaranteed_present(value),
-        ResolvedExpr::String(_)
-        | ResolvedExpr::Character(_)
-        | ResolvedExpr::Boolean(_)
-        | ResolvedExpr::Integer { .. }
-        | ResolvedExpr::Concat(_) => true,
-    }
-}
-
-pub(super) fn validate_credential_names(
-    values: &[Value],
-    secrets: &[Secret],
-    credentials: &[Credential],
-) -> syn::Result<()> {
-    let mut builder = RESERVED_GENERATED_METHODS
-        .iter()
-        .map(|name| ((*name).to_owned(), Span::call_site()))
-        .collect::<HashMap<_, _>>();
-    for value in values {
-        insert_name(
-            &mut builder,
-            canonical_ident(&value_setter_ident(&value.name)),
-            value.name.span(),
-            "generated client builder method",
-        )?;
-        if value.accepts_absence() {
-            insert_name(
-                &mut builder,
-                format!("omit_{}", canonical_ident(&value.name)),
-                value.name.span(),
-                "generated client builder method",
-            )?;
-        }
-        if value.has_default() {
-            insert_name(
-                &mut builder,
-                format!("reset_{}", canonical_ident(&value.name)),
-                value.name.span(),
-                "generated client builder method",
-            )?;
-        }
-    }
-    for secret in secrets {
-        insert_name(
-            &mut builder,
-            canonical_ident(&secret.name),
-            secret.name.span(),
-            "generated client builder method",
-        )?;
-    }
-    for credential in credentials {
-        if matches!(credential.source, CredentialSource::Custom { .. }) {
-            insert_name(
-                &mut builder,
-                format!(
-                    "{}_provider",
-                    to_snake_case(&canonical_ident(&credential.name))
-                ),
-                credential.name.span(),
-                "generated client builder method",
-            )?;
-        }
-    }
-    let mut accessors = HashMap::from([("__concord_new".to_owned(), Span::call_site())]);
-    for credential in credentials {
-        insert_name(
-            &mut accessors,
-            to_snake_case(&canonical_ident(&credential.name)),
-            credential.name.span(),
-            "generated credential accessor",
-        )?;
-    }
-    Ok(())
-}
-
-pub(super) fn resolve_endpoint_credentials(
-    credentials: &mut [Credential],
-    children: &[Child],
-) -> syn::Result<()> {
-    let mut endpoints = Vec::new();
-    collect_endpoints(children, &mut endpoints);
-    let paths = endpoints
-        .iter()
-        .map(|endpoint| {
-            (
-                endpoint
-                    .dsl_path
-                    .iter()
-                    .map(canonical_ident)
+                    .map(|segment| canonical_ident(&segment.ident))
                     .collect::<Vec<_>>()
-                    .join("::"),
-                endpoint.id,
-            )
-        })
-        .collect::<HashMap<_, _>>();
-    for credential in credentials {
-        if let CredentialSource::Endpoint { path, endpoint_id } = &mut credential.source {
-            let canonical = path
-                .segments
-                .iter()
-                .map(|segment| canonical_ident(&segment.ident))
-                .collect::<Vec<_>>()
-                .join("::");
-            *endpoint_id = Some(*paths.get(&canonical).ok_or_else(|| {
-                path.span().error(format!(
-                    "unknown endpoint-backed credential target `{canonical}`"
-                ))
-            })?);
+                    .join("::");
+                CredentialSource::Endpoint {
+                    endpoint,
+                    path_text,
+                }
+            }
+            SourceKind::Custom { provider } => CredentialSource::Custom {
+                provider: provider.clone(),
+            },
+        };
+        let credential = Credential {
+            name: declaration.name.clone(),
+            logical: canonical_ident(&declaration.name),
+            meta: meta_from(&declaration.attrs),
+            source,
+            field: prefixed_ident("c", &declaration.name),
+            clear: prefixed_ident("clear", &declaration.name),
+            replace: prefixed_ident("replace", &declaration.name),
+            store_terminal: prefixed_ident("store_as", &declaration.name),
+        };
+        if let CredentialSource::Endpoint { endpoint, .. } = &credential.source {
+            let index = credentials.len();
+            resolver.model.endpoints[*endpoint].storage.push(index);
         }
+        credentials.push(credential);
     }
-    Ok(())
-}
-
-fn collect_endpoints<'a>(children: &'a [Child], output: &mut Vec<&'a Endpoint>) {
-    for child in children {
-        match child {
-            Child::Scope(scope) => collect_endpoints(&scope.children, output),
-            Child::Endpoint(endpoint) => output.push(endpoint),
-        }
-    }
-}
-
-pub(super) fn validate_credential_cycles(
-    credentials: &[Credential],
-    children: &[Child],
-) -> syn::Result<()> {
-    let mut endpoints = Vec::new();
-    collect_endpoints(children, &mut endpoints);
-    let endpoint_count = endpoints
-        .iter()
-        .map(|endpoint| endpoint.id)
-        .max()
-        .map_or(0, |maximum| maximum + 1);
-    let credential_count = credentials.len();
-    let mut edges = vec![Vec::new(); credential_count + endpoint_count];
-    for (index, credential) in credentials.iter().enumerate() {
-        if let CredentialSource::Endpoint {
-            endpoint_id: Some(endpoint),
-            ..
-        } = credential.source
-        {
-            edges[index].push(credential_count + endpoint);
-        }
-    }
-    for endpoint in endpoints {
-        for auth in &endpoint.config.auth {
-            edges[credential_count + endpoint.id].push(auth.credential);
-        }
-    }
-    let mut state = vec![0_u8; edges.len()];
-    fn visit(node: usize, edges: &[Vec<usize>], state: &mut [u8]) -> bool {
-        if state[node] == 1 {
-            return true;
-        }
-        if state[node] == 2 {
-            return false;
-        }
-        state[node] = 1;
-        if edges[node]
+    // §3.5: a dead required input cannot be retained. Every secret is a
+    // required protected builder input, so one no credential source reads is
+    // rejected rather than demanded from every caller for no effect.
+    for (index, secret) in secrets.iter().enumerate() {
+        let used = credentials
             .iter()
-            .copied()
-            .any(|next| visit(next, edges, state))
-        {
-            return true;
+            .any(|credential| match credential.source {
+                CredentialSource::ApiKey { secret: used }
+                | CredentialSource::Bearer { secret: used } => used == index,
+                CredentialSource::Basic { username, password } => {
+                    username == index || password == index
+                }
+                CredentialSource::Endpoint { .. } | CredentialSource::Custom { .. } => false,
+            });
+        if !used {
+            return Err(coded(
+                secret.name.span(),
+                Code::Auth,
+                format!(
+                    "secret `{0}` of {client} is never used by a credential source; every secret is a required builder input, so remove it or read it with `api_key(secret.{0})`, `bearer(secret.{0})` or `basic(...)`",
+                    secret.logical
+                ),
+            ));
         }
-        state[node] = 2;
-        false
     }
-    for node in 0..edges.len() {
-        if visit(node, &edges, &mut state) {
-            return Err(Span::call_site()
-                .error("endpoint-backed credential dependency or authentication cycle detected"));
+    resolver.model.client.secrets = secrets;
+    resolver.model.client.credentials = credentials;
+    Ok(())
+}
+
+/// Resolves a root-relative `scope::scope::endpoint` path (forward references
+/// are allowed because the whole tree is known).
+///
+/// `context` names the credential being resolved (DIAG-01).
+fn find_endpoint(resolver: &Resolver, path: &syn::Path, context: &str) -> syn::Result<usize> {
+    let segments: Vec<String> = path
+        .segments
+        .iter()
+        .map(|segment| canonical_ident(&segment.ident))
+        .collect();
+    let mut owner = 0;
+    for (index, segment) in segments.iter().enumerate() {
+        let last = index + 1 == segments.len();
+        let children = &resolver.model.owners[owner].children;
+        if last {
+            let found = children.iter().find_map(|child| match child {
+                Child::Endpoint(endpoint)
+                    if resolver.model.endpoints[*endpoint].logical == *segment =>
+                {
+                    Some(*endpoint)
+                }
+                _ => None,
+            });
+            return found.ok_or_else(|| {
+                coded(
+                    syn::spanned::Spanned::span(path),
+                    Code::Auth,
+                    format!("credential source endpoint `{}` does not name an endpoint (paths are root-relative: `scope::endpoint`); {context} must name a declared endpoint such as `endpoint auth::login`", segments.join("::")),
+                )
+            });
+        }
+        let found = children.iter().find_map(|child| match child {
+            Child::Scope(scope) if resolver.model.owners[*scope].logical == *segment => {
+                Some(*scope)
+            }
+            _ => None,
+        });
+        owner = found.ok_or_else(|| {
+            coded(
+                syn::spanned::Spanned::span(path),
+                Code::Auth,
+                format!(
+                    "credential source path segment `{segment}` does not name a scope ({context}); write the root-relative path `scope::endpoint` of a declared endpoint"
+                ),
+            )
+        })?;
+    }
+    Err(coded(
+        syn::spanned::Spanned::span(path),
+        Code::Auth,
+        format!("empty credential source path ({context}); write `endpoint scope::endpoint`"),
+    ))
+}
+
+fn resolve_local(
+    resolver: &Resolver,
+    site: Site,
+    operation: &AuthOperation,
+) -> syn::Result<LocalAuth> {
+    let origin = resolver.site_display(site);
+    let label = resolver.site_label(site);
+    let credentials = &resolver.model.client.credentials;
+    let placements =
+        |placements: &[crate::syntax::ast::AuthPlacement]| -> syn::Result<Vec<Placement>> {
+            placements
+            .iter()
+            .map(|placement| {
+                let logical = canonical_ident(&placement.credential);
+                let credential = credentials
+                    .iter()
+                    .position(|credential| credential.logical == logical)
+                    .ok_or_else(|| {
+                        coded(
+                            placement.credential.span(),
+                            Code::Auth,
+                            format!("unknown credential `{logical}` in the auth placement of {label}; declare `credential {logical} = source;` in the client `credentials {{ ... }}` block"),
+                        )
+                    })?;
+                let kind = match &placement.kind {
+                    AuthPlacementKind::Bearer => PlacementKind::Bearer,
+                    AuthPlacementKind::Basic => PlacementKind::Basic,
+                    AuthPlacementKind::Authorization(scheme) => {
+                        PlacementKind::Authorization(scheme.as_ref().map(syn::LitStr::value))
+                    }
+                    AuthPlacementKind::Header(name) => PlacementKind::Header(name.value()),
+                    AuthPlacementKind::Query(name) => PlacementKind::Query(name.value()),
+                };
+                let source = &credentials[credential].source;
+                let basic_source = matches!(source, CredentialSource::Basic { .. });
+                let secret_only = matches!(source, CredentialSource::ApiKey { .. } | CredentialSource::Bearer { .. });
+                if kind == PlacementKind::Basic && secret_only {
+                    return Err(coded(
+                        placement.span,
+                        Code::Auth,
+                        format!("`basic {logical}` in {label} requires a Basic credential capability; `{logical}` is a single-secret source, so write `bearer {logical}`, `authorization = {logical}`, `header \"Name\" = {logical}` or `query \"name\" = {logical}`"),
+                    ));
+                }
+                if kind != PlacementKind::Basic && basic_source {
+                    return Err(coded(
+                        placement.span,
+                        Code::Auth,
+                        format!("`{logical}` is a Basic username/password source; only a `basic` placement can apply it, so write `basic {logical};` in {label}"),
+                    ));
+                }
+                Ok(Placement {
+                    kind,
+                    credential,
+                    challenge: placement.challenge.unwrap_or(AuthChallenge::Never),
+                    origin: origin.clone(),
+                    span: placement.span,
+                })
+            })
+            .collect()
+        };
+    Ok(match operation {
+        AuthOperation::Modify {
+            replace: false,
+            placements: list,
+        } => LocalAuth::Append(placements(list)?),
+        AuthOperation::Modify {
+            replace: true,
+            placements: list,
+        } => LocalAuth::Replace(placements(list)?),
+        AuthOperation::Off => LocalAuth::Off,
+    })
+}
+
+fn compose(inherited: &[Placement], local: Option<&LocalAuth>) -> Vec<Placement> {
+    match local {
+        None => inherited.to_vec(),
+        Some(LocalAuth::Append(placements)) => {
+            inherited.iter().chain(placements).cloned().collect()
+        }
+        Some(LocalAuth::Replace(placements)) => placements.clone(),
+        Some(LocalAuth::Off) => Vec::new(),
+    }
+}
+
+fn validate(
+    resolver: &Resolver,
+    site: Site,
+    placements: &[Placement],
+    potential: &Potential,
+    span: Span,
+) -> syn::Result<()> {
+    if placements.len() > crate::MAX_AUTH_PLACEMENTS {
+        return Err(coded(
+            span,
+            Code::Auth,
+            format!(
+                "{} has {} effective auth placements; at most {} are allowed, so drop inherited placements with `auth replace {{ ... }}`",
+                resolver.site_label(site),
+                placements.len(),
+                crate::MAX_AUTH_PLACEMENTS
+            ),
+        ));
+    }
+    let mut targets: HashMap<(PlacementFamily, String), &Placement> = HashMap::new();
+    let mut challenger: Option<&Placement> = None;
+    for placement in placements {
+        let target = placement.kind.target();
+        if let Some(first) = targets.insert(target.clone(), placement) {
+            let error = coded(
+                placement.span,
+                Code::Auth,
+                format!(
+                    "auth placement target `{}` of {} is already claimed by an effective placement from {}; use `auth replace {{ ... }}` to select a different placement",
+                    target.1,
+                    resolver.site_label(site),
+                    first.origin
+                ),
+            );
+            return Err(related(error, first.span, "the earlier placement is here"));
+        }
+        if placement.challenge != AuthChallenge::Never {
+            if let Some(first) = challenger {
+                let error = coded(
+                    placement.span,
+                    Code::Auth,
+                    format!(
+                        "at most one effective auth placement of {} may attribute a challenge; keep `challenge ...` on one placement and write `challenge never` (or omit it) on the others",
+                        resolver.site_label(site)
+                    ),
+                );
+                return Err(related(
+                    error,
+                    first.span,
+                    "the other challenge-attributing placement is here",
+                ));
+            }
+            challenger = Some(placement);
+        }
+        if let Some(writer) = potential.contains(target.0, &target.1) {
+            let error = coded(
+                placement.span,
+                Code::Auth,
+                format!(
+                    "private auth target `{}` of {} collides with a public {} writer ({}); public and private-auth targets have distinct owners, so rename or remove the public writer",
+                    target.1,
+                    resolver.site_label(site),
+                    match target.0 {
+                        PlacementFamily::Query => "query",
+                        PlacementFamily::Header => "header",
+                    },
+                    writer.source
+                ),
+            );
+            return Err(related(error, writer.span, "the public writer is here"));
         }
     }
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use quote::quote;
+pub(crate) fn resolve_owner(resolver: &mut Resolver, owner: usize) -> syn::Result<()> {
+    let site = Site::Owner(owner);
+    let source = resolver.owner_sources[owner].site.auth.take();
+    let local = source
+        .as_ref()
+        .map(|clause| resolve_local(resolver, site, &clause.value))
+        .transpose()?;
+    let inherited = resolver.model.owners[owner]
+        .parent
+        .map(|parent| resolver.model.owners[parent].effective_auth.clone())
+        .unwrap_or_default();
+    let effective = compose(&inherited, local.as_ref());
+    let span = source
+        .as_ref()
+        .map_or(resolver.model.owners[owner].span, |clause| clause.key_span);
+    validate(
+        resolver,
+        site,
+        &effective,
+        &resolver.owner_potential[owner],
+        span,
+    )?;
+    let entry = &mut resolver.model.owners[owner];
+    entry.auth = local;
+    entry.effective_auth = effective;
+    Ok(())
+}
 
-    use super::super::model::Api;
-    use super::super::test_support;
-    use super::*;
-
-    fn resolve(tokens: proc_macro2::TokenStream) -> syn::Result<Api> {
-        let source = crate::syntax::parse(tokens)?;
-        super::super::resolve(source)
+pub(crate) fn resolve_endpoint(resolver: &mut Resolver, endpoint: usize) -> syn::Result<()> {
+    let site = Site::Endpoint(endpoint);
+    let source = resolver.endpoint_sources[endpoint].site.auth.take();
+    let local = source
+        .as_ref()
+        .map(|clause| resolve_local(resolver, site, &clause.value))
+        .transpose()?;
+    let owner = resolver.model.endpoints[endpoint].owner;
+    let effective = compose(&resolver.model.owners[owner].effective_auth, local.as_ref());
+    let span = source
+        .as_ref()
+        .map_or(resolver.model.endpoints[endpoint].span, |clause| {
+            clause.key_span
+        });
+    validate(
+        resolver,
+        site,
+        &effective,
+        &resolver.endpoint_potential[endpoint],
+        span,
+    )?;
+    // Challenge statuses are disjoint from accepted payload and absence statuses.
+    let entry = &resolver.model.endpoints[endpoint];
+    for placement in &effective {
+        let statuses: &[u16] = match placement.challenge {
+            AuthChallenge::Never => &[],
+            AuthChallenge::Unauthorized => &[401],
+            AuthChallenge::UnauthorizedOrForbidden => &[401, 403],
+        };
+        for status in statuses {
+            if entry.status.contains(*status)
+                || entry
+                    .absence
+                    .as_ref()
+                    .is_some_and(|absence| absence.contains(status))
+            {
+                let error = coded(
+                    entry.span,
+                    Code::Auth,
+                    format!(
+                        "{} accepts status {status}, which overlaps the effective auth challenge attributed by {}; remove {status} from `status`/`absent on` or write `challenge never` on that placement",
+                        resolver.site_label(site),
+                        placement.origin
+                    ),
+                );
+                return Err(related(
+                    error,
+                    placement.span,
+                    "the challenge placement is here",
+                ));
+            }
+        }
     }
+    let entry = &mut resolver.model.endpoints[endpoint];
+    entry.auth = local;
+    entry.effective_auth = effective;
+    Ok(())
+}
 
-    #[test]
-    fn normalizes_generic_credential_sources_and_effective_auth() {
-        let api = test_support::resolve_tokens(quote! {
-            client AuthApi {
-                timeout 30s;
-                base "https://example.test";
-                credentials {
-                    secret token;
-                    credential bearer = bearer(secret.token);
+/// Rejects credential-source cycles and incompatible source endpoints.
+pub(crate) fn validate_credential_graph(resolver: &Resolver) -> syn::Result<()> {
+    let credentials = &resolver.model.client.credentials;
+    for (index, credential) in credentials.iter().enumerate() {
+        let CredentialSource::Endpoint { endpoint, .. } = &credential.source else {
+            continue;
+        };
+        let source = &resolver.model.endpoints[*endpoint];
+        if source.absence.is_some() || source.pagination.is_some() {
+            return Err(coded(
+                credential.name.span(),
+                Code::Auth,
+                format!(
+                    "credential `{}` of {} names source endpoint `{}`, which must return complete credential material; `absent on` and pagination are incompatible with `store_as_{}`, so remove them from the source endpoint",
+                    credential.logical,
+                    resolver.model.owner_label(0),
+                    source.display,
+                    credential.logical
+                ),
+            ));
+        }
+        // Walk the source endpoints reachable through effective placements.
+        let mut stack = vec![*endpoint];
+        let mut visited = vec![false; resolver.model.endpoints.len()];
+        while let Some(current) = stack.pop() {
+            if std::mem::replace(&mut visited[current], true) {
+                continue;
+            }
+            for placement in &resolver.model.endpoints[current].effective_auth {
+                if placement.credential == index {
+                    let error = coded(
+                        credential.name.span(),
+                        Code::Auth,
+                        format!(
+                            "credential `{}` of {} is obtained from `{}`, whose effective authentication requires the same credential; the source graph has a cycle, so authenticate the source endpoint with another credential or write `auth off;` on it",
+                            credential.logical,
+                            resolver.model.owner_label(0),
+                            source.display
+                        ),
+                    );
+                    return Err(related(
+                        error,
+                        placement.span,
+                        "the cyclic placement is here",
+                    ));
                 }
-                auth { bearer bearer; }
-
-            GET read() -> Bytes via Binary;
-        }});
-        let endpoint = test_support::endpoint(&api.client.children, "read");
-
-        assert_eq!(api.client.credentials.len(), 1);
-        assert!(matches!(
-            api.client.credentials[0].source,
-            CredentialSource::Bearer { secret: 0 }
-        ));
-        assert_eq!(endpoint.config.auth.len(), 1);
-        assert_eq!(endpoint.config.auth[0].credential, 0);
-        assert_eq!(
-            endpoint.config.auth[0].challenge,
-            ResolvedChallengePolicy::Never
-        );
-    }
-
-    #[test]
-    fn unused_secret_is_rejected() {
-        let error = resolve(quote! {
-            client AuthApi {
-                timeout 30s;
-                base "https://example.test";
-                credentials {
-                    secret unused;
+                if let CredentialSource::Endpoint { endpoint: next, .. } =
+                    &credentials[placement.credential].source
+                {
+                    stack.push(*next);
                 }
-
-            GET read() -> Bytes via Binary;
-        }})
-        .err()
-        .expect("unused secret");
-
-        assert_eq!(
-            error.to_string(),
-            "secret `unused` is never used by a credential source"
-        );
+            }
+        }
     }
-
-    #[test]
-    fn all_builtin_secret_uses_count_as_used() {
-        resolve(quote! {
-            client AuthApi {
-                timeout 30s;
-                base "https://example.test";
-                credentials {
-                    secret api_key;
-                    secret token;
-                    secret username;
-                    secret password;
-                    credential api = api_key(secret.api_key);
-                    credential bearer = bearer(secret.token);
-                    credential basic = basic(secret.username, secret.password);
-                }
-
-            GET read() -> Bytes via Binary;
-        }})
-        .expect("all built-in credential sources consume their declared secrets");
-    }
-
-    #[test]
-    fn basic_username_and_password_each_count_as_used() {
-        resolve(quote! {
-            client AuthApi {
-                timeout 30s;
-                base "https://example.test";
-                credentials {
-                    secret username;
-                    secret password;
-                    credential basic = basic(secret.username, secret.password);
-                }
-
-            GET read() -> Bytes via Binary;
-        }})
-        .expect("both Basic components consume their declared secrets");
-    }
-
-    #[test]
-    fn one_secret_used_by_multiple_credentials_is_valid() {
-        resolve(quote! {
-            client AuthApi {
-                timeout 30s;
-                base "https://example.test";
-                credentials {
-                    secret shared;
-                    credential first = api_key(secret.shared);
-                    credential second = api_key(secret.shared);
-                }
-
-            GET read() -> Bytes via Binary;
-        }})
-        .expect("one declared secret may be shared by credentials");
-    }
-
-    #[test]
-    fn multiple_unused_secrets_report_deterministically() {
-        let error = resolve(quote! {
-            client AuthApi {
-                timeout 30s;
-                base "https://example.test";
-                credentials {
-                    secret first;
-                    secret used;
-                    secret second;
-                    credential bearer = bearer(secret.used);
-                }
-
-            GET read() -> Bytes via Binary;
-        }})
-        .err()
-        .expect("multiple unused secrets");
-        let diagnostic = error.into_compile_error().to_string();
-        let first = diagnostic
-            .find("secret `first` is never used by a credential source")
-            .expect("first declaration diagnostic");
-        let second = diagnostic
-            .find("secret `second` is never used by a credential source")
-            .expect("second declaration diagnostic");
-
-        assert_eq!(
-            diagnostic
-                .matches("is never used by a credential source")
-                .count(),
-            2
-        );
-        assert!(first < second);
-    }
+    Ok(())
 }

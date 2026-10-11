@@ -1,0 +1,2115 @@
+Concord first-use (fresh-process, no warm-up) request-head cost measurement, r2 (V3-O07, spec section 28.4;
+external review section 6), recorded verbatim from real runs.
+
+New in r2: the review asked to retain first-use scenarios beside the warm medians. The warm companion is
+head_cost_linux_2026-09-26_r2.txt (same executables' build block, same commit); the attribution is in
+ATTRIBUTION.md, section "r2 remeasurement". These are measurements, not a performance acceptance.
+
+Host:        Linux 6.18.44-fc-v37 x86_64, Intel(R) Xeon(R) Processor @ 2.10GHz, 2 CPUs, 7 GiB RAM; the only job on
+             the host; load averages before/after the block are in the log
+Toolchain:   rustc 1.95.0 (59807616e 2026-04-14), cargo 1.95.0 (f2d3ce0bd 2026-03-21), RUSTUP_TOOLCHAIN=stable
+Env:         CARGO_TARGET_DIR=/home/claude/targets/perf2 CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2 (offline, vendored)
+v3 source:   this workspace at commit 89b2cbcd1866e5ef58e908cf3e1fb9b1a0cea051, clean tree (the repaired tree ed1ef3c
+             plus two commits that only add tools/perf/src/bin/head_first_use.rs); the commit adding this file
+             changes only tools/perf/measurements/
+v2.1 source: `git archive baseline-v2.1` = eefca26c80ffe67ab5b70d6605cc713d63549b89 in /home/claude/scratch_perf/v21,
+             with byte-identical copies of head_first_use.rs, head_cost.rs and declaration_v2_1.rs.txt (as
+             src/head_cost/declaration.rs); hashes in the build log below
+Probe:       tools/perf/src/bin/head_first_use.rs (new; sha256 65f59778... in the log). It uses the same two
+             declarations and only caller calls that exist unchanged in v2.1 and v3.
+
+Method (head_first_use.rs): `head_first_use <category>` measures, in one fresh process and with no warm-up, the
+first operation of one category; everything the category needs (the client, inputs, the request being planned,
+the runtime and loopback responder) is prepared before the measured region, and the region is exactly the
+operation and the drop of its result, as in head_cost:
+  client-build          HeadApi::builder()...build() (not a head_cost row; included because it is the first thing
+                        an application does)
+  direct-construction   client.records(..).search(..)
+  unbound-construction  HeadApi::unbound().records(..).show(..)
+  binding               client.request(unbound_endpoint)
+  plan-show             client.plan(&unbound_endpoint)
+  plan-search           search.plan()
+  plan-protected        protected.plan()
+  plan-limited          limited.plan()   (rate policy)
+  execution             runtime.block_on(exec.bounded().into_future()) on ExecApi, including opening the loopback
+                        connection (TCP_NODELAY responder as in head_cost)
+  sequence              all of the above in this order in ONE fresh process, each category's first operation
+                        measured as it comes (later categories see the lazy state earlier ones initialized)
+Allocation count, allocated bytes, peak live bytes (allocation-counter's maximum of bytes held at once during the
+region) and net allocations (allocations minus deallocations in the region; > 0 = retained after the operation)
+are counted with allocation-counter on the current thread. Bytes are allocation traffic, not resident memory.
+
+Protocol: 20 samples per version and category, one fresh process per sample and category (isolated mode) plus 20
+fresh `sequence` processes per version; within each sample the versions alternate, v2.1 first on odd samples
+and v3 first on even samples. 400 processes, every one exited 0.
+
+Preliminary block (discarded, disclosed): the same protocol ran once at be5b95c, whose execution row built the
+operation future outside the measured region (v3 161 allocations / 73,940 B, v2.1 93 / 61,103 B; the boxed
+future was not counted). 89b2cbc moved `into_future()` inside the region to match head_cost; every other row gave
+the same counts and bytes in both blocks. Only the 89b2cbc block is reported below.
+
+Commands:
+  (build block below: the same executables as head_cost_linux_2026-09-26_r2.txt)
+  for i in 1..20: for c in <9 categories> sequence: for v in (v2.1 v3 | v3 v2.1):
+      /home/claude/scratch_perf/bin/head_first_use_<v> <c>                                 exit 0 (each)
+
+================================================================================================================
+Verbatim log: builds (shared with head_cost_linux_2026-09-26_r2.txt)
+================================================================================================================
+measured v3 commit: 89b2cbcd1866e5ef58e908cf3e1fb9b1a0cea051
+status: 0 modified/untracked paths
+host: Linux 6.18.44-fc-v37 x86_64; model name	: Intel(R) Xeon(R) Processor @ 2.10GHz; 2 CPUs; 7 GiB RAM
+toolchain: rustc 1.95.0 (59807616e 2026-04-14); cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+env: RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=/home/claude/targets/perf2 CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2
+v2.1 export: eefca26c80ffe67ab5b70d6605cc713d63549b89 at /home/claude/scratch_perf/v21 (git archive baseline-v2.1, probe copies added)
+sha256 (worktree):
+c2855474bcd351b65961189e7ae1282c95f1d864b0cf874049ed5e33cb8d60a1  tools/perf/src/bin/head_cost.rs
+65f59778485ce7a27e473d06c9432268b812cf49bbd4e0b4cca522f7d65f80ca  tools/perf/src/bin/head_first_use.rs
+6a3c41fc23a82fbd3bdedb945b12bd6791b2d010f94a01cb21a752e250f10082  tools/perf/src/head_cost/declaration.rs
+9d521734c4e491909b5d9020339e0c195c8d043f713edd6050c52d77ea1bfdd2  tools/perf/src/head_cost/declaration_v2_1.rs.txt
+sha256 (v2.1 export copies):
+c2855474bcd351b65961189e7ae1282c95f1d864b0cf874049ed5e33cb8d60a1  /home/claude/scratch_perf/v21/tools/perf/src/bin/head_cost.rs
+65f59778485ce7a27e473d06c9432268b812cf49bbd4e0b4cca522f7d65f80ca  /home/claude/scratch_perf/v21/tools/perf/src/bin/head_first_use.rs
+9d521734c4e491909b5d9020339e0c195c8d043f713edd6050c52d77ea1bfdd2  /home/claude/scratch_perf/v21/tools/perf/src/head_cost/declaration.rs
+== builds (uptime:  23:37:33 up 10:52,  0 user,  load average: 0.29, 0.75, 0.84)
+$ cargo build --release --locked -p concord-perf --bin head_cost --bin head_first_use
+    Finished `release` profile [optimized] target(s) in 4.82s
+[build-v3] exit 0
+$ cargo build --release --locked --offline --manifest-path /home/claude/scratch_perf/v21/Cargo.toml -p concord-perf --bin head_cost --bin head_first_use
+    Finished `release` profile [optimized] target(s) in 6.49s
+[build-v21] exit 0
+executables copied aside:
+d6a562677033587a9c90b96249b3d7ed9f940531b254d3952f93116bdb573b30  /home/claude/scratch_perf/bin/head_cost_v2_1
+b4c586484cd4a4618ad7994aa216b13a9d2b434b3524aeafd7a4737ba9065deb  /home/claude/scratch_perf/bin/head_cost_v3
+76d1d3ab6f03443ff038592577616f50597a51eb009c214dbba2f00c0d53d859  /home/claude/scratch_perf/bin/head_first_use_v2_1
+c693548865b5686232b192656c120bd613dff3938ab1ccc800c563068ee0a7ee  /home/claude/scratch_perf/bin/head_first_use_v3
+== builds done (uptime:  23:37:45 up 10:52,  0 user,  load average: 0.55, 0.79, 0.85)
+
+================================================================================================================
+Verbatim log: fresh-process samples
+================================================================================================================
+== head_first_use samples (uptime before:  23:38:42 up 10:53,  0 user,  load average: 0.38, 0.69, 0.81)
+== sample 1 v2.1 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 client-build
+concord-perf 2.1.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1864015 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+[sample 1 v2.1 client-build] exit 0
+== sample 1 v3 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v3 client-build
+concord-perf 3.0.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1823625 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+[sample 1 v3 client-build] exit 0
+== sample 1 v2.1 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 direct-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=2033 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+[sample 1 v2.1 direct-construction] exit 0
+== sample 1 v3 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 direct-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1687 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+[sample 1 v3 direct-construction] exit 0
+== sample 1 v2.1 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 unbound-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=728 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 1 v2.1 unbound-construction] exit 0
+== sample 1 v3 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 unbound-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=616 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 1 v3 unbound-construction] exit 0
+== sample 1 v2.1 binding: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 binding
+concord-perf 2.1.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=708 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 1 v2.1 binding] exit 0
+== sample 1 v3 binding: $ /home/claude/scratch_perf/bin/head_first_use_v3 binding
+concord-perf 3.0.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=584 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 1 v3 binding] exit 0
+== sample 1 v2.1 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-show
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=34544 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+[sample 1 v2.1 plan-show] exit 0
+== sample 1 v3 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-show
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=293909 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+[sample 1 v3 plan-show] exit 0
+== sample 1 v2.1 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-search
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=29567 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+[sample 1 v2.1 plan-search] exit 0
+== sample 1 v3 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-search
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=192990 allocations=556 bytes=73966 peak_live_bytes=25800 net_allocations=122
+[sample 1 v3 plan-search] exit 0
+== sample 1 v2.1 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-protected
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=25274 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+[sample 1 v2.1 plan-protected] exit 0
+== sample 1 v3 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-protected
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=119327 allocations=509 bytes=70622 peak_live_bytes=25800 net_allocations=122
+[sample 1 v3 plan-protected] exit 0
+== sample 1 v2.1 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-limited
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=27749 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+[sample 1 v2.1 plan-limited] exit 0
+== sample 1 v3 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-limited
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=120257 allocations=525 bytes=71831 peak_live_bytes=25800 net_allocations=122
+[sample 1 v3 plan-limited] exit 0
+== sample 1 v2.1 execution: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 execution
+concord-perf 2.1.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=588387 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 1 v2.1 execution] exit 0
+== sample 1 v3 execution: $ /home/claude/scratch_perf/bin/head_first_use_v3 execution
+concord-perf 3.0.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=608883 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 1 v3 execution] exit 0
+== sample 1 v2.1 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 sequence
+concord-perf 2.1.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1787416 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+first-use direct-construction: ns=1658 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+first-use unbound-construction: ns=324 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=235 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=22632 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+first-use plan-search: ns=11542 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+first-use plan-protected: ns=7154 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+first-use plan-limited: ns=9073 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+first-use execution: ns=562290 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 1 v2.1 sequence] exit 0
+== sample 1 v3 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v3 sequence
+concord-perf 3.0.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=2022901 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+first-use direct-construction: ns=1434 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+first-use unbound-construction: ns=251 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=324 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=111932 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+first-use plan-search: ns=12305 allocations=93 bytes=6419 peak_live_bytes=1848 net_allocations=1
+first-use plan-protected: ns=7346 allocations=46 bytes=3075 peak_live_bytes=1855 net_allocations=1
+first-use plan-limited: ns=10083 allocations=62 bytes=4284 peak_live_bytes=2211 net_allocations=1
+first-use execution: ns=554715 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 1 v3 sequence] exit 0
+== sample 2 v3 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v3 client-build
+concord-perf 3.0.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1913132 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+[sample 2 v3 client-build] exit 0
+== sample 2 v2.1 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 client-build
+concord-perf 2.1.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1859500 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+[sample 2 v2.1 client-build] exit 0
+== sample 2 v3 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 direct-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1642 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+[sample 2 v3 direct-construction] exit 0
+== sample 2 v2.1 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 direct-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1760 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+[sample 2 v2.1 direct-construction] exit 0
+== sample 2 v3 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 unbound-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=584 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 2 v3 unbound-construction] exit 0
+== sample 2 v2.1 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 unbound-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=627 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 2 v2.1 unbound-construction] exit 0
+== sample 2 v3 binding: $ /home/claude/scratch_perf/bin/head_first_use_v3 binding
+concord-perf 3.0.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=558 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 2 v3 binding] exit 0
+== sample 2 v2.1 binding: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 binding
+concord-perf 2.1.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=550 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 2 v2.1 binding] exit 0
+== sample 2 v3 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-show
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=166829 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+[sample 2 v3 plan-show] exit 0
+== sample 2 v2.1 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-show
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=29778 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+[sample 2 v2.1 plan-show] exit 0
+== sample 2 v3 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-search
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=123341 allocations=556 bytes=73966 peak_live_bytes=25800 net_allocations=122
+[sample 2 v3 plan-search] exit 0
+== sample 2 v2.1 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-search
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=33841 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+[sample 2 v2.1 plan-search] exit 0
+== sample 2 v3 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-protected
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=133020 allocations=509 bytes=70622 peak_live_bytes=25800 net_allocations=122
+[sample 2 v3 plan-protected] exit 0
+== sample 2 v2.1 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-protected
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=74969 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+[sample 2 v2.1 plan-protected] exit 0
+== sample 2 v3 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-limited
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=111519 allocations=525 bytes=71831 peak_live_bytes=25800 net_allocations=122
+[sample 2 v3 plan-limited] exit 0
+== sample 2 v2.1 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-limited
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=27394 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+[sample 2 v2.1 plan-limited] exit 0
+== sample 2 v3 execution: $ /home/claude/scratch_perf/bin/head_first_use_v3 execution
+concord-perf 3.0.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=777031 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 2 v3 execution] exit 0
+== sample 2 v2.1 execution: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 execution
+concord-perf 2.1.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=595732 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 2 v2.1 execution] exit 0
+== sample 2 v3 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v3 sequence
+concord-perf 3.0.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=2142909 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+first-use direct-construction: ns=1345 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+first-use unbound-construction: ns=257 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=334 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=110138 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+first-use plan-search: ns=11750 allocations=93 bytes=6419 peak_live_bytes=1848 net_allocations=1
+first-use plan-protected: ns=7215 allocations=46 bytes=3075 peak_live_bytes=1855 net_allocations=1
+first-use plan-limited: ns=9919 allocations=62 bytes=4284 peak_live_bytes=2211 net_allocations=1
+first-use execution: ns=578230 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 2 v3 sequence] exit 0
+== sample 2 v2.1 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 sequence
+concord-perf 2.1.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1801945 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+first-use direct-construction: ns=1695 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+first-use unbound-construction: ns=401 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=378 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=22831 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+first-use plan-search: ns=11586 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+first-use plan-protected: ns=6667 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+first-use plan-limited: ns=9069 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+first-use execution: ns=444767 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 2 v2.1 sequence] exit 0
+== sample 3 v2.1 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 client-build
+concord-perf 2.1.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=3302654 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+[sample 3 v2.1 client-build] exit 0
+== sample 3 v3 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v3 client-build
+concord-perf 3.0.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=3164011 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+[sample 3 v3 client-build] exit 0
+== sample 3 v2.1 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 direct-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=2376 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+[sample 3 v2.1 direct-construction] exit 0
+== sample 3 v3 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 direct-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1951 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+[sample 3 v3 direct-construction] exit 0
+== sample 3 v2.1 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 unbound-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=847 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 3 v2.1 unbound-construction] exit 0
+== sample 3 v3 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 unbound-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=745 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 3 v3 unbound-construction] exit 0
+== sample 3 v2.1 binding: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 binding
+concord-perf 2.1.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=767 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 3 v2.1 binding] exit 0
+== sample 3 v3 binding: $ /home/claude/scratch_perf/bin/head_first_use_v3 binding
+concord-perf 3.0.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=918 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 3 v3 binding] exit 0
+== sample 3 v2.1 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-show
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=44900 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+[sample 3 v2.1 plan-show] exit 0
+== sample 3 v3 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-show
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=256080 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+[sample 3 v3 plan-show] exit 0
+== sample 3 v2.1 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-search
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=31281 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+[sample 3 v2.1 plan-search] exit 0
+== sample 3 v3 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-search
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=129716 allocations=556 bytes=73966 peak_live_bytes=25800 net_allocations=122
+[sample 3 v3 plan-search] exit 0
+== sample 3 v2.1 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-protected
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=23874 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+[sample 3 v2.1 plan-protected] exit 0
+== sample 3 v3 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-protected
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=160771 allocations=509 bytes=70622 peak_live_bytes=25800 net_allocations=122
+[sample 3 v3 plan-protected] exit 0
+== sample 3 v2.1 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-limited
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=26151 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+[sample 3 v2.1 plan-limited] exit 0
+== sample 3 v3 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-limited
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=142542 allocations=525 bytes=71831 peak_live_bytes=25800 net_allocations=122
+[sample 3 v3 plan-limited] exit 0
+== sample 3 v2.1 execution: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 execution
+concord-perf 2.1.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=527010 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 3 v2.1 execution] exit 0
+== sample 3 v3 execution: $ /home/claude/scratch_perf/bin/head_first_use_v3 execution
+concord-perf 3.0.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=530300 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 3 v3 execution] exit 0
+== sample 3 v2.1 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 sequence
+concord-perf 2.1.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1930019 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+first-use direct-construction: ns=1186 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+first-use unbound-construction: ns=392 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=259 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=22112 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+first-use plan-search: ns=11687 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+first-use plan-protected: ns=7201 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+first-use plan-limited: ns=8292 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+first-use execution: ns=383899 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 3 v2.1 sequence] exit 0
+== sample 3 v3 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v3 sequence
+concord-perf 3.0.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1736515 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+first-use direct-construction: ns=1075 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+first-use unbound-construction: ns=262 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=397 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=113276 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+first-use plan-search: ns=12126 allocations=93 bytes=6419 peak_live_bytes=1848 net_allocations=1
+first-use plan-protected: ns=6474 allocations=46 bytes=3075 peak_live_bytes=1855 net_allocations=1
+first-use plan-limited: ns=10125 allocations=62 bytes=4284 peak_live_bytes=2211 net_allocations=1
+first-use execution: ns=386943 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 3 v3 sequence] exit 0
+== sample 4 v3 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v3 client-build
+concord-perf 3.0.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1802424 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+[sample 4 v3 client-build] exit 0
+== sample 4 v2.1 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 client-build
+concord-perf 2.1.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1898486 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+[sample 4 v2.1 client-build] exit 0
+== sample 4 v3 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 direct-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1249 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+[sample 4 v3 direct-construction] exit 0
+== sample 4 v2.1 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 direct-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1406 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+[sample 4 v2.1 direct-construction] exit 0
+== sample 4 v3 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 unbound-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=565 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 4 v3 unbound-construction] exit 0
+== sample 4 v2.1 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 unbound-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=718 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 4 v2.1 unbound-construction] exit 0
+== sample 4 v3 binding: $ /home/claude/scratch_perf/bin/head_first_use_v3 binding
+concord-perf 3.0.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=804 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 4 v3 binding] exit 0
+== sample 4 v2.1 binding: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 binding
+concord-perf 2.1.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=453 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 4 v2.1 binding] exit 0
+== sample 4 v3 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-show
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=118267 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+[sample 4 v3 plan-show] exit 0
+== sample 4 v2.1 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-show
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=28308 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+[sample 4 v2.1 plan-show] exit 0
+== sample 4 v3 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-search
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=113436 allocations=556 bytes=73966 peak_live_bytes=25800 net_allocations=122
+[sample 4 v3 plan-search] exit 0
+== sample 4 v2.1 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-search
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=30121 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+[sample 4 v2.1 plan-search] exit 0
+== sample 4 v3 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-protected
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=124610 allocations=509 bytes=70622 peak_live_bytes=25800 net_allocations=122
+[sample 4 v3 plan-protected] exit 0
+== sample 4 v2.1 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-protected
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=28862 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+[sample 4 v2.1 plan-protected] exit 0
+== sample 4 v3 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-limited
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=117667 allocations=525 bytes=71831 peak_live_bytes=25800 net_allocations=122
+[sample 4 v3 plan-limited] exit 0
+== sample 4 v2.1 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-limited
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=26304 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+[sample 4 v2.1 plan-limited] exit 0
+== sample 4 v3 execution: $ /home/claude/scratch_perf/bin/head_first_use_v3 execution
+concord-perf 3.0.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=608157 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 4 v3 execution] exit 0
+== sample 4 v2.1 execution: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 execution
+concord-perf 2.1.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=479069 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 4 v2.1 execution] exit 0
+== sample 4 v3 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v3 sequence
+concord-perf 3.0.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1949704 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+first-use direct-construction: ns=1069 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+first-use unbound-construction: ns=252 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=310 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=111601 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+first-use plan-search: ns=12279 allocations=93 bytes=6419 peak_live_bytes=1848 net_allocations=1
+first-use plan-protected: ns=6356 allocations=46 bytes=3075 peak_live_bytes=1855 net_allocations=1
+first-use plan-limited: ns=9945 allocations=62 bytes=4284 peak_live_bytes=2211 net_allocations=1
+first-use execution: ns=599674 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 4 v3 sequence] exit 0
+== sample 4 v2.1 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 sequence
+concord-perf 2.1.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1731009 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+first-use direct-construction: ns=1459 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+first-use unbound-construction: ns=329 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=221 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=23285 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+first-use plan-search: ns=12555 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+first-use plan-protected: ns=6923 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+first-use plan-limited: ns=9024 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+first-use execution: ns=536792 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 4 v2.1 sequence] exit 0
+== sample 5 v2.1 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 client-build
+concord-perf 2.1.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=2343092 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+[sample 5 v2.1 client-build] exit 0
+== sample 5 v3 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v3 client-build
+concord-perf 3.0.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1745780 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+[sample 5 v3 client-build] exit 0
+== sample 5 v2.1 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 direct-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1547 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+[sample 5 v2.1 direct-construction] exit 0
+== sample 5 v3 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 direct-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1399 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+[sample 5 v3 direct-construction] exit 0
+== sample 5 v2.1 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 unbound-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=655 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 5 v2.1 unbound-construction] exit 0
+== sample 5 v3 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 unbound-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=549 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 5 v3 unbound-construction] exit 0
+== sample 5 v2.1 binding: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 binding
+concord-perf 2.1.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=446 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 5 v2.1 binding] exit 0
+== sample 5 v3 binding: $ /home/claude/scratch_perf/bin/head_first_use_v3 binding
+concord-perf 3.0.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=531 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 5 v3 binding] exit 0
+== sample 5 v2.1 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-show
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=28993 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+[sample 5 v2.1 plan-show] exit 0
+== sample 5 v3 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-show
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=167190 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+[sample 5 v3 plan-show] exit 0
+== sample 5 v2.1 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-search
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=28375 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+[sample 5 v2.1 plan-search] exit 0
+== sample 5 v3 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-search
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=129672 allocations=556 bytes=73966 peak_live_bytes=25800 net_allocations=122
+[sample 5 v3 plan-search] exit 0
+== sample 5 v2.1 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-protected
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=24374 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+[sample 5 v2.1 plan-protected] exit 0
+== sample 5 v3 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-protected
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=115441 allocations=509 bytes=70622 peak_live_bytes=25800 net_allocations=122
+[sample 5 v3 plan-protected] exit 0
+== sample 5 v2.1 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-limited
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=26602 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+[sample 5 v2.1 plan-limited] exit 0
+== sample 5 v3 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-limited
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=112872 allocations=525 bytes=71831 peak_live_bytes=25800 net_allocations=122
+[sample 5 v3 plan-limited] exit 0
+== sample 5 v2.1 execution: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 execution
+concord-perf 2.1.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=476115 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 5 v2.1 execution] exit 0
+== sample 5 v3 execution: $ /home/claude/scratch_perf/bin/head_first_use_v3 execution
+concord-perf 3.0.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=427974 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 5 v3 execution] exit 0
+== sample 5 v2.1 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 sequence
+concord-perf 2.1.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1727592 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+first-use direct-construction: ns=1312 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+first-use unbound-construction: ns=320 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=227 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=24149 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+first-use plan-search: ns=12253 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+first-use plan-protected: ns=7027 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+first-use plan-limited: ns=9090 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+first-use execution: ns=378223 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 5 v2.1 sequence] exit 0
+== sample 5 v3 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v3 sequence
+concord-perf 3.0.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1782888 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+first-use direct-construction: ns=1215 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+first-use unbound-construction: ns=374 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=692 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=401855 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+first-use plan-search: ns=15733 allocations=93 bytes=6419 peak_live_bytes=1848 net_allocations=1
+first-use plan-protected: ns=7337 allocations=46 bytes=3075 peak_live_bytes=1855 net_allocations=1
+first-use plan-limited: ns=10481 allocations=62 bytes=4284 peak_live_bytes=2211 net_allocations=1
+first-use execution: ns=431452 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 5 v3 sequence] exit 0
+== sample 6 v3 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v3 client-build
+concord-perf 3.0.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1974398 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+[sample 6 v3 client-build] exit 0
+== sample 6 v2.1 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 client-build
+concord-perf 2.1.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1730292 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+[sample 6 v2.1 client-build] exit 0
+== sample 6 v3 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 direct-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1388 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+[sample 6 v3 direct-construction] exit 0
+== sample 6 v2.1 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 direct-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1423 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+[sample 6 v2.1 direct-construction] exit 0
+== sample 6 v3 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 unbound-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=594 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 6 v3 unbound-construction] exit 0
+== sample 6 v2.1 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 unbound-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=649 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 6 v2.1 unbound-construction] exit 0
+== sample 6 v3 binding: $ /home/claude/scratch_perf/bin/head_first_use_v3 binding
+concord-perf 3.0.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=535 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 6 v3 binding] exit 0
+== sample 6 v2.1 binding: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 binding
+concord-perf 2.1.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=491 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 6 v2.1 binding] exit 0
+== sample 6 v3 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-show
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=134453 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+[sample 6 v3 plan-show] exit 0
+== sample 6 v2.1 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-show
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=36443 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+[sample 6 v2.1 plan-show] exit 0
+== sample 6 v3 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-search
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=150835 allocations=556 bytes=73966 peak_live_bytes=25800 net_allocations=122
+[sample 6 v3 plan-search] exit 0
+== sample 6 v2.1 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-search
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=34751 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+[sample 6 v2.1 plan-search] exit 0
+== sample 6 v3 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-protected
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=125568 allocations=509 bytes=70622 peak_live_bytes=25800 net_allocations=122
+[sample 6 v3 plan-protected] exit 0
+== sample 6 v2.1 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-protected
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=24753 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+[sample 6 v2.1 plan-protected] exit 0
+== sample 6 v3 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-limited
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=115671 allocations=525 bytes=71831 peak_live_bytes=25800 net_allocations=122
+[sample 6 v3 plan-limited] exit 0
+== sample 6 v2.1 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-limited
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=32230 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+[sample 6 v2.1 plan-limited] exit 0
+== sample 6 v3 execution: $ /home/claude/scratch_perf/bin/head_first_use_v3 execution
+concord-perf 3.0.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=605534 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 6 v3 execution] exit 0
+== sample 6 v2.1 execution: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 execution
+concord-perf 2.1.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=639813 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 6 v2.1 execution] exit 0
+== sample 6 v3 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v3 sequence
+concord-perf 3.0.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1779789 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+first-use direct-construction: ns=1220 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+first-use unbound-construction: ns=276 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=344 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=110774 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+first-use plan-search: ns=12651 allocations=93 bytes=6419 peak_live_bytes=1848 net_allocations=1
+first-use plan-protected: ns=6987 allocations=46 bytes=3075 peak_live_bytes=1855 net_allocations=1
+first-use plan-limited: ns=9951 allocations=62 bytes=4284 peak_live_bytes=2211 net_allocations=1
+first-use execution: ns=489226 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 6 v3 sequence] exit 0
+== sample 6 v2.1 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 sequence
+concord-perf 2.1.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1899258 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+first-use direct-construction: ns=1296 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+first-use unbound-construction: ns=284 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=272 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=24695 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+first-use plan-search: ns=11785 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+first-use plan-protected: ns=6706 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+first-use plan-limited: ns=9140 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+first-use execution: ns=499062 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 6 v2.1 sequence] exit 0
+== sample 7 v2.1 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 client-build
+concord-perf 2.1.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1828579 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+[sample 7 v2.1 client-build] exit 0
+== sample 7 v3 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v3 client-build
+concord-perf 3.0.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=2141059 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+[sample 7 v3 client-build] exit 0
+== sample 7 v2.1 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 direct-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1917 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+[sample 7 v2.1 direct-construction] exit 0
+== sample 7 v3 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 direct-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1652 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+[sample 7 v3 direct-construction] exit 0
+== sample 7 v2.1 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 unbound-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=855 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 7 v2.1 unbound-construction] exit 0
+== sample 7 v3 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 unbound-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=607 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 7 v3 unbound-construction] exit 0
+== sample 7 v2.1 binding: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 binding
+concord-perf 2.1.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=757 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 7 v2.1 binding] exit 0
+== sample 7 v3 binding: $ /home/claude/scratch_perf/bin/head_first_use_v3 binding
+concord-perf 3.0.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=677 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 7 v3 binding] exit 0
+== sample 7 v2.1 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-show
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=36944 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+[sample 7 v2.1 plan-show] exit 0
+== sample 7 v3 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-show
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=155060 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+[sample 7 v3 plan-show] exit 0
+== sample 7 v2.1 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-search
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=32296 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+[sample 7 v2.1 plan-search] exit 0
+== sample 7 v3 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-search
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=133959 allocations=556 bytes=73966 peak_live_bytes=25800 net_allocations=122
+[sample 7 v3 plan-search] exit 0
+== sample 7 v2.1 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-protected
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=28493 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+[sample 7 v2.1 plan-protected] exit 0
+== sample 7 v3 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-protected
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=165932 allocations=509 bytes=70622 peak_live_bytes=25800 net_allocations=122
+[sample 7 v3 plan-protected] exit 0
+== sample 7 v2.1 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-limited
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=38488 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+[sample 7 v2.1 plan-limited] exit 0
+== sample 7 v3 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-limited
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=144612 allocations=525 bytes=71831 peak_live_bytes=25800 net_allocations=122
+[sample 7 v3 plan-limited] exit 0
+== sample 7 v2.1 execution: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 execution
+concord-perf 2.1.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=662281 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 7 v2.1 execution] exit 0
+== sample 7 v3 execution: $ /home/claude/scratch_perf/bin/head_first_use_v3 execution
+concord-perf 3.0.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=659047 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 7 v3 execution] exit 0
+== sample 7 v2.1 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 sequence
+concord-perf 2.1.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1728132 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+first-use direct-construction: ns=1352 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+first-use unbound-construction: ns=374 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=316 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=23699 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+first-use plan-search: ns=12618 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+first-use plan-protected: ns=6489 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+first-use plan-limited: ns=9744 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+first-use execution: ns=490061 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 7 v2.1 sequence] exit 0
+== sample 7 v3 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v3 sequence
+concord-perf 3.0.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=2910455 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+first-use direct-construction: ns=1587 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+first-use unbound-construction: ns=345 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=539 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=158454 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+first-use plan-search: ns=16247 allocations=93 bytes=6419 peak_live_bytes=1848 net_allocations=1
+first-use plan-protected: ns=9301 allocations=46 bytes=3075 peak_live_bytes=1855 net_allocations=1
+first-use plan-limited: ns=15096 allocations=62 bytes=4284 peak_live_bytes=2211 net_allocations=1
+first-use execution: ns=577187 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 7 v3 sequence] exit 0
+== sample 8 v3 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v3 client-build
+concord-perf 3.0.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1794623 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+[sample 8 v3 client-build] exit 0
+== sample 8 v2.1 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 client-build
+concord-perf 2.1.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1790380 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+[sample 8 v2.1 client-build] exit 0
+== sample 8 v3 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 direct-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1382 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+[sample 8 v3 direct-construction] exit 0
+== sample 8 v2.1 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 direct-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1864 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+[sample 8 v2.1 direct-construction] exit 0
+== sample 8 v3 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 unbound-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=522 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 8 v3 unbound-construction] exit 0
+== sample 8 v2.1 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 unbound-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=806 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 8 v2.1 unbound-construction] exit 0
+== sample 8 v3 binding: $ /home/claude/scratch_perf/bin/head_first_use_v3 binding
+concord-perf 3.0.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=519 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 8 v3 binding] exit 0
+== sample 8 v2.1 binding: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 binding
+concord-perf 2.1.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=557 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 8 v2.1 binding] exit 0
+== sample 8 v3 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-show
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=287296 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+[sample 8 v3 plan-show] exit 0
+== sample 8 v2.1 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-show
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=76272 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+[sample 8 v2.1 plan-show] exit 0
+== sample 8 v3 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-search
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=171099 allocations=556 bytes=73966 peak_live_bytes=25800 net_allocations=122
+[sample 8 v3 plan-search] exit 0
+== sample 8 v2.1 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-search
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=38567 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+[sample 8 v2.1 plan-search] exit 0
+== sample 8 v3 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-protected
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=155789 allocations=509 bytes=70622 peak_live_bytes=25800 net_allocations=122
+[sample 8 v3 plan-protected] exit 0
+== sample 8 v2.1 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-protected
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=32045 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+[sample 8 v2.1 plan-protected] exit 0
+== sample 8 v3 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-limited
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=154756 allocations=525 bytes=71831 peak_live_bytes=25800 net_allocations=122
+[sample 8 v3 plan-limited] exit 0
+== sample 8 v2.1 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-limited
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=34205 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+[sample 8 v2.1 plan-limited] exit 0
+== sample 8 v3 execution: $ /home/claude/scratch_perf/bin/head_first_use_v3 execution
+concord-perf 3.0.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=757076 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 8 v3 execution] exit 0
+== sample 8 v2.1 execution: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 execution
+concord-perf 2.1.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=497191 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 8 v2.1 execution] exit 0
+== sample 8 v3 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v3 sequence
+concord-perf 3.0.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1735409 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+first-use direct-construction: ns=1430 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+first-use unbound-construction: ns=275 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=364 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=141254 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+first-use plan-search: ns=18737 allocations=93 bytes=6419 peak_live_bytes=1848 net_allocations=1
+first-use plan-protected: ns=9539 allocations=46 bytes=3075 peak_live_bytes=1855 net_allocations=1
+first-use plan-limited: ns=12682 allocations=62 bytes=4284 peak_live_bytes=2211 net_allocations=1
+first-use execution: ns=554997 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 8 v3 sequence] exit 0
+== sample 8 v2.1 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 sequence
+concord-perf 2.1.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1844953 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+first-use direct-construction: ns=1557 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+first-use unbound-construction: ns=355 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=305 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=31221 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+first-use plan-search: ns=47692 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+first-use plan-protected: ns=11071 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+first-use plan-limited: ns=10859 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+first-use execution: ns=448968 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 8 v2.1 sequence] exit 0
+== sample 9 v2.1 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 client-build
+concord-perf 2.1.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=2107138 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+[sample 9 v2.1 client-build] exit 0
+== sample 9 v3 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v3 client-build
+concord-perf 3.0.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=2042670 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+[sample 9 v3 client-build] exit 0
+== sample 9 v2.1 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 direct-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1922 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+[sample 9 v2.1 direct-construction] exit 0
+== sample 9 v3 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 direct-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1602 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+[sample 9 v3 direct-construction] exit 0
+== sample 9 v2.1 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 unbound-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=803 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 9 v2.1 unbound-construction] exit 0
+== sample 9 v3 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 unbound-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=625 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 9 v3 unbound-construction] exit 0
+== sample 9 v2.1 binding: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 binding
+concord-perf 2.1.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=653 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 9 v2.1 binding] exit 0
+== sample 9 v3 binding: $ /home/claude/scratch_perf/bin/head_first_use_v3 binding
+concord-perf 3.0.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=587 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 9 v3 binding] exit 0
+== sample 9 v2.1 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-show
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=25036 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+[sample 9 v2.1 plan-show] exit 0
+== sample 9 v3 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-show
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=134863 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+[sample 9 v3 plan-show] exit 0
+== sample 9 v2.1 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-search
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=26966 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+[sample 9 v2.1 plan-search] exit 0
+== sample 9 v3 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-search
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=139094 allocations=556 bytes=73966 peak_live_bytes=25800 net_allocations=122
+[sample 9 v3 plan-search] exit 0
+== sample 9 v2.1 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-protected
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=22097 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+[sample 9 v2.1 plan-protected] exit 0
+== sample 9 v3 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-protected
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=117366 allocations=509 bytes=70622 peak_live_bytes=25800 net_allocations=122
+[sample 9 v3 plan-protected] exit 0
+== sample 9 v2.1 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-limited
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=25780 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+[sample 9 v2.1 plan-limited] exit 0
+== sample 9 v3 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-limited
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=333867 allocations=525 bytes=71831 peak_live_bytes=25800 net_allocations=122
+[sample 9 v3 plan-limited] exit 0
+== sample 9 v2.1 execution: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 execution
+concord-perf 2.1.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=489872 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 9 v2.1 execution] exit 0
+== sample 9 v3 execution: $ /home/claude/scratch_perf/bin/head_first_use_v3 execution
+concord-perf 3.0.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=633839 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 9 v3 execution] exit 0
+== sample 9 v2.1 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 sequence
+concord-perf 2.1.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=3789652 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+first-use direct-construction: ns=1192 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+first-use unbound-construction: ns=301 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=268 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=23701 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+first-use plan-search: ns=12353 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+first-use plan-protected: ns=7097 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+first-use plan-limited: ns=9483 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+first-use execution: ns=786594 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 9 v2.1 sequence] exit 0
+== sample 9 v3 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v3 sequence
+concord-perf 3.0.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1751174 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+first-use direct-construction: ns=1116 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+first-use unbound-construction: ns=256 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=593 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=115716 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+first-use plan-search: ns=12068 allocations=93 bytes=6419 peak_live_bytes=1848 net_allocations=1
+first-use plan-protected: ns=7296 allocations=46 bytes=3075 peak_live_bytes=1855 net_allocations=1
+first-use plan-limited: ns=9871 allocations=62 bytes=4284 peak_live_bytes=2211 net_allocations=1
+first-use execution: ns=461491 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 9 v3 sequence] exit 0
+== sample 10 v3 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v3 client-build
+concord-perf 3.0.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1715544 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+[sample 10 v3 client-build] exit 0
+== sample 10 v2.1 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 client-build
+concord-perf 2.1.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1889617 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+[sample 10 v2.1 client-build] exit 0
+== sample 10 v3 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 direct-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1380 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+[sample 10 v3 direct-construction] exit 0
+== sample 10 v2.1 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 direct-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1653 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+[sample 10 v2.1 direct-construction] exit 0
+== sample 10 v3 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 unbound-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=618 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 10 v3 unbound-construction] exit 0
+== sample 10 v2.1 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 unbound-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=646 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 10 v2.1 unbound-construction] exit 0
+== sample 10 v3 binding: $ /home/claude/scratch_perf/bin/head_first_use_v3 binding
+concord-perf 3.0.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=694 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 10 v3 binding] exit 0
+== sample 10 v2.1 binding: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 binding
+concord-perf 2.1.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=534 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 10 v2.1 binding] exit 0
+== sample 10 v3 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-show
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=134605 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+[sample 10 v3 plan-show] exit 0
+== sample 10 v2.1 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-show
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=30314 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+[sample 10 v2.1 plan-show] exit 0
+== sample 10 v3 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-search
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=121808 allocations=556 bytes=73966 peak_live_bytes=25800 net_allocations=122
+[sample 10 v3 plan-search] exit 0
+== sample 10 v2.1 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-search
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=39287 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+[sample 10 v2.1 plan-search] exit 0
+== sample 10 v3 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-protected
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=135364 allocations=509 bytes=70622 peak_live_bytes=25800 net_allocations=122
+[sample 10 v3 plan-protected] exit 0
+== sample 10 v2.1 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-protected
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=25612 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+[sample 10 v2.1 plan-protected] exit 0
+== sample 10 v3 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-limited
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=113819 allocations=525 bytes=71831 peak_live_bytes=25800 net_allocations=122
+[sample 10 v3 plan-limited] exit 0
+== sample 10 v2.1 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-limited
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=29976 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+[sample 10 v2.1 plan-limited] exit 0
+== sample 10 v3 execution: $ /home/claude/scratch_perf/bin/head_first_use_v3 execution
+concord-perf 3.0.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=720131 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 10 v3 execution] exit 0
+== sample 10 v2.1 execution: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 execution
+concord-perf 2.1.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=631525 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 10 v2.1 execution] exit 0
+== sample 10 v3 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v3 sequence
+concord-perf 3.0.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=3536235 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+first-use direct-construction: ns=1304 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+first-use unbound-construction: ns=264 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=316 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=121180 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+first-use plan-search: ns=12089 allocations=93 bytes=6419 peak_live_bytes=1848 net_allocations=1
+first-use plan-protected: ns=6567 allocations=46 bytes=3075 peak_live_bytes=1855 net_allocations=1
+first-use plan-limited: ns=10365 allocations=62 bytes=4284 peak_live_bytes=2211 net_allocations=1
+first-use execution: ns=586663 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 10 v3 sequence] exit 0
+== sample 10 v2.1 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 sequence
+concord-perf 2.1.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=2367983 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+first-use direct-construction: ns=1450 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+first-use unbound-construction: ns=313 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=258 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=27702 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+first-use plan-search: ns=12345 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+first-use plan-protected: ns=6525 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+first-use plan-limited: ns=9140 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+first-use execution: ns=660641 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 10 v2.1 sequence] exit 0
+== sample 11 v2.1 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 client-build
+concord-perf 2.1.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=2883929 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+[sample 11 v2.1 client-build] exit 0
+== sample 11 v3 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v3 client-build
+concord-perf 3.0.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=2588291 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+[sample 11 v3 client-build] exit 0
+== sample 11 v2.1 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 direct-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1651 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+[sample 11 v2.1 direct-construction] exit 0
+== sample 11 v3 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 direct-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1457 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+[sample 11 v3 direct-construction] exit 0
+== sample 11 v2.1 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 unbound-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=712 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 11 v2.1 unbound-construction] exit 0
+== sample 11 v3 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 unbound-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=582 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 11 v3 unbound-construction] exit 0
+== sample 11 v2.1 binding: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 binding
+concord-perf 2.1.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=777 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 11 v2.1 binding] exit 0
+== sample 11 v3 binding: $ /home/claude/scratch_perf/bin/head_first_use_v3 binding
+concord-perf 3.0.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=737 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 11 v3 binding] exit 0
+== sample 11 v2.1 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-show
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=29654 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+[sample 11 v2.1 plan-show] exit 0
+== sample 11 v3 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-show
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=162525 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+[sample 11 v3 plan-show] exit 0
+== sample 11 v2.1 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-search
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=37168 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+[sample 11 v2.1 plan-search] exit 0
+== sample 11 v3 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-search
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=165923 allocations=556 bytes=73966 peak_live_bytes=25800 net_allocations=122
+[sample 11 v3 plan-search] exit 0
+== sample 11 v2.1 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-protected
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=22901 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+[sample 11 v2.1 plan-protected] exit 0
+== sample 11 v3 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-protected
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=110766 allocations=509 bytes=70622 peak_live_bytes=25800 net_allocations=122
+[sample 11 v3 plan-protected] exit 0
+== sample 11 v2.1 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-limited
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=34712 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+[sample 11 v2.1 plan-limited] exit 0
+== sample 11 v3 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-limited
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=148454 allocations=525 bytes=71831 peak_live_bytes=25800 net_allocations=122
+[sample 11 v3 plan-limited] exit 0
+== sample 11 v2.1 execution: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 execution
+concord-perf 2.1.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=656439 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 11 v2.1 execution] exit 0
+== sample 11 v3 execution: $ /home/claude/scratch_perf/bin/head_first_use_v3 execution
+concord-perf 3.0.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=847042 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 11 v3 execution] exit 0
+== sample 11 v2.1 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 sequence
+concord-perf 2.1.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=2543836 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+first-use direct-construction: ns=1332 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+first-use unbound-construction: ns=394 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=221 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=25235 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+first-use plan-search: ns=12194 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+first-use plan-protected: ns=7293 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+first-use plan-limited: ns=9373 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+first-use execution: ns=527420 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 11 v2.1 sequence] exit 0
+== sample 11 v3 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v3 sequence
+concord-perf 3.0.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=2250349 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+first-use direct-construction: ns=1607 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+first-use unbound-construction: ns=458 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=421 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=199056 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+first-use plan-search: ns=17557 allocations=93 bytes=6419 peak_live_bytes=1848 net_allocations=1
+first-use plan-protected: ns=26183 allocations=46 bytes=3075 peak_live_bytes=1855 net_allocations=1
+first-use plan-limited: ns=16394 allocations=62 bytes=4284 peak_live_bytes=2211 net_allocations=1
+first-use execution: ns=618632 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 11 v3 sequence] exit 0
+== sample 12 v3 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v3 client-build
+concord-perf 3.0.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=3136348 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+[sample 12 v3 client-build] exit 0
+== sample 12 v2.1 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 client-build
+concord-perf 2.1.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1915481 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+[sample 12 v2.1 client-build] exit 0
+== sample 12 v3 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 direct-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1597 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+[sample 12 v3 direct-construction] exit 0
+== sample 12 v2.1 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 direct-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1554 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+[sample 12 v2.1 direct-construction] exit 0
+== sample 12 v3 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 unbound-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=571 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 12 v3 unbound-construction] exit 0
+== sample 12 v2.1 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 unbound-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=728 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 12 v2.1 unbound-construction] exit 0
+== sample 12 v3 binding: $ /home/claude/scratch_perf/bin/head_first_use_v3 binding
+concord-perf 3.0.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=532 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 12 v3 binding] exit 0
+== sample 12 v2.1 binding: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 binding
+concord-perf 2.1.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=734 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 12 v2.1 binding] exit 0
+== sample 12 v3 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-show
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=140219 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+[sample 12 v3 plan-show] exit 0
+== sample 12 v2.1 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-show
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=32205 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+[sample 12 v2.1 plan-show] exit 0
+== sample 12 v3 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-search
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=143885 allocations=556 bytes=73966 peak_live_bytes=25800 net_allocations=122
+[sample 12 v3 plan-search] exit 0
+== sample 12 v2.1 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-search
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=30740 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+[sample 12 v2.1 plan-search] exit 0
+== sample 12 v3 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-protected
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=194424 allocations=509 bytes=70622 peak_live_bytes=25800 net_allocations=122
+[sample 12 v3 plan-protected] exit 0
+== sample 12 v2.1 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-protected
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=24060 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+[sample 12 v2.1 plan-protected] exit 0
+== sample 12 v3 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-limited
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=114324 allocations=525 bytes=71831 peak_live_bytes=25800 net_allocations=122
+[sample 12 v3 plan-limited] exit 0
+== sample 12 v2.1 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-limited
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=25544 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+[sample 12 v2.1 plan-limited] exit 0
+== sample 12 v3 execution: $ /home/claude/scratch_perf/bin/head_first_use_v3 execution
+concord-perf 3.0.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=678327 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 12 v3 execution] exit 0
+== sample 12 v2.1 execution: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 execution
+concord-perf 2.1.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=529704 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 12 v2.1 execution] exit 0
+== sample 12 v3 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v3 sequence
+concord-perf 3.0.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1706952 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+first-use direct-construction: ns=1013 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+first-use unbound-construction: ns=299 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=332 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=122627 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+first-use plan-search: ns=17612 allocations=93 bytes=6419 peak_live_bytes=1848 net_allocations=1
+first-use plan-protected: ns=8828 allocations=46 bytes=3075 peak_live_bytes=1855 net_allocations=1
+first-use plan-limited: ns=9269 allocations=62 bytes=4284 peak_live_bytes=2211 net_allocations=1
+first-use execution: ns=655204 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 12 v3 sequence] exit 0
+== sample 12 v2.1 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 sequence
+concord-perf 2.1.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1776710 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+first-use direct-construction: ns=1390 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+first-use unbound-construction: ns=317 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=205 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=22712 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+first-use plan-search: ns=12000 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+first-use plan-protected: ns=7017 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+first-use plan-limited: ns=8809 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+first-use execution: ns=505728 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 12 v2.1 sequence] exit 0
+== sample 13 v2.1 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 client-build
+concord-perf 2.1.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1713330 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+[sample 13 v2.1 client-build] exit 0
+== sample 13 v3 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v3 client-build
+concord-perf 3.0.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1710292 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+[sample 13 v3 client-build] exit 0
+== sample 13 v2.1 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 direct-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1662 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+[sample 13 v2.1 direct-construction] exit 0
+== sample 13 v3 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 direct-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1587 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+[sample 13 v3 direct-construction] exit 0
+== sample 13 v2.1 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 unbound-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=630 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 13 v2.1 unbound-construction] exit 0
+== sample 13 v3 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 unbound-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=534 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 13 v3 unbound-construction] exit 0
+== sample 13 v2.1 binding: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 binding
+concord-perf 2.1.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=494 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 13 v2.1 binding] exit 0
+== sample 13 v3 binding: $ /home/claude/scratch_perf/bin/head_first_use_v3 binding
+concord-perf 3.0.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=482 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 13 v3 binding] exit 0
+== sample 13 v2.1 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-show
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=24937 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+[sample 13 v2.1 plan-show] exit 0
+== sample 13 v3 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-show
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=149538 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+[sample 13 v3 plan-show] exit 0
+== sample 13 v2.1 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-search
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=27525 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+[sample 13 v2.1 plan-search] exit 0
+== sample 13 v3 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-search
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=128011 allocations=556 bytes=73966 peak_live_bytes=25800 net_allocations=122
+[sample 13 v3 plan-search] exit 0
+== sample 13 v2.1 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-protected
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=25002 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+[sample 13 v2.1 plan-protected] exit 0
+== sample 13 v3 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-protected
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=110759 allocations=509 bytes=70622 peak_live_bytes=25800 net_allocations=122
+[sample 13 v3 plan-protected] exit 0
+== sample 13 v2.1 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-limited
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=26179 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+[sample 13 v2.1 plan-limited] exit 0
+== sample 13 v3 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-limited
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=154695 allocations=525 bytes=71831 peak_live_bytes=25800 net_allocations=122
+[sample 13 v3 plan-limited] exit 0
+== sample 13 v2.1 execution: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 execution
+concord-perf 2.1.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=543296 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 13 v2.1 execution] exit 0
+== sample 13 v3 execution: $ /home/claude/scratch_perf/bin/head_first_use_v3 execution
+concord-perf 3.0.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=612771 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 13 v3 execution] exit 0
+== sample 13 v2.1 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 sequence
+concord-perf 2.1.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1845526 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+first-use direct-construction: ns=1193 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+first-use unbound-construction: ns=380 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=291 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=28801 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+first-use plan-search: ns=15799 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+first-use plan-protected: ns=9060 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+first-use plan-limited: ns=12404 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+first-use execution: ns=429228 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 13 v2.1 sequence] exit 0
+== sample 13 v3 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v3 sequence
+concord-perf 3.0.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1836763 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+first-use direct-construction: ns=1419 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+first-use unbound-construction: ns=418 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=294 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=117400 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+first-use plan-search: ns=12700 allocations=93 bytes=6419 peak_live_bytes=1848 net_allocations=1
+first-use plan-protected: ns=7165 allocations=46 bytes=3075 peak_live_bytes=1855 net_allocations=1
+first-use plan-limited: ns=9627 allocations=62 bytes=4284 peak_live_bytes=2211 net_allocations=1
+first-use execution: ns=462524 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 13 v3 sequence] exit 0
+== sample 14 v3 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v3 client-build
+concord-perf 3.0.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1720041 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+[sample 14 v3 client-build] exit 0
+== sample 14 v2.1 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 client-build
+concord-perf 2.1.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1697079 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+[sample 14 v2.1 client-build] exit 0
+== sample 14 v3 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 direct-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1460 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+[sample 14 v3 direct-construction] exit 0
+== sample 14 v2.1 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 direct-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1830 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+[sample 14 v2.1 direct-construction] exit 0
+== sample 14 v3 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 unbound-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=580 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 14 v3 unbound-construction] exit 0
+== sample 14 v2.1 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 unbound-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=615 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 14 v2.1 unbound-construction] exit 0
+== sample 14 v3 binding: $ /home/claude/scratch_perf/bin/head_first_use_v3 binding
+concord-perf 3.0.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=502 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 14 v3 binding] exit 0
+== sample 14 v2.1 binding: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 binding
+concord-perf 2.1.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=528 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 14 v2.1 binding] exit 0
+== sample 14 v3 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-show
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=138525 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+[sample 14 v3 plan-show] exit 0
+== sample 14 v2.1 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-show
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=30946 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+[sample 14 v2.1 plan-show] exit 0
+== sample 14 v3 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-search
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=121047 allocations=556 bytes=73966 peak_live_bytes=25800 net_allocations=122
+[sample 14 v3 plan-search] exit 0
+== sample 14 v2.1 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-search
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=28536 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+[sample 14 v2.1 plan-search] exit 0
+== sample 14 v3 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-protected
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=109854 allocations=509 bytes=70622 peak_live_bytes=25800 net_allocations=122
+[sample 14 v3 plan-protected] exit 0
+== sample 14 v2.1 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-protected
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=23585 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+[sample 14 v2.1 plan-protected] exit 0
+== sample 14 v3 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-limited
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=114057 allocations=525 bytes=71831 peak_live_bytes=25800 net_allocations=122
+[sample 14 v3 plan-limited] exit 0
+== sample 14 v2.1 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-limited
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=25820 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+[sample 14 v2.1 plan-limited] exit 0
+== sample 14 v3 execution: $ /home/claude/scratch_perf/bin/head_first_use_v3 execution
+concord-perf 3.0.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=862585 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 14 v3 execution] exit 0
+== sample 14 v2.1 execution: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 execution
+concord-perf 2.1.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=644590 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 14 v2.1 execution] exit 0
+== sample 14 v3 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v3 sequence
+concord-perf 3.0.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=2537878 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+first-use direct-construction: ns=1551 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+first-use unbound-construction: ns=314 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=354 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=196367 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+first-use plan-search: ns=16735 allocations=93 bytes=6419 peak_live_bytes=1848 net_allocations=1
+first-use plan-protected: ns=8977 allocations=46 bytes=3075 peak_live_bytes=1855 net_allocations=1
+first-use plan-limited: ns=12808 allocations=62 bytes=4284 peak_live_bytes=2211 net_allocations=1
+first-use execution: ns=641606 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 14 v3 sequence] exit 0
+== sample 14 v2.1 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 sequence
+concord-perf 2.1.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=2083569 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+first-use direct-construction: ns=1699 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+first-use unbound-construction: ns=376 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=301 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=30093 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+first-use plan-search: ns=28963 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+first-use plan-protected: ns=9869 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+first-use plan-limited: ns=9985 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+first-use execution: ns=529433 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 14 v2.1 sequence] exit 0
+== sample 15 v2.1 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 client-build
+concord-perf 2.1.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1804564 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+[sample 15 v2.1 client-build] exit 0
+== sample 15 v3 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v3 client-build
+concord-perf 3.0.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=2751287 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+[sample 15 v3 client-build] exit 0
+== sample 15 v2.1 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 direct-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1863 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+[sample 15 v2.1 direct-construction] exit 0
+== sample 15 v3 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 direct-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1762 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+[sample 15 v3 direct-construction] exit 0
+== sample 15 v2.1 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 unbound-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=678 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 15 v2.1 unbound-construction] exit 0
+== sample 15 v3 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 unbound-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=505 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 15 v3 unbound-construction] exit 0
+== sample 15 v2.1 binding: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 binding
+concord-perf 2.1.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=577 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 15 v2.1 binding] exit 0
+== sample 15 v3 binding: $ /home/claude/scratch_perf/bin/head_first_use_v3 binding
+concord-perf 3.0.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=442 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 15 v3 binding] exit 0
+== sample 15 v2.1 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-show
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=30210 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+[sample 15 v2.1 plan-show] exit 0
+== sample 15 v3 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-show
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=143989 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+[sample 15 v3 plan-show] exit 0
+== sample 15 v2.1 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-search
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=29263 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+[sample 15 v2.1 plan-search] exit 0
+== sample 15 v3 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-search
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=126801 allocations=556 bytes=73966 peak_live_bytes=25800 net_allocations=122
+[sample 15 v3 plan-search] exit 0
+== sample 15 v2.1 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-protected
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=23419 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+[sample 15 v2.1 plan-protected] exit 0
+== sample 15 v3 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-protected
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=117591 allocations=509 bytes=70622 peak_live_bytes=25800 net_allocations=122
+[sample 15 v3 plan-protected] exit 0
+== sample 15 v2.1 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-limited
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=26107 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+[sample 15 v2.1 plan-limited] exit 0
+== sample 15 v3 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-limited
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=116914 allocations=525 bytes=71831 peak_live_bytes=25800 net_allocations=122
+[sample 15 v3 plan-limited] exit 0
+== sample 15 v2.1 execution: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 execution
+concord-perf 2.1.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=625694 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 15 v2.1 execution] exit 0
+== sample 15 v3 execution: $ /home/claude/scratch_perf/bin/head_first_use_v3 execution
+concord-perf 3.0.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=662535 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 15 v3 execution] exit 0
+== sample 15 v2.1 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 sequence
+concord-perf 2.1.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1700811 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+first-use direct-construction: ns=1250 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+first-use unbound-construction: ns=344 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=243 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=22215 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+first-use plan-search: ns=11655 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+first-use plan-protected: ns=6712 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+first-use plan-limited: ns=8916 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+first-use execution: ns=432709 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 15 v2.1 sequence] exit 0
+== sample 15 v3 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v3 sequence
+concord-perf 3.0.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1929182 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+first-use direct-construction: ns=1365 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+first-use unbound-construction: ns=261 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=296 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=120808 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+first-use plan-search: ns=12207 allocations=93 bytes=6419 peak_live_bytes=1848 net_allocations=1
+first-use plan-protected: ns=6785 allocations=46 bytes=3075 peak_live_bytes=1855 net_allocations=1
+first-use plan-limited: ns=10576 allocations=62 bytes=4284 peak_live_bytes=2211 net_allocations=1
+first-use execution: ns=464814 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 15 v3 sequence] exit 0
+== sample 16 v3 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v3 client-build
+concord-perf 3.0.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=2845679 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+[sample 16 v3 client-build] exit 0
+== sample 16 v2.1 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 client-build
+concord-perf 2.1.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1815599 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+[sample 16 v2.1 client-build] exit 0
+== sample 16 v3 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 direct-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1527 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+[sample 16 v3 direct-construction] exit 0
+== sample 16 v2.1 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 direct-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1674 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+[sample 16 v2.1 direct-construction] exit 0
+== sample 16 v3 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 unbound-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=560 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 16 v3 unbound-construction] exit 0
+== sample 16 v2.1 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 unbound-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=2133 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 16 v2.1 unbound-construction] exit 0
+== sample 16 v3 binding: $ /home/claude/scratch_perf/bin/head_first_use_v3 binding
+concord-perf 3.0.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=563 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 16 v3 binding] exit 0
+== sample 16 v2.1 binding: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 binding
+concord-perf 2.1.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=555 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 16 v2.1 binding] exit 0
+== sample 16 v3 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-show
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=139657 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+[sample 16 v3 plan-show] exit 0
+== sample 16 v2.1 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-show
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=32895 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+[sample 16 v2.1 plan-show] exit 0
+== sample 16 v3 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-search
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=128212 allocations=556 bytes=73966 peak_live_bytes=25800 net_allocations=122
+[sample 16 v3 plan-search] exit 0
+== sample 16 v2.1 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-search
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=29122 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+[sample 16 v2.1 plan-search] exit 0
+== sample 16 v3 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-protected
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=112654 allocations=509 bytes=70622 peak_live_bytes=25800 net_allocations=122
+[sample 16 v3 plan-protected] exit 0
+== sample 16 v2.1 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-protected
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=23153 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+[sample 16 v2.1 plan-protected] exit 0
+== sample 16 v3 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-limited
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=128563 allocations=525 bytes=71831 peak_live_bytes=25800 net_allocations=122
+[sample 16 v3 plan-limited] exit 0
+== sample 16 v2.1 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-limited
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=25781 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+[sample 16 v2.1 plan-limited] exit 0
+== sample 16 v3 execution: $ /home/claude/scratch_perf/bin/head_first_use_v3 execution
+concord-perf 3.0.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=494442 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 16 v3 execution] exit 0
+== sample 16 v2.1 execution: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 execution
+concord-perf 2.1.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=441357 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 16 v2.1 execution] exit 0
+== sample 16 v3 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v3 sequence
+concord-perf 3.0.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1818497 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+first-use direct-construction: ns=912 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+first-use unbound-construction: ns=263 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=571 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=140702 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+first-use plan-search: ns=12226 allocations=93 bytes=6419 peak_live_bytes=1848 net_allocations=1
+first-use plan-protected: ns=6755 allocations=46 bytes=3075 peak_live_bytes=1855 net_allocations=1
+first-use plan-limited: ns=10047 allocations=62 bytes=4284 peak_live_bytes=2211 net_allocations=1
+first-use execution: ns=488742 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 16 v3 sequence] exit 0
+== sample 16 v2.1 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 sequence
+concord-perf 2.1.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1787378 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+first-use direct-construction: ns=1370 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+first-use unbound-construction: ns=321 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=467 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=24445 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+first-use plan-search: ns=11550 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+first-use plan-protected: ns=7268 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+first-use plan-limited: ns=9271 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+first-use execution: ns=488261 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 16 v2.1 sequence] exit 0
+== sample 17 v2.1 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 client-build
+concord-perf 2.1.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=2148798 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+[sample 17 v2.1 client-build] exit 0
+== sample 17 v3 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v3 client-build
+concord-perf 3.0.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1717185 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+[sample 17 v3 client-build] exit 0
+== sample 17 v2.1 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 direct-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1679 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+[sample 17 v2.1 direct-construction] exit 0
+== sample 17 v3 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 direct-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1542 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+[sample 17 v3 direct-construction] exit 0
+== sample 17 v2.1 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 unbound-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=684 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 17 v2.1 unbound-construction] exit 0
+== sample 17 v3 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 unbound-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=696 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 17 v3 unbound-construction] exit 0
+== sample 17 v2.1 binding: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 binding
+concord-perf 2.1.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=653 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 17 v2.1 binding] exit 0
+== sample 17 v3 binding: $ /home/claude/scratch_perf/bin/head_first_use_v3 binding
+concord-perf 3.0.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=582 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 17 v3 binding] exit 0
+== sample 17 v2.1 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-show
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=35928 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+[sample 17 v2.1 plan-show] exit 0
+== sample 17 v3 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-show
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=202484 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+[sample 17 v3 plan-show] exit 0
+== sample 17 v2.1 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-search
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=38966 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+[sample 17 v2.1 plan-search] exit 0
+== sample 17 v3 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-search
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=177795 allocations=556 bytes=73966 peak_live_bytes=25800 net_allocations=122
+[sample 17 v3 plan-search] exit 0
+== sample 17 v2.1 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-protected
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=32271 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+[sample 17 v2.1 plan-protected] exit 0
+== sample 17 v3 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-protected
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=166680 allocations=509 bytes=70622 peak_live_bytes=25800 net_allocations=122
+[sample 17 v3 plan-protected] exit 0
+== sample 17 v2.1 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-limited
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=60515 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+[sample 17 v2.1 plan-limited] exit 0
+== sample 17 v3 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-limited
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=119229 allocations=525 bytes=71831 peak_live_bytes=25800 net_allocations=122
+[sample 17 v3 plan-limited] exit 0
+== sample 17 v2.1 execution: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 execution
+concord-perf 2.1.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=491556 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 17 v2.1 execution] exit 0
+== sample 17 v3 execution: $ /home/claude/scratch_perf/bin/head_first_use_v3 execution
+concord-perf 3.0.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=443276 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 17 v3 execution] exit 0
+== sample 17 v2.1 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 sequence
+concord-perf 2.1.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1850832 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+first-use direct-construction: ns=1629 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+first-use unbound-construction: ns=370 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=324 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=26391 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+first-use plan-search: ns=12590 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+first-use plan-protected: ns=6712 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+first-use plan-limited: ns=9032 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+first-use execution: ns=480996 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 17 v2.1 sequence] exit 0
+== sample 17 v3 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v3 sequence
+concord-perf 3.0.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1743522 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+first-use direct-construction: ns=1041 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+first-use unbound-construction: ns=244 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=411 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=142349 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+first-use plan-search: ns=16301 allocations=93 bytes=6419 peak_live_bytes=1848 net_allocations=1
+first-use plan-protected: ns=8829 allocations=46 bytes=3075 peak_live_bytes=1855 net_allocations=1
+first-use plan-limited: ns=12769 allocations=62 bytes=4284 peak_live_bytes=2211 net_allocations=1
+first-use execution: ns=616886 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 17 v3 sequence] exit 0
+== sample 18 v3 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v3 client-build
+concord-perf 3.0.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1851601 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+[sample 18 v3 client-build] exit 0
+== sample 18 v2.1 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 client-build
+concord-perf 2.1.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=2355487 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+[sample 18 v2.1 client-build] exit 0
+== sample 18 v3 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 direct-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1333 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+[sample 18 v3 direct-construction] exit 0
+== sample 18 v2.1 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 direct-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1491 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+[sample 18 v2.1 direct-construction] exit 0
+== sample 18 v3 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 unbound-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=502 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 18 v3 unbound-construction] exit 0
+== sample 18 v2.1 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 unbound-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=960 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 18 v2.1 unbound-construction] exit 0
+== sample 18 v3 binding: $ /home/claude/scratch_perf/bin/head_first_use_v3 binding
+concord-perf 3.0.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=742 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 18 v3 binding] exit 0
+== sample 18 v2.1 binding: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 binding
+concord-perf 2.1.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=596 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 18 v2.1 binding] exit 0
+== sample 18 v3 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-show
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=130908 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+[sample 18 v3 plan-show] exit 0
+== sample 18 v2.1 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-show
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=30197 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+[sample 18 v2.1 plan-show] exit 0
+== sample 18 v3 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-search
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=124443 allocations=556 bytes=73966 peak_live_bytes=25800 net_allocations=122
+[sample 18 v3 plan-search] exit 0
+== sample 18 v2.1 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-search
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=30978 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+[sample 18 v2.1 plan-search] exit 0
+== sample 18 v3 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-protected
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=108642 allocations=509 bytes=70622 peak_live_bytes=25800 net_allocations=122
+[sample 18 v3 plan-protected] exit 0
+== sample 18 v2.1 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-protected
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=26159 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+[sample 18 v2.1 plan-protected] exit 0
+== sample 18 v3 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-limited
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=114453 allocations=525 bytes=71831 peak_live_bytes=25800 net_allocations=122
+[sample 18 v3 plan-limited] exit 0
+== sample 18 v2.1 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-limited
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=25364 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+[sample 18 v2.1 plan-limited] exit 0
+== sample 18 v3 execution: $ /home/claude/scratch_perf/bin/head_first_use_v3 execution
+concord-perf 3.0.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=598905 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 18 v3 execution] exit 0
+== sample 18 v2.1 execution: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 execution
+concord-perf 2.1.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=436014 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 18 v2.1 execution] exit 0
+== sample 18 v3 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v3 sequence
+concord-perf 3.0.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=2518039 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+first-use direct-construction: ns=1081 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+first-use unbound-construction: ns=268 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=351 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=114399 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+first-use plan-search: ns=12099 allocations=93 bytes=6419 peak_live_bytes=1848 net_allocations=1
+first-use plan-protected: ns=6762 allocations=46 bytes=3075 peak_live_bytes=1855 net_allocations=1
+first-use plan-limited: ns=9768 allocations=62 bytes=4284 peak_live_bytes=2211 net_allocations=1
+first-use execution: ns=671872 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 18 v3 sequence] exit 0
+== sample 18 v2.1 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 sequence
+concord-perf 2.1.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=2312683 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+first-use direct-construction: ns=1158 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+first-use unbound-construction: ns=383 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=530 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=25372 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+first-use plan-search: ns=11550 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+first-use plan-protected: ns=6928 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+first-use plan-limited: ns=9365 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+first-use execution: ns=362992 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 18 v2.1 sequence] exit 0
+== sample 19 v2.1 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 client-build
+concord-perf 2.1.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=2044507 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+[sample 19 v2.1 client-build] exit 0
+== sample 19 v3 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v3 client-build
+concord-perf 3.0.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1821739 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+[sample 19 v3 client-build] exit 0
+== sample 19 v2.1 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 direct-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1460 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+[sample 19 v2.1 direct-construction] exit 0
+== sample 19 v3 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 direct-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1448 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+[sample 19 v3 direct-construction] exit 0
+== sample 19 v2.1 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 unbound-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=596 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 19 v2.1 unbound-construction] exit 0
+== sample 19 v3 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 unbound-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=535 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 19 v3 unbound-construction] exit 0
+== sample 19 v2.1 binding: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 binding
+concord-perf 2.1.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=540 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 19 v2.1 binding] exit 0
+== sample 19 v3 binding: $ /home/claude/scratch_perf/bin/head_first_use_v3 binding
+concord-perf 3.0.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=622 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 19 v3 binding] exit 0
+== sample 19 v2.1 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-show
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=28002 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+[sample 19 v2.1 plan-show] exit 0
+== sample 19 v3 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-show
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=139185 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+[sample 19 v3 plan-show] exit 0
+== sample 19 v2.1 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-search
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=29221 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+[sample 19 v2.1 plan-search] exit 0
+== sample 19 v3 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-search
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=132238 allocations=556 bytes=73966 peak_live_bytes=25800 net_allocations=122
+[sample 19 v3 plan-search] exit 0
+== sample 19 v2.1 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-protected
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=23150 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+[sample 19 v2.1 plan-protected] exit 0
+== sample 19 v3 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-protected
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=140590 allocations=509 bytes=70622 peak_live_bytes=25800 net_allocations=122
+[sample 19 v3 plan-protected] exit 0
+== sample 19 v2.1 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-limited
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=25792 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+[sample 19 v2.1 plan-limited] exit 0
+== sample 19 v3 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-limited
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=119088 allocations=525 bytes=71831 peak_live_bytes=25800 net_allocations=122
+[sample 19 v3 plan-limited] exit 0
+== sample 19 v2.1 execution: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 execution
+concord-perf 2.1.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=448057 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 19 v2.1 execution] exit 0
+== sample 19 v3 execution: $ /home/claude/scratch_perf/bin/head_first_use_v3 execution
+concord-perf 3.0.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=551881 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 19 v3 execution] exit 0
+== sample 19 v2.1 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 sequence
+concord-perf 2.1.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=2586012 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+first-use direct-construction: ns=1263 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+first-use unbound-construction: ns=397 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=286 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=27436 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+first-use plan-search: ns=19913 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+first-use plan-protected: ns=7403 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+first-use plan-limited: ns=9759 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+first-use execution: ns=513919 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 19 v2.1 sequence] exit 0
+== sample 19 v3 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v3 sequence
+concord-perf 3.0.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1774014 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+first-use direct-construction: ns=1273 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+first-use unbound-construction: ns=252 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=366 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=135102 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+first-use plan-search: ns=12537 allocations=93 bytes=6419 peak_live_bytes=1848 net_allocations=1
+first-use plan-protected: ns=7282 allocations=46 bytes=3075 peak_live_bytes=1855 net_allocations=1
+first-use plan-limited: ns=9497 allocations=62 bytes=4284 peak_live_bytes=2211 net_allocations=1
+first-use execution: ns=590395 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 19 v3 sequence] exit 0
+== sample 20 v3 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v3 client-build
+concord-perf 3.0.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1677179 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+[sample 20 v3 client-build] exit 0
+== sample 20 v2.1 client-build: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 client-build
+concord-perf 2.1.0-beta.1 head first-use probe: category client-build, no warm-up
+first-use client-build: ns=1707647 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+[sample 20 v2.1 client-build] exit 0
+== sample 20 v3 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 direct-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1242 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+[sample 20 v3 direct-construction] exit 0
+== sample 20 v2.1 direct-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 direct-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category direct-construction, no warm-up
+first-use direct-construction: ns=1614 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+[sample 20 v2.1 direct-construction] exit 0
+== sample 20 v3 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v3 unbound-construction
+concord-perf 3.0.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=555 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 20 v3 unbound-construction] exit 0
+== sample 20 v2.1 unbound-construction: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 unbound-construction
+concord-perf 2.1.0-beta.1 head first-use probe: category unbound-construction, no warm-up
+first-use unbound-construction: ns=743 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+[sample 20 v2.1 unbound-construction] exit 0
+== sample 20 v3 binding: $ /home/claude/scratch_perf/bin/head_first_use_v3 binding
+concord-perf 3.0.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=486 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 20 v3 binding] exit 0
+== sample 20 v2.1 binding: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 binding
+concord-perf 2.1.0-beta.1 head first-use probe: category binding, no warm-up
+first-use binding: ns=579 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+[sample 20 v2.1 binding] exit 0
+== sample 20 v3 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-show
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=144052 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+[sample 20 v3 plan-show] exit 0
+== sample 20 v2.1 plan-show: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-show
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-show, no warm-up
+first-use plan-show: ns=31342 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+[sample 20 v2.1 plan-show] exit 0
+== sample 20 v3 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-search
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=147023 allocations=556 bytes=73966 peak_live_bytes=25800 net_allocations=122
+[sample 20 v3 plan-search] exit 0
+== sample 20 v2.1 plan-search: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-search
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-search, no warm-up
+first-use plan-search: ns=28955 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+[sample 20 v2.1 plan-search] exit 0
+== sample 20 v3 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-protected
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=113215 allocations=509 bytes=70622 peak_live_bytes=25800 net_allocations=122
+[sample 20 v3 plan-protected] exit 0
+== sample 20 v2.1 plan-protected: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-protected
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-protected, no warm-up
+first-use plan-protected: ns=23078 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+[sample 20 v2.1 plan-protected] exit 0
+== sample 20 v3 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v3 plan-limited
+concord-perf 3.0.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=116786 allocations=525 bytes=71831 peak_live_bytes=25800 net_allocations=122
+[sample 20 v3 plan-limited] exit 0
+== sample 20 v2.1 plan-limited: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 plan-limited
+concord-perf 2.1.0-beta.1 head first-use probe: category plan-limited, no warm-up
+first-use plan-limited: ns=28575 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+[sample 20 v2.1 plan-limited] exit 0
+== sample 20 v3 execution: $ /home/claude/scratch_perf/bin/head_first_use_v3 execution
+concord-perf 3.0.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=472368 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 20 v3 execution] exit 0
+== sample 20 v2.1 execution: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 execution
+concord-perf 2.1.0-beta.1 head first-use probe: category execution, no warm-up
+first-use execution: ns=429477 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 20 v2.1 execution] exit 0
+== sample 20 v3 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v3 sequence
+concord-perf 3.0.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=1784635 allocations=1037 bytes=640100 peak_live_bytes=292989 net_allocations=1
+first-use direct-construction: ns=1272 allocations=5 bytes=176 peak_live_bytes=176 net_allocations=-5
+first-use unbound-construction: ns=433 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=399 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=119612 allocations=527 bytes=71305 peak_live_bytes=25800 net_allocations=122
+first-use plan-search: ns=17739 allocations=93 bytes=6419 peak_live_bytes=1848 net_allocations=1
+first-use plan-protected: ns=8999 allocations=46 bytes=3075 peak_live_bytes=1855 net_allocations=1
+first-use plan-limited: ns=12839 allocations=62 bytes=4284 peak_live_bytes=2211 net_allocations=1
+first-use execution: ns=524214 allocations=162 bytes=81556 peak_live_bytes=55361 net_allocations=46
+[sample 20 v3 sequence] exit 0
+== sample 20 v2.1 sequence: $ /home/claude/scratch_perf/bin/head_first_use_v2_1 sequence
+concord-perf 2.1.0-beta.1 head first-use probe: category sequence, no warm-up
+first-use client-build: ns=2039897 allocations=1033 bytes=639796 peak_live_bytes=292917 net_allocations=1
+first-use direct-construction: ns=1266 allocations=5 bytes=168 peak_live_bytes=168 net_allocations=-5
+first-use unbound-construction: ns=354 allocations=2 bytes=80 peak_live_bytes=80 net_allocations=-2
+first-use binding: ns=236 allocations=0 bytes=0 peak_live_bytes=0 net_allocations=-4
+first-use plan-show: ns=25402 allocations=53 bytes=4178 peak_live_bytes=2345 net_allocations=4
+first-use plan-search: ns=11884 allocations=86 bytes=7519 peak_live_bytes=3168 net_allocations=4
+first-use plan-protected: ns=7716 allocations=45 bytes=3766 peak_live_bytes=2575 net_allocations=4
+first-use plan-limited: ns=9181 allocations=68 bytes=4699 peak_live_bytes=2595 net_allocations=6
+first-use execution: ns=413903 allocations=94 bytes=65727 peak_live_bytes=50298 net_allocations=25
+[sample 20 v2.1 sequence] exit 0
+== head_first_use samples done (uptime after:  23:38:44 up 10:53,  0 user,  load average: 0.38, 0.69, 0.81)
+
+================================================================================================================
+Derived comparison (computed by a scratch script from the log above)
+================================================================================================================
+
+Allocation counts, bytes, peak live bytes and net allocations were identical in all 20 samples of every
+version/category (a single value is shown; a range would appear as lo-hi). Time: median, min and max over the 20
+fresh-process samples.
+
+isolated mode (one category per fresh process); samples per version: v2.1 20, v3 20
+| first operation | version | time µs median | min | max | allocations | bytes | peak live bytes | net allocations |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| client-build | v2.1 | 1876.8 | 1697.1 | 3302.7 | 1033 | 639796 | 292917 | 1 |
+| client-build | v3 | 1837.6 | 1677.2 | 3164.0 | 1037 | 640100 | 292989 | 1 |
+| direct-construction | v2.1 | 1.7 | 1.4 | 2.4 | 5 | 168 | 168 | -5 |
+| direct-construction | v3 | 1.5 | 1.2 | 2.0 | 5 | 176 | 176 | -5 |
+| unbound-construction | v2.1 | 0.7 | 0.6 | 2.1 | 2 | 80 | 80 | -2 |
+| unbound-construction | v3 | 0.6 | 0.5 | 0.7 | 2 | 80 | 80 | -2 |
+| binding | v2.1 | 0.6 | 0.4 | 0.8 | 0 | 0 | 0 | -4 |
+| binding | v3 | 0.6 | 0.4 | 0.9 | 0 | 0 | 0 | -4 |
+| plan-show | v2.1 | 30.6 | 24.9 | 76.3 | 53 | 4178 | 2345 | 4 |
+| plan-show | v3 | 144.0 | 118.3 | 293.9 | 527 | 71305 | 25800 | 122 |
+| plan-search | v2.1 | 30.4 | 27.0 | 39.3 | 86 | 7519 | 3168 | 4 |
+| plan-search | v3 | 131.0 | 113.4 | 193.0 | 556 | 73966 | 25800 | 122 |
+| plan-protected | v2.1 | 24.6 | 22.1 | 75.0 | 45 | 3766 | 2575 | 4 |
+| plan-protected | v3 | 122.0 | 108.6 | 194.4 | 509 | 70622 | 25800 | 122 |
+| plan-limited | v2.1 | 26.5 | 25.4 | 60.5 | 68 | 4699 | 2595 | 6 |
+| plan-limited | v3 | 118.4 | 111.5 | 333.9 | 525 | 71831 | 25800 | 122 |
+| execution | v2.1 | 528.4 | 429.5 | 662.3 | 94 | 65727 | 50298 | 25 |
+| execution | v3 | 610.8 | 428.0 | 862.6 | 162 | 81556 | 55361 | 46 |
+
+isolated mode, v2.1 -> v3 (median time; allocation count and bytes use the per-version medians)
+| first operation | time µs | allocations | bytes |
+|---|---|---|---|
+| client-build | 1876.8 -> 1837.6 (0.98x) | 1033 -> 1037 (+4) | 639796 -> 640100 (+304) |
+| direct-construction | 1.7 -> 1.5 (0.90x) | 5 -> 5 (+0) | 168 -> 176 (+8) |
+| unbound-construction | 0.7 -> 0.6 (0.80x) | 2 -> 2 (+0) | 80 -> 80 (+0) |
+| binding | 0.6 -> 0.6 (1.01x) | 0 -> 0 (+0) | 0 -> 0 (+0) |
+| plan-show | 30.6 -> 144.0 (4.70x) | 53 -> 527 (+474) | 4178 -> 71305 (+67127) |
+| plan-search | 30.4 -> 131.0 (4.30x) | 86 -> 556 (+470) | 7519 -> 73966 (+66447) |
+| plan-protected | 24.6 -> 122.0 (4.97x) | 45 -> 509 (+464) | 3766 -> 70622 (+66856) |
+| plan-limited | 26.5 -> 118.4 (4.48x) | 68 -> 525 (+457) | 4699 -> 71831 (+67132) |
+| execution | 528.4 -> 610.8 (1.16x) | 94 -> 162 (+68) | 65727 -> 81556 (+15829) |
+
+sequence mode (all categories in order in one fresh process); samples per version: v2.1 20, v3 20
+| first operation | version | time µs median | min | max | allocations | bytes | peak live bytes | net allocations |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| client-build | v2.1 | 1848.2 | 1700.8 | 3789.7 | 1033 | 639796 | 292917 | 1 |
+| client-build | v3 | 1827.6 | 1707.0 | 3536.2 | 1037 | 640100 | 292989 | 1 |
+| direct-construction | v2.1 | 1.3 | 1.2 | 1.7 | 5 | 168 | 168 | -5 |
+| direct-construction | v3 | 1.3 | 0.9 | 1.6 | 5 | 176 | 176 | -5 |
+| unbound-construction | v2.1 | 0.4 | 0.3 | 0.4 | 2 | 80 | 80 | -2 |
+| unbound-construction | v3 | 0.3 | 0.2 | 0.5 | 2 | 80 | 80 | -2 |
+| binding | v2.1 | 0.3 | 0.2 | 0.5 | 0 | 0 | 0 | -4 |
+| binding | v3 | 0.4 | 0.3 | 0.7 | 0 | 0 | 0 | -4 |
+| plan-show | v2.1 | 24.6 | 22.1 | 31.2 | 53 | 4178 | 2345 | 4 |
+| plan-show | v3 | 121.0 | 110.1 | 401.9 | 527 | 71305 | 25800 | 122 |
+| plan-search | v2.1 | 12.2 | 11.5 | 47.7 | 86 | 7519 | 3168 | 4 |
+| plan-search | v3 | 12.6 | 11.8 | 18.7 | 93 | 6419 | 1848 | 1 |
+| plan-protected | v2.1 | 7.1 | 6.5 | 11.1 | 45 | 3766 | 2575 | 4 |
+| plan-protected | v3 | 7.3 | 6.4 | 26.2 | 46 | 3075 | 1855 | 1 |
+| plan-limited | v2.1 | 9.2 | 8.3 | 12.4 | 68 | 4699 | 2595 | 6 |
+| plan-limited | v3 | 10.1 | 9.3 | 16.4 | 62 | 4284 | 2211 | 1 |
+| execution | v2.1 | 489.2 | 363.0 | 786.6 | 94 | 65727 | 50298 | 25 |
+| execution | v3 | 566.1 | 386.9 | 671.9 | 162 | 81556 | 55361 | 46 |
+
+sequence mode, v2.1 -> v3 (median time; allocation count and bytes use the per-version medians)
+| first operation | time µs | allocations | bytes |
+|---|---|---|---|
+| client-build | 1848.2 -> 1827.6 (0.99x) | 1033 -> 1037 (+4) | 639796 -> 640100 (+304) |
+| direct-construction | 1.3 -> 1.3 (0.95x) | 5 -> 5 (+0) | 168 -> 176 (+8) |
+| unbound-construction | 0.4 -> 0.3 (0.75x) | 2 -> 2 (+0) | 80 -> 80 (+0) |
+| binding | 0.3 -> 0.4 (1.33x) | 0 -> 0 (+0) | 0 -> 0 (+0) |
+| plan-show | 24.6 -> 121.0 (4.92x) | 53 -> 527 (+474) | 4178 -> 71305 (+67127) |
+| plan-search | 12.2 -> 12.6 (1.03x) | 86 -> 93 (+7) | 7519 -> 6419 (-1100) |
+| plan-protected | 7.1 -> 7.3 (1.03x) | 45 -> 46 (+1) | 3766 -> 3075 (-691) |
+| plan-limited | 9.2 -> 10.1 (1.10x) | 68 -> 62 (-6) | 4699 -> 4284 (-415) |
+| execution | 489.2 -> 566.1 (1.16x) | 94 -> 162 (+68) | 65727 -> 81556 (+15829) |
+
+Reading the numbers (the allocation-by-allocation attribution is in ATTRIBUTION.md, "r2 remeasurement"):
+
+- The first bound-head plan of a client in a process is the large first-use gap: 4.3-5.0x the v2.1 time
+  (isolated medians 118-144 us versus 24.6-30.6 us), +457 to +474 allocations and about +67 KB allocated, with
+  122 allocations retained afterwards (v2.1: 4-6). A scratch tracking-allocator harness attributes 466 of the 527
+  allocations and 67,383 of the 71,305 bytes of the first show plan to building the client's lazily allocated
+  static contract description (concord-core inspection::resolve), which spec section 18.1 allows to be allocated
+  once; it happens on whichever plan comes first (isolated rows) and only once per client type (sequence rows:
+  after the show plan, the first search/protected/limited plans are within +0.2..+0.9 us of v2.1, with 93/46/62
+  allocations versus warm 81/40/56 (v2.1: 86/45/68 versus warm 82/41/62); the harness attributes the 12 extra
+  allocations (300 B) of the first search plan to that endpoint's own lazily built description (route shape and
+  display strings), v2.1's 4 extra (1,376 B) to its lazily generated endpoint metadata).
+  Peak live bytes during the first plan are 25,800 B, an upper bound for what the description retains.
+- The first managed execution is 1.16x the v2.1 time (median 610.8 vs 528.4 us isolated, 566.1 vs 489.2 us in
+  sequence; the spread is wide, min 428.0 vs 429.5 us) with +68 allocations and +15,829 B. The +68 allocations
+  (12,901 B) are ExecApi's own lazily built contract description (the execution client is a different client
+  type, so it is built on its first execution even in sequence mode); the other +2,928 B are the larger operation
+  and buffered-acquisition futures (+3,344 B, the same as warm) minus smaller one-time items of v2.1 (-416 B).
+- Construction and binding: first use equals warm in counts and bytes in both versions (5/168 vs 5/176 B, 2/80,
+  0/0); first-operation times are within a microsecond and at or below v2.1.
+- Client build: +4 allocations, +304 B (1,037 / 640,100 B versus 1,033 / 639,796 B); time equal within noise
+  (1.84 vs 1.88 ms isolated). It is dominated in both versions by the HTTP/TLS stack.
+- Retained after the first operation (net allocations): plan 122 (v3) vs 4-6 (v2.1); execution 46 vs 25
+  (connection pool, runtime registration and the ExecApi description).

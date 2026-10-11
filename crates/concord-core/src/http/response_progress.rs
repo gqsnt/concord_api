@@ -15,13 +15,77 @@ pub(super) enum ResponseChunkError {
     LimitExceeded,
 }
 
+/// Shared aggregate count of nonempty response-body bytes actually acquired
+/// from application responses, with one finite ceiling.
+///
+/// A traversal attaches one meter to every application response of every page
+/// attempt (accepted pages, rejected-status captures and responses whose
+/// acquisition later fails), so its total counts every byte actually read, not
+/// only delivered pages. The chunk that first crosses the ceiling is counted
+/// (it was read) and the acquisition then stops with a limit failure.
+#[derive(Clone)]
+pub(crate) struct AcquiredByteMeter {
+    inner: std::sync::Arc<AcquiredByteState>,
+}
+
+struct AcquiredByteState {
+    total: std::sync::atomic::AtomicU64,
+    ceiling: u64,
+}
+
+impl AcquiredByteMeter {
+    pub(crate) fn new(ceiling: u64) -> Self {
+        Self {
+            inner: std::sync::Arc::new(AcquiredByteState {
+                total: std::sync::atomic::AtomicU64::new(0),
+                ceiling,
+            }),
+        }
+    }
+
+    /// Records one acquired chunk; returns whether the total is still within
+    /// the ceiling. The total saturates instead of wrapping.
+    pub(crate) fn record(&self, bytes: usize) -> bool {
+        let bytes = u64::try_from(bytes).unwrap_or(u64::MAX);
+        let previous = self
+            .inner
+            .total
+            .fetch_update(
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Acquire,
+                |total| Some(total.saturating_add(bytes)),
+            )
+            .unwrap_or_else(|total| total);
+        previous.saturating_add(bytes) <= self.inner.ceiling
+    }
+
+    pub(crate) fn total(&self) -> u64 {
+        self.inner.total.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    pub(crate) fn exceeded(&self) -> bool {
+        self.total() > self.inner.ceiling
+    }
+}
+
 #[derive(Default)]
 pub(super) struct ResponseChunkProgress {
     empty_chunks_seen: usize,
     ready_empty_chunks: usize,
+    acquired: Option<AcquiredByteMeter>,
 }
 
 impl ResponseChunkProgress {
+    pub(super) fn attach_meter(&mut self, meter: AcquiredByteMeter) {
+        self.acquired = Some(meter);
+    }
+
+    fn record_acquired(&self, bytes: usize) -> bool {
+        self.acquired
+            .as_ref()
+            .is_none_or(|meter| meter.record(bytes))
+    }
+
     pub(super) fn begin_turn(&mut self) {
         self.ready_empty_chunks = 0;
     }
@@ -68,7 +132,13 @@ pub(super) async fn next_nonempty_chunk(
                     return Err(ResponseChunkError::LimitExceeded);
                 }
             },
-            chunk => return Ok(chunk),
+            Some(bytes) => {
+                if !progress.record_acquired(bytes.len()) {
+                    return Err(ResponseChunkError::LimitExceeded);
+                }
+                return Ok(Some(bytes));
+            }
+            None => return Ok(None),
         }
     }
 }
@@ -176,6 +246,7 @@ mod tests {
         let mut progress = ResponseChunkProgress {
             empty_chunks_seen: usize::MAX,
             ready_empty_chunks: 0,
+            acquired: None,
         };
         assert_eq!(progress.observe_empty(), EmptyChunkAction::LimitExceeded);
     }

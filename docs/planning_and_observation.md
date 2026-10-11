@@ -1,266 +1,227 @@
-# Planning, descriptions, observation, and errors
+# Planning, inspection and observation
 
-Concord exposes several inspection/evidence products. They share one semantic contract but have different authority and runtime state.
+Concord generates four distinct views from the resolved contract and the
+execution journal (EXPLAIN-01). Each answers a different question and must not
+be mistaken for another:
 
-## Four products
+| View | Answers | Must not imply |
+|---|---|---|
+| Method/hover rustdoc | What to call, required inputs, result, capabilities, inherited auth and timeout | That runtime values or provider behavior are known |
+| Static contract (`Client::contract()`, `description()`) | Effective symbolic behavior, origins, fallbacks, coverage and identities | That a plan was executed or opaque Rust code was proved equivalent |
+| Bound `RequestPlan` | This request's public shape and effective controls | Credential acquisition, quota admission, body preparation or a send |
+| Execution, traversal and stream outcomes | What happened as of the recorded stage and why it stopped | Remote rollback, complete consumption at acquisition, or business intent |
 
-1. **Static contract description** — value-free declarations and provenance.
-2. **Effective endpoint description** — inherited normalized endpoint contract.
-3. **Request plan** — one bound credential-free public request projection.
-4. **Operation evidence** — runtime identities, stages, waits, and outcomes.
+## Static contracts
 
-Do not conflate them or call all of them “request metadata.”
+`CatalogApi::contract()` returns a `&'static ContractDescription` without an
+executable client, secret or network service; a generated request or intent's
+`description()` returns its `&'static EndpointDescription`. Building a
+description never evaluates payload defaults, invokes converters or encodes
+values. The description preserves (§18.2):
 
-## Static and effective descriptions
+- the owner tree, source origins, author docs and deprecation, and local versus
+  effective attachments and fences;
+- each value's owner, payload type, presence, initializer identity,
+  sensitivity, liveness and constructor order;
+- each endpoint's method, exact result/body types and selected representation,
+  with declared versus inherited provenance;
+- the ordered path/DNS template IR and the query/header operation IR
+  (literals, value references, adapters, `concat`, `each`, conditional
+  branches);
+- per-endpoint credential sources, targets, challenge rules and whether
+  automatic recovery is actually available;
+- explicit and derived endpoint IDs; policy IDs, window dependencies, ordered
+  key labels and encoding identities, bindings, cost, coverage and possible
+  sharing;
+- accepted and absent statuses, effect and its source, timeout selections,
+  pagination Init/Cursor mappings, body/driver capabilities and terminal
+  availability;
+- opaque dependencies: Rust types, constants, adapters, controllers and
+  providers whose semantics cannot be proved from declaration text.
 
-Generated entry points:
+A sensitive literal is held only as a redacted marker with its classification
+and location; a comparison involving it reports an unresolved opaque
+dependency rather than equality.
 
-<!-- concord-source: crates/concord-examples/src/contracts/catalog_contract.rs#catalog_planning -->
-```rust
-    let _plan = request.plan()?;
-    let _pagination = request.paginate(PageLimit::CompleteWithin(
-        NonZeroU32::new(20).expect("positive"),
-    ));
-    let _accepted: concord::endpoint::AcceptedBytesRequest<_> =
-        regional.item("item-42".to_owned()).accepted_bytes();
-
-    let endpoint = CatalogApi::unbound()
-        .regional("eu-west".to_owned())
-        .item("item-42".to_owned());
-    let _description = endpoint.description();
-    let _unbound_plan = client.plan(&endpoint)?;
-    let request = client.request(endpoint);
-    let _response: concord::endpoint::ResponseRequest<_> = request.response();
-    let _metadata_shape: Option<ApiResponse<Bytes>> = None;
-```
-
-Descriptions include:
-
-- client/scope/endpoint tree;
-- docs/deprecation and stable/derived identity;
-- exact value types, presence, defaults, sensitivity, and controls;
-- local and effective request/response representation plus origin;
-- route/query/header/auth/rate patches and provenance;
-- status, effect, timeout, body/response capabilities;
-- pagination bindings and metadata interests;
-- available terminals;
-- opaque custom behavior marked as opaque rather than guessed.
-
-Because representation defaults are inherited, the effective representation and owner must appear near every endpoint signature in generated Rustdoc and tooling.
-
-## Request plan
+## Bound plans
 
 <!-- concord-source: crates/concord-examples/src/contracts/catalog_contract.rs#catalog_planning -->
 ```rust
-    let _plan = request.plan()?;
-    let _pagination = request.paginate(PageLimit::CompleteWithin(
-        NonZeroU32::new(20).expect("positive"),
-    ));
-    let _accepted: concord::endpoint::AcceptedBytesRequest<_> =
-        regional.item("item-42".to_owned()).accepted_bytes();
+let _plan = request.plan()?;
+let _complete: concord::pagination::CollectAll<ItemSummary> =
+    request.collect_all(NonZeroU32::new(20).expect("positive"));
+let _accepted: concord::endpoint::AcceptedBytesRequest =
+    regional.item("item-42").accepted_bytes();
 
-    let endpoint = CatalogApi::unbound()
-        .regional("eu-west".to_owned())
-        .item("item-42".to_owned());
-    let _description = endpoint.description();
-    let _unbound_plan = client.plan(&endpoint)?;
-    let request = client.request(endpoint);
-    let _response: concord::endpoint::ResponseRequest<_> = request.response();
-    let _metadata_shape: Option<ApiResponse<Bytes>> = None;
+let endpoint = CatalogApi::unbound().regional("eu-west").item("item-42");
+let _description = endpoint.description();
+let _unbound_plan = client.plan(&endpoint)?;
+let request = client.request(endpoint);
+let _response: concord::endpoint::ResponseRequest<Item> = request.response();
+let _metadata_shape: Option<ApiResponse<Bytes>> = None;
 ```
 
-A plan is inert, credential-free, redaction-aware, and not universally safe for unrestricted disclosure.
+`request.plan()`, `client.plan(&intent)` and `owner.plan_runtime(&endpoint)`
+run public selection and rendering only: they evaluate surviving public atom
+encoders but never prepare a body, trigger a provider, acquire a limiter,
+register a schema or open a connection (EXEC-03). A `RequestPlan` provides:
 
-It may include:
+| Accessor | Fact |
+|---|---|
+| `observed_url()` | the sanitized logical URL, with sensitive components redacted |
+| `public_headers()` | the ordered sanitized public headers |
+| `endpoint_id()`, `method()`, `description()` | identity and the static description |
+| `timeout_selection()`, `resolved_timeout()` | the effective timeout and its source |
+| `body_category()`, `body_description()` | body presence and the static body hint; exact Content-Type and length are deferred to preparation |
+| `absent_status()`, `response_acquisition()`, `capabilities()` | absence, driver and terminal facts, including effective authentication |
+| `rate_limit()`, `rate_limit_policy_count()` | effective policy IDs and key-label schemas without values, and the enforcement choice |
+| `runtime_binding()` | for runtime endpoints: the owner, operations, and authentication disposition |
 
-- stable endpoint ID and owner path;
-- method and logical origin;
-- actual public path/query/header structure;
-- ordinary public values through explicit accessors;
-- sensitive values as structural redaction markers;
-- private auth target/source structure without material;
-- body category/representation, not content;
-- exact output and caller-lifecycle category;
-- response representation and negotiation metadata;
-- status, effect, timeout;
-- rate schemas without resolved key values;
-- pagination and terminals;
-- local/effective provenance.
+A plan never displays a placeholder as the actual rate origin, and it labels a
+`NoopRateLimiter` as "declared policies; enforcement explicitly disabled by
+application selection" rather than "rate limited" (EXPLAIN-04). A runtime plan
+includes inherited root and scope attachments, auth and rates, and every
+explicit runtime removal; removed authentication is displayed prominently.
+Plans and execution are separate preparations, so a plan is not a cache and
+does not guarantee later user code cannot fail.
 
-The exact logical URL and sanitized public header values are deliberate caller
-authority available only through explicit accessors. They can still contain
-personal or operational application data. `RequestPlan`'s `Debug`
-implementation omits the URL and every header name/value; automatic logs,
-observers, and rate feedback do not inherit those accessors.
+## The `concord.contract/3` format
 
-Planning performs bounded public atom encoding/validation. It does not invoke body preparation, provider, limiter, retry, observer, native HTTP, endpoint-backed storage, or completion.
+`concord.contract/3` is the versioned JSON structural export of a
+`ContractDescription`, produced by the `concord-inspect` companion crate so
+the runtime carries no JSON dependency (§18.3):
 
-## Plan versus execution
+- top-level keys `format`, `client`, `owners`, `endpoints`, `policies`,
+  `window_sets`, `dependencies` and `diagnostics`;
+- every record has a stable structural key (`path`, `id`, `name` or
+  `kind` + `reference`); semantic arrays keep declaration order and object keys
+  are sorted, so exports are byte-identical across runs;
+- only integers and strings: durations are `{ "secs": u64, "nanos": u32 }`;
+- no timestamps, absolute paths, runtime values, bodies, material or raw keys;
+  sensitive literals appear only as redacted markers.
 
-Both consume the same semantic shaping program. `RequestAtom` promises deterministic output for an unchanged semantic value. Within each pass, real and sanitized views derive from one atom emission.
+Two equal snapshots establish only equality of the represented structural
+facts. Opaque imports, constants and adapters still need behavior checks, and
+IDs are never compared "modulo IDs" because they enter rate state and
+correlation.
 
-Planning and later execution may perform separate passes; exact byte identity is not promised for an extension that violates its deterministic contract. A public frozen resolved request remains deferred.
-
-## Information classes
+## Contract tooling
 
 ```text
-ordinary public protocol data
-sensitive public protocol data
-private credential data
-body/content data
-operator-only bounded diagnostics
+cargo run -p concord-xtask -- contract <export --target NAME --output FILE | check --target NAME --snapshot FILE | diff BEFORE AFTER [--format text|json] | list>
 ```
 
-### Sensitivity propagation
+| Subcommand | Effect | Exit status |
+|---|---|---|
+| `export` | writes the target's `concord.contract/3` document | 0, or 2 on usage/I/O/format errors |
+| `check` | compares the target with a snapshot, listing changed endpoint IDs/paths and classifications | 0 when structurally equal, 1 on a difference |
+| `diff` | a semantic diff of two documents, as text or JSON | 0, or 2 on errors |
+| `list` | the registered targets | 0 |
 
-A `#[sensitive]` source redacts complete derived atoms, including `concat` and every `each` occurrence. It still affects the real request and internal pagination identity.
+Targets resolve through an explicit, maintained registry: a proc macro cannot
+discover every invocation. `fixture-catalog` is always available; the
+repository examples (`catalog`, `catalog-v3`, `riot`, `data-dragon`) are
+registered with `cargo run -p concord-xtask --features examples -- contract ...`
+and exported and checked by `cargo test -p concord-xtask --features examples`.
+Export runs no application network work. `check` is not a semantic-versioning
+oracle.
 
-No plan, observer, error, or debug path may downgrade sensitivity.
+`diff` classifies each change on one or more axes: `CallerApi`, `Wire`,
+`PresenceAndDefaults`, `AuthAuthority`, `RuntimePolicy`,
+`IdentityAndRateSchema`, `SharingCoverage`, `Capability`, `Provenance`,
+`Documentation` and `OpaqueDependency`; anything unclassified is reported as
+`Unknown`, never as unchanged. It distinguishes changes a lossy snapshot would
+miss (EXPLAIN-02): switching a credential source at the same header, changing a
+literal without changing the key, remapping a value, removing a representation
+fence, changing a default expression, renaming a rate label, and splitting or
+merging policy sharing. Rate changes show the covered endpoints, possible
+sharing and cost/window edits separately (RATE-02).
 
-## Operation observer
+Outside this repository, call the same library on your own client from a small
+Rust tool:
 
 ```text
-pub trait OperationObserver: Send + Sync + 'static {
-    fn observe(&self, event: OperationEvent<'_>);
+let json = concord_inspect::export_string(TheirClient::contract());
+let report = concord_inspect::check(TheirClient::contract(), &snapshot)?;
+if !report.is_structurally_equal() { /* fail the build */ }
+```
+
+`concord_inspect::explain_endpoint` and `explain_policy` render the expanded
+text views (see the [Catalog example](modeling_apis.md#the-effective-view-of-one-endpoint)).
+
+## Observing operations
+
+An `OperationObserver` receives bounded, sanitized, borrowed facts. It is
+read-only and synchronous: it cannot mutate, veto, retry or start asynchronous
+work through core.
+
+<!-- concord-source: crates/concord-examples/src/runtime_policy/hooks.rs#hooks_implementation -->
+```rust
+#[derive(Default)]
+pub struct CountingHooks {
+    attempts: AtomicUsize,
+    responses: AtomicUsize,
+    completions: AtomicUsize,
+}
+
+impl CountingHooks {
+    /// Returns the number of before-send callbacks observed so far.
+    #[must_use]
+    pub fn attempts(&self) -> usize {
+        self.attempts.load(Ordering::Relaxed)
+    }
+}
+
+impl OperationObserver for CountingHooks {
+    fn observe(&self, event: OperationEvent<'_>) {
+        match event {
+            OperationEvent::AttemptStarted(_) => {
+                self.attempts.fetch_add(1, Ordering::Relaxed);
+            }
+            OperationEvent::ResponseHeadObserved(_) => {
+                self.responses.fetch_add(1, Ordering::Relaxed);
+            }
+            OperationEvent::OperationFinished(_) | OperationEvent::PaginationFinished(_) => {
+                self.completions.fetch_add(1, Ordering::Relaxed);
+            }
+            _ => {}
+        }
+    }
 }
 ```
 
-Properties:
-
-- synchronous and borrowed;
-- returns unit;
-- cannot mutate or veto request/result/retry/auth/rate;
-- prompt, finite, non-blocking, no external I/O, no panic by contract;
-- request event views are bounded and value-free;
-- core contains observer panics and checks the deadline before and after every
-  intermediate callback, but cannot preempt synchronous Rust code;
-- each contained panic saturatingly increments a private process counter without
-  retaining event or panic data; v2.1 has no public observer-health surface, so
-  applications must not claim that observer failure is externally observable;
-- time spent in an intermediate callback consumes the remaining budget after
-  it returns; if the deadline expired, no later remote work starts;
-- completion observation runs after the semantic result is fixed, so a slow
-  final callback can delay delivery beyond the nominal deadline but cannot
-  replace that result.
-
-Applications needing asynchronous export use an extras/application-owned bounded queue with explicit drop/backpressure/shutdown policy. Core does not own a telemetry worker.
-
-## Event vocabulary
-
-The active event set is:
-
-```text
-AttemptStarted
-ResponseHeadObserved
-OperationFinished
-PaginationFinished
-StreamFinished
-```
-
-Transport-private physical retries appear only as bounded structural evidence,
-not independent visible attempts.
-
-Events may expose:
-
-- endpoint/operation/page/attempt identities;
-- method;
-- a value-free `RequestTarget` containing only path-segment, query-occurrence,
-  and public-header-occurrence counts;
-- request body category and known length;
-- status, safely parsed content length, and standard server delay on
-  `ResponseHeadObserved`;
-- final outcome, timing, attempt/retry/recovery counts, and stream lifecycle.
-
-They never expose a complete URL, path/query names or values, request/response
-header names or values, bodies, output values, credentials, private auth, raw
-rate keys, or native objects. The compatibility-named `DebugLevel::Headers`
-adds only value-free target counts plus typed content-length/server-delay facts;
-it does not print headers.
-
-## Error model
-
-Stable top-level categories:
-
-```text
-pub enum ErrorCategory {
-    Configuration,
-    RequestEncoding,
-    RequestBody,
-    AuthenticationUnavailable,
-    AuthenticationProvider,
-    AuthenticationRejected,
-    RateLimit,
-    Connect,
-    Transport,
-    Timeout,
-    HttpStatus,
-    ResponseBody,
-    ResponseDecoding,
-    ResponseContract,
-    Pagination,
-    Internal,
+<!-- concord-source: crates/concord-examples/src/runtime_policy/hooks.rs#hooks_client -->
+```rust
+pub fn construct() -> Result<ObservedApi, concord::ClientBuildError> {
+    let observation = Arc::new(CountingHooks::default());
+    ObservedApi::builder()
+        .configure_runtime(move |runtime| {
+            runtime
+                .operation_observer(observation)
+                .debug(DebugLevel::Basic)
+        })
+        .build()
 }
 ```
 
-Each error exposes or permits bounded access to:
+`OperationEvent` is `AttemptStarted`, `ResponseHeadObserved`,
+`OperationFinished`, `PaginationFinished` or `StreamFinished`. Events carry
+operation and attempt identities, sanitized targets and headers and outcomes;
+never bodies, credential material, raw rate keys or sensitive values. Final
+events run after the result is fixed and cannot change it; a slow final
+callback can delay delivery. Observer panics are contained where Rust unwinds
+and counted only in bounded private diagnostics; no detached observer thread or
+queue exists (EXEC-04).
 
-- stable endpoint ID;
-- operation ID;
-- page/attempt ordinal;
-- failure stage;
-- dispatch knowledge;
-- status when observed;
-- policy-retry/auth-recovery counts;
-- bounded structural response-header names with every value redacted;
-- protected source only through explicit trusted access when safe.
+`DebugLevel::Basic` emits structural request/response metadata without headers;
+`DebugLevel::Headers` adds value-free request-target counts and typed response
+facts. Header names and values are never included at any level.
 
-Do not mirror every dependency error type in the public enum.
+## Execution outcomes
 
-## Dispatch knowledge
-
-```text
-pub enum DispatchKnowledge {
-    NotDispatched,
-    PossiblyDispatched,
-    ResponseObserved,
-}
-```
-
-A timeout or transport failure after dispatch does not prove remote rejection. `PossiblyDispatched` should direct callers toward application reconciliation using their own domain/idempotency identity.
-
-## No universal retry boolean
-
-Retry depends on effect, dispatch knowledge, body replayability, deadline, budgets, application workflow, and reconciliation. Expose the facts rather than one `is_retryable()` answer.
-
-## Codec and provider diagnostics
-
-Use stable codes and bounded structural locations. Raw third-party text is not
-copied into public errors or automatic diagnostics.
-
-Example:
-
-```text
-ResponseDecode {
-  format: Json,
-  location: Field("items").AnyIndex.Field("created_at"),
-  reason: TypeMismatch,
-}
-```
-
-## Semantic diff
-
-Compare effective leaf contracts and classify:
-
-```text
-CallerApi
-DomainMeaning
-WireShapeOrRepresentation
-SecurityOrAuthority
-RuntimePolicyOrResource
-Capability
-OperationalIdentity
-DocumentationOnly
-OpaqueUnknown
-```
-
-A parent representation/query/header/auth/rate/timeout change expands to every affected leaf. Source moves must report inherited changes, not only generated Rust names.
+Results and errors carry the fourth view: `ExecutionMeta` on successful
+responses and pages, `TraversalSummary` on traversals, `StreamSummary` on
+streams and the value-free `ApiError` accessors ([Execution
+policy](execution_policy.md#errors)). They report what happened as of the
+recorded stage, never a remote rollback or business outcome inferred from
+transport.

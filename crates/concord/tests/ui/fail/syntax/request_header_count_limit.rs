@@ -1,15 +1,16 @@
-#![recursion_limit = "1024"]
+// LIMIT-01 / §20.1: one effective request head carries at most 256 public
+// headers. 257 statically certain header occurrences can never be sent, so
+// the declaration is rejected at compile time.
+#![allow(unused_imports)]
 
-use concord::api;
+use concord::{Empty, api};
 
 api! {
     client HeaderCountLimit {
-        timeout 30s;
         base "https://example.test/";
 
-
-    GET fetch() -> () via concord::Empty {
-        headers {
+        GET fetch() -> () via Empty {
+            headers {
             "x-h000" = "v"; "x-h001" = "v"; "x-h002" = "v"; "x-h003" = "v"; "x-h004" = "v"; "x-h005" = "v"; "x-h006" = "v"; "x-h007" = "v";
             "x-h008" = "v"; "x-h009" = "v"; "x-h010" = "v"; "x-h011" = "v"; "x-h012" = "v"; "x-h013" = "v"; "x-h014" = "v"; "x-h015" = "v";
             "x-h016" = "v"; "x-h017" = "v"; "x-h018" = "v"; "x-h019" = "v"; "x-h020" = "v"; "x-h021" = "v"; "x-h022" = "v"; "x-h023" = "v";
@@ -43,8 +44,9 @@ api! {
             "x-h240" = "v"; "x-h241" = "v"; "x-h242" = "v"; "x-h243" = "v"; "x-h244" = "v"; "x-h245" = "v"; "x-h246" = "v"; "x-h247" = "v";
             "x-h248" = "v"; "x-h249" = "v"; "x-h250" = "v"; "x-h251" = "v"; "x-h252" = "v"; "x-h253" = "v"; "x-h254" = "v"; "x-h255" = "v";
             "x-h256" = "v";
+            }
         }
     }
-}}
+}
 
 fn main() {}

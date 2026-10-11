@@ -2,8 +2,8 @@ use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 
 use concord_core::contracts::{
-    Buffered, Bytes, BytesMut, ItemStream, PageResponseRepresentation, ResponseBodyError,
-    ResponseBodyErrorKind, ResponseDriver, ResponseHead, ResponseRepresentation, Streaming,
+    Buffered, Bytes, BytesMut, ItemStream, ResponseBodyError, ResponseBodyErrorKind,
+    ResponseDriver, ResponseHead, ResponseRepresentation, Streaming,
 };
 use concord_core::records::{
     RecordDecoder, RecordError, RecordErrorKind, decode_complete_records, validate_record_decoder,
@@ -18,9 +18,24 @@ mod private {
 
 /// A sealed type-level policy selecting whether a CSV stream has a header row.
 ///
-/// Concord provides [`HasHeader`] and [`NoHeader`]. Downstream implementations
-/// are intentionally unsupported; custom record formats can implement
-/// [`RecordDecoder`] instead.
+/// Concord provides [`HasHeader`] and [`NoHeader`].
+///
+/// # Extension contract
+///
+/// * **Ownership.** A zero-sized marker selected at the type level; it holds
+///   no data and Concord never constructs a value of it.
+/// * **Concurrency.** Stateless; any number of decoders may use the same
+///   policy concurrently.
+/// * **Cancellation.** No callbacks; the CSV decoder that reads the policy
+///   follows the [`RecordDecoder`] cancellation rules.
+/// * **Input sensitivity.** None: the policy reads no response data.
+/// * **Errors.** None of its own; header-row and record failures are reported
+///   by the CSV decoder as record errors.
+/// * **Resource obligations.** None; the decoder's staging and record limits
+///   apply.
+/// * **Negative capabilities.** Downstream implementations are intentionally
+///   unsupported; custom record formats can implement [`RecordDecoder`]
+///   instead.
 pub trait CsvHeaderMode: private::Sealed + Send + Sync + 'static {
     #[doc(hidden)]
     const HAS_HEADER: bool;
@@ -29,8 +44,24 @@ pub trait CsvHeaderMode: private::Sealed + Send + Sync + 'static {
 /// A sealed type-level policy selecting a built-in CSV delimiter.
 ///
 /// Concord provides [`CommaDelimiter`], [`SemicolonDelimiter`], and
-/// [`TabDelimiter`]. Downstream implementations are intentionally unsupported;
-/// custom record formats can implement [`RecordDecoder`] instead.
+/// [`TabDelimiter`].
+///
+/// # Extension contract
+///
+/// * **Ownership.** A zero-sized marker selected at the type level; it holds
+///   no data and Concord never constructs a value of it.
+/// * **Concurrency.** Stateless; any number of decoders may use the same
+///   policy concurrently.
+/// * **Cancellation.** No callbacks; the CSV decoder that reads the policy
+///   follows the [`RecordDecoder`] cancellation rules.
+/// * **Input sensitivity.** None: the policy reads no response data.
+/// * **Errors.** None of its own; malformed records are reported by the CSV
+///   decoder as record errors.
+/// * **Resource obligations.** None; the decoder's staging and record limits
+///   apply.
+/// * **Negative capabilities.** Downstream implementations are intentionally
+///   unsupported; custom record formats can implement [`RecordDecoder`]
+///   instead.
 pub trait CsvDelimiter: private::Sealed + Send + Sync + 'static {
     #[doc(hidden)]
     const BYTE: u8;
@@ -85,8 +116,13 @@ impl CsvDelimiter for TabDelimiter {
 /// Typed CSV responses with type-level header and delimiter policies.
 ///
 /// With `Vec<T>`, `Csv<H, D>` completely acquires the bounded body. With
-/// [`ItemStream<T>`], it returns a lazy semantic stream. Both forms use the
+/// [`ItemStream<T>`], it returns a managed lazy semantic stream that inherits
+/// the core stream lease, idle, byte and record limits and yields exactly one
+/// correlated `ApiError` on a framing or decoding failure. Both forms use the
 /// same internal [`RecordDecoder`] implementation and sealed core drivers.
+/// Invalid quoting fails, an unterminated quote at end of body is an
+/// incomplete record, and a record never grows past the staging ceiling (the
+/// smaller of 1 MiB and the runtime stream frame limit).
 ///
 /// Header mode `H` and delimiter `D` are representation policies. Plain `Csv`
 /// means `Csv<HasHeader, CommaDelimiter>`; the output type supplies `T`.
@@ -357,9 +393,7 @@ where
 {
     type Record = T;
 
-    fn accept() -> Option<&'static str> {
-        Some("text/csv")
-    }
+    const ACCEPT: Option<&'static str> = Some("text/csv");
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), RecordError> {
         let valid = head
@@ -404,9 +438,7 @@ where
 {
     type Driver = Buffered;
 
-    fn accept() -> Option<&'static str> {
-        CsvDecoder::<T, H, D>::accept()
-    }
+    const ACCEPT: Option<&'static str> = CsvDecoder::<T, H, D>::ACCEPT;
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         validate_record_decoder::<CsvDecoder<T, H, D>>(head)
@@ -417,14 +449,6 @@ where
     }
 }
 
-impl<T, H, D> PageResponseRepresentation<Vec<T>> for Csv<H, D>
-where
-    T: DeserializeOwned + Send + 'static,
-    H: CsvHeaderMode,
-    D: CsvDelimiter,
-{
-}
-
 impl<T, H, D> ResponseRepresentation<ItemStream<T>> for Csv<H, D>
 where
     T: DeserializeOwned + Send + 'static,
@@ -433,9 +457,7 @@ where
 {
     type Driver = Streaming;
 
-    fn accept() -> Option<&'static str> {
-        CsvDecoder::<T, H, D>::accept()
-    }
+    const ACCEPT: Option<&'static str> = CsvDecoder::<T, H, D>::ACCEPT;
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         CsvDecoder::<T, H, D>::validate(head)
@@ -768,7 +790,7 @@ mod tests {
         assert!(!is_csv_media_type("text/csv; broken=\"unterminated"));
 
         assert_eq!(
-            <CsvDecoder<Row, HasHeader, CommaDelimiter> as RecordDecoder>::accept(),
+            <CsvDecoder<Row, HasHeader, CommaDelimiter> as RecordDecoder>::ACCEPT,
             Some("text/csv")
         );
         assert_eq!(
@@ -776,7 +798,7 @@ mod tests {
             1024 * 1024
         );
         assert_eq!(
-            <CsvDecoder<Row, NoHeader, SemicolonDelimiter> as RecordDecoder>::accept(),
+            <CsvDecoder<Row, NoHeader, SemicolonDelimiter> as RecordDecoder>::ACCEPT,
             Some("text/csv")
         );
         assert_eq!(
@@ -786,13 +808,12 @@ mod tests {
 
         fn complete_page_spec<S>()
         where
-            S: ResponseRepresentation<Vec<Row>, Driver = Buffered>
-                + PageResponseRepresentation<Vec<Row>>,
+            S: ResponseRepresentation<Vec<Row>, Driver = Buffered>,
         {
         }
         complete_page_spec::<Csv>();
         assert_eq!(
-            <Csv as ResponseRepresentation<Vec<Row>>>::accept(),
+            <Csv as ResponseRepresentation<Vec<Row>>>::ACCEPT,
             Some("text/csv")
         );
     }

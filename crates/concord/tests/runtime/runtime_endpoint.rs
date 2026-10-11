@@ -1,92 +1,169 @@
 #![cfg(feature = "multipart")]
+//! Runtime endpoints through generated v3 owners (§16, RUNTIME-01/02).
+//!
+//! Obligations: V3-R09 (root and scope binding carry path/query/header/auth/
+//! rates/time with symbolic suppression; the bound plan agrees with the
+//! actual send, including over TLS), V3-R10 (runtime public replacement
+//! parity with generated programs for absent/empty/each, static name bounds,
+//! forbidden origin/private-source/rate removal rejected), V3-R11
+//! (accepted/challenge overlap, generated-ID collision and a missing limiter
+//! cannot bypass bind).
 
 use std::future::poll_fn;
-use std::num::{NonZeroU32, NonZeroUsize};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use concord::api;
-use concord::auth::{Auth, ChallengePolicy};
+use concord::auth::AuthTarget;
 use concord::body::{
-    BodyError, BodyFactory, MultipartBody, MultipartFactory, MultipartPart, RequestBody,
-    RequestStream,
+    BodyError, BodyFactory, Multipart, MultipartBody, MultipartFactory, MultipartPart,
+    PreparedBody, RequestStream,
 };
 use concord::codec::{
     CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext,
 };
-use concord::endpoint::{EndpointId, RuntimeEndpoint, RuntimeEndpointBuilder, RuntimeValue};
+use concord::endpoint::{
+    EndpointId, MAX_RUNTIME_KEY_BYTES, RuntimeAuthDisposition, RuntimeEndpoint,
+    RuntimeEndpointBuilder,
+};
 use concord::error::{ConfigurationErrorKind, ErrorCategory};
-use concord::http::{HeaderName, Method, SafeProxy};
+use concord::http::{Method, SafeProxy, StatusCode};
 use concord::observation::{OperationEvent, OperationObserver};
 use concord::rate_limit::{
-    BoxFuture, NoopRateLimiter, RateLimitError, RateLimitId, RateLimitKey, RateLimitPermit,
-    RateLimitPolicy, RateLimitRequest, RateLimitWindow, RateLimiter,
+    BoxFuture, Enforcement, LimiterCapability, LocalRateLimiter, NoopRateLimiter,
+    RateLimitDeclaration, RateLimitError, RateLimitPermit, RateLimitRequest, RateLimiter,
 };
 use concord::response::ByteStream;
-use concord::{ApiResponse, Binary, Bytes, Discard, Empty};
+use concord::{ApiResponse, Binary, Bytes, Discard, Empty, SecretString, Text};
+use concord_test_support::proxy::ConnectProxy;
 use concord_test_support::server::{ResponseScript, ScriptedServer};
+use concord_test_support::tls::TlsServer;
 use futures_core::Stream;
 
 fn runtime_id(value: &str) -> EndpointId {
-    EndpointId::try_from(value).expect("valid runtime endpoint ID")
+    EndpointId::new(value).expect("valid runtime endpoint ID")
+}
+
+fn secret(value: &str) -> SecretString {
+    SecretString::try_new(value).expect("bounded test secret")
 }
 
 api! {
     client PreparedAlphaApi {
-        timeout 30s;
         base "http://alpha.prepared.example.test/root/";
+        timeout 30s;
 
-
-    GET explicit() -> Bytes via Binary { path ["explicit"]; }
-}}
+        GET explicit() -> Bytes via Binary { path "explicit"; }
+    }
+}
 
 api! {
     client PreparedBetaApi {
-        timeout 30s;
         base "http://beta.prepared.example.test/other/";
+        timeout 30s;
 
-
-    GET explicit() -> Bytes via Binary { path ["explicit"]; }
-}}
+        GET explicit() -> Bytes via Binary { path "explicit"; }
+    }
+}
 
 api! {
     client PreparedAuthApi {
-        timeout 30s;
         base "http://auth.prepared.example.test/";
+        timeout 30s;
         credentials {
             secret token;
             credential api_key = api_key(secret.token);
         }
+        auth { header "X-Api-Key" = api_key; }
 
+        GET explicit() -> () via Empty;
 
-    GET explicit() -> () via Empty;
-}}
+        scope custom() {
+            auth replace { authorization "Token" = api_key; }
+            GET declared() -> () via Empty;
+        }
+    }
+}
 
 api! {
     client RuntimeScopeApi {
-        timeout 30s;
         base "http://scope-runtime.example.test/root/";
+        timeout 30s;
         values { tenant: String; }
         rate_limits {
             policy tenant_reads(tenant) {
                 id "runtime.scope.tenant";
-                key [endpoint, tenant];
+                key [endpoint, "tenant" = tenant];
                 cost 1;
                 allow 10 per 1m;
             }
         }
-        path ["v2"];
-        query { "tenant" = client.tenant; }
+        path "v2";
+        query { "tenant" = tenant; }
 
         scope regional(region: String) {
             timeout 5s;
             subdomain ["api"];
-            path ["regions", regional.region];
+            path "regions/{region}";
             query { append "view" = "scope"; }
-            headers { "X-Scope" = regional.region; }
+            headers { "X-Scope" = region; }
             rate_limit tenant_reads(tenant = client.tenant);
+
+            GET declared() -> () via Empty { id "runtime.scope.declared"; }
+        }
+    }
+}
+
+api! {
+    client RuntimeAuthScopeApi {
+        base "https://runtime-auth-scope.example.test/";
+        timeout 30s;
+        credentials {
+            secret token;
+            credential api_key = api_key(secret.token);
+            credential access = bearer(secret.token);
+        }
+
+        scope protected() {
+            auth {
+                header "X-Runtime-Scope-Key" = api_key challenge never;
+                query "token" = api_key;
+            }
+            GET declared() -> () via Empty;
+        }
+
+        scope challenged() {
+            auth { bearer access challenge unauthorized; }
+            GET declared() -> () via Empty;
+        }
+    }
+}
+
+api! {
+    client RuntimeTlsApi {
+        base "https://localhost/api/";
+        timeout 30s;
+        credentials {
+            secret token;
+            credential api_key = api_key(secret.token);
+        }
+        rate_limits {
+            policy reads() {
+                id "runtime.tls.reads";
+                key [origin];
+                allow 100 per 1m;
+            }
+        }
+
+        scope protected(region: String) {
+            timeout 7s;
+            path "regions/{region}";
+            query { "view" = "full"; }
+            headers { "X-Region" = region; }
+            auth { header "X-Runtime-Key" = api_key; }
+            rate_limit reads();
 
             GET declared() -> () via Empty;
         }
@@ -94,17 +171,51 @@ api! {
 }
 
 api! {
-    client RuntimeAuthScopeApi {
+    client ParityApi {
+        base "http://parity.example.test/";
         timeout 30s;
-        base "https://runtime-auth-scope.example.test/";
-        credentials {
-            secret token;
-            credential api_key = api_key(secret.token);
+        query { "a" = "1"; "locale" = "fr"; "z" = "9"; }
+
+        GET when_present_locale(locale?: String) -> () via Empty {
+            id "parity.when_present";
+            path "items";
+            query { when_present "locale" = locale; }
         }
 
-        scope protected() {
-            auth { header "X-Runtime-Scope-Key" = api_key challenge never; }
-            GET declared() -> () via Empty;
+        GET replace_locale(locale?: String) -> () via Empty {
+            id "parity.replace";
+            path "items";
+            query { replace "locale" = locale; }
+        }
+
+        GET append_locale(locale?: String) -> () via Empty {
+            id "parity.append";
+            path "items";
+            query { append "locale" = locale; }
+        }
+
+        GET replace_each(locales: Vec<String>) -> () via Empty {
+            id "parity.replace_each";
+            path "items";
+            query { replace "locale" = each locales; }
+        }
+
+        GET when_present_each(locales?: Vec<String>) -> () via Empty {
+            id "parity.when_present_each";
+            path "items";
+            query { when_present "locale" = each locales; }
+        }
+
+        GET append_each(locales: Vec<String>) -> () via Empty {
+            id "parity.append_each";
+            path "items";
+            query { append "locale" = each locales; }
+        }
+
+        GET removed() -> () via Empty {
+            id "parity.remove";
+            path "items";
+            query { remove "locale"; }
         }
     }
 }
@@ -203,6 +314,10 @@ fn canonical_utf8(value: &str) -> Vec<u8> {
 }
 
 impl RateLimiter for CapturingLimiter {
+    fn capability(&self) -> LimiterCapability {
+        LimiterCapability::new(Enforcement::Local, "test.runtime.capturing", 1)
+    }
+
     fn acquire<'a>(
         &'a self,
         request: RateLimitRequest<'a>,
@@ -270,37 +385,96 @@ fn alpha(server: &ScriptedServer) -> PreparedAlphaApi {
         .expect("prepared alpha client")
 }
 
-fn rule(id: &str, key: RateLimitKey, cost: u32, windows: &[(u32, u64)]) -> RateLimitPolicy {
-    RateLimitPolicy::new(
-        RateLimitId::new(id).expect("rate ID"),
-        key,
-        NonZeroU32::new(cost).expect("rate cost"),
-        windows.iter().map(|(capacity, seconds)| {
-            RateLimitWindow::new(
-                NonZeroU32::new(*capacity).expect("rate capacity"),
-                Duration::from_secs(*seconds),
-            )
-            .expect("rate window")
-        }),
-    )
-    .expect("rate rule")
+fn offline_alpha() -> PreparedAlphaApi {
+    PreparedAlphaApi::new().expect("offline alpha client")
 }
 
-fn exact_builder_contracts() {
-    let default: RuntimeEndpointBuilder<Empty> =
-        RuntimeEndpoint::builder(runtime_id("runtime.default"), Method::GET);
-    let buffered: RuntimeEndpointBuilder<EchoCodec, String> =
-        default.response::<EchoCodec, String>();
-    let bytes: RuntimeEndpointBuilder<Binary, Bytes> = buffered.accepted_bytes();
-    let stream: RuntimeEndpointBuilder<Binary, ByteStream> = bytes.response::<Binary, ByteStream>();
-    let empty: RuntimeEndpointBuilder<Empty> = stream.response_empty();
-    let discard: RuntimeEndpointBuilder<Discard> = empty.response_discard();
-    let _: RuntimeEndpoint<Discard> = discard.build().expect("exact endpoint");
+fn auth_scope_client() -> RuntimeAuthScopeApi {
+    RuntimeAuthScopeApi::builder()
+        .token(secret("scope-secret-5d1c"))
+        .build()
+        .expect("runtime scope auth client")
 }
 
+fn window_rule(id: &str) -> RateLimitDeclaration {
+    RateLimitDeclaration::new(id).window(10, Duration::from_secs(1))
+}
+
+fn build_kind(builder: RuntimeEndpointBuilder) -> Option<ConfigurationErrorKind> {
+    builder
+        .response::<Empty, ()>()
+        .build()
+        .err()
+        .map(|error| error.kind())
+}
+
+fn empty(builder: RuntimeEndpointBuilder) -> RuntimeEndpoint<Empty, ()> {
+    builder
+        .response::<Empty, ()>()
+        .build()
+        .expect("structurally valid runtime endpoint")
+}
+
+// ---------------------------------------------------------------------------
+// Construction surface and ordinary execution (RUNTIME-01).
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "json")]
+mod canonical {
+    use super::*;
+
+    #[derive(serde::Deserialize)]
+    pub struct Item {
+        pub _id: Option<String>,
+    }
+
+    /// The exact §16.1 construction compiles through the facade.
+    #[test]
+    fn section_16_1_construction_compiles() -> Result<(), concord::error::ConfigurationError> {
+        let endpoint =
+            RuntimeEndpoint::builder(EndpointId::new("catalog.dynamic.lookup")?, Method::GET)
+                .path("items")
+                .path("42")
+                .query("view", "summary")
+                .response::<concord::Json, Item>()
+                .build()?;
+        assert_eq!(endpoint.description().id(), "catalog.dynamic.lookup");
+        Ok(())
+    }
+}
+
+/// v2 switched response selections repeatedly (`accepted_bytes()`,
+/// `response_empty()`, `response_discard()`); v3 selects the output pair
+/// exactly once from the unselected factory builder (RUNTIME-01) and exposes
+/// accepted bytes explicitly on a buffered/discard descriptor.
 #[test]
 fn exact_runtime_endpoint_types_are_available_from_endpoint_domain() {
-    exact_builder_contracts();
+    let unselected: RuntimeEndpointBuilder =
+        RuntimeEndpoint::builder(runtime_id("runtime.default"), Method::GET);
+    let buffered: RuntimeEndpointBuilder<EchoCodec, String> =
+        unselected.response::<EchoCodec, String>();
+    let _: RuntimeEndpoint<EchoCodec, String> = buffered.build().expect("buffered endpoint");
+    let _: RuntimeEndpoint<Binary, Bytes> =
+        RuntimeEndpoint::builder(runtime_id("runtime.bytes"), Method::GET)
+            .response::<Binary, Bytes>()
+            .expose_accepted_bytes()
+            .build()
+            .expect("exposed bytes endpoint");
+    let _: RuntimeEndpoint<Binary, ByteStream> =
+        RuntimeEndpoint::builder(runtime_id("runtime.stream"), Method::GET)
+            .response::<Binary, ByteStream>()
+            .build()
+            .expect("stream endpoint");
+    let _: RuntimeEndpoint<Empty, ()> = empty(RuntimeEndpoint::builder(
+        runtime_id("runtime.empty"),
+        Method::GET,
+    ));
+    let _: RuntimeEndpoint<Discard, ()> =
+        RuntimeEndpoint::builder(runtime_id("runtime.discard"), Method::DELETE)
+            .response::<Discard, ()>()
+            .expose_accepted_bytes()
+            .build()
+            .expect("discard endpoint");
 }
 
 #[tokio::test]
@@ -321,17 +495,17 @@ async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
         .path("slash value")
         .path("dot-dot")
         .path("tail?query#fragment%value")
-        .query("first", 1)
+        .query("first", 1_u8)
         .query_optional("omitted", Option::<u8>::None)
-        .query_each("repeat", [2, 3])
-        .header(HeaderName::from_static("x-prepared-endpoint"), "new")
-        .body_codec::<EchoCodec>("encoded".to_owned())
+        .query_each("repeat", vec![2_u8, 3])
+        .header("x-prepared-endpoint", "new")
+        .body_repr::<EchoCodec, _>("encoded".to_owned())
         .response::<EchoCodec, String>()
         .build()
         .expect("buffered runtime endpoint");
     assert_eq!(
-        buffered
-            .try_bind(&client)
+        client
+            .bind(buffered)
             .expect("runtime endpoint binds to client")
             .await
             .expect("buffered response"),
@@ -340,12 +514,12 @@ async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
 
     let bytes = RuntimeEndpoint::builder(runtime_id("runtime.bytes"), Method::GET)
         .path("bytes")
-        .accepted_bytes()
+        .response::<Binary, Bytes>()
         .build()
         .expect("bytes runtime endpoint");
     assert_eq!(
-        bytes
-            .try_bind(&client)
+        client
+            .bind(bytes)
             .expect("runtime endpoint binds to client")
             .await
             .expect("bytes response"),
@@ -354,11 +528,11 @@ async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
 
     let no_content = RuntimeEndpoint::builder(runtime_id("runtime.none"), Method::DELETE)
         .path("none")
-        .response_discard()
+        .response::<Discard, ()>()
         .build()
         .expect("no-content runtime endpoint");
-    no_content
-        .try_bind(&client)
+    client
+        .bind(no_content)
         .expect("runtime endpoint binds to client")
         .await
         .expect("no-content response");
@@ -368,8 +542,8 @@ async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
         .response::<Binary, ByteStream>()
         .build()
         .expect("stream runtime endpoint");
-    let mut response: ByteStream = stream
-        .try_bind(&client)
+    let mut response: ByteStream = client
+        .bind(stream)
         .expect("runtime endpoint binds to client")
         .await
         .expect("stream response");
@@ -405,29 +579,60 @@ async fn prepared_modes_use_the_ordinary_generated_client_runtime() {
 
 #[tokio::test]
 async fn runtime_endpoint_binary_output_is_exact_and_bounded() {
-    let server = ScriptedServer::start([ResponseScript::ok(b"runtime-binary".to_vec())
-        .with_header("content-type", "application/octet-stream")])
+    let server = ScriptedServer::start([
+        ResponseScript::ok(b"runtime-binary".to_vec())
+            .with_header("content-type", "application/octet-stream"),
+        ResponseScript::ok(b"accepted-bytes".to_vec()).with_header("content-type", "text/plain"),
+    ])
     .expect("runtime binary server");
     let client = alpha(&server);
-    let endpoint = RuntimeEndpoint::builder(runtime_id("runtime.accepted_bytes"), Method::GET)
+    let endpoint = RuntimeEndpoint::builder(runtime_id("runtime.binary"), Method::GET)
         .path("binary")
-        .accepted_bytes()
+        .response::<Binary, Bytes>()
         .build()
         .expect("runtime binary endpoint");
 
-    let response: ApiResponse<Bytes> = endpoint
-        .try_bind(&client)
+    let response: ApiResponse<Bytes> = client
+        .bind(endpoint)
         .expect("runtime endpoint binds to client")
         .response()
         .await
         .expect("runtime endpoint binary response");
     assert_eq!(response.value(), b"runtime-binary".as_slice());
-    assert_eq!(response.status(), concord::http::StatusCode::OK);
-    assert_eq!(response.metadata().endpoint(), "runtime.accepted_bytes");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.metadata().endpoint(), "runtime.binary");
     assert_eq!(
         server.requests()[0].header("accept"),
         Some("application/octet-stream")
     );
+
+    // The alternate accepted-bytes terminal is explicit on the descriptor and
+    // bypasses only representation validation (§10.4).
+    let exposed = RuntimeEndpoint::builder(runtime_id("runtime.accepted_bytes"), Method::GET)
+        .path("text")
+        .response::<Text, String>()
+        .expose_accepted_bytes()
+        .build()
+        .expect("exposed runtime endpoint");
+    let bytes = client
+        .bind(exposed)
+        .expect("runtime endpoint binds to client")
+        .accepted_bytes()
+        .expect("exposed accepted bytes")
+        .await
+        .expect("accepted bytes response");
+    assert_eq!(bytes.value().as_ref(), b"accepted-bytes");
+    let unexposed = RuntimeEndpoint::builder(runtime_id("runtime.unexposed"), Method::GET)
+        .response::<Text, String>()
+        .build()
+        .expect("unexposed runtime endpoint");
+    let error = client
+        .bind(unexposed)
+        .expect("runtime endpoint binds to client")
+        .accepted_bytes()
+        .expect_err("not exposed by the descriptor");
+    assert_eq!(error.category(), ErrorCategory::Configuration);
+    assert_eq!(server.request_count(), 2);
 }
 
 #[tokio::test]
@@ -442,30 +647,34 @@ async fn runtime_sensitive_values_reach_the_request_but_not_the_plan() {
     let server = ScriptedServer::start([ResponseScript::ok(Vec::new())])
         .expect("runtime sensitivity server");
     let client = alpha(&server);
-    let endpoint = RuntimeEndpoint::builder(runtime_id("runtime.sensitive"), Method::GET)
-        .path_value(RuntimeValue::sensitive(PATH_SENTINEL))
-        .query_value("secret", RuntimeValue::sensitive(QUERY_SENTINEL))
-        .query_optional_value("optional", RuntimeValue::sensitive(Some(OPTIONAL_SENTINEL)))
-        .query_each_values(
-            "each",
-            RuntimeValue::sensitive(vec![EACH_SENTINEL, EACH_SENTINEL]),
+    let endpoint = || {
+        empty(
+            RuntimeEndpoint::builder(runtime_id("runtime.sensitive"), Method::GET)
+                .path_sensitive(PATH_SENTINEL)
+                // Neutral key names: redaction here comes from the explicit
+                // `_sensitive` classification, not mandatory name matching.
+                .query_sensitive("classified", QUERY_SENTINEL)
+                .query_optional_sensitive("optional", Some(OPTIONAL_SENTINEL))
+                .query_each_sensitive("each", vec![EACH_SENTINEL, EACH_SENTINEL])
+                .header_sensitive("x-runtime-sensitive", HEADER_SENTINEL)
+                .header_each_sensitive(
+                    "x-runtime-sensitive-each",
+                    vec![HEADER_EACH_SENTINEL, HEADER_EACH_SENTINEL],
+                ),
         )
-        .header_value(
-            HeaderName::from_static("x-runtime-sensitive"),
-            RuntimeValue::sensitive(HEADER_SENTINEL),
-        )
-        .header_each_values(
-            HeaderName::from_static("x-runtime-sensitive-each"),
-            RuntimeValue::sensitive(vec![HEADER_EACH_SENTINEL, HEADER_EACH_SENTINEL]),
-        )
-        .build()
-        .expect("runtime sensitive endpoint");
+    };
 
-    let plan = endpoint.plan(&client).expect("runtime sensitive plan");
+    let plan = client
+        .plan_runtime(&endpoint())
+        .expect("runtime sensitive plan");
+    let bound = client
+        .bind(endpoint())
+        .expect("runtime sensitive endpoint binds");
     let evidence = format!(
-        "{plan:?}\n{}\n{:?}",
+        "{plan:?}\n{}\n{:?}\n{bound:?}\n{:?}",
         plan.observed_url(),
-        plan.public_headers()
+        plan.public_headers(),
+        bound.description()
     );
     for sentinel in [
         PATH_SENTINEL,
@@ -475,13 +684,9 @@ async fn runtime_sensitive_values_reach_the_request_but_not_the_plan() {
         HEADER_SENTINEL,
         HEADER_EACH_SENTINEL,
     ] {
-        assert!(!evidence.contains(sentinel));
+        assert!(!evidence.contains(sentinel), "{sentinel}");
     }
-    endpoint
-        .try_bind(&client)
-        .expect("runtime sensitive endpoint binds")
-        .await
-        .expect("runtime sensitive endpoint executes");
+    bound.await.expect("runtime sensitive endpoint executes");
 
     let request = &server.requests()[0];
     for sentinel in [
@@ -499,6 +704,10 @@ async fn runtime_sensitive_values_reach_the_request_but_not_the_plan() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// V3-R09: owner projection and plan/send agreement.
+// ---------------------------------------------------------------------------
+
 #[tokio::test]
 async fn runtime_endpoint_binding_to_scope_uses_effective_owner_patches_and_timeout() {
     let server = ScriptedServer::start([
@@ -510,48 +719,83 @@ async fn runtime_endpoint_binding_to_scope_uses_effective_owner_patches_and_time
     let limiter = Arc::new(CapturingLimiter::default());
     let configured_limiter = Arc::clone(&limiter);
     let client = RuntimeScopeApi::builder()
-        .set_tenant("tenant-a".to_owned())
+        .set_tenant("tenant-a")
         .configure_http(move |http| http.proxy(proxy))
         .configure_runtime(move |runtime| runtime.rate_limiter(configured_limiter))
         .build()
         .expect("runtime scope client");
-    let scope = client.regional("west".to_owned());
+    let scope = client.regional("west");
 
-    let inherited = RuntimeEndpoint::builder(runtime_id("runtime.scope.inherited"), Method::GET)
-        .path("items")
-        .build()
-        .expect("inherited runtime endpoint");
-    let plan = inherited.plan(&scope).expect("scope-owned runtime plan");
+    let inherited = || {
+        empty(
+            RuntimeEndpoint::builder(runtime_id("runtime.scope.inherited"), Method::GET)
+                .path("items"),
+        )
+    };
+    let plan = scope
+        .plan_runtime(&inherited())
+        .expect("scope-owned runtime plan");
     assert_eq!(plan.resolved_timeout(), Some(Duration::from_secs(5)));
     assert_eq!(plan.rate_limit_policy_count(), 1);
     assert!(plan.capabilities().rate_limits());
-    inherited
-        .try_bind(&scope)
-        .expect("runtime endpoint binds to scope")
-        .await
-        .expect("scope-owned runtime request");
+    assert_eq!(
+        plan.observed_url(),
+        "http://api.scope-runtime.example.test/root/v2/regions/west/items?tenant=tenant-a&view=scope"
+    );
+    let bound = scope
+        .bind(inherited())
+        .expect("runtime endpoint binds to scope");
+    assert_eq!(
+        bound.plan().expect("bound plan").observed_url(),
+        plan.observed_url()
+    );
+    let facts = bound
+        .description()
+        .runtime_binding()
+        .expect("runtime binding facts");
+    assert_eq!(facts.owner(), Some("RuntimeScopeApi::regional"));
+    assert_eq!(facts.effective_rate_policies(), 1);
+    bound.await.expect("scope-owned runtime request");
 
-    let replaced = RuntimeEndpoint::builder(runtime_id("runtime.scope.replaced"), Method::GET)
-        .replace_path(["replacement"])
-        .query("tenant", "runtime")
-        .headers_off()
-        .build()
-        .expect("replaced runtime endpoint");
-    replaced
-        .try_bind(&scope)
+    // Replacement is explicit (PATCH-02): a plain `query("tenant", ..)` on an
+    // inherited key is a bind-time conflict, `query_replace` is the override.
+    let conflict = scope
+        .bind(empty(
+            RuntimeEndpoint::builder(runtime_id("runtime.scope.conflict"), Method::GET)
+                .query("tenant", "runtime"),
+        ))
+        .expect_err("introducing an inherited key conflicts");
+    assert_eq!(
+        conflict.configuration_kind(),
+        Some(ConfigurationErrorKind::InvalidValue)
+    );
+    let replaced = empty(
+        RuntimeEndpoint::builder(runtime_id("runtime.scope.replaced"), Method::GET)
+            .path_replace()
+            .path("replacement")
+            .query_replace("tenant", "runtime")
+            .header_off()
+            .timeout(Duration::from_secs(9)),
+    );
+    let replaced_plan = scope.plan_runtime(&replaced).expect("replaced plan");
+    assert_eq!(
+        replaced_plan.resolved_timeout(),
+        Some(Duration::from_secs(9))
+    );
+    scope
+        .bind(replaced)
         .expect("patched runtime endpoint binds to scope")
         .await
         .expect("patched scope-owned runtime request");
 
     let requests = server.requests();
-    assert!(requests[0].target().contains(
-        "api.scope-runtime.example.test/root/v2/regions/west/items?tenant=tenant-a&view=scope"
-    ));
+    // The bound plan agrees with the actual send (absolute-form proxy target).
+    assert_eq!(requests[0].target(), plan.observed_url());
     assert_eq!(requests[0].header("x-scope"), Some("west"));
-    assert!(
-        requests[1]
-            .target()
-            .contains("api.scope-runtime.example.test/root/replacement?view=scope&tenant=runtime")
+    assert_eq!(requests[1].target(), replaced_plan.observed_url());
+    assert_eq!(
+        requests[1].target(),
+        "http://api.scope-runtime.example.test/root/replacement?view=scope&tenant=runtime"
     );
     assert_eq!(requests[1].header("x-scope"), None);
     let plans = limiter.plans.lock().expect("captured runtime scope plans");
@@ -567,47 +811,521 @@ async fn runtime_endpoint_binding_to_scope_uses_effective_owner_patches_and_time
             ("tenant".to_owned(), canonical_utf8("tenant-a")),
         ]
     );
+    // Every inherited rate constraint remains after whole-family fences.
+    assert_eq!(plans[1][0].id, "runtime.scope.tenant");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn bound_plan_agrees_with_the_actual_tls_send_including_private_auth() {
+    const TOKEN: &str = "runtime-tls-credential-3f9a";
+    let server = TlsServer::start().expect("tls server");
+    let tunnel = ConnectProxy::start(server.address()).expect("tunnel");
+    let proxy = SafeProxy::parse(tunnel.url()).expect("proxy");
+    let certificate = server.certificate_pem();
+    let client = RuntimeTlsApi::builder()
+        .token(secret(TOKEN))
+        .configure_http(move |http| {
+            http.http1_only()
+                .proxy(proxy)
+                .add_root_certificate_pem(certificate)
+        })
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(LocalRateLimiter::new())))
+        .build()
+        .expect("tls client");
+    server.queue_response(200, Vec::new()).expect("queue");
+    server.queue_response(200, Vec::new()).expect("queue");
+    let scope = client.protected("eu");
+
+    let endpoint = || {
+        empty(
+            RuntimeEndpoint::builder(runtime_id("runtime.tls.items"), Method::GET)
+                .path("items")
+                .path("7")
+                .query("page", 2_u32)
+                .header("x-runtime", "yes"),
+        )
+    };
+    let plan = scope.plan_runtime(&endpoint()).expect("tls plan");
+    assert_eq!(
+        plan.observed_url(),
+        "https://localhost/api/regions/eu/items/7?view=full&page=2"
+    );
+    assert_eq!(plan.resolved_timeout(), Some(Duration::from_secs(7)));
+    assert_eq!(plan.rate_limit_policy_count(), 1);
+    assert!(plan.capabilities().authentication());
+    let x_region = concord::http::HeaderName::from_static("x-region");
+    let x_runtime = concord::http::HeaderName::from_static("x-runtime");
+    let x_key = concord::http::HeaderName::from_static("x-runtime-key");
+    assert!(plan.public_headers().get(&x_region).is_some());
+    assert!(plan.public_headers().get(&x_runtime).is_some());
+    assert!(plan.public_headers().get(&x_key).is_none());
+    assert!(!format!("{plan:?}").contains(TOKEN));
+    scope
+        .bind(endpoint())
+        .expect("tls binding")
+        .await
+        .expect("tls runtime request");
+
+    // Removing the inherited placement by its safe identity: the plan says
+    // so prominently and the credential is not sent (RUNTIME-02).
+    let removed = empty(
+        RuntimeEndpoint::builder(runtime_id("runtime.tls.removed"), Method::GET)
+            .path("public")
+            .auth_remove(AuthTarget::header("X-Runtime-Key").expect("target")),
+    );
+    let removed_plan = scope.plan_runtime(&removed).expect("removed plan");
+    assert!(!removed_plan.capabilities().authentication());
+    assert!(
+        format!("{removed_plan:?}").starts_with(
+            "RequestPlan { runtime_authentication: INHERITED AUTHENTICATION PARTIALLY REMOVED"
+        ),
+        "{removed_plan:?}"
+    );
+    scope
+        .bind(removed)
+        .expect("removed binding")
+        .await
+        .expect("removed runtime request");
+
+    server
+        .wait_for_requests(2, Duration::from_secs(5))
+        .expect("two tls requests");
+    let requests = server.requests();
+    assert_eq!(
+        format!("https://localhost{}", requests[0].target()),
+        plan.observed_url()
+    );
+    assert_eq!(requests[0].header("x-region"), Some("eu"));
+    assert_eq!(requests[0].header("x-runtime"), Some("yes"));
+    assert_eq!(requests[0].header("x-runtime-key"), Some(TOKEN));
+    assert_eq!(
+        format!("https://localhost{}", requests[1].target()),
+        removed_plan.observed_url()
+    );
+    assert_eq!(requests[1].header("x-runtime-key"), None);
+    assert_eq!(requests[1].header("x-region"), Some("eu"));
+}
+
+api! {
+    /// A generated ROOT owner declaring every inheritable family itself:
+    /// root path, query and headers, bearer authentication, a timeout and a
+    /// rate policy (V3-R09 root binding).
+    client RuntimeRootApi {
+        base "https://localhost/api/";
+        timeout 12s;
+        values { tenant: String; }
+        credentials {
+            secret token;
+            credential access = bearer(secret.token);
+        }
+        rate_limits {
+            policy root_reads(tenant) {
+                id "runtime.root.reads";
+                key [origin, "tenant" = tenant];
+                allow 100 per 1m;
+            }
+        }
+        path "v3";
+        query { "tenant" = tenant; "view" = "root"; }
+        headers { "X-Tenant" = tenant; "X-Root" = "root-header"; }
+        auth { bearer access; }
+        rate_limit root_reads(tenant = tenant);
+
+        GET declared() -> () via Empty {
+            id "runtime.root.declared";
+            path "declared";
+        }
+    }
+}
+
+/// One limiter admission as the limiter saw it.
+#[derive(Debug)]
+struct CapturedAdmission {
+    endpoint: String,
+    logical_origin: Option<String>,
+    rules: CapturedPlan,
+}
+
+/// A limiter recording the endpoint, logical origin and complete protected
+/// canonical keys of every admission.
+#[derive(Default)]
+struct AdmissionCapturingLimiter {
+    admissions: Mutex<Vec<CapturedAdmission>>,
+}
+
+impl RateLimiter for AdmissionCapturingLimiter {
+    fn capability(&self) -> LimiterCapability {
+        LimiterCapability::new(Enforcement::Local, "test.runtime.admissions", 1)
+    }
+
+    fn acquire<'a>(
+        &'a self,
+        request: RateLimitRequest<'a>,
+    ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
+        let rules = request
+            .plan
+            .policies()
+            .iter()
+            .map(|rule| CapturedRule {
+                id: rule.id().as_str().to_owned(),
+                parts: rule
+                    .key()
+                    .parts()
+                    .iter()
+                    .map(|part| (part.name().to_owned(), part.value().to_owned()))
+                    .collect(),
+                cost: rule.cost().get(),
+                windows: rule
+                    .windows()
+                    .iter()
+                    .map(|window| (window.capacity().get(), window.duration()))
+                    .collect(),
+            })
+            .collect();
+        self.admissions
+            .lock()
+            .expect("admission capture lock")
+            .push(CapturedAdmission {
+                endpoint: request.endpoint.to_owned(),
+                logical_origin: request.logical_origin.map(str::to_owned),
+                rules,
+            });
+        Box::pin(async { Ok(RateLimitPermit::granted()) })
+    }
+}
+
+/// Every public header the plan shows is sent with exactly that value.
+fn assert_public_headers_sent(
+    plan: &concord::endpoint::RequestPlan,
+    request: &concord_test_support::tls::TlsRequest,
+) {
+    for (name, value) in plan.public_headers().iter() {
+        match value {
+            concord::observation::SanitizedHeaderValue::Text(text) => {
+                assert_eq!(request.header(name.as_str()), Some(text), "{name}");
+            }
+            other => panic!("unexpected non-text public header {name}: {other:?}"),
+        }
+    }
+}
+
+/// V3-R09 at a generated ROOT (RUNTIME-01: root binding uses the same
+/// projection as scope binding): `client.bind(runtime_endpoint)` inherits
+/// the root path, query, headers, bearer authentication, timeout and rate
+/// policy. For an inherited endpoint, a root-level override
+/// (`path_replace`, `query_replace`, `header_off`, `timeout`) and a root
+/// `auth_off`, the bound plan's target, public headers and timeout equal
+/// the actual TLS send, the private Authorization is sent exactly when the
+/// plan says authentication applies, and the limiter's captured origin and
+/// tenant key equal the plan's destination and the root value — also after
+/// the query override, which never changes the protected rate key.
+#[tokio::test(flavor = "current_thread")]
+async fn runtime_endpoint_bound_at_the_generated_root_matches_the_actual_tls_send() {
+    const TOKEN: &str = "runtime-root-credential-8d2e";
+    const TENANT: &str = "tenant-root-7c";
+    let server = TlsServer::start().expect("tls server");
+    let tunnel = ConnectProxy::start(server.address()).expect("tunnel");
+    let proxy = SafeProxy::parse(tunnel.url()).expect("proxy");
+    let certificate = server.certificate_pem();
+    let limiter = Arc::new(AdmissionCapturingLimiter::default());
+    let configured_limiter = Arc::clone(&limiter);
+    let client = RuntimeRootApi::builder()
+        .set_tenant(TENANT)
+        .token(secret(TOKEN))
+        .configure_http(move |http| {
+            http.http1_only()
+                .proxy(proxy)
+                .add_root_certificate_pem(certificate)
+        })
+        .configure_runtime(move |runtime| runtime.rate_limiter(configured_limiter))
+        .build()
+        .expect("runtime root client");
+    for _ in 0..3 {
+        server.queue_response(200, Vec::new()).expect("queue");
+    }
+    let x_tenant = concord::http::HeaderName::from_static("x-tenant");
+    let x_root = concord::http::HeaderName::from_static("x-root");
+    let x_runtime = concord::http::HeaderName::from_static("x-runtime");
+    let authorization = concord::http::HeaderName::from_static("authorization");
+
+    // 1. Inherited root program plus local operations and an additive
+    //    runtime policy.
+    let inherited = || {
+        empty(
+            RuntimeEndpoint::builder(runtime_id("runtime.root.items"), Method::GET)
+                .path("items")
+                .path("7")
+                .query("page", 2_u32)
+                .header("x-runtime", "yes")
+                .rate_limit(
+                    RateLimitDeclaration::new("runtime.root.extra")
+                        .endpoint()
+                        .window(10, Duration::from_secs(1)),
+                ),
+        )
+    };
+    let inherited_plan = client
+        .plan_runtime(&inherited())
+        .expect("root-owned runtime plan");
+    assert_eq!(
+        inherited_plan.observed_url(),
+        format!("https://localhost/api/v3/items/7?tenant={TENANT}&view=root&page=2")
+    );
+    assert_eq!(
+        inherited_plan.resolved_timeout(),
+        Some(Duration::from_secs(12))
+    );
+    assert_eq!(inherited_plan.rate_limit_policy_count(), 2);
+    let schemas: Vec<(String, Vec<String>)> = inherited_plan
+        .rate_limit()
+        .policies()
+        .iter()
+        .map(|policy| {
+            (
+                policy.schema().id().as_str().to_owned(),
+                policy
+                    .schema()
+                    .dimensions()
+                    .iter()
+                    .map(|dimension| dimension.label().to_owned())
+                    .collect(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        schemas,
+        [
+            (
+                "runtime.root.reads".to_owned(),
+                vec!["origin".to_owned(), "tenant".to_owned()]
+            ),
+            ("runtime.root.extra".to_owned(), vec!["endpoint".to_owned()]),
+        ]
+    );
+    assert!(inherited_plan.capabilities().authentication());
+    assert!(inherited_plan.public_headers().get(&x_tenant).is_some());
+    assert!(inherited_plan.public_headers().get(&x_root).is_some());
+    assert!(inherited_plan.public_headers().get(&x_runtime).is_some());
+    assert!(
+        inherited_plan
+            .public_headers()
+            .get(&authorization)
+            .is_none()
+    );
+    assert!(!format!("{inherited_plan:?}").contains(TOKEN));
+    let bound = client
+        .bind(inherited())
+        .expect("runtime endpoint binds at the root");
+    assert_eq!(
+        bound.plan().expect("bound plan").observed_url(),
+        inherited_plan.observed_url()
+    );
+    let facts = bound
+        .description()
+        .runtime_binding()
+        .expect("runtime binding facts");
+    assert_eq!(facts.owner(), Some("RuntimeRootApi"));
+    assert_eq!(facts.inherited_auth_placements(), 1);
+    assert_eq!(facts.effective_auth_placements(), 1);
+    assert_eq!(facts.effective_rate_policies(), 2);
+    bound.await.expect("root-owned runtime request");
+
+    // The root projection is the one a generated root endpoint uses.
+    let declared = client.declared().plan().expect("generated root plan");
+    assert_eq!(
+        declared.observed_url(),
+        format!("https://localhost/api/v3/declared?tenant={TENANT}&view=root")
+    );
+    for name in [&x_tenant, &x_root] {
+        assert_eq!(
+            format!("{:?}", declared.public_headers().get(name)),
+            format!("{:?}", inherited_plan.public_headers().get(name)),
+        );
+    }
+
+    // 2. Root-level overrides against the inherited root program.
+    let overridden = empty(
+        RuntimeEndpoint::builder(runtime_id("runtime.root.overridden"), Method::GET)
+            .path_replace()
+            .path("replaced")
+            .query_replace("tenant", "runtime-tenant")
+            .header_off()
+            .timeout(Duration::from_secs(9)),
+    );
+    let overridden_plan = client
+        .plan_runtime(&overridden)
+        .expect("overridden root plan");
+    assert_eq!(
+        overridden_plan.observed_url(),
+        "https://localhost/api/replaced?view=root&tenant=runtime-tenant"
+    );
+    assert_eq!(
+        overridden_plan.resolved_timeout(),
+        Some(Duration::from_secs(9))
+    );
+    assert!(overridden_plan.public_headers().is_empty());
+    assert!(overridden_plan.capabilities().authentication());
+    assert_eq!(overridden_plan.rate_limit_policy_count(), 1);
+    client
+        .bind(overridden)
+        .expect("overridden runtime endpoint binds at the root")
+        .await
+        .expect("overridden root-owned runtime request");
+
+    // 3. Removing the root authentication is explicit and prominent.
+    let public = empty(
+        RuntimeEndpoint::builder(runtime_id("runtime.root.public"), Method::GET)
+            .path("public")
+            .auth_off(),
+    );
+    let public_plan = client.plan_runtime(&public).expect("public root plan");
+    assert!(!public_plan.capabilities().authentication());
+    assert!(
+        format!("{public_plan:?}")
+            .contains("INHERITED AUTHENTICATION REMOVED by runtime auth_off()"),
+        "{public_plan:?}"
+    );
+    assert_eq!(
+        public_plan.observed_url(),
+        format!("https://localhost/api/v3/public?tenant={TENANT}&view=root")
+    );
+    client
+        .bind(public)
+        .expect("auth-off runtime endpoint binds at the root")
+        .await
+        .expect("auth-off root-owned runtime request");
+
+    server
+        .wait_for_requests(3, Duration::from_secs(5))
+        .expect("three tls requests");
+    let requests = server.requests();
+    assert_eq!(requests.len(), 3);
+    for (request, plan) in requests
+        .iter()
+        .zip([&inherited_plan, &overridden_plan, &public_plan])
+    {
+        assert_eq!(request.method(), "GET");
+        assert_eq!(
+            format!("https://localhost{}", request.target()),
+            plan.observed_url()
+        );
+        assert_public_headers_sent(plan, request);
+    }
+    assert_eq!(requests[0].header("x-tenant"), Some(TENANT));
+    assert_eq!(requests[0].header("x-root"), Some("root-header"));
+    assert_eq!(requests[0].header("x-runtime"), Some("yes"));
+    let bearer = format!("Bearer {TOKEN}");
+    assert_eq!(requests[0].header("authorization"), Some(bearer.as_str()));
+    assert_eq!(requests[1].header("x-tenant"), None);
+    assert_eq!(requests[1].header("x-root"), None);
+    assert_eq!(requests[1].header("authorization"), Some(bearer.as_str()));
+    assert_eq!(requests[2].header("x-tenant"), Some(TENANT));
+    assert_eq!(requests[2].header("authorization"), None);
+
+    // The captured limiter keys agree with the plans and the send: the
+    // origin is the plan's destination with its explicit effective port and
+    // the tenant is the root value (a query override never changes it).
+    let origin = "https://localhost:443";
+    assert!(
+        inherited_plan
+            .observed_url()
+            .starts_with("https://localhost/")
+    );
+    let root_rule = || CapturedRule {
+        id: "runtime.root.reads".to_owned(),
+        parts: vec![
+            ("origin".to_owned(), canonical_utf8(origin)),
+            ("tenant".to_owned(), canonical_utf8(TENANT)),
+        ],
+        cost: 1,
+        windows: vec![(100, Duration::from_secs(60))],
+    };
+    let admissions = limiter.admissions.lock().expect("captured admissions");
+    assert_eq!(admissions.len(), 3, "{admissions:?}");
+    assert_eq!(admissions[0].endpoint, "runtime.root.items");
+    assert_eq!(admissions[0].logical_origin.as_deref(), Some(origin));
+    assert_eq!(
+        admissions[0].rules,
+        [
+            root_rule(),
+            CapturedRule {
+                id: "runtime.root.extra".to_owned(),
+                parts: vec![("endpoint".to_owned(), canonical_utf8("runtime.root.items"))],
+                cost: 1,
+                windows: vec![(10, Duration::from_secs(1))],
+            },
+        ]
+    );
+    assert_eq!(admissions[1].endpoint, "runtime.root.overridden");
+    assert_eq!(admissions[1].logical_origin.as_deref(), Some(origin));
+    assert_eq!(admissions[1].rules, [root_rule()]);
+    assert_eq!(admissions[2].endpoint, "runtime.root.public");
+    assert_eq!(
+        admissions[2].rules,
+        [root_rule()],
+        "RATE-01: auth_off keeps quotas"
+    );
 }
 
 #[test]
 fn runtime_scope_auth_is_inherited_and_can_be_explicitly_disabled() {
-    let client = RuntimeAuthScopeApi::builder()
-        .token(
-            concord::prelude::SecretString::try_new("scope-secret").expect("bounded scope secret"),
-        )
-        .build()
-        .expect("runtime scope auth client");
+    let client = auth_scope_client();
     let scope = client.protected();
 
-    let inherited =
-        RuntimeEndpoint::builder(runtime_id("runtime.scope.auth.description"), Method::GET)
-            .build()
-            .expect("auth-inheriting runtime endpoint");
-    let inherited_plan = inherited.plan(&scope).expect("inherited auth plan");
-    assert!(inherited_plan.capabilities().authentication());
+    let inherited = scope
+        .bind(empty(RuntimeEndpoint::builder(
+            runtime_id("runtime.scope.auth.description"),
+            Method::GET,
+        )))
+        .expect("auth-inheriting runtime endpoint");
+    assert!(inherited.description().capabilities().authentication());
+    let facts = inherited.description().runtime_binding().expect("facts");
+    assert_eq!(facts.authentication(), &RuntimeAuthDisposition::Inherited);
+    assert_eq!(facts.effective_auth_placements(), 2);
+    assert!(
+        inherited
+            .plan()
+            .expect("inherited auth plan")
+            .capabilities()
+            .authentication()
+    );
 
-    let collision =
-        RuntimeEndpoint::builder(runtime_id("runtime.scope.auth.inherited"), Method::GET)
-            .header(HeaderName::from_static("x-runtime-scope-key"), "public")
-            .build()
-            .expect("auth-inheriting runtime endpoint")
-            .try_bind(&scope)
-            .err()
-            .expect("inherited private placement collides with public header");
+    // HEAD-01: a public writer cannot target an effective private placement.
+    let collision = scope
+        .bind(empty(
+            RuntimeEndpoint::builder(runtime_id("runtime.scope.auth.inherited"), Method::GET)
+                .header("x-runtime-scope-key", "public"),
+        ))
+        .expect_err("inherited private placement collides with public header");
     assert_eq!(
         collision.configuration_kind(),
         Some(ConfigurationErrorKind::InvalidAuthentication)
     );
-    let auth_free = RuntimeEndpoint::builder(runtime_id("runtime.scope.auth.off"), Method::GET)
-        .auth_off()
-        .header(HeaderName::from_static("x-runtime-scope-key"), "public")
-        .build()
-        .expect("auth-free runtime endpoint");
-    let auth_free_plan = auth_free.plan(&scope).expect("auth-free runtime plan");
+
+    let auth_free = empty(
+        RuntimeEndpoint::builder(runtime_id("runtime.scope.auth.off"), Method::GET)
+            .auth_off()
+            .header("x-runtime-scope-key", "public"),
+    );
+    let auth_free_plan = scope
+        .plan_runtime(&auth_free)
+        .expect("auth-free runtime plan");
     assert!(!auth_free_plan.capabilities().authentication());
-    let _request = auth_free
-        .try_bind(&scope)
+    assert!(
+        format!("{auth_free_plan:?}")
+            .contains("INHERITED AUTHENTICATION REMOVED by runtime auth_off()")
+    );
+    let request = scope
+        .bind(auth_free)
         .expect("auth-free runtime endpoint binds");
+    assert_eq!(
+        request
+            .description()
+            .runtime_binding()
+            .expect("facts")
+            .authentication(),
+        &RuntimeAuthDisposition::RemovedAll
+    );
 }
 
 #[tokio::test]
@@ -648,14 +1366,14 @@ async fn the_same_prepared_definition_uses_each_selected_client_base_and_core() 
     let definition = || {
         RuntimeEndpoint::builder(runtime_id("runtime.portable"), Method::GET)
             .path("portable")
-            .accepted_bytes()
+            .response::<Binary, Bytes>()
             .build()
             .expect("portable endpoint")
     };
 
     assert_eq!(
-        definition()
-            .try_bind(&alpha)
+        alpha
+            .bind(definition())
             .expect("runtime endpoint binds to alpha")
             .await
             .expect("alpha"),
@@ -664,8 +1382,7 @@ async fn the_same_prepared_definition_uses_each_selected_client_base_and_core() 
     assert_eq!(alpha_calls.load(Ordering::SeqCst), 1);
     assert_eq!(beta_calls.load(Ordering::SeqCst), 0);
     assert_eq!(
-        definition()
-            .try_bind(&beta)
+        beta.bind(definition())
             .expect("runtime endpoint binds to beta")
             .await
             .expect("beta"),
@@ -686,6 +1403,12 @@ async fn the_same_prepared_definition_uses_each_selected_client_base_and_core() 
     );
 }
 
+// ---------------------------------------------------------------------------
+// Bodies, observers and limits (§9, §16.2 Body row).
+// ---------------------------------------------------------------------------
+
+/// v2 `body(RequestBody::...)`/`body_codec::<C>` become the one typed
+/// `body_repr::<B, T>(input)` selection (§16.2 Body row).
 #[tokio::test]
 async fn all_prepared_body_forms_use_the_existing_lazy_body_architecture() {
     let server = ScriptedServer::start((0..7).map(|_| ResponseScript::ok(Vec::new())))
@@ -693,59 +1416,64 @@ async fn all_prepared_body_forms_use_the_existing_lazy_body_architecture() {
     let client = alpha(&server);
     let factory_calls = Arc::new(AtomicUsize::new(0));
     let multipart_factory_calls = Arc::new(AtomicUsize::new(0));
+    let post = |id: &str| RuntimeEndpoint::builder(runtime_id(id), Method::POST);
 
     let bodies = [
-        RuntimeEndpoint::builder(runtime_id("runtime.empty"), Method::POST)
-            .body(RequestBody::empty())
-            .build()
-            .expect("empty"),
-        RuntimeEndpoint::builder(runtime_id("runtime.bytes"), Method::POST)
-            .body(RequestBody::bytes(Bytes::from_static(b"bytes-body")))
-            .build()
-            .expect("bytes"),
-        RuntimeEndpoint::builder(runtime_id("runtime.stream"), Method::POST)
-            .body(RequestBody::stream(RequestStream::from_bytes(
+        empty(post("runtime.empty").body_repr::<PreparedBody, _>(PreparedBody::empty())),
+        empty(post("runtime.bytes").body_repr::<Binary, _>(Bytes::from_static(b"bytes-body"))),
+        empty(
+            post("runtime.stream").body_repr::<Binary, _>(RequestStream::from_bytes(
                 Bytes::from_static(b"stream-body"),
-            )))
-            .build()
-            .expect("stream"),
-        RuntimeEndpoint::builder(runtime_id("runtime.factory"), Method::POST)
-            .body(RequestBody::factory(FreshFactory {
-                calls: Arc::clone(&factory_calls),
-            }))
-            .build()
-            .expect("factory"),
-        RuntimeEndpoint::builder(runtime_id("runtime.codec"), Method::POST)
-            .body_codec::<EchoCodec>("codec-body".to_owned())
-            .build()
-            .expect("codec"),
-        RuntimeEndpoint::builder(runtime_id("runtime.multipart"), Method::POST)
-            .body(RequestBody::multipart(
+            )),
+        ),
+        empty(
+            post("runtime.factory").body_repr::<PreparedBody, _>(PreparedBody::factory(
+                FreshFactory {
+                    calls: Arc::clone(&factory_calls),
+                },
+            )),
+        ),
+        empty(post("runtime.codec").body_repr::<EchoCodec, _>("codec-body".to_owned())),
+        empty(
+            post("runtime.multipart").body_repr::<Multipart, _>(
                 MultipartBody::new()
                     .part(
                         "field",
                         MultipartPart::text("multipart-body").expect("bounded multipart text"),
                     )
                     .expect("multipart part"),
-            ))
-            .build()
-            .expect("multipart"),
-        RuntimeEndpoint::builder(runtime_id("runtime.multipart_factory"), Method::POST)
-            .body(RequestBody::multipart_factory(FreshMultipartFactory {
-                calls: Arc::clone(&multipart_factory_calls),
-            }))
-            .build()
-            .expect("multipart factory"),
+            ),
+        ),
+        empty(
+            post("runtime.multipart_factory").body_repr::<PreparedBody, _>(
+                PreparedBody::multipart_factory(FreshMultipartFactory {
+                    calls: Arc::clone(&multipart_factory_calls),
+                })
+                .expect("multipart factory body"),
+            ),
+        ),
     ];
 
     assert_eq!(factory_calls.load(Ordering::SeqCst), 0);
     assert_eq!(multipart_factory_calls.load(Ordering::SeqCst), 0);
     for endpoint in bodies {
-        endpoint
-            .try_bind(&client)
-            .expect("runtime endpoint binds to client")
-            .await
-            .expect("prepared body send");
+        let bound = client
+            .bind(endpoint)
+            .expect("runtime endpoint binds to client");
+        // Binding and planning never prepare a body (V3-S12).
+        let before = (
+            factory_calls.load(Ordering::SeqCst),
+            multipart_factory_calls.load(Ordering::SeqCst),
+        );
+        let _ = bound.plan().expect("inert plan");
+        assert_eq!(
+            (
+                factory_calls.load(Ordering::SeqCst),
+                multipart_factory_calls.load(Ordering::SeqCst),
+            ),
+            before
+        );
+        bound.await.expect("prepared body send");
     }
     assert_eq!(factory_calls.load(Ordering::SeqCst), 1);
     assert_eq!(multipart_factory_calls.load(Ordering::SeqCst), 1);
@@ -785,27 +1513,27 @@ async fn observer_panic_cannot_reject_runtime_endpoint_work() {
         .configure_runtime(|runtime| runtime.operation_observer(Arc::new(RejectingHooks)))
         .build()
         .expect("hooked client");
-    let endpoint = RuntimeEndpoint::builder(runtime_id("runtime.observed"), Method::POST)
-        .body(RequestBody::factory(FreshFactory {
-            calls: Arc::clone(&calls),
-        }))
-        .build()
-        .expect("lazy factory endpoint");
+    let endpoint = empty(
+        RuntimeEndpoint::builder(runtime_id("runtime.observed"), Method::POST)
+            .body_repr::<PreparedBody, _>(PreparedBody::factory(FreshFactory {
+                calls: Arc::clone(&calls),
+            })),
+    );
 
-    endpoint
-        .try_bind(&client)
+    client
+        .bind(endpoint)
         .expect("runtime endpoint binds to client")
         .await
         .expect("observer has no veto authority");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 
     let encode_calls = Arc::new(AtomicUsize::new(0));
-    let endpoint = RuntimeEndpoint::builder(runtime_id("runtime.codec_observed"), Method::POST)
-        .body_codec::<CountingEncodeCodec>(Arc::clone(&encode_calls))
-        .build()
-        .expect("lazy codec endpoint");
-    endpoint
-        .try_bind(&client)
+    let endpoint = empty(
+        RuntimeEndpoint::builder(runtime_id("runtime.codec_observed"), Method::POST)
+            .body_repr::<CountingEncodeCodec, _>(Arc::clone(&encode_calls)),
+    );
+    client
+        .bind(endpoint)
         .expect("runtime endpoint binds to client")
         .await
         .expect("observer has no codec veto authority");
@@ -813,16 +1541,17 @@ async fn observer_panic_cannot_reject_runtime_endpoint_work() {
     assert_eq!(server.request_count(), 2);
 }
 
+/// v2 runtime endpoints created their own private placements
+/// (`.auth(Auth::header(..))`); RUNTIME-02 removes that authority, so the
+/// credentials now come from the binding owner and the cleartext rule is
+/// enforced at bind, before any observer, body or transport work.
 #[tokio::test]
 async fn prepared_protected_http_fails_before_observer_or_body_materialization() {
     let server = ScriptedServer::start([]).expect("protected preparation server");
     let hook_calls = Arc::new(AtomicUsize::new(0));
     let selected_hooks = Arc::clone(&hook_calls);
     let client = PreparedAuthApi::builder()
-        .token(
-            concord::prelude::SecretString::try_new("prepared-credential-15e8d20c")
-                .expect("bounded prepared credential"),
-        )
+        .token(secret("prepared-credential-15e8d20c"))
         .configure_http({
             let proxy = proxy(&server);
             move |http| http.proxy(proxy)
@@ -835,51 +1564,48 @@ async fn prepared_protected_http_fails_before_observer_or_body_materialization()
         .build()
         .expect("prepared authentication client");
     let factory_calls = Arc::new(AtomicUsize::new(0));
-    let endpoint = RuntimeEndpoint::builder(runtime_id("runtime.protected_http"), Method::POST)
-        .body(RequestBody::factory(FreshFactory {
-            calls: Arc::clone(&factory_calls),
-        }))
-        .auth(
-            Auth::header(
-                HeaderName::from_static("x-api-key"),
-                client.credentials().api_key().credential(),
-            )
-            .expect("valid header placement"),
-        )
-        .build()
-        .expect("structurally valid protected endpoint");
+    let endpoint = empty(
+        RuntimeEndpoint::builder(runtime_id("runtime.protected_http"), Method::POST)
+            .body_repr::<PreparedBody, _>(PreparedBody::factory(FreshFactory {
+                calls: Arc::clone(&factory_calls),
+            })),
+    );
 
-    let error = endpoint
-        .try_bind(&client)
-        .err()
-        .expect("authenticated cleartext must fail");
+    let error = client
+        .bind(endpoint)
+        .expect_err("authenticated cleartext must fail");
     assert_eq!(error.category(), ErrorCategory::Configuration);
     assert_eq!(hook_calls.load(Ordering::SeqCst), 0);
     assert_eq!(factory_calls.load(Ordering::SeqCst), 0);
     assert_eq!(server.request_count(), 0);
 
     let custom_factory_calls = Arc::new(AtomicUsize::new(0));
-    let endpoint = RuntimeEndpoint::builder(
-        runtime_id("runtime.custom_authorization_http"),
-        Method::POST,
-    )
-    .body(RequestBody::factory(FreshFactory {
-        calls: Arc::clone(&custom_factory_calls),
-    }))
-    .auth(
-        Auth::authorization_with_scheme("Token", client.credentials().api_key().credential())
-            .expect("valid static Authorization scheme"),
-    )
-    .build()
-    .expect("structurally valid custom Authorization endpoint");
-    let error = endpoint
-        .try_bind(&client)
-        .err()
-        .expect("custom Authorization over cleartext must fail");
+    let endpoint = empty(
+        RuntimeEndpoint::builder(
+            runtime_id("runtime.custom_authorization_http"),
+            Method::POST,
+        )
+        .body_repr::<PreparedBody, _>(PreparedBody::factory(FreshFactory {
+            calls: Arc::clone(&custom_factory_calls),
+        })),
+    );
+    let error = client
+        .custom()
+        .bind(endpoint)
+        .expect_err("custom Authorization over cleartext must fail");
     assert_eq!(error.category(), ErrorCategory::Configuration);
     assert_eq!(hook_calls.load(Ordering::SeqCst), 0);
     assert_eq!(custom_factory_calls.load(Ordering::SeqCst), 0);
     assert_eq!(server.request_count(), 0);
+
+    // Removing every inherited placement leaves an auth-free cleartext
+    // request, which binds.
+    client
+        .custom()
+        .bind(empty(
+            RuntimeEndpoint::builder(runtime_id("runtime.cleartext_off"), Method::GET).auth_off(),
+        ))
+        .expect("auth-free cleartext binding");
 }
 
 #[tokio::test]
@@ -890,23 +1616,21 @@ async fn prepared_bodies_and_responses_cannot_bypass_runtime_limits() {
             let proxy = proxy(&request_server);
             move |http| http.proxy(proxy)
         })
-        .configure_runtime(|runtime| {
-            runtime.request_body_limit(NonZeroUsize::new(3).expect("positive request limit"))
-        })
+        .configure_runtime(|runtime| runtime.request_body_limit(3))
         .build()
         .expect("request-limited client");
     for endpoint in [
-        RuntimeEndpoint::builder(runtime_id("runtime.limited_bytes"), Method::POST)
-            .body(RequestBody::bytes(Bytes::from_static(b"four")))
-            .build()
-            .expect("limited bytes endpoint"),
-        RuntimeEndpoint::builder(runtime_id("runtime.limited_codec"), Method::POST)
-            .body_codec::<EchoCodec>("four".to_owned())
-            .build()
-            .expect("limited codec endpoint"),
+        empty(
+            RuntimeEndpoint::builder(runtime_id("runtime.limited_bytes"), Method::POST)
+                .body_repr::<Binary, _>(Bytes::from_static(b"four")),
+        ),
+        empty(
+            RuntimeEndpoint::builder(runtime_id("runtime.limited_codec"), Method::POST)
+                .body_repr::<EchoCodec, _>("four".to_owned()),
+        ),
     ] {
-        let error = endpoint
-            .try_bind(&request_client)
+        let error = request_client
+            .bind(endpoint)
             .expect("runtime endpoint binds to client")
             .await
             .expect_err("prepared request body limit");
@@ -921,17 +1645,15 @@ async fn prepared_bodies_and_responses_cannot_bypass_runtime_limits() {
             let proxy = proxy(&response_server);
             move |http| http.proxy(proxy)
         })
-        .configure_runtime(|runtime| {
-            runtime.response_body_limit(NonZeroUsize::new(3).expect("positive response limit"))
-        })
+        .configure_runtime(|runtime| runtime.response_body_limit(3))
         .build()
         .expect("response-limited client");
     let endpoint = RuntimeEndpoint::builder(runtime_id("runtime.limited_response"), Method::GET)
-        .accepted_bytes()
+        .response::<Binary, Bytes>()
         .build()
         .expect("limited response endpoint");
-    let error = endpoint
-        .try_bind(&response_client)
+    let error = response_client
+        .bind(endpoint)
         .expect("runtime endpoint binds to client")
         .await
         .expect_err("prepared response body limit");
@@ -939,6 +1661,14 @@ async fn prepared_bodies_and_responses_cannot_bypass_runtime_limits() {
     assert_eq!(response_server.request_count(), 1);
 }
 
+// ---------------------------------------------------------------------------
+// Rate policies (RATE-01, V3-R11).
+// ---------------------------------------------------------------------------
+
+/// v2 runtime rules were resolved `RateLimitPolicy` values (including a
+/// dimensionless global key); v3 runtime policies are explicit
+/// `RateLimitDeclaration`s whose built-in dimensions resolve from the bound
+/// head, and every v3 key has at least one dimension (§12.3).
 #[tokio::test]
 async fn prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_order() {
     let server = ScriptedServer::start([
@@ -947,29 +1677,30 @@ async fn prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_ord
     ])
     .expect("prepared limiter server");
     let endpoint = || {
-        RuntimeEndpoint::builder(runtime_id("runtime.limited"), Method::GET)
-            .rate_limit(rule(
-                "global",
-                RateLimitKey::global(),
-                1,
-                &[(10, 1), (100, 10)],
-            ))
-            .rate_limit(rule(
-                "one-part",
-                RateLimitKey::from_canonical_values([("tenant", "west")])
-                    .expect("one-part rate key"),
-                2,
-                &[(20, 2)],
-            ))
-            .rate_limit(rule(
-                "several-parts",
-                RateLimitKey::from_canonical_values([("tenant", "east"), ("region", "eu")])
-                    .expect("several-parts rate key"),
-                3,
-                &[(30, 3), (300, 30)],
-            ))
-            .build()
-            .expect("prepared rate plan")
+        empty(
+            RuntimeEndpoint::builder(runtime_id("runtime.limited"), Method::GET)
+                .rate_limit(
+                    RateLimitDeclaration::new("global")
+                        .window(10, Duration::from_secs(1))
+                        .window(100, Duration::from_secs(10))
+                        .origin(),
+                )
+                .rate_limit(
+                    RateLimitDeclaration::new("one-part")
+                        .cost(2)
+                        .window(20, Duration::from_secs(2))
+                        .part("tenant", "west"),
+                )
+                .rate_limit(
+                    RateLimitDeclaration::new("several-parts")
+                        .cost(3)
+                        .window(30, Duration::from_secs(3))
+                        .window(300, Duration::from_secs(30))
+                        .endpoint()
+                        .part("tenant", "east")
+                        .part("region", "eu"),
+                ),
+        )
     };
 
     let explicit_noop = PreparedAlphaApi::builder()
@@ -977,11 +1708,18 @@ async fn prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_ord
             let proxy = proxy(&server);
             move |http| http.proxy(proxy)
         })
-        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter)))
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
         .build()
         .expect("explicit no-op client");
-    endpoint()
-        .try_bind(&explicit_noop)
+    let noop_plan = explicit_noop
+        .plan_runtime(&endpoint())
+        .expect("explicit no-op plan");
+    assert_eq!(
+        noop_plan.rate_limit().enforcement_label(),
+        "declared policies; enforcement explicitly disabled by application selection"
+    );
+    explicit_noop
+        .bind(endpoint())
         .expect("runtime endpoint binds to client")
         .await
         .expect("explicit no-op authorizes plan");
@@ -996,17 +1734,20 @@ async fn prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_ord
         .configure_runtime(move |runtime| runtime.rate_limiter(selected))
         .build()
         .expect("custom limiter client");
-    endpoint()
-        .try_bind(&custom)
-        .expect("runtime endpoint binds to client")
-        .await
-        .expect("custom limiter authorizes plan");
+    let bound = custom
+        .bind(endpoint())
+        .expect("runtime endpoint binds to client");
+    assert!(limiter.plans.lock().expect("captured plans").is_empty());
+    bound.await.expect("custom limiter authorizes plan");
     assert_eq!(
         limiter.plans.lock().expect("captured plans").as_slice(),
         [vec![
             CapturedRule {
                 id: "global".to_owned(),
-                parts: vec![],
+                parts: vec![(
+                    "origin".to_owned(),
+                    canonical_utf8("http://alpha.prepared.example.test:80"),
+                )],
                 cost: 1,
                 windows: vec![(10, Duration::from_secs(1)), (100, Duration::from_secs(10))],
             },
@@ -1019,6 +1760,7 @@ async fn prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_ord
             CapturedRule {
                 id: "several-parts".to_owned(),
                 parts: vec![
+                    ("endpoint".to_owned(), canonical_utf8("runtime.limited")),
                     ("tenant".to_owned(), canonical_utf8("east")),
                     ("region".to_owned(), canonical_utf8("eu")),
                 ],
@@ -1030,92 +1772,410 @@ async fn prepared_custom_limiter_inspects_ids_keys_costs_and_windows_in_call_ord
 }
 
 #[test]
+fn missing_limiter_cannot_bypass_bind() {
+    let client = offline_alpha();
+    let governed = || {
+        empty(
+            RuntimeEndpoint::builder(runtime_id("runtime.governed"), Method::GET)
+                .rate_limit(window_rule("runtime.governed").origin()),
+        )
+    };
+    for error in [
+        client
+            .plan_runtime(&governed())
+            .expect_err("plan without limiter"),
+        client.bind(governed()).expect_err("bind without limiter"),
+    ] {
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidRateLimit)
+        );
+        assert_eq!(error.category(), ErrorCategory::Configuration);
+    }
+    // An ungoverned runtime endpoint on the same client binds.
+    client
+        .bind(empty(RuntimeEndpoint::builder(
+            runtime_id("runtime.ungoverned"),
+            Method::GET,
+        )))
+        .expect("ungoverned runtime endpoint binds");
+}
+
+#[test]
+fn inherited_rate_policies_cannot_be_removed_or_redefined() {
+    let client = RuntimeScopeApi::builder()
+        .set_tenant("tenant-a")
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(LocalRateLimiter::new())))
+        .build()
+        .expect("runtime scope client");
+    let scope = client.regional("west");
+    // No runtime operation removes a rate policy: every fence leaves it.
+    let fenced = empty(
+        RuntimeEndpoint::builder(runtime_id("runtime.scope.fenced"), Method::GET)
+            .path_off()
+            .query_off()
+            .header_off()
+            .auth_off(),
+    );
+    let plan = scope.plan_runtime(&fenced).expect("fenced plan");
+    assert_eq!(plan.rate_limit_policy_count(), 1);
+    assert_eq!(
+        plan.observed_url(),
+        "http://api.scope-runtime.example.test/root/"
+    );
+    // A runtime policy is additive; redefining an inherited ID conflicts.
+    let additive = empty(
+        RuntimeEndpoint::builder(runtime_id("runtime.scope.additive"), Method::GET)
+            .rate_limit(window_rule("runtime.scope.extra").endpoint()),
+    );
+    assert_eq!(
+        scope
+            .plan_runtime(&additive)
+            .expect("additive plan")
+            .rate_limit_policy_count(),
+        2
+    );
+    let redefined = empty(
+        RuntimeEndpoint::builder(runtime_id("runtime.scope.redefined"), Method::GET)
+            .rate_limit(window_rule("runtime.scope.tenant").endpoint()),
+    );
+    assert_eq!(
+        scope
+            .bind(redefined)
+            .expect_err("redefining an inherited policy")
+            .configuration_kind(),
+        Some(ConfigurationErrorKind::InvalidRateLimit)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// V3-R10: replacement parity, name bounds, forbidden authority.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn runtime_public_replacement_parity_matches_generated_programs() {
+    let client = ParityApi::new().expect("parity client");
+    let runtime = |builder: RuntimeEndpointBuilder| {
+        client
+            .plan_runtime(&empty(builder.path("items")))
+            .expect("runtime parity plan")
+            .observed_url()
+            .to_owned()
+    };
+    let base = || RuntimeEndpoint::builder(runtime_id("parity.runtime"), Method::GET);
+    let generated = |plan: Result<concord::endpoint::RequestPlan, concord::ApiError>| {
+        plan.expect("generated parity plan")
+            .observed_url()
+            .to_owned()
+    };
+    let url = |query: &str| format!("http://parity.example.test/items?{query}");
+
+    let cases = [
+        (
+            generated(client.when_present_locale().plan()),
+            runtime(base().query_when_present("locale", Option::<String>::None)),
+            url("a=1&locale=fr&z=9"),
+        ),
+        (
+            generated(client.when_present_locale().set_locale("de").plan()),
+            runtime(base().query_when_present("locale", Some("de".to_owned()))),
+            url("a=1&z=9&locale=de"),
+        ),
+        (
+            generated(client.replace_locale().plan()),
+            runtime(base().query_replace_optional("locale", Option::<String>::None)),
+            url("a=1&z=9"),
+        ),
+        (
+            generated(client.append_locale().set_locale("de").plan()),
+            runtime(base().query_append_optional("locale", Some("de".to_owned()))),
+            url("a=1&locale=fr&z=9&locale=de"),
+        ),
+        (
+            generated(client.append_locale().plan()),
+            runtime(base().query_append_optional("locale", Option::<String>::None)),
+            url("a=1&locale=fr&z=9"),
+        ),
+        (
+            generated(client.replace_each(Vec::new()).plan()),
+            runtime(base().query_replace_each("locale", Vec::<String>::new())),
+            url("a=1&z=9"),
+        ),
+        (
+            generated(
+                client
+                    .replace_each(vec!["x".to_owned(), "y".to_owned()])
+                    .plan(),
+            ),
+            runtime(base().query_replace_each("locale", vec!["x".to_owned(), "y".to_owned()])),
+            url("a=1&z=9&locale=x&locale=y"),
+        ),
+        (
+            generated(client.when_present_each().plan()),
+            runtime(base().query_when_present_each("locale", Option::<Vec<String>>::None)),
+            url("a=1&locale=fr&z=9"),
+        ),
+        (
+            generated(client.when_present_each().set_locales(Vec::new()).plan()),
+            runtime(base().query_when_present_each("locale", Some(Vec::<String>::new()))),
+            url("a=1&z=9"),
+        ),
+        (
+            generated(client.append_each(vec!["x".to_owned()]).plan()),
+            runtime(base().query_append_each("locale", vec!["x".to_owned()])),
+            url("a=1&locale=fr&z=9&locale=x"),
+        ),
+        (
+            generated(client.removed().plan()),
+            runtime(base().query_remove("locale")),
+            url("a=1&z=9"),
+        ),
+    ];
+    for (generated, runtime, expected) in cases {
+        assert_eq!(generated, expected);
+        assert_eq!(runtime, expected);
+    }
+    // Whole-family runtime fences.
+    assert_eq!(
+        runtime(base().query_off()),
+        "http://parity.example.test/items"
+    );
+    assert_eq!(
+        runtime(base().query_replace_all().query("b", "2")),
+        url("b=2")
+    );
+}
+
+#[test]
+fn runtime_key_names_are_statically_bounded() {
+    let base = || RuntimeEndpoint::builder(runtime_id("runtime.names"), Method::GET);
+    let exact = "k".repeat(MAX_RUNTIME_KEY_BYTES);
+    let excessive = "k".repeat(MAX_RUNTIME_KEY_BYTES + 1);
+    assert_eq!(
+        build_kind(base().query(&exact, "v").header(&exact, "v")),
+        None
+    );
+    assert_eq!(
+        build_kind(base().query(&excessive, "v")),
+        Some(ConfigurationErrorKind::InvalidValue)
+    );
+    assert_eq!(
+        build_kind(base().query("", "v")),
+        Some(ConfigurationErrorKind::InvalidValue)
+    );
+    assert_eq!(
+        build_kind(base().header(&excessive, "v")),
+        Some(ConfigurationErrorKind::InvalidHeader)
+    );
+    assert_eq!(
+        build_kind(base().header("bad header", "v")),
+        Some(ConfigurationErrorKind::InvalidHeader)
+    );
+    // HEAD-01 singleton request headers cannot repeat.
+    assert_eq!(
+        build_kind(base().header_each("User-Agent", vec!["a", "b"])),
+        Some(ConfigurationErrorKind::InvalidHeader)
+    );
+}
+
+#[test]
+fn runtime_endpoints_cannot_reach_another_origin_or_private_source() {
+    let client = offline_alpha();
+    // There is no runtime origin/scheme/port/absolute-URL operation; a path
+    // atom is exactly one encoded segment under the fixed base.
+    let plan = client
+        .plan_runtime(&empty(
+            RuntimeEndpoint::builder(runtime_id("runtime.origin"), Method::GET)
+                .path("evil.example.test:443"),
+        ))
+        .expect("segment plan");
+    assert_eq!(
+        plan.observed_url(),
+        "http://alpha.prepared.example.test/root/evil.example.test:443"
+    );
+    for smuggled in ["//evil.example.test", "https://evil.example.test", ".."] {
+        let error = client
+            .plan_runtime(&empty(
+                RuntimeEndpoint::builder(runtime_id("runtime.origin"), Method::GET).path(smuggled),
+            ))
+            .expect_err("not one relative segment");
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidRoute),
+            "{smuggled}"
+        );
+    }
+    let base = || RuntimeEndpoint::builder(runtime_id("runtime.reserved"), Method::GET);
+    for reserved in [
+        "Host",
+        "authorization",
+        "Proxy-Authorization",
+        "Cookie",
+        "Content-Type",
+    ] {
+        assert_eq!(
+            build_kind(base().header(reserved, "value")),
+            Some(ConfigurationErrorKind::InvalidHeader),
+            "{reserved}"
+        );
+    }
+    for method in ["CONNECT", "TRACE"] {
+        assert_eq!(
+            build_kind(RuntimeEndpoint::builder(
+                runtime_id("runtime.method"),
+                Method::from_bytes(method.as_bytes()).expect("method"),
+            )),
+            Some(ConfigurationErrorKind::InvalidValue)
+        );
+    }
+}
+
+/// v2 validated collisions among runtime-created placements at build; v3
+/// runtime endpoints cannot create placements (RUNTIME-02), so the canonical
+/// collision rules now apply at bind between runtime public writers and the
+/// owner's effective private placements (HEAD-01), and removal is by safe
+/// target identity only.
+#[test]
 fn prepared_authentication_uses_canonical_collision_and_challenge_validation() {
-    let client = PreparedAuthApi::builder()
-        .token(
-            concord::prelude::SecretString::try_new("credential-sentinel")
-                .expect("bounded prepared credential"),
-        )
-        .build()
-        .expect("auth client");
-    let credential = client.credentials().api_key().credential();
-
-    let header_collision = RuntimeEndpoint::builder(runtime_id("runtime.auth"), Method::GET)
-        .header(HeaderName::from_static("x-api-key"), "public")
-        .auth(
-            Auth::header(HeaderName::from_static("x-api-key"), credential.clone())
-                .expect("valid header placement"),
-        )
-        .build()
-        .err()
-        .expect("public/auth header collision");
-    assert_eq!(
-        header_collision.kind(),
-        ConfigurationErrorKind::InvalidAuthentication
-    );
-
-    let query_collision = RuntimeEndpoint::builder(runtime_id("runtime.auth"), Method::GET)
-        .query("token", "public")
-        .auth(Auth::query("token", credential.clone()).expect("valid query placement"))
-        .build()
-        .err()
-        .expect("public/auth query collision");
-    assert_eq!(
-        query_collision.kind(),
-        ConfigurationErrorKind::InvalidAuthentication
-    );
-
-    let two_challenges = RuntimeEndpoint::builder(runtime_id("runtime.auth"), Method::GET)
-        .auth(
-            Auth::header(HeaderName::from_static("x-first"), credential.clone())
-                .expect("valid header placement")
-                .challenge(ChallengePolicy::Unauthorized),
-        )
-        .auth(
-            Auth::query("second", credential.clone())
-                .expect("valid query placement")
-                .challenge(ChallengePolicy::UnauthorizedOrForbidden),
-        )
-        .build()
-        .err()
-        .expect("two challenge placements");
-    assert_eq!(
-        two_challenges.kind(),
-        ConfigurationErrorKind::InvalidAuthentication
-    );
-
-    let authorization_collision = RuntimeEndpoint::builder(runtime_id("runtime.auth"), Method::GET)
-        .auth(Auth::authorization(credential.clone()))
-        .auth(
-            Auth::authorization_with_scheme("Token", credential.clone())
-                .expect("valid static Authorization scheme"),
-        )
-        .build()
-        .err()
-        .expect("two custom Authorization owners");
-    assert_eq!(
-        authorization_collision.kind(),
-        ConfigurationErrorKind::InvalidAuthentication
-    );
-
-    let bearer_authorization_collision =
-        RuntimeEndpoint::builder(runtime_id("runtime.auth"), Method::GET)
-            .auth(Auth::bearer(credential.clone()))
-            .auth(Auth::authorization(credential.clone()))
-            .build()
+    let client = auth_scope_client();
+    let scope = client.protected();
+    let bind = |builder: RuntimeEndpointBuilder| {
+        scope
+            .bind(empty(builder))
             .err()
-            .expect("Bearer and exact Authorization collide");
-    assert_eq!(
-        bearer_authorization_collision.kind(),
-        ConfigurationErrorKind::InvalidAuthentication
-    );
+            .and_then(|error| error.configuration_kind())
+    };
+    let base = || RuntimeEndpoint::builder(runtime_id("runtime.auth"), Method::GET);
+    let auth = Some(ConfigurationErrorKind::InvalidAuthentication);
 
-    RuntimeEndpoint::builder(runtime_id("runtime.auth"), Method::GET)
-        .auth(
-            Auth::header(HeaderName::from_static("x-first"), credential.clone())
-                .expect("valid header placement"),
+    // Public writers cannot target a private header or query placement,
+    // even through an absent optional source or an append.
+    assert_eq!(bind(base().header("X-RUNTIME-SCOPE-KEY", "public")), auth);
+    assert_eq!(
+        bind(base().header_optional("x-runtime-scope-key", Option::<&str>::None)),
+        auth
+    );
+    assert_eq!(bind(base().query("token", "public")), auth);
+    assert_eq!(
+        bind(base().query_append_each("token", vec!["public"])),
+        auth
+    );
+    // Query keys are case-sensitive; unrelated names are compatible.
+    assert_eq!(
+        bind(base().query("TOKEN", "public").header("x-other", "public")),
+        None
+    );
+    // Removing the placement by its identity frees the target.
+    assert_eq!(
+        bind(
+            base()
+                .auth_remove(AuthTarget::query("token").expect("target"))
+                .query("token", "public")
+        ),
+        None
+    );
+    // A target no effective placement owns cannot be removed.
+    assert_eq!(bind(base().auth_remove(AuthTarget::authorization())), auth);
+    // No reintroduction or double removal.
+    assert_eq!(
+        build_kind(
+            base()
+                .auth_remove(AuthTarget::query("token").expect("target"))
+                .auth_remove(AuthTarget::query("token").expect("target"))
+        ),
+        auth
+    );
+    assert_eq!(
+        build_kind(base().auth_off().auth_remove(AuthTarget::authorization())),
+        auth
+    );
+    assert_eq!(build_kind(base().auth_off().auth_off()), auth);
+    assert!(AuthTarget::header("Authorization").is_err());
+    assert!(AuthTarget::query("").is_err());
+}
+
+// ---------------------------------------------------------------------------
+// V3-R11: nothing bypasses bind.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn accepted_statuses_cannot_overlap_an_effective_challenge() {
+    let client = auth_scope_client();
+    let challenged = client.challenged();
+    let endpoint = |codes: &[u16]| {
+        empty(
+            RuntimeEndpoint::builder(runtime_id("runtime.overlap"), Method::GET).status_codes(
+                codes
+                    .iter()
+                    .map(|code| StatusCode::from_u16(*code).expect("status")),
+            ),
         )
-        .auth(Auth::query("second", credential).expect("valid query placement"))
+    };
+    for error in [
+        challenged
+            .plan_runtime(&endpoint(&[200, 401]))
+            .expect_err("overlap plan"),
+        challenged
+            .bind(endpoint(&[200, 401]))
+            .expect_err("overlap bind"),
+    ] {
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidAuthentication)
+        );
+    }
+    challenged
+        .bind(endpoint(&[200, 403]))
+        .expect("no overlap with an unauthorized-only challenge");
+    // Removing the challenging placement removes the overlap.
+    challenged
+        .bind(empty(
+            RuntimeEndpoint::builder(runtime_id("runtime.overlap"), Method::GET)
+                .auth_remove(AuthTarget::authorization())
+                .status_codes([StatusCode::UNAUTHORIZED]),
+        ))
+        .expect("no effective challenge remains");
+    // The never-challenging scope accepts 401 explicitly.
+    client
+        .protected()
+        .bind(endpoint(&[401]))
+        .expect("never-challenge placements do not overlap");
+}
+
+#[test]
+fn generated_endpoint_id_collisions_cannot_bind() {
+    let client = RuntimeScopeApi::builder()
+        .set_tenant("tenant-a")
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(LocalRateLimiter::new())))
         .build()
-        .expect("compatible ordered placements");
+        .expect("runtime scope client");
+    let colliding = || {
+        empty(RuntimeEndpoint::builder(
+            runtime_id("runtime.scope.declared"),
+            Method::GET,
+        ))
+    };
+    for error in [
+        client
+            .regional("west")
+            .bind(colliding())
+            .expect_err("scope collision"),
+        client.bind(colliding()).expect_err("root collision"),
+        client
+            .regional("west")
+            .plan_runtime(&colliding())
+            .expect_err("plan collision"),
+    ] {
+        assert_eq!(
+            error.configuration_kind(),
+            Some(ConfigurationErrorKind::InvalidValue)
+        );
+    }
+    client
+        .regional("west")
+        .bind(empty(RuntimeEndpoint::builder(
+            runtime_id("runtime.scope.dynamic"),
+            Method::GET,
+        )))
+        .expect("distinct runtime ID binds");
 }

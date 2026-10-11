@@ -24,7 +24,7 @@ pub struct Binary;
 
 /// Safe request metadata supplied to a request encoder.
 pub struct EncodeContext<'a> {
-    /// Stable generated endpoint identity.
+    /// Operational endpoint ID (an explicit `id` pin or navigation-derived).
     pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
@@ -34,15 +34,41 @@ pub struct EncodeContext<'a> {
 
 /// Encodes one application input into a complete buffered request body.
 ///
-/// Encoding is synchronous, runs at most once for a pending execution, and
-/// begins only after the visible attempt starts. Input may be
-/// sensitive. Implementors are trusted application extensions: they must
-/// bound their own CPU, memory, retries, maps, queues, spawned tasks, metric
-/// cardinality, logging, storage, and external I/O. Calls for independent
-/// operations may occur concurrently. Concord cannot preempt or cancel this
-/// synchronous work; it checks the operation deadline immediately after return,
-/// and cancellation prevents only later Concord work. Implementors own the
-/// confidentiality of input and all application logging or storage.
+/// A blanket implementation bridges every `EncodeBody` codec to
+/// [`RequestRepresentation<Self::Input>`](crate::body::RequestRepresentation):
+/// the bridge calls `encode` exactly once per direct operation or page, during
+/// body preparation (after public head selection, before credentials and rate
+/// admission), rejects output above the body limit, wraps the bytes in a
+/// mechanically replayable [`PreparedBody`](crate::body::PreparedBody) and
+/// applies the one declared [`EncodeBody::CONTENT_TYPE`]. There is no second
+/// metadata method; automatic retries replay the prepared bytes and never call
+/// `encode` again. A codec chooses either this convenience role or a full
+/// `RequestRepresentation` for the same pair, never both.
+///
+/// # Extension contract
+///
+/// * **Ownership.** `encode` consumes the input; the returned bytes are owned
+///   by core and replayed for automatic attempts. Codecs are marker types
+///   that Concord never constructs.
+/// * **Concurrency.** Calls for independent operations may occur
+///   concurrently.
+/// * **Cancellation.** Encoding is synchronous; Concord cannot preempt or
+///   cancel it. It checks the operation deadline immediately after return,
+///   and cancellation prevents only later Concord work.
+/// * **Input sensitivity.** Input may be sensitive. Implementors own the
+///   confidentiality of input and all application logging or storage.
+/// * **Errors.** Errors are category-only: [`CodecErrorKind::Limit`] becomes a
+///   request-body limit failure and other categories a request-encoding
+///   failure.
+/// * **Resource obligations.** Implementors are trusted application
+///   extensions: they must bound their own CPU, memory, retries, maps,
+///   queues, spawned tasks, metric cardinality, logging, storage and external
+///   I/O, and should write into a buffer bounded by
+///   [`EncodeContext::body_limit`] and stop at the first excess (returning
+///   `Limit`) rather than serialize without bound.
+/// * **Negative capabilities.** No access to credentials, headers, the URL or
+///   the native request, and no way to declare a second, conflicting media
+///   type.
 pub trait EncodeBody: Send + Sync + 'static {
     /// Application value accepted by the generated endpoint.
     type Input: Send + 'static;
@@ -108,7 +134,7 @@ impl Error for CodecError {}
 
 /// Safe response metadata supplied to a response decoder.
 pub struct DecodeContext<'a> {
-    /// Stable generated endpoint identity.
+    /// Operational endpoint ID (an explicit `id` pin or navigation-derived).
     pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
@@ -120,21 +146,43 @@ pub struct DecodeContext<'a> {
 
 /// Decodes a complete bounded response body.
 ///
+/// A blanket implementation bridges every `DecodeBody` codec to
+/// `ResponseRepresentation<Self::Output, Driver = Buffered>`, forwarding the
+/// static [`DecodeBody::ACCEPT`] constant (read without running codec code),
+/// media validation and decoding with the correct complete-acquisition phase.
 /// Validation runs after known-length preflight and before body polling.
-/// Decoding runs synchronously only after complete bounded collection. The
-/// body may be sensitive. Implementors are trusted application extensions and
-/// must bound their CPU, memory, retries, maps, queues, spawned tasks, metric
-/// cardinality, logging, storage, and external I/O. Calls for independent
-/// operations may occur concurrently. Concord cannot preempt or cancel these
-/// synchronous callbacks; it checks the operation deadline immediately after
-/// return, and cancellation prevents only later Concord work. Implementors own
-/// the confidentiality of body and context data and all application logging or
-/// storage.
+/// Decoding runs synchronously only after complete bounded collection.
+///
+/// # Extension contract
+///
+/// * **Ownership.** `decode` takes ownership of the complete bounded body;
+///   the output is moved to the caller. Codecs are marker types that Concord
+///   never constructs.
+/// * **Concurrency.** Calls for independent operations may occur
+///   concurrently.
+/// * **Cancellation.** Concord cannot preempt or cancel these synchronous
+///   callbacks; it checks the operation deadline immediately after return,
+///   and cancellation prevents only later Concord work.
+/// * **Input sensitivity.** The body may be sensitive. Implementors own the
+///   confidentiality of body and context data and all application logging or
+///   storage.
+/// * **Errors.** Errors are category-only: a validation failure becomes an
+///   invalid-media-type failure, a `Decode` failure a conversion failure; no
+///   codec text or source chain is retained. Conversion failures are
+///   terminal, never retried.
+/// * **Resource obligations.** Implementors are trusted application
+///   extensions and must bound their CPU, memory, retries, maps, queues,
+///   spawned tasks, metric cardinality, logging, storage and external I/O.
+///   Core bounds the collected wire bytes, not the heap size of the decoded
+///   output.
+/// * **Negative capabilities.** A decoder cannot change the accepted status,
+///   the absence rule or the acquisition mode, and receives no native
+///   response or transport handle.
 pub trait DecodeBody: Send + Sync + 'static {
     /// Value produced by the decoder.
     type Output: Send + 'static;
 
-    /// Default response media range requested by this decoder.
+    /// Static response media range negotiated for this decoder.
     const ACCEPT: Option<&'static str>;
 
     /// Validates response media metadata before decoding.

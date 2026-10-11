@@ -1,0 +1,25 @@
+error[E0599]: no method named `accepted_bytes` found for struct `OrdinaryRequest` in the current scope
+  --> tests/ui/fail/capabilities/accepted_bytes_requires_expose.rs:23:31
+   |
+ 9 | / api! {
+10 | |     client ExposureApi {
+11 | |         base "https://exposure.example.test";
+...  |
+18 | | }
+   | |_- method `accepted_bytes` not found for this struct
+...
+23 |       let _ = client.ordinary().accepted_bytes();
+   |                                 ^^^^^^^^^^^^^^ method not found in `OrdinaryRequest`
+
+error[E0599]: no method named `accepted_bytes` found for struct `ExposedEndpoint` in the current scope
+  --> tests/ui/fail/capabilities/accepted_bytes_requires_expose.rs:24:46
+   |
+ 9 | / api! {
+10 | |     client ExposureApi {
+11 | |         base "https://exposure.example.test";
+...  |
+18 | | }
+   | |_- method `accepted_bytes` not found for this struct
+...
+24 |       let _ = ExposureApi::unbound().exposed().accepted_bytes();
+   |                                                ^^^^^^^^^^^^^^ method not found in `ExposedEndpoint`

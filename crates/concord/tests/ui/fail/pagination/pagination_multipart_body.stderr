@@ -1,115 +1,205 @@
-error[E0277]: the trait bound `MultipartBody: Clone` is not satisfied
-  --> tests/ui/fail/pagination/pagination_multipart_body.rs:29:1
+error[E0277]: [C3-PAGE] `concord::body::Multipart` does not promise page-stable request bodies for `concord::body::MultipartBody`
+  --> tests/ui/fail/pagination/pagination_multipart_body.rs:28:48
    |
-29 | / api! {
-30 | |     client MultipartPageBodyApi {
-31 | |         timeout 30s;
-32 | |         base "https://example.test";
+24 | / api! {
+25 | |     client MultipartPageBodyApi {
+26 | |         base "https://example.test";
+27 | |
+28 | |         POST read(body form: MultipartBody via Multipart, query offset: u64 = 0) -> Vec<String> via crate::Lines {
+   | |                                                ^^^^^^^^^ a paginated endpoint prepares this body again for every page
 ...  |
-41 | | }}
-   | |__^ the trait `Clone` is not implemented for `MultipartBody`
+36 | | }
+   | |_- required by a bound introduced by this call
    |
-   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `concord::body::Multipart: PageRequestRepresentation<MultipartBody>` is not satisfied
-  --> tests/ui/fail/pagination/pagination_multipart_body.rs:29:1
-   |
-29 | / api! {
-30 | |     client MultipartPageBodyApi {
-31 | |         timeout 30s;
-32 | |         base "https://example.test";
-...  |
-41 | | }}
-   | |__^ the trait `PageRequestRepresentation<MultipartBody>` is not implemented for `concord::body::Multipart`
-   |
+   = help: the trait `PageRequestRepresentation<concord::body::MultipartBody>` is not implemented for `concord::body::Multipart`
+   = note: pagination requires the explicit `PageRequestRepresentation<concord::body::MultipartBody>` opt-in; `Clone` alone does not establish the page-body promise
+   = note: select a page-capable representation with `via R` (such as `Json`, `Text` or `Binary`), implement `PageRequestRepresentation<concord::body::MultipartBody>` when every clone prepares the same body, or remove `paginate`
    = help: the following other types implement trait `PageRequestRepresentation<Input>`:
+             `Json` implements `PageRequestRepresentation<T>`
+             `NdJson` implements `PageRequestRepresentation<Vec<T>>`
              `concord::Binary` implements `PageRequestRepresentation<Vec<u8>>`
              `concord::Binary` implements `PageRequestRepresentation<concord::Bytes>`
-             `concord::Json` implements `PageRequestRepresentation<T>`
              `concord::Text` implements `PageRequestRepresentation<std::string::String>`
-             `concord_core::body::spec::OptionalRequestRepresentation<R>` implements `PageRequestRepresentation<std::option::Option<Input>>`
-             `support::Json` implements `PageRequestRepresentation<T>`
-   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+note: required by a bound in `BodySpec::page_capable_for`
+  --> $WORKSPACE/crates/concord-core/src/inspection/endpoint.rs
+   |
+   |     pub const fn page_capable_for<B, I>(mut self) -> Self
+   |                  ---------------- required by a bound in this associated function
+   |     where
+   |         B: PageRequestRepresentation<I>,
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `BodySpec::page_capable_for`
 
-error[E0277]: the trait bound `MultipartBody: Clone` is not satisfied
-  --> tests/ui/fail/pagination/pagination_multipart_body.rs:29:1
+error[E0277]: the trait bound `concord::body::MultipartBody: Clone` is not satisfied
+  --> tests/ui/fail/pagination/pagination_multipart_body.rs:28:30
    |
-29 | / api! {
-30 | |     client MultipartPageBodyApi {
-31 | |         timeout 30s;
-32 | |         base "https://example.test";
+24 | / api! {
+25 | |     client MultipartPageBodyApi {
+26 | |         base "https://example.test";
+27 | |
+28 | |         POST read(body form: MultipartBody via Multipart, query offset: u64 = 0) -> Vec<String> via crate::Lines {
+   | |                              ^^^^^^^^^^^^^ the trait `Clone` is not implemented for `concord::body::MultipartBody`
 ...  |
-41 | | }}
-   | |__^ the trait `Clone` is not implemented for `MultipartBody`
+36 | | }
+   | |_- required by a bound introduced by this call
    |
-note: required by a bound in `PageRequestRepresentation`
-  --> $WORKSPACE/crates/concord-core/src/body/spec.rs
+note: required by a bound in `BodySpec::page_capable_for`
+  --> $WORKSPACE/crates/concord-core/src/inspection/endpoint.rs
    |
-   | pub trait PageRequestRepresentation<Input>: RequestRepresentation<Input>
-   |           ------------------------- required by a bound in this trait
-   | where
-   |     Input: Clone + Send + 'static,
-   |            ^^^^^ required by this bound in `PageRequestRepresentation`
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `MultipartBody: Clone` is not satisfied
-  --> tests/ui/fail/pagination/pagination_multipart_body.rs:29:1
-   |
-29 | / api! {
-30 | |     client MultipartPageBodyApi {
-31 | |         timeout 30s;
-32 | |         base "https://example.test";
-...  |
-41 | | }}
-   | |__^ the trait `Clone` is not implemented for `MultipartBody`
-   |
-note: required by a bound in `concord::__private::PaginatedEndpoint`
-  --> $WORKSPACE/crates/concord-core/src/pagination/pending.rs
-   |
-   | pub trait PaginatedEndpoint: crate::request::EndpointSpec + Clone + Sized
-   |           ----------------- required by a bound in this trait
-   | where
-   |     Self::Input: Clone,
-   |                  ^^^^^ required by this bound in `PaginatedEndpoint`
-   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `concord::body::Multipart: PageRequestRepresentation<MultipartBody>` is not satisfied
-  --> tests/ui/fail/pagination/pagination_multipart_body.rs:29:1
-   |
-29 | / api! {
-30 | |     client MultipartPageBodyApi {
-31 | |         timeout 30s;
-32 | |         base "https://example.test";
-...  |
-41 | | }}
-   | |__^ the trait `PageRequestRepresentation<MultipartBody>` is not implemented for `concord::body::Multipart`
-   |
-   = help: the following other types implement trait `PageRequestRepresentation<Input>`:
-             `concord::Binary` implements `PageRequestRepresentation<Vec<u8>>`
-             `concord::Binary` implements `PageRequestRepresentation<concord::Bytes>`
-             `concord::Json` implements `PageRequestRepresentation<T>`
-             `concord::Text` implements `PageRequestRepresentation<std::string::String>`
-             `concord_core::body::spec::OptionalRequestRepresentation<R>` implements `PageRequestRepresentation<std::option::Option<Input>>`
-             `support::Json` implements `PageRequestRepresentation<T>`
-note: required for `multipart_page_body_api::Read` to implement `concord::__private::EndpointSpec`
-  --> tests/ui/fail/pagination/pagination_multipart_body.rs:29:1
-   |
-29 | / api! {
-30 | |     client MultipartPageBodyApi {
-31 | |         timeout 30s;
-32 | |         base "https://example.test";
-...  |
-35 | |     POST read(
-   | |          ^^^^
-...  |
-41 | | }}
-   | |__^ unsatisfied trait bound introduced here
-note: required by a bound in `concord::__private::request_plan`
-  --> $WORKSPACE/crates/concord-core/src/__private.rs
-   |
-   | pub fn request_plan<E>(
-   |        ------------ required by a bound in this function
+   |     pub const fn page_capable_for<B, I>(mut self) -> Self
+   |                  ---------------- required by a bound in this associated function
 ...
-   |     E: EndpointSpec,
-   |        ^^^^^^^^^^^^ required by this bound in `request_plan`
+   |         I: Clone + Send + 'static,
+   |            ^^^^^ required by this bound in `BodySpec::page_capable_for`
+
+error[E0277]: the trait bound `concord::body::MultipartBody: Clone` is not satisfied
+  --> tests/ui/fail/pagination/pagination_multipart_body.rs:24:1
+   |
+24 | / api! {
+25 | |     client MultipartPageBodyApi {
+26 | |         base "https://example.test";
+...  |
+36 | | }
+   | |_^ the trait `Clone` is not implemented for `concord::body::MultipartBody`
+   |
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `concord::body::MultipartBody: Clone` is not satisfied
+  --> tests/ui/fail/pagination/pagination_multipart_body.rs:30:13
+   |
+30 |             paginate via OffsetPagination {
+   |             ^^^^^^^^
+   |             |
+   |             the trait `Clone` is not implemented for `concord::body::MultipartBody`
+   |             required by a bound introduced by this call
+   |
+note: required by a bound in `concord::__private::pages_request`
+  --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
+   |
+   | pub fn pages_request<E>(request: Request<E>, maximum_pages: u32) -> Pages<PageItem<E>>
+   |        ------------- required by a bound in this function
+...
+   |     E::Input: Clone,
+   |               ^^^^^ required by this bound in `pages_request`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [C3-PAGE] `concord::body::Multipart` does not promise page-stable request bodies for `concord::body::MultipartBody`
+  --> tests/ui/fail/pagination/pagination_multipart_body.rs:30:13
+   |
+30 |             paginate via OffsetPagination {
+   |             ^^^^^^^^
+   |             |
+   |             a paginated endpoint prepares this body again for every page
+   |             required by a bound introduced by this call
+   |
+   = help: the trait `PageRequestRepresentation<concord::body::MultipartBody>` is not implemented for `concord::body::Multipart`
+   = note: pagination requires the explicit `PageRequestRepresentation<concord::body::MultipartBody>` opt-in; `Clone` alone does not establish the page-body promise
+   = note: select a page-capable representation with `via R` (such as `Json`, `Text` or `Binary`), implement `PageRequestRepresentation<concord::body::MultipartBody>` when every clone prepares the same body, or remove `paginate`
+   = help: the following other types implement trait `PageRequestRepresentation<Input>`:
+             `Json` implements `PageRequestRepresentation<T>`
+             `NdJson` implements `PageRequestRepresentation<Vec<T>>`
+             `concord::Binary` implements `PageRequestRepresentation<Vec<u8>>`
+             `concord::Binary` implements `PageRequestRepresentation<concord::Bytes>`
+             `concord::Text` implements `PageRequestRepresentation<std::string::String>`
+note: required by a bound in `concord::__private::pages_request`
+  --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
+   |
+   | pub fn pages_request<E>(request: Request<E>, maximum_pages: u32) -> Pages<PageItem<E>>
+   |        ------------- required by a bound in this function
+...
+   |     E::Body: PageRequestRepresentation<E::Input>,
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `pages_request`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `concord::body::MultipartBody: Clone` is not satisfied
+  --> tests/ui/fail/pagination/pagination_multipart_body.rs:30:13
+   |
+30 |             paginate via OffsetPagination {
+   |             ^^^^^^^^
+   |             |
+   |             the trait `Clone` is not implemented for `concord::body::MultipartBody`
+   |             required by a bound introduced by this call
+   |
+note: required by a bound in `concord::__private::collect_prefix_request`
+  --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
+   |
+   | pub fn collect_prefix_request<E>(
+   |        ---------------------- required by a bound in this function
+...
+   |     E::Input: Clone,
+   |               ^^^^^ required by this bound in `collect_prefix_request`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [C3-PAGE] `concord::body::Multipart` does not promise page-stable request bodies for `concord::body::MultipartBody`
+  --> tests/ui/fail/pagination/pagination_multipart_body.rs:30:13
+   |
+30 |             paginate via OffsetPagination {
+   |             ^^^^^^^^
+   |             |
+   |             a paginated endpoint prepares this body again for every page
+   |             required by a bound introduced by this call
+   |
+   = help: the trait `PageRequestRepresentation<concord::body::MultipartBody>` is not implemented for `concord::body::Multipart`
+   = note: pagination requires the explicit `PageRequestRepresentation<concord::body::MultipartBody>` opt-in; `Clone` alone does not establish the page-body promise
+   = note: select a page-capable representation with `via R` (such as `Json`, `Text` or `Binary`), implement `PageRequestRepresentation<concord::body::MultipartBody>` when every clone prepares the same body, or remove `paginate`
+   = help: the following other types implement trait `PageRequestRepresentation<Input>`:
+             `Json` implements `PageRequestRepresentation<T>`
+             `NdJson` implements `PageRequestRepresentation<Vec<T>>`
+             `concord::Binary` implements `PageRequestRepresentation<Vec<u8>>`
+             `concord::Binary` implements `PageRequestRepresentation<concord::Bytes>`
+             `concord::Text` implements `PageRequestRepresentation<std::string::String>`
+note: required by a bound in `concord::__private::collect_prefix_request`
+  --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
+   |
+   | pub fn collect_prefix_request<E>(
+   |        ---------------------- required by a bound in this function
+...
+   |     E::Body: PageRequestRepresentation<E::Input>,
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `collect_prefix_request`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `concord::body::MultipartBody: Clone` is not satisfied
+  --> tests/ui/fail/pagination/pagination_multipart_body.rs:30:13
+   |
+30 |             paginate via OffsetPagination {
+   |             ^^^^^^^^
+   |             |
+   |             the trait `Clone` is not implemented for `concord::body::MultipartBody`
+   |             required by a bound introduced by this call
+   |
+note: required by a bound in `concord::__private::collect_all_request`
+  --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
+   |
+   | pub fn collect_all_request<E>(
+   |        ------------------- required by a bound in this function
+...
+   |     E::Input: Clone,
+   |               ^^^^^ required by this bound in `collect_all_request`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [C3-PAGE] `concord::body::Multipart` does not promise page-stable request bodies for `concord::body::MultipartBody`
+  --> tests/ui/fail/pagination/pagination_multipart_body.rs:30:13
+   |
+30 |             paginate via OffsetPagination {
+   |             ^^^^^^^^
+   |             |
+   |             a paginated endpoint prepares this body again for every page
+   |             required by a bound introduced by this call
+   |
+   = help: the trait `PageRequestRepresentation<concord::body::MultipartBody>` is not implemented for `concord::body::Multipart`
+   = note: pagination requires the explicit `PageRequestRepresentation<concord::body::MultipartBody>` opt-in; `Clone` alone does not establish the page-body promise
+   = note: select a page-capable representation with `via R` (such as `Json`, `Text` or `Binary`), implement `PageRequestRepresentation<concord::body::MultipartBody>` when every clone prepares the same body, or remove `paginate`
+   = help: the following other types implement trait `PageRequestRepresentation<Input>`:
+             `Json` implements `PageRequestRepresentation<T>`
+             `NdJson` implements `PageRequestRepresentation<Vec<T>>`
+             `concord::Binary` implements `PageRequestRepresentation<Vec<u8>>`
+             `concord::Binary` implements `PageRequestRepresentation<concord::Bytes>`
+             `concord::Text` implements `PageRequestRepresentation<std::string::String>`
+note: required by a bound in `concord::__private::collect_all_request`
+  --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
+   |
+   | pub fn collect_all_request<E>(
+   |        ------------------- required by a bound in this function
+...
+   |     E::Body: PageRequestRepresentation<E::Input>,
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `collect_all_request`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,5 +1,5 @@
-error: this declaration is client-only and cannot appear in a scope
-  --> tests/ui/fail/rate_limits/rate_limits_scope_block.rs:10:9
+error: [C3-OWNER] this declaration is client-only and cannot appear in scope `Api::accounts`; move it to the client preamble (scope inputs are scope parameters)
+  --> tests/ui/fail/rate_limits/rate_limits_scope_block.rs:11:13
    |
-10 |         rate_limits {
-   |         ^^^^^^^^^^^
+11 |             rate_limits {
+   |             ^^^^^^^^^^^

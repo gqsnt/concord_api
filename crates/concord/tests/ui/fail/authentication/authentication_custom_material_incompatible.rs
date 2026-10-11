@@ -1,14 +1,16 @@
+// AUTH-01: bearer/authorization/API-key placements type-check against the
+// relevant credential capability; a custom provider whose material is not a
+// `SecretCredential` cannot back a bearer placement.
 use concord::auth::{
     AuthError, BoxFuture, CredentialMaterial, CredentialProvider, CredentialRequest,
 };
-use concord::api;
+use concord::{Binary, Bytes, api};
 
-#[derive(Clone)]
-struct NonSecretMaterial;
+pub struct NonSecretMaterial;
 
 impl CredentialMaterial for NonSecretMaterial {}
 
-struct NonSecretProvider;
+pub struct NonSecretProvider;
 
 impl CredentialProvider for NonSecretProvider {
     type Material = NonSecretMaterial;
@@ -23,16 +25,15 @@ impl CredentialProvider for NonSecretProvider {
 
 api! {
     client Api {
-        timeout 30s;
         base "https://example.test";
         credentials {
             credential session = custom crate::NonSecretProvider;
         }
 
-
-    GET protected() -> Bytes via Binary {
-        auth { bearer session; }
+        GET protected() -> Bytes via Binary {
+            auth { bearer session; }
+        }
     }
-}}
+}
 
 fn main() {}

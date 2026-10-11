@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::future::IntoFuture;
 use std::io;
-use std::num::{NonZeroU32, NonZeroUsize};
+use std::num::NonZeroUsize;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -22,10 +22,7 @@ use futures_core::Stream;
 use http::{Method, StatusCode};
 
 use super::*;
-use crate::body::{
-    BodyError, BodyFactory, EmptyBody, RequestBody, RequestBodyContext, RequestBodyMetadata,
-    RequestRepresentation, RequestStream,
-};
+use crate::body::{BodyError, BodyFactory, EmptyBody, PreparedBody, RequestStream};
 #[cfg(feature = "multipart")]
 use crate::body::{MultipartBody, MultipartFactory, MultipartPart};
 use crate::codec::{
@@ -33,19 +30,23 @@ use crate::codec::{
 };
 use crate::endpoint::{AcceptedStatus, EndpointId};
 use crate::error::{ErrorCategory, StatusBodyState};
-use crate::hooks::{BoxFuture, OperationEvent, OperationObserver, StreamKind, StreamOutcome};
+use crate::hooks::{
+    BoxFuture, CompletionOutcome, DebugLevel, OperationEvent, OperationObserver, StreamKind,
+    StreamOutcome,
+};
 use crate::http::HttpConfigBuilder;
 #[cfg(feature = "records")]
 use crate::rate_limit::NoopRateLimiter;
 use crate::rate_limit::{
-    RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitPolicy,
-    RateLimitRequest, RateLimitResponse, RateLimitWindow, RateLimiter,
+    RateLimitDeclaration, RateLimitError, RateLimitPermit, RateLimitRequest, RateLimitResponse,
+    RateLimiter,
 };
 #[cfg(feature = "records")]
 use crate::records::{
-    BufferedRecords, ItemStream, RecordBatches, RecordDecoder, RecordError, RecordErrorKind,
+    BufferedRecords, ItemBatches, ItemStream, RecordDecoder, RecordError, RecordErrorKind,
     RecordStream, Records,
 };
+use crate::request::test_owner;
 use crate::request::{HeadBuilder, PreparedHead, RequestMeta, RuntimeEndpoint};
 #[cfg(feature = "records")]
 use crate::response::ApiResponse;
@@ -135,13 +136,6 @@ where
         builder.finish()
     }
 
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        EmptyBody::metadata(&(), context)
-    }
-
     fn into_body(self) {}
 }
 
@@ -159,13 +153,6 @@ impl EndpointSpec for StreamEndpoint {
         builder.push_static("stream")?;
         builder.push_static("download")?;
         builder.finish()
-    }
-
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        EmptyBody::metadata(&(), context)
     }
 
     fn into_body(self) {}
@@ -206,20 +193,12 @@ where
         builder.push_static("records")?;
         builder.push_static("stream")?;
         builder.push_pagination_query_value("continuation", &self.query)?;
-        builder.push_rate_limit_policy(
-            "ExecutionApi::rate_limit::records",
-            [("records.partition", "record-surface-rate-key")],
-            1,
-            [(100, Duration::from_secs(1))],
+        builder.push_rate_limit(
+            RateLimitDeclaration::new("ExecutionApi::rate_limit::records")
+                .window(100, Duration::from_secs(1))
+                .part("records.partition", "record-surface-rate-key"),
         )?;
         builder.finish()
-    }
-
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        EmptyBody::metadata(&(), context)
     }
 
     fn into_body(self) {}
@@ -262,9 +241,7 @@ struct OpeningRecordDecoder;
 impl RecordDecoder for OpeningRecordDecoder {
     type Record = Bytes;
 
-    fn accept() -> Option<&'static str> {
-        Some("application/x-concord-records")
-    }
+    const ACCEPT: Option<&'static str> = Some("application/x-concord-records");
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), RecordError> {
         OPENING_VALIDATE_CALLS.fetch_add(1, Ordering::SeqCst);
@@ -449,9 +426,7 @@ struct DiagnosticRecordDecoder {
 impl RecordDecoder for DiagnosticRecordDecoder {
     type Record = DiagnosticRecord;
 
-    fn accept() -> Option<&'static str> {
-        Some("application/x-concord-records")
-    }
+    const ACCEPT: Option<&'static str> = Some("application/x-concord-records");
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), RecordError> {
         if head
@@ -588,18 +563,18 @@ impl RecordDecoder for ResponseSurfaceRecordDecoder {
 }
 
 struct BodyEndpoint {
-    body: RequestBody,
+    body: PreparedBody,
 }
 
 impl BodyEndpoint {
-    fn new(body: RequestBody) -> Self {
+    fn new(body: PreparedBody) -> Self {
         Self { body }
     }
 }
 
 impl EndpointSpec for BodyEndpoint {
-    type Input = RequestBody;
-    type Body = RequestBody;
+    type Input = PreparedBody;
+    type Body = PreparedBody;
     type Output = Bytes;
     type Response = Binary;
 
@@ -618,14 +593,7 @@ impl EndpointSpec for BodyEndpoint {
         builder.finish()
     }
 
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        RequestBody::metadata(&self.body, context)
-    }
-
-    fn into_body(self) -> RequestBody {
+    fn into_body(self) -> PreparedBody {
         self.body
     }
 }
@@ -672,20 +640,12 @@ impl Drop for BodyPollProbe {
 }
 
 struct ProbeBodyFactory {
-    content_type_calls: Arc<AtomicUsize>,
     create_calls: Arc<AtomicUsize>,
     polls: Arc<AtomicUsize>,
     fail: bool,
 }
 
 impl BodyFactory for ProbeBodyFactory {
-    fn content_type(&self) -> Option<http::HeaderValue> {
-        self.content_type_calls.fetch_add(1, Ordering::SeqCst);
-        Some(http::HeaderValue::from_static(
-            "application/x-concord-factory",
-        ))
-    }
-
     fn create(&self) -> Result<RequestStream, BodyError> {
         self.create_calls.fetch_add(1, Ordering::SeqCst);
         if self.fail {
@@ -812,13 +772,6 @@ where
         builder.push_static("codec")?;
         builder.push_static("round-trip")?;
         builder.finish()
-    }
-
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        Encoder::metadata(&self.input, context)
     }
 
     fn into_body(self) -> Encoder::Input {
@@ -1001,13 +954,6 @@ impl EndpointSpec for BytesEndpoint {
         builder.finish()
     }
 
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        EmptyBody::metadata(&(), context)
-    }
-
     fn into_body(self) {}
 }
 
@@ -1042,20 +988,12 @@ impl EndpointSpec for RateLimitedBytesEndpoint {
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("health")?;
         builder.push_static("bytes")?;
-        builder.push_rate_limit_policy(
-            "ExecutionApi::rate_limit::tenant",
-            [("client.tenant", self.key.as_str())],
-            1,
-            [(self.capacity, self.window)],
+        builder.push_rate_limit(
+            RateLimitDeclaration::new("ExecutionApi::rate_limit::tenant")
+                .window(self.capacity, self.window)
+                .part("client.tenant", self.key.as_str()),
         )?;
         builder.finish()
-    }
-
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        EmptyBody::metadata(&(), context)
     }
 
     fn into_body(self) {}
@@ -1076,20 +1014,12 @@ impl EndpointSpec for GlobalRateLimitedBytesEndpoint {
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("health")?;
         builder.push_static("bytes")?;
-        builder.push_rate_limit_policy(
-            "ExecutionApi::rate_limit::global",
-            std::iter::empty::<(&str, &str)>(),
-            1,
-            [(100, Duration::from_secs(1))],
+        builder.push_rate_limit(
+            RateLimitDeclaration::new("ExecutionApi::rate_limit::global")
+                .window(100, Duration::from_secs(1))
+                .part("scope", "global"),
         )?;
         builder.finish()
-    }
-
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        EmptyBody::metadata(&(), context)
     }
 
     fn into_body(self) {}
@@ -1117,13 +1047,6 @@ impl EndpointSpec for NoContentEndpoint {
         builder.finish()
     }
 
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        EmptyBody::metadata(&(), context)
-    }
-
     fn into_body(self) {}
 }
 
@@ -1142,13 +1065,6 @@ impl EndpointSpec for InvalidEndpoint {
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_value(&"")?;
         builder.finish()
-    }
-
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        EmptyBody::metadata(&(), context)
     }
 
     fn into_body(self) {}
@@ -1294,6 +1210,14 @@ impl AutomaticSurfaceLimiter {
 
 #[cfg(feature = "records")]
 impl RateLimiter for AutomaticSurfaceLimiter {
+    fn capability(&self) -> crate::rate_limit::LimiterCapability {
+        crate::rate_limit::LimiterCapability::new(
+            crate::rate_limit::Enforcement::Local,
+            "test.automatic-surface-limiter",
+            1,
+        )
+    }
+
     fn acquire<'a>(
         &'a self,
         request: RateLimitRequest<'a>,
@@ -1360,6 +1284,14 @@ impl ProbeRateLimiter {
 }
 
 impl RateLimiter for ProbeRateLimiter {
+    fn capability(&self) -> crate::rate_limit::LimiterCapability {
+        crate::rate_limit::LimiterCapability::new(
+            crate::rate_limit::Enforcement::Local,
+            "test.probe-rate-limiter",
+            1,
+        )
+    }
+
     fn preparation_key_limit(&self) -> usize {
         self.key_limit
     }
@@ -1644,7 +1576,7 @@ where
     Request::new(core, CodecEndpoint::new(input))
 }
 
-fn body_request(core: ClientCore, body: RequestBody) -> Request<BodyEndpoint> {
+fn body_request(core: ClientCore, body: PreparedBody) -> Request<BodyEndpoint> {
     Request::new(core, BodyEndpoint::new(body))
 }
 
@@ -1664,22 +1596,25 @@ async fn next_stream_chunk(response: &mut ByteStream) -> Option<Result<Bytes, Ap
 }
 
 #[cfg(feature = "records")]
-async fn next_record<D>(stream: &mut RecordStream<D>) -> Option<Result<D::Record, RecordError>>
+async fn next_record<T>(stream: &mut ItemStream<T>) -> Option<Result<T, ApiError>> {
+    stream.next().await
+}
+
+#[cfg(feature = "records")]
+async fn next_batch<T>(stream: &mut ItemBatches<T>) -> Option<Result<Vec<T>, ApiError>>
 where
-    D: RecordDecoder,
+    T: Send + 'static,
 {
     std::future::poll_fn(|context| Pin::new(&mut *stream).poll_next(context)).await
 }
 
-#[cfg(feature = "records")]
-async fn next_batch<D>(stream: &mut RecordBatches<D>) -> Option<Result<Vec<D::Record>, RecordError>>
-where
-    D: RecordDecoder,
-{
-    std::future::poll_fn(|context| Pin::new(&mut *stream).poll_next(context)).await
+/// Structural stream error kind carried by a stream-consumption error.
+fn stream_error_kind(error: &ApiError) -> Option<crate::response::StreamErrorKind> {
+    error
+        .stream_summary()
+        .and_then(crate::response::StreamSummary::error_kind)
 }
 
-#[cfg(feature = "records")]
 fn recursive_error_surfaces(error: &(dyn std::error::Error + 'static)) -> String {
     let mut rendered = String::new();
     let mut current = Some(error);
@@ -1701,7 +1636,6 @@ fn completion_count(records: &[LifecycleRecord]) -> usize {
         .count()
 }
 
-#[cfg(feature = "records")]
 fn assert_omits(rendered: &str, sentinels: &[&str]) {
     for sentinel in sentinels {
         assert!(
@@ -1745,12 +1679,15 @@ fn completion(
         .expect("completion record")
 }
 
+mod body_outcomes;
 #[cfg(feature = "records")]
 mod buffered_records;
 mod cancellation;
 mod completion;
+mod journal;
 mod laziness;
 mod ordering;
 mod retry;
 mod status;
+mod stream_lease;
 mod streaming;

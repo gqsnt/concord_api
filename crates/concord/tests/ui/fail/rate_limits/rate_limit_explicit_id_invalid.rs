@@ -1,35 +1,29 @@
-use concord::api;
+// §12.3: a policy ID is a nonempty string of at most 256 UTF-8 bytes. (The
+// v2 endpoint-style segment grammar is not applied to policy IDs in v3; see
+// pass/language/explicit_rate_limit_ids.rs.)
+#![allow(unused_imports)]
+
+use concord::{Binary, Bytes, api};
 
 api! {
-    client Empty {
-        timeout 30s;
+    client EmptyIdApi {
         base "https://example.test";
-        rate_limit { key [origin]; cost 1;
-            id "";
-            allow 1 per 1s;
-        }
+        rate_limit { id ""; key [origin]; allow 1 per 1s; }
     }
 }
 
 api! {
-    client InvalidSegments {
-        timeout 30s;
+    client OversizedIdApi {
         base "https://example.test";
-        rate_limit { key [origin]; cost 1;
-            id "Service..quota-";
-            allow 1 per 1s;
-        }
+        rate_limit { id "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"; key [origin]; allow 1 per 1s; }
     }
 }
 
 api! {
-    client Oversized {
-        timeout 30s;
+    client ShortFormEmptyIdApi {
         base "https://example.test";
-        rate_limit { key [origin]; cost 1;
-            id "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-            allow 1 per 1s;
-        }
+        rate_limits { windows standard { allow 1 per 1s; } }
+        rate_limit "" key [origin] using standard;
     }
 }
 

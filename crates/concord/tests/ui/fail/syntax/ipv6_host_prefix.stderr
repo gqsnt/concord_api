@@ -1,5 +1,5 @@
-error: subdomain shaping requires a DNS-domain fixed base; IP-literal bases cannot receive generated labels
- --> tests/ui/fail/syntax/ipv6_host_prefix.rs:8:9
-  |
-8 |         subdomain replace ["api"];
-  |         ^^^^^^^^^
+error: [C3-ATOM] generated subdomain labels require a domain base host; the base is an IP literal (subdomain of scope `Ipv6HostApi::regional`), so remove the `subdomain` clause or declare a DNS base
+  --> tests/ui/fail/syntax/ipv6_host_prefix.rs:12:13
+   |
+12 |             subdomain ["api"];
+   |             ^^^^^^^^^

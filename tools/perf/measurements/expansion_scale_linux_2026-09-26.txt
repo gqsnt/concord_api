@@ -1,0 +1,43 @@
+Concord generated-contract scale measurement (V3-O07), recorded verbatim from real runs.
+
+Host:       Linux 6.18.44-fc-v37 x86_64, Intel(R) Xeon(R) Processor @ 2.10GHz, 2 CPUs, 7 GiB RAM,
+            shared with other build jobs (load average 0.4-1.2 during both runs)
+Toolchain:  rustc 1.95.0 (59807616e 2026-04-14), cargo 1.95.0 (f2d3ce0bd 2026-03-21), RUSTUP_TOOLCHAIN=stable
+Env:        CARGO_TARGET_DIR=/home/claude/cargo-target-shared CARGO_BUILD_JOBS=2 CARGO_INCREMENTAL=0, nice -n 10
+Probe:      tools/perf/src/bin/expansion_scale.rs at commit a32ab46 (dependencies warmed by an unreported run)
+v3 source:  this workspace at a32ab46 (3.0.0-beta.1)
+v2.1 source: `git archive eefca26` (Concord v2.1 baseline export of 3765907aa2e424997bfd8f2fcdcc95275e6142f5);
+            identical external dependency versions (Cargo.lock differs only in workspace package versions)
+
+Column notes: "edit ms" is the rebuild after changing one endpoint's route; "description bytes" is the
+concord.contract/3 export (v3) versus the v2.1 tool snapshot (different formats, not comparable 1:1);
+binaries are unstripped debug executables built with RUSTC_BOOTSTRAP=1 (see the dialect line).
+
+== v3: RUSTUP_TOOLCHAIN=stable cargo run -p concord-perf --bin expansion_scale (exit 0) ==
+dialect: V3; concord: /home/claude/work/concord/.claude/worktrees/agent-a91bdb45cc1ac59ae; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method)
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 681 | 24404 | 2366 | 128 | 69 | 166 | 540 | 501 | 51033376 | 9888 |
+| 10 | 3782 | 136089 | 12527 | 713 | 366 | 183 | 824 | 688 | 51075680 | 62268 |
+| 100 | 34787 | 1252944 | 114137 | 6563 | 3336 | 442 | 2843 | 2885 | 51501688 | 586068 |
+| 500 | 172587 | 6216744 | 565737 | 32563 | 16536 | 1977 | 13654 | 13256 | 53415672 | 2914068 |
+| 1000 | 344837 | 12421494 | 1130237 | 65063 | 33036 | 4114 | 26813 | 25890 | 55844704 | 5824068 |
+
+== v2.1 baseline: RUSTUP_TOOLCHAIN=stable cargo run -p concord-perf --bin expansion_scale -- --baseline-v2-1 <v2.1 export> (exit 0) ==
+dialect: V2_1; concord: <scratch>/v21; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method)
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 725 | 30132 | 2196 | 101 | 39 | 163 | 454 | 463 | 31960024 | 1649 |
+| 10 | 3713 | 171369 | 10485 | 497 | 219 | 205 | 592 | 657 | 32064744 | 13214 |
+| 100 | 33593 | 1585989 | 93375 | 4457 | 2019 | 484 | 2266 | 2295 | 33112896 | 128864 |
+| 500 | 166393 | 7883189 | 461775 | 22057 | 10019 | 1984 | 9990 | 10160 | 37776440 | 642864 |
+| 1000 | 332393 | 15754689 | 922275 | 44057 | 20019 | 3804 | 19811 | 20313 | 43626984 | 1285364 |
+
+Derived at 1000 endpoints (v3 relative to v2.1, same host/toolchain/method): lines +3.74%,
+characters -21.16%, fragments +22.55%, declaration-shaped lines +47.68%, function-shaped lines
++65.02%, expansion time +8.15%, full build +35.34%, one-endpoint edit rebuild +27.46%; binary growth
+from 1 to 1000 endpoints 4.81 MB (v3) versus 11.67 MB (v2.1). Every v3 column grows linearly with the
+endpoint count; the marginal build cost from 1 to 1000 endpoints is 26.30 ms per endpoint (v3)
+versus 19.38 ms (v2.1). Timings are single runs on a shared host and carry that noise.

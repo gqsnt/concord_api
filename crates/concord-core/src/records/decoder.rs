@@ -20,9 +20,7 @@ use super::RecordError;
 /// boundaries and may exceed the staging limit when they contain smaller
 /// logical records. `decode_eof` owns exact final framing semantics.
 /// `max_buffered_bytes` is an independently enforced positive finite staging
-/// bound. Inputs and decoder state may be sensitive; implementations own
-/// logging, storage, CPU, memory, metric cardinality, and external I/O
-/// behavior.
+/// bound.
 ///
 /// Core enforces net staging-buffer progress across each callback.
 /// Implementations must not increase the supplied staging buffer's length.
@@ -37,14 +35,40 @@ use super::RecordError;
 /// One logical decoder output must correspond to staged-byte consumption. A
 /// format that expands one framed input into several values should return that
 /// collection as one record or use a different response specification.
+///
+/// # Extension contract
+///
+/// * **Ownership.** The decoder value created by `start` belongs to exactly
+///   one response and is dropped with it; the staging buffer is core-owned
+///   and lent for one callback at a time. Decoded records are moved to the
+///   caller.
+/// * **Concurrency.** A decoder is `Send` but never shared: one response
+///   drives its callbacks sequentially. Decoders of independent responses may
+///   run concurrently.
+/// * **Cancellation.** Callbacks are synchronous and cannot be preempted.
+///   They run while the caller polls, under the stream lease, idle timeout
+///   and cancellation checks; dropping an item stream drops the decoder
+///   without further calls.
+/// * **Input sensitivity.** Inputs and decoder state may be sensitive;
+///   implementations own logging, storage and metrics, and core never prints
+///   staged bytes or records.
+/// * **Errors.** A [`RecordError`] from any callback terminates decoding:
+///   core keeps only its kind, releases the staged bytes and reports a
+///   value-free failure as the final stream item (or the buffered result).
+/// * **Resource obligations.** Core bounds acquired bytes, staged bytes
+///   (`max_buffered_bytes`) and the record count; implementations own their
+///   CPU, memory, metric cardinality and external I/O behavior, including the
+///   heap size of each decoded record.
+/// * **Negative capabilities.** A decoder cannot poll the body, change the
+///   accepted status, extend a lease or observe the transport or native
+///   response.
 pub trait RecordDecoder: Sized + Send + 'static {
     /// One successfully decoded record.
     type Record: Send + 'static;
 
-    /// Default `Accept` header inserted only when the request has none.
-    fn accept() -> Option<&'static str> {
-        None
-    }
+    /// Static `Accept` value negotiated by representations built on this
+    /// decoder. Read without running decoder code.
+    const ACCEPT: Option<&'static str> = None;
 
     /// Validates the accepted response head before the first body poll.
     fn validate(_head: &ResponseHead<'_>) -> Result<(), RecordError> {

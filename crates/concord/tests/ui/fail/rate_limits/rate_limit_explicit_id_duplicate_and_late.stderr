@@ -1,17 +1,17 @@
-error: an anonymous rate-limit attachment permits at most one `id` clause
- --> tests/ui/fail/rate_limits/rate_limit_explicit_id_duplicate_and_late.rs:9:13
-  |
-9 |             id "service.second";
-  |             ^^
-
-error: the first `id` clause is here
- --> tests/ui/fail/rate_limits/rate_limit_explicit_id_duplicate_and_late.rs:8:13
-  |
-8 |             id "service.first";
-  |             ^^
-
-error: `id`, `key`, and `cost` clauses must appear before rate-limit windows
-  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_duplicate_and_late.rs:21:13
+error: [C3-RATE] the inline rate policy of client `Duplicate` requires `key [...];` after its `id`
+  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_duplicate_and_late.rs:11:13
    |
-21 |             id "service.late";
+11 |             id "service.second";
    |             ^^
+
+error: [C3-RATE] every rate policy begins with an explicit `id "...";` (the inline rate policy of client `Late`)
+  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_duplicate_and_late.rs:22:13
+   |
+22 |             key [origin];
+   |             ^^^
+
+error: [C3-RATE] every rate policy begins with an explicit `id "...";` (policy `anonymous` of client `Missing`)
+  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_duplicate_and_late.rs:33:34
+   |
+33 |             policy anonymous() { key [origin]; allow 1 per 1s; }
+   |                                  ^^^

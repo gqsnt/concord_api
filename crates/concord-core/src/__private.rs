@@ -23,15 +23,18 @@ pub use crate::atom::{AtomEncoder, BoundedAtomWriter, OrderedValues, RequestAtom
 pub use crate::auth::Auth;
 #[doc(hidden)]
 pub use crate::body::{
-    EmptyBody, OptionalRequestRepresentation, PageRequestRepresentation, RequestBodyContext,
-    RequestBodyMetadata, RequestRepresentation,
+    BodyDescription, EmptyBody, OptionalRequestRepresentation, PageRequestRepresentation,
+    PreparedBody, RequestBodyContext, RequestRepresentation,
 };
 #[doc(hidden)]
 pub use crate::client::ClientCore;
 #[doc(hidden)]
+pub use crate::controls::{AnyCancelled, RequestControlState};
+#[doc(hidden)]
 pub use crate::endpoint::{
-    AcceptedStatus, Effect, EffectSource, EndpointCapabilities, EndpointDescription, EndpointId,
-    RequestBodyCategory, RequestPlan, ResponseAcquisition, StatusSource, TimeoutSelection,
+    AbsentStatus, AcceptedStatus, Effect, EffectSource, EndpointCapabilities, EndpointDescription,
+    EndpointId, RequestBodyCategory, RequestPlan, ResponseAcquisition, StatusSource,
+    TimeoutSelection,
 };
 #[doc(hidden)]
 pub use crate::error::{ApiError, ClientBuildError, ClientInputKind};
@@ -43,26 +46,101 @@ pub use crate::limits::{
     MAX_REQUEST_URL_BYTES,
 };
 #[doc(hidden)]
-pub use crate::pagination::PaginatedEndpoint;
+pub use crate::pagination::{
+    ControllerCursor, ControllerInit, PageItem, PageableEndpoint, collect_all_request,
+    collect_prefix_request, pages_request,
+};
 #[doc(hidden)]
 pub use crate::rate_limit::{
-    RateKeyPart, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPolicy, RateLimitWindow,
+    RateKeyEncoder, RateKeyPart, RateLimitDeclaration, RateLimitId, RateLimitKey, RateLimitKeyPart,
+    RateLimitPolicy, RateLimitWindow,
 };
 #[doc(hidden)]
 pub use crate::request::{
-    EndpointSpec, HeadBuilder, PreparedHead, RequestMeta, RequestOptions, TimeoutOverride,
+    EndpointSpec, HeadBuilder, HeadEmissions, NO_EMISSION, OccurrenceSink, OwnerProjection,
+    PatchFamily, PatchKind, PatchOp, PreparedHead, ProgramSegment, ProgramVisitor, RequestMeta,
+    RequestOptions, TimeoutOverride, apply_head_program, surviving_keys, visit_extended_program,
 };
 #[doc(hidden)]
-pub use crate::response::{ApiResponse, PageResponseRepresentation, ResponseRepresentation};
+pub use crate::response::{
+    ApiResponse, Buffered, ExpectedAbsence, HeadAbsence, OptionalOutcome, ResponseRepresentation,
+};
 #[doc(hidden)]
 pub use crate::runtime::defaults::{
     DEFAULT_AUTH_FAILURE_COOLDOWN_SECONDS, DEFAULT_PAGINATION_IDENTITY_BYTES,
     DEFAULT_PAGINATION_MAX_ITEMS, DEFAULT_PAGINATION_MAX_PAGES,
-    DEFAULT_PAGINATION_TOTAL_RESPONSE_BYTES, DEFAULT_PROVIDER_REQUEST_BYTES,
-    DEFAULT_PROVIDER_RESPONSE_BYTES, DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS,
+    DEFAULT_PAGINATION_TOTAL_RESPONSE_BYTES, DEFAULT_PROVIDER_MAX_ORIGINS,
+    DEFAULT_PROVIDER_MAX_SENDS, DEFAULT_PROVIDER_REQUEST_BYTES, DEFAULT_PROVIDER_RESPONSE_BYTES,
+    DEFAULT_PROVIDER_TIMEOUT_SECONDS, DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS,
     DEFAULT_RATE_LIMIT_KEY_BYTES, DEFAULT_REQUEST_BODY_BYTES, DEFAULT_RESPONSE_BODY_BYTES,
-    DEFAULT_STATUS_BODY_BYTES, DEFAULT_STREAM_RESPONSE_BYTES,
+    DEFAULT_STATUS_BODY_BYTES, DEFAULT_STREAM_FRAME_BYTES, DEFAULT_STREAM_IDLE_SECONDS,
+    DEFAULT_STREAM_LIFETIME_SECONDS, DEFAULT_STREAM_MAX_RECORDS, DEFAULT_STREAM_RESPONSE_BYTES,
 };
+
+/// Constructs the absent value of a head-only expected-absence result.
+///
+/// Implemented only through the sealed [`OptionalOutcome`] relationship, so
+/// it is available for `Option<T>` (and aliases of it) and nothing else.
+/// Core itself constructs absence on a declared status; generated code only
+/// needs this for type assertions and documentation examples.
+#[doc(hidden)]
+#[must_use]
+pub fn absent_outcome<O>() -> O
+where
+    O: OptionalOutcome,
+{
+    crate::response::absent_outcome::<O>()
+}
+
+/// Wraps one present value into a head-only expected-absence result.
+#[doc(hidden)]
+#[must_use]
+pub fn present_outcome<O>(value: O::Present) -> O
+where
+    O: OptionalOutcome,
+{
+    crate::response::present_outcome::<O>(value)
+}
+
+/// Compile-time validation of a representation's static `Accept` constant.
+///
+/// Generated code emits, once per endpoint response representation,
+/// `const _: () = __private::assert_response_accept(<R as ResponseRepresentation<O>>::ACCEPT);`
+/// so an invalid value (for example one containing a line break) is a
+/// compile error rather than a runtime surprise.
+///
+/// # Panics
+///
+/// Panics — at compile time in a constant — when the value is not a valid
+/// HTTP `Accept` value.
+#[doc(hidden)]
+pub const fn assert_response_accept(accept: Option<&'static str>) {
+    if let Some(accept) = accept {
+        assert!(
+            crate::response::accept_is_valid(accept),
+            "invalid static response representation Accept value"
+        );
+    }
+}
+
+/// Runtime validation of a representation's static `Accept` constant at
+/// client build.
+///
+/// Generated builders may call this once per endpoint response
+/// representation; it runs no representation code.
+#[doc(hidden)]
+pub fn validate_response_accept<R, Output>() -> Result<(), ClientBuildError>
+where
+    R: ResponseRepresentation<Output>,
+    Output: Send + 'static,
+{
+    match R::ACCEPT {
+        Some(accept) if !crate::response::accept_is_valid(accept) => Err(ClientBuildError::new(
+            crate::error::ClientBuildErrorKind::RuntimeConfiguration,
+        )),
+        _ => Ok(()),
+    }
+}
 
 /// Creates one allocation-free, compile-time-validated generated endpoint ID.
 #[doc(hidden)]
@@ -72,6 +150,24 @@ pub const fn endpoint_id_from_static(value: &'static str) -> EndpointId {
 }
 
 /// Generated-private owner for one credential source selection.
+///
+/// One value is created per declared credential when the generated client is
+/// built and shared by every clone of that client. Every method is
+/// synchronous and local: none performs network work, revokes a remote
+/// session or recalls already dispatched requests. No lock is held across
+/// application code; poisoning or counter exhaustion fails closed with a
+/// value-free [`AuthError`](crate::auth::AuthError).
+///
+/// Bridge for the macro:
+///
+/// * construction: [`Self::static_value`], [`Self::endpoint`],
+///   [`Self::provider`] / [`Self::provider_arc`] (fallible: the provider's
+///   declared helper origins are validated at build);
+/// * placements: [`Self::credential`];
+/// * `client.credentials().clear_<name>()?` → [`Self::clear`];
+/// * `client.credentials().replace_<name>(material)?` → [`Self::replace`]
+///   (or [`Self::replace_result`] for built-in fallible constructors);
+/// * `store_as_<name>()` → [`store_request`].
 #[doc(hidden)]
 pub struct GeneratedCredential<M>
 where
@@ -95,6 +191,7 @@ impl<M> GeneratedCredential<M>
 where
     M: crate::auth::CredentialMaterial,
 {
+    /// Creates a static source whose initial material is installed version 1.
     #[doc(hidden)]
     pub fn static_value(core: &ClientCore, value: M) -> Self {
         Self {
@@ -106,6 +203,7 @@ where
         }
     }
 
+    /// Creates an initially empty endpoint-backed source.
     #[doc(hidden)]
     pub fn endpoint(core: &ClientCore) -> Self {
         Self {
@@ -116,32 +214,43 @@ where
         }
     }
 
+    /// Creates a provider source, validating the provider's declared helper
+    /// origins against the client's configured capacity. `field` names the
+    /// generated provider input for the build error.
     #[doc(hidden)]
-    pub fn provider<P>(core: &ClientCore, provider: P) -> Self
+    pub fn provider<P>(
+        core: &ClientCore,
+        field: &'static str,
+        provider: P,
+    ) -> Result<Self, ClientBuildError>
     where
         P: crate::auth::CredentialProvider<Material = M>,
     {
-        Self {
-            selector: crate::auth::SlotSelector::provider_in_context(
-                provider,
-                core.auth_failure_cooldown_cap(),
-                core.credential_context().clone(),
-            ),
-        }
+        crate::auth::SlotSelector::provider_in_context(
+            provider,
+            core.auth_failure_cooldown_cap(),
+            core.credential_context().clone(),
+            core.provider_max_origins(),
+        )
+        .map(|selector| Self { selector })
+        .map_err(|_: crate::auth::OriginSetError| ClientBuildError::invalid_provider_origins(field))
     }
 
+    /// Shared-provider form of [`Self::provider`].
     #[doc(hidden)]
     pub fn provider_arc(
         core: &ClientCore,
+        field: &'static str,
         provider: std::sync::Arc<dyn crate::auth::CredentialProvider<Material = M>>,
-    ) -> Self {
-        Self {
-            selector: crate::auth::SlotSelector::provider_arc_in_context(
-                provider,
-                core.auth_failure_cooldown_cap(),
-                core.credential_context().clone(),
-            ),
-        }
+    ) -> Result<Self, ClientBuildError> {
+        crate::auth::SlotSelector::provider_arc_in_context(
+            provider,
+            core.auth_failure_cooldown_cap(),
+            core.credential_context().clone(),
+            core.provider_max_origins(),
+        )
+        .map(|selector| Self { selector })
+        .map_err(|_: crate::auth::OriginSetError| ClientBuildError::invalid_provider_origins(field))
     }
 
     #[doc(hidden)]
@@ -154,16 +263,38 @@ where
         crate::auth::CredentialHandle::new(std::sync::Arc::clone(&self.selector))
     }
 
+    /// Manual local clear: advances the installation intent even when empty,
+    /// removes ready material and supersedes in-flight acquisition.
     #[doc(hidden)]
-    pub async fn replace_static(
-        &self,
-        value: Result<M, crate::auth::CredentialMaterialError>,
-    ) -> Result<(), crate::auth::AuthError> {
-        self.selector.replace_static_result(value)
+    pub fn clear(&self) -> Result<(), crate::auth::AuthError> {
+        self.selector.clear()
     }
 
+    /// Manual local replacement: advances the installation intent and
+    /// installs `value` as a new version.
     #[doc(hidden)]
-    pub async fn replace_provider<P>(&self, provider: P) -> Result<(), crate::auth::AuthError>
+    pub fn replace(
+        &self,
+        value: M,
+    ) -> Result<crate::auth::CredentialVersion, crate::auth::AuthError> {
+        self.selector.replace(value)
+    }
+
+    /// [`Self::replace`] for a built-in fallible material constructor; a
+    /// construction error leaves the current material and version unchanged.
+    #[doc(hidden)]
+    pub fn replace_result(
+        &self,
+        value: Result<M, crate::auth::CredentialMaterialError>,
+    ) -> Result<crate::auth::CredentialVersion, crate::auth::AuthError> {
+        self.selector.replace_result(value)
+    }
+
+    /// Complete provider replacement. The replacement's declared origins are
+    /// validated against the client's capacity; pending intents of the old
+    /// provider are superseded.
+    #[doc(hidden)]
+    pub fn replace_provider<P>(&self, provider: P) -> Result<(), crate::auth::AuthError>
     where
         P: crate::auth::CredentialProvider<Material = M>,
     {
@@ -171,19 +302,34 @@ where
     }
 
     #[doc(hidden)]
-    pub async fn set(&self, value: M) -> Result<(), crate::auth::AuthError> {
-        self.selector.set(value)
-    }
-
-    #[doc(hidden)]
-    pub async fn clear(&self) -> Result<(), crate::auth::AuthError> {
-        self.selector.clear()
-    }
-
-    #[doc(hidden)]
     pub fn is_set(&self) -> bool {
         self.selector.is_set()
     }
+
+    /// Returns the currently installed, unrejected version, if any.
+    #[doc(hidden)]
+    pub fn installed_version(&self) -> Option<crate::auth::CredentialVersion> {
+        self.selector.installed_version()
+    }
+}
+
+/// Wraps one bound source-endpoint request as the `store_as_<credential>()`
+/// terminal for `credential`.
+///
+/// The request keeps every control it already carries; the terminal executes
+/// it through the ordinary managed executor on first poll. The endpoint's
+/// declared output must be exactly the credential material type.
+#[doc(hidden)]
+#[must_use]
+pub fn store_request<E, M>(
+    request: crate::Request<E>,
+    credential: &GeneratedCredential<M>,
+) -> crate::StoreRequest
+where
+    E: EndpointSpec<Output = M>,
+    M: crate::auth::CredentialMaterial,
+{
+    crate::execute::store_request(request, std::sync::Arc::clone(&credential.selector))
 }
 
 /// Borrows a generated endpoint through the opaque request wrapper without
@@ -191,16 +337,6 @@ where
 #[doc(hidden)]
 pub fn inspect_endpoint<E, T>(request: &crate::Request<E>, inspect: impl FnOnce(&E) -> T) -> T {
     inspect(&request.endpoint)
-}
-
-/// Reduces a generated endpoint-acquisition storage failure to one safe API error.
-#[doc(hidden)]
-pub fn credential_store_error(
-    endpoint: &'static str,
-    method: Method,
-    error: crate::auth::AuthError,
-) -> ApiError {
-    ApiError::authentication(EndpointId::from_static(endpoint), method, error)
 }
 
 /// Creates the ordinary generated-client HTTP configuration baseline.
@@ -259,6 +395,13 @@ pub const fn missing_input_error(
     ClientBuildError::missing_input(field, input_kind)
 }
 
+/// Produces one safe generated-builder error accumulating every missing
+/// required input (values, secrets, providers) in declaration order.
+#[doc(hidden)]
+pub fn missing_inputs_error(missing: Vec<(&'static str, ClientInputKind)>) -> ClientBuildError {
+    ClientBuildError::missing_inputs(missing)
+}
+
 /// Produces a safe generated-builder error for one invalid single-string credential input.
 #[doc(hidden)]
 pub fn credential_input_error(
@@ -293,8 +436,22 @@ pub fn request<E>(core: &ClientCore, endpoint: E) -> crate::Request<E> {
 }
 
 /// Creates one inert unbound-intent plan through real public-head preparation.
+///
+/// Planning never dispatches (EXEC-03): every failure reports
+/// `FailureStage::Preparation`, `DispatchKnowledge::NotDispatched` and no
+/// operation identity.
 #[doc(hidden)]
 pub fn plan_unbound_request(
+    core: &ClientCore,
+    description: &EndpointDescription,
+    response_accept: Option<&'static str>,
+    prepare_head: impl FnOnce(HeadBuilder) -> Result<PreparedHead, ApiError>,
+) -> Result<RequestPlan, ApiError> {
+    plan_unbound_request_inner(core, description, response_accept, prepare_head)
+        .map_err(ApiError::before_operation)
+}
+
+fn plan_unbound_request_inner(
     core: &ClientCore,
     description: &EndpointDescription,
     response_accept: Option<&'static str>,
@@ -318,9 +475,10 @@ pub fn plan_unbound_request(
         ));
     }
     head.validate_rate_limit_key_limit(core.rate_limit_key_limit())?;
-    // Planning cannot call application-owned body metadata, but the
-    // response specification's static Accept value is part of every finalized
-    // head and must consume the same aggregate budget as execution.
+    // Planning never prepares a body (the exact Content-Type is deferred to
+    // preparation), but the response representation's static Accept constant
+    // is part of every finalized head and consumes the same aggregate budget
+    // as execution.
     head.apply_media_headers(response_accept, None, false)?;
     head.validate_auth()?;
     if head.auth().is_empty() {
@@ -338,14 +496,28 @@ pub fn plan_unbound_request(
         public_headers,
         head.timeout(),
         0,
-        head.rate_limit_plan().policies().len(),
+        core.rate_plan_summary(head.rate_limit_plan()),
     ))
 }
 
 /// Plans one already-bound inert generated request without inspecting or
 /// materializing its body and without allocating an execution lifecycle.
+///
+/// Planning never dispatches (EXEC-03): every failure reports
+/// `FailureStage::Preparation`, `DispatchKnowledge::NotDispatched` and no
+/// operation identity.
 #[doc(hidden)]
 pub fn request_plan<E>(
+    request: &crate::Request<E>,
+    description: &EndpointDescription,
+) -> Result<RequestPlan, ApiError>
+where
+    E: EndpointSpec,
+{
+    request_plan_inner(request, description).map_err(ApiError::before_operation)
+}
+
+fn request_plan_inner<E>(
     request: &crate::Request<E>,
     description: &EndpointDescription,
 ) -> Result<RequestPlan, ApiError>
@@ -363,7 +535,11 @@ where
     let mut head = request.endpoint.prepare_head(builder)?;
     head.validate_auth_context(request.core.credential_context())?;
     head.validate_rate_limit_key_limit(request.core.rate_limit_key_limit())?;
-    head.apply_media_headers(E::Response::accept(), None, false)?;
+    head.apply_media_headers(
+        <E::Response as ResponseRepresentation<E::Output>>::ACCEPT,
+        None,
+        false,
+    )?;
     head.validate_auth()?;
     if head.auth().is_empty() {
         request
@@ -386,32 +562,84 @@ where
         public_headers,
         head.timeout(),
         0,
-        head.rate_limit_plan().policies().len(),
+        request.core.rate_plan_summary(head.rate_limit_plan()),
     ))
+}
+
+/// Generated named-request bridge for `request.timeout(duration)`.
+///
+/// Forwards to the inherent [`crate::Request::timeout`]: replaces only the
+/// selected finite timeout; caps are retained. Generated wrappers may call
+/// either this function or the inherent method.
+#[doc(hidden)]
+pub fn request_timeout<E>(
+    request: crate::Request<E>,
+    duration: std::time::Duration,
+) -> Result<crate::Request<E>, crate::contracts::ControlError> {
+    request.timeout(duration)
+}
+
+/// Generated named-request bridge for `request.reset_timeout()`
+/// ([`crate::Request::reset_timeout`]); caps are retained.
+#[doc(hidden)]
+#[must_use]
+pub fn request_reset_timeout<E>(request: crate::Request<E>) -> crate::Request<E> {
+    request.reset_timeout()
+}
+
+/// Generated named-request bridge for `request.cancel_with(token)`
+/// ([`crate::Request::cancel_with`]); at most eight distinct signals.
+#[doc(hidden)]
+pub fn request_cancel_with<E>(
+    request: crate::Request<E>,
+    token: crate::contracts::CancellationToken,
+) -> Result<crate::Request<E>, crate::contracts::ControlError> {
+    request.cancel_with(token)
+}
+
+/// Generated named-request bridge for `request.with_options(&options)`
+/// ([`crate::Request::with_options`]); caps intersect componentwise.
+#[doc(hidden)]
+#[must_use]
+pub fn request_with_options<E>(
+    request: crate::Request<E>,
+    options: &crate::contracts::CallOptions,
+) -> crate::Request<E> {
+    request.with_options(options)
+}
+
+/// Generated named-request bridge for `request.control_summary()`
+/// ([`crate::Request::control_summary`]); the declared timeout comes from the
+/// endpoint's effective metadata.
+#[doc(hidden)]
+#[must_use]
+pub fn request_control_summary<E>(request: &crate::Request<E>) -> crate::contracts::ControlSummary
+where
+    E: EndpointSpec,
+{
+    request.control_summary()
 }
 
 /// Selects universal response metadata for one generated named request wrapper.
 #[doc(hidden)]
 #[must_use]
-pub fn response_request<E>(request: crate::Request<E>) -> crate::ResponseRequest<E> {
-    crate::ResponseRequest::from_generated(request)
+pub fn response_request<E>(request: crate::Request<E>) -> crate::ResponseRequest<E::Output>
+where
+    E: EndpointSpec,
+{
+    crate::execute::response_request(request)
 }
 
 /// Selects complete bounded bytes for one generated named request wrapper.
 #[doc(hidden)]
 #[must_use]
-pub fn accepted_bytes_request<E>(request: crate::Request<E>) -> crate::AcceptedBytesRequest<E> {
-    crate::AcceptedBytesRequest::from_generated(request)
-}
-
-/// Creates one side-effect-free stable pagination wrapper.
-#[doc(hidden)]
-#[must_use]
-pub fn paginate_request<E>(
-    request: crate::Request<E>,
-    limit: crate::PageLimit,
-) -> crate::PaginatedRequest<E> {
-    crate::PaginatedRequest::new(request, limit)
+pub fn accepted_bytes_request<E>(request: crate::Request<E>) -> crate::AcceptedBytesRequest
+where
+    E: EndpointSpec,
+    <E::Response as ResponseRepresentation<E::Output>>::Driver:
+        crate::response::AcceptedBytesDriver,
+{
+    crate::execute::accepted_bytes_request(request)
 }
 
 /// Consumes a pending request, maps its endpoint value, and preserves every
@@ -432,4 +660,72 @@ where
         endpoint: map(endpoint),
         options,
     }
+}
+
+/// Binds one runtime endpoint at a generated owner projection
+/// (`owner.bind(endpoint)`); see [`crate::RuntimeEndpoint`].
+#[doc(hidden)]
+pub fn bind_runtime_endpoint<R, O>(
+    projection: std::sync::Arc<dyn OwnerProjection>,
+    endpoint: crate::request::RuntimeEndpoint<R, O>,
+) -> Result<crate::request::BoundRuntimeRequest<R, O>, ApiError>
+where
+    R: ResponseRepresentation<O>,
+    O: Send + 'static,
+{
+    crate::request::bind_runtime_at_owner(&projection, endpoint).map_err(ApiError::before_operation)
+}
+
+/// Plans one runtime endpoint at a generated owner projection without
+/// binding it (`owner.plan_runtime(&endpoint)`).
+#[doc(hidden)]
+pub fn plan_runtime_endpoint<R, O>(
+    projection: std::sync::Arc<dyn OwnerProjection>,
+    endpoint: &crate::request::RuntimeEndpoint<R, O>,
+) -> Result<RequestPlan, ApiError>
+where
+    R: ResponseRepresentation<O>,
+    O: Send + 'static,
+{
+    crate::request::plan_runtime_at_owner(&projection, endpoint).map_err(ApiError::before_operation)
+}
+
+/// Builds the head-only expected absence of one generated endpoint from its
+/// macro-validated status codes (`absent on 404;`).
+///
+/// # Panics
+///
+/// Panics only if the codes are not a valid final-status set, which the
+/// declaration compiler rejects before emitting this call.
+#[doc(hidden)]
+#[must_use]
+pub fn expected_absence<O, R>(codes: &'static [u16]) -> ExpectedAbsence<O, HeadAbsence<R>>
+where
+    O: OptionalOutcome,
+    R: ResponseRepresentation<O::Present, Driver = Buffered>,
+{
+    let statuses = AbsentStatus::codes(
+        codes
+            .iter()
+            .map(|code| http::StatusCode::from_u16(*code).expect("macro-validated status")),
+    )
+    .expect("macro-validated absence statuses");
+    ExpectedAbsence::new(statuses)
+}
+
+/// Derives one generated endpoint's runtime description from its client's
+/// built contract (the single source of meaning for executor facts).
+///
+/// # Panics
+///
+/// Panics with a contract-mismatch message if the contract has no endpoint
+/// with this operational ID, which indicates a macro/core version mismatch.
+#[doc(hidden)]
+#[must_use]
+pub fn endpoint_description(
+    contract: &'static crate::inspection::ContractDescription,
+    endpoint_id: &str,
+) -> EndpointDescription {
+    EndpointDescription::from_contract(contract, endpoint_id)
+        .expect("concord macro/core contract mismatch: generated endpoint missing from contract")
 }

@@ -1,5 +1,11 @@
-error: unknown binding `tenant` for rate-limit profile `account_reads`
-  --> tests/ui/fail/rate_limits/rate_limit_unknown_named_binding.rs:16:34
+error: [C3-RATE] policy `account_reads` has no formal `tenant`; bindings are exact (attachment in client `Api`), so bind only the policy's declared formals
+  --> tests/ui/fail/rate_limits/rate_limit_unknown_named_binding.rs:17:34
    |
-16 |         rate_limit account_reads(tenant = client.tenant);
+17 |         rate_limit account_reads(tenant = tenant);
+   |                                  ^^^^^^
+
+error: [C3-RATE] policy bindings are named and exact: `formal = value` (the attachment of policy `account_reads` in client `PositionalApi`); write `tenant = tenant`
+  --> tests/ui/fail/rate_limits/rate_limit_unknown_named_binding.rs:34:34
+   |
+34 |         rate_limit account_reads(tenant);
    |                                  ^^^^^^

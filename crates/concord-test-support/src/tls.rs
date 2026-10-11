@@ -171,6 +171,7 @@ impl TlsRequest {
 
 struct TlsResponse {
     status: u16,
+    headers: Vec<(String, String)>,
     body: Vec<u8>,
 }
 
@@ -200,6 +201,36 @@ impl TlsServer {
         Self::start_with_client_auth(true)
     }
 
+    /// Starts the loopback server with a caller-supplied, non-secret test
+    /// identity instead of the fixed `localhost` fixture.
+    ///
+    /// `root_certificate_pem` is the trust anchor returned by
+    /// [`Self::certificate_pem`] for the client; `certificate_chain_pem` holds
+    /// the server chain (leaf first) and `private_key_pem` its PKCS#8 key.
+    /// This lets a fixed-HTTPS declaration whose logical host is not
+    /// `localhost` (for example `eu.api.catalog.example.test`) complete a real
+    /// verified TLS handshake through [`crate::proxy::ConnectProxy`]. The
+    /// material must be owned test fixture material, never a real credential.
+    pub fn start_with_identity_pem(
+        root_certificate_pem: &str,
+        certificate_chain_pem: &str,
+        private_key_pem: &str,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let certificate = single_pem_block(root_certificate_pem, "CERTIFICATE")?;
+        let certificate_chain = pem_blocks(certificate_chain_pem, "CERTIFICATE")?
+            .into_iter()
+            .map(CertificateDer::from)
+            .collect::<Vec<_>>();
+        if certificate_chain.is_empty() {
+            return Err("the TLS identity chain holds no certificate".into());
+        }
+        let key = PrivateKeyDer::from(PrivatePkcs8KeyDer::from(single_pem_block(
+            private_key_pem,
+            "PRIVATE KEY",
+        )?));
+        Self::start_with_identity(certificate, certificate_chain, key, false)
+    }
+
     fn start_with_client_auth(
         require_client_auth: bool,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
@@ -208,6 +239,15 @@ impl TlsServer {
         let private_key = STANDARD.decode(SERVER_PRIVATE_KEY_DER_BASE64)?;
         let certificate_chain = vec![CertificateDer::from(server_certificate)];
         let key = PrivateKeyDer::from(PrivatePkcs8KeyDer::from(private_key));
+        Self::start_with_identity(certificate, certificate_chain, key, require_client_auth)
+    }
+
+    fn start_with_identity(
+        certificate: Vec<u8>,
+        certificate_chain: Vec<CertificateDer<'static>>,
+        key: PrivateKeyDer<'static>,
+        require_client_auth: bool,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let builder = ServerConfig::builder();
         let config = if require_client_auth {
             let mut roots = RootCertStore::empty();
@@ -256,6 +296,32 @@ impl TlsServer {
 
     /// Queues one status and complete response body for the next request.
     pub fn queue_response(&self, status: u16, body: impl Into<Vec<u8>>) -> io::Result<()> {
+        self.queue_response_with_headers(status, &[], body)
+    }
+
+    /// Queues one status, extra response headers (for example `Location` or
+    /// `Set-Cookie`) and a complete body for the next request. Header names
+    /// and values must be single-line visible ASCII.
+    pub fn queue_response_with_headers(
+        &self,
+        status: u16,
+        headers: &[(&str, &str)],
+        body: impl Into<Vec<u8>>,
+    ) -> io::Result<()> {
+        if headers.iter().any(|(name, value)| {
+            name.is_empty()
+                || !name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_graphic() && byte != b':')
+                || !value
+                    .bytes()
+                    .all(|byte| byte == b' ' || byte.is_ascii_graphic())
+        }) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "TLS probe headers must be single-line visible ASCII",
+            ));
+        }
         if !(200..=599).contains(&status) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -268,6 +334,10 @@ impl TlsServer {
             .map_err(|_| io::Error::other("TLS response queue mutex poisoned"))?
             .push_back(TlsResponse {
                 status,
+                headers: headers
+                    .iter()
+                    .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+                    .collect(),
                 body: body.into(),
             });
         Ok(())
@@ -384,6 +454,9 @@ fn handle_tls(tcp: TcpStream, connection_id: u64, config: Arc<ServerConfig>, sha
         .expect("failed to make accepted TLS socket blocking");
     tcp.set_read_timeout(Some(Duration::from_secs(2)))
         .expect("failed to set TLS read timeout");
+    // Small TLS records must not wait on Nagle/delayed-ACK interaction.
+    tcp.set_nodelay(true)
+        .expect("failed to disable Nagle on the TLS loopback connection");
     let connection = ServerConnection::new(config).expect("failed to create TLS connection");
     let mut stream = StreamOwned::new(connection, tcp);
     loop {
@@ -405,10 +478,16 @@ fn handle_tls(tcp: TcpStream, connection_id: u64, config: Arc<ServerConfig>, sha
             .pop_front()
             .unwrap_or_else(|| TlsResponse {
                 status: 200,
+                headers: Vec::new(),
                 body: b"ok".to_vec(),
             });
+        let extra_headers: String = response
+            .headers
+            .iter()
+            .map(|(name, value)| format!("{name}: {value}\r\n"))
+            .collect();
         let head = format!(
-            "HTTP/1.1 {} Scripted\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n",
+            "HTTP/1.1 {} Scripted\r\n{extra_headers}Content-Length: {}\r\nConnection: keep-alive\r\n\r\n",
             response.status,
             response.body.len()
         );
@@ -467,4 +546,67 @@ fn read_request(stream: &mut impl Read, connection_id: u64) -> Option<TlsRequest
         headers,
         body: bytes[body_start..total].to_vec(),
     })
+}
+
+/// Decodes every `-----BEGIN {label}-----` block of fixture PEM text.
+fn pem_blocks(
+    pem: &str,
+    label: &str,
+) -> Result<Vec<Vec<u8>>, Box<dyn std::error::Error + Send + Sync>> {
+    let begin = format!("-----BEGIN {label}-----");
+    let end = format!("-----END {label}-----");
+    let mut blocks = Vec::new();
+    let mut rest = pem;
+    while let Some(start) = rest.find(&begin) {
+        let body_start = start + begin.len();
+        let Some(length) = rest[body_start..].find(&end) else {
+            return Err(format!("unterminated PEM {label} block").into());
+        };
+        let encoded: String = rest[body_start..body_start + length]
+            .chars()
+            .filter(|character| !character.is_ascii_whitespace())
+            .collect();
+        blocks.push(STANDARD.decode(encoded)?);
+        rest = &rest[body_start + length + end.len()..];
+    }
+    Ok(blocks)
+}
+
+/// Decodes exactly one PEM block with `label`.
+fn single_pem_block(
+    pem: &str,
+    label: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    let mut blocks = pem_blocks(pem, label)?;
+    if blocks.len() != 1 {
+        return Err(format!("expected exactly one PEM {label} block").into());
+    }
+    Ok(blocks.remove(0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pem_identity_round_trips_the_fixed_fixture() {
+        let fixed = TlsServer::start().expect("fixed fixture server");
+        let root = String::from_utf8(fixed.certificate_pem()).expect("ASCII PEM");
+        assert_eq!(
+            single_pem_block(&root, "CERTIFICATE").expect("one block"),
+            fixed.certificate_der()
+        );
+        let twice = format!("{root}{root}");
+        assert_eq!(
+            pem_blocks(&twice, "CERTIFICATE").expect("two blocks").len(),
+            2
+        );
+        assert!(single_pem_block(&twice, "CERTIFICATE").is_err());
+        assert!(pem_blocks("-----BEGIN CERTIFICATE-----\nAAAA", "CERTIFICATE").is_err());
+
+        let identity = String::from_utf8(fixed.identity_pem()).expect("ASCII PEM");
+        let custom = TlsServer::start_with_identity_pem(&root, &identity, &identity)
+            .expect("caller-supplied identity server");
+        assert_eq!(custom.certificate_der(), fixed.certificate_der());
+    }
 }

@@ -3,6 +3,7 @@ use std::time::Duration;
 use http::{Method, StatusCode};
 
 use crate::body::BodyKind;
+use crate::error::{AuthErrorKind, ProviderAcquisitionFacts};
 use crate::operation::OperationId;
 
 /// Bounded value-free structure of one logical request target.
@@ -81,7 +82,8 @@ pub struct AttemptStarted<'a> {
     pub operation_id: OperationId,
     /// Aggregate pagination identity for a page operation.
     pub parent_operation_id: Option<OperationId>,
-    /// Stable generated or runtime endpoint identity.
+    /// Operational endpoint ID: an explicit `id` pin or a navigation-derived ID
+    /// for a generated endpoint, the validated ID of a runtime endpoint.
     pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
@@ -104,7 +106,8 @@ pub struct ResponseHeadObserved<'a> {
     pub operation_id: OperationId,
     /// Aggregate pagination identity for a page operation.
     pub parent_operation_id: Option<OperationId>,
-    /// Stable generated or runtime endpoint identity.
+    /// Operational endpoint ID: an explicit `id` pin or a navigation-derived ID
+    /// for a generated endpoint, the validated ID of a runtime endpoint.
     pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
@@ -133,7 +136,8 @@ pub struct OperationFinished<'a> {
     pub operation_id: OperationId,
     /// Aggregate pagination identity for a page operation.
     pub parent_operation_id: Option<OperationId>,
-    /// Stable generated or runtime endpoint identity.
+    /// Operational endpoint ID: an explicit `id` pin or a navigation-derived ID
+    /// for a generated endpoint, the validated ID of a runtime endpoint.
     pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
@@ -155,7 +159,13 @@ pub struct OperationFinished<'a> {
     pub outcome: CompletionOutcome,
 }
 
-/// Inline observation of one already-fixed pagination result.
+/// Inline observation of one already-fixed pagination traversal result.
+///
+/// Emitted exactly once for a started traversal when it reaches a terminal
+/// state: natural exhaustion, the page bound, a failure, an application stop
+/// through `Pages::finish`, or cancellation (including the synchronous drop
+/// guard of a started traversal). Unstarted and zero-bound traversals emit
+/// nothing.
 ///
 /// Observer time contributes to caller latency. Because this callback begins
 /// after semantic result fixation, it can delay delivery beyond the nominal
@@ -164,7 +174,7 @@ pub struct OperationFinished<'a> {
 pub struct PaginationFinished<'a> {
     /// Identity of the aggregate pagination operation.
     pub operation_id: OperationId,
-    /// Stable generated endpoint identity.
+    /// Operational endpoint ID (an explicit `id` pin or navigation-derived).
     pub endpoint: &'a str,
     /// Application HTTP method used for every page.
     pub method: &'a Method,
@@ -184,6 +194,39 @@ pub struct PaginationFinished<'a> {
     pub final_status: Option<StatusCode>,
     /// Structural category of the already-fixed aggregate result.
     pub outcome: CompletionOutcome,
+    /// Why the traversal stopped; distinguishes exhaustion from a page bound,
+    /// an application stop, cancellation and failure.
+    pub stop_reason: crate::pagination::StopReason,
+}
+
+/// Inline observation of one settled credential-provider acquisition or
+/// refresh (EXEC-01).
+///
+/// A provider acquisition is its own operation. Its identity
+/// ([`ProviderAcquisitionFacts::operation_id`]) is distinct from the
+/// application operation that led it, which is reported as
+/// [`ProviderAcquisitionFacts::parent_operation_id`]. The event is emitted once
+/// per started acquisition, from the leading operation, when the acquisition
+/// is installed, fails, is superseded, or is cancelled because the leader
+/// stopped. A cancelled leader reports synchronously from its drop guard.
+/// Followers that join the acquisition emit nothing. They see the same facts
+/// through [`ApiError::provider_acquisition`](crate::contracts::ApiError::provider_acquisition)
+/// or [`ExecutionMeta::provider_acquisition`](crate::contracts::ExecutionMeta::provider_acquisition).
+///
+/// The event runs after the acquisition's result is published to followers,
+/// so it cannot change that result. Time spent in the callback still counts
+/// against the leading operation's deadline. The event is value-free: it
+/// contains no provider URL, header, body, credential material or provider
+/// text.
+#[derive(Debug)]
+pub struct ProviderAcquisitionFinished {
+    /// Value-free provider journal facts: identity, parent operation, helper
+    /// sends, last provider status, provider dispatch knowledge and outcome.
+    pub facts: ProviderAcquisitionFacts,
+    /// Structured authentication failure kind when the acquisition failed.
+    pub auth_kind: Option<AuthErrorKind>,
+    /// Elapsed provider acquisition time before this observation began.
+    pub elapsed: Duration,
 }
 
 /// Public kind of a lazy response lifecycle.
@@ -196,28 +239,42 @@ pub enum StreamKind {
 }
 
 /// Terminal state of a caller-driven lazy response lifecycle.
+///
+/// Each variant corresponds to one terminal `StreamState` of the managed
+/// stream: `Completed` is `Eof`, `Failed` is `Failed`, `Application` is
+/// `Application`, and both `Dropped` and `Cancelled` are `Cancelled`.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StreamOutcome {
-    /// The caller polled the stream through its natural end.
+    /// The caller polled the stream through the actual end of the body.
     Completed,
-    /// Polling yielded a terminal transport, limit, framing, or decode failure.
+    /// Polling yielded a terminal transport, limit, lease, idle, framing, or
+    /// decode failure.
     Failed,
     /// The stream was dropped before a terminal poll result was observed.
     Dropped,
+    /// The application called `finish` before the end of the body; the body
+    /// was not drained.
+    Application,
+    /// An attached cancellation signal terminated the stream.
+    Cancelled,
 }
 
 /// Correlated terminal evidence for one acquired lazy response stream.
 ///
-/// Stream consumption occurs after the request result is fixed and outside the
-/// operation deadline. This event therefore reports only bounded structural
-/// counts and cannot retroactively change that result.
+/// Stream consumption occurs after the request result is fixed (as
+/// `StreamOpened`) under the stream's own finite lease. This event therefore
+/// reports only bounded structural counts and cannot retroactively change that
+/// result. It is emitted exactly once per stream delivered to the caller (a
+/// stream dropped inside a failed operation before delivery emits none).
 #[derive(Debug)]
 pub struct StreamFinished<'a> {
     /// Identity of the request operation that acquired the stream.
     pub operation_id: OperationId,
     /// Aggregate pagination identity, when applicable.
     pub parent_operation_id: Option<OperationId>,
-    /// Stable generated or runtime endpoint identity.
+    /// Operational endpoint ID: an explicit `id` pin or a navigation-derived ID
+    /// for a generated endpoint, the validated ID of a runtime endpoint.
     pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
@@ -271,6 +328,11 @@ pub enum CompletionOutcome {
     Pagination,
     /// Concord reduced an otherwise unclassified internal failure.
     Internal,
+    /// A started operation was cancelled (a dropped started future or an
+    /// attached cancellation signal) before any other result was fixed.
+    Cancelled,
+    /// The caller send cap left no application handoff for the operation.
+    SendCapExhausted,
 }
 
 impl CompletionOutcome {
@@ -294,6 +356,8 @@ impl CompletionOutcome {
             ErrorCategory::ResponseContract => Self::ResponseContract,
             ErrorCategory::Pagination => Self::Pagination,
             ErrorCategory::Internal => Self::Internal,
+            ErrorCategory::Cancelled => Self::Cancelled,
+            ErrorCategory::SendCapExhausted => Self::SendCapExhausted,
         }
     }
 }
@@ -315,6 +379,8 @@ pub enum OperationEvent<'a> {
     PaginationFinished(PaginationFinished<'a>),
     /// One caller-driven lazy response lifecycle terminated.
     StreamFinished(StreamFinished<'a>),
+    /// One credential-provider acquisition or refresh settled.
+    ProviderAcquisitionFinished(ProviderAcquisitionFinished),
     /// Reserved for forward-compatible lifecycle evidence.
     #[doc(hidden)]
     __NonExhaustive,

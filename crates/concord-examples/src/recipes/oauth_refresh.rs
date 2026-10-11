@@ -3,24 +3,28 @@
 //! Required features: `oauth2-client` and `default-tls`. Mode: construction
 //! and managed execution. Documentation owner:
 //! `docs/auth.md`. Proving test: `tests/construction.rs`.
+//!
+//! The provider registers its validated token origin as its only helper
+//! destination; the builder setter is named after the credential (`access`).
 
-use concord::api;
 use concord::auth::OAuth2ClientCredentials;
+use concord::{Empty, api};
 
 // ANCHOR: oauth_refresh_recipe
 api! {
     client OAuthRecordsApi {
-        timeout 30s;
         base "https://records.example.test/";
+        timeout 30s;
+
         credentials {
             credential access = custom OAuth2ClientCredentials;
         }
 
-
-    GET records() -> () via Empty {
-        auth { bearer access challenge unauthorized; }
+        GET records() -> () via Empty {
+            auth { bearer access challenge unauthorized; }
+        }
     }
-}}
+}
 
 /// Builds a client whose clones share one provider-backed credential slot.
 pub fn build(
@@ -33,9 +37,7 @@ pub fn build(
         .client_secret(client_secret)
         .scope("records.read")
         .build()?;
-    let client = OAuthRecordsApi::builder()
-        .access_provider(provider)
-        .build()?;
+    let client = OAuthRecordsApi::builder().access(provider).build()?;
     Ok(client)
 }
 

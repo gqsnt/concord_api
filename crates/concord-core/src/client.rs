@@ -40,6 +40,9 @@ impl ClientCore {
         runtime: RuntimeConfigBuilder,
     ) -> Result<Self, ClientBuildError> {
         runtime.validate_rate_limit_key_limit()?;
+        runtime.validate_provider_configuration()?;
+        runtime.validate_stream_configuration()?;
+        runtime.validate_limit_configuration()?;
         let base_url = parse_fixed_base(fixed_base)?;
         let runtime = runtime.resolve();
         let http = http.resolve()?;
@@ -68,6 +71,9 @@ impl ClientCore {
         executor: &concord_test_support::executor::DeterministicExecutor,
     ) -> Result<Self, ClientBuildError> {
         runtime.validate_rate_limit_key_limit()?;
+        runtime.validate_provider_configuration()?;
+        runtime.validate_stream_configuration()?;
+        runtime.validate_limit_configuration()?;
         let base_url = parse_fixed_base(fixed_base)?;
         let runtime = runtime.resolve();
         let http = http.resolve()?;
@@ -106,8 +112,40 @@ impl ClientCore {
         self.inner.runtime.auth_failure_cooldown_cap
     }
 
+    pub(crate) fn provider_max_origins(&self) -> usize {
+        self.inner.runtime.provider_max_origins
+    }
+
     pub(crate) fn rate_limiter(&self) -> &Arc<dyn crate::rate_limit::RateLimiter> {
         &self.inner.runtime.rate_limiter
+    }
+
+    /// Whether the application explicitly selected a limiter (a real limiter
+    /// or the explicit unenforced `NoopRateLimiter`) at client build. Without
+    /// a selection the fail-closed fallback rejects every nonempty plan, so a
+    /// runtime binding that adds policies must fail at bind (V3-R11).
+    pub(crate) fn rate_limiter_selected(&self) -> bool {
+        self.inner.runtime.rate_limiter_selected
+    }
+
+    /// Returns the limiter capability snapshotted at client build.
+    pub(crate) fn rate_limiter_capability(&self) -> crate::rate_limit::LimiterCapability {
+        self.inner.runtime.rate_limiter_capability
+    }
+
+    /// Returns the safe structural rate facts of one prepared plan together
+    /// with the actual enforcement choice. Performs no limiter call.
+    pub(crate) fn rate_plan_summary(
+        &self,
+        plan: &crate::rate_limit::RateLimitPlan,
+    ) -> crate::rate_limit::RatePlanSummary {
+        crate::rate_limit::RatePlanSummary::new(
+            plan,
+            self.inner
+                .runtime
+                .rate_limiter_selected
+                .then_some(self.inner.runtime.rate_limiter_capability),
+        )
     }
 
     pub(crate) fn rate_limit_cooldown_cap(&self) -> std::time::Duration {
@@ -172,8 +210,23 @@ impl ClientCore {
         self.inner.runtime.pagination_identity_limit
     }
 
-    pub(crate) fn stream_response_limit(&self) -> std::num::NonZeroUsize {
-        self.inner.runtime.stream_response_limit
+    /// The trusted aggregate application-handoff ceiling (§20.4
+    /// `aggregate_max_sends`), before per-call narrowing.
+    pub(crate) fn aggregate_max_sends(&self) -> std::num::NonZeroU32 {
+        self.inner.runtime.aggregate_max_sends
+    }
+
+    /// Returns the trusted runtime ceilings of a managed stream, before any
+    /// per-call narrowing.
+    pub(crate) fn stream_limits(&self) -> crate::response::StreamLimits {
+        let runtime = &self.inner.runtime;
+        crate::response::StreamLimits {
+            lifetime: runtime.stream_lifetime,
+            idle: runtime.stream_idle_timeout,
+            bytes: runtime.stream_response_limit,
+            records: runtime.stream_max_records,
+            frame: runtime.stream_frame_limit,
+        }
     }
 
     pub(crate) fn allocate_operation_id(
@@ -241,7 +294,7 @@ impl ClientCore {
 }
 
 fn parse_fixed_base(value: &str) -> Result<Url, ClientBuildError> {
-    let url = Url::parse(value)
+    let mut url = Url::parse(value)
         .map_err(|_| ClientBuildError::new(ClientBuildErrorKind::InvalidBaseUrl))?;
     let raw_authority = value
         .split_once("://")
@@ -256,13 +309,20 @@ fn parse_fixed_base(value: &str) -> Result<Url, ClientBuildError> {
     if !valid {
         return Err(ClientBuildError::new(ClientBuildErrorKind::InvalidBaseUrl));
     }
+    // ORIGIN-01: a missing terminal slash is normalized as a directory
+    // prefix, so `/root` and `/root/` own the same fixed base path, with or
+    // without generated segments, exactly as the static explanation reports.
+    if !url.path().ends_with('/') {
+        let path = format!("{}/", url.path());
+        url.set_path(&path);
+    }
     Ok(url)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::num::{NonZeroU32, NonZeroUsize};
+    use std::num::NonZeroUsize;
     use std::time::Duration;
 
     use crate::contracts::NoopRateLimiter;
@@ -295,11 +355,36 @@ mod tests {
         }
     }
 
+    /// ORIGIN-01 regression: the runtime fixed base path uses the same
+    /// directory-prefix normalization as the static explanation, so a request
+    /// with zero generated segments targets `/root/`, not `/root`.
+    #[test]
+    fn fixed_base_path_is_normalized_as_a_directory_prefix() {
+        for (literal, expected) in [
+            ("https://example.test/root", "https://example.test/root/"),
+            ("https://example.test/root/", "https://example.test/root/"),
+            ("https://example.test/a/b", "https://example.test/a/b/"),
+            ("https://example.test", "https://example.test/"),
+            ("https://example.test/", "https://example.test/"),
+        ] {
+            let url = parse_fixed_base(literal).expect("valid fixed base");
+            assert_eq!(url.as_str(), expected, "{literal}");
+        }
+    }
+
     #[test]
     fn rate_limiter_rejects_preparation_limit_above_hard_cap() {
         struct ExcessiveKeyLimit;
 
         impl crate::rate_limit::RateLimiter for ExcessiveKeyLimit {
+            fn capability(&self) -> crate::rate_limit::LimiterCapability {
+                crate::rate_limit::LimiterCapability::new(
+                    crate::rate_limit::Enforcement::Local,
+                    "test.excessive-key-limit",
+                    1,
+                )
+            }
+
             fn preparation_key_limit(&self) -> usize {
                 crate::rate_limit::MAX_RATE_LIMIT_KEY_BYTES + 1
             }
@@ -364,16 +449,16 @@ mod tests {
                 .proxy(SafeProxy::parse(first_proxy).expect("safe proxy")),
             RuntimeConfigBuilder::new()
                 .runtime_endpoint_timeout(Duration::from_secs(7))
-                .request_body_limit(one)
-                .response_body_limit(two)
-                .stream_response_limit(three)
-                .status_body_limit(four)
-                .provider_request_limit(five)
-                .provider_response_limit(six)
-                .pagination_max_pages(NonZeroU32::new(37).expect("positive page limit"))
-                .pagination_max_items(seven)
-                .pagination_total_response_body_limit(eight)
-                .pagination_identity_limit(NonZeroUsize::new(41).expect("positive identity limit"))
+                .request_body_limit(one.get())
+                .response_body_limit(two.get())
+                .stream_response_limit(three.get())
+                .status_body_limit(four.get())
+                .provider_request_limit(five.get())
+                .provider_response_limit(six.get())
+                .pagination_max_pages(37)
+                .pagination_max_items(seven.get())
+                .pagination_total_response_body_limit(eight.get())
+                .pagination_identity_limit(41)
                 .auth_failure_cooldown_cap(Duration::from_secs(43))
                 .rate_limit_cooldown_cap(Duration::from_secs(47))
                 .operation_observer(Arc::clone(&first_observer))
@@ -463,7 +548,7 @@ mod tests {
             "http://second.example",
             HttpConfigBuilder::new(),
             RuntimeConfigBuilder::new()
-                .request_body_limit(NonZeroUsize::new(53).expect("positive test limit"))
+                .request_body_limit(53)
                 .operation_observer(Arc::clone(&second_observer))
                 .rate_limiter(Arc::clone(&second_limiter))
                 .debug(DebugLevel::Basic),

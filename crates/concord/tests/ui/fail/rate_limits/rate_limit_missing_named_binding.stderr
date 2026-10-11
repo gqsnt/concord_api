@@ -1,5 +1,5 @@
-error: rate-limit profile `account_reads` requires a binding for dimension `account`
-  --> tests/ui/fail/rate_limits/rate_limit_missing_named_binding.rs:13:20
+error: [C3-RATE] policy `account_reads` formal `account` is unbound; bindings are named, exact and total (attachment in client `Api`), so write `account = value`
+  --> tests/ui/fail/rate_limits/rate_limit_missing_named_binding.rs:16:20
    |
-13 |         rate_limit account_reads();
+16 |         rate_limit account_reads();
    |                    ^^^^^^^^^^^^^

@@ -1,5 +1,5 @@
-error: a rate-limit key permits at most 32 dimensions
-  --> tests/ui/fail/rate_limits/rate_limit_dimension_limit.rs:17:17
+error: [C3-RATE] a rate key has 1..=32 dimensions (inline policy `concord.rate_limit_dimension_limit.1` of client `Api` has 33); write `key [origin];` at minimum
+  --> tests/ui/fail/rate_limits/rate_limit_dimension_limit.rs:44:9
    |
-17 |                 client.first_excess,
-   |                 ^^^^^^
+44 |         rate_limit {
+   |         ^^^^^^^^^^

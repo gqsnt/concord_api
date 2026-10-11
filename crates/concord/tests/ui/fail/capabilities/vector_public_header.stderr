@@ -1,14 +1,12 @@
-error[E0277]: the trait bound `Vec<String>: RequestAtom` is not satisfied
-  --> tests/ui/fail/capabilities/vector_public_header.rs:3:1
+error[E0277]: [C3-ATOM] `Vec<std::string::String>` is not a scalar request atom
+  --> tests/ui/fail/capabilities/vector_public_header.rs:11:36
    |
- 3 | / api! {
- 4 | |     client HeaderApi {
- 5 | |         timeout 30s;
- 6 | |         base "https://header.example.test";
-...  |
-12 | | }}
-   | |__^ the trait `RequestAtom` is not implemented for `Vec<String>`
+11 |             headers { "X-Values" = values; }
+   |                                    ^^^^^^ this placement writes exactly one scalar atom
    |
+   = help: the trait `RequestAtom` is not implemented for `Vec<std::string::String>`
+   = note: `RequestAtom` owns one scalar path, DNS, query or header value; a sequence is never repeated implicitly
+   = note: for one query/header occurrence per item write `"key" = each value;`; for one scalar write `value via Encoder` with an `AtomEncoder<Vec<std::string::String>>`, or implement `RequestAtom` for a domain type
    = help: the following other types implement trait `RequestAtom`:
              &T
              NonZero<i128>
@@ -19,84 +17,12 @@ error[E0277]: the trait bound `Vec<String>: RequestAtom` is not satisfied
              NonZero<isize>
              NonZero<u128>
            and $N others
-   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `Vec<String>: RequestAtom` is not satisfied
-  --> tests/ui/fail/capabilities/vector_public_header.rs:3:1
+note: required by a bound in `concord::__private::OccurrenceSink::<'_>::value`
+  --> $WORKSPACE/crates/concord-core/src/request/program.rs
    |
- 3 | / api! {
- 4 | |     client HeaderApi {
- 5 | |         timeout 30s;
- 6 | |         base "https://header.example.test";
-...  |
-12 | | }}
-   | |__^ the trait `RequestAtom` is not implemented for `Vec<String>`
-   |
-   = help: the following other types implement trait `RequestAtom`:
-             &T
-             NonZero<i128>
-             NonZero<i16>
-             NonZero<i32>
-             NonZero<i64>
-             NonZero<i8>
-             NonZero<isize>
-             NonZero<u128>
-           and $N others
-note: required for `Item` to implement `concord::__private::EndpointSpec`
-  --> tests/ui/fail/capabilities/vector_public_header.rs:3:1
-   |
- 3 | / api! {
- 4 | |     client HeaderApi {
- 5 | |         timeout 30s;
- 6 | |         base "https://header.example.test";
-...  |
- 9 | |     GET item(values: Vec<String>) -> Bytes via Binary {
-   | |         ^^^^
-...  |
-12 | | }}
-   | |__^ unsatisfied trait bound introduced here
-note: required by a bound in `concord::__private::request_plan`
-  --> $WORKSPACE/crates/concord-core/src/__private.rs
-   |
-   | pub fn request_plan<E>(
-   |        ------------ required by a bound in this function
-...
-   |     E: EndpointSpec,
-   |        ^^^^^^^^^^^^ required by this bound in `request_plan`
-   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `Vec<String>: RequestAtom` is not satisfied
-  --> tests/ui/fail/capabilities/vector_public_header.rs:3:1
-   |
- 3 | / api! {
- 4 | |     client HeaderApi {
- 5 | |         timeout 30s;
- 6 | |         base "https://header.example.test";
-...  |
-12 | | }}
-   | |__^ the trait `RequestAtom` is not implemented for `Vec<String>`
-   |
-   = help: the following other types implement trait `RequestAtom`:
-             &T
-             NonZero<i128>
-             NonZero<i16>
-             NonZero<i32>
-             NonZero<i64>
-             NonZero<i8>
-             NonZero<isize>
-             NonZero<u128>
-           and $N others
-note: required for `Item` to implement `header_api::Endpoint`
-  --> tests/ui/fail/capabilities/vector_public_header.rs:3:1
-   |
- 3 | / api! {
- 4 | |     client HeaderApi {
- 5 | |         timeout 30s;
- 6 | |         base "https://header.example.test";
-...  |
- 9 | |     GET item(values: Vec<String>) -> Bytes via Binary {
-   | |         ^^^^
-...  |
-12 | | }}
-   | |__^ unsatisfied trait bound introduced here
+   |     pub fn value<T>(&mut self, value: &T) -> Result<(), AtomError>
+   |            ----- required by a bound in this associated function
+   |     where
+   |         T: crate::atom::RequestAtom + ?Sized,
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `OccurrenceSink::<'_>::value`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

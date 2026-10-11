@@ -1,19 +1,16 @@
-error[E0277]: the trait bound `NonSecretMaterial: SecretCredential` is not satisfied
-  --> tests/ui/fail/authentication/authorization_endpoint_material_incompatible.rs:26:1
+error[E0277]: [C3-AUTH] `NonSecretMaterial` is not single-secret credential material
+  --> tests/ui/fail/authentication/authorization_endpoint_material_incompatible.rs:33:20
    |
-26 | / api! {
-27 | |     client Api {
-28 | |         timeout 30s;
-29 | |         base "https://example.test";
-...  |
-39 | | }}
-   | |__^ unsatisfied trait bound
+33 |             auth { authorization "Session" = session; }
+   |                    ^^^^^^^^^^^^^ a bearer, authorization, header or query placement applies exactly one secret string
    |
 help: the trait `SecretCredential` is not implemented for `NonSecretMaterial`
-  --> tests/ui/fail/authentication/authorization_endpoint_material_incompatible.rs:6:1
+  --> tests/ui/fail/authentication/authorization_endpoint_material_incompatible.rs:8:1
    |
- 6 | struct NonSecretMaterial;
-   | ^^^^^^^^^^^^^^^^^^^^^^^^
+ 8 | pub struct NonSecretMaterial;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: only `SecretCredential` material can be placed as one bearer/authorization/header/query value; Basic username/password material needs a `basic` placement
+   = note: write a `basic` placement for Basic material, or produce material that implements `SecretCredential`
 help: the following other types implement trait `SecretCredential`
   --> $WORKSPACE/crates/concord-core/src/auth/material.rs
    |
@@ -22,90 +19,12 @@ help: the following other types implement trait `SecretCredential`
 ...
    | impl SecretCredential for ApiKey {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::auth::ApiKey`
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `NonSecretMaterial: SecretCredential` is not satisfied
-  --> tests/ui/fail/authentication/authorization_endpoint_material_incompatible.rs:26:1
+note: required by a bound in `Auth::authorization_with_scheme`
+  --> $WORKSPACE/crates/concord-core/src/auth/placement.rs
    |
-26 | / api! {
-27 | |     client Api {
-28 | |         timeout 30s;
-29 | |         base "https://example.test";
-...  |
-39 | | }}
-   | |__^ unsatisfied trait bound
-   |
-help: the trait `SecretCredential` is not implemented for `NonSecretMaterial`
-  --> tests/ui/fail/authentication/authorization_endpoint_material_incompatible.rs:6:1
-   |
- 6 | struct NonSecretMaterial;
-   | ^^^^^^^^^^^^^^^^^^^^^^^^
-help: the following other types implement trait `SecretCredential`
-  --> $WORKSPACE/crates/concord-core/src/auth/material.rs
-   |
-   | impl SecretCredential for AccessToken {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `AccessToken`
+   |     pub fn authorization_with_scheme<M>(
+   |            ------------------------- required by a bound in this associated function
 ...
-   | impl SecretCredential for ApiKey {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::auth::ApiKey`
-note: required for `Protected` to implement `concord::__private::EndpointSpec`
-  --> tests/ui/fail/authentication/authorization_endpoint_material_incompatible.rs:26:1
-   |
-26 | / api! {
-27 | |     client Api {
-28 | |         timeout 30s;
-29 | |         base "https://example.test";
-...  |
-36 | |     GET protected() -> Bytes via Binary {
-   | |         ^^^^^^^^^
-...  |
-39 | | }}
-   | |__^ unsatisfied trait bound introduced here
-note: required by a bound in `concord::__private::request_plan`
-  --> $WORKSPACE/crates/concord-core/src/__private.rs
-   |
-   | pub fn request_plan<E>(
-   |        ------------ required by a bound in this function
-...
-   |     E: EndpointSpec,
-   |        ^^^^^^^^^^^^ required by this bound in `request_plan`
-   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `NonSecretMaterial: SecretCredential` is not satisfied
-  --> tests/ui/fail/authentication/authorization_endpoint_material_incompatible.rs:26:1
-   |
-26 | / api! {
-27 | |     client Api {
-28 | |         timeout 30s;
-29 | |         base "https://example.test";
-...  |
-39 | | }}
-   | |__^ unsatisfied trait bound
-   |
-help: the trait `SecretCredential` is not implemented for `NonSecretMaterial`
-  --> tests/ui/fail/authentication/authorization_endpoint_material_incompatible.rs:6:1
-   |
- 6 | struct NonSecretMaterial;
-   | ^^^^^^^^^^^^^^^^^^^^^^^^
-help: the following other types implement trait `SecretCredential`
-  --> $WORKSPACE/crates/concord-core/src/auth/material.rs
-   |
-   | impl SecretCredential for AccessToken {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `AccessToken`
-...
-   | impl SecretCredential for ApiKey {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::auth::ApiKey`
-note: required for `Protected` to implement `api::Endpoint`
-  --> tests/ui/fail/authentication/authorization_endpoint_material_incompatible.rs:26:1
-   |
-26 | / api! {
-27 | |     client Api {
-28 | |         timeout 30s;
-29 | |         base "https://example.test";
-...  |
-36 | |     GET protected() -> Bytes via Binary {
-   | |         ^^^^^^^^^
-...  |
-39 | | }}
-   | |__^ unsatisfied trait bound introduced here
+   |         M: SecretCredential,
+   |            ^^^^^^^^^^^^^^^^ required by this bound in `Auth::authorization_with_scheme`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

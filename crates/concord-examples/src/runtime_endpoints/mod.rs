@@ -1,8 +1,8 @@
-//! Runtime endpoint construction alongside the corresponding generated surface.
+//! Runtime endpoint construction and owner binding alongside the
+//! corresponding generated surface.
 //!
-//! Required features: none. Mode: construction, credential-free planning, and deterministic
-//! local execution. Documentation owner:
-//! `docs/runtime_endpoints.md`.
+//! Required features: none. Mode: construction, binding and credential-free
+//! planning. Documentation owner: `docs/runtime_endpoints.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 pub mod generated_and_runtime;

@@ -1,8 +1,12 @@
-use concord::api;
+// §11.1: each secret is a required protected builder input; optional static
+// secrets are not supported (an endpoint-backed source starts empty, and a
+// custom provider may report unavailable).
+#![allow(unused_imports)]
+
+use concord::{Binary, Bytes, api};
 
 api! {
     client OptionalSecretApi {
-        timeout 30s;
         base "https://example.test";
         credentials {
             secret optional_api_key?;

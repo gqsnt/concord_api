@@ -1,107 +1,107 @@
-error: v1 pagination syntax was removed; pagination requires `paginate via Controller { field -> endpoint.slot; stable = value; }`
-  --> tests/ui/fail/pagination/pagination_syntax.rs:15:18
+error: [C3-PAGE] pagination of endpoint `MissingVia::read` is `paginate via Controller { init Init { ... }; cursor -> slot; }`
+  --> tests/ui/fail/pagination/pagination_syntax.rs:15:22
    |
-15 |         paginate crate::Controller
-   |                  ^^^^^
+15 |             paginate OffsetPagination { init OffsetInit { offset: offset }; cursor -> offset; }
+   |                      ^^^^^^^^^^^^^^^^
 
-error: expected `;`
-  --> tests/ui/fail/pagination/pagination_syntax.rs:26:66
+error: [C3-MIGRATE] v2 public controller-field bindings were replaced: write `init InitType { field: value, ... }; cursor -> slot;` in endpoint `LegacyFieldBinding::read`
+  --> tests/ui/fail/pagination/pagination_syntax.rs:25:45
    |
-26 |         paginate via crate::Controller { state = endpoint.offset }
-   |                                                                  ^
+25 |             paginate via OffsetPagination { offset -> offset; }
+   |                                             ^^^^^^
 
-error: v1 pagination syntax was removed; pagination requires `paginate via Controller { field -> endpoint.slot; stable = value; }`
-  --> tests/ui/fail/pagination/pagination_syntax.rs:37:18
+error: [C3-MIGRATE] v2 public controller-field bindings were replaced: write `init InitType { field: value, ... }; cursor -> slot;` in endpoint `LegacyStableAssignment::read`
+  --> tests/ui/fail/pagination/pagination_syntax.rs:35:45
    |
-37 |         paginate custom crate::factory();
-   |                  ^^^^^^
+35 |             paginate via OffsetPagination { page_size = 10; }
+   |                                             ^^^^^^^^^
 
-error: duplicate pagination controller field `state`
-  --> tests/ui/fail/pagination/pagination_syntax.rs:50:13
+error: [C3-MIGRATE] v2 public controller-field bindings were replaced: write `init InitType { field: value, ... }; cursor -> slot;` in endpoint `MissingInit::read`
+  --> tests/ui/fail/pagination/pagination_syntax.rs:45:45
    |
-50 |             state -> endpoint.other;
-   |             ^^^^^
+45 |             paginate via OffsetPagination { cursor -> offset; }
+   |                                             ^^^^^^
 
-error: duplicate live pagination destination `endpoint.offset`
-  --> tests/ui/fail/pagination/pagination_syntax.rs:64:31
+error: [C3-PAGE] `..Default::default()` is not DSL syntax (Init of endpoint `RestConstruction::read`); supply every Init field or name a Rust constant
+  --> tests/ui/fail/pagination/pagination_syntax.rs:55:63
    |
-64 |             other -> endpoint.offset;
-   |                               ^^^^^^
+55 |             paginate via OffsetPagination { init OffsetInit { ..Default::default() }; cursor -> offset; }
+   |                                                               ^
 
-error: a live pagination binding may update only an endpoint-owned slot (`field -> endpoint.name`)
-  --> tests/ui/fail/pagination/pagination_syntax.rs:79:51
+error: [C3-PAGE] duplicate Init field `offset` in the pagination of endpoint `DuplicateInitField::read`; assign each field once
+  --> tests/ui/fail/pagination/pagination_syntax.rs:65:79
    |
-79 |         paginate via crate::Controller { state -> client.offset; }
-   |                                                   ^^^^^^
+65 |             paginate via OffsetPagination { init OffsetInit { offset: offset, offset: 0 }; cursor -> offset; }
+   |                                                                               ^^^^^^
 
-error: a live pagination binding may update only an endpoint-owned slot (`field -> endpoint.name`)
-  --> tests/ui/fail/pagination/pagination_syntax.rs:90:51
+error: note: first assignment here
+  --> tests/ui/fail/pagination/pagination_syntax.rs:65:63
    |
-90 |         paginate via crate::Controller { state -> secret.offset; }
-   |                                                   ^^^^^^
+65 |             paginate via OffsetPagination { init OffsetInit { offset: offset, offset: 0 }; cursor -> offset; }
+   |                                                               ^^^^^^
 
-error: a live pagination binding may update only an endpoint-owned slot (`field -> endpoint.name`)
-   --> tests/ui/fail/pagination/pagination_syntax.rs:101:51
-    |
-101 |         paginate via crate::Controller { state -> credential.offset; }
-    |                                                   ^^^^^^^^^^
+error: [C3-PAGE] the pagination block of endpoint `MissingCursor::read` ends with `cursor -> slot;` or `cursor -> (a, b);`
+  --> tests/ui/fail/pagination/pagination_syntax.rs:75:81
+   |
+75 |             paginate via OffsetPagination { init OffsetInit { offset: offset }; }
+   |                                                                                 ^
 
-error: a live pagination destination must be one direct `endpoint.NAME` reference
-   --> tests/ui/fail/pagination/pagination_syntax.rs:112:66
-    |
-112 |         paginate via crate::Controller { state -> endpoint.offset.value; }
-    |                                                                  ^
+error: [C3-PAGE] cursor destinations of endpoint `QualifiedCursor::read` are bare endpoint-owned slots, never `endpoint.x`, client or scope values; declare `offset` as an endpoint parameter and write `cursor -> offset;`
+  --> tests/ui/fail/pagination/pagination_syntax.rs:85:91
+   |
+85 |             paginate via OffsetPagination { init OffsetInit { offset: offset }; cursor -> endpoint.offset; }
+   |                                                                                           ^^^^^^^^
 
-error: unexpected end of input, pagination fields require `-> endpoint.slot` or `= stable_initializer`
-   --> tests/ui/fail/pagination/pagination_syntax.rs:123:48
-    |
-123 |         paginate via crate::Controller { state }
-    |                                                ^
+error: [C3-PAGE] a tuple cursor destination of endpoint `SingleTupleCursor::read` names at least two endpoint slots; write `cursor -> slot;` for one slot
+  --> tests/ui/fail/pagination/pagination_syntax.rs:95:81
+   |
+95 |             paginate via OffsetPagination { init OffsetInit { offset: offset }; cursor -> (offset); }
+   |                                                                                 ^^^^^^
 
-error: a pagination controller field begins with its field name
-   --> tests/ui/fail/pagination/pagination_syntax.rs:134:42
+error: [C3-PAGE] unexpected tokens after `cursor -> ...;` in the pagination of endpoint `TrailingTokens::read`; the cursor mapping is the last statement
+   --> tests/ui/fail/pagination/pagination_syntax.rs:105:99
     |
-134 |         paginate via crate::Controller { .. }
-    |                                          ^
+105 |             paginate via OffsetPagination { init OffsetInit { offset: offset }; cursor -> offset; extra; }
+    |                                                                                                   ^^^^^
 
-error: pagination initializers accept only direct total owner references, supported literals, or Rust const/static paths
-   --> tests/ui/fail/pagination/pagination_syntax.rs:145:61
+error: [C3-OWNER] stable initializers accept a literal or a Rust constant path, not a call, method, macro, block, index or collection (in endpoint `CallInitializer::read`); name a supporting Rust constant instead
+   --> tests/ui/fail/pagination/pagination_syntax.rs:115:82
     |
-145 |         paginate via crate::Controller { state = crate::make(); }
-    |                                                             ^
+115 |             paginate via OffsetPagination { init OffsetInit { offset: crate::make() }; cursor -> offset; }
+    |                                                                                  ^
 
-error: pagination stable references must be one direct owner/value reference
-   --> tests/ui/fail/pagination/pagination_syntax.rs:156:64
+error: [C3-ATOM] arbitrary Rust expressions are not supported after a value reference in endpoint `MethodInitializer::read`; reference a declared value and adapt it with `via Encoder`
+   --> tests/ui/fail/pagination/pagination_syntax.rs:125:78
     |
-156 |         paginate via crate::Controller { state = endpoint.value.clone(); }
-    |                                                                ^
+125 |             paginate via OffsetPagination { init OffsetInit { offset: offset.clone() }; cursor -> offset; }
+    |                                                                              ^^^^^
 
-error: pagination initializers accept only direct total owner references, supported literals, or Rust const/static paths
-   --> tests/ui/fail/pagination/pagination_syntax.rs:167:50
+error: [C3-NAME] expected a value reference in endpoint `ClosureInitializer::read`, such as `id`, `client.tenant` or `regional.region`
+   --> tests/ui/fail/pagination/pagination_syntax.rs:135:71
     |
-167 |         paginate via crate::Controller { state = || 1; }
-    |                                                  ^
+135 |             paginate via OffsetPagination { init OffsetInit { offset: || 1 }; cursor -> offset; }
+    |                                                                       ^
 
-error: pagination initializers accept only direct total owner references, supported literals, or Rust const/static paths
-   --> tests/ui/fail/pagination/pagination_syntax.rs:178:50
+error: [C3-NAME] expected a value reference in endpoint `BlockInitializer::read`, such as `id`, `client.tenant` or `regional.region`
+   --> tests/ui/fail/pagination/pagination_syntax.rs:145:71
     |
-178 |         paginate via crate::Controller { state = async { 1 }; }
-    |                                                  ^^^^^
+145 |             paginate via OffsetPagination { init OffsetInit { offset: { 1 } }; cursor -> offset; }
+    |                                                                       ^
 
-error: pagination initializers accept only direct total owner references, supported literals, or Rust const/static paths
-   --> tests/ui/fail/pagination/pagination_syntax.rs:189:50
+error: [C3-ATOM] arbitrary Rust expressions are not supported in endpoint `MacroInitializer::read`; reference a declared value and adapt it with `via Encoder`
+   --> tests/ui/fail/pagination/pagination_syntax.rs:155:71
     |
-189 |         paginate via crate::Controller { state = { 1 }; }
-    |                                                  ^
+155 |             paginate via OffsetPagination { init OffsetInit { offset: format_args!("1") }; cursor -> offset; }
+    |                                                                       ^^^^^^^^^^^
 
-error: pagination initializers accept only direct total owner references, supported literals, or Rust const/static paths
-   --> tests/ui/fail/pagination/pagination_syntax.rs:200:61
+error: [C3-NAME] `default` is not a value of endpoint `DefaultKeywordInitializer::read`; declare `default` as a value of this owner, or qualify an ancestor value as `client.default` or `<scope>.default`
+   --> tests/ui/fail/pagination/pagination_syntax.rs:165:71
     |
-200 |         paginate via crate::Controller { state = format_args!("value"); }
-    |                                                             ^
+165 |             paginate via OffsetPagination { init OffsetInit { offset: default }; cursor -> offset; }
+    |                                                                       ^^^^^^^
 
-error: `default` is not a pagination initializer; use a stable literal, const/static path, or visible total owner reference
-   --> tests/ui/fail/pagination/pagination_syntax.rs:211:50
+error: [C3-AUTH] secrets and credentials are private sources and cannot appear in public expressions of endpoint `SecretInitializer::read`; apply a credential with `auth { ... }`
+   --> tests/ui/fail/pagination/pagination_syntax.rs:175:71
     |
-211 |         paginate via crate::Controller { state = default; }
-    |                                                  ^^^^^^^
+175 |             paginate via OffsetPagination { init OffsetInit { offset: secret.offset }; cursor -> offset; }
+    |                                                                       ^^^^^^

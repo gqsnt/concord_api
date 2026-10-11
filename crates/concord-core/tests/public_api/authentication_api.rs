@@ -6,9 +6,9 @@ use std::time::{Duration, Instant};
 use concord_core::contracts::{
     AccessToken, ApiKey, Auth, AuthError, AuthErrorKind, BasicCredential, BoxFuture,
     ChallengePolicy, CredentialHandle, CredentialMaterial, CredentialProvider, CredentialReason,
-    CredentialRef, CredentialRequest, HeaderName, HeaderValue, Method, ProviderBody,
-    ProviderBodyFactory, ProviderHttp, ProviderRequest, ProviderResponse, RecoveryMode,
-    SecretCredential, SecretString, StatusCode, Url,
+    CredentialRef, CredentialRequest, CredentialVersion, HeaderName, HeaderValue, Method,
+    ProviderBody, ProviderBodyFactory, ProviderHttp, ProviderRequest, ProviderResponse,
+    RecoveryMode, SecretCredential, SecretString, StatusCode, Url,
 };
 
 const SENTINEL: &str = "authentication-public-api-sentinel-f629cb6a8fe749ea";
@@ -88,16 +88,15 @@ fn exact_handle_and_auth_signatures(
     let _: Auth = Auth::basic(basic).challenge(ChallengePolicy::Unauthorized);
     let _: ChallengePolicy = ChallengePolicy::Never;
 
-    async fn mutate(handle: &CredentialHandle<SessionToken>) -> Result<(), AuthError> {
-        handle
-            .set(SessionToken(
-                SecretString::try_new("replacement").expect("bounded replacement"),
-            ))
-            .await?;
-        handle.clear().await
+    fn mutate(handle: &CredentialHandle<SessionToken>) -> Result<(), AuthError> {
+        let _version: CredentialVersion = handle.replace(SessionToken(
+            SecretString::try_new("replacement").expect("bounded replacement"),
+        ))?;
+        let _installed: Option<CredentialVersion> = handle.installed_version();
+        handle.clear()
     }
 
-    let _future = mutate(handle);
+    let _mutate: fn(&CredentialHandle<SessionToken>) -> Result<(), AuthError> = mutate;
 }
 
 #[allow(dead_code)]
@@ -116,6 +115,63 @@ async fn exact_provider_response_surface(http: ProviderHttp<'_>) -> Result<(), A
     let _: &concord_core::contracts::Bytes = response.body();
     let _: concord_core::contracts::Bytes = response.into_body();
     Ok(())
+}
+
+#[test]
+fn v3_storage_terminal_versions_origins_and_recovery_capabilities_are_public() {
+    use std::future::IntoFuture;
+
+    use concord_core::contracts::{
+        ApiError, ChallengeRecovery, CredentialSourceKind, Effect, MAX_CREDENTIAL_FLIGHT_WAITERS,
+        MAX_PROVIDER_ORIGINS, MAX_PROVIDER_SENDS, ProviderOrigin, ProviderOriginErrorKind,
+        RequestControls, StoreOutcome, StoreRequest,
+    };
+
+    fn assert_storage_terminal<T>()
+    where
+        T: RequestControls + IntoFuture<Output = Result<StoreOutcome, ApiError>> + Send,
+    {
+    }
+    assert_storage_terminal::<StoreRequest>();
+    assert_copy::<CredentialVersion>();
+    assert_send_sync_static::<ProviderOrigin>();
+
+    // Applications handle both outcomes exhaustively.
+    fn installed(outcome: StoreOutcome) -> Option<CredentialVersion> {
+        match outcome {
+            StoreOutcome::Installed { version } => Some(version),
+            StoreOutcome::Superseded => None,
+        }
+    }
+    assert_eq!(installed(StoreOutcome::Superseded), None);
+
+    let origin = ProviderOrigin::parse("https://Auth.Example.TEST/").expect("exact origin");
+    assert_eq!(origin.as_str(), "https://auth.example.test");
+    assert_eq!(origin.port(), 443);
+    assert_eq!(
+        ProviderOrigin::parse("https://auth.example.test/token")
+            .expect_err("paths are not origins")
+            .kind(),
+        ProviderOriginErrorKind::PathQueryOrFragment
+    );
+    // The provider default declares no helper destinations.
+    fn declared<P: CredentialProvider>(provider: &P) -> usize {
+        provider.http_origins().len()
+    }
+    assert_eq!(declared(&SessionProvider), 0);
+    assert_eq!(MAX_PROVIDER_ORIGINS, 32);
+    assert_eq!(MAX_PROVIDER_SENDS, 64);
+    assert_eq!(MAX_CREDENTIAL_FLIGHT_WAITERS, 4_096);
+
+    assert_eq!(
+        CredentialSourceKind::Endpoint.challenge_recovery(),
+        ChallengeRecovery::FinalRejectsInstalledVersion
+    );
+    assert!(!CredentialSourceKind::Bearer.may_replay_after_challenge(Effect::Safe));
+    assert!(
+        !CredentialSourceKind::CustomProvider.may_replay_after_challenge(Effect::NonIdempotent)
+    );
+    assert!(CredentialSourceKind::CustomProvider.may_replay_after_challenge(Effect::Idempotent));
 }
 
 #[test]

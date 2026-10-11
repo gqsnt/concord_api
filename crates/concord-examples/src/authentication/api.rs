@@ -4,15 +4,23 @@
 //! `default-tls`. Mode: construction and deterministic local execution.
 //! Documentation owner: `docs/auth.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
+//!
+//! Sources are not placements: `credentials` names where material comes from
+//! and each endpoint's `auth` block places it. The endpoint-backed `acquired`
+//! source starts empty; `login().store_as_acquired()` explicitly requests
+//! installation and reports a `StoreOutcome`.
 
-use concord::api;
 use concord::auth::OAuth2ClientCredentials;
+use concord::{Empty, api};
+
+use super::extensions::{ExampleProvider, ExampleToken, ExampleTokenCodec};
 
 // ANCHOR: authentication_contract
 api! {
     client AuthenticationApi {
-        timeout 30s;
         base "https://localhost/authentication-example/";
+        timeout 30s;
+
         // ANCHOR: credential_declarations
         credentials {
             secret api_key;
@@ -24,25 +32,25 @@ api! {
             credential login = basic(secret.username, secret.password);
             credential oauth = custom OAuth2ClientCredentials;
             credential acquired = endpoint login;
-            credential custom = custom crate::authentication::extensions::ExampleProvider;
+            credential custom = custom ExampleProvider;
         }
         // ANCHOR_END: credential_declarations
 
+        // ANCHOR: static_authentication_endpoints
+        GET login() -> ExampleToken via ExampleTokenCodec;
+        GET api_key() -> () via Empty { auth { header "X-Api-Key" = application_key; } }
+        GET token_authorization() -> () via Empty {
+            auth { authorization "Token" = application_key; }
+        }
+        GET bearer() -> () via Empty { auth { bearer static_bearer; } }
+        GET basic() -> () via Empty { auth { basic login; } }
+        // ANCHOR_END: static_authentication_endpoints
 
-    // ANCHOR: static_authentication_endpoints
-    GET login() -> crate::authentication::extensions::ExampleToken via crate::authentication::extensions::ExampleTokenCodec;
-    GET api_key() -> () via Empty { auth { header "X-Api-Key" = application_key; } }
-    GET token_authorization() -> () via Empty {
-        auth { authorization "Token" = application_key; }
+        // ANCHOR: provider_authentication_endpoints
+        GET o_auth() -> () via Empty { auth { bearer oauth challenge unauthorized; } }
+        GET endpoint_backed() -> () via Empty { auth { query "session" = acquired; } }
+        GET provider_backed() -> () via Empty { auth { bearer custom; } }
+        // ANCHOR_END: provider_authentication_endpoints
     }
-    GET bearer() -> () via Empty { auth { bearer static_bearer; } }
-    GET basic() -> () via Empty { auth { basic login; } }
-    // ANCHOR_END: static_authentication_endpoints
-
-    // ANCHOR: provider_authentication_endpoints
-    GET o_auth() -> () via Empty { auth { bearer oauth challenge unauthorized; } }
-    GET endpoint_backed() -> () via Empty { auth { query "session" = acquired; } }
-    GET provider_backed() -> () via Empty { auth { bearer custom; } }
-    // ANCHOR_END: provider_authentication_endpoints
-}}
+}
 // ANCHOR_END: authentication_contract

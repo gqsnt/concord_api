@@ -184,7 +184,8 @@ serde_json = "1"
 [System.IO.File]::WriteAllText((Join-Path $downstreamRoot 'Cargo.toml'), $manifest)
 
 $source = @'
-use concord::{api, prelude::*};
+use concord::inspection::RepresentationSource;
+use concord::{Json, api};
 
 api! {
     client PackagedApi {
@@ -193,15 +194,19 @@ api! {
         response Json;
 
         GET item(id: u64) -> serde_json::Value {
-            path ["items", endpoint.id];
+            path "items/{id}";
         }
     }
 }
 
 fn main() {
-    let endpoint = PackagedApi::unbound().item(7).description();
-    assert_eq!(endpoint.method().as_str(), "GET");
-    assert_eq!(endpoint.contract().unwrap().response().representation_origin(), "client");
+    let description = PackagedApi::unbound().item(7).description();
+    assert_eq!(description.method(), "GET");
+    let contract = description.contract().expect("packaged endpoint contract");
+    assert_eq!(
+        contract.result().representation().source(),
+        RepresentationSource::Inherited("PackagedApi")
+    );
 }
 '@
 [System.IO.File]::WriteAllText((Join-Path $downstreamRoot 'src/main.rs'), $source)

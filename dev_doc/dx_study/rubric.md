@@ -1,5 +1,7 @@
 # Gate 3 scoring and decision rubric
 
+**Status:** Part of the v2.1 Gate 3 packet described in [`README.md`](README.md); not revised for v3.
+
 ## Per-task score
 
 - `2`: correct result and correct ownership/reasoning without coaching;

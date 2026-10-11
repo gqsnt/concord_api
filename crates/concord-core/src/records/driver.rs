@@ -143,9 +143,17 @@ where
         self.pending = Bytes::new();
     }
 
+    /// Ends decoding and releases staged and pending bytes synchronously, for
+    /// example when the owning stream terminates for a non-record reason.
+    pub(super) fn release(&mut self) {
+        self.done = true;
+        self.input_requested = false;
+        self.release_bytes();
+    }
+
     #[cfg(test)]
     pub(super) fn staging_is_empty(&self) -> bool {
-        self.staging.is_empty()
+        self.staging.is_empty() && self.pending.is_empty()
     }
 }
 

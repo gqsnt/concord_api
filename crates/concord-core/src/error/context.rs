@@ -8,6 +8,7 @@ pub struct ClientBuildError {
     kind: ClientBuildErrorKind,
     input_field: Option<&'static str>,
     input_kind: Option<ClientInputKind>,
+    missing: Vec<(&'static str, ClientInputKind)>,
 }
 
 impl ClientBuildError {
@@ -16,6 +17,7 @@ impl ClientBuildError {
             kind,
             input_field: None,
             input_kind: None,
+            missing: Vec::new(),
         }
     }
 
@@ -24,6 +26,7 @@ impl ClientBuildError {
             kind: ClientBuildErrorKind::MissingInput,
             input_field: Some(field),
             input_kind: Some(input_kind),
+            missing: Vec::new(),
         }
     }
 
@@ -32,6 +35,56 @@ impl ClientBuildError {
             kind: ClientBuildErrorKind::InvalidCredential,
             input_field: Some(field),
             input_kind: Some(ClientInputKind::Secret),
+            missing: Vec::new(),
+        }
+    }
+
+    /// A trusted runtime-configuration setter received an invalid latest
+    /// value. `field` is the static setter name, never the value.
+    pub(crate) const fn invalid_runtime_setting(field: &'static str) -> Self {
+        Self {
+            kind: ClientBuildErrorKind::RuntimeConfiguration,
+            input_field: Some(field),
+            input_kind: None,
+            missing: Vec::new(),
+        }
+    }
+
+    /// A credential provider declared an origin set that is too large for the
+    /// configured capacity or contains a cleartext origin. `field` names the
+    /// generated provider input.
+    pub(crate) const fn invalid_provider_origins(field: &'static str) -> Self {
+        Self {
+            kind: ClientBuildErrorKind::InvalidProviderOrigins,
+            input_field: Some(field),
+            input_kind: Some(ClientInputKind::CredentialProvider),
+            missing: Vec::new(),
+        }
+    }
+
+    /// Accumulates every missing required generated input (§7.3). The first
+    /// entry is also reported through [`Self::input_field`]/[`Self::input_kind`].
+    pub(crate) fn missing_inputs(missing: Vec<(&'static str, ClientInputKind)>) -> Self {
+        let first = missing.first().copied();
+        Self {
+            kind: ClientBuildErrorKind::MissingInput,
+            input_field: first.map(|(field, _)| field),
+            input_kind: first.map(|(_, kind)| kind),
+            missing,
+        }
+    }
+
+    /// Returns every missing required generated input, in declaration order,
+    /// when this error accumulates them; a single-input error returns its
+    /// one field. Names are static setter identifiers, never values.
+    #[must_use]
+    pub fn missing_fields(&self) -> Vec<(&'static str, ClientInputKind)> {
+        if !self.missing.is_empty() {
+            return self.missing.clone();
+        }
+        match (self.kind, self.input_field, self.input_kind) {
+            (ClientBuildErrorKind::MissingInput, Some(field), Some(kind)) => vec![(field, kind)],
+            _ => Vec::new(),
         }
     }
 
@@ -69,6 +122,13 @@ impl fmt::Display for ClientBuildError {
             };
             write!(formatter, ": {reason} {input_kind:?} field `{field}`")?;
         }
+        if self.missing.len() > 1 {
+            write!(
+                formatter,
+                " (and {} more missing inputs)",
+                self.missing.len() - 1
+            )?;
+        }
         Ok(())
     }
 }
@@ -80,6 +140,7 @@ impl fmt::Debug for ClientBuildError {
             .field("kind", &self.kind)
             .field("input_field", &self.input_field)
             .field("input_kind", &self.input_kind)
+            .field("missing", &self.missing)
             .finish()
     }
 }
@@ -138,6 +199,7 @@ mod tests {
             ClientBuildErrorKind::RuntimeConfiguration => 9,
             ClientBuildErrorKind::LimiterUnavailable => 10,
             ClientBuildErrorKind::Internal => 11,
+            ClientBuildErrorKind::InvalidProviderOrigins => 12,
         }
     }
 
@@ -171,6 +233,7 @@ mod tests {
             ClientBuildErrorKind::RuntimeConfiguration,
             ClientBuildErrorKind::LimiterUnavailable,
             ClientBuildErrorKind::Internal,
+            ClientBuildErrorKind::InvalidProviderOrigins,
         ];
 
         for (index, kind) in kinds.iter().copied().enumerate() {

@@ -1,28 +1,25 @@
-error[E0599]: no method named `set` found for struct `CustomProviderCredentialHandle<M>` in the current scope
-  --> tests/ui/fail/authentication/authentication_custom_set_absent.rs:39:44
+error[E0599]: no method named `set_session` found for struct `Credentials<'a>` in the current scope
+  --> tests/ui/fail/authentication/authentication_custom_set_absent.rs:52:34
    |
-24 | / api! {
-25 | |     client Api {
-26 | |         timeout 30s;
-27 | |         base "http://example.test";
+33 | / api! {
+34 | |     client Api {
+35 | |         base "https://example.test";
+36 | |         credentials {
 ...  |
-32 | | }
-   | |_- method `set` not found for this struct
+44 | | }
+   | |_- method `set_session` not found for this struct
 ...
-39 |       let _ = client.credentials().session().set(SessionToken);
-   |                                              ^^^
+52 |       let _ = client.credentials().set_session(token);
+   |                                    ^^^^^^^^^^^
    |
-   = help: items from traits can only be used if the trait is implemented and in scope
-   = note: the following trait defines an item `set`, perhaps you need to implement it:
-           candidate #1: `bitflags::traits::Flags`
-help: there is a method `is_set` with a similar name, but with different arguments
-  --> tests/ui/fail/authentication/authentication_custom_set_absent.rs:24:1
+help: there is a method `clear_session` with a similar name, but with different arguments
+  --> tests/ui/fail/authentication/authentication_custom_set_absent.rs:33:1
    |
-24 | / api! {
-25 | |     client Api {
-26 | |         timeout 30s;
-27 | |         base "http://example.test";
+33 | / api! {
+34 | |     client Api {
+35 | |         base "https://example.test";
+36 | |         credentials {
 ...  |
-32 | | }
+44 | | }
    | |_^
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

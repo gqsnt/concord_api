@@ -1,4 +1,9 @@
-# Migration to Concord v2.1
+# Migration to Concord v2.1 (historical)
+
+**Historical:** this is the v2.0 to v2.1 guide, kept for reference. It
+describes the retired v2.1 surface, not the current product. To migrate
+Concord v2.1 code to v3, read [migration_v3.md](migration_v3.md) and use the
+`migrate-v3` tool.
 
 This guide targets the supplied v2.0.0 baseline at `f7464c5` directly. Some
 retired forms originated in its earlier v1 language lineage; the headings below
@@ -140,10 +145,11 @@ Migration rules:
 
 Do not preserve `?=`, `+=`, or `...` as public aliases.
 
-The migrated exact optional-control surface is compiled from this source:
+The v2.1 exact optional-control surface looked like this (historical; the v3
+spelling uses `set_x(v)` for payloads and `replace_x(Option<T>)` for exact
+replacement):
 
-<!-- concord-source: crates/concord-examples/src/contracts/full_dsl.rs#request_controls -->
-```rust
+```text
     let _: reference_api::StatusRequest = client
         .status()
         .set_verbose(Some(true))

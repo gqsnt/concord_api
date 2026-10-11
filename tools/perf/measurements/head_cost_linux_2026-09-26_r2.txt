@@ -1,0 +1,720 @@
+Concord steady (warm) request-head cost and allocation measurement, r2 remeasurement on the repaired tree (V3-O07,
+spec section 28.4; external review section 6), recorded verbatim from real runs.
+
+Supersedes nothing: head_cost_linux_2026-09-26.txt (e6d702a) and head_cost_linux_2026-09-26_final.txt (d30e23d) are
+kept unchanged as history. The first-use companion is first_use_linux_2026-09-26_r2.txt; the attribution of the
+deltas is in ATTRIBUTION.md, section "r2 remeasurement". These are measurements, not a performance acceptance.
+
+Host:        Linux 6.18.44-fc-v37 x86_64, Intel(R) Xeon(R) Processor @ 2.10GHz, 2 CPUs, 7 GiB RAM; the only job on
+             the host (no other cargo/rustc process during any timed block); load averages before/after every block
+             are in the log
+Toolchain:   rustc 1.95.0 (59807616e 2026-04-14), cargo 1.95.0 (f2d3ce0bd 2026-03-21), RUSTUP_TOOLCHAIN=stable
+Env:         CARGO_TARGET_DIR=/home/claude/targets/perf2 CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2 (offline, vendored)
+Profile:     `--release`; one target dir for both versions (the two concord-perf packages have different versions,
+             hence separate artifacts; each probe prints its package version, 2.1.0-beta.1 / 3.0.0-beta.1); the
+             executables were copied aside after each build (sha256 in the log)
+v3 source:   this workspace at commit 89b2cbcd1866e5ef58e908cf3e1fb9b1a0cea051, clean tree (0 modified/untracked
+             paths). It is the repaired tree ed1ef3c (all review repairs F01-F03 merged) plus two commits that only add
+             tools/perf/src/bin/head_first_use.rs (`git diff --stat ed1ef3c..89b2cbc`: that one file). The commit
+             adding this file changes only tools/perf/measurements/.
+v2.1 source: `git archive baseline-v2.1` = eefca26c80ffe67ab5b70d6605cc713d63549b89 (unmodified Concord v2.1 export),
+             extracted to /home/claude/scratch_perf/v21, with byte-identical copies of tools/perf/src/bin/head_cost.rs,
+             tools/perf/src/bin/head_first_use.rs and declaration_v2_1.rs.txt (as src/head_cost/declaration.rs)
+             added; hashes are in the log
+Probe:       tools/perf/src/bin/head_cost.rs, declaration.rs and declaration_v2_1.rs.txt are unchanged since the
+             earlier files (same sha256 as in head_cost_linux_2026-09-26_final.txt); the v2.1 head_cost executable
+             is byte-identical to the one measured there (sha256 d6a56267...)
+
+Commands (exit codes are in the log after every command):
+  cargo build --release --locked -p concord-perf --bin head_cost --bin head_first_use                          exit 0
+  cargo build --release --locked --offline --manifest-path <v2.1 export>/Cargo.toml -p concord-perf \
+        --bin head_cost --bin head_first_use                                                                   exit 0
+  Block 1: head_cost alternately, v2.1 first, 8 runs per version; block 2: the same with v3 first, 8 runs per
+  version (16 runs per version in total; the order was reversed to expose order effects). Every run exited 0.
+  (A preliminary pair of blocks at be5b95c, with byte-identical head_cost executables, gave the same counts and
+  bytes and times within the ranges below; it is not reported because the first-use probe changed afterwards.)
+
+Probe method (unchanged, head_cost.rs): every category runs 1000 untimed warm-up operations (execution: 50), then
+one counted batch of 2000 operations (execution: 200) under allocation-counter (a counting global allocator;
+current thread only, where planning and the current-thread execution runtime run), then 9 timed batches
+(execution: 5). "allocations/op" is the allocation COUNT per operation (realloc counts as an allocation) and
+"bytes/op" the allocated BYTES per operation: both are allocation-traffic counters, not peak resident memory or
+retained heap. "net allocations per batch" is allocations minus deallocations in the counted batch (negative
+where inputs prepared outside the counted region are freed inside it; 0 = nothing retained). "median/min ns/op"
+are over the timed batches. The counting allocator is active during the timed batches in both versions. The
+execution row uses the probe's own TCP_NODELAY loopback responder and includes building the request and its
+boxed IntoFuture.
+
+================================================================================================================
+Verbatim log: builds
+================================================================================================================
+measured v3 commit: 89b2cbcd1866e5ef58e908cf3e1fb9b1a0cea051
+status: 0 modified/untracked paths
+host: Linux 6.18.44-fc-v37 x86_64; model name	: Intel(R) Xeon(R) Processor @ 2.10GHz; 2 CPUs; 7 GiB RAM
+toolchain: rustc 1.95.0 (59807616e 2026-04-14); cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+env: RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=/home/claude/targets/perf2 CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2
+v2.1 export: eefca26c80ffe67ab5b70d6605cc713d63549b89 at /home/claude/scratch_perf/v21 (git archive baseline-v2.1, probe copies added)
+sha256 (worktree):
+c2855474bcd351b65961189e7ae1282c95f1d864b0cf874049ed5e33cb8d60a1  tools/perf/src/bin/head_cost.rs
+65f59778485ce7a27e473d06c9432268b812cf49bbd4e0b4cca522f7d65f80ca  tools/perf/src/bin/head_first_use.rs
+6a3c41fc23a82fbd3bdedb945b12bd6791b2d010f94a01cb21a752e250f10082  tools/perf/src/head_cost/declaration.rs
+9d521734c4e491909b5d9020339e0c195c8d043f713edd6050c52d77ea1bfdd2  tools/perf/src/head_cost/declaration_v2_1.rs.txt
+sha256 (v2.1 export copies):
+c2855474bcd351b65961189e7ae1282c95f1d864b0cf874049ed5e33cb8d60a1  /home/claude/scratch_perf/v21/tools/perf/src/bin/head_cost.rs
+65f59778485ce7a27e473d06c9432268b812cf49bbd4e0b4cca522f7d65f80ca  /home/claude/scratch_perf/v21/tools/perf/src/bin/head_first_use.rs
+9d521734c4e491909b5d9020339e0c195c8d043f713edd6050c52d77ea1bfdd2  /home/claude/scratch_perf/v21/tools/perf/src/head_cost/declaration.rs
+== builds (uptime:  23:37:33 up 10:52,  0 user,  load average: 0.29, 0.75, 0.84)
+$ cargo build --release --locked -p concord-perf --bin head_cost --bin head_first_use
+    Finished `release` profile [optimized] target(s) in 4.82s
+[build-v3] exit 0
+$ cargo build --release --locked --offline --manifest-path /home/claude/scratch_perf/v21/Cargo.toml -p concord-perf --bin head_cost --bin head_first_use
+    Finished `release` profile [optimized] target(s) in 6.49s
+[build-v21] exit 0
+executables copied aside:
+d6a562677033587a9c90b96249b3d7ed9f940531b254d3952f93116bdb573b30  /home/claude/scratch_perf/bin/head_cost_v2_1
+b4c586484cd4a4618ad7994aa216b13a9d2b434b3524aeafd7a4737ba9065deb  /home/claude/scratch_perf/bin/head_cost_v3
+76d1d3ab6f03443ff038592577616f50597a51eb009c214dbba2f00c0d53d859  /home/claude/scratch_perf/bin/head_first_use_v2_1
+c693548865b5686232b192656c120bd613dff3938ab1ccc800c563068ee0a7ee  /home/claude/scratch_perf/bin/head_first_use_v3
+== builds done (uptime:  23:37:45 up 10:52,  0 user,  load average: 0.55, 0.79, 0.85)
+
+================================================================================================================
+Verbatim log: block 1 (v2.1 first)
+================================================================================================================
+== head_cost runs (uptime before:  23:38:12 up 10:53,  0 user,  load average: 0.33, 0.71, 0.82)
+== head_cost run 1: v2.1 (/home/claude/scratch_perf/bin/head_cost_v2_1)
+$ /home/claude/scratch_perf/bin/head_cost_v2_1
+concord-perf 2.1.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 168.0 | -10001 | 333 | 324 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 115 | 109 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 102 | 101 |
+| bound-head plan: scope + endpoint path (client.plan) | 49.00 | 3402.0 | 0 | 3047 | 2990 |
+| bound-head plan: query program (search) | 82.00 | 6143.0 | 0 | 4688 | 4577 |
+| bound-head plan: bearer placement (protected) | 41.00 | 3014.0 | 0 | 2652 | 2566 |
+| bound-head plan: rate policy (limited) | 62.00 | 3883.0 | 0 | 3333 | 3250 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 24647.0 | 0 | 62548 | 47601 |
+[head_cost run 1 v2.1] exit 0
+== head_cost run 1: v3 (/home/claude/scratch_perf/bin/head_cost_v3)
+$ /home/claude/scratch_perf/bin/head_cost_v3
+concord-perf 3.0.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 176.0 | -10001 | 396 | 304 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 107 | 100 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 83 | 83 |
+| bound-head plan: scope + endpoint path (client.plan) | 48.00 | 3378.0 | 0 | 3589 | 3375 |
+| bound-head plan: query program (search) | 81.00 | 6119.0 | 0 | 4951 | 4897 |
+| bound-head plan: bearer placement (protected) | 40.00 | 2990.0 | 0 | 2732 | 2713 |
+| bound-head plan: rate policy (limited) | 56.00 | 4213.0 | 0 | 3330 | 3264 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 27991.0 | 0 | 62016 | 58822 |
+[head_cost run 1 v3] exit 0
+== head_cost run 2: v2.1 (/home/claude/scratch_perf/bin/head_cost_v2_1)
+$ /home/claude/scratch_perf/bin/head_cost_v2_1
+concord-perf 2.1.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 168.0 | -10001 | 332 | 327 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 113 | 110 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 101 | 101 |
+| bound-head plan: scope + endpoint path (client.plan) | 49.00 | 3402.0 | 0 | 2999 | 2982 |
+| bound-head plan: query program (search) | 82.00 | 6143.0 | 0 | 4703 | 4608 |
+| bound-head plan: bearer placement (protected) | 41.00 | 3014.0 | 0 | 2592 | 2556 |
+| bound-head plan: rate policy (limited) | 62.00 | 3883.0 | 0 | 3371 | 3297 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 24647.0 | 0 | 69975 | 62699 |
+[head_cost run 2 v2.1] exit 0
+== head_cost run 2: v3 (/home/claude/scratch_perf/bin/head_cost_v3)
+$ /home/claude/scratch_perf/bin/head_cost_v3
+concord-perf 3.0.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 176.0 | -10001 | 295 | 291 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 106 | 100 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 85 | 85 |
+| bound-head plan: scope + endpoint path (client.plan) | 48.00 | 3378.0 | 0 | 3239 | 3156 |
+| bound-head plan: query program (search) | 81.00 | 6119.0 | 0 | 4896 | 4855 |
+| bound-head plan: bearer placement (protected) | 40.00 | 2990.0 | 0 | 2674 | 2660 |
+| bound-head plan: rate policy (limited) | 56.00 | 4213.0 | 0 | 3246 | 3203 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 27991.0 | 0 | 63038 | 61148 |
+[head_cost run 2 v3] exit 0
+== head_cost run 3: v2.1 (/home/claude/scratch_perf/bin/head_cost_v2_1)
+$ /home/claude/scratch_perf/bin/head_cost_v2_1
+concord-perf 2.1.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 168.0 | -10001 | 339 | 322 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 164 | 152 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 137 | 103 |
+| bound-head plan: scope + endpoint path (client.plan) | 49.00 | 3402.0 | 0 | 3059 | 3000 |
+| bound-head plan: query program (search) | 82.00 | 6143.0 | 0 | 4837 | 4676 |
+| bound-head plan: bearer placement (protected) | 41.00 | 3014.0 | 0 | 2694 | 2621 |
+| bound-head plan: rate policy (limited) | 62.00 | 3883.0 | 0 | 3492 | 3377 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 24647.0 | 0 | 62030 | 59812 |
+[head_cost run 3 v2.1] exit 0
+== head_cost run 3: v3 (/home/claude/scratch_perf/bin/head_cost_v3)
+$ /home/claude/scratch_perf/bin/head_cost_v3
+concord-perf 3.0.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 176.0 | -10001 | 441 | 436 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 152 | 138 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 124 | 123 |
+| bound-head plan: scope + endpoint path (client.plan) | 48.00 | 3378.0 | 0 | 3249 | 3132 |
+| bound-head plan: query program (search) | 81.00 | 6119.0 | 0 | 4947 | 4881 |
+| bound-head plan: bearer placement (protected) | 40.00 | 2990.0 | 0 | 2761 | 2650 |
+| bound-head plan: rate policy (limited) | 56.00 | 4213.0 | 0 | 3375 | 3288 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 27991.0 | 0 | 62030 | 61450 |
+[head_cost run 3 v3] exit 0
+== head_cost run 4: v2.1 (/home/claude/scratch_perf/bin/head_cost_v2_1)
+$ /home/claude/scratch_perf/bin/head_cost_v2_1
+concord-perf 2.1.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 168.0 | -10001 | 344 | 332 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 125 | 109 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 102 | 101 |
+| bound-head plan: scope + endpoint path (client.plan) | 49.00 | 3402.0 | 0 | 2977 | 2966 |
+| bound-head plan: query program (search) | 82.00 | 6143.0 | 0 | 4708 | 4619 |
+| bound-head plan: bearer placement (protected) | 41.00 | 3014.0 | 0 | 2668 | 2566 |
+| bound-head plan: rate policy (limited) | 62.00 | 3883.0 | 0 | 3377 | 3312 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 24647.0 | 0 | 58316 | 58214 |
+[head_cost run 4 v2.1] exit 0
+== head_cost run 4: v3 (/home/claude/scratch_perf/bin/head_cost_v3)
+$ /home/claude/scratch_perf/bin/head_cost_v3
+concord-perf 3.0.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 176.0 | -10001 | 298 | 292 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 108 | 100 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 86 | 84 |
+| bound-head plan: scope + endpoint path (client.plan) | 48.00 | 3378.0 | 0 | 3181 | 3104 |
+| bound-head plan: query program (search) | 81.00 | 6119.0 | 0 | 5003 | 4923 |
+| bound-head plan: bearer placement (protected) | 40.00 | 2990.0 | 0 | 2757 | 2707 |
+| bound-head plan: rate policy (limited) | 56.00 | 4213.0 | 0 | 5778 | 5559 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 27991.0 | 0 | 75582 | 64661 |
+[head_cost run 4 v3] exit 0
+== head_cost run 5: v2.1 (/home/claude/scratch_perf/bin/head_cost_v2_1)
+$ /home/claude/scratch_perf/bin/head_cost_v2_1
+concord-perf 2.1.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 168.0 | -10001 | 333 | 326 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 113 | 109 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 101 | 101 |
+| bound-head plan: scope + endpoint path (client.plan) | 49.00 | 3402.0 | 0 | 3000 | 2962 |
+| bound-head plan: query program (search) | 82.00 | 6143.0 | 0 | 4687 | 4614 |
+| bound-head plan: bearer placement (protected) | 41.00 | 3014.0 | 0 | 2569 | 2547 |
+| bound-head plan: rate policy (limited) | 62.00 | 3883.0 | 0 | 3331 | 3233 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 24647.0 | 0 | 59844 | 58550 |
+[head_cost run 5 v2.1] exit 0
+== head_cost run 5: v3 (/home/claude/scratch_perf/bin/head_cost_v3)
+$ /home/claude/scratch_perf/bin/head_cost_v3
+concord-perf 3.0.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 176.0 | -10001 | 304 | 293 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 106 | 100 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 84 | 84 |
+| bound-head plan: scope + endpoint path (client.plan) | 48.00 | 3378.0 | 0 | 3303 | 3227 |
+| bound-head plan: query program (search) | 81.00 | 6119.0 | 0 | 5019 | 4960 |
+| bound-head plan: bearer placement (protected) | 40.00 | 2990.0 | 0 | 2692 | 2663 |
+| bound-head plan: rate policy (limited) | 56.00 | 4213.0 | 0 | 3310 | 3281 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 27991.0 | 0 | 61273 | 50527 |
+[head_cost run 5 v3] exit 0
+== head_cost run 6: v2.1 (/home/claude/scratch_perf/bin/head_cost_v2_1)
+$ /home/claude/scratch_perf/bin/head_cost_v2_1
+concord-perf 2.1.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 168.0 | -10001 | 341 | 331 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 118 | 109 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 101 | 100 |
+| bound-head plan: scope + endpoint path (client.plan) | 49.00 | 3402.0 | 0 | 3059 | 2958 |
+| bound-head plan: query program (search) | 82.00 | 6143.0 | 0 | 4702 | 4608 |
+| bound-head plan: bearer placement (protected) | 41.00 | 3014.0 | 0 | 2579 | 2548 |
+| bound-head plan: rate policy (limited) | 62.00 | 3883.0 | 0 | 3352 | 3306 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 24647.0 | 0 | 62479 | 57706 |
+[head_cost run 6 v2.1] exit 0
+== head_cost run 6: v3 (/home/claude/scratch_perf/bin/head_cost_v3)
+$ /home/claude/scratch_perf/bin/head_cost_v3
+concord-perf 3.0.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 176.0 | -10001 | 296 | 284 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 105 | 100 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 84 | 84 |
+| bound-head plan: scope + endpoint path (client.plan) | 48.00 | 3378.0 | 0 | 3227 | 3147 |
+| bound-head plan: query program (search) | 81.00 | 6119.0 | 0 | 4885 | 4770 |
+| bound-head plan: bearer placement (protected) | 40.00 | 2990.0 | 0 | 2694 | 2620 |
+| bound-head plan: rate policy (limited) | 56.00 | 4213.0 | 0 | 3240 | 3158 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 27991.0 | 0 | 86073 | 61763 |
+[head_cost run 6 v3] exit 0
+== head_cost run 7: v2.1 (/home/claude/scratch_perf/bin/head_cost_v2_1)
+$ /home/claude/scratch_perf/bin/head_cost_v2_1
+concord-perf 2.1.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 168.0 | -10001 | 335 | 324 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 115 | 109 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 101 | 101 |
+| bound-head plan: scope + endpoint path (client.plan) | 49.00 | 3402.0 | 0 | 2999 | 2975 |
+| bound-head plan: query program (search) | 82.00 | 6143.0 | 0 | 4622 | 4594 |
+| bound-head plan: bearer placement (protected) | 41.00 | 3014.0 | 0 | 2653 | 2583 |
+| bound-head plan: rate policy (limited) | 62.00 | 3883.0 | 0 | 3320 | 3277 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 24647.0 | 0 | 59448 | 58570 |
+[head_cost run 7 v2.1] exit 0
+== head_cost run 7: v3 (/home/claude/scratch_perf/bin/head_cost_v3)
+$ /home/claude/scratch_perf/bin/head_cost_v3
+concord-perf 3.0.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 176.0 | -10001 | 296 | 292 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 106 | 100 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 86 | 84 |
+| bound-head plan: scope + endpoint path (client.plan) | 48.00 | 3378.0 | 0 | 3214 | 3115 |
+| bound-head plan: query program (search) | 81.00 | 6119.0 | 0 | 4947 | 4913 |
+| bound-head plan: bearer placement (protected) | 40.00 | 2990.0 | 0 | 2730 | 2665 |
+| bound-head plan: rate policy (limited) | 56.00 | 4213.0 | 0 | 3291 | 3258 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 27991.0 | 0 | 77203 | 65394 |
+[head_cost run 7 v3] exit 0
+== head_cost run 8: v2.1 (/home/claude/scratch_perf/bin/head_cost_v2_1)
+$ /home/claude/scratch_perf/bin/head_cost_v2_1
+concord-perf 2.1.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 168.0 | -10001 | 354 | 327 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 123 | 109 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 107 | 100 |
+| bound-head plan: scope + endpoint path (client.plan) | 49.00 | 3402.0 | 0 | 3031 | 2988 |
+| bound-head plan: query program (search) | 82.00 | 6143.0 | 0 | 4765 | 4653 |
+| bound-head plan: bearer placement (protected) | 41.00 | 3014.0 | 0 | 2627 | 2575 |
+| bound-head plan: rate policy (limited) | 62.00 | 3883.0 | 0 | 3354 | 3306 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 24647.0 | 0 | 62126 | 49013 |
+[head_cost run 8 v2.1] exit 0
+== head_cost run 8: v3 (/home/claude/scratch_perf/bin/head_cost_v3)
+$ /home/claude/scratch_perf/bin/head_cost_v3
+concord-perf 3.0.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 176.0 | -10001 | 299 | 293 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 118 | 101 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 85 | 84 |
+| bound-head plan: scope + endpoint path (client.plan) | 48.00 | 3378.0 | 0 | 3201 | 3148 |
+| bound-head plan: query program (search) | 81.00 | 6119.0 | 0 | 4994 | 4886 |
+| bound-head plan: bearer placement (protected) | 40.00 | 2990.0 | 0 | 2760 | 2692 |
+| bound-head plan: rate policy (limited) | 56.00 | 4213.0 | 0 | 3328 | 3266 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 27991.0 | 0 | 64670 | 59825 |
+[head_cost run 8 v3] exit 0
+== head_cost runs done (uptime after:  23:38:19 up 10:53,  0 user,  load average: 0.39, 0.72, 0.83)
+
+================================================================================================================
+Verbatim log: block 2 (v3 first)
+================================================================================================================
+== head_cost runs (uptime before:  23:38:19 up 10:53,  0 user,  load average: 0.39, 0.72, 0.83)
+== head_cost run 1: v3 (/home/claude/scratch_perf/bin/head_cost_v3)
+$ /home/claude/scratch_perf/bin/head_cost_v3
+concord-perf 3.0.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 176.0 | -10001 | 306 | 291 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 105 | 100 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 84 | 84 |
+| bound-head plan: scope + endpoint path (client.plan) | 48.00 | 3378.0 | 0 | 3256 | 3149 |
+| bound-head plan: query program (search) | 81.00 | 6119.0 | 0 | 5061 | 4948 |
+| bound-head plan: bearer placement (protected) | 40.00 | 2990.0 | 0 | 2782 | 2666 |
+| bound-head plan: rate policy (limited) | 56.00 | 4213.0 | 0 | 3425 | 3255 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 27991.0 | 0 | 60551 | 53010 |
+[head_cost run 1 v3] exit 0
+== head_cost run 1: v2.1 (/home/claude/scratch_perf/bin/head_cost_v2_1)
+$ /home/claude/scratch_perf/bin/head_cost_v2_1
+concord-perf 2.1.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 168.0 | -10001 | 334 | 326 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 113 | 110 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 103 | 100 |
+| bound-head plan: scope + endpoint path (client.plan) | 49.00 | 3402.0 | 0 | 3019 | 2933 |
+| bound-head plan: query program (search) | 82.00 | 6143.0 | 0 | 4500 | 4250 |
+| bound-head plan: bearer placement (protected) | 41.00 | 3014.0 | 0 | 2593 | 2556 |
+| bound-head plan: rate policy (limited) | 62.00 | 3883.0 | 0 | 3391 | 3288 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 24647.0 | 0 | 58647 | 58256 |
+[head_cost run 1 v2.1] exit 0
+== head_cost run 2: v3 (/home/claude/scratch_perf/bin/head_cost_v3)
+$ /home/claude/scratch_perf/bin/head_cost_v3
+concord-perf 3.0.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 176.0 | -10001 | 308 | 293 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 111 | 101 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 84 | 83 |
+| bound-head plan: scope + endpoint path (client.plan) | 48.00 | 3378.0 | 0 | 3248 | 3156 |
+| bound-head plan: query program (search) | 81.00 | 6119.0 | 0 | 5268 | 4958 |
+| bound-head plan: bearer placement (protected) | 40.00 | 2990.0 | 0 | 2746 | 2691 |
+| bound-head plan: rate policy (limited) | 56.00 | 4213.0 | 0 | 3277 | 3214 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 27991.0 | 0 | 62460 | 60805 |
+[head_cost run 2 v3] exit 0
+== head_cost run 2: v2.1 (/home/claude/scratch_perf/bin/head_cost_v2_1)
+$ /home/claude/scratch_perf/bin/head_cost_v2_1
+concord-perf 2.1.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 168.0 | -10001 | 397 | 351 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 143 | 114 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 111 | 98 |
+| bound-head plan: scope + endpoint path (client.plan) | 49.00 | 3402.0 | 0 | 3548 | 3058 |
+| bound-head plan: query program (search) | 82.00 | 6143.0 | 0 | 4684 | 4570 |
+| bound-head plan: bearer placement (protected) | 41.00 | 3014.0 | 0 | 2672 | 2589 |
+| bound-head plan: rate policy (limited) | 62.00 | 3883.0 | 0 | 3339 | 3285 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 24647.0 | 0 | 60010 | 58364 |
+[head_cost run 2 v2.1] exit 0
+== head_cost run 3: v3 (/home/claude/scratch_perf/bin/head_cost_v3)
+$ /home/claude/scratch_perf/bin/head_cost_v3
+concord-perf 3.0.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 176.0 | -10001 | 307 | 289 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 105 | 100 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 84 | 84 |
+| bound-head plan: scope + endpoint path (client.plan) | 48.00 | 3378.0 | 0 | 3328 | 3204 |
+| bound-head plan: query program (search) | 81.00 | 6119.0 | 0 | 4966 | 4870 |
+| bound-head plan: bearer placement (protected) | 40.00 | 2990.0 | 0 | 2708 | 2650 |
+| bound-head plan: rate policy (limited) | 56.00 | 4213.0 | 0 | 4133 | 3257 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 27991.0 | 0 | 59876 | 59460 |
+[head_cost run 3 v3] exit 0
+== head_cost run 3: v2.1 (/home/claude/scratch_perf/bin/head_cost_v2_1)
+$ /home/claude/scratch_perf/bin/head_cost_v2_1
+concord-perf 2.1.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 168.0 | -10001 | 335 | 332 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 118 | 112 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 102 | 101 |
+| bound-head plan: scope + endpoint path (client.plan) | 49.00 | 3402.0 | 0 | 3020 | 3003 |
+| bound-head plan: query program (search) | 82.00 | 6143.0 | 0 | 4700 | 4629 |
+| bound-head plan: bearer placement (protected) | 41.00 | 3014.0 | 0 | 2667 | 2628 |
+| bound-head plan: rate policy (limited) | 62.00 | 3883.0 | 0 | 3324 | 3284 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 24647.0 | 0 | 59375 | 57563 |
+[head_cost run 3 v2.1] exit 0
+== head_cost run 4: v3 (/home/claude/scratch_perf/bin/head_cost_v3)
+$ /home/claude/scratch_perf/bin/head_cost_v3
+concord-perf 3.0.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 176.0 | -10001 | 299 | 290 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 106 | 100 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 84 | 84 |
+| bound-head plan: scope + endpoint path (client.plan) | 48.00 | 3378.0 | 0 | 3153 | 3114 |
+| bound-head plan: query program (search) | 81.00 | 6119.0 | 0 | 4948 | 4884 |
+| bound-head plan: bearer placement (protected) | 40.00 | 2990.0 | 0 | 2710 | 2662 |
+| bound-head plan: rate policy (limited) | 56.00 | 4213.0 | 0 | 3377 | 3278 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 27991.0 | 0 | 61204 | 58952 |
+[head_cost run 4 v3] exit 0
+== head_cost run 4: v2.1 (/home/claude/scratch_perf/bin/head_cost_v2_1)
+$ /home/claude/scratch_perf/bin/head_cost_v2_1
+concord-perf 2.1.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 168.0 | -10001 | 339 | 326 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 115 | 112 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 101 | 101 |
+| bound-head plan: scope + endpoint path (client.plan) | 49.00 | 3402.0 | 0 | 2997 | 2957 |
+| bound-head plan: query program (search) | 82.00 | 6143.0 | 0 | 4656 | 4542 |
+| bound-head plan: bearer placement (protected) | 41.00 | 3014.0 | 0 | 2630 | 2559 |
+| bound-head plan: rate policy (limited) | 62.00 | 3883.0 | 0 | 3450 | 3375 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 24647.0 | 0 | 58924 | 58875 |
+[head_cost run 4 v2.1] exit 0
+== head_cost run 5: v3 (/home/claude/scratch_perf/bin/head_cost_v3)
+$ /home/claude/scratch_perf/bin/head_cost_v3
+concord-perf 3.0.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 176.0 | -10001 | 294 | 285 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 103 | 98 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 83 | 83 |
+| bound-head plan: scope + endpoint path (client.plan) | 48.00 | 3378.0 | 0 | 3171 | 3116 |
+| bound-head plan: query program (search) | 81.00 | 6119.0 | 0 | 5046 | 4978 |
+| bound-head plan: bearer placement (protected) | 40.00 | 2990.0 | 0 | 2749 | 2699 |
+| bound-head plan: rate policy (limited) | 56.00 | 4213.0 | 0 | 3287 | 3205 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 27991.0 | 0 | 60276 | 59380 |
+[head_cost run 5 v3] exit 0
+== head_cost run 5: v2.1 (/home/claude/scratch_perf/bin/head_cost_v2_1)
+$ /home/claude/scratch_perf/bin/head_cost_v2_1
+concord-perf 2.1.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 168.0 | -10001 | 341 | 331 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 115 | 107 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 101 | 100 |
+| bound-head plan: scope + endpoint path (client.plan) | 49.00 | 3402.0 | 0 | 3016 | 2903 |
+| bound-head plan: query program (search) | 82.00 | 6143.0 | 0 | 7766 | 4565 |
+| bound-head plan: bearer placement (protected) | 41.00 | 3014.0 | 0 | 2554 | 2545 |
+| bound-head plan: rate policy (limited) | 62.00 | 3883.0 | 0 | 3447 | 3258 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 24647.0 | 0 | 59869 | 58278 |
+[head_cost run 5 v2.1] exit 0
+== head_cost run 6: v3 (/home/claude/scratch_perf/bin/head_cost_v3)
+$ /home/claude/scratch_perf/bin/head_cost_v3
+concord-perf 3.0.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 176.0 | -10001 | 300 | 293 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 105 | 100 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 85 | 85 |
+| bound-head plan: scope + endpoint path (client.plan) | 48.00 | 3378.0 | 0 | 3129 | 3093 |
+| bound-head plan: query program (search) | 81.00 | 6119.0 | 0 | 5007 | 4971 |
+| bound-head plan: bearer placement (protected) | 40.00 | 2990.0 | 0 | 2684 | 2664 |
+| bound-head plan: rate policy (limited) | 56.00 | 4213.0 | 0 | 3271 | 3143 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 27991.0 | 0 | 62676 | 61128 |
+[head_cost run 6 v3] exit 0
+== head_cost run 6: v2.1 (/home/claude/scratch_perf/bin/head_cost_v2_1)
+$ /home/claude/scratch_perf/bin/head_cost_v2_1
+concord-perf 2.1.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 168.0 | -10001 | 336 | 333 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 115 | 109 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 102 | 97 |
+| bound-head plan: scope + endpoint path (client.plan) | 49.00 | 3402.0 | 0 | 3053 | 2977 |
+| bound-head plan: query program (search) | 82.00 | 6143.0 | 0 | 4716 | 4642 |
+| bound-head plan: bearer placement (protected) | 41.00 | 3014.0 | 0 | 2592 | 2561 |
+| bound-head plan: rate policy (limited) | 62.00 | 3883.0 | 0 | 3317 | 3272 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 24647.0 | 0 | 59121 | 36084 |
+[head_cost run 6 v2.1] exit 0
+== head_cost run 7: v3 (/home/claude/scratch_perf/bin/head_cost_v3)
+$ /home/claude/scratch_perf/bin/head_cost_v3
+concord-perf 3.0.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 176.0 | -10001 | 299 | 293 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 107 | 101 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 87 | 85 |
+| bound-head plan: scope + endpoint path (client.plan) | 48.00 | 3378.0 | 0 | 3198 | 3110 |
+| bound-head plan: query program (search) | 81.00 | 6119.0 | 0 | 4938 | 4915 |
+| bound-head plan: bearer placement (protected) | 40.00 | 2990.0 | 0 | 2723 | 2704 |
+| bound-head plan: rate policy (limited) | 56.00 | 4213.0 | 0 | 3282 | 3247 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 27991.0 | 0 | 59718 | 59203 |
+[head_cost run 7 v3] exit 0
+== head_cost run 7: v2.1 (/home/claude/scratch_perf/bin/head_cost_v2_1)
+$ /home/claude/scratch_perf/bin/head_cost_v2_1
+concord-perf 2.1.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 168.0 | -10001 | 336 | 324 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 113 | 110 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 104 | 102 |
+| bound-head plan: scope + endpoint path (client.plan) | 49.00 | 3402.0 | 0 | 2974 | 2953 |
+| bound-head plan: query program (search) | 82.00 | 6143.0 | 0 | 4612 | 4568 |
+| bound-head plan: bearer placement (protected) | 41.00 | 3014.0 | 0 | 2620 | 2548 |
+| bound-head plan: rate policy (limited) | 62.00 | 3883.0 | 0 | 3276 | 3247 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 24647.0 | 0 | 59608 | 58013 |
+[head_cost run 7 v2.1] exit 0
+== head_cost run 8: v3 (/home/claude/scratch_perf/bin/head_cost_v3)
+$ /home/claude/scratch_perf/bin/head_cost_v3
+concord-perf 3.0.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 176.0 | -10001 | 304 | 300 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 106 | 101 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 84 | 84 |
+| bound-head plan: scope + endpoint path (client.plan) | 48.00 | 3378.0 | 0 | 3203 | 3140 |
+| bound-head plan: query program (search) | 81.00 | 6119.0 | 0 | 4916 | 4872 |
+| bound-head plan: bearer placement (protected) | 40.00 | 2990.0 | 0 | 2858 | 2677 |
+| bound-head plan: rate policy (limited) | 56.00 | 4213.0 | 0 | 3472 | 3331 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 27991.0 | 0 | 63558 | 61609 |
+[head_cost run 8 v3] exit 0
+== head_cost run 8: v2.1 (/home/claude/scratch_perf/bin/head_cost_v2_1)
+$ /home/claude/scratch_perf/bin/head_cost_v2_1
+concord-perf 2.1.0-beta.1 head-cost probe: warmup 1000, batch 2000, rounds 9; execution warmup 50, batch 200, rounds 5
+planned show: https://head-cost.example.test/v1/records/archive/item-1?tenant=tenant-a (2 public header(s))
+planned search: https://head-cost.example.test/v1/records/archive/search?tenant=tenant-a&term=rust&count=25&tag=stable&tag=featured (2 public header(s))
+planned protected: https://head-cost.example.test/v1/protected?tenant=tenant-a (2 public header(s))
+planned limited: https://head-cost.example.test/v1/limited?tenant=tenant-a (2 public header(s))
+| operation | allocations/op | bytes/op | net allocations per batch | median ns/op | min ns/op |
+|---|---:|---:|---:|---:|---:|
+| direct request construction (scope + search) | 5.00 | 168.0 | -10001 | 334 | 325 |
+| unbound endpoint construction (scope + show) | 2.00 | 80.0 | -4001 | 113 | 109 |
+| request binding (client.request) | 0.00 | 0.0 | -8001 | 101 | 101 |
+| bound-head plan: scope + endpoint path (client.plan) | 49.00 | 3402.0 | 0 | 3614 | 2949 |
+| bound-head plan: query program (search) | 82.00 | 6143.0 | 0 | 4631 | 4544 |
+| bound-head plan: bearer placement (protected) | 41.00 | 3014.0 | 0 | 2627 | 2556 |
+| bound-head plan: rate policy (limited) | 62.00 | 3883.0 | 0 | 3370 | 3261 |
+| managed execution, client thread (loopback, keep-alive) | 63.00 | 24647.0 | 0 | 59763 | 47467 |
+[head_cost run 8 v2.1] exit 0
+== head_cost runs done (uptime after:  23:38:25 up 10:53,  0 user,  load average: 0.44, 0.72, 0.83)
+
+================================================================================================================
+Derived comparison (v3 relative to v2.1; same host, toolchain, profile and harness)
+================================================================================================================
+
+Allocation counts and bytes are deterministic: all 16 runs of a version reported identical values (the script
+asserts this). Times: "median of medians" is the median of the per-run medians, "min" the minimum over all timed
+batches of all runs of that version.
+
+Both blocks combined (16 runs per version; computed by a scratch script from the two logs above):
+runs: v2.1 16, v3 16
+| operation | allocs/op v2.1 -> v3 | bytes/op v2.1 -> v3 | median of medians ns v2.1 -> v3 | min ns v2.1 -> v3 | per-run medians v2.1 | per-run medians v3 |
+|---|---|---|---|---|---|---|
+| direct request construction (scope + search) | 5 -> 5 (+0) | 168 -> 176 (+8, +4.8%) | 336 -> 300 (-10.9%) | 322 -> 284 (-11.8%) | 333, 332, 339, 344, 333, 341, 335, 354, 334, 397, 335, 339, 341, 336, 336, 334 | 396, 295, 441, 298, 304, 296, 296, 299, 306, 308, 307, 299, 294, 300, 299, 304 |
+| unbound endpoint construction (scope + show) | 2 -> 2 (+0) | 80 -> 80 (+0, +0.0%) | 115 -> 106 (-7.8%) | 107 -> 98 (-8.4%) | 115, 113, 164, 125, 113, 118, 115, 123, 113, 143, 118, 115, 115, 115, 113, 113 | 107, 106, 152, 108, 106, 105, 106, 118, 105, 111, 105, 106, 103, 105, 107, 106 |
+| request binding (client.request) | 0 -> 0 (+0) | 0 -> 0 (+0, n/a) | 102 -> 84 (-17.6%) | 97 -> 83 (-14.4%) | 102, 101, 137, 102, 101, 101, 101, 107, 103, 111, 102, 101, 101, 102, 104, 101 | 83, 85, 124, 86, 84, 84, 86, 85, 84, 84, 84, 84, 83, 85, 87, 84 |
+| bound-head plan: scope + endpoint path (client.plan) | 49 -> 48 (-1) | 3402 -> 3378 (-24, -0.7%) | 3020 -> 3220 (+6.7%) | 2903 -> 3093 (+6.5%) | 3047, 2999, 3059, 2977, 3000, 3059, 2999, 3031, 3019, 3548, 3020, 2997, 3016, 3053, 2974, 3614 | 3589, 3239, 3249, 3181, 3303, 3227, 3214, 3201, 3256, 3248, 3328, 3153, 3171, 3129, 3198, 3203 |
+| bound-head plan: query program (search) | 82 -> 81 (-1) | 6143 -> 6119 (-24, -0.4%) | 4694 -> 4958 (+5.6%) | 4250 -> 4770 (+12.2%) | 4688, 4703, 4837, 4708, 4687, 4702, 4622, 4765, 4500, 4684, 4700, 4656, 7766, 4716, 4612, 4631 | 4951, 4896, 4947, 5003, 5019, 4885, 4947, 4994, 5061, 5268, 4966, 4948, 5046, 5007, 4938, 4916 |
+| bound-head plan: bearer placement (protected) | 41 -> 40 (-1) | 3014 -> 2990 (-24, -0.8%) | 2627 -> 2731 (+4.0%) | 2545 -> 2620 (+2.9%) | 2652, 2592, 2694, 2668, 2569, 2579, 2653, 2627, 2593, 2672, 2667, 2630, 2554, 2592, 2620, 2627 | 2732, 2674, 2761, 2757, 2692, 2694, 2730, 2760, 2782, 2746, 2708, 2710, 2749, 2684, 2723, 2858 |
+| bound-head plan: rate policy (limited) | 62 -> 56 (-6) | 3883 -> 4213 (+330, +8.5%) | 3353 -> 3319 (-1.0%) | 3233 -> 3143 (-2.8%) | 3333, 3371, 3492, 3377, 3331, 3352, 3320, 3354, 3391, 3339, 3324, 3450, 3447, 3317, 3276, 3370 | 3330, 3246, 3375, 5778, 3310, 3240, 3291, 3328, 3425, 3277, 4133, 3377, 3287, 3271, 3282, 3472 |
+| managed execution, client thread (loopback, keep-alive) | 63 -> 63 (+0) | 24647 -> 27991 (+3344, +13.6%) | 59804 -> 62245 (+4.1%) | 36084 -> 50527 (+40.0%) | 62548, 69975, 62030, 58316, 59844, 62479, 59448, 62126, 58647, 60010, 59375, 58924, 59869, 59121, 59608, 59763 | 62016, 63038, 62030, 75582, 61273, 86073, 77203, 64670, 60551, 62460, 59876, 61204, 60276, 62676, 59718, 63558 |
+
+Per block (median of the 8 per-run medians; min over the block):
+
+| operation | block 1 (v2.1 first) median | block 1 min | block 2 (v3 first) median | block 2 min |
+|---|---|---|---|---|
+| direct request construction | 337 -> 298 (-11.4%) | 322 -> 284 (-11.8%) | 336 -> 302 (-10.1%) | 324 -> 285 (-12.0%) |
+| unbound endpoint construction | 116 -> 106 (-8.6%) | 109 -> 100 (-8.3%) | 115 -> 106 (-8.3%) | 107 -> 98 (-8.4%) |
+| request binding | 102 -> 85 (-16.3%) | 100 -> 83 (-17.0%) | 102 -> 84 (-17.6%) | 97 -> 83 (-14.4%) |
+| plan: show (client.plan) | 3016 -> 3233 (+7.2%) | 2958 -> 3104 (+4.9%) | 3020 -> 3200 (+6.0%) | 2903 -> 3093 (+6.5%) |
+| plan: search (query program) | 4702 -> 4949 (+5.2%) | 4577 -> 4770 (+4.2%) | 4670 -> 4986 (+6.8%) | 4250 -> 4870 (+14.6%) |
+| plan: protected (bearer) | 2640 -> 2731 (+3.5%) | 2547 -> 2620 (+2.9%) | 2624 -> 2734 (+4.2%) | 2545 -> 2650 (+4.1%) |
+| plan: limited (rate policy) | 3353 -> 3319 (-1.0%) | 3233 -> 3158 (-2.3%) | 3354 -> 3332 (-0.7%) | 3247 -> 3143 (-3.2%) |
+| managed execution | 62078 -> 63854 (+2.9%) | 47601 -> 50527 (+6.1%) | 59492 -> 60878 (+2.3%) | 36084 -> 53010 (+46.9%) |
+
+Reading the numbers (the attribution is in ATTRIBUTION.md, "r2 remeasurement"):
+
+- Counts versus bytes. Equal or lower allocation COUNTS do not mean equal or lower allocated BYTES:
+    construction 5 = 5 allocations but +8 B/op (+4.8%); unbound construction and binding equal in both;
+    planning -1 allocation and -24 B in the show/search/protected rows; rate-policy planning -6 allocations but
+    +330 B/op (+8.5%); managed execution 63 = 63 allocations but +3,344 B/op (+13.6%: 24,647 -> 27,991).
+- The execution bytes grew since the earlier final file (d30e23d: 26,783 B/op, +2,136) and since the review's
+  figure (27,031 B/op, +2,384): 27,031 is exactly the value of commit a4d679a (slice E, EXEC-01 provider link),
+  and the remaining +960 B came with the F01 repair merge a20a331; F02 changed no execution byte. Per-commit
+  values and the field-level breakdown are in ATTRIBUTION.md.
+- Construction and binding are faster than v2.1 in both blocks (-8% to -18%). Planning time is +3% to +7%
+  (show, search, protected) at -1 allocation; the rate-policy row is at parity (-1% to -3%). These planning
+  deltas are larger than the instruction-count deltas (+0.6%, +0.1%, -0.6%, -9.1% per plan, ATTRIBUTION.md);
+  per-run medians of one version spread by about 3% here with occasional outliers (v2.1 search 7766 ns), so
+  about +/-5% remains the resolution of this time comparison.
+- Execution time is bimodal on this host in both versions (fast batches around 36-53 us, slow ones around
+  58-86 us per operation); the minimum columns therefore compare modes, not code (block 2: v2.1 reached the fast
+  mode once, v3 did not). Medians are +2.3% / +2.9%; the instruction count per execution is +4.3%, of which
+  about 83% is memcpy of the larger operation futures (ATTRIBUTION.md).

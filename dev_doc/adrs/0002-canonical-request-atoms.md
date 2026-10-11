@@ -1,6 +1,7 @@
 # ADR 0002 — Canonical request atoms, not implicit `Display`
 
-- **Status:** Selected and mechanically supported on Windows/Linux; human ergonomics remains unknown for public freeze
+- **Status:** Retained unchanged in v3.0.0-beta.1 (v3 specification §5.1, ATOM-01).
+- **v2.1 status (historical):** Selected and mechanically supported on Windows/Linux; human ergonomics remains unknown for public freeze. That platform evidence is v2.1 evidence; v3 was not run on Windows.
 
 ## Decision
 

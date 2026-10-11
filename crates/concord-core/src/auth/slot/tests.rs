@@ -87,6 +87,28 @@ impl CredentialProvider for SequenceProvider {
     }
 }
 
+/// A provider that always returns one fixed identity.
+struct FixedProvider {
+    id: usize,
+}
+
+impl CredentialProvider for FixedProvider {
+    type Material = TestMaterial;
+
+    fn acquire<'a>(
+        &'a self,
+        _context: CredentialRequest<'a>,
+    ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
+        let id = self.id;
+        Box::pin(async move {
+            Ok(TestMaterial {
+                id,
+                expires_at: None,
+            })
+        })
+    }
+}
+
 struct TestCore;
 
 impl TestCore {
@@ -151,7 +173,7 @@ async fn credential_versions_remain_monotonic_across_deterministic_mutations() {
                 .unwrap_or_else(|_| panic!("seed={SEED:#x} clear case={case_index}"));
         }
         selector
-            .set(TestMaterial {
+            .replace(TestMaterial {
                 id: case_index + 1,
                 expires_at: None,
             })
@@ -186,7 +208,7 @@ async fn built_in_replacement_exact_limit_succeeds_and_failure_preserves_materia
         .expect("initial ready material");
     let exact = "e".repeat(MAX_CREDENTIAL_SECRET_BYTES);
     selector
-        .replace_static_result(ApiKey::try_new(&exact))
+        .replace_result(ApiKey::try_new(&exact))
         .expect("exact replacement limit");
     let replaced = selector
         .preflight(core.provider_http(None))
@@ -200,7 +222,7 @@ async fn built_in_replacement_exact_limit_succeeds_and_failure_preserves_materia
         "x".repeat(MAX_CREDENTIAL_SECRET_BYTES)
     );
     let error = selector
-        .replace_static_result(ApiKey::try_new(&excessive))
+        .replace_result(ApiKey::try_new(&excessive))
         .expect_err("first excess replacement");
     assert_eq!(error.kind(), AuthErrorKind::MaterialTooLarge);
     assert!(!error.to_string().contains(FIRST_EXCESS_SENTINEL));
@@ -230,7 +252,7 @@ async fn invalid_basic_username_replacement_preserves_material_and_version() {
         .expect("initial Basic material");
 
     let error = selector
-        .replace_static_result(BasicCredential::try_new("foreign:user", "replacement"))
+        .replace_result(BasicCredential::try_new("foreign:user", "replacement"))
         .expect_err("invalid Basic replacement");
     assert_eq!(error.kind(), AuthErrorKind::InvalidConfiguration);
 
@@ -293,11 +315,11 @@ async fn manual_set_supersedes_and_cancels_blocked_acquisition() {
         async move {
             gate.wait_until_reached().await;
             selector
-                .set(TestMaterial {
+                .replace(TestMaterial {
                     id: 99,
                     expires_at: None,
                 })
-                .expect("manual set");
+                .expect("manual replacement");
         }
     };
     let (prepared, ()) = tokio::join!(selector.preflight(core.provider_http(None)), mutate,);
@@ -341,11 +363,8 @@ async fn complete_source_replacement_isolated_from_blocked_old_completion() {
         async move {
             gate.wait_until_reached().await;
             selector
-                .replace_static(TestMaterial {
-                    id: 77,
-                    expires_at: None,
-                })
-                .expect("complete source replacement");
+                .replace_provider(FixedProvider { id: 77 })
+                .expect("complete provider replacement");
             gate.open();
         }
     };
@@ -358,6 +377,10 @@ async fn complete_source_replacement_isolated_from_blocked_old_completion() {
         .expect("finalization follows replacement slot");
     assert_eq!(current.value.id, 77);
     assert!(!Arc::ptr_eq(&old.slot, &current.slot));
+    assert!(
+        current.version > old.version,
+        "versions continue monotonically"
+    );
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
@@ -483,7 +506,7 @@ async fn recovery_preserves_newer_valid_expiring_soon_material() {
         .await
         .expect("initial acquisition");
     selector
-        .set(TestMaterial {
+        .replace(TestMaterial {
             id: 50,
             expires_at: Instant::now().checked_add(Duration::from_secs(30)),
         })
@@ -506,11 +529,11 @@ async fn finalization_rechecks_clear_and_complete_source_replacement() {
     let core = core(&executor);
     let endpoint = SlotSelector::endpoint(Duration::ZERO);
     endpoint
-        .set(TestMaterial {
+        .replace(TestMaterial {
             id: 1,
             expires_at: None,
         })
-        .expect("endpoint set");
+        .expect("endpoint replacement");
     let prepared = endpoint
         .preflight(core.provider_http(None))
         .await
@@ -534,21 +557,22 @@ async fn finalization_rechecks_clear_and_complete_source_replacement() {
         .await
         .expect("old static");
     static_slot
-        .replace_static(TestMaterial {
+        .replace(TestMaterial {
             id: 11,
             expires_at: None,
         })
-        .expect("complete replacement");
+        .expect("manual replacement");
     let current = static_slot
         .finalize(&old, core.provider_http(None))
         .await
-        .expect("finalization follows new slot");
+        .expect("finalization selects the newer installed version");
     assert_eq!(current.value.id, 11);
-    assert!(!Arc::ptr_eq(&old.slot, &current.slot));
+    assert!(Arc::ptr_eq(&old.slot, &current.slot));
+    assert!(current.version > old.version);
 
     let same_slot = SlotSelector::endpoint(Duration::ZERO);
     same_slot
-        .set(TestMaterial {
+        .replace(TestMaterial {
             id: 20,
             expires_at: None,
         })
@@ -558,7 +582,7 @@ async fn finalization_rechecks_clear_and_complete_source_replacement() {
         .await
         .expect("same-slot preflight");
     same_slot
-        .set(TestMaterial {
+        .replace(TestMaterial {
             id: 21,
             expires_at: None,
         })
@@ -573,7 +597,7 @@ async fn finalization_rechecks_clear_and_complete_source_replacement() {
 }
 
 #[tokio::test]
-async fn source_replacement_during_awaited_finalization_wins_selection() {
+async fn manual_replacement_during_awaited_finalization_wins_selection() {
     let executor = DeterministicExecutor::new();
     let core = core(&executor);
     let refresh_gate = Gate::closed();
@@ -591,11 +615,11 @@ async fn source_replacement_during_awaited_finalization_wins_selection() {
         async move {
             refresh_gate.wait_until_reached().await;
             selector
-                .replace_static(TestMaterial {
+                .replace(TestMaterial {
                     id: 99,
                     expires_at: None,
                 })
-                .expect("complete replacement during finalization");
+                .expect("manual replacement during finalization");
             refresh_gate.open();
         }
     };
@@ -603,9 +627,9 @@ async fn source_replacement_during_awaited_finalization_wins_selection() {
         selector.finalize(&prepared, core.provider_http(None)),
         replace,
     );
-    let finalized = finalized.expect("finalization follows replacement slot");
+    let finalized = finalized.expect("finalization selects the manual replacement");
     assert_eq!(finalized.value.id, 99);
-    assert!(!Arc::ptr_eq(&finalized.slot, &prepared.slot));
+    assert!(finalized.version > prepared.version);
 }
 
 #[tokio::test]
@@ -754,7 +778,7 @@ async fn provider_material_discarded_on_version_overflow_drops_outside_slot_lock
     );
     let slot = selector.selected().expect("selected slot");
     *lock(&slot_probe).expect("slot probe") = Some(Arc::downgrade(&slot));
-    lock(&slot.state).expect("slot state").next_version = u64::MAX;
+    slot.versions.last.store(u64::MAX, Ordering::SeqCst);
 
     assert_eq!(
         auth_error(
@@ -827,7 +851,7 @@ async fn cooldown_is_capped_without_waiting_and_static_rejection_is_exact() {
         .await
         .expect("static ready");
     static_slot
-        .reject_static_exact(&applied)
+        .reject_installed(&applied, false)
         .expect("exact rejection");
     assert!(!static_slot.is_set());
     let error = auth_error(
@@ -836,7 +860,7 @@ async fn cooldown_is_capped_without_waiting_and_static_rejection_is_exact() {
     );
     assert_eq!(error.kind(), AuthErrorKind::Rejected);
     static_slot
-        .replace_static(TestMaterial {
+        .replace(TestMaterial {
             id: 8,
             expires_at: None,
         })
@@ -850,4 +874,174 @@ async fn cooldown_is_capped_without_waiting_and_static_rejection_is_exact() {
             .id,
         8
     );
+}
+
+/// Module invariant: a retired flight is told to re-evaluate before retired
+/// material is dropped. A cancelled leader whose source version was rejected
+/// retires the challenged installed material; its application `Drop` must
+/// observe the flight already published, so a panicking or blocking `Drop`
+/// can never leave followers waiting on an unpublished flight.
+#[test]
+fn cancelled_leader_publishes_reevaluation_before_dropping_retired_material() {
+    type ProbeFlight = Arc<Mutex<Option<Arc<Flight<FlightProbeMaterial>>>>>;
+
+    struct FlightProbeMaterial {
+        flight: ProbeFlight,
+        published_before_drop: Arc<Mutex<Option<bool>>>,
+    }
+
+    impl CredentialMaterial for FlightProbeMaterial {}
+
+    impl Drop for FlightProbeMaterial {
+        fn drop(&mut self) {
+            let flight = lock(&self.flight).ok().and_then(|flight| flight.clone());
+            let published = flight
+                .map(|flight| matches!(flight.result_now(), Ok(Some(FlightOutcome::Reevaluate))));
+            if let Ok(mut seen) = lock(&self.published_before_drop) {
+                *seen = published;
+            }
+        }
+    }
+
+    struct UnusedProvider;
+
+    impl CredentialProvider for UnusedProvider {
+        type Material = FlightProbeMaterial;
+
+        fn acquire<'a>(
+            &'a self,
+            _context: CredentialRequest<'a>,
+        ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
+            Box::pin(async { Err(AuthError::new(AuthErrorKind::Acquisition)) })
+        }
+    }
+
+    let selector = SlotSelector::provider(UnusedProvider, Duration::ZERO);
+    let slot = selector.selected().expect("selected slot");
+    let flight = Arc::new(Flight::new());
+    let probe_flight: ProbeFlight = Arc::new(Mutex::new(Some(Arc::clone(&flight))));
+    let published_before_drop = Arc::new(Mutex::new(None));
+    {
+        let mut state = lock(&slot.state).expect("slot state");
+        let epoch = state.intent_epoch;
+        // The slot holds the only reference to the challenged material.
+        state.ready = Some(Ready {
+            version: 1,
+            value: Arc::new(FlightProbeMaterial {
+                flight: Arc::clone(&probe_flight),
+                published_before_drop: Arc::clone(&published_before_drop),
+            }),
+            expires_at: None,
+        });
+        state.rejected_version = Some(1);
+        state.in_flight = Some(ActiveFlight {
+            flight: Arc::clone(&flight),
+            epoch,
+            source_version: Some(1),
+        });
+    }
+
+    slot.cancel_leader(&flight);
+
+    assert_eq!(
+        *lock(&published_before_drop).expect("probe"),
+        Some(true),
+        "the retired material was dropped before the flight published Reevaluate"
+    );
+    let state = lock(&slot.state).expect("slot state");
+    assert!(state.ready.is_none() && state.in_flight.is_none());
+    assert_eq!(state.rejected_version, None);
+    drop(state);
+    *lock(&probe_flight).expect("probe flight") = None;
+}
+
+/// Module invariant for the leader's own terminal: `finish_provider` wakes
+/// followers with the flight's terminal before any material the slot no
+/// longer holds runs its application `Drop`. In the version-overflow branch
+/// the produced value is the last reference to itself, so its `Drop` must
+/// observe the flight already published (third post-fix review probe).
+#[tokio::test]
+async fn provider_overflow_publishes_the_terminal_before_dropping_the_produced_value() {
+    type FlightProbe = Arc<Mutex<Option<Arc<Flight<OrderProbeMaterial>>>>>;
+    type SlotProbe = Arc<Mutex<Option<std::sync::Weak<CredentialSlot<OrderProbeMaterial>>>>>;
+
+    struct OrderProbeMaterial {
+        flight: FlightProbe,
+        published_at_drop: Arc<Mutex<Option<bool>>>,
+    }
+
+    impl CredentialMaterial for OrderProbeMaterial {}
+
+    impl Drop for OrderProbeMaterial {
+        fn drop(&mut self) {
+            let flight = lock(&self.flight).ok().and_then(|flight| flight.clone());
+            let published = flight.is_some_and(|flight| matches!(flight.result_now(), Ok(Some(_))));
+            if let Ok(mut seen) = lock(&self.published_at_drop) {
+                seen.get_or_insert(published);
+            }
+        }
+    }
+
+    struct CapturingProvider {
+        flight: FlightProbe,
+        published_at_drop: Arc<Mutex<Option<bool>>>,
+        slot: SlotProbe,
+    }
+
+    impl CredentialProvider for CapturingProvider {
+        type Material = OrderProbeMaterial;
+
+        fn acquire<'a>(
+            &'a self,
+            _context: CredentialRequest<'a>,
+        ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
+            // Capture the leader's flight for the Drop probe.
+            let slot = lock(&self.slot)
+                .ok()
+                .and_then(|slot| slot.as_ref().and_then(std::sync::Weak::upgrade));
+            if let Some(slot) = slot {
+                let flight = lock(&slot.state).ok().and_then(|state| {
+                    state
+                        .in_flight
+                        .as_ref()
+                        .map(|active| Arc::clone(&active.flight))
+                });
+                *lock(&self.flight).expect("flight probe") = flight;
+            }
+            let material = OrderProbeMaterial {
+                flight: Arc::clone(&self.flight),
+                published_at_drop: Arc::clone(&self.published_at_drop),
+            };
+            Box::pin(async move { Ok(material) })
+        }
+    }
+
+    let executor = DeterministicExecutor::new();
+    let core = core(&executor);
+    let flight_probe: FlightProbe = Arc::new(Mutex::new(None));
+    let slot_probe: SlotProbe = Arc::new(Mutex::new(None));
+    let published_at_drop = Arc::new(Mutex::new(None));
+    let selector = SlotSelector::provider(
+        CapturingProvider {
+            flight: Arc::clone(&flight_probe),
+            published_at_drop: Arc::clone(&published_at_drop),
+            slot: Arc::clone(&slot_probe),
+        },
+        Duration::ZERO,
+    );
+    let slot = selector.selected().expect("selected slot");
+    *lock(&slot_probe).expect("slot probe") = Some(Arc::downgrade(&slot));
+    slot.versions.last.store(u64::MAX, Ordering::SeqCst);
+
+    let error = auth_error(
+        selector.preflight(core.provider_http(None)).await,
+        "version overflow",
+    );
+    assert_eq!(error.kind(), AuthErrorKind::Internal);
+    assert_eq!(
+        *lock(&published_at_drop).expect("probe"),
+        Some(true),
+        "the produced value was dropped before the flight published its terminal"
+    );
+    *lock(&flight_probe).expect("flight probe") = None;
 }

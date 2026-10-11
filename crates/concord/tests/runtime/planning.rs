@@ -1,4 +1,13 @@
+//! Bound plans (§18.4, EXEC-03): generated and runtime-bound plans use real
+//! public-head shaping but never prepare a body, obtain credentials, acquire
+//! a limiter, observe or send; execution afterwards follows the same ordered
+//! lifecycle, and body preparation precedes credential and admission work
+//! (V3-E05).
+
 #![forbid(unsafe_code)]
+// The secure-planning harness needs an https client; without `default-tls`
+// its helpers and imports are intentionally unused.
+#![cfg_attr(not(feature = "default-tls"), allow(unused_imports, dead_code))]
 
 use std::io;
 use std::pin::Pin;
@@ -7,32 +16,31 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use concord::auth::{
-    AccessToken, Auth, AuthError, BoxFuture, CredentialProvider, CredentialRequest,
-};
+use concord::auth::{AccessToken, AuthError, BoxFuture, CredentialProvider, CredentialRequest};
 use concord::body::{
-    BodyError, BodyFactory, BodyKind, LengthHint, RequestBody, RequestBodyContext,
-    RequestBodyMetadata, RequestContentType, RequestRepresentation, RequestStream,
+    BodyDescription, BodyError, BodyErrorKind, BodyFactory, BodyKind, PreparedBody,
+    RequestBodyContext, RequestRepresentation, RequestStream,
 };
-use concord::codec::Text;
-#[cfg(feature = "default-tls")]
-use concord::endpoint::RequestBodyCategory;
-use concord::endpoint::{EndpointId, ResponseAcquisition, RuntimeEndpoint, TimeoutSelection};
-use concord::error::ConfigurationErrorKind;
-use concord::http::{Method, SafeProxy};
+use concord::endpoint::{
+    EndpointId, RequestBodyCategory, ResponseAcquisition, RuntimeEndpoint, TimeoutSelection,
+};
+use concord::error::{ConfigurationErrorKind, DispatchKnowledge, ErrorCategory, FailureStage};
+use concord::http::{HttpConfigBuilder, Method, SafeProxy};
 use concord::observation::SanitizedHeaderValue;
 use concord::observation::{OperationEvent, OperationObserver, RequestTarget};
 use concord::rate_limit::{
-    NoopRateLimiter, RateLimitError, RateLimitPermit, RateLimitRequest, RateLimitResponse,
-    RateLimiter,
+    Enforcement, LimiterCapability, RateLimitError, RateLimitPermit, RateLimitRequest,
+    RateLimitResponse, RateLimiter,
 };
-use concord::{Bytes, api};
+use concord::{Binary, Bytes, Text, api};
+#[cfg(feature = "default-tls")]
+use concord_test_support::proxy::ConnectProxy;
 use concord_test_support::server::{ResponseScript, ScriptedServer};
+#[cfg(feature = "default-tls")]
+use concord_test_support::tls::TlsServer;
 use tokio::io::{AsyncRead, ReadBuf};
 
-#[cfg(feature = "default-tls")]
 const QUERY_SENTINEL: &str = "planned-query-secret-48c7";
-#[cfg(feature = "default-tls")]
 const HEADER_SENTINEL: &str = "planned-header-secret-95af";
 const PROVIDER_SENTINEL: &str = "planned-provider-secret-b40e";
 const BODY_SENTINEL: &[u8] = b"planned-body-secret-02d1";
@@ -42,7 +50,6 @@ const UNKNOWN_HEADER_SENTINEL: &str = "unknown-header-value-8a30";
 
 #[derive(Default)]
 struct EffectCounts {
-    body_metadata: AtomicUsize,
     body_prepare: AtomicUsize,
     body_factory: AtomicUsize,
     stream_polls: AtomicUsize,
@@ -60,7 +67,6 @@ struct EffectCounts {
 impl EffectCounts {
     fn assert_no_effects(&self) {
         for count in [
-            &self.body_metadata,
             &self.body_prepare,
             &self.body_factory,
             &self.stream_polls,
@@ -86,29 +92,26 @@ impl EffectCounts {
 
 pub struct PlanningBodyInput {
     effects: Arc<EffectCounts>,
+    fail: bool,
 }
 
+/// Counting request representation producing a reconstructible factory body.
+/// Its static description is read by plans without calling `prepare`.
 pub struct PlanningBodySpec;
 
 impl RequestRepresentation<PlanningBodyInput> for PlanningBodySpec {
-    fn metadata(
-        input: &PlanningBodyInput,
-        _context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        input.effects.body_metadata.fetch_add(1, Ordering::SeqCst);
-        Ok(RequestBodyMetadata {
-            length: LengthHint::Unknown,
-            content_type: RequestContentType::None,
-            kind: BodyKind::Stream,
-        })
-    }
+    const DESCRIPTION: BodyDescription =
+        BodyDescription::new(BodyKind::Stream).with_media_hint("application/x-planning");
 
     fn prepare(
         input: PlanningBodyInput,
         _context: RequestBodyContext<'_>,
-    ) -> Result<RequestBody, BodyError> {
+    ) -> Result<PreparedBody, BodyError> {
         input.effects.body_prepare.fetch_add(1, Ordering::SeqCst);
-        Ok(RequestBody::factory(PlanningBodyFactory {
+        if input.fail {
+            return Err(BodyError::new(BodyErrorKind::Producer));
+        }
+        Ok(PreparedBody::factory(PlanningBodyFactory {
             effects: input.effects,
         }))
     }
@@ -147,8 +150,9 @@ impl AsyncRead for CountingReader {
     }
 }
 
-pub(crate) struct CountingProvider {
+pub struct CountingProvider {
     effects: Arc<EffectCounts>,
+    token: &'static str,
 }
 
 impl CredentialProvider for CountingProvider {
@@ -159,9 +163,8 @@ impl CredentialProvider for CountingProvider {
         _context: CredentialRequest<'a>,
     ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
         self.effects.provider.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async {
-            Ok(AccessToken::try_new(PROVIDER_SENTINEL).expect("bounded test access token"))
-        })
+        let token = self.token;
+        Box::pin(async move { Ok(AccessToken::try_new(token).expect("bounded test access token")) })
     }
 }
 
@@ -170,6 +173,10 @@ struct CountingLimiter {
 }
 
 impl RateLimiter for CountingLimiter {
+    fn capability(&self) -> LimiterCapability {
+        LimiterCapability::new(Enforcement::Local, "concord.tests.planning", 1)
+    }
+
     fn acquire<'a>(
         &'a self,
         request: RateLimitRequest<'a>,
@@ -241,7 +248,6 @@ impl OperationObserver for CountingHooks {
                     .expect("lifecycle capture")
                     .push((context.endpoint.to_owned(), "operation_finished"));
             }
-            OperationEvent::PaginationFinished(_) => {}
             _ => {}
         }
     }
@@ -250,83 +256,86 @@ impl OperationObserver for CountingHooks {
 api! {
     client SecurePlanningApi {
         timeout 30s;
-        base "https://secure-planning.example.test/root/";
+        base "https://localhost/root/";
         credentials {
-            credential bearer = custom crate::CountingProvider;
+            credential bearer = custom CountingProvider;
         }
 
+        POST protected(
+            resource: String,
+            protected_query: String,
+            protected_header: String,
+            body body: PlanningBodyInput via PlanningBodySpec,
+        ) -> Bytes via Binary {
+            id "planning.secure.protected";
+            path "resources/{resource}";
+            query { "api_key" = protected_query; }
+            headers { "X-Api-Key" = protected_header; }
+            auth { bearer bearer challenge unauthorized; }
+            rate_limit { id "concord.planning.1"; key [origin]; cost 1; allow 1 per 1s; }
+        }
 
-    POST protected(
-        resource: String,
-        protected_query: String,
-        protected_header: String,
-        body body: crate::runtime::planning::PlanningBodyInput via crate::PlanningBodySpec,
-    ) -> Bytes via Binary {
-        id "planning.secure.protected";
-        path ["resources", endpoint.resource];
-        query { "api_key" = endpoint.protected_query; }
-        headers { "X-Api-Key" = endpoint.protected_header; }
-        auth { bearer bearer challenge unauthorized; }
-        rate_limit { id "concord.planning.1"; key [origin]; cost 1;  allow 1 per 1s; }
+        /// Runtime-binding owner: protected runtime endpoints bind here and
+        /// inherit this owner's credential placement.
+        scope secured() {
+            auth { bearer bearer challenge unauthorized; }
+        }
     }
-}}
+}
 
 api! {
     client PublicPlanningApi {
         timeout 30s;
         base "http://public-planning.example.test/root/";
 
+        POST public_head(
+            resource: String,
+            query("q") query_value: String,
+            header("X-Public") header_value: String,
+            body body: PlanningBodyInput via PlanningBodySpec,
+        ) -> Bytes via Binary {
+            id "planning.public.head";
+            path "resources/{resource}";
+            rate_limit { id "concord.planning.2"; key [origin]; cost 1; allow 1 per 1s; }
+        }
 
-    POST public_head(
-        resource: String,
-        query_value: String,
-        header_value: String,
-        body body: crate::runtime::planning::PlanningBodyInput via crate::PlanningBodySpec,
-    ) -> Bytes via Binary {
-        id "planning.public.head";
-        path ["resources", endpoint.resource];
-        query { "q" = endpoint.query_value; }
-        headers { "X-Public" = endpoint.header_value; }
-        rate_limit { id "concord.planning.2"; key [origin]; cost 1;  allow 1 per 1s; }
-    }
+        GET lifecycle_probe() -> Bytes via Binary {
+            id "planning.generated.lifecycle";
+            path "lifecycle";
+        }
 
-    GET lifecycle_probe() -> Bytes via Binary {
-        id "planning.generated.lifecycle";
-        path ["lifecycle"];
+        GET aggregate_head(query("value") each values: Vec<u16>) -> String via Text {
+            id "planning.generated.aggregate_head";
+        }
     }
-
-    GET aggregate_head(values: Vec<u16>) -> String via Text {
-        id "planning.generated.aggregate_head";
-        query { "value" = each endpoint.values; }
-    }
-}}
+}
 
 api! {
     client StableBeforeApi {
         timeout 30s;
         base "http://stable-before.example.test/";
 
-
-    GET old_rust_name() -> Bytes via Binary {
-        id "stable.contract.identity";
+        GET old_rust_name() -> Bytes via Binary {
+            id "stable.contract.identity";
+        }
     }
-}}
+}
 
 api! {
     client StableAfterApi {
         timeout 30s;
         base "http://stable-after.example.test/";
 
-
-    GET renamed_rust_name() -> Bytes via Binary {
-        id "stable.contract.identity";
+        GET renamed_rust_name() -> Bytes via Binary {
+            id "stable.contract.identity";
+        }
     }
-}}
+}
 
 fn configured_public_client(
     server: &ScriptedServer,
     effects: &Arc<EffectCounts>,
-    timeout: Duration,
+    runtime_endpoint_timeout: Duration,
 ) -> PublicPlanningApi {
     let proxy = SafeProxy::parse(server.url("")).expect("loopback proxy");
     let limiter: Arc<dyn RateLimiter> = Arc::new(CountingLimiter {
@@ -339,7 +348,7 @@ fn configured_public_client(
         .configure_http(move |http| http.proxy(proxy))
         .configure_runtime(move |runtime| {
             runtime
-                .runtime_endpoint_timeout(timeout)
+                .runtime_endpoint_timeout(runtime_endpoint_timeout)
                 .rate_limiter(limiter)
                 .operation_observer(hooks.clone())
                 .operation_observer(hooks.clone())
@@ -349,20 +358,23 @@ fn configured_public_client(
         .expect("public planning client")
 }
 
-#[cfg(feature = "default-tls")]
-#[test]
-fn safe_planning_uses_real_head_shaping_without_any_lifecycle_effect() {
-    let effects = Arc::new(EffectCounts::default());
+fn secure_client(
+    effects: &Arc<EffectCounts>,
+    token: &'static str,
+    http: impl FnOnce(HttpConfigBuilder) -> HttpConfigBuilder,
+) -> SecurePlanningApi {
     let limiter: Arc<dyn RateLimiter> = Arc::new(CountingLimiter {
-        effects: Arc::clone(&effects),
+        effects: Arc::clone(effects),
     });
     let hooks = Arc::new(CountingHooks {
-        effects: Arc::clone(&effects),
+        effects: Arc::clone(effects),
     });
-    let client = SecurePlanningApi::builder()
-        .bearer_provider(CountingProvider {
-            effects: Arc::clone(&effects),
+    SecurePlanningApi::builder()
+        .bearer(CountingProvider {
+            effects: Arc::clone(effects),
+            token,
         })
+        .configure_http(http)
         .configure_runtime(move |runtime| {
             runtime
                 .rate_limiter(limiter)
@@ -371,13 +383,25 @@ fn safe_planning_uses_real_head_shaping_without_any_lifecycle_effect() {
                 .operation_observer(hooks)
         })
         .build()
-        .expect("secure planning client");
+        .expect("secure planning client")
+}
+
+fn runtime_id(value: &str) -> EndpointId {
+    EndpointId::new(value).expect("valid runtime endpoint ID")
+}
+
+#[cfg(feature = "default-tls")] // https base: TlsUnavailable without TLS
+#[test]
+fn safe_planning_uses_real_head_shaping_without_any_lifecycle_effect() {
+    let effects = Arc::new(EffectCounts::default());
+    let client = secure_client(&effects, PROVIDER_SENTINEL, |http| http);
     let endpoint = SecurePlanningApi::unbound().protected(
-        "resource".to_owned(),
-        QUERY_SENTINEL.to_owned(),
-        HEADER_SENTINEL.to_owned(),
+        "resource",
+        QUERY_SENTINEL,
+        HEADER_SENTINEL,
         PlanningBodyInput {
             effects: Arc::clone(&effects),
+            fail: false,
         },
     );
 
@@ -420,6 +444,12 @@ fn safe_planning_uses_real_head_shaping_without_any_lifecycle_effect() {
     assert_eq!(plan.rate_limit_policy_count(), 1);
     assert!(!plan.dynamic_body_metadata_available());
     assert_eq!(plan.body_category(), RequestBodyCategory::Specification);
+    // The static description stands in for the deferred exact media/length.
+    assert_eq!(plan.body_description().family(), Some(BodyKind::Stream));
+    assert_eq!(
+        plan.body_description().media_hint(),
+        Some("application/x-planning")
+    );
     assert_eq!(plan.response_acquisition(), ResponseAcquisition::Buffered);
     assert!(plan.capabilities().authentication());
     assert!(
@@ -431,6 +461,8 @@ fn safe_planning_uses_real_head_shaping_without_any_lifecycle_effect() {
             .get(&concord::http::HeaderName::from_static("x-api-key")),
         Some(SanitizedHeaderValue::Redacted)
     );
+    let authorization = concord::http::HeaderName::from_static("authorization");
+    assert!(plan.public_headers().get(&authorization).is_none());
 
     let safe_output = format!(
         "{plan:?}\n{description:?}\n{}\n{:?}",
@@ -443,52 +475,130 @@ fn safe_planning_uses_real_head_shaping_without_any_lifecycle_effect() {
         PROVIDER_SENTINEL,
         std::str::from_utf8(BODY_SENTINEL).expect("body sentinel is UTF-8"),
     ] {
-        assert!(!safe_output.contains(sentinel));
+        assert!(!safe_output.contains(sentinel), "{sentinel}");
     }
 }
 
+// RUNTIME-02 / §16.2: runtime endpoints can no longer attach a credential
+// reference of their own (v2's `auth(Auth::bearer(credentials().x().credential()))`
+// is removed). A runtime endpoint inherits the placements of the owner it is
+// bound at, so the credential context is always the binding client's own:
+// independent builds stay isolated and clones share installed material.
 #[cfg(feature = "default-tls")]
-#[test]
-fn credential_references_cannot_cross_independent_client_builds() {
+#[tokio::test]
+async fn runtime_endpoints_use_only_the_binding_clients_credential_context() {
+    let server = TlsServer::start().expect("TLS server");
+    let tunnel = ConnectProxy::start(server.address()).expect("tunnel");
+    let http = || {
+        let proxy = SafeProxy::parse(tunnel.url()).expect("proxy");
+        let certificate = server.certificate_pem();
+        move |http: HttpConfigBuilder| {
+            http.http1_only()
+                .proxy(proxy)
+                .add_root_certificate_pem(certificate)
+        }
+    };
     let owner_effects = Arc::new(EffectCounts::default());
     let foreign_effects = Arc::new(EffectCounts::default());
-    let owner = SecurePlanningApi::builder()
-        .bearer_provider(CountingProvider {
-            effects: Arc::clone(&owner_effects),
-        })
-        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
-        .build()
-        .expect("credential owner client");
-    let foreign = SecurePlanningApi::builder()
-        .bearer_provider(CountingProvider {
-            effects: Arc::clone(&foreign_effects),
-        })
-        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
-        .build()
-        .expect("foreign client");
-    let endpoint = RuntimeEndpoint::builder(
-        EndpointId::new("planning.runtime.foreign_auth").expect("valid endpoint ID"),
-        Method::GET,
-    )
-    .auth(Auth::bearer(owner.credentials().bearer().credential()))
-    .build()
-    .expect("context-bound runtime endpoint");
+    let owner = secure_client(&owner_effects, "owner-token", http());
+    let foreign = secure_client(&foreign_effects, "foreign-token", http());
+    let endpoint = || {
+        RuntimeEndpoint::builder(runtime_id("planning.runtime.inherited_auth"), Method::GET)
+            .path("inherited")
+            .response::<Binary, Bytes>()
+            .build()
+            .expect("runtime endpoint")
+    };
 
-    let error = endpoint
-        .plan(&foreign)
-        .expect_err("foreign client context must be rejected");
+    // Planning under either owner acquires nothing.
+    let owner_plan = owner
+        .secured()
+        .plan_runtime(&endpoint())
+        .expect("owner plan");
+    let foreign_plan = foreign
+        .secured()
+        .plan_runtime(&endpoint())
+        .expect("foreign plan");
+    assert!(owner_plan.capabilities().authentication());
+    assert!(foreign_plan.capabilities().authentication());
+    owner_effects.assert_no_effects();
+    foreign_effects.assert_no_effects();
+
+    owner
+        .secured()
+        .bind(endpoint())
+        .expect("bind under owner")
+        .await
+        .expect("owner request");
+    foreign
+        .secured()
+        .bind(endpoint())
+        .expect("bind under foreign")
+        .await
+        .expect("foreign request");
+    owner
+        .clone()
+        .secured()
+        .bind(endpoint())
+        .expect("bind under a clone")
+        .await
+        .expect("clone request");
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[0].target(), "/root/inherited");
     assert_eq!(
-        error.configuration_kind(),
-        Some(ConfigurationErrorKind::InvalidAuthentication)
+        requests[0].header("authorization"),
+        Some("Bearer owner-token")
     );
-    owner_effects.assert_no_effects();
-    foreign_effects.assert_no_effects();
+    assert_eq!(
+        requests[1].header("authorization"),
+        Some("Bearer foreign-token")
+    );
+    assert_eq!(
+        requests[2].header("authorization"),
+        Some("Bearer owner-token")
+    );
+    assert_eq!(
+        owner_effects.provider.load(Ordering::SeqCst),
+        1,
+        "a clone shares the owner's installed material"
+    );
+    assert_eq!(foreign_effects.provider.load(Ordering::SeqCst), 1);
+}
 
-    endpoint
-        .plan(&owner.clone())
-        .expect("a clone shares the credential context");
-    owner_effects.assert_no_effects();
-    foreign_effects.assert_no_effects();
+#[cfg(feature = "default-tls")] // https base: TlsUnavailable without TLS
+#[test]
+fn v3_e05_invalid_body_fails_before_provider_and_admission() {
+    let effects = Arc::new(EffectCounts::default());
+    let client = secure_client(&effects, PROVIDER_SENTINEL, |http| http);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("runtime");
+    let error = runtime
+        .block_on(std::future::IntoFuture::into_future(client.protected(
+            "resource",
+            QUERY_SENTINEL,
+            HEADER_SENTINEL,
+            PlanningBodyInput {
+                effects: Arc::clone(&effects),
+                fail: true,
+            },
+        )))
+        .expect_err("body preparation fails");
+    assert_eq!(error.category(), ErrorCategory::RequestEncoding);
+    assert_eq!(error.failure_stage(), FailureStage::Preparation);
+    assert_eq!(error.dispatch_knowledge(), DispatchKnowledge::NotDispatched);
+    assert_eq!(effects.body_prepare.load(Ordering::SeqCst), 1);
+    assert_eq!(effects.body_factory.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        effects.provider.load(Ordering::SeqCst),
+        0,
+        "no provider work for an already invalid body"
+    );
+    assert_eq!(effects.limiter_acquire.load(Ordering::SeqCst), 0);
+    assert_eq!(effects.before_send.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]
@@ -498,11 +608,12 @@ async fn runtime_endpoint_timeout_does_not_change_generated_timeout_or_lazy_exec
     let effects = Arc::new(EffectCounts::default());
     let client = configured_public_client(&server, &effects, Duration::from_secs(17));
     let endpoint = PublicPlanningApi::unbound().public_head(
-        UNKNOWN_PATH_SENTINEL.to_owned(),
-        UNKNOWN_QUERY_SENTINEL.to_owned(),
-        UNKNOWN_HEADER_SENTINEL.to_owned(),
+        UNKNOWN_PATH_SENTINEL,
+        UNKNOWN_QUERY_SENTINEL,
+        UNKNOWN_HEADER_SENTINEL,
         PlanningBodyInput {
             effects: Arc::clone(&effects),
+            fail: false,
         },
     );
 
@@ -539,7 +650,6 @@ async fn runtime_endpoint_timeout_does_not_change_generated_timeout_or_lazy_exec
             .expect("planned endpoint execution"),
         Bytes::from_static(b"planned")
     );
-    assert_eq!(effects.body_metadata.load(Ordering::SeqCst), 1);
     assert_eq!(effects.body_prepare.load(Ordering::SeqCst), 1);
     assert_eq!(effects.body_factory.load(Ordering::SeqCst), 1);
     assert!(effects.stream_polls.load(Ordering::SeqCst) >= 1);
@@ -550,6 +660,7 @@ async fn runtime_endpoint_timeout_does_not_change_generated_timeout_or_lazy_exec
     assert_eq!(effects.response_head.load(Ordering::SeqCst), 1);
     assert_eq!(effects.completion.load(Ordering::SeqCst), 1);
     assert_eq!(server.request_count(), 1);
+    assert_eq!(server.requests()[0].body(), BODY_SENTINEL);
 
     let heads = effects.heads.lock().expect("head capture");
     assert_eq!(heads.len(), 1);
@@ -599,52 +710,34 @@ async fn runtime_endpoint_timeout_does_not_change_generated_timeout_or_lazy_exec
     }
 }
 
-#[test]
-fn runtime_endpoint_plan_remains_zero_effect() {
+#[tokio::test]
+async fn runtime_endpoint_plan_remains_zero_effect() {
     let server = ScriptedServer::start([]).expect("unused planning server");
     let effects = Arc::new(EffectCounts::default());
     let client = configured_public_client(&server, &effects, Duration::from_secs(23));
 
-    let inherited = RuntimeEndpoint::builder(
-        EndpointId::new("runtime.timeout.inherited").expect("owned ID"),
-        Method::GET,
-    )
-    .path("inherited")
-    .accepted_bytes()
-    .build()
-    .expect("inherited runtime endpoint");
-    let explicit = RuntimeEndpoint::builder(
-        EndpointId::new("runtime.timeout.explicit").expect("valid endpoint ID"),
-        Method::GET,
-    )
-    .path("explicit")
-    .timeout(Duration::from_secs(7))
-    .accepted_bytes()
-    .build()
-    .expect("explicit runtime endpoint");
-    let reset = RuntimeEndpoint::builder(
-        EndpointId::new("runtime.timeout.reset").expect("valid endpoint ID"),
-        Method::GET,
-    )
-    .path("reset")
-    .timeout(Duration::from_secs(9))
-    .reset_timeout()
-    .accepted_bytes()
-    .build()
-    .expect("reset runtime endpoint");
+    let inherited = RuntimeEndpoint::builder(runtime_id("runtime.timeout.inherited"), Method::GET)
+        .path("inherited")
+        .response::<Binary, Bytes>()
+        .build()
+        .expect("inherited runtime endpoint");
+    let explicit = RuntimeEndpoint::builder(runtime_id("runtime.timeout.explicit"), Method::GET)
+        .path("explicit")
+        .timeout(Duration::from_secs(7))
+        .response::<Binary, Bytes>()
+        .build()
+        .expect("explicit runtime endpoint");
 
-    let inherited_plan = inherited.plan(&client).expect("inherited plan");
-    let explicit_plan = explicit.plan(&client).expect("explicit plan");
-    let reset_plan = reset.plan(&client).expect("reset plan");
+    let inherited_plan = client.plan_runtime(&inherited).expect("inherited plan");
+    let explicit_plan = client.plan_runtime(&explicit).expect("explicit plan");
     effects.assert_no_effects();
 
-    assert_eq!(
-        inherited_plan.timeout_selection(),
-        TimeoutSelection::InheritClient
-    );
+    // §3.3 / §16.1: a runtime endpoint bound at an owner inherits that owner's
+    // nearest finite timeout (here the declared 30 s), not a separate
+    // client-wide runtime-endpoint default.
     assert_eq!(
         inherited_plan.resolved_timeout(),
-        Some(Duration::from_secs(23))
+        Some(Duration::from_secs(30))
     );
     assert_eq!(
         explicit_plan.timeout_selection(),
@@ -654,25 +747,40 @@ fn runtime_endpoint_plan_remains_zero_effect() {
         explicit_plan.resolved_timeout(),
         Some(Duration::from_secs(7))
     );
-    assert_eq!(
-        reset_plan.timeout_selection(),
-        TimeoutSelection::InheritClient
-    );
-    assert_eq!(reset_plan.resolved_timeout(), Some(Duration::from_secs(23)));
 
-    let description = inherited.description();
-    assert_eq!(description.id(), "runtime.timeout.inherited");
-    assert_eq!(description.source_path(), "runtime");
+    // Selection and reset are request controls on the bound request (§8.1);
+    // binding performs no work.
+    let bound = client
+        .bind(explicit)
+        .expect("binding is inert")
+        .timeout(Duration::from_secs(9))
+        .expect("selected timeout");
     assert_eq!(
-        description.route_shape(),
-        "<client-base-host>/<client-base>/<runtime-segment>"
+        bound.control_summary().selected_timeout(),
+        Some(Duration::from_secs(9))
     );
+    let reset = bound.reset_timeout();
+    assert!(!reset.control_summary().timeout_was_selected());
+    assert_eq!(
+        reset.control_summary().selected_timeout(),
+        Some(Duration::from_secs(7))
+    );
+    drop(reset);
+    effects.assert_no_effects();
+
+    let description = inherited_plan.description();
+    assert_eq!(description.id(), "runtime.timeout.inherited");
     assert_eq!(
         description.response_acquisition(),
         ResponseAcquisition::Buffered
     );
     assert!(!description.capabilities().pagination());
     assert!(!description.capabilities().credential_storage());
+    // Only owner-level attachments are inherited: the root declares no auth
+    // and no rate policy (the policies of `public_head` are endpoint-local).
+    assert!(!description.capabilities().authentication());
+    assert!(!description.capabilities().rate_limits());
+    assert_eq!(server.request_count(), 0);
 }
 
 #[test]
@@ -682,14 +790,12 @@ fn runtime_method_limit_is_public_bounded_and_preserved_by_planning() {
     let client = configured_public_client(&server, &effects, Duration::from_secs(23));
     let exact_text = "M".repeat(concord::endpoint::MAX_RUNTIME_ENDPOINT_METHOD_BYTES);
     let exact_method = Method::from_bytes(exact_text.as_bytes()).expect("exact method token");
-    let endpoint = RuntimeEndpoint::builder(
-        EndpointId::new("runtime.method.exact").expect("valid endpoint ID"),
-        exact_method.clone(),
-    )
-    .accepted_bytes()
-    .build()
-    .expect("exact runtime method limit");
-    let plan = endpoint.plan(&client).expect("exact method plan");
+    let endpoint =
+        RuntimeEndpoint::builder(runtime_id("runtime.method.exact"), exact_method.clone())
+            .response::<Binary, Bytes>()
+            .build()
+            .expect("exact runtime method limit");
+    let plan = client.plan_runtime(&endpoint).expect("exact method plan");
     assert_eq!(plan.method(), &exact_method);
     assert!(format!("{plan:?}").len() < 2_048);
     effects.assert_no_effects();
@@ -697,13 +803,10 @@ fn runtime_method_limit_is_public_bounded_and_preserved_by_planning() {
     let excessive_text = "N".repeat(concord::endpoint::MAX_RUNTIME_ENDPOINT_METHOD_BYTES + 1);
     let excessive_method =
         Method::from_bytes(excessive_text.as_bytes()).expect("excess method token");
-    let error = RuntimeEndpoint::builder(
-        EndpointId::new("runtime.method.excess").expect("valid endpoint ID"),
-        excessive_method,
-    )
-    .build()
-    .err()
-    .expect("first excess runtime method");
+    let error = RuntimeEndpoint::builder(runtime_id("runtime.method.excess"), excessive_method)
+        .response::<Binary, Bytes>()
+        .build()
+        .expect_err("first excess runtime method");
     assert_eq!(error.kind(), ConfigurationErrorKind::InvalidValue);
     assert!(!error.to_string().contains(&excessive_text));
     assert!(!format!("{error:?}").contains(&excessive_text));
@@ -726,15 +829,9 @@ fn generated_and_runtime_planning_share_final_head_limits() {
     let error = client
         .plan(&generated_excess)
         .expect_err("generated first excess including Accept");
-    assert_eq!(
-        error.category(),
-        concord::error::ErrorCategory::Configuration
-    );
+    assert_eq!(error.category(), ErrorCategory::Configuration);
 
-    let mut runtime_exact = RuntimeEndpoint::builder(
-        EndpointId::new("runtime.head.exact").expect("valid endpoint ID"),
-        Method::GET,
-    );
+    let mut runtime_exact = RuntimeEndpoint::builder(runtime_id("runtime.head.exact"), Method::GET);
     for _ in 0..dynamic_components {
         runtime_exact = runtime_exact.path("x");
     }
@@ -742,23 +839,23 @@ fn generated_and_runtime_planning_share_final_head_limits() {
         .response::<Text, String>()
         .build()
         .expect("runtime exact structural boundary");
-    runtime_exact
-        .plan(&client)
+    client
+        .plan_runtime(&runtime_exact)
         .expect("runtime head exact boundary including Accept");
 
-    let mut runtime_excess = RuntimeEndpoint::builder(
-        EndpointId::new("runtime.head.excess").expect("valid endpoint ID"),
-        Method::GET,
-    );
+    let mut runtime_excess =
+        RuntimeEndpoint::builder(runtime_id("runtime.head.excess"), Method::GET);
     for _ in 0..(dynamic_components + 1) {
         runtime_excess = runtime_excess.path("x");
     }
     let error = runtime_excess
         .response::<Text, String>()
         .build()
-        .err()
-        .expect("runtime first excess includes the retained method component");
-    assert_eq!(error.kind(), ConfigurationErrorKind::InvalidValue);
+        .expect_err("runtime first excess includes the retained method component");
+    // The v3 runtime builder charges each recorded path operation to the
+    // structural budget and reports the first excess path segment as a route
+    // error (V3-S11); the method component is still counted first.
+    assert_eq!(error.kind(), ConfigurationErrorKind::InvalidRoute);
     effects.assert_no_effects();
 }
 
@@ -776,17 +873,14 @@ async fn generated_and_runtime_endpoints_use_the_same_ordered_lifecycle() {
         client.lifecycle_probe().await.expect("generated lifecycle"),
         Bytes::from_static(b"generated")
     );
-    let runtime = RuntimeEndpoint::builder(
-        EndpointId::new("planning.runtime.lifecycle").expect("valid endpoint ID"),
-        Method::GET,
-    )
-    .path("lifecycle")
-    .accepted_bytes()
-    .build()
-    .expect("runtime lifecycle endpoint");
+    let runtime = RuntimeEndpoint::builder(runtime_id("planning.runtime.lifecycle"), Method::GET)
+        .path("lifecycle")
+        .response::<Binary, Bytes>()
+        .build()
+        .expect("runtime lifecycle endpoint");
     assert_eq!(
-        runtime
-            .try_bind(&client)
+        client
+            .bind(runtime)
             .expect("runtime endpoint binds to client")
             .await
             .expect("runtime lifecycle"),
@@ -832,5 +926,11 @@ fn explicit_contract_identity_survives_a_rust_endpoint_rename() {
     assert_ne!(
         before.description().source_path(),
         after.description().source_path()
+    );
+    // The static contract is readable without any runtime service (V3-R12).
+    assert!(
+        StableAfterApi::contract()
+            .endpoint("stable.contract.identity")
+            .is_some()
     );
 }

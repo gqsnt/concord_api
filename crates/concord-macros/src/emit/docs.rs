@@ -1,1517 +1,940 @@
+//! Generated rustdoc (§19.2): author text first, then the effective facts a
+//! caller needs — inputs, result, statuses, route, timeout, authentication
+//! and quota coverage — rendered from the resolved model.
+
+use std::fmt::Write as _;
 use std::time::Duration;
 
-use quote::ToTokens;
-use syn::Type;
+use proc_macro2::TokenStream;
+use quote::{ToTokens, quote};
 
-use super::*;
+use crate::semantic::{
+    AuthChallenge, BoundDim, EffectDecl, LocalHost, LocalPath, Meta, Model, OwnerKind, Placement,
+    PlacementKind, Positional, SegPart, Status, Value,
+};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct EndpointDocModel {
-    client_name: String,
-    scope_chain: Vec<String>,
-    direct_method_name: String,
-    endpoint_type_path: String,
-    request_type_path: String,
-    http_method: String,
-    base_url: String,
-    host: Option<EndpointDocHost>,
-    route_atoms: Vec<EndpointDocRouteAtom>,
-    scope_inputs: Vec<EndpointDocInput>,
-    required_endpoint_inputs: Vec<EndpointDocInput>,
-    endpoint_setters: Vec<EndpointDocSetter>,
-    safe_query_names: Vec<String>,
-    safe_header_names: Vec<String>,
-    body: Option<EndpointDocBody>,
-    response: EndpointDocResponse,
-    authentication: Vec<EndpointDocAuthPlacement>,
-    rate_limits: Vec<EndpointDocRateLimit>,
-    timeout: EndpointDocTimeout,
-    accepted_status: AcceptedStatus,
-    status_explicit: bool,
-    effect: Effect,
-    effect_explicit: bool,
-    terminals: EndpointDocTerminals,
-    contract_id: String,
-    explicit_contract_id: bool,
+fn type_text(ty: &impl ToTokens) -> String {
+    ty.to_token_stream()
+        .to_string()
+        .replace(" < ", "<")
+        .replace("< ", "<")
+        .replace(" <", "<")
+        .replace(" >", ">")
+        .replace(" ,", ",")
+        .replace(" :: ", "::")
+        .replace(":: ", "::")
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct EndpointDocHost {
-    label_atoms: Vec<EndpointDocRouteAtom>,
-    base_host: String,
-    port: Option<u16>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum EndpointDocRouteAtom {
-    Literal(String),
-    Value {
-        namespace: EndpointDocNamespace,
-        name: String,
-    },
-    Concat(Vec<EndpointDocRouteAtom>),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum EndpointDocNamespace {
-    Client,
-    Scope(String),
-    Endpoint,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct EndpointDocInput {
-    owner: Option<String>,
-    name: String,
-    type_name: String,
-    kind: EndpointDocInputKind,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum EndpointDocInputKind {
-    Required,
-    Optional,
-    Defaulted,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct EndpointDocSetter {
-    name: String,
-    setter: String,
-    omit: Option<String>,
-    reset: Option<String>,
-    type_name: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct EndpointDocBody {
-    argument: String,
-    specification: String,
-    input_type: String,
-    optional: bool,
-    representation_origin: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct EndpointDocResponse {
-    specification: String,
-    output_type: String,
-    representation_origin: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct EndpointDocAuthPlacement {
-    placement: String,
-    challenge: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct EndpointDocRateLimit {
-    id: String,
-    origin: String,
-    dimensions: Vec<String>,
-    cost: u32,
-    windows: Vec<EndpointDocRateLimitWindow>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct EndpointDocRateLimitWindow {
-    capacity: u32,
-    duration: Duration,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum EndpointDocTimeout {
-    Inherited(Duration),
-    Overridden(Duration),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct EndpointDocTerminals {
-    direct_await: bool,
-    response: bool,
-    accepted_bytes: bool,
-    pagination: bool,
-    credential_storage: Vec<String>,
-}
-
-fn projected_endpoint_docs(
-    client: &Client,
-    scopes: &[&Scope],
-    endpoint: &Endpoint,
-) -> EndpointDocModel {
-    let local_timeout = endpoint
-        .local_attachments
-        .iter()
-        .any(|attachment| attachment.family == AttachmentFamily::Timeout);
-    let duration = endpoint
-        .config
-        .timeout
-        .expect("semantic inheritance retains one finite endpoint timeout");
-    let timeout = match local_timeout {
-        true => EndpointDocTimeout::Overridden(duration),
-        false => EndpointDocTimeout::Inherited(duration),
-    };
-    let surface = &endpoint.surface;
-    let mut endpoint_type_path = canonical_ident(&client.surface.support_name);
-    for module in &surface.module_path {
-        endpoint_type_path.push_str("::");
-        endpoint_type_path.push_str(&canonical_ident(module));
+pub(crate) fn human_duration(duration: Duration) -> String {
+    let seconds = duration.as_secs();
+    if duration.subsec_nanos() != 0 {
+        return format!("{} ms", duration.as_millis());
     }
-    let mut request_type_path = endpoint_type_path.clone();
-    endpoint_type_path.push_str("::");
-    endpoint_type_path.push_str(&canonical_ident(&surface.endpoint_type_name));
-    request_type_path.push_str("::");
-    request_type_path.push_str(&canonical_ident(&surface.request_type_name));
-
-    let body = endpoint.body.as_ref().map(|body| EndpointDocBody {
-        argument: canonical_ident(&body.name),
-        input_type: type_name(&body.input_type),
-        specification: type_name(&body.spec_type),
-        optional: matches!(body.presence, ValuePresence::Optional),
-        representation_origin: body.representation_origin.clone(),
-    });
-    let required_endpoint_inputs = surface
-        .required_arguments
-        .iter()
-        .map(|argument| match argument {
-            RequiredArgument::Parameter(index) => doc_input(None, &endpoint.parameters[*index]),
-            RequiredArgument::Body => {
-                let body = body.as_ref().expect("body documentation");
-                EndpointDocInput {
-                    owner: None,
-                    name: body.argument.clone(),
-                    type_name: body.input_type.clone(),
-                    kind: EndpointDocInputKind::Required,
-                }
-            }
-        })
-        .collect();
-    let mut endpoint_setters = surface
-        .setters
-        .iter()
-        .map(|setter| {
-            let value = &endpoint.parameters[setter.parameter];
-            EndpointDocSetter {
-                name: canonical_ident(&value.name),
-                setter: canonical_ident(&setter.setter),
-                omit: setter.omit.as_ref().map(canonical_ident),
-                reset: setter.reset.as_ref().map(canonical_ident),
-                type_name: type_name(&value.effective_type),
-            }
-        })
-        .collect::<Vec<_>>();
-    if let (Some(setter), Some(body)) = (&surface.body_setter, &endpoint.body) {
-        endpoint_setters.push(EndpointDocSetter {
-            name: canonical_ident(&body.name),
-            setter: canonical_ident(&setter.setter),
-            omit: Some(canonical_ident(&setter.omit)),
-            reset: None,
-            type_name: type_name(&body.effective_input_type),
-        });
-    }
-    let scope_inputs = scopes
-        .iter()
-        .flat_map(|scope| {
-            let owner = canonical_ident(&scope.name);
-            scope
-                .parameters
-                .iter()
-                .map(move |value| doc_input(Some(owner.clone()), value))
-        })
-        .collect();
-    let route_atoms = endpoint
-        .config
-        .path
-        .iter()
-        .map(|atom| route_atom(atom, &client.values, scopes, &endpoint.parameters))
-        .collect();
-    let host = if endpoint.config.host.is_empty() {
-        None
+    if seconds % 3600 == 0 {
+        format!("{} h", seconds / 3600)
+    } else if seconds % 60 == 0 {
+        format!("{} min", seconds / 60)
     } else {
-        let base = url::Url::parse(&client.base.value())
-            .expect("validated base URL for endpoint documentation");
-        Some(EndpointDocHost {
-            label_atoms: endpoint
-                .config
-                .host
-                .iter()
-                .map(|atom| route_atom(atom, &client.values, scopes, &endpoint.parameters))
-                .collect(),
-            base_host: base
-                .host_str()
-                .expect("validated base host for endpoint documentation")
-                .to_owned(),
-            port: base.port(),
-        })
-    };
-    let authentication = endpoint
-        .config
-        .auth
-        .iter()
-        .map(|auth| EndpointDocAuthPlacement {
-            placement: match &auth.kind {
-                ResolvedAuthPlacement::Bearer => "Bearer authorization".to_owned(),
-                ResolvedAuthPlacement::Basic => "Basic authorization".to_owned(),
-                ResolvedAuthPlacement::Authorization(None) => {
-                    "exact Authorization value".to_owned()
-                }
-                ResolvedAuthPlacement::Authorization(Some(scheme)) => {
-                    format!("{} Authorization scheme", scheme.value())
-                }
-                ResolvedAuthPlacement::Header(name) => {
-                    format!("private header {}", name.value())
-                }
-                ResolvedAuthPlacement::Query(name) => {
-                    format!("private query {}", name.value())
-                }
-            },
-            challenge: match auth.challenge {
-                ResolvedChallengePolicy::Unauthorized => "recover once after 401".to_owned(),
-                ResolvedChallengePolicy::UnauthorizedOrForbidden => {
-                    "recover once after 401 or 403".to_owned()
-                }
-                ResolvedChallengePolicy::Never => "no automatic recovery".to_owned(),
-            },
-        })
-        .collect();
-    let rate_limits = endpoint
-        .config
-        .rate_limits
-        .iter()
-        .map(|rule| EndpointDocRateLimit {
-            id: rule.id.clone(),
-            origin: rule.origin.clone(),
-            dimensions: rule
-                .dimensions
-                .iter()
-                .map(|dimension| match dimension {
-                    NormalizedRateLimitDimension::Origin { .. } => "origin".to_owned(),
-                    NormalizedRateLimitDimension::Endpoint { .. } => "endpoint".to_owned(),
-                    NormalizedRateLimitDimension::Value { public_name, .. } => public_name.clone(),
-                })
-                .collect(),
-            cost: rule.cost,
-            windows: rule
-                .windows
-                .iter()
-                .map(|window| EndpointDocRateLimitWindow {
-                    capacity: window.capacity,
-                    duration: window.duration,
-                })
-                .collect(),
-        })
-        .collect();
-
-    EndpointDocModel {
-        client_name: canonical_ident(&client.name),
-        scope_chain: scopes
-            .iter()
-            .map(|scope| canonical_ident(&scope.name))
-            .collect(),
-        direct_method_name: canonical_ident(&surface.method_name),
-        endpoint_type_path,
-        request_type_path,
-        http_method: resolved_method_name(&endpoint.method),
-        base_url: client.base.value(),
-        host,
-        route_atoms,
-        scope_inputs,
-        required_endpoint_inputs,
-        endpoint_setters,
-        safe_query_names: endpoint
-            .config
-            .query
-            .iter()
-            .map(|entry| entry.key.value())
-            .collect(),
-        safe_header_names: endpoint
-            .config
-            .headers
-            .iter()
-            .map(|entry| entry.name.value())
-            .collect(),
-        body,
-        response: EndpointDocResponse {
-            output_type: type_name(&endpoint.output),
-            specification: type_name(&endpoint.response_spec),
-            representation_origin: endpoint.response_representation_origin.clone(),
-        },
-        authentication,
-        rate_limits,
-        timeout,
-        accepted_status: endpoint.accepted_status.clone(),
-        status_explicit: endpoint.status_explicit,
-        effect: endpoint.effect,
-        effect_explicit: endpoint.effect_explicit,
-        terminals: EndpointDocTerminals {
-            direct_await: true,
-            response: surface.terminals.response,
-            accepted_bytes: surface.terminals.accepted_bytes,
-            pagination: surface.terminals.pagination,
-            credential_storage: surface
-                .terminals
-                .credential_storage
-                .iter()
-                .map(|terminal| canonical_ident(&terminal.method))
-                .collect(),
-        },
-        contract_id: endpoint.contract_id.value.clone(),
-        explicit_contract_id: endpoint.contract_id.explicit,
+        format!("{seconds} s")
     }
 }
 
-fn route_atom(
-    value: &ResolvedExpr,
-    client_values: &[Value],
-    scopes: &[&Scope],
-    endpoint_values: &[Value],
-) -> EndpointDocRouteAtom {
-    match value {
-        ResolvedExpr::String(value) => EndpointDocRouteAtom::Literal(value.value()),
-        ResolvedExpr::Character(value) => EndpointDocRouteAtom::Literal(value.value().to_string()),
-        ResolvedExpr::Boolean(value) => EndpointDocRouteAtom::Literal(value.value.to_string()),
-        ResolvedExpr::Integer { negative, literal } => EndpointDocRouteAtom::Literal(format!(
-            "{}{}",
-            if *negative { "-" } else { "" },
-            literal.base10_digits()
-        )),
-        ResolvedExpr::Adapted { value, .. } => {
-            route_atom(value, client_values, scopes, endpoint_values)
+fn author(meta: &Meta) -> String {
+    let mut out = String::new();
+    for line in &meta.docs {
+        out.push_str(line.strip_prefix(' ').unwrap_or(line));
+        out.push('\n');
+    }
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    out
+}
+
+pub(crate) fn deprecated_attr(meta: &Meta) -> TokenStream {
+    match &meta.deprecated {
+        None => TokenStream::new(),
+        Some(deprecation) => match (&deprecation.note, &deprecation.since) {
+            (None, None) => quote!(#[deprecated]),
+            (Some(note), None) => quote!(#[deprecated(note = #note)]),
+            (None, Some(since)) => quote!(#[deprecated(since = #since)]),
+            (Some(note), Some(since)) => quote!(#[deprecated(since = #since, note = #note)]),
+        },
+    }
+}
+
+fn timeout_text(timeout: Option<Duration>) -> String {
+    match timeout {
+        Some(duration) => human_duration(duration),
+        None => {
+            "the client default (30 s unless the runtime configuration selects another)".to_owned()
         }
-        ResolvedExpr::Value(value) => match value.reference {
-            ValueReference::Client(index) => EndpointDocRouteAtom::Value {
-                namespace: EndpointDocNamespace::Client,
-                name: canonical_ident(
-                    &client_values
-                        .get(index)
-                        .expect("resolved client documentation value")
-                        .name,
-                ),
-            },
-            ValueReference::Scope {
-                scope_id,
-                parameter,
-            } => {
-                let scope = scopes
-                    .iter()
-                    .find(|scope| scope.id == scope_id)
-                    .expect("resolved scope documentation frame");
-                EndpointDocRouteAtom::Value {
-                    namespace: EndpointDocNamespace::Scope(canonical_ident(&scope.name)),
-                    name: canonical_ident(
-                        &scope
-                            .parameters
-                            .get(parameter)
-                            .expect("resolved scope documentation value")
-                            .name,
-                    ),
+    }
+}
+
+fn placement_text(model: &Model, placement: &Placement) -> String {
+    let credential = &model.client.credentials[placement.credential].logical;
+    let target = match &placement.kind {
+        PlacementKind::Bearer => format!("bearer `{credential}`"),
+        PlacementKind::Basic => format!("basic `{credential}`"),
+        PlacementKind::Authorization(None) => format!("authorization = `{credential}`"),
+        PlacementKind::Authorization(Some(scheme)) => {
+            format!("authorization \"{scheme}\" = `{credential}`")
+        }
+        PlacementKind::Header(name) => format!("header \"{name}\" = `{credential}`"),
+        PlacementKind::Query(name) => format!("query \"{name}\" = `{credential}`"),
+    };
+    let challenge = match placement.challenge {
+        AuthChallenge::Never => "",
+        AuthChallenge::Unauthorized => " (challenge on 401)",
+        AuthChallenge::UnauthorizedOrForbidden => " (challenge on 401/403)",
+    };
+    format!("{target}{challenge}, from `{}`", placement.origin)
+}
+
+/// Effective route template of an endpoint, e.g.
+/// `https://{region}.api.catalog.example.test/root/{api_version}/regions/{region}/items`.
+pub(crate) fn route_template(model: &Model, endpoint: usize) -> String {
+    let entry = &model.endpoints[endpoint];
+    let chain = model.chain(entry.owner);
+    let from = crate::semantic::Site::Endpoint(endpoint);
+    let mut labels: Vec<String> = Vec::new();
+    for owner in &chain {
+        let local: Vec<String> = match &model.owners[*owner].host {
+            None => continue,
+            Some(LocalHost::Off) => {
+                labels.clear();
+                continue;
+            }
+            Some(LocalHost::Prepend(list) | LocalHost::Replace(list)) => list
+                .iter()
+                .map(|label| atom_text(model, &label.atom, from))
+                .collect(),
+        };
+        if matches!(model.owners[*owner].host, Some(LocalHost::Replace(_))) {
+            labels = local;
+        } else {
+            let mut next = local;
+            next.extend(labels);
+            labels = next;
+        }
+    }
+    let mut segments: Vec<String> = Vec::new();
+    let paths = chain
+        .iter()
+        .map(|owner| &model.owners[*owner].path)
+        .chain(std::iter::once(&entry.path));
+    for path in paths {
+        match path {
+            None => {}
+            Some(LocalPath::Off) => segments.clear(),
+            Some(LocalPath::Append(template)) | Some(LocalPath::Replace(template)) => {
+                if matches!(path, Some(LocalPath::Replace(_))) {
+                    segments.clear();
+                }
+                for segment in &template.segments {
+                    let text = segment
+                        .parts
+                        .iter()
+                        .map(|part| match part {
+                            SegPart::Literal(text) => text.clone(),
+                            SegPart::Value { value, .. } => {
+                                format!("{{{}}}", model.display_ref(*value, from))
+                            }
+                        })
+                        .collect::<String>();
+                    segments.push(text);
                 }
             }
-            ValueReference::Endpoint(index) => EndpointDocRouteAtom::Value {
-                namespace: EndpointDocNamespace::Endpoint,
-                name: canonical_ident(
-                    &endpoint_values
-                        .get(index)
-                        .expect("resolved endpoint documentation value")
-                        .name,
-                ),
-            },
-        },
-        ResolvedExpr::Concat(values) => EndpointDocRouteAtom::Concat(
-            values
-                .iter()
-                .map(|value| route_atom(value, client_values, scopes, endpoint_values))
-                .collect(),
-        ),
+        }
     }
-}
-
-fn doc_input(owner: Option<String>, value: &Value) -> EndpointDocInput {
-    EndpointDocInput {
-        owner,
-        name: canonical_ident(&value.name),
-        type_name: type_name(&value.payload_type),
-        kind: input_kind(value),
+    let base = model.client.base.value();
+    let Ok(url) = url::Url::parse(&base) else {
+        return base;
+    };
+    let host = url.host_str().unwrap_or_default();
+    let mut prefix = url.path().to_owned();
+    if !prefix.ends_with('/') {
+        prefix.push('/');
     }
-}
-
-fn input_kind(value: &Value) -> EndpointDocInputKind {
-    if value.is_required() {
-        EndpointDocInputKind::Required
-    } else if value.is_optional() && !value.has_default() {
-        EndpointDocInputKind::Optional
+    let port = url
+        .port()
+        .map(|port| format!(":{port}"))
+        .unwrap_or_default();
+    let host = if labels.is_empty() {
+        host.to_owned()
     } else {
-        EndpointDocInputKind::Defaulted
-    }
-}
-
-fn type_name(value: &Type) -> String {
-    value.to_token_stream().to_string()
-}
-
-fn resolved_method_name(method: &ResolvedMethod) -> String {
-    match method {
-        ResolvedMethod::Get => "GET".to_owned(),
-        ResolvedMethod::Post => "POST".to_owned(),
-        ResolvedMethod::Put => "PUT".to_owned(),
-        ResolvedMethod::Patch => "PATCH".to_owned(),
-        ResolvedMethod::Delete => "DELETE".to_owned(),
-        ResolvedMethod::Head => "HEAD".to_owned(),
-        ResolvedMethod::Options => "OPTIONS".to_owned(),
-        ResolvedMethod::Custom(value) => value.value(),
-    }
-}
-
-pub(super) fn endpoint_method_doc(
-    client: &Client,
-    scopes: &[&Scope],
-    endpoint: &Endpoint,
-) -> String {
-    let docs = projected_endpoint_docs(client, scopes, endpoint);
-    let endpoint_name = local_type_name(&docs.endpoint_type_path);
-    let request_name = local_type_name(&docs.request_type_path);
-    let arguments = if docs.required_endpoint_inputs.is_empty() {
-        "Required arguments: none.".to_owned()
-    } else {
-        format!(
-            "Required arguments: {}.",
-            docs.required_endpoint_inputs
-                .iter()
-                .map(render_argument)
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
+        format!("{}.{host}", labels.join("."))
     };
     format!(
-        "`{} {}`\n\nCreates an inert request for [`{endpoint_name}`]. {arguments} Returns [`{request_name}`].",
-        docs.http_method,
-        render_route(&docs),
+        "{}://{host}{port}{prefix}{}",
+        url.scheme(),
+        segments.join("/")
     )
 }
 
-pub(super) fn endpoint_type_doc(client: &Client, scopes: &[&Scope], endpoint: &Endpoint) -> String {
-    let docs = projected_endpoint_docs(client, scopes, endpoint);
-    let scope_chain = if docs.scope_chain.is_empty() {
-        "the client".to_owned()
-    } else {
-        format!("scope chain `{}`", docs.scope_chain.join("::"))
-    };
-    let inputs = render_inputs(&docs);
-    let default_semantics = render_default_semantics(&docs);
-    let request = render_request(&docs);
-    let response = render_response(&docs);
-    let summary = render_location(&docs);
-    let identity = if docs.explicit_contract_id {
-        format!("Stable contract ID: `{}` (explicit).", docs.contract_id)
-    } else {
-        format!(
-            "Stable contract ID: `{}` (derived from the declaration path; renaming that path changes the ID).",
-            docs.contract_id
-        )
-    };
-    format!(
-        "Endpoint contract for `{} {}`.\n\n# Summary\n\n{summary}\n\n# Usage\n\nCall the `{}` direct scope method on {scope_chain}, or construct `{}` and bind it with `{}::request`. Both return `{}`.\n\n# Inputs\n\n{inputs}{default_semantics}\n\n# Request\n\n{request}\n\n# Response\n\n{response}\n\n# Identity\n\n{identity}\n\nEndpoint type: `{}`.\n\nRequest type: `{}`.",
-        docs.http_method,
-        render_route(&docs),
-        docs.direct_method_name,
-        docs.endpoint_type_path,
-        docs.client_name,
-        docs.request_type_path,
-        docs.endpoint_type_path,
-        docs.request_type_path,
-    )
-}
-
-fn render_default_semantics(docs: &EndpointDocModel) -> &'static str {
-    let has_default = docs
-        .scope_inputs
-        .iter()
-        .any(|input| input.kind == EndpointDocInputKind::Defaulted)
-        || docs
-            .endpoint_setters
+fn atom_text(model: &Model, atom: &crate::semantic::RAtom, from: crate::semantic::Site) -> String {
+    match atom {
+        crate::semantic::RAtom::Literal { text, .. } => text.clone(),
+        crate::semantic::RAtom::Value { value, .. } => {
+            format!("{{{}}}", model.display_ref(*value, from))
+        }
+        crate::semantic::RAtom::Concat(parts) => parts
             .iter()
-            .any(|setter| setter.reset.is_some());
-    if has_default {
-        "\n\nEach declaration default is evaluated when its owning snapshot is constructed. `#[default]` invokes application-owned `Default::default()` for the written payload type at that point; snapshot and request `reset_*` controls restore retained values without re-evaluation."
+            .map(|part| atom_text(model, part, from))
+            .collect(),
+    }
+}
+
+fn value_line(value: &Value) -> String {
+    let presence = if value.optional {
+        "optional"
+    } else if value.is_initialized() {
+        "initialized"
+    } else {
+        "required"
+    };
+    let sensitive = if value.sensitive {
+        ", sensitive (withheld from automatic observation)"
     } else {
         ""
-    }
-}
-
-fn render_location(docs: &EndpointDocModel) -> String {
-    let mut lines = vec![format!("Base URL: `{}`.", docs.base_url)];
-    if let Some(host) = &docs.host {
-        lines.push(format!("Host template: `{}`.", render_host(host)));
-    }
-    lines.push(format!("Path: `{}`.", render_route(docs)));
-    lines.join("\n\n")
-}
-
-fn render_host(host: &EndpointDocHost) -> String {
-    let mut rendered = host
-        .label_atoms
-        .iter()
-        .map(render_route_atom)
-        .collect::<Vec<_>>()
-        .join(".");
-    if !rendered.is_empty() {
-        rendered.push('.');
-    }
-    rendered.push_str(&host.base_host);
-    if let Some(port) = host.port {
-        rendered.push(':');
-        rendered.push_str(&port.to_string());
-    }
-    rendered
-}
-
-pub(super) fn request_wrapper_doc(
-    client: &Client,
-    scopes: &[&Scope],
-    endpoint: &Endpoint,
-) -> String {
-    let docs = projected_endpoint_docs(client, scopes, endpoint);
-    let endpoint_name = local_type_name(&docs.endpoint_type_path);
-    let mut controls = docs
-        .endpoint_setters
-        .iter()
-        .map(render_request_control)
-        .collect::<Vec<_>>();
-    controls.extend([
-        "`.timeout(...)`".to_owned(),
-        "`.reset_timeout()`".to_owned(),
-    ]);
-
-    let mut terminals = Vec::new();
-    if docs.terminals.direct_await {
-        terminals.push(format!("`.await` returns `{}`", docs.response.output_type));
-    }
-    if docs.terminals.response {
-        terminals.push("`.response()` includes accepted response metadata".to_owned());
-    }
-    if docs.terminals.pagination {
-        terminals.push("`.paginate(...)` runs bounded sequential pagination".to_owned());
-    }
-    terminals.extend(
-        docs.terminals
-            .credential_storage
-            .iter()
-            .map(|method| format!("`.{method}()` stores the decoded credential")),
+    };
+    let deprecated = if value.is_deprecated() && !value.live {
+        ", deprecated no-op migration bridge"
+    } else {
+        ""
+    };
+    let mut line = format!(
+        "- `{}`: `{}` ({presence}{sensitive}{deprecated})",
+        value.logical,
+        type_text(&value.ty)
     );
-    if docs.terminals.accepted_bytes {
-        terminals.push(
-            "`.accepted_bytes()` selects complete bounded accepted bytes while preserving authentication challenge and status semantics"
-                .to_owned(),
-        );
+    if let Some(first) = value.meta.docs.first() {
+        let _ = write!(line, " — {}", first.trim());
     }
-
-    format!(
-        "Inert named request for [`{endpoint_name}`]. Construction and value controls perform no request lifecycle work.\n\nControls: {}.\n\nTerminals:\n\n{}",
-        controls.join(", "),
-        terminals
-            .iter()
-            .map(|terminal| format!("- {terminal}"))
-            .collect::<Vec<_>>()
-            .join("\n"),
-    )
+    line
 }
 
-pub(super) fn endpoint_identity(endpoint: &Endpoint) -> String {
-    endpoint.surface.docs_identity.clone()
-}
-
-pub(super) fn endpoint_route(client: &Client, scopes: &[&Scope], endpoint: &Endpoint) -> String {
-    render_route(&projected_endpoint_docs(client, scopes, endpoint))
-}
-
-fn render_route(docs: &EndpointDocModel) -> String {
-    if docs.route_atoms.is_empty() {
-        return "/".to_owned();
+pub(crate) fn owner_module(model: &Model, owner: usize) -> String {
+    let entry = &model.owners[owner];
+    match entry.kind {
+        OwnerKind::Client => format!(
+            "Generated support module for [`{}`](super::{}): its builder, unbound intent tree, credential facade, named requests of root endpoints and one module per scope.",
+            entry.display, model.client.name
+        ),
+        OwnerKind::Scope => format!(
+            "Generated support module for the `{}` scope: its handle, unbound handle and named requests.",
+            entry.display
+        ),
     }
-    format!(
-        "/{}",
-        docs.route_atoms
-            .iter()
-            .map(render_route_atom)
-            .collect::<Vec<_>>()
-            .join("/")
-    )
 }
 
-fn render_route_atom(atom: &EndpointDocRouteAtom) -> String {
-    match atom {
-        EndpointDocRouteAtom::Literal(value) => value.clone(),
-        EndpointDocRouteAtom::Value { namespace, name } => {
-            let namespace = match namespace {
-                EndpointDocNamespace::Client => "client",
-                EndpointDocNamespace::Scope(owner) => owner,
-                EndpointDocNamespace::Endpoint => "endpoint",
-            };
-            format!("{{{namespace}.{name}}}")
-        }
-        EndpointDocRouteAtom::Concat(values) => {
-            values.iter().map(render_route_atom).collect::<String>()
+pub(crate) fn scope_handle(model: &Model, owner: usize) -> String {
+    let entry = &model.owners[owner];
+    let mut out = author(&entry.meta);
+    let _ = writeln!(
+        out,
+        "Selected `{}` scope. Cloning shares the client services and this immutable snapshot; value controls consume the handle and return a new snapshot, so requests created earlier keep the old values.",
+        entry.display
+    );
+    if !entry.values.is_empty() {
+        out.push_str("\n# Scope values\n\n");
+        for value in &entry.values {
+            out.push_str(&value_line(value));
+            out.push('\n');
         }
     }
+    let _ = writeln!(
+        out,
+        "\nEffective timeout: {}.",
+        timeout_text(entry.effective_timeout)
+    );
+    out
 }
 
-fn render_inputs(docs: &EndpointDocModel) -> String {
-    let mut values = Vec::new();
-    values.extend(docs.scope_inputs.iter().map(|input| {
-        let owner = input.owner.as_deref().unwrap_or("scope");
-        format!(
-            "- `{owner}.{}: {}` — {} input owned by scope `{owner}`.",
-            input.name,
-            input.type_name,
-            input_kind_name(input.kind)
-        )
-    }));
-    values.extend(docs.required_endpoint_inputs.iter().map(|input| {
-        format!(
-            "- `endpoint.{}: {}` — required direct argument.",
-            input.name, input.type_name
-        )
-    }));
-    values.extend(docs.endpoint_setters.iter().map(render_setter));
-    if values.is_empty() {
-        "None.".to_owned()
-    } else {
-        values.join("\n")
-    }
+pub(crate) fn scope_navigation(model: &Model, owner: usize) -> String {
+    let entry = &model.owners[owner];
+    let mut out = author(&entry.meta);
+    let _ = write!(
+        out,
+        "Selects the `{}` scope. Its defaults are evaluated once now. No I/O is performed.",
+        entry.display
+    );
+    out
 }
 
-fn render_setter(setter: &EndpointDocSetter) -> String {
-    let controls = render_value_controls(setter, ", ");
+pub(crate) fn unbound_owner(model: &Model, owner: usize) -> String {
+    let entry = &model.owners[owner];
     format!(
-        "- `endpoint.{}: {}` — {}; {controls}.",
-        setter.name,
-        setter.type_name,
-        setter_capability_name(setter),
+        "Unbound `{}` navigation: captures scope and endpoint snapshots without a client. Bind an endpoint intent with `{}::request` or plan it with `{}::plan`; the selected client supplies its root values and services, and retained defaults are not re-evaluated.",
+        entry.display, model.client.name, model.client.name
     )
 }
 
-fn render_request_control(setter: &EndpointDocSetter) -> String {
-    render_value_controls(setter, "; ")
-}
-
-fn setter_capability_name(setter: &EndpointDocSetter) -> &'static str {
-    match (setter.omit.is_some(), setter.reset.is_some()) {
-        (true, true) => "absence-capable and has a declaration default",
-        (true, false) => "absence-capable",
-        (false, true) => "has a declaration default",
-        (false, false) => "plain",
+pub(crate) fn control(value: &Value, kind: &str, owner: &str) -> String {
+    let name = &value.logical;
+    let ty = type_text(&value.ty);
+    let mut out = String::new();
+    if let Some(first) = value.meta.docs.first() {
+        let _ = writeln!(out, "{}\n", first.trim());
     }
-}
-
-fn render_value_controls(setter: &EndpointDocSetter, separator: &str) -> String {
-    let mut controls = Vec::new();
-    let set = format!(
-        "replace the exact effective value with `.{}(...)`",
-        setter.setter
-    );
-    controls.push(set);
-    if let Some(omit) = &setter.omit {
-        controls.push(format!("select absence with `.{omit}()`"));
-    }
-    if let Some(reset) = &setter.reset {
-        controls.push(format!("restore the retained default with `.{reset}()`"));
-    }
-    controls.join(separator)
-}
-
-fn render_request(docs: &EndpointDocModel) -> String {
-    let query = render_names("Public query names", &docs.safe_query_names);
-    let headers = render_names("Public header names", &docs.safe_header_names);
-    let body = docs.body.as_ref().map_or_else(
-        || "Body: none.".to_owned(),
-        |body| {
-            let mut rendered = format!(
-                "Body argument: `endpoint.{}`{}; representation `{}` from {}; input type `{}`.",
-                body.argument,
-                if body.optional { " (optional)" } else { "" },
-                body.specification,
-                body.representation_origin,
-                body.input_type
-            );
-            if docs.terminals.pagination {
-                rendered.push_str(
-                    " Pagination requires `PageRequestRepresentation`: every page clones the original \
-                     page-stable input and prepares a fresh managed body.",
-                );
-            }
-            rendered
-        },
-    );
-    let authentication = if docs.authentication.is_empty() {
-        "Authentication: none.".to_owned()
-    } else {
-        format!(
-            "Authentication: {}.",
-            docs.authentication
-                .iter()
-                .map(|placement| { format!("{} ({})", placement.placement, placement.challenge) })
-                .collect::<Vec<_>>()
-                .join("; ")
-        )
-    };
-    let rate_limits = if docs.rate_limits.is_empty() {
-        "Rate limits: none.".to_owned()
-    } else {
-        format!(
-            "Rate limits (applicable policies are listed in inherited order):\n{}",
-            docs.rate_limits
-                .iter()
-                .map(|rule| {
-                    let identity = "explicit stable policy ID";
-                    let windows = rule
-                        .windows
-                        .iter()
-                        .map(|window| {
-                            format!("{}/{}", window.capacity, human_duration(window.duration))
-                        })
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    let dimensions = rule
-                        .dimensions
-                        .iter()
-                        .map(|dimension| format!("`{dimension}`"))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    format!(
-                        "- {} ({identity} `{}`)\n  - Bucketed by: {dimensions}\n  - Cost: {}\n  - Windows: {windows}",
-                        rule.origin, rule.id, rule.cost,
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-        )
-    };
-    let timeout = match docs.timeout {
-        EndpointDocTimeout::Inherited(duration) => format!(
-            "Timeout: inherited {}. Request controls can override or reset it.",
-            human_duration(duration)
+    let body = match kind {
+        "set" => format!(
+            "Selects a present `{name}` payload (`impl IntoValue<{ty}>`: identity, `&str`/`&String` to `String`)."
         ),
-        EndpointDocTimeout::Overridden(duration) => format!(
-            "Timeout: endpoint override {}. Request controls can override or reset it.",
-            human_duration(duration)
+        "replace" => format!(
+            "Replaces the outer slot of `{name}` exactly: `Some(v)` is present, `None` is absent. For a nested `Option` payload, `Some(None)` is a present inner `None`."
         ),
+        "set_if_some" => format!(
+            "Selects `{name}` when `Some`; `None` means no new opinion and leaves the current selection unchanged."
+        ),
+        "omit" => format!("Selects an absent `{name}`: its keyed emissions are omitted."),
+        "reset" => format!(
+            "Restores the retained initial selection of `{name}` (the initializer is not re-evaluated)."
+        ),
+        _ => String::new(),
     };
-    format!("{query}\n\n{headers}\n\n{body}\n\n{authentication}\n\n{rate_limits}\n\n{timeout}")
+    let _ = write!(out, "{body} Owner: `{owner}`.");
+    if value.sensitive {
+        out.push_str(" The value is sensitive: it is sent, but withheld from automatic plans, errors and observers.");
+    }
+    out
 }
 
-fn render_response(docs: &EndpointDocModel) -> String {
-    let status = match &docs.accepted_status {
-        AcceptedStatus::Success => "final `200..=299`".to_owned(),
-        AcceptedStatus::Codes(codes) => codes
+fn status_text(status: &Status) -> String {
+    match status {
+        Status::Success => "200..=299".to_owned(),
+        Status::Ranges(ranges) => ranges
+            .iter()
+            .map(|(start, end)| {
+                if start == end {
+                    start.to_string()
+                } else {
+                    format!("{start}..={end}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", "),
+    }
+}
+
+fn effect_text(effect: EffectDecl) -> &'static str {
+    match effect {
+        EffectDecl::Safe => "safe",
+        EffectDecl::Idempotent => "idempotent",
+        EffectDecl::NonIdempotent => "non-idempotent",
+    }
+}
+
+fn endpoint_card(model: &Model, index: usize) -> String {
+    let entry = &model.endpoints[index];
+    let mut out = String::new();
+    let _ = writeln!(out, "# Contract\n");
+    let _ = writeln!(
+        out,
+        "- Operation: `{} {}` (endpoint ID `{}`, {})",
+        entry.method.as_str(),
+        route_template(model, index),
+        entry.id,
+        if entry.id_explicit {
+            "explicit"
+        } else {
+            "navigation-derived"
+        }
+    );
+    let result = type_text(&entry.output);
+    let _ = writeln!(
+        out,
+        "- Result: `{result}` via `{}`",
+        type_text(&entry.response)
+    );
+    let _ = writeln!(out, "- Accepted statuses: {}", status_text(&entry.status));
+    if let Some(absence) = &entry.absence {
+        let codes = absence
             .iter()
             .map(u16::to_string)
             .collect::<Vec<_>>()
-            .join(", "),
-    };
-    let status_origin = if docs.status_explicit {
-        "explicit"
+            .join(", ");
+        let _ = writeln!(
+            out,
+            "- Expected absence: `None` on {codes} (head-only; that response body is dropped unread)"
+        );
+    }
+    let _ = writeln!(
+        out,
+        "- Effect: {}{}",
+        effect_text(entry.effect),
+        if entry.effect_explicit {
+            " (declared)"
+        } else {
+            " (method default)"
+        }
+    );
+    let _ = writeln!(out, "- Timeout: {}", timeout_text(entry.effective_timeout));
+    if entry.effective_auth.is_empty() {
+        let _ = writeln!(out, "- Authentication: none");
     } else {
-        "method-independent default"
-    };
-    let effect = match docs.effect {
-        Effect::Safe => "safe",
-        Effect::Idempotent => "idempotent",
-        Effect::NonIdempotent => "non_idempotent",
-    };
-    let effect_origin = if docs.effect_explicit {
-        "explicit"
-    } else {
-        "inferred from the HTTP method"
-    };
-    format!(
-        "Representation: `{}` (from {}).\n\nOutput type: `{}`.\n\nAccepted status: {status} ({status_origin}).\n\nEffect: `{effect}` ({effect_origin}).\n\nThe response representation selects buffered, streaming, or discard acquisition. Status and effect remain endpoint-owned. The named request documents the terminals actually available for this build.",
-        docs.response.specification, docs.response.representation_origin, docs.response.output_type
-    )
-}
-
-fn render_names(label: &str, values: &[String]) -> String {
-    if values.is_empty() {
-        format!("{label}: none.")
-    } else {
-        format!(
-            "{label}: {}.",
-            values
-                .iter()
-                .map(|value| format!("`{value}`"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
+        for placement in &entry.effective_auth {
+            let _ = writeln!(
+                out,
+                "- Authentication: {}",
+                placement_text(model, placement)
+            );
+        }
     }
-}
-
-fn render_argument(input: &EndpointDocInput) -> String {
-    format!("`{}: {}`", input.name, input.type_name)
-}
-
-fn input_kind_name(kind: EndpointDocInputKind) -> &'static str {
-    match kind {
-        EndpointDocInputKind::Required => "required",
-        EndpointDocInputKind::Optional => "optional",
-        EndpointDocInputKind::Defaulted => "defaulted",
-    }
-}
-
-fn local_type_name(path: &str) -> &str {
-    path.rsplit("::").next().unwrap_or(path)
-}
-
-pub(super) fn human_duration(duration: Duration) -> String {
-    let total = duration.as_nanos();
-    if total == 0 {
-        return "0s".to_owned();
-    }
-    const NANOS_PER_MICROSECOND: u128 = 1_000;
-    const NANOS_PER_MILLISECOND: u128 = 1_000_000;
-    const NANOS_PER_SECOND: u128 = 1_000_000_000;
-    const NANOS_PER_MINUTE: u128 = 60 * NANOS_PER_SECOND;
-    const NANOS_PER_HOUR: u128 = 60 * NANOS_PER_MINUTE;
-
-    if total % NANOS_PER_HOUR == 0 {
-        return format!("{}h", total / NANOS_PER_HOUR);
-    }
-    if total % NANOS_PER_MINUTE == 0 {
-        return format!("{}m", total / NANOS_PER_MINUTE);
-    }
-    if total >= NANOS_PER_SECOND {
-        return format_scaled(total, NANOS_PER_SECOND, 9, "s");
-    }
-    if total >= NANOS_PER_MILLISECOND {
-        return format_scaled(total, NANOS_PER_MILLISECOND, 6, "ms");
-    }
-    if total >= NANOS_PER_MICROSECOND {
-        return format_scaled(total, NANOS_PER_MICROSECOND, 3, "µs");
-    }
-    format!("{total}ns")
-}
-
-fn format_scaled(total: u128, unit: u128, width: usize, suffix: &str) -> String {
-    let whole = total / unit;
-    let remainder = total % unit;
-    if remainder == 0 {
-        return format!("{whole}{suffix}");
-    }
-    let fraction = format!("{remainder:0width$}")
-        .trim_end_matches('0')
-        .to_owned();
-    format!("{whole}.{fraction}{suffix}")
-}
-
-pub(super) fn value_category_summary(values: &[Value], owner: &str) -> String {
-    let names = |predicate: fn(&Value) -> bool| {
-        values
+    for rate in &entry.effective_rates {
+        let labels = rate
+            .dims
             .iter()
-            .filter(|value| predicate(value))
-            .map(|value| {
-                format!(
-                    "`{}: {}`",
-                    canonical_ident(&value.name),
-                    value.effective_type.to_token_stream()
-                )
+            .map(|dim| match dim {
+                BoundDim::Origin => "origin".to_owned(),
+                BoundDim::Endpoint => "endpoint".to_owned(),
+                BoundDim::Custom { label, .. } => format!("\"{label}\""),
             })
             .collect::<Vec<_>>()
-    };
-    let required = names(Value::is_required);
-    let optional = names(Value::is_optional);
-    let defaulted = names(|value| value.default().is_some());
-    let mut categories = Vec::new();
+            .join(", ");
+        let _ = writeln!(
+            out,
+            "- Rate policy `{}`: key [{labels}], cost {}, from `{}`",
+            rate.id, rate.cost, rate.origin
+        );
+    }
+    if entry.pagination.is_some() {
+        let _ = writeln!(
+            out,
+            "- Pagination: `pages`, `collect_prefix` and `collect_all` are available; ordinary `.await` returns one page"
+        );
+    }
+    if entry.expose_accepted_bytes {
+        let _ = writeln!(
+            out,
+            "- `accepted_bytes()` bypasses representation validation and conversion"
+        );
+    }
+    for credential in &entry.storage {
+        let credential = &model.client.credentials[*credential];
+        let _ = writeln!(
+            out,
+            "- `{}()` requests local installation into credential `{}`",
+            credential.store_terminal, credential.logical
+        );
+    }
+    // §2.3: a real rustdoc link to the expanded effective contract. The card
+    // is attached to items of the owner's support module (and to constructor
+    // impls written there), so the client type is `depth + 1` levels up.
+    let client = &model.client.name;
+    let path = "super::".repeat(model.owners[entry.owner].depth + 1);
+    let _ = writeln!(
+        out,
+        "\nThe complete effective contract is available from [`{client}::contract()`]({path}{client}::contract)."
+    );
+    out
+}
+
+pub(crate) fn request(model: &Model, index: usize) -> String {
+    let entry = &model.endpoints[index];
+    let mut out = author(&entry.meta);
+    let _ = writeln!(
+        out,
+        "Named request for `{}`. Holding it does not contact the server; `.await` executes one managed operation. {}\n",
+        entry.display,
+        if entry.is_clone() {
+            "Cloning creates an independent operation and grants no retry authority."
+        } else {
+            "It is not `Clone` because the declaration has a body slot."
+        }
+    );
+    out.push_str(&endpoint_card(model, index));
+    if !entry.values.is_empty() {
+        out.push_str("\n# Endpoint values\n\n");
+        for value in &entry.values {
+            out.push_str(&value_line(value));
+            out.push('\n');
+        }
+    }
+    out
+}
+
+pub(crate) fn constructor(model: &Model, index: usize) -> String {
+    let entry = &model.endpoints[index];
+    let mut out = author(&entry.meta);
+    let required: Vec<String> = entry
+        .positional
+        .iter()
+        .map(|positional| match positional {
+            Positional::Value(value) => format!("`{}`", entry.values[*value].logical),
+            Positional::Body => format!("body `{}`", entry.body.as_ref().expect("body").logical),
+        })
+        .collect();
+    let _ = writeln!(
+        out,
+        "Creates the inert `{}` request{}. Endpoint defaults are evaluated once now.\n",
+        entry.display,
+        if required.is_empty() {
+            String::new()
+        } else {
+            format!(" from its required inputs {}", required.join(", "))
+        }
+    );
+    out.push_str(&endpoint_card(model, index));
+    out
+}
+
+pub(crate) fn intent(model: &Model, index: usize) -> String {
+    let entry = &model.endpoints[index];
+    let mut out = author(&entry.meta);
+    let _ = write!(
+        out,
+        "Unbound intent for `{}`: endpoint values are captured now; bind it with `{}::request` (or plan it with `{}::plan`). Direct and unbound+bind requests have equivalent plans for the same selected snapshots.",
+        entry.display, model.client.name, model.client.name
+    );
+    out
+}
+
+pub(crate) fn client(model: &Model) -> String {
+    let root = model.root();
+    let mut out = author(&root.meta);
+    let _ = writeln!(
+        out,
+        "Immutable generated client for base `{}`. Build it with [`{}::builder`](Self::builder); transport, runtime policy, client values and credential sources are fixed in the built snapshot. Clones share services and credential stores.",
+        model.client.base.value(),
+        model.client.name
+    );
+    if !root.values.is_empty() {
+        out.push_str("\n# Client values\n\n");
+        for value in &root.values {
+            out.push_str(&value_line(value));
+            out.push('\n');
+        }
+    }
+    let _ = writeln!(
+        out,
+        "\nDefault timeout: {}.",
+        timeout_text(root.effective_timeout)
+    );
+    if model.client.requires_limiter {
+        out.push_str("\nRate policies are declared: building requires an explicitly selected limiter (`configure_runtime(|runtime| runtime.rate_limiter(...))`); Concord never installs one implicitly.\n");
+    }
+    out
+}
+
+pub(crate) fn builder(model: &Model) -> String {
+    let root = model.root();
+    let mut out = format!(
+        "Builder for [`{}`]. Declaration defaults were evaluated once when this builder was created; `build` does not evaluate them again. Missing required values, secrets and providers are reported together in one `ClientBuildError` naming the setters, never the values. Build performs no network access.\n",
+        model.client.name
+    );
+    let required: Vec<String> = root
+        .values
+        .iter()
+        .filter(|value| value.is_required_input())
+        .map(|value| format!("`set_{}`", value.logical))
+        .chain(
+            model
+                .client
+                .secrets
+                .iter()
+                .map(|secret| format!("`{}` (secret)", secret.logical)),
+        )
+        .collect();
     if !required.is_empty() {
-        categories.push(format!("Required {owner} inputs: {}.", required.join(", ")));
+        let _ = writeln!(out, "\nRequired inputs: {}.", required.join(", "));
     }
-    if !optional.is_empty() {
-        categories.push(format!("Optional {owner} inputs: {}.", optional.join(", ")));
-    }
-    if !defaulted.is_empty() {
-        categories.push(format!(
-            "Defaulted {owner} inputs: {}.",
-            defaulted.join(", ")
-        ));
-    }
-    if categories.is_empty() {
-        format!("{owner} inputs: none.")
-    } else {
-        categories.join(" ")
-    }
+    out
 }
 
-pub(super) fn credential_summary(client: &Client) -> String {
-    let secrets = client
-        .secrets
-        .iter()
-        .map(|secret| format!("`{}`", canonical_ident(&secret.name)))
-        .collect::<Vec<_>>();
-    let providers = client
-        .credentials
-        .iter()
-        .filter(|credential| matches!(credential.source, CredentialSource::Custom { .. }))
-        .map(|credential| format!("`{}`", canonical_ident(&credential.name)))
-        .collect::<Vec<_>>();
-    let secret_summary = if secrets.is_empty() {
-        "Required protected secrets: none.".to_owned()
-    } else {
-        format!("Required protected secrets: {}.", secrets.join(", "))
-    };
-    let provider_summary = if providers.is_empty() {
-        "Required credential providers: none.".to_owned()
-    } else {
-        format!("Required credential providers: {}.", providers.join(", "))
-    };
-    format!("{secret_summary} {provider_summary}")
-}
-
+/// V3-O01 / §2.3 / §19.2: the generated rustdoc attached to the actual caller
+/// method and request type of the canonical §22 Catalog. The declaration is
+/// expanded through the real emitter and the output parsed as Rust, so these
+/// assertions read the `#[doc]` attributes rustdoc renders, not an
+/// intermediate string.
 #[cfg(test)]
 mod tests {
     use proc_macro2::TokenStream;
     use quote::quote;
 
-    use super::super::test_support;
-    use super::*;
-    use crate::semantic;
+    /// The canonical §22 Catalog declaration
+    /// (`crates/concord-examples/src/contracts/catalog_v3.rs`).
+    fn catalog() -> TokenStream {
+        quote! {
+            /// Typed, tenant-scoped Catalog provider client.
+            client CatalogApi {
+                base "https://catalog.example.test/root/";
+                timeout 20s;
+                request Json;
+                response Json;
 
-    fn endpoint_context<'a>(
-        client: &'a Client,
-        endpoint_name: &str,
-    ) -> (Vec<&'a Scope>, &'a Endpoint) {
-        fn find<'a>(
-            children: &'a [Child],
-            endpoint_name: &str,
-            scopes: &mut Vec<&'a Scope>,
-        ) -> Option<(Vec<&'a Scope>, &'a Endpoint)> {
-            for child in children {
-                match child {
-                    Child::Endpoint(endpoint) if endpoint.name == endpoint_name => {
-                        return Some((scopes.clone(), endpoint));
-                    }
-                    Child::Scope(scope) => {
-                        scopes.push(scope);
-                        if let Some(found) = find(&scope.children, endpoint_name, scopes) {
-                            return Some(found);
-                        }
-                        scopes.pop();
-                    }
-                    Child::Endpoint(_) => {}
-                }
-            }
-            None
-        }
-
-        find(&client.children, endpoint_name, &mut Vec::new())
-            .unwrap_or_else(|| panic!("endpoint `{endpoint_name}`"))
-    }
-
-    fn endpoint_type_docs(api: &Api, endpoint_name: &str) -> String {
-        let (scopes, endpoint) = endpoint_context(&api.client, endpoint_name);
-        endpoint_type_doc(&api.client, &scopes, endpoint)
-    }
-
-    fn endpoint_request_docs(api: &Api, endpoint_name: &str) -> String {
-        let (scopes, endpoint) = endpoint_context(&api.client, endpoint_name);
-        request_wrapper_doc(&api.client, &scopes, endpoint)
-    }
-
-    fn endpoint_method_docs(api: &Api, endpoint_name: &str) -> String {
-        let (scopes, endpoint) = endpoint_context(&api.client, endpoint_name);
-        endpoint_method_doc(&api.client, &scopes, endpoint)
-    }
-
-    fn endpoint_route_docs(api: &Api, endpoint_name: &str) -> String {
-        let (scopes, endpoint) = endpoint_context(&api.client, endpoint_name);
-        endpoint_route(&api.client, &scopes, endpoint)
-    }
-
-    fn emitted_endpoint_docs(tokens: TokenStream, endpoint_name: &str) -> String {
-        let api = semantic::test_support::resolve_tokens(tokens);
-        endpoint_type_docs(&api, endpoint_name)
-    }
-
-    fn riot_host_api() -> Api {
-        semantic::test_support::resolve_tokens(quote! {
-            client RiotApi {
-                timeout 30s;
-                base "https://riotgames.com/";
                 values {
-                    platform: String;
-                    regional: String;
+                    /// The tenant is sent, but excluded from automatic observation.
+                    #[sensitive] query tenant: TenantId;
+                    query locale?: Locale;
+                    #[default] api_version: ApiVersion;
                 }
 
-            scope platform() {
-                subdomain [client.platform, "api"];
-                path ["lol", "league", "v4"];
-                GET challenger() -> Bytes via Binary;
+                credentials {
+                    secret bootstrap_key;
+                    credential application_key = api_key(secret.bootstrap_key);
+                    credential session = endpoint authenticate;
+                }
+
+                rate_limits {
+                    policy tenant_reads(tenant) {
+                        id "catalog.tenant.read";
+                        key [origin, "tenant" = tenant];
+                        allow 120 per 1m;
+                        allow 5000 per 1h;
+                    }
+                }
+
+                subdomain ["api"];
+                path "{api_version}";
+                headers { "X-Client-Version" = "3"; }
+                auth { header "X-Bootstrap-Key" = application_key; }
+
+                /// Explicit login. Use store_as_session to request local installation.
+                POST authenticate(body input: LoginInput) -> SessionToken {
+                    id "catalog.auth.login";
+                    path "auth/session";
+                    effect non_idempotent;
+                }
+
+                scope regional(
+                    region: Region,
+                    header("Accept-Language") language?: Language,
+                ) {
+                    subdomain [region];
+                    path "regions/{region}";
+                    auth replace { bearer session challenge unauthorized; }
+                    rate_limit tenant_reads(tenant = client.tenant);
+
+                    /// One decoded page; select an explicit traversal terminal for more.
+                    GET item_summaries(
+                        query category?: Category,
+                        query offset: u64 = 0,
+                        query count: NonZeroU32 = DEFAULT_PAGE_SIZE,
+                        query("tag") each tags: Vec<Tag>,
+                    ) -> Vec<ItemSummary> {
+                        id "catalog.items.list";
+                        path "items";
+                        paginate via OffsetPagination {
+                            init OffsetInit { offset: offset, page_size: count };
+                            cursor -> offset;
+                        }
+                    }
+
+                    /// A head-only 404 is None; the body of that response is not polled.
+                    GET find_item(id: ItemId) -> Option<Item> {
+                        id "catalog.item.find";
+                        path "items/{id}";
+                        absent on 404;
+                    }
+
+                    /// Returns a managed byte stream, not a completed export.
+                    #[deprecated(note = "use the paged feed instead")]
+                    GET export() -> ByteStream via Binary {
+                        id "catalog.item.export";
+                        path "export";
+                    }
+                }
             }
-            scope regional() {
-                subdomain [client.regional, "api"];
-                path ["riot", "account", "v1"];
-                GET account() -> Bytes via Binary;
-            }
-        }})
-    }
-
-    #[test]
-    fn static_host_prefix() {
-        let docs = emitted_endpoint_docs(
-            quote! {
-                client HostApi {
-                    timeout 30s; base "https://example.test:8443/root";
-                GET read() -> Bytes via Binary {
-                    subdomain ["api"];
-                    path ["items"];
-                }
-            }},
-            "read",
-        );
-
-        assert!(docs.contains("Base URL: `https://example.test:8443/root`."));
-        assert!(docs.contains("Host template: `api.example.test:8443`."));
-        assert!(docs.contains("Path: `/items`."));
-    }
-
-    #[test]
-    fn ip_bases_without_host_shaping_render_their_authorities() {
-        let ipv4 = emitted_endpoint_docs(
-            quote! {
-                client Ipv4Api {
-                    timeout 30s; base "http://127.0.0.1:8080/root";
-                GET read() -> Bytes via Binary;
-            }},
-            "read",
-        );
-        assert!(ipv4.contains("Base URL: `http://127.0.0.1:8080/root`."));
-        assert!(!ipv4.contains("Host template:"));
-
-        let ipv6 = emitted_endpoint_docs(
-            quote! {
-                client Ipv6Api {
-                    timeout 30s; base "http://[2001:db8::1]:8080/root";
-                GET read() -> Bytes via Binary;
-            }},
-            "read",
-        );
-        assert!(ipv6.contains("Base URL: `http://[2001:db8::1]:8080/root`."));
-        assert!(!ipv6.contains("Host template:"));
-    }
-
-    #[test]
-    fn impossible_ip_subdomain_shaping_never_reaches_documentation_generation() {
-        for declaration in [
-            quote! {
-                client Ipv4Api {
-                    timeout 30s;
-                    base "http://127.0.0.1:8080/";
-                    subdomain ["api"];
-
-                GET read() -> Bytes via Binary;
-            }},
-            quote! {
-                client Ipv6Api {
-                    timeout 30s;
-                    base "http://[2001:db8::1]:8080/";
-
-                GET read() -> Bytes via Binary {
-                    subdomain ["api"];
-                }
-            }},
-        ] {
-            let error = semantic::test_support::try_resolve_tokens(declaration)
-                .err()
-                .expect("IP host shaping must fail before documentation IR");
-            assert!(
-                error
-                    .to_string()
-                    .contains("subdomain shaping requires a DNS-domain fixed base")
-            );
         }
     }
 
-    #[test]
-    fn client_value_in_host() {
-        let docs = emitted_endpoint_docs(
-            quote! {
-                client HostApi {
-                    timeout 30s;
-                    base "https://example.test";
-                    values { locale: String; }
-
-                GET localized() -> Bytes via Binary {
-                    subdomain [client.locale];
-                }
-            }},
-            "localized",
-        );
-
-        assert!(docs.contains("Host template: `{client.locale}.example.test`."));
+    fn expand(tokens: TokenStream) -> syn::File {
+        let expanded =
+            crate::expand_with_facade(tokens, &quote!(::concord)).expect("valid declaration");
+        syn::parse2(expanded).expect("generated code parses as a Rust file")
     }
 
-    #[test]
-    fn scope_value_in_host() {
-        let docs = emitted_endpoint_docs(
-            quote! {
-                client HostApi {
-                    timeout 30s; base "https://example.test";
-                scope platform(platform: String) {
-                    GET scoped() -> Bytes via Binary {
-                        subdomain [platform.platform];
-                    }
-                }
-            }},
-            "scoped",
-        );
-
-        assert!(docs.contains("Host template: `{platform.platform}.example.test`."));
+    fn doc_text(attributes: &[syn::Attribute]) -> String {
+        attributes
+            .iter()
+            .filter(|attribute| attribute.path().is_ident("doc"))
+            .filter_map(|attribute| match &attribute.meta {
+                syn::Meta::NameValue(pair) => match &pair.value {
+                    syn::Expr::Lit(syn::ExprLit {
+                        lit: syn::Lit::Str(text),
+                        ..
+                    }) => Some(text.value()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
-    #[test]
-    fn formatted_host_atom() {
-        let docs = emitted_endpoint_docs(
-            quote! {
-                client HostApi {
-                    timeout 30s; base "https://example.test";
-                GET formatted(value: String) -> Bytes via Binary {
-                    subdomain [concat["edge-", endpoint.value]];
-                }
-            }},
-            "formatted",
-        );
-
-        assert!(docs.contains("Host template: `edge-{endpoint.value}.example.test`."));
-    }
-
-    #[test]
-    fn host_inheritance() {
-        let docs = emitted_endpoint_docs(
-            quote! {
-                client HostApi {
-                    timeout 30s;
-                    base "https://example.test";
-                    subdomain ["gateway"];
-
-                scope inherited() {
-                    GET read() -> Bytes via Binary;
-                }
-            }},
-            "read",
-        );
-
-        assert!(docs.contains("Host template: `gateway.example.test`."));
-    }
-
-    #[test]
-    fn host_off() {
-        let docs = emitted_endpoint_docs(
-            quote! {
-                client HostApi {
-                    timeout 30s;
-                    base "https://example.test/root";
-                    subdomain ["gateway"];
-
-                scope base_host() {
-                    subdomain off;
-                    GET read() -> Bytes via Binary;
-                }
-            }},
-            "read",
-        );
-
-        assert!(docs.contains("Base URL: `https://example.test/root`."));
-        assert!(docs.contains("Path: `/`."));
-        assert!(!docs.contains("Host template:"));
-    }
-
-    #[test]
-    fn sibling_scopes_have_distinct_hosts() {
-        let api = semantic::test_support::resolve_tokens(quote! {
-            client HostApi {
-                timeout 30s; base "https://example.test";
-            scope platform() {
-                subdomain ["platform"];
-                GET platform_status() -> Bytes via Binary;
-            }
-            scope regional() {
-                subdomain ["regional"];
-                GET regional_status() -> Bytes via Binary;
-            }
-        }});
-        let platform = endpoint_type_docs(&api, "platform_status");
-        let regional = endpoint_type_docs(&api, "regional_status");
-
-        assert!(platform.contains("Host template: `platform.example.test`."));
-        assert!(!platform.contains("regional.example.test"));
-        assert!(regional.contains("Host template: `regional.example.test`."));
-        assert!(!regional.contains("platform.example.test"));
-    }
-
-    #[test]
-    fn riot_platform_endpoint_host() {
-        let api = riot_host_api();
-        let docs = endpoint_type_docs(&api, "challenger");
-
-        assert!(docs.contains("Base URL: `https://riotgames.com/`."));
-        assert!(docs.contains("Host template: `{client.platform}.api.riotgames.com`."));
-        assert!(docs.contains("Path: `/lol/league/v4`."));
-    }
-
-    #[test]
-    fn riot_regional_endpoint_host() {
-        let api = riot_host_api();
-        let docs = endpoint_type_docs(&api, "account");
-
-        assert!(docs.contains("Base URL: `https://riotgames.com/`."));
-        assert!(docs.contains("Host template: `{client.regional}.api.riotgames.com`."));
-        assert!(docs.contains("Path: `/riot/account/v1`."));
-    }
-
-    #[test]
-    fn renders_named_routes_human_durations_and_user_sections() {
-        let api = semantic::test_support::resolve_tokens(quote! {
-            client DDragonApi {
-                base "https://ddragon.example.test/root";
-                values { locale: String = "en_US"; }
-                timeout 20s;
-
-            scope version(version: String) {
-                path ["cdn", version.version];
-                scope data() {
-                    path ["data", client.locale];
-                    GET realm(region: String, compact?: bool) -> Value via Json {
-                        path [concat[endpoint.region, ".json"]];
-                        query { "compact" = endpoint.compact; }
-                        headers { "X-View" = "public"; }
-                        timeout 250ms;
-                        rate_limit { id "concord.docs.1"; cost 1;
-                            key [endpoint, endpoint.region];
-                            allow 10 per 1500ms;
+    /// Every generated method named `name` with its attributes, in any module.
+    fn methods<'a>(items: &'a [syn::Item], name: &str, found: &mut Vec<&'a [syn::Attribute]>) {
+        for item in items {
+            match item {
+                syn::Item::Impl(block) => {
+                    for inner in &block.items {
+                        if let syn::ImplItem::Fn(method) = inner {
+                            if method.sig.ident == name {
+                                found.push(&method.attrs);
+                            }
                         }
                     }
                 }
+                syn::Item::Mod(module) => {
+                    if let Some((_, items)) = &module.content {
+                        methods(items, name, found);
+                    }
+                }
+                _ => {}
             }
-        }});
-        assert_eq!(
-            endpoint_route_docs(&api, "realm"),
-            "/cdn/{version.version}/data/{client.locale}/{endpoint.region}.json"
-        );
-        let docs = endpoint_type_docs(&api, "realm");
-        for expected in [
-            "# Summary",
-            "# Usage",
-            "# Inputs",
-            "# Request",
-            "# Response",
-            "# Identity",
-            "Public query names: `compact`",
-            "Public header names: `X-View`",
-            "Timeout: endpoint override 250ms",
-            "10/1.5s",
-            "Bucketed by: `endpoint`, `endpoint.region`",
-            "Stable contract ID: `d_dragon_api.version.data.realm`",
-        ] {
-            assert!(docs.contains(expected), "missing `{expected}` in:\n{docs}");
         }
-        for forbidden in [
-            "{vars.VALUE}",
-            "{scope.VALUE}",
-            "{ep.VALUE}",
-            "/<fixed base>",
-            "normalized public head",
-            "facade method",
-            "core-owned capability bounds",
-            "selected core capability",
-            "application native retry",
-        ] {
+    }
+
+    fn structure<'a>(items: &'a [syn::Item], name: &str) -> Option<&'a syn::ItemStruct> {
+        items.iter().find_map(|item| match item {
+            syn::Item::Struct(structure) if structure.ident == name => Some(structure),
+            syn::Item::Mod(module) => module
+                .content
+                .as_ref()
+                .and_then(|(_, items)| structure(items, name)),
+            _ => None,
+        })
+    }
+
+    /// The scope-handle constructor (not the unbound intent constructor).
+    fn constructor_docs(file: &syn::File, name: &str) -> (String, Vec<syn::Attribute>) {
+        let mut found = Vec::new();
+        methods(&file.items, name, &mut found);
+        found
+            .into_iter()
+            .map(|attributes| (doc_text(attributes), attributes.to_vec()))
+            .find(|(docs, _)| docs.contains("Creates the inert"))
+            .unwrap_or_else(|| panic!("no generated constructor `{name}`"))
+    }
+
+    fn assert_contains(docs: &str, needles: &[&str]) {
+        for needle in needles {
             assert!(
-                !docs.contains(forbidden),
-                "forbidden `{forbidden}` in:\n{docs}"
+                docs.contains(needle),
+                "generated docs lack `{needle}`:\n{docs}"
             );
         }
     }
 
     #[test]
-    fn key_values_do_not_appear_in_generated_docs() {
-        let api = semantic::test_support::resolve_tokens(quote! {
-            client RateDocsApi {
-                timeout 30s;
-                base "https://example.test";
-                values { tenant: String; }
-                rate_limit { id "concord.docs.2"; key [origin]; cost 1;  allow 100 per 1m; }
-
-            scope accounts(account: String) {
-                GET read(resource: String) -> Bytes via Binary {
-                    rate_limit { cost 1;
-                        id "service.account.read";
-                        key [origin, endpoint, client.tenant, accounts.account, endpoint.resource];
-                        allow 10 per 1s;
-                    }
-                }
-            }
-        }});
-        let docs = endpoint_type_docs(&api, "read");
-
-        assert!(docs.contains("applicable policies are listed in inherited order"));
-        assert!(docs.contains("Bucketed by: `origin`"));
-        assert!(docs.contains(
-            "Bucketed by: `origin`, `endpoint`, `client.tenant`, `accounts.account`, `endpoint.resource`"
-        ));
-        assert!(docs.contains("explicit stable policy ID `concord.docs.2`"));
-        assert!(docs.contains("explicit stable policy ID `service.account.read`"));
-    }
-
-    #[test]
-    fn named_rule_docs_report_definition_attachment_and_logical_dimensions() {
-        let api = semantic::test_support::resolve_tokens(quote! {
-            client RateDocsApi {
-                timeout 30s;
-                base "https://example.test";
-                rate_limits {
-                    policy account_reads(account) { id "concord.docs.4"; cost 1;
-                        key [origin, account];
-                        allow 10 per 1m;
-                    }
-                }
-
-            scope accounts(account: String) {
-                rate_limit account_reads(account = accounts.account) { cost 2; }
-                GET read() -> Bytes via Binary;
-            }
-        }});
-        let docs = endpoint_type_docs(&api, "read");
-
-        assert!(docs.contains("rate-limit profile `account_reads` attached at scope accounts"));
-        assert!(docs.contains("explicit stable policy ID `concord.docs.4`"));
-        assert!(docs.contains("Bucketed by: `origin`, `account`"));
-        assert!(docs.contains("Cost: 2"));
-        assert!(!docs.contains("Bucketed by: `origin`, `accounts.account`"));
-    }
-
-    #[test]
-    fn value_controls_describe_optional_and_defaulted_semantics_exactly() {
-        let api = semantic::test_support::resolve_tokens(quote! {
-            client ControlDocsApi {
-                timeout 30s;
-                base "https://example.test";
-
-            GET read(
-                cursor?: String,
-                #[default]
-                limit: u32,
-                label?: Option<String> = None,
-                values?: Option<Vec<String>> = None,
-            ) -> Bytes via Binary;
-        }});
-        let endpoint_docs = endpoint_type_docs(&api, "read");
-        assert!(endpoint_docs.contains(
-            "absence-capable; replace the exact effective value with `.set_cursor(...)`, select absence with `.omit_cursor()`"
-        ));
-        assert!(endpoint_docs.contains(
-            "has a declaration default; replace the exact effective value with `.set_limit(...)`, restore the retained default with `.reset_limit()`"
-        ));
-        assert!(
-            endpoint_docs.contains("`#[default]` invokes application-owned `Default::default()`")
+    fn catalog_method_docs_show_the_caller_contract() {
+        let file = expand(catalog());
+        let (constructor, _) = constructor_docs(&file, "find_item");
+        let request = doc_text(
+            &structure(&file.items, "FindItemRequest")
+                .expect("generated FindItemRequest")
+                .attrs,
         );
-        assert!(endpoint_docs.contains(
-            "`endpoint.label: :: std :: option :: Option < Option < String > >` — absence-capable and has a declaration default; replace the exact effective value with `.set_label(...)`, select absence with `.omit_label()`, restore the retained default with `.reset_label()`"
-        ));
-        assert!(endpoint_docs.contains(
-            "`endpoint.values: :: std :: option :: Option < Option < Vec < String > > >` — absence-capable and has a declaration default; replace the exact effective value with `.set_values(...)`, select absence with `.omit_values()`, restore the retained default with `.reset_values()`"
-        ));
-        assert!(!endpoint_docs.contains("Some(value)"));
-
-        let request_docs = endpoint_request_docs(&api, "read");
-        assert!(request_docs.contains(
-            "replace the exact effective value with `.set_cursor(...)`; select absence with `.omit_cursor()`"
-        ));
-        assert!(request_docs.contains(
-            "replace the exact effective value with `.set_limit(...)`; restore the retained default with `.reset_limit()`"
-        ));
-        assert!(request_docs.contains(
-            "replace the exact effective value with `.set_label(...)`; select absence with `.omit_label()`; restore the retained default with `.reset_label()`"
-        ));
-        assert!(request_docs.contains(
-            "replace the exact effective value with `.set_values(...)`; select absence with `.omit_values()`; restore the retained default with `.reset_values()`"
-        ));
-        assert!(!request_docs.contains("Some(value)"));
+        for docs in [&constructor, &request] {
+            assert_contains(
+                docs,
+                &[
+                    // Author description first.
+                    "A head-only 404 is None; the body of that response is not polled.",
+                    // Effective route, explicit operational ID.
+                    "`GET https://{regional.region}.api.catalog.example.test/root/{client.api_version}/regions/{regional.region}/items/{id}`",
+                    "endpoint ID `catalog.item.find`, explicit",
+                    // Result and its effective representation.
+                    "Result: `Option<Item>` via `Json`",
+                    // Expected-absence status, head-only.
+                    "Expected absence: `None` on 404 (head-only; that response body is dropped unread)",
+                    // Effect and its source, effective timeout.
+                    "Effect: safe (method default)",
+                    "Timeout: 20 s",
+                    // Inherited authentication truth and quota coverage.
+                    "Authentication: bearer `session` (challenge on 401)",
+                    "Rate policy `catalog.tenant.read`: key [origin, \"tenant\"], cost 1",
+                    // The rustdoc link to the complete effective contract,
+                    // relative to the `catalog_api::regional` support module.
+                    "The complete effective contract is available from [`CatalogApi::contract()`](super::super::CatalogApi::contract).",
+                ],
+            );
+        }
+        // Required inputs are named on the method the caller invokes.
+        assert_contains(&constructor, &["from its required inputs `id`"]);
+        assert!(
+            constructor.find("A head-only 404").expect("author text")
+                < constructor.find("# Contract").expect("contract card"),
+            "author description must precede the generated card:\n{constructor}"
+        );
+        // An endpoint-backed source never logs in automatically: the docs
+        // must not advertise a recovery the source cannot perform (§2.3).
+        for docs in [&constructor, &request] {
+            let lower = docs.to_ascii_lowercase();
+            assert!(
+                !lower.contains("refresh") && !lower.contains("recover"),
+                "docs advertise a recovery the endpoint-backed source cannot perform:\n{docs}"
+            );
+        }
     }
 
     #[test]
-    fn request_docs_list_endpoint_terminals() {
-        let api = test_support::api();
-        let docs = endpoint_request_docs(&api, "fetch_item");
-        assert!(docs.contains("`.response()`"));
-        assert!(docs.contains("`.accepted_bytes()`"));
-        assert!(!docs.contains("`.paginate(...)`"));
+    fn catalog_docs_expose_traversal_value_controls_storage_and_deprecation() {
+        let file = expand(catalog());
+
+        let (summaries, _) = constructor_docs(&file, "item_summaries");
+        assert_contains(
+            &summaries,
+            &[
+                "One decoded page; select an explicit traversal terminal for more.",
+                "from its required inputs `tags`",
+                "Pagination: `pages`, `collect_prefix` and `collect_all` are available; ordinary `.await` returns one page",
+                "Timeout: 20 s",
+            ],
+        );
+
+        let (login, _) = constructor_docs(&file, "authenticate");
+        assert_contains(
+            &login,
+            &[
+                "Explicit login. Use store_as_session to request local installation.",
+                "from its required inputs body `input`",
+                "Effect: non-idempotent (declared)",
+                "`store_as_session()` requests local installation into credential `session`",
+                "Authentication: header \"X-Bootstrap-Key\" = `application_key`",
+                // A root endpoint's card lives in the `catalog_api` module.
+                "The complete effective contract is available from [`CatalogApi::contract()`](super::CatalogApi::contract).",
+            ],
+        );
+
+        // Value controls carry the author's value docs and a one-line meaning.
+        let mut category = Vec::new();
+        methods(&file.items, "replace_category", &mut category);
+        let category = doc_text(category.first().expect("replace_category control"));
+        assert_contains(
+            &category,
+            &[
+                "Replaces the outer slot of `category` exactly: `Some(v)` is present, `None` is absent.",
+            ],
+        );
+        let mut tenant = Vec::new();
+        methods(&file.items, "set_tenant", &mut tenant);
+        let tenant = doc_text(tenant.first().expect("set_tenant control"));
+        assert_contains(
+            &tenant,
+            &[
+                "The tenant is sent, but excluded from automatic observation.",
+                "withheld from automatic plans, errors and observers",
+            ],
+        );
+
+        // Deprecation is emitted where calling triggers the warning.
+        let (export, attributes) = constructor_docs(&file, "export");
+        assert_contains(
+            &export,
+            &["Returns a managed byte stream, not a completed export."],
+        );
+        let deprecated = attributes
+            .iter()
+            .find(|attribute| attribute.path().is_ident("deprecated"))
+            .expect("the deprecated endpoint's constructor carries #[deprecated]");
+        let note = quote!(#deprecated).to_string();
+        assert!(note.contains("use the paged feed instead"), "{note}");
+
+        // The builder names every required input without values.
+        let builder = doc_text(
+            &structure(&file.items, "CatalogApiBuilder")
+                .expect("generated builder")
+                .attrs,
+        );
+        assert_contains(
+            &builder,
+            &["Required inputs: `set_tenant`, `bootstrap_key` (secret)."],
+        );
     }
 
+    fn allows_deprecated(attributes: &[syn::Attribute]) -> bool {
+        attributes.iter().any(|attribute| {
+            attribute.path().is_ident("allow")
+                && quote!(#attribute).to_string().contains("deprecated")
+        })
+    }
+
+    fn support_module<'a>(file: &'a syn::File, name: &str) -> &'a syn::ItemMod {
+        file.items
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Mod(module) if module.ident == name => Some(module),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no generated support module `{name}`"))
+    }
+
+    /// §3.5 regression (V3-O01, `tests/ui/fail/deprecation`): deprecation
+    /// fires at call sites only. The generated support code of a declaration
+    /// with a deprecated endpoint or scope allows its own uses of those items
+    /// (a `#![deny(deprecated)]` crate could not declare them otherwise), and
+    /// the unbound navigation of a deprecated scope warns like the bound one.
     #[test]
-    fn emitted_markdown_separates_direct_endpoint_and_request_ownership() {
-        let api = semantic::test_support::resolve_tokens(quote! {
-            client DocsApi {
-                base "https://docs.example.test";
-                credentials {
-                    secret token;
-                    credential bearer = bearer(secret.token);
+    fn deprecation_fires_at_call_sites_not_in_generated_support_code() {
+        let file = expand(quote! {
+            client LegacyApi {
+                base "https://legacy.example.test/";
+
+                #[deprecated(note = "use the paged feed instead")]
+                GET export() -> Bytes via Binary;
+
+                #[deprecated(note = "regions are resolved by the provider")]
+                scope regional(region: String) {
+                    path "regions/{region}";
+                    GET status() -> Bytes via Binary;
                 }
-                timeout 20s;
+            }
+        });
+        assert!(
+            allows_deprecated(&support_module(&file, "legacy_api").attrs),
+            "the support module must not report its own deprecated items"
+        );
+        let debug =
+            file.items
+                .iter()
+                .find_map(|item| match item {
+                    syn::Item::Impl(block)
+                        if block.trait_.as_ref().is_some_and(|(path, _)| {
+                            quote!(#path).to_string().contains("Debug")
+                        }) =>
+                    {
+                        Some(block)
+                    }
+                    _ => None,
+                })
+                .expect("client Debug impl");
+        assert!(allows_deprecated(&debug.attrs));
 
-            POST submit(
-                body body: Input via Json,
-                optional?: bool,
-            ) -> Output via Json {
-                auth { bearer bearer; }
-                expose accepted_bytes;
-            }
-            GET stream() -> ::concord::response::ByteStream via Binary;
-            GET discard() -> () via Empty {
-                timeout 30s;
-            }
-            POST pages(
-                cursor?: String,
-                body filter: Filter via Json,
-            ) -> Page via Json {
-                effect safe;
-                paginate via crate::Controller {
-                    cursor -> endpoint.cursor;
+        // Bound and unbound scope navigation both carry the deprecation.
+        let mut navigation = Vec::new();
+        methods(&file.items, "regional", &mut navigation);
+        assert_eq!(navigation.len(), 2, "bound and unbound `regional`");
+        for attributes in navigation {
+            let deprecated = attributes
+                .iter()
+                .find(|attribute| attribute.path().is_ident("deprecated"))
+                .expect("deprecated scope navigation carries #[deprecated]");
+            let note = quote!(#deprecated).to_string();
+            assert!(
+                note.contains("regions are resolved by the provider"),
+                "{note}"
+            );
+        }
+
+        // An ordinary declaration (a deprecated value alone included: its
+        // controls are never called internally) keeps every deprecation
+        // diagnostic for the user types it names.
+        let plain = expand(quote! {
+            client PlainApi {
+                base "https://plain.example.test/";
+                values {
+                    #[deprecated(note = "no longer sent")]
+                    legacy?: String;
                 }
+
+                GET export() -> Bytes via Binary;
             }
-        }});
-        let direct = endpoint_method_docs(&api, "submit");
-        assert!(direct.starts_with("`POST /`"));
-        assert!(direct.contains("Creates an inert request for [`Submit`]"));
-        assert!(direct.contains("Returns [`SubmitRequest`]"));
-        assert!(!direct.contains("# Request"));
-
-        let endpoint = endpoint_type_docs(&api, "submit");
-        assert!(endpoint.contains("Body argument: `endpoint.body`"));
-        assert!(endpoint.contains("representation `Json`"));
-        assert!(endpoint.contains("Authentication: Bearer authorization"));
-        assert!(endpoint.contains("Timeout: inherited 20s"));
-
-        let request = endpoint_request_docs(&api, "submit");
-        assert!(request.contains("`.set_optional(...)`"));
-        assert!(request.contains("`.response()`"));
-        assert!(request.contains("`.accepted_bytes()`"));
-        assert!(!request.contains("`.paginate(...)`"));
-
-        let stream_docs = endpoint_type_docs(&api, "stream");
-        assert!(stream_docs.contains("Representation: `Binary`"));
-        assert!(stream_docs.contains("Body: none."));
-        assert!(stream_docs.contains("Authentication: none."));
-
-        assert!(endpoint_type_docs(&api, "discard").contains("Representation: `Empty`"));
-        assert!(endpoint_type_docs(&api, "discard").contains("Timeout: endpoint override 30s"));
-
-        assert!(endpoint_request_docs(&api, "pages").contains("`.paginate(...)`"));
-        assert!(endpoint_type_docs(&api, "pages").contains("`PageRequestRepresentation`"));
-        assert!(endpoint_type_docs(&api, "pages").contains("page-stable input"));
-    }
-
-    #[test]
-    fn durations_are_compact_and_exact() {
-        assert_eq!(human_duration(Duration::from_secs(20)), "20s");
-        assert_eq!(human_duration(Duration::from_millis(250)), "250ms");
-        assert_eq!(human_duration(Duration::from_millis(1_500)), "1.5s");
-        assert_eq!(human_duration(Duration::from_secs(600)), "10m");
+        });
+        assert!(!allows_deprecated(
+            &support_module(&plain, "plain_api").attrs
+        ));
     }
 }

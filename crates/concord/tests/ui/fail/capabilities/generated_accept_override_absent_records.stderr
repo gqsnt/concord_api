@@ -1,18 +1,13 @@
 error[E0599]: no method named `accept` found for struct `ReadRequest` in the current scope
-  --> tests/ui/fail/capabilities/generated_accept_override_absent_records.rs:14:27
+  --> tests/ui/fail/capabilities/generated_accept_override_absent_records.rs:17:27
    |
- 3 | / api! {
- 4 | |     client GeneratedAcceptApi {
- 5 | |         timeout 30s;
- 6 | |         base "https://example.test";
+ 6 | / api! {
+ 7 | |     client GeneratedAcceptApi {
+ 8 | |         timeout 30s;
+ 9 | |         base "https://example.test";
 ...  |
-10 | | }
+13 | | }
    | |_- method `accept` not found for this struct
 ...
-14 |       let _ = client.read().accept("application/json");
+17 |       let _ = client.read().accept("application/json");
    |                             ^^^^^^ method not found in `ReadRequest`
-   |
-   = help: items from traits can only be used if the trait is implemented and in scope
-   = note: the following traits define an item `accept`, perhaps you need to implement one of them:
-           candidate #1: `RecordDecoder`
-           candidate #2: `concord::response::ResponseRepresentation`

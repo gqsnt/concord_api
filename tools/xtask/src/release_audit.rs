@@ -146,25 +146,47 @@ fn check_lifecycle(root: &Path) -> Result<(), String> {
         }
     }
 
-    if version == "2.1.0" {
+    lifecycle_decision(version, &status, &owner)
+}
+
+/// The v3 release line this tree may carry (spec DONE-02: `3.0.0-beta.N`,
+/// unpublished until separately authorized).
+const RELEASE_LINE: &str = "3.0.0";
+
+/// Decides whether the workspace version is allowed by the authoritative
+/// status and owner-decision documents.
+fn lifecycle_decision(version: &str, status: &str, owner: &str) -> Result<(), String> {
+    if !status.contains(&format!("`{version}`")) {
+        return Err(format!(
+            "dev_doc/release_gate_status.md does not name the exact workspace version `{version}`"
+        ));
+    }
+    if version == RELEASE_LINE {
         if owner.contains("REQUIRED OWNER DECISION")
             || status.contains("Blocked")
             || status.contains("Provisional")
             || status.contains("Conditional")
         {
-            return Err(
-                "stable 2.1.0 is forbidden while owner or mandatory gate decisions remain open"
-                    .to_owned(),
-            );
+            return Err(format!(
+                "stable {RELEASE_LINE} is forbidden while owner or mandatory gate decisions remain open"
+            ));
         }
-    } else if version.starts_with("2.1.0-beta.") {
+    } else if version
+        .strip_prefix(RELEASE_LINE)
+        .and_then(|rest| rest.strip_prefix("-beta."))
+        .is_some_and(|number| {
+            !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
+        })
+    {
         if !status.contains("integration candidate / beta")
             || !status.contains("Blocked — owner authority required")
         {
             return Err("beta lifecycle does not name its mandatory external blockers".to_owned());
         }
     } else {
-        return Err(format!("unsupported v2.1 lifecycle version `{version}`"));
+        return Err(format!(
+            "unsupported lifecycle version `{version}`; this tree carries {RELEASE_LINE}-beta.N or {RELEASE_LINE}"
+        ));
     }
     Ok(())
 }
@@ -256,14 +278,45 @@ fn relative(root: &Path, path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::quoted_assignment;
+    use super::{lifecycle_decision, quoted_assignment};
 
     #[test]
     fn manifest_assignment_parser_is_exact() {
         assert_eq!(
-            quoted_assignment("version = \"2.1.0-beta.1\"", "version"),
-            Some("2.1.0-beta.1")
+            quoted_assignment("version = \"3.0.0-beta.1\"", "version"),
+            Some("3.0.0-beta.1")
         );
         assert_eq!(quoted_assignment("versioned = \"bad\"", "version"), None);
+    }
+
+    const BETA_STATUS: &str = "- **Workspace version:** `3.0.0-beta.1`\n\
+        unpublished beta (integration candidate / beta lifecycle)\n\
+        | Gate 0 | **Blocked — owner authority required** |";
+
+    #[test]
+    fn v3_beta_lifecycle_requires_the_exact_version_and_named_blockers() {
+        lifecycle_decision("3.0.0-beta.1", BETA_STATUS, "").expect("v3 beta");
+        let stale = BETA_STATUS.replace("3.0.0-beta.1", "2.1.0-beta.1");
+        let error = lifecycle_decision("3.0.0-beta.1", &stale, "").expect_err("stale status");
+        assert!(error.contains("exact workspace version"), "{error}");
+        let unblocked = BETA_STATUS.replace("Blocked — owner authority required", "Open");
+        assert!(lifecycle_decision("3.0.0-beta.1", &unblocked, "").is_err());
+        for unsupported in ["2.1.0-beta.1", "3.0.0-rc.1", "3.0.0-beta.", "3.1.0-beta.1"] {
+            let status = BETA_STATUS.replace("3.0.0-beta.1", unsupported);
+            let error = lifecycle_decision(unsupported, &status, "").expect_err(unsupported);
+            assert!(error.contains("unsupported lifecycle version"), "{error}");
+        }
+    }
+
+    #[test]
+    fn stable_v3_requires_every_decision_closed() {
+        let status = BETA_STATUS.replace("3.0.0-beta.1", "3.0.0");
+        let error = lifecycle_decision("3.0.0", &status, "").expect_err("open gates");
+        assert!(error.contains("forbidden"), "{error}");
+        lifecycle_decision("3.0.0", "Workspace version: `3.0.0`; all gates passed", "")
+            .expect("closed gates");
+        assert!(
+            lifecycle_decision("3.0.0", "`3.0.0`", "REQUIRED OWNER DECISION: license").is_err()
+        );
     }
 }

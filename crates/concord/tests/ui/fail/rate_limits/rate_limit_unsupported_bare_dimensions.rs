@@ -1,34 +1,42 @@
-use concord::api;
+// §12.3: `origin` and `endpoint` are the only built-in dimensions; every other
+// dimension is an explicit `"label" = value`. Bare names get a migration
+// diagnostic, and a label must bind a declared value.
+#![allow(unused_imports)]
+
+use concord::{Binary, Bytes, api};
 
 api! {
     client MethodApi {
-        timeout 30s;
         base "https://example.test";
-        rate_limit { id "concord.rate_limit_unsupported_bare_dimensions.1"; cost 1;  key [method]; allow 1 per 1s; }
+        rate_limit { id "concord.rate_limit_unsupported_bare_dimensions.1"; key [method]; allow 1 per 1s; }
     }
 }
 
 api! {
     client PathApi {
-        timeout 30s;
         base "https://example.test";
-        rate_limit { id "concord.rate_limit_unsupported_bare_dimensions.2"; cost 1;  key [path]; allow 1 per 1s; }
+        rate_limit { id "concord.rate_limit_unsupported_bare_dimensions.2"; key [path]; allow 1 per 1s; }
     }
 }
 
 api! {
     client QueryApi {
-        timeout 30s;
         base "https://example.test";
-        rate_limit { id "concord.rate_limit_unsupported_bare_dimensions.3"; cost 1;  key [query]; allow 1 per 1s; }
+        rate_limit { id "concord.rate_limit_unsupported_bare_dimensions.3"; key [query]; allow 1 per 1s; }
     }
 }
 
 api! {
     client SafeUrlApi {
-        timeout 30s;
         base "https://example.test";
-        rate_limit { id "concord.rate_limit_unsupported_bare_dimensions.4"; cost 1;  key [observed_url]; allow 1 per 1s; }
+        rate_limit { id "concord.rate_limit_unsupported_bare_dimensions.4"; key [observed_url]; allow 1 per 1s; }
+    }
+}
+
+api! {
+    client LabelledMethodApi {
+        base "https://example.test";
+        rate_limit { id "concord.rate_limit_unsupported_bare_dimensions.5"; key ["method" = method]; allow 1 per 1s; }
     }
 }
 

@@ -1,125 +1,48 @@
-error[E0277]: the trait bound `Vec<String>: RateKeyPart` is not satisfied
-  --> tests/ui/fail/rate_limits/rate_limit_vector_dimension.rs:3:1
+error[E0277]: [C3-RATE] `Vec<std::string::String>` has no canonical rate-key encoding
+  --> tests/ui/fail/rate_limits/rate_limit_vector_dimension.rs:11:30
    |
- 3 | / api! {
- 4 | |     client VectorKeyApi {
- 5 | |         timeout 30s;
- 6 | |         base "https://example.test";
-...  |
-17 | | }
-   | |_^ the trait `RateKeyPart` is not implemented for `Vec<String>`
+11 |             key ["tenants" = tenants];
+   |                              ^^^^^^^ this rate-key dimension needs a stable `RateKeyPart` encoding
    |
+   = help: the trait `RateKeyPart` is not implemented for `Vec<std::string::String>`
+   = note: a custom rate-key dimension is encoded through a named, stable `RateKeyPart` contract (strings, integers, `bool` and `char` are built in); it is never an atom encoder or `Display` bridge
+   = note: write `"label" = value via Encoder` with an `Encoder: RateKeyEncoder<Vec<std::string::String>>`, or implement `RateKeyPart` for the domain type
    = help: the following other types implement trait `RateKeyPart`:
              &T
              Arc<T>
              Box<T>
-             Cow<'a, T>
-             String
+             Cow<'_, T>
              bool
              char
              i128
+             i16
            and $N others
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `Vec<String>: RateKeyPart` is not satisfied
-  --> tests/ui/fail/rate_limits/rate_limit_vector_dimension.rs:3:1
+error[E0277]: [C3-RATE] `Vec<std::string::String>` has no canonical rate-key encoding
+  --> tests/ui/fail/rate_limits/rate_limit_vector_dimension.rs:11:30
    |
- 3 | / api! {
- 4 | |     client VectorKeyApi {
- 5 | |         timeout 30s;
- 6 | |         base "https://example.test";
-...  |
-17 | | }
-   | |_^ the trait `RateKeyPart` is not implemented for `Vec<String>`
+11 |             key ["tenants" = tenants];
+   |                              ^^^^^^^ this rate-key dimension needs a stable `RateKeyPart` encoding
    |
+   = help: the trait `RateKeyPart` is not implemented for `Vec<std::string::String>`
+   = note: a custom rate-key dimension is encoded through a named, stable `RateKeyPart` contract (strings, integers, `bool` and `char` are built in); it is never an atom encoder or `Display` bridge
+   = note: write `"label" = value via Encoder` with an `Encoder: RateKeyEncoder<Vec<std::string::String>>`, or implement `RateKeyPart` for the domain type
    = help: the following other types implement trait `RateKeyPart`:
              &T
              Arc<T>
              Box<T>
-             Cow<'a, T>
-             String
+             Cow<'_, T>
              bool
              char
              i128
+             i16
            and $N others
-   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `Vec<String>: RateKeyPart` is not satisfied
-  --> tests/ui/fail/rate_limits/rate_limit_vector_dimension.rs:3:1
+note: required by a bound in `RateLimitDeclaration::part`
+  --> $WORKSPACE/crates/concord-core/src/rate_limit/declaration.rs
    |
- 3 | / api! {
- 4 | |     client VectorKeyApi {
- 5 | |         timeout 30s;
- 6 | |         base "https://example.test";
-...  |
-17 | | }
-   | |_^ the trait `RateKeyPart` is not implemented for `Vec<String>`
-   |
-   = help: the following other types implement trait `RateKeyPart`:
-             &T
-             Arc<T>
-             Box<T>
-             Cow<'a, T>
-             String
-             bool
-             char
-             i128
-           and $N others
-note: required for `vector_key_api::Read` to implement `concord::__private::EndpointSpec`
-  --> tests/ui/fail/rate_limits/rate_limit_vector_dimension.rs:3:1
-   |
- 3 | / api! {
- 4 | |     client VectorKeyApi {
- 5 | |         timeout 30s;
- 6 | |         base "https://example.test";
-...  |
-15 | |         GET read() -> Bytes via Binary;
-   | |             ^^^^
-16 | |     }
-17 | | }
-   | |_^ unsatisfied trait bound introduced here
-note: required by a bound in `concord::__private::request_plan`
-  --> $WORKSPACE/crates/concord-core/src/__private.rs
-   |
-   | pub fn request_plan<E>(
-   |        ------------ required by a bound in this function
-...
-   |     E: EndpointSpec,
-   |        ^^^^^^^^^^^^ required by this bound in `request_plan`
-   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `Vec<String>: RateKeyPart` is not satisfied
-  --> tests/ui/fail/rate_limits/rate_limit_vector_dimension.rs:3:1
-   |
- 3 | / api! {
- 4 | |     client VectorKeyApi {
- 5 | |         timeout 30s;
- 6 | |         base "https://example.test";
-...  |
-17 | | }
-   | |_^ the trait `RateKeyPart` is not implemented for `Vec<String>`
-   |
-   = help: the following other types implement trait `RateKeyPart`:
-             &T
-             Arc<T>
-             Box<T>
-             Cow<'a, T>
-             String
-             bool
-             char
-             i128
-           and $N others
-note: required for `vector_key_api::Read` to implement `vector_key_api::Endpoint`
-  --> tests/ui/fail/rate_limits/rate_limit_vector_dimension.rs:3:1
-   |
- 3 | / api! {
- 4 | |     client VectorKeyApi {
- 5 | |         timeout 30s;
- 6 | |         base "https://example.test";
-...  |
-15 | |         GET read() -> Bytes via Binary;
-   | |             ^^^^
-16 | |     }
-17 | | }
-   | |_^ unsatisfied trait bound introduced here
+   |     pub fn part<T>(self, label: &str, value: &T) -> Self
+   |            ---- required by a bound in this associated function
+   |     where
+   |         T: RateKeyPart + ?Sized,
+   |            ^^^^^^^^^^^ required by this bound in `RateLimitDeclaration::part`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

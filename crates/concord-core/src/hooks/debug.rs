@@ -106,7 +106,7 @@ impl DebugDispatcher {
     pub(crate) fn pagination_completion(&self, event: &PaginationFinished<'_>) {
         if self.level != DebugLevel::None {
             self.emit(format_args!(
-                "pagination-completion endpoint={} method={} pages={} items={} attempts={} policy-retries={} recovered-authentication={} status={:?} outcome={:?} elapsed={:?}",
+                "pagination-completion endpoint={} method={} pages={} items={} attempts={} policy-retries={} recovered-authentication={} status={:?} outcome={:?} stop={:?} elapsed={:?}",
                 event.endpoint,
                 event.method,
                 event.pages_completed,
@@ -116,6 +116,7 @@ impl DebugDispatcher {
                 event.recovered_authentication,
                 event.final_status,
                 event.outcome,
+                event.stop_reason,
                 event.elapsed
             ));
         }

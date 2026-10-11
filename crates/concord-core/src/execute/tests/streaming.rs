@@ -22,9 +22,7 @@ impl TestResponseRepresentation for BinaryStreamSurface {
 impl ResponseRepresentation<ByteStream> for BinaryStreamSurface {
     type Driver = Streaming;
 
-    fn accept() -> Option<&'static str> {
-        <Binary as ResponseRepresentation<ByteStream>>::accept()
-    }
+    const ACCEPT: Option<&'static str> = <Binary as ResponseRepresentation<ByteStream>>::ACCEPT;
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         <Binary as ResponseRepresentation<ByteStream>>::validate(head)
@@ -201,7 +199,10 @@ async fn semantic_item_stream_reports_complete_failure_and_drop_after_acquisitio
         .await
         .expect("failure item")
         .expect_err("body failure remains a stream item");
-    assert_eq!(error.kind(), RecordErrorKind::Body);
+    assert_eq!(
+        stream_error_kind(&error),
+        Some(crate::response::StreamErrorKind::Body)
+    );
     assert!(!format!("{error:?} {error}").contains("private item failure"));
 
     let dropped = surface_request::<SemanticItemStreamSurface>(core, "dropped")
@@ -230,8 +231,7 @@ async fn binary_stream_allows_missing_media_and_keeps_streaming_lifecycle_and_li
     let core = development_core(
         &executor,
         Arc::clone(&hooks),
-        RuntimeConfigBuilder::new()
-            .stream_response_limit(NonZeroUsize::new(4).expect("positive stream limit")),
+        RuntimeConfigBuilder::new().stream_response_limit(4),
     );
     let mut headers = http::HeaderMap::new();
     headers.insert(
@@ -282,8 +282,7 @@ async fn binary_stream_allows_missing_media_and_keeps_streaming_lifecycle_and_li
     let limited_core = development_core(
         &limited_executor,
         Arc::clone(&limited_hooks),
-        RuntimeConfigBuilder::new()
-            .stream_response_limit(NonZeroUsize::new(4).expect("positive stream limit")),
+        RuntimeConfigBuilder::new().stream_response_limit(4),
     );
     limited_executor
         .application()
@@ -376,8 +375,7 @@ async fn stream_response_known_length_and_media_fail_before_body_polling() {
     let known_core = real_core(
         &known_server,
         Arc::new(ProbeHooks::new()),
-        RuntimeConfigBuilder::new()
-            .stream_response_limit(NonZeroUsize::new(4).expect("positive limit")),
+        RuntimeConfigBuilder::new().stream_response_limit(4),
     );
     let error = tokio::time::timeout(Duration::from_secs(1), stream_request(known_core))
         .await
@@ -431,8 +429,8 @@ async fn unknown_stream_is_lazy_and_first_cumulative_excess_chunk_is_withheld() 
         &server,
         Arc::clone(&hooks),
         RuntimeConfigBuilder::new()
-            .response_body_limit(NonZeroUsize::new(1).expect("positive limit"))
-            .stream_response_limit(NonZeroUsize::new(4).expect("positive limit")),
+            .response_body_limit(1)
+            .stream_response_limit(4),
     );
     let mut lazy = tokio::time::timeout(Duration::from_secs(1), stream_request(core.clone()))
         .await
@@ -499,8 +497,7 @@ async fn response_stream_limit_counts_reqwest_post_decompression_bytes() {
     let core = real_core(
         &server,
         Arc::new(ProbeHooks::new()),
-        RuntimeConfigBuilder::new()
-            .stream_response_limit(NonZeroUsize::new(64).expect("positive limit")),
+        RuntimeConfigBuilder::new().stream_response_limit(64),
     );
     let mut response = stream_request(core).await.expect("compressed stream opens");
     let error = next_stream_chunk(&mut response)
@@ -508,7 +505,101 @@ async fn response_stream_limit_counts_reqwest_post_decompression_bytes() {
         .expect("post-decompression limit result")
         .expect_err("128 decoded bytes exceed a 64-byte stream limit");
     assert_eq!(error.category(), ErrorCategory::ResponseBody);
+    // V3-P11: the byte limit applies to decoded bytes after decompression.
+    assert_eq!(
+        stream_error_kind(&error),
+        Some(crate::response::StreamErrorKind::ByteLimit)
+    );
+    assert_eq!(
+        error
+            .stream_summary()
+            .map(crate::response::StreamSummary::acquired_bytes),
+        Some(128)
+    );
     assert!(next_stream_chunk(&mut response).await.is_none());
+}
+
+/// Reference encoder output for 128 `x` bytes, produced offline and
+/// deterministically because neither encoder is a dependency of this crate:
+/// `brotli` 8.0.4 `CompressorWriter` (quality 11, window 22) and Python
+/// `zlib.compress(b"x" * 128, 9)` (RFC 1950 zlib framing, which is what HTTP
+/// `Content-Encoding: deflate` denotes). Each is 12 encoded bytes that decode
+/// to 128 bytes.
+#[cfg(feature = "brotli")]
+const BROTLI_128_X: &[u8] = &[139, 63, 0, 248, 37, 240, 34, 177, 64, 32, 27, 3];
+#[cfg(feature = "deflate")]
+const DEFLATE_128_X: &[u8] = &[120, 218, 171, 168, 24, 88, 0, 0, 31, 97, 60, 1];
+
+/// PRODUCT-04 evidence for one runtime decompression feature path: the
+/// encoded body is decoded through a Concord client, and the stream byte
+/// limit counts decoded bytes (128) rather than the 12 encoded bytes.
+#[cfg(any(feature = "brotli", feature = "deflate"))]
+async fn assert_stream_decodes_and_limits_post_decompression_bytes(encoding: &str, encoded: &[u8]) {
+    let script = || ResponseScript::Complete {
+        status: 200,
+        headers: vec![
+            ("Content-Encoding".into(), encoding.into()),
+            ("Content-Type".into(), "application/octet-stream".into()),
+        ],
+        body: encoded.to_vec(),
+    };
+    let server = ScriptedServer::start([script(), script()]).expect("compressed stream server");
+
+    // Decoded through the feature path: exactly 128 decoded bytes.
+    let core = real_core(
+        &server,
+        Arc::new(ProbeHooks::new()),
+        RuntimeConfigBuilder::new().stream_response_limit(128),
+    );
+    let mut response = stream_request(core).await.expect("compressed stream opens");
+    let mut decoded = Vec::new();
+    while let Some(chunk) = next_stream_chunk(&mut response).await {
+        decoded.extend_from_slice(&chunk.expect("decoded chunk"));
+    }
+    assert_eq!(decoded, vec![b'x'; 128], "{encoding} body decoded");
+
+    // A 64-byte limit sits between the encoded (12) and decoded (128) sizes.
+    let core = real_core(
+        &server,
+        Arc::new(ProbeHooks::new()),
+        RuntimeConfigBuilder::new().stream_response_limit(64),
+    );
+    let mut response = stream_request(core).await.expect("compressed stream opens");
+    let error = loop {
+        match next_stream_chunk(&mut response)
+            .await
+            .expect("post-decompression limit result")
+        {
+            Ok(chunk) => assert!(chunk.len() <= 64),
+            Err(error) => break error,
+        }
+    };
+    assert_eq!(error.category(), ErrorCategory::ResponseBody);
+    assert_eq!(
+        stream_error_kind(&error),
+        Some(crate::response::StreamErrorKind::ByteLimit),
+        "{encoding}: the byte limit applies after decompression"
+    );
+    assert!(
+        error
+            .stream_summary()
+            .map(crate::response::StreamSummary::acquired_bytes)
+            .is_some_and(|acquired| acquired > 64),
+        "{encoding}: acquired bytes are decoded bytes"
+    );
+    assert!(next_stream_chunk(&mut response).await.is_none());
+}
+
+#[cfg(feature = "brotli")]
+#[tokio::test]
+async fn response_stream_limit_counts_brotli_post_decompression_bytes() {
+    assert_stream_decodes_and_limits_post_decompression_bytes("br", BROTLI_128_X).await;
+}
+
+#[cfg(feature = "deflate")]
+#[tokio::test]
+async fn response_stream_limit_counts_deflate_post_decompression_bytes() {
+    assert_stream_decodes_and_limits_post_decompression_bytes("deflate", DEFLATE_128_X).await;
 }
 
 #[tokio::test]
@@ -579,6 +670,7 @@ async fn caller_stream_polling_is_outside_operation_deadline_and_drop_is_termina
     let core = real_core(&server, Arc::clone(&hooks), RuntimeConfigBuilder::new());
     let mut after_deadline = stream_request(core.clone())
         .timeout(Duration::from_millis(100))
+        .expect("valid timeout")
         .await
         .expect("stream opens inside deadline");
     tokio::time::sleep(Duration::from_millis(180)).await;
@@ -790,7 +882,10 @@ async fn record_stream_body_and_decoder_failures_are_items_without_second_comple
         .await
         .expect("body failure item")
         .expect_err("body read fails after opening");
-    assert_eq!(error.kind(), RecordErrorKind::Body);
+    assert_eq!(
+        stream_error_kind(&error),
+        Some(crate::response::StreamErrorKind::Body)
+    );
     assert_omits(
         &recursive_error_surfaces(&error),
         &[
@@ -813,7 +908,10 @@ async fn record_stream_body_and_decoder_failures_are_items_without_second_comple
         .await
         .expect("decode failure item")
         .expect_err("decoder framing fails after opening");
-    assert_eq!(error.kind(), RecordErrorKind::InvalidFraming);
+    assert_eq!(
+        stream_error_kind(&error),
+        Some(crate::response::StreamErrorKind::InvalidFraming)
+    );
     assert_omits(
         &recursive_error_surfaces(&error),
         &["decoder-framing-body-sentinel-a14f2b"],
@@ -830,7 +928,10 @@ async fn record_stream_body_and_decoder_failures_are_items_without_second_comple
         .await
         .expect("EOF failure item")
         .expect_err("decoder EOF fails after opening");
-    assert_eq!(error.kind(), RecordErrorKind::IncompleteRecord);
+    assert_eq!(
+        stream_error_kind(&error),
+        Some(crate::response::StreamErrorKind::IncompleteRecord)
+    );
     assert_omits(
         &recursive_error_surfaces(&error),
         &["decoder-eof-body-sentinel-72b59c"],
@@ -851,14 +952,16 @@ async fn record_stream_body_and_decoder_failures_are_items_without_second_comple
     assert_eq!(FAILURE_START_CALLS.load(Ordering::SeqCst), 3);
     assert!(FAILURE_DECODE_CALLS.load(Ordering::SeqCst) >= 5);
     assert_eq!(FAILURE_EOF_CALLS.load(Ordering::SeqCst), 1);
+    // Body, framing and final-record failures each end the one item stream
+    // as Failed; a byte-level EOF is not reported as completion when the
+    // final record is incomplete.
     let stream_records = hooks.stream_records();
     assert_eq!(stream_records.len(), 3);
-    assert_eq!(stream_records[0].kind, StreamKind::Bytes);
-    assert_eq!(stream_records[0].outcome, StreamOutcome::Failed);
-    assert_eq!(stream_records[1].kind, StreamKind::Bytes);
-    assert_eq!(stream_records[1].outcome, StreamOutcome::Dropped);
-    assert_eq!(stream_records[2].kind, StreamKind::Bytes);
-    assert_eq!(stream_records[2].outcome, StreamOutcome::Completed);
+    for record in &stream_records {
+        assert_eq!(record.kind, StreamKind::Items);
+        assert_eq!(record.outcome, StreamOutcome::Failed);
+        assert_eq!(record.units_yielded, 0);
+    }
 }
 
 #[cfg(feature = "records")]
@@ -1007,7 +1110,10 @@ async fn record_payloads_never_enter_hooks_debug_limiter_completion_or_sources()
         .await
         .expect("record error batch item")
         .expect_err("parser failure remains a record item");
-    assert_eq!(record_error.kind(), RecordErrorKind::InvalidFraming);
+    assert_eq!(
+        stream_error_kind(&record_error),
+        Some(crate::response::StreamErrorKind::InvalidFraming)
+    );
     let record_error_surfaces = recursive_error_surfaces(&record_error);
     assert_eq!(hooks.outcomes(), [CompletionOutcome::StreamOpened]);
 

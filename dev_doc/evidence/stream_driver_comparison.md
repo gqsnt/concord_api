@@ -1,5 +1,7 @@
 # Stream driver comparison
 
+**Status:** Historical v2.1 evidence (ADR 0011); not re-run for the v3 tree.
+
 - **Recorded:** 2026-09-04
 - **Host:** Windows x86-64
 - **Toolchain:** `rustc 1.97.1 (8bab26f4f 2026-07-14)`

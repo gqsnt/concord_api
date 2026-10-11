@@ -5,14 +5,18 @@ use std::time::Duration;
 use std::time::SystemTime;
 
 use bytes::Bytes;
-use http::header::CONTENT_TYPE;
 #[cfg(test)]
 use http::header::RETRY_AFTER;
-use http::{HeaderMap, Method, StatusCode};
+use http::header::{CONTENT_LENGTH, CONTENT_TYPE};
+use http::{HeaderMap, HeaderValue, Method, StatusCode, Version};
+use url::Url;
 
 use crate::codec::{DecodeBody, DecodeContext};
 use crate::endpoint::EndpointId;
 use crate::redaction::SanitizedHeaderMap;
+use crate::response::{
+    Buffered, ExecutionMeta, ResponseBodyErrorKind, ResponseHead, ResponseRepresentation,
+};
 
 /// The structural result of finite terminal status-body capture.
 #[non_exhaustive]
@@ -164,14 +168,28 @@ impl fmt::Debug for StatusBody {
 }
 
 /// A body-free failure from explicit terminal status-body decoding.
+///
+/// This error is separate from, and never mutates, the original
+/// [`HttpResponseFailure`] or its `ApiError`: decoding performs no network
+/// work and cannot change contact, status or retry decisions. Formatting is
+/// structural and never includes body bytes, decoder text or header values.
 pub struct StatusBodyDecodeError {
     kind: StatusBodyDecodeErrorKind,
 }
 
+/// Stable bounded kinds of explicit status-body decoding failure.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum StatusBodyDecodeErrorKind {
+pub enum StatusBodyDecodeErrorKind {
+    /// No complete body was retained; the payload is the capture state.
     Unavailable(StatusBodyState),
+    /// The retained media type was rejected by the selected representation.
+    InvalidMediaType,
+    /// The selected representation or decoder rejected the complete bytes.
     DecodeFailed,
+    /// The failure was not produced by the managed executor, so no safe
+    /// response head is available to a response representation.
+    ContextUnavailable,
 }
 
 impl StatusBodyDecodeError {
@@ -186,6 +204,16 @@ impl StatusBodyDecodeError {
             kind: StatusBodyDecodeErrorKind::DecodeFailed,
         }
     }
+
+    const fn from_kind(kind: StatusBodyDecodeErrorKind) -> Self {
+        Self { kind }
+    }
+
+    /// Returns the stable decoding failure kind.
+    #[must_use]
+    pub const fn kind(&self) -> StatusBodyDecodeErrorKind {
+        self.kind
+    }
 }
 
 impl fmt::Display for StatusBodyDecodeError {
@@ -197,8 +225,14 @@ impl fmt::Display for StatusBodyDecodeError {
                     "terminal status body is not complete ({state:?})"
                 )
             }
+            StatusBodyDecodeErrorKind::InvalidMediaType => {
+                formatter.write_str("terminal status body media type was rejected")
+            }
             StatusBodyDecodeErrorKind::DecodeFailed => {
                 formatter.write_str("terminal status body decoding failed")
+            }
+            StatusBodyDecodeErrorKind::ContextUnavailable => {
+                formatter.write_str("terminal status body has no managed response context")
             }
         }
     }
@@ -216,6 +250,10 @@ impl fmt::Debug for StatusBodyDecodeError {
 impl Error for StatusBodyDecodeError {}
 
 /// Safe metadata and an opaque complete-only body for a terminal HTTP status.
+///
+/// The HTTP status classification is retained even when capturing the body
+/// fails: the capture outcome is recorded only as [`StatusBody`] state
+/// evidence and never replaces the status failure with a transport error.
 pub struct HttpResponseFailure {
     endpoint: EndpointId,
     method: Method,
@@ -224,6 +262,14 @@ pub struct HttpResponseFailure {
     body: StatusBody,
     content_type: Option<String>,
     retry_after: Option<Duration>,
+    decode_facts: Option<Box<StatusDecodeFacts>>,
+}
+
+/// Safe managed-executor facts used to build a decode-only response head.
+struct StatusDecodeFacts {
+    url: Url,
+    version: Version,
+    metadata: ExecutionMeta,
 }
 
 impl HttpResponseFailure {
@@ -274,7 +320,25 @@ impl HttpResponseFailure {
             body,
             content_type,
             retry_after: retry_after.map(|delay| delay.min(retry_after_cap)),
+            decode_facts: None,
         }
+    }
+
+    /// Records the credential-sanitized logical URL, HTTP version and safe
+    /// execution metadata used by [`HttpResponseFailure::decode_status_body`].
+    #[must_use]
+    pub(crate) fn with_decode_facts(
+        mut self,
+        url: Url,
+        version: Version,
+        metadata: ExecutionMeta,
+    ) -> Self {
+        self.decode_facts = Some(Box::new(StatusDecodeFacts {
+            url,
+            version,
+            metadata,
+        }));
+        self
     }
 
     #[cfg(test)]
@@ -301,16 +365,17 @@ impl HttpResponseFailure {
             body,
             content_type,
             retry_after,
+            decode_facts: None,
         }
     }
 
-    /// Returns the stable generated endpoint identity.
+    /// Returns the operational endpoint ID (an explicit `id` pin or navigation-derived).
     #[must_use]
     pub fn endpoint(&self) -> &str {
         self.endpoint.as_str()
     }
 
-    /// Returns the typed stable endpoint identity.
+    /// Returns the typed operational endpoint ID (an explicit `id` pin or navigation-derived).
     #[must_use]
     pub const fn endpoint_id(&self) -> &EndpointId {
         &self.endpoint
@@ -357,6 +422,65 @@ impl HttpResponseFailure {
         self.retry_after
     }
 
+    /// Explicitly decodes the retained complete body with a buffered response
+    /// representation, such as `Json`.
+    ///
+    /// Only [`StatusBodyState::Complete`] bytes are decoded; every other state
+    /// returns [`StatusBodyDecodeErrorKind::Unavailable`] without touching the
+    /// network. The representation receives a safe decode-only
+    /// [`ResponseHead`]: the rejected status, method, endpoint, HTTP version,
+    /// credential-sanitized logical URL, the retained execution metadata and a
+    /// header map containing only the retained `Content-Type` and the
+    /// complete body length. Its `validate` runs first, so a representation
+    /// with a media requirement (Json requires JSON media) reports
+    /// [`StatusBodyDecodeErrorKind::InvalidMediaType`]. This method returns a
+    /// separate bounded error and never mutates this failure.
+    pub fn decode_status_body<R, T>(&self) -> Result<T, StatusBodyDecodeError>
+    where
+        R: ResponseRepresentation<T, Driver = Buffered>,
+        T: Send + 'static,
+    {
+        let Some(body) = self.body.bytes() else {
+            return Err(StatusBodyDecodeError::unavailable(self.body.state()));
+        };
+        let Some(facts) = self.decode_facts.as_deref() else {
+            return Err(StatusBodyDecodeError::from_kind(
+                StatusBodyDecodeErrorKind::ContextUnavailable,
+            ));
+        };
+        let mut headers = HeaderMap::new();
+        if let Some(value) = self
+            .content_type
+            .as_deref()
+            .and_then(|value| HeaderValue::from_str(value).ok())
+        {
+            headers.insert(CONTENT_TYPE, value);
+        }
+        headers.insert(CONTENT_LENGTH, HeaderValue::from(body.len()));
+        let head = ResponseHead {
+            endpoint: self.endpoint.as_str(),
+            method: &self.method,
+            url: &facts.url,
+            status: self.status,
+            version: facts.version,
+            headers: &headers,
+            content_length: u64::try_from(body.len()).ok(),
+            metadata: &facts.metadata,
+        };
+        R::validate(&head).map_err(|error| {
+            StatusBodyDecodeError::from_kind(match error.kind() {
+                ResponseBodyErrorKind::InvalidMediaType => {
+                    StatusBodyDecodeErrorKind::InvalidMediaType
+                }
+                _ => StatusBodyDecodeErrorKind::DecodeFailed,
+            })
+        })?;
+        R::from_body(body.clone(), &head).map_err(|error| {
+            drop(error);
+            StatusBodyDecodeError::decode_failed()
+        })
+    }
+
     /// Explicitly decodes a retained complete body with the final public
     /// response-decoder contract.
     pub fn decode_body<C>(&self) -> Result<C::Output, StatusBodyDecodeError>
@@ -366,8 +490,9 @@ impl HttpResponseFailure {
         let Some(body) = self.body.bytes() else {
             return Err(StatusBodyDecodeError::unavailable(self.body.state()));
         };
-        C::validate_content_type(self.content_type.as_deref())
-            .map_err(|_| StatusBodyDecodeError::decode_failed())?;
+        C::validate_content_type(self.content_type.as_deref()).map_err(|_| {
+            StatusBodyDecodeError::from_kind(StatusBodyDecodeErrorKind::InvalidMediaType)
+        })?;
         C::decode(
             body.clone(),
             DecodeContext {

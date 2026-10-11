@@ -1,5 +1,7 @@
 # Surface under study
 
+**Status:** Part of the v2.1 Gate 3 packet described in [`README.md`](README.md); not revised for v3.
+
 The Gate 3 final-surface study uses only the exact v2.1 candidate:
 
 - `set_x(Option<T>)` for a Concord-present value;

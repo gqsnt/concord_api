@@ -6,14 +6,23 @@ use http::{Method, StatusCode};
 use crate::error::RateLimitErrorKind;
 use crate::hooks::{AttemptInfo, BoxFuture};
 
-use super::{RateLimitError, RateLimitPermit, RateLimitPlan};
+use super::{Enforcement, LimiterCapability, RateLimitError, RateLimitPermit, RateLimitPlan};
 
 /// Default maximum aggregate byte length of one resolved rate-limit key.
 pub use crate::runtime::defaults::DEFAULT_RATE_LIMIT_KEY_BYTES;
 
 /// Safe request metadata supplied to a selected rate limiter.
+///
+/// The request carries the complete effective conjunctive plan with protected
+/// canonical keys, the value-free schema of every policy
+/// ([`crate::rate_limit::RateLimitPolicy::schema`]), and the limiter
+/// capability that core snapshotted at client build. Together, each policy
+/// schema and [`Self::capability`] form the complete schema descriptor of
+/// RATE-05: policy ID, ordered labels and encoding IDs, framing version,
+/// canonical window schema, and limiter namespace/algorithm identity. It
+/// never carries request bodies, credentials or raw headers.
 pub struct RateLimitRequest<'a> {
-    /// Stable generated endpoint identity.
+    /// Operational endpoint ID (an explicit `id` pin or navigation-derived).
     pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
@@ -29,6 +38,9 @@ pub struct RateLimitRequest<'a> {
     pub attempt: AttemptInfo,
     /// Canonical immutable effective plan.
     pub plan: &'a RateLimitPlan,
+    /// The selected limiter's capability as snapshotted by core at client
+    /// build: enforcement kind, adapter namespace and algorithm version.
+    pub capability: LimiterCapability,
 }
 
 /// Typed response feedback supplied to a selected rate limiter.
@@ -45,22 +57,67 @@ pub struct RateLimitResponse<'a> {
 
 /// Application-supplied or Concord-provided per-attempt limiter authority.
 ///
-/// Calls may overlap. Implementations own the boundedness of CPU, memory,
-/// retries, maps, queues, spawned tasks, metric cardinality, and external I/O,
-/// and must treat resolved plan keys and an explicitly requested logical origin
-/// as potentially sensitive.
-/// Custom implementations are responsible for protecting those values in their
-/// own logs and storage. Acquisition is current-attempt authority and runs under
-/// the remaining operation deadline. Response observation is synchronous,
-/// prompt, and non-fallible for the current result; an implementation may record
-/// degradation that a later `acquire` reports. Concord cannot preempt arbitrary
-/// blocking synchronous Rust or bound application-created work.
+/// # Atomic conjunctive admission (RATE-04)
+///
+/// Each successful `acquire` admits the complete conjunctive plan (every
+/// window of every policy) atomically, or returns an error / keeps waiting
+/// without any new quota debit. Waiting or failed admission must not
+/// partially reserve a prefix of the plan. This strengthens the Concord 2.1
+/// contract, which permitted conservative partial reservations; custom
+/// limiters must be migrated.
+///
+/// # Shared persistent adapters
+///
+/// An adapter reporting [`Enforcement::SharedPersistent`] must, inside
+/// `acquire` and before any state use, atomically register or compare every
+/// policy schema under its namespace and algorithm version, fail closed on an
+/// incompatible active schema under the same ID (never treating it as a fresh
+/// bucket), and keep registrations in finite storage that never evicts an
+/// active contract.
+///
+/// # Extension contract
+///
+/// * **Ownership.** The limiter owns all of its quota, cooldown and schema
+///   state. Clients share state only when explicitly given the same limiter
+///   object; separate objects are independent even for identical policy IDs.
+/// * **Concurrency.** Calls may overlap from many tasks. No core lock is held
+///   while `acquire` is pending.
+/// * **Cancellation.** `acquire` runs under the remaining operation deadline
+///   and its future may be dropped at any await point; a dropped, uncommitted
+///   acquisition must leave no debit. A committed admission is
+///   non-refundable: later cancellation, a credential-freshness restart or a
+///   failure before dispatch may consume quota without a send. A permit is an
+///   admission result, not a held concurrency lease.
+/// * **Input sensitivity.** Resolved key values and the optional logical
+///   origin are potentially sensitive; implementations must protect them in
+///   their own logs, metrics and storage. Policy IDs, labels, encoding IDs
+///   and windows are value-free schema facts.
+/// * **Errors.** Acquisition failures become `RateLimit` API errors before
+///   dispatch. Observation is synchronous, prompt, and non-fallible for the
+///   current result; an implementation may record degradation that a later
+///   `acquire` reports.
+/// * **Resource obligations.** Implementations own the boundedness of CPU,
+///   memory, maps, queues, spawned tasks, metric cardinality and external
+///   I/O. Concord cannot preempt arbitrary blocking synchronous Rust.
+/// * **Negative capabilities.** A limiter never sees bodies, credentials or
+///   raw headers, cannot change the current endpoint result from feedback,
+///   and cannot add endpoint behavior.
 pub trait RateLimiter: Send + Sync + 'static {
+    /// Returns the structural enforcement capability of this limiter.
+    ///
+    /// This method is required: every limiter must state truthfully whether
+    /// it enforces locally, is an explicit no-op, or is a shared persistent
+    /// adapter, so that plans can disclose the actual enforcement choice.
+    /// Core calls it once, when the limiter is selected, and snapshots the
+    /// result; it must be prompt and side-effect free.
+    fn capability(&self) -> LimiterCapability;
+
     /// Returns the maximum aggregate byte length accepted while preparing one
     /// resolved rate-limit key.
     ///
-    /// The default is [`DEFAULT_RATE_LIMIT_KEY_BYTES`]. Returning zero permits
-    /// only global keys. Values above
+    /// The default is [`DEFAULT_RATE_LIMIT_KEY_BYTES`]. Every v3 key has at
+    /// least one dimension, so zero admits no policy: a generated client that
+    /// declares policies refuses to build with such a limiter. Values above
     /// [`crate::rate_limit::MAX_RATE_LIMIT_KEY_BYTES`] are invalid and fail
     /// client construction. Core snapshots this value with the selected
     /// limiter and validates generated and runtime-defined plans before
@@ -73,13 +130,8 @@ pub trait RateLimiter: Send + Sync + 'static {
     /// Acquires admission for exactly one visible Concord attempt.
     ///
     /// The returned [`RateLimitPermit`] is proof that the implementation
-    /// admitted the complete conjunctive [`RateLimitPlan`], not a concurrency
-    /// lease retained until request completion. The bundled process-local
-    /// limiter evaluates and reserves all policies atomically. External or
-    /// distributed implementations must document whether a rejected
-    /// multi-policy evaluation is atomic or conservatively retains an earlier
-    /// reservation; core cannot promise rollback for authority it does not
-    /// own.
+    /// atomically admitted the complete conjunctive [`RateLimitPlan`]; see the
+    /// trait documentation for the all-or-nothing and non-refundable rules.
     fn acquire<'a>(
         &'a self,
         request: RateLimitRequest<'a>,
@@ -93,6 +145,10 @@ pub trait RateLimiter: Send + Sync + 'static {
 }
 
 /// An explicit limiter that authorizes every plan and ignores observation.
+///
+/// Its capability is [`Enforcement::Unenforced`]; bound plans label declared
+/// policies as "declared policies; enforcement explicitly disabled by
+/// application selection". Endpoint syntax never installs it implicitly.
 pub struct NoopRateLimiter;
 
 #[allow(
@@ -100,6 +156,10 @@ pub struct NoopRateLimiter;
     reason = "the normative contract specifies an explicit constructor without a Default contract"
 )]
 impl NoopRateLimiter {
+    /// Structural capability of the explicit no-op limiter.
+    pub const CAPABILITY: LimiterCapability =
+        LimiterCapability::new(Enforcement::Unenforced, "concord.noop", 1);
+
     /// Creates an explicit no-op limiter.
     #[must_use]
     pub const fn new() -> Self {
@@ -108,6 +168,10 @@ impl NoopRateLimiter {
 }
 
 impl RateLimiter for NoopRateLimiter {
+    fn capability(&self) -> LimiterCapability {
+        Self::CAPABILITY
+    }
+
     fn acquire<'a>(
         &'a self,
         _request: RateLimitRequest<'a>,
@@ -118,7 +182,16 @@ impl RateLimiter for NoopRateLimiter {
 
 pub(crate) struct FallbackRateLimiter;
 
+impl FallbackRateLimiter {
+    pub(crate) const CAPABILITY: LimiterCapability =
+        LimiterCapability::new(Enforcement::Unenforced, "concord.unselected", 1);
+}
+
 impl RateLimiter for FallbackRateLimiter {
+    fn capability(&self) -> LimiterCapability {
+        Self::CAPABILITY
+    }
+
     fn acquire<'a>(
         &'a self,
         request: RateLimitRequest<'a>,
@@ -151,29 +224,47 @@ mod tests {
         );
     }
 
+    #[test]
+    fn noop_and_fallback_capabilities_are_explicitly_unenforced_and_distinct() {
+        let noop = NoopRateLimiter::new().capability();
+        assert_eq!(noop.enforcement(), Enforcement::Unenforced);
+        assert_eq!(noop.namespace(), "concord.noop");
+        assert_eq!(noop.algorithm_version(), 1);
+        noop.validate().expect("noop capability is valid");
+        let fallback = FallbackRateLimiter.capability();
+        assert_ne!(noop, fallback);
+        fallback.validate().expect("fallback capability is valid");
+        assert_eq!(
+            Enforcement::Unenforced.plan_label(),
+            "declared policies; enforcement explicitly disabled by application selection"
+        );
+    }
+
     #[tokio::test]
     async fn noop_and_fallback_are_explicitly_distinct() {
         let method = Method::GET;
         let empty = RateLimitPlan::empty();
         NoopRateLimiter::new()
             .acquire(RateLimitRequest {
-                endpoint: "RateApi::get",
+                endpoint: "rate.api.get",
                 method: &method,
                 logical_origin: None,
                 page_index: 0,
                 attempt: AttemptInfo::INITIAL,
                 plan: &empty,
+                capability: NoopRateLimiter::CAPABILITY,
             })
             .await
             .expect("noop grants empty plan");
         FallbackRateLimiter
             .acquire(RateLimitRequest {
-                endpoint: "RateApi::get",
+                endpoint: "rate.api.get",
                 method: &method,
                 logical_origin: None,
                 page_index: 0,
                 attempt: AttemptInfo::INITIAL,
                 plan: &empty,
+                capability: FallbackRateLimiter::CAPABILITY,
             })
             .await
             .expect("fallback grants empty plan");

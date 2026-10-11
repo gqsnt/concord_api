@@ -1,0 +1,320 @@
+//! Receiver identity (independent review F03, V3-O04): migrate-v3 input.
+//!
+//! Every unrelated type here offers both `set_x` and `replace_x`, so a rename
+//! decided by a last path segment, a field name or a function name would still
+//! compile and silently change the result (1 becomes 2).
+//! `tools/xtask/src/migration/tests.rs` migrates this file as a module of a
+//! crate and asserts that the result is byte-for-byte
+//! `tools/xtask/tests/migrated_v3_identity/receiver_identity.rs`, which
+//! `tools/xtask/tests/migrated_v3.rs` compiles through the real v3
+//! `concord::api!` and executes: the unrelated calls keep their original
+//! results and the genuine generated calls keep the v2.1 meaning.
+
+use concord::endpoint::RequestPlan;
+use concord::{ApiError, Empty, api};
+
+use self::api::ItemRequest as GeneratedRequest;
+use self::other::ItemRequest as ForeignRequest;
+
+api! {
+    client Api {
+        base "https://review.example.test/";
+        timeout 5s;
+        values {
+            query locale?: String;
+        }
+        GET item(query x?: u32) -> () via Empty {
+            path "item";
+        }
+    }
+}
+
+/// Unrelated items whose names collide with the generated ones.
+pub mod other {
+    /// The generated request's leaf name, with both setter names.
+    pub struct ItemRequest;
+
+    impl ItemRequest {
+        /// The original call's result.
+        pub fn set_x(self, _: Option<u32>) -> u32 {
+            1
+        }
+
+        /// What a wrong rename would return instead.
+        pub fn replace_x(self, _: Option<u32>) -> u32 {
+            2
+        }
+    }
+
+    /// The generated client's leaf name, with the same child method.
+    #[derive(Default)]
+    pub struct Api;
+
+    impl Api {
+        /// Same constructor name as the generated client.
+        pub fn new() -> Self {
+            Self
+        }
+
+        /// Same child name as the generated endpoint.
+        pub fn item(&self) -> ItemRequest {
+            ItemRequest
+        }
+    }
+
+    /// Same name as the crate-level `make`.
+    pub fn make() -> ItemRequest {
+        ItemRequest
+    }
+
+    /// Offers both builder setter names of the client value `locale`.
+    pub struct Locale;
+
+    impl Locale {
+        /// The original call's result.
+        pub fn set_locale(self, _: Option<String>) -> u32 {
+            1
+        }
+
+        /// What a wrong rename would return instead.
+        pub fn replace_locale(self, _: Option<String>) -> u32 {
+            2
+        }
+    }
+}
+
+/// Owns a generated request in a field named `request`.
+pub struct Real {
+    pub request: api::ItemRequest,
+}
+
+/// Owns an unrelated request in a field with the same name.
+pub struct Other {
+    pub request: other::ItemRequest,
+}
+
+/// Returns a generated request.
+pub fn make(client: &Api) -> api::ItemRequest {
+    client.item()
+}
+
+pub fn qualified(foreign: other::ItemRequest) -> u32 {
+    foreign.set_x(None) // unrelated: qualified
+}
+
+pub fn alias(foreign: ForeignRequest) -> u32 {
+    foreign.set_x(None) // unrelated: alias
+}
+
+pub fn field(owner: Other) -> u32 {
+    owner.request.set_x(None) // unrelated: field
+}
+
+pub fn ufcs(foreign: other::ItemRequest) -> u32 {
+    other::ItemRequest::set_x(foreign, None) // unrelated: ufcs
+}
+
+pub fn constructor() -> u32 {
+    other::Api::new().item().set_x(None) // unrelated: constructor
+}
+
+pub fn imported_function() -> u32 {
+    use self::other::make;
+    make().set_x(None) // unrelated: imported function
+}
+
+pub fn local_function() -> u32 {
+    fn make() -> other::ItemRequest {
+        other::ItemRequest
+    }
+    make().set_x(None) // unrelated: local function
+}
+
+/// The genuine generated calls, in v2.1 exact outer-slot replacement.
+pub fn genuine_plans(client: &Api) -> Vec<Result<RequestPlan, ApiError>> {
+    let chained = client.item().replace_x(Some(3)).replace_x(None); // genuine: chained
+    let typed: GeneratedRequest = client.item();
+    let aliased = typed.replace_x(Some(4)); // genuine: alias
+    let owner = Real {
+        request: client.item(),
+    };
+    let through_field = owner.request.replace_x(Some(5)); // genuine: field
+    let through_function = make(client).replace_x(None); // genuine: function
+    let ufcs = api::ItemRequest::replace_x(client.item(), Some(6)); // genuine: ufcs
+    let constructed = Api::new().expect("client").item().replace_x(Some(7)); // genuine: constructor
+    vec![
+        chained.plan(),
+        aliased.plan(),
+        through_field.plan(),
+        through_function.plan(),
+        ufcs.plan(),
+        constructed.plan(),
+    ]
+}
+
+/// A local `PageLimit` and a `paginate` that is not Concord's: a rewrite to
+/// `.collect_prefix(2)` would compile and return 1002 instead of 2.
+pub mod paging {
+    /// Same name as Concord's v2.1 `PageLimit`.
+    pub enum PageLimit {
+        Prefix(u32),
+        CompleteWithin(u32),
+    }
+
+    /// Offers `paginate` and the v3 terminal names.
+    pub struct Repo;
+
+    impl Repo {
+        /// The original call's result.
+        pub fn paginate(&self, limit: PageLimit) -> u32 {
+            match limit {
+                PageLimit::Prefix(pages) => pages,
+                PageLimit::CompleteWithin(pages) => pages + 100,
+            }
+        }
+
+        /// What a wrong `Prefix` rewrite would return instead.
+        pub fn collect_prefix(&self, pages: u32) -> u32 {
+            pages + 1000
+        }
+
+        /// What a wrong `CompleteWithin` rewrite would return instead.
+        pub fn collect_all(&self, pages: u32) -> u32 {
+            pages + 2000
+        }
+    }
+}
+
+pub fn local_page_limit() -> (u32, u32) {
+    use self::paging::{PageLimit, Repo};
+    (
+        Repo.paginate(PageLimit::Prefix(2)), // local: prefix
+        Repo.paginate(PageLimit::CompleteWithin(3)), // local: complete within
+    )
+}
+
+// ----- post-fix review (F03 follow-up) ---------------------------------------
+// Each call below is unrelated to the generated setter in v2.1 and returns 1;
+// a rename to `replace_*` would still compile and return 2.
+
+/// An extension trait whose methods take the generated setter names on
+/// wrappers and references of the generated request.
+pub trait Patch {
+    /// The original call's result.
+    fn set_x(self, value: Option<u32>) -> u32;
+    /// What a wrong rename would return instead.
+    fn replace_x(self, value: Option<u32>) -> u32;
+}
+
+impl Patch for Option<api::ItemRequest> {
+    fn set_x(self, _: Option<u32>) -> u32 {
+        1
+    }
+    fn replace_x(self, _: Option<u32>) -> u32 {
+        2
+    }
+}
+
+impl Patch for std::sync::Arc<api::ItemRequest> {
+    fn set_x(self, _: Option<u32>) -> u32 {
+        1
+    }
+    fn replace_x(self, _: Option<u32>) -> u32 {
+        2
+    }
+}
+
+impl Patch for &api::ItemRequest {
+    fn set_x(self, _: Option<u32>) -> u32 {
+        1
+    }
+    fn replace_x(self, _: Option<u32>) -> u32 {
+        2
+    }
+}
+
+/// A user helper on the generated builder (which v2.1 names at the level of
+/// the `api!` invocation) returning an unrelated type.
+impl api::ApiBuilder {
+    pub fn into_locale(self) -> other::Locale {
+        other::Locale
+    }
+}
+
+/// A `set_`-prefixed user helper on the generated request returning an
+/// unrelated type.
+impl api::ItemRequest {
+    pub fn set_mode(self, _: u8) -> other::ItemRequest {
+        other::ItemRequest
+    }
+}
+
+/// A pattern macro: it binds the name it is given.
+macro_rules! bind {
+    ($name:ident) => {
+        $name
+    };
+}
+
+/// A crate-local statement macro named like a `log`/`tracing` macro.
+macro_rules! debug {
+    ($name:ident) => {
+        let $name = other::ItemRequest;
+    };
+}
+
+pub fn option_ext(o: Option<api::ItemRequest>) -> u32 {
+    o.set_x(None) // unrelated: option extension
+}
+
+pub fn arc_ext(a: std::sync::Arc<api::ItemRequest>) -> u32 {
+    a.set_x(None) // unrelated: arc extension
+}
+
+pub fn ref_ext(r: &api::ItemRequest) -> u32 {
+    r.set_x(None) // unrelated: reference extension
+}
+
+pub fn builder_chain() -> u32 {
+    Api::builder().into_locale().set_locale(None) // unrelated: builder helper
+}
+
+pub fn request_chain(r: api::ItemRequest) -> u32 {
+    r.set_mode(1).set_x(None) // unrelated: request helper
+}
+
+pub fn pattern_macro_let(request: api::ItemRequest) -> u32 {
+    let _keep = request;
+    let bind!(request) = other::ItemRequest;
+    request.set_x(None) // unrelated: pattern macro let
+}
+
+pub fn pattern_macro_arm(request: api::ItemRequest) -> u32 {
+    let _keep = request;
+    match other::ItemRequest {
+        bind!(request) => request.set_x(None), // unrelated: pattern macro arm
+    }
+}
+
+pub fn listed_name_macro(request: api::ItemRequest) -> u32 {
+    let _keep = request;
+    debug!(request);
+    request.set_x(None) // unrelated: statement macro
+}
+
+/// Genuine generated calls through a box, an explicit unwrap and the builder
+/// chain, in v2.1 exact outer-slot replacement.
+pub fn postfix_genuine_plans(
+    boxed: Box<api::ItemRequest>,
+    wrapped: Option<api::ItemRequest>,
+) -> Vec<Result<RequestPlan, ApiError>> {
+    let localized = Api::builder()
+        .replace_locale(Some("fr".to_owned())) // genuine: builder
+        .build()
+        .expect("client");
+    vec![
+        boxed.replace_x(Some(8)).plan(), // genuine: boxed
+        wrapped.unwrap().replace_x(Some(9)).plan(), // genuine: unwrap
+        localized.item().plan(),
+    ]
+}

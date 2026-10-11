@@ -1,11 +1,15 @@
 error: cannot construct `RuntimeEndpointBuilder` with struct literal syntax due to private fields
- --> tests/ui/fail/privacy/runtime_endpoint_fields_private.rs:6:13
+ --> tests/ui/fail/privacy/runtime_endpoint_fields_private.rs:5:13
   |
-6 |     let _ = RuntimeEndpointBuilder::<Empty> {};
-  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+5 |     let _ = RuntimeEndpointBuilder::<(), ()> {};
+  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: private fields `state` and `response` that were not provided
 
 error: cannot construct `RuntimeEndpoint` with struct literal syntax due to private fields
- --> tests/ui/fail/privacy/runtime_endpoint_fields_private.rs:7:13
+ --> tests/ui/fail/privacy/runtime_endpoint_fields_private.rs:6:13
   |
-7 |     let _ = RuntimeEndpoint::<Empty> {};
-  |             ^^^^^^^^^^^^^^^^^^^^^^^^
+6 |     let _ = RuntimeEndpoint::<(), ()> {};
+  |             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: private fields `program`, `body` and `response` that were not provided

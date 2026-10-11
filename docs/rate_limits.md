@@ -1,175 +1,287 @@
 # Rate limits
 
-Concord separates provider quota semantics from application-selected enforcement topology.
+A contract declares the provider's quota semantics; the application selects
+enforcement. Numbers and state use different declarations: reusable **window
+sets** hold capacities and durations, while **policies** carry an explicit ID
+and an ordered key schema that together determine which requests share state
+(§12).
 
-## Declare a reusable policy
+## Declaring policies
 
-This is a partial client-owned policy registry clause. The surrounding
-compiled contract supplies the client and referenced values:
+```concord
+client WindowSetApi {
+    base "https://window-set.example.test/";
+    values {
+        header("X-Tenant") tenant: String;
+    }
+    rate_limits {
+        windows standard { allow 20000 per 10s; allow 1200000 per 10m; }
+        policy tenant_reads(tenant) {
+            id "catalog.tenant.read";
+            key [origin, "tenant" = tenant];
+            allow 120 per 1m;
+            allow 5000 per 1h;
+        }
+        policy shared_reads() {
+            id "catalog.shared.read";
+            key [origin];
+            using standard;
+        }
+    }
+    rate_limit "concord.riot.21" key [origin] using standard;
 
-```concord-pseudocode
-rate_limits {
-    policy tenant_reads(tenant) {
-        id "catalog.tenant.read";
-        key [origin, endpoint, tenant];
-        cost 1;
-        allow 120 per 1m;
-        allow 5_000 per 1h;
+    scope accounts() {
+        rate_limit tenant_reads(tenant = client.tenant);
+        rate_limit shared_reads();
+
+        GET list() -> () via Empty;
     }
 }
 ```
 
-Attach it:
+- A **window set** (`windows standard { ... }`) names only positive capacities
+  and durations. It grants no identity and shares no state; two policies using
+  the same set are separate buckets.
+- A **policy** (`policy name(formals) { id ...; key [...]; cost n; windows }`)
+  has an explicit ID (at most 256 bytes), a key of 1-32 uniquely labelled
+  dimensions, an optional cost (default 1), and either `using set;` or inline
+  `allow N per D;` windows, not both. Windows are conjunctive. Repeated window
+  durations, zero or overflowing values, and a cost greater than any capacity
+  are rejected. A formal that no dimension uses is an error.
+- An **attachment** binds a policy where its coverage belongs:
+  `rate_limit name(formal = reference);` (named bindings exact and total, with an
+  optional `{ cost n; }` block), an inline `rate_limit { id ...; key [...]; ... }`,
+  or `rate_limit "id" key [...] (cost n)? using set;`.
+- Unused window sets and policies are shown as unused by contract inspection;
+  they do not invalidate the client.
 
+## Coverage is lexical and additive
+
+<!-- concord-source: crates/concord-examples/src/rate_limiting/lexical.rs#rate_limit_contract -->
 ```concord
-rate_limit tenant_reads(tenant = client.tenant);
+api! {
+    client RateLimitApi {
+        base "http://rate-limit.example.test/";
+        timeout 30s;
+
+        values {
+            header("X-Tenant") tenant: String;
+        }
+
+        rate_limits {
+            policy account_reads(account) {
+                id "example.account.read";
+                key ["account" = account];
+                cost 1;
+                allow 100 per 1m;
+                allow 1_000 per 1h;
+            }
+        }
+
+        rate_limit {
+            id "example.application";
+            key [origin];
+            cost 1;
+            allow 500 per 10s;
+        }
+
+        scope region(region: String) {
+            subdomain replace [region, "api"];
+            rate_limit account_reads(account = region);
+            rate_limit {
+                id "concord.lexical.3";
+                key [origin];
+                cost 1;
+                allow 200 per 1m;
+            }
+
+            GET item(item: String) -> Bytes via Binary {
+                rate_limit {
+                    id "concord.lexical.4";
+                    key ["endpoint.item" = item];
+                    cost 2;
+                    allow 100 per 1m;
+                }
+            }
+        }
+
+        GET lookup(account: String) -> Bytes via Binary {
+            rate_limit account_reads(account = account) { cost 2; }
+        }
+
+        GET public() -> Bytes via Binary;
+    }
+}
 ```
 
-Anonymous policies use the same explicit ID/key/cost/windows inline.
+A policy attached at an owner covers every endpoint below it (RATE-01). No
+descendant, runtime endpoint or request control can disable an ancestor
+constraint, and an ID is not an endpoint selector. Here `region("eu").item(..)`
+is admitted against `example.application`, `example.account.read`,
+`concord.lexical.3` and `concord.lexical.4`; `lookup` against
+`example.application` and `example.account.read` (cost 2); `public` against
+`example.application` only.
 
-## Ownership
+An effective repeated attachment of one policy is deduplicated only when the
+policy identity, typed binding expressions, window schema and cost are
+structurally identical; a conflicting repetition on one endpoint is a compile
+(or runtime-bind) error. Repetition at unrelated endpoints can intentionally
+share state with different per-call costs: cost is charged, not a bucket
+dimension.
 
-DSL owns:
+## Key schemas
 
-- stable policy ID;
-- formal dimension schema and bindings;
-- cost;
-- conjunctive windows;
-- additive attachment.
+| Dimension | Payload |
+|---|---|
+| `origin` | the complete normalized logical destination `scheme://host:port` (explicit port, lowercase host) |
+| `endpoint` | the operational endpoint ID; requires an explicit `id` on the endpoint |
+| `"label" = value` | a required, non-page-live ordinary value, canonically encoded |
+| `"label" = value via Encoder` | the value encoded by a `RateKeyEncoder` |
 
-Application/limiter owns:
+Custom labels (at most 128 bytes) are written explicitly and are
+state-affecting: `"client.tenant" = client.tenant` and `"tenant" = client.tenant`
+are different schemas even with equal values. `origin` and `endpoint` are
+reserved. Optional slots, credentials, secrets, `each` sources, `concat` and
+expressions cannot be dimensions. Sensitive values are eligible but always
+protected in observations.
 
-- local versus distributed implementation;
-- clock/state storage;
-- wait/reject;
-- fail-open/closed/fallback;
-- cleanup and operational evidence.
+A local bucket is identified by (RATE-03):
 
-A declaration does not imply distributed enforcement.
+```text
+(policy_id,
+ ordered [(logical_dimension_label, canonical_typed_value_bytes)],
+ window_capacity,
+ window_duration)
+```
 
-## Canonical key
+Cost is charged against every applicable window and is not part of the bucket.
+No implicit client-instance, security-context or credential-version dimension
+exists. Canonical bytes keep the baseline tagged, length-framed encoding
+(`u8(tag.len) || tag || u64_be(bytes.len) || bytes`); strings use the `utf8`
+tag, integers keep their exact width and big-endian bytes. A `RateKeyPart` or
+`RateKeyEncoder` names its encoding with a stable `ENCODING_ID` (at most 128
+ASCII bytes) that is schema metadata, not inserted into the value bytes.
 
-Use a bounded `RateKeyPart`, not `Display` or ordinary `RequestAtom`.
+## Selecting enforcement
 
-Key encoding includes policy/dimension identities and length-framed components. Equal semantic values must produce equal canonical bytes.
-
-Built-ins:
-
-- `origin`: normalized logical scheme, lowercase ASCII host, effective port, never proxy route;
-- `endpoint`: explicit stable endpoint ID;
-- explicit domain dimensions.
-
-Reject:
-
-- secrets/credentials/private values;
-- Concord-optional values;
-- repeated/dynamic dimensions;
-- page-live pagination values;
-- unordered collections or collections without an explicit canonical scalar adapter.
-
-## Policy validation
-
-Require:
-
-- globally unique stable policy IDs;
-- one positive cost;
-- at least one positive finite window;
-- cost no greater than any capacity;
-- all formal bindings exactly once;
-- bounded dimensions/key bytes/windows;
-- duplicate effective attachment of one policy ID rejected;
-- endpoint built-in dimension only when the endpoint has an explicit stable ID.
-
-All windows in a policy are conjunctive.
-
-## Additive inheritance
-
-Client, outer scope, inner scope, and endpoint policy attachments compose additively. A descendant cannot disable an ancestor provider constraint.
-
-## Explicit limiter selection
-
-A generated client with effective policies must choose explicitly:
+A client with any reachable rate policy (including one available only through
+runtime binding) requires an explicit limiter. There is no implicit fallback:
 
 <!-- concord-source: crates/concord-examples/src/rate_limiting/lexical.rs#configured_rate_limiter -->
 ```rust
 pub fn construct() -> Result<(), concord::prelude::ClientBuildError> {
     let limiter = LocalRateLimiter::new();
     let client = RateLimitApi::builder()
-        .set_tenant("example-tenant".to_owned())
+        .set_tenant("example-tenant")
         .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(limiter)))
         .build()?;
-    let _: rate_limit_api::region::ItemRequest =
-        client.region("eu".to_owned()).item("record-42".to_owned());
-    let _: rate_limit_api::LookupRequest = client.lookup("account-7".to_owned());
+    let _: rate_limit_api::region::ItemRequest = client.region("eu").item("record-42");
+    let _: rate_limit_api::LookupRequest = client.lookup("account-7");
     let _: rate_limit_api::PublicRequest = client.public();
     Ok(())
 }
 ```
 
-Do not silently install a process-local limiter because a Cargo feature is enabled.
+| Limiter | Enforcement |
+|---|---|
+| `rate_limit::LocalRateLimiter` (feature `rate-limit`) | `Local`: object-local token buckets |
+| `rate_limit::NoopRateLimiter` | `Unenforced`: an explicit trusted choice, disclosed in every plan as "declared policies; enforcement explicitly disabled by application selection" |
+| a custom `RateLimiter` | declares `Local`, `Unenforced` or `SharedPersistent` in its `LimiterCapability` |
 
-## Whole-plan admission
+Clients share local state only when given the same limiter object; separate
+limiter objects count independently even with equal IDs. Clones of one client
+share its limiter:
 
-For one visible attempt, core supplies the complete effective conjunctive policy
-plan to the limiter. A returned `RateLimitPermit` represents admission of that
-whole plan. The bundled process-local limiter evaluates and reserves every
-policy/window atomically: a wait or rejection causes no partial local
-reservation, and its state lock is released before waiting.
+<!-- concord-source: crates/concord-examples/src/rate_limiting/partitioning.rs#shared_limiter -->
+```rust
+pub fn construct() -> Result<(), Box<dyn Error>> {
+    let partitioned = PartitioningApi::builder()
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(LocalRateLimiter::new())))
+        .build()?;
+    let account = partitioned.regions("eu").accounts("account-42");
+    let _: partitioning_api::regions::accounts::ChannelRequest = account.channel("alerts");
+    let _: partitioning_api::regions::accounts::CompositeRequest = account.composite("resource-7");
 
-An external/distributed implementation owns and documents whether failed
-multi-policy evaluation is atomic or conservatively debits an earlier
-reservation. Concord cannot promise or perform rollback across authority it
-does not own.
+    let limiter: Arc<dyn RateLimiter> = Arc::new(LocalRateLimiter::new());
+    let first = SharedStateApi::builder()
+        .configure_runtime({
+            let limiter = Arc::clone(&limiter);
+            move |runtime| runtime.rate_limiter(limiter)
+        })
+        .build()?;
+    let second = SharedStateApi::builder()
+        .configure_runtime(move |runtime| runtime.rate_limiter(limiter))
+        .build()?;
+    let _: shared_state_api::PingRequest = first.ping();
+    let _: shared_state_api::PingRequest = second.ping();
 
-Every policy retry, auth-recovery replay, and page visible attempt reacquires the complete plan. Protocol-proven physical transport recovery does not.
-
-## Response feedback
-
-```text
-trait RateLimiter {
-    async fn acquire(
-        &self,
-        request: RateLimitRequest<'_>,
-    ) -> Result<RateLimitPermit, RateLimitError>;
-
-    fn observe(&self, feedback: RateLimitResponse<'_>);
+    let bounded: Arc<dyn RateLimiter> = Arc::new(LocalRateLimiter::new().quota_capacity(1)?);
+    let high_cardinality = ResourceStateApi::builder()
+        .configure_runtime(move |runtime| runtime.rate_limiter(bounded))
+        .build()?;
+    let _: resource_state_api::ChannelRequest = high_cardinality.channel("first-key");
+    Ok(())
 }
 ```
 
-Only admission can fail the current attempt. Response feedback is synchronous, prompt, bounded, and non-result-determining.
+## Admission
 
-`RateLimitRequest` contains endpoint and method, page/visible-attempt identity,
-the complete canonical plan, and normalized logical origin only when that plan
-uses the `origin` dimension. It contains no complete URL, path/query values, or
-request headers.
+Each acquisition admits the complete conjunctive plan atomically or fails
+without new debits (RATE-04): waiting or failed admission never reserves a
+prefix of the plan. Committed admission is non-refundable, so cancellation or a
+later freshness restart can consume quota without a send; a permit is an
+admission result, not a held concurrency lease. Admission counts are recorded
+separately from contact and send counts. The resolved key is bounded by the
+minimum of the runtime setting (1,024 bytes by default), the limiter's
+`preparation_key_limit` and the hard 65,536-byte bound, checked before
+credentials, body or limiter effects.
 
-Feedback adds only status, the standard server delay parsed once by core, and
-the configured cooldown cap. It contains no response header map and offers no
-vendor-header iteration. It may:
+Standard server feedback (the one core-parsed server delay) affects only future
+admission; limiter feedback can never replace the current endpoint result.
+`RateLimitResponse` carries the status and that delay, not arbitrary headers.
 
-- update cooldown/not-before state for future acquisitions;
-- mark the limiter degraded;
-- emit bounded diagnostics.
+## The local limiter
 
-It must not hide or replace the current endpoint response. A distributed implementation that needs async storage owns a bounded handoff and applies its fail-open/closed policy on future `acquire` calls.
+`LocalRateLimiter` keeps bounded object-local token buckets: each capacity
+replenishes continuously at capacity/duration with checked integer accounting
+and no overshoot, and all windows and policies are conjunctive. A blocked plan
+releases the mutex while waiting, re-evaluates on wake and stays cancellable
+under the operation deadline. There is no strict FIFO fairness promise.
 
-Provider-specific feedback requires a future finite purpose-specific contract;
-it is not obtained through arbitrary header access.
+| Setting | Default |
+|---|---|
+| `quota_capacity(n)` | 4,096 quota entries |
+| `cooldown_capacity(n)` | 4,096 cooldown entries |
+| `idle_ttl(d)` | 15 minutes (a quota entry is prunable only when fully replenished and idle that long) |
+| `key_limit(bytes)` | 1,024 resolved key bytes |
 
-## Local limiter extra
+Capacity pressure rejects new state (`RateLimitErrorKind::StateCapacity`) rather
+than evicting active debt or an unexpired cooldown; the required capacity of a
+complete admission is checked before any insertion. Overflow, poisoning or
+inconsistency fails closed.
 
-The first-party local limiter documents:
+## Shared limiters and continuity
 
-- process-local scope;
-- bucket/window algorithm;
-- fairness and wakeup behavior;
-- state/cardinality bounds and eviction;
-- deterministic clock dependency;
-- cooldown semantics;
-- sharing across client clones and independent builds.
+A `SharedPersistent` adapter must atomically register and compare each policy
+schema (ID, ordered labels and encoding IDs, framing version, windows,
+algorithm/namespace identity) inside `acquire`, before any state use, and fail
+closed on a mismatch rather than treating it as a fresh bucket (RATE-05).
+Registration has finite capacity (4,096 active schemas by default for the local
+conformance fixture) and never evicts active contracts. An unchanged encoding
+ID is a trusted promise; Concord cannot prove opaque encoder code unchanged.
 
-It must never be presented as distributed quota enforcement.
+Cross-version continuity requires the same adapter namespace, key framing,
+labels, order, encodings, windows and algorithm interpretation. A changed ID,
+window or label is a reviewed state reset, not preservation. With the local
+limiter, a process restart resets state by definition. See the
+[migration guide](migration_v3.md) for capturing identities before conversion
+and [Extensions](extensions.md) for a custom limiter.
 
-## Observation and security
+## Inspecting coverage
 
-Plans/descriptions expose policy ID, schema, cost, windows, bindings, and provenance—not resolved raw keys. Errors/events expose policy identity and wait/reject category, not key values.
+`CatalogApi::contract()` and `concord-xtask contract diff` show the exact
+endpoints each policy ID covers, which endpoints can share each bucket, and
+cost/window edits as separate facts (RATE-02). A hoisted attachment that newly
+covers a sibling is a behavior change even when the source got shorter. A bound
+`RequestPlan` shows effective policy IDs and key-label schemas without values,
+and the actual enforcement choice.

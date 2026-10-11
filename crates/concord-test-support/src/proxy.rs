@@ -144,6 +144,9 @@ fn tunnel_connect(
     }
 
     let mut origin = TcpStream::connect_timeout(&upstream, Duration::from_secs(3))?;
+    // Relay small writes immediately in both directions (no Nagle stall).
+    client.set_nodelay(true)?;
+    origin.set_nodelay(true)?;
     client.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")?;
     client.flush()?;
     let poll = Duration::from_millis(25);

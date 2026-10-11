@@ -1,5 +1,11 @@
 # Gate 10 independent Rustdoc and semantic-diff review packet
 
+**Status:** v2.1 packet, not run. It refers to the v2.1 `semantic-diff`
+command, which v3 replaced with `concord-xtask contract diff` over
+`concord.contract/3` snapshots; it must be revised before it can produce v3
+review evidence. The v3 lifecycle is owned by
+[`../release_gate_status.md`](../release_gate_status.md).
+
 This packet addresses only the human documentation portion of Gate 10 for
 public freeze; it is not a local beta-integration gate. It requires at least
 one consenting human who understands Rust library usage and

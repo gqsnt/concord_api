@@ -1,5 +1,11 @@
-error: endpoint result has no effective representation; add `response Representation;` to a client/scope or inline `via Representation`
-  --> tests/ui/fail/syntax/response_fence_requires_inline_representation.rs:11:17
+error: [C3-REP] endpoint `ResponseFenceApi::fenced::missing` has no response representation (`response explicit` in ResponseFenceApi::fenced blocks inherited defaults); declare `response R;` on an owner or write `-> T via R` (no codec is guessed from the result type)
+  --> tests/ui/fail/syntax/response_fence_requires_inline_representation.rs:14:17
    |
-11 |             GET missing() -> String;
+14 |             GET missing() -> String;
    |                 ^^^^^^^
+
+error: [C3-REP] endpoint `NoResponseDefaultApi::missing` has no response representation; declare `response R;` on an owner or write `-> T via R` (no codec is guessed from the result type)
+  --> tests/ui/fail/syntax/response_fence_requires_inline_representation.rs:24:13
+   |
+24 |         GET missing() -> String;
+   |             ^^^^^^^

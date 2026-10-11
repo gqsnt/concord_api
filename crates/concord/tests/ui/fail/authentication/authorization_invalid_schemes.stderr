@@ -1,23 +1,23 @@
-error: an Authorization scheme cannot be empty
-  --> tests/ui/fail/authentication/authorization_invalid_schemes.rs:13:30
+error: [C3-AUTH] an Authorization scheme of endpoint `EmptySchemeApi::protected` must be a nonempty HTTP token of at most 256 bytes; write a scheme such as `authorization "Token" = key;`
+  --> tests/ui/fail/authentication/authorization_invalid_schemes.rs:16:34
    |
-13 |         auth { authorization "" = key; }
-   |                              ^^
+16 |             auth { authorization "" = key; }
+   |                                  ^^
 
-error: an Authorization scheme must contain only ASCII HTTP token characters
-  --> tests/ui/fail/authentication/authorization_invalid_schemes.rs:27:30
+error: [C3-AUTH] an Authorization scheme of endpoint `SpaceSchemeApi::protected` must be a nonempty HTTP token of at most 256 bytes; write a scheme such as `authorization "Token" = key;`
+  --> tests/ui/fail/authentication/authorization_invalid_schemes.rs:30:34
    |
-27 |         auth { authorization "Token value" = key; }
-   |                              ^^^^^^^^^^^^^
+30 |             auth { authorization "Token value" = key; }
+   |                                  ^^^^^^^^^^^^^
 
-error: an Authorization scheme must contain only ASCII HTTP token characters
-  --> tests/ui/fail/authentication/authorization_invalid_schemes.rs:41:30
+error: [C3-AUTH] an Authorization scheme of endpoint `NonAsciiSchemeApi::protected` must be a nonempty HTTP token of at most 256 bytes; write a scheme such as `authorization "Token" = key;`
+  --> tests/ui/fail/authentication/authorization_invalid_schemes.rs:44:34
    |
-41 |         auth { authorization "Tökén" = key; }
-   |                              ^^^^^^^
+44 |             auth { authorization "Tökén" = key; }
+   |                                  ^^^^^^^
 
-error: an Authorization scheme permits at most 256 ASCII bytes
-  --> tests/ui/fail/authentication/authorization_invalid_schemes.rs:55:30
+error: [C3-AUTH] an Authorization scheme of endpoint `OversizedSchemeApi::protected` must be a nonempty HTTP token of at most 256 bytes; write a scheme such as `authorization "Token" = key;`
+  --> tests/ui/fail/authentication/authorization_invalid_schemes.rs:58:34
    |
-55 | ...on "ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt" = ...
+58 | ...on "ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt" = ...
    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

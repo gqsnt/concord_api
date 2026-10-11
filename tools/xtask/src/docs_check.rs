@@ -1,6 +1,6 @@
 //! Cross-platform documentation and active-language truth checks.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -9,23 +9,53 @@ use regex::Regex;
 const RELEASE_STATUS_OWNER: &str = "<!-- concord-release-status-owner -->";
 const DSL_LANGUAGE: &str = "concord";
 const DSL_PSEUDOCODE_LANGUAGE: &str = "concord-pseudocode";
+const DOMAIN_TREE_SOURCE: &str = "crates/concord-examples/src/getting_started/domain_tree.rs";
+const MINIMAL_SOURCE: &str = "crates/concord-examples/src/getting_started/minimal.rs";
+const CATALOG_V3_SOURCE: &str = "crates/concord-examples/src/contracts/catalog_v3.rs";
 const CANONICAL_SOURCES: &[(&str, &str, &str, &str)] = &[
     (
         "README.md",
-        "crates/concord-examples/src/getting_started/domain_tree.rs",
+        DOMAIN_TREE_SOURCE,
+        "domain_tree_contract",
+        DSL_LANGUAGE,
+    ),
+    (
+        "README.md",
+        DOMAIN_TREE_SOURCE,
+        "domain_tree_await_request",
+        "rust",
+    ),
+    ("docs/quick_start.md", MINIMAL_SOURCE, "first_api", "rust"),
+    (
+        "docs/quick_start.md",
+        MINIMAL_SOURCE,
+        "first_request",
+        "rust",
+    ),
+    (
+        "docs/quick_start.md",
+        DOMAIN_TREE_SOURCE,
         "domain_tree_contract",
         DSL_LANGUAGE,
     ),
     (
         "docs/quick_start.md",
-        "crates/concord-examples/src/getting_started/domain_tree.rs",
-        "domain_tree_contract",
-        DSL_LANGUAGE,
+        DOMAIN_TREE_SOURCE,
+        "domain_tree_await_request",
+        "rust",
     ),
     (
         "docs/overview.md",
-        "crates/concord-examples/src/getting_started/domain_tree.rs",
+        DOMAIN_TREE_SOURCE,
         "domain_tree_contract",
+        DSL_LANGUAGE,
+    ),
+    // §22: the canonical extended Catalog is the coverage reference, not the
+    // first-contact advertisement, so it lives in the modeling guide.
+    (
+        "docs/modeling_apis.md",
+        CATALOG_V3_SOURCE,
+        "catalog_v3_declaration",
         DSL_LANGUAGE,
     ),
     (
@@ -87,6 +117,266 @@ const REMOVED_DOCS: &[&str] = &[
     "docs/customization.md",
 ];
 
+/// Clauses of the §3.2 grammar each parser fallback diagnostic must name, so
+/// an author who writes an unsupported entry is shown every legal choice.
+const CLIENT_CLAUSES: &[&str] = &[
+    "`base`",
+    "`values`",
+    "`credentials`",
+    "`rate_limits`",
+    "`request`",
+    "`response`",
+    "`subdomain`",
+    "`path`",
+    "`query`",
+    "`headers`",
+    "`auth`",
+    "`timeout`",
+    "`rate_limit`",
+];
+const SCOPE_CLAUSES: &[&str] = &[
+    "`request`",
+    "`response`",
+    "`subdomain`",
+    "`path`",
+    "`query`",
+    "`headers`",
+    "`auth`",
+    "`timeout`",
+    "`rate_limit`",
+];
+const ENDPOINT_CLAUSES: &[&str] = &[
+    "`path`",
+    "`query`",
+    "`headers`",
+    "`auth`",
+    "`timeout`",
+    "`rate_limit`",
+    "`id`",
+    "`status`",
+    "`effect`",
+    "`absent on`",
+    "`paginate`",
+    "`expose accepted_bytes`",
+];
+
+/// Every terminal keyword of the canonical v3 grammar (§3.2, §11.1, §12.1,
+/// §14.1). The parser must declare each one and `docs/spec.md` must quote
+/// each one in its grammar.
+const V3_KEYWORDS: &[&str] = &[
+    "absent",
+    "accepted_bytes",
+    "allow",
+    "api_key",
+    "append",
+    "auth",
+    "authorization",
+    "base",
+    "basic",
+    "bearer",
+    "body",
+    "challenge",
+    "client",
+    "concat",
+    "cost",
+    "credential",
+    "credentials",
+    "cursor",
+    "custom",
+    "each",
+    "effect",
+    "endpoint",
+    "explicit",
+    "expose",
+    "header",
+    "headers",
+    "id",
+    "idempotent",
+    "init",
+    "key",
+    "METHOD",
+    "never",
+    "non_idempotent",
+    "off",
+    "on",
+    "origin",
+    "paginate",
+    "path",
+    "per",
+    "policy",
+    "query",
+    "rate_limit",
+    "rate_limits",
+    "remove",
+    "replace",
+    "request",
+    "response",
+    "safe",
+    "scope",
+    "secret",
+    "status",
+    "subdomain",
+    "success",
+    "timeout",
+    "unauthorized",
+    "unauthorized_or_forbidden",
+    "using",
+    "values",
+    "via",
+    "when_present",
+    "windows",
+];
+
+/// Retired v2 keywords the parser only recognizes to emit a migration
+/// diagnostic; the normative grammar must never quote them as terminals.
+const RETIRED_V2_KEYWORDS: &[&str] = &["vars", "host", "fmt", "retry"];
+
+/// The v3 value-control matrix (§4.3) and credential controls (§11.3) as the
+/// macro builds them: `(source file, required construction)`.
+const GENERATED_NAME_CONSTRUCTIONS: &[(&str, &str)] = &[
+    (
+        "crates/concord-macros/src/semantic/names.rs",
+        "prefixed_ident(\"set\", &value.name)",
+    ),
+    (
+        "crates/concord-macros/src/semantic/names.rs",
+        "prefixed_ident(\"replace\", &value.name)",
+    ),
+    ("crates/concord-macros/src/semantic/names.rs", "\"if_some\""),
+    (
+        "crates/concord-macros/src/semantic/names.rs",
+        "prefixed_ident(\"omit\", &value.name)",
+    ),
+    (
+        "crates/concord-macros/src/semantic/names.rs",
+        "prefixed_ident(\"reset\", &value.name)",
+    ),
+    (
+        "crates/concord-macros/src/semantic/auth.rs",
+        "prefixed_ident(\"clear\", &declaration.name)",
+    ),
+    (
+        "crates/concord-macros/src/semantic/auth.rs",
+        "prefixed_ident(\"replace\", &declaration.name)",
+    ),
+    (
+        "crates/concord-macros/src/semantic/auth.rs",
+        "prefixed_ident(\"store_as\", &declaration.name)",
+    ),
+];
+
+/// Retired v2 surfaces and the UI fixture proving the v3 product rejects each
+/// one with a precise diagnostic: `(fixture, fixture needle, stderr needle)`.
+const RETIRED_V2_DIAGNOSTICS: &[(&str, &str, &str)] = &[
+    (
+        "crates/concord/tests/ui/fail/syntax/retired_v2_forms.rs",
+        "vars { tenant: String; }",
+        "[C3-MIGRATE] `vars { ... }` was removed",
+    ),
+    (
+        "crates/concord/tests/ui/fail/syntax/retired_v2_forms.rs",
+        "host [\"api\"];",
+        "[C3-MIGRATE] `host [...]` was removed",
+    ),
+    (
+        "crates/concord/tests/ui/fail/syntax/retired_v2_forms.rs",
+        "path [\"items\", id];",
+        "[C3-MIGRATE] v2 path atom lists were replaced by a relative template string",
+    ),
+    (
+        "crates/concord/tests/ui/fail/syntax/retired_v2_forms.rs",
+        "-> String using Text;",
+        "[C3-MIGRATE] result `using Representation` was replaced by `via Representation`",
+    ),
+    (
+        "crates/concord/tests/ui/fail/names/redundant_current_owner_qualification.rs",
+        "{endpoint.id}",
+        "[C3-MIGRATE] `endpoint.id` is redundant qualification of the current endpoint",
+    ),
+    (
+        "crates/concord/tests/ui/fail/syntax/default_expression_restrictions.rs",
+        "query value: String = default;",
+        "[C3-MIGRATE] `= default` was removed; place `#[default]` on the value declaration",
+    ),
+    (
+        "crates/concord/tests/ui/fail/syntax/retry_dsl_removed.rs",
+        "retry reqwest_default;",
+        "the `retry` DSL clause was removed",
+    ),
+    (
+        "crates/concord/tests/ui/fail/pagination/numeric_page_limit_absent.rs",
+        ".paginate(10_u32)",
+        "no method named `paginate` found",
+    ),
+    (
+        "crates/concord/tests/ui/fail/syntax/optional_static_secret_deferred.rs",
+        "secret optional_api_key?;",
+        "[C3-AUTH] optional static secrets are not supported",
+    ),
+];
+
+/// §11.1: the parser's rejection of `secret NAME?;`.
+const OPTIONAL_SECRET_REJECTION: &str = "optional static secrets are not supported";
+const OPTIONAL_SECRET_FIXTURE: &str =
+    "crates/concord/tests/ui/fail/syntax/optional_static_secret_deferred.rs";
+
+/// §7.2: names the facade must re-export at its root.
+const FACADE_ROOT_EXPORTS: &[&str] = &[
+    "ApiError",
+    "ClientBuildError",
+    "ControlError",
+    "IntoValue",
+    "RequestControls",
+    "CallOptions",
+    "ControlSummary",
+    "CancellationToken",
+    "SecretString",
+    "StoreOutcome",
+    "DispatchKnowledge",
+    "OperationId",
+    "ExecutionMeta",
+    "Bytes",
+    "ByteStream",
+    "Json",
+    "Binary",
+    "Text",
+    "Empty",
+    "Discard",
+];
+/// §7.2: detailed role modules of the facade.
+const FACADE_ROLE_MODULES: &[&str] = &[
+    "body",
+    "response",
+    "pagination",
+    "auth",
+    "rate_limit",
+    "retry",
+    "inspection",
+];
+
+/// Markdown heading of the README feature matrix checked against the facade
+/// manifest.
+const FEATURE_MATRIX_HEADING: &str = "Cargo features";
+
+/// Anchors of fences that show construction/control internals; the tutorial
+/// must show an ordinary awaited result before any of them (§19.2).
+const TUTORIAL_INTERNAL_ANCHORS: &[&str] = &[
+    "domain_tree_planning",
+    "domain_tree_controls",
+    "domain_tree_pagination",
+    "runtime_endpoint",
+    "runtime_endpoint_client",
+    "execute_helper",
+];
+const TUTORIAL_INTERNAL_MARKERS: &[&str] = &[
+    "unbound()",
+    "RuntimeEndpoint",
+    "with_options(",
+    "cancel_with(",
+    "control_summary(",
+];
+const TUTORIAL_AWAIT_ANCHORS: &[&str] = &["first_request", "domain_tree_await_request"];
+
 #[derive(Default)]
 struct Counts {
     dsl: usize,
@@ -138,10 +428,16 @@ pub(crate) fn run(root: &Path) -> Result<(), String> {
     }
 
     check_documentation_inventory(root, &mut counts, &mut errors)?;
+    check_documentation_index(root, &mut errors)?;
     check_canonical_sources(root, &mut counts, &mut errors)?;
+    check_tutorial_order(root, &mut errors)?;
     check_retired_language(root, &markdown_files, &mut counts, &mut errors)?;
     check_release_truth(root, &markdown_files, &mut errors)?;
     check_language_projection_agreement(root, &mut errors)?;
+    check_facade_exports(root, &mut errors)?;
+    check_feature_matrix(root, &mut errors)?;
+    check_tool_agreement(root, &mut errors)?;
+    let rules = crate::doc_rules::check(root, &mut errors)?;
 
     if !errors.is_empty() {
         errors.sort();
@@ -174,9 +470,11 @@ pub(crate) fn run(root: &Path) -> Result<(), String> {
         "validated {} local Markdown links and {} heading fragments",
         counts.links, counts.fragments
     );
-    println!("validated canonical docs/README.md inventory coverage");
     println!(
-        "validated {} machine-owned canonical source anchors",
+        "validated canonical docs/README.md inventory coverage and the v2.1 -> v3 migration link"
+    );
+    println!(
+        "validated {} machine-owned canonical source anchors and the tutorial order",
         counts.canonical_sources
     );
     println!(
@@ -184,6 +482,13 @@ pub(crate) fn run(root: &Path) -> Result<(), String> {
         counts.retired_files
     );
     println!("validated one release-status owner and parser/spec/generated-name agreement");
+    println!(
+        "validated facade root exports, the Cargo feature matrix and migrate-v3/contract tool agreement"
+    );
+    println!(
+        "validated the EXT-01 extension contract of {} public traits, IDENTITY-01 endpoint-ID wording across {} product source files and the LIMIT-02 runtime limits section",
+        rules.traits, rules.identity_files
+    );
     Ok(())
 }
 
@@ -257,6 +562,16 @@ fn check_markdown(
         if !is_retired_allowlisted(&relative_path) {
             for finding in retired_fence_findings(fence) {
                 errors.push(format!("{location}: {finding}"));
+            }
+            if is_user_documentation(&relative_path)
+                && matches!(
+                    fence.language.as_str(),
+                    DSL_LANGUAGE | DSL_PSEUDOCODE_LANGUAGE
+                )
+            {
+                for finding in retired_v3_dsl_findings(&fence.body) {
+                    errors.push(format!("{location}: {finding}"));
+                }
             }
         }
     }
@@ -591,6 +906,73 @@ fn check_documentation_inventory(
     Ok(())
 }
 
+/// The documentation index routes v2.1 users to the v3 migration guide, and
+/// the v2.0 -> v2.1 guide is explicitly historical (§19.2, DOC-01).
+fn check_documentation_index(root: &Path, errors: &mut Vec<String>) -> Result<(), String> {
+    let index = read(&root.join("docs/README.md"))?;
+    let links = markdown_links(&index);
+    if !links.iter().any(|target| target == "migration_v3.md") {
+        errors.push("docs/README.md: must link the v2.1 -> v3 guide `migration_v3.md`".to_owned());
+    }
+    let historical = root.join("docs/migration_v2_1.md");
+    if historical.is_file() {
+        let content = read(&historical)?;
+        let header = content.lines().take(12).collect::<Vec<_>>().join("\n");
+        if !header.contains("Historical") || !header.contains("migration_v3.md") {
+            errors.push(
+                "docs/migration_v2_1.md: the v2.0 -> v2.1 guide must be marked Historical near its heading and point to migration_v3.md"
+                    .to_owned(),
+            );
+        }
+    }
+    Ok(())
+}
+
+/// DOC-01: the tutorial builds a real typed client and shows an ordinary
+/// awaited result before unbound/runtime/control internals.
+fn check_tutorial_order(root: &Path, errors: &mut Vec<String>) -> Result<(), String> {
+    let path = "docs/quick_start.md";
+    let content = read(&root.join(path))?;
+    let mut ignored = Vec::new();
+    let fences = parse_fences(path, &content, &mut ignored);
+    for error in tutorial_order_errors(path, &fences) {
+        errors.push(error);
+    }
+    Ok(())
+}
+
+fn tutorial_order_errors(path: &str, fences: &[Fence]) -> Vec<String> {
+    let first_await = fences.iter().position(|fence| {
+        fence.source.as_ref().is_some_and(|source| {
+            TUTORIAL_AWAIT_ANCHORS
+                .iter()
+                .any(|anchor| source.anchor == *anchor)
+        })
+    });
+    let first_internal = fences.iter().position(|fence| {
+        fence.source.as_ref().is_some_and(|source| {
+            TUTORIAL_INTERNAL_ANCHORS
+                .iter()
+                .any(|anchor| source.anchor == *anchor)
+        }) || TUTORIAL_INTERNAL_MARKERS
+            .iter()
+            .any(|marker| fence.body.contains(marker))
+    });
+    match (first_await, first_internal) {
+        (None, _) => vec![format!(
+            "{path}: the tutorial must show an anchored ordinary `.await` ({})",
+            TUTORIAL_AWAIT_ANCHORS.join(" or ")
+        )],
+        (Some(first_await), Some(first_internal)) if first_internal < first_await => {
+            vec![format!(
+                "{path}:{}: construction/control internals appear before the first ordinary `.await` result at line {}",
+                fences[first_internal].start, fences[first_await].start
+            )]
+        }
+        _ => Vec::new(),
+    }
+}
+
 fn check_canonical_sources(
     root: &Path,
     counts: &mut Counts,
@@ -631,8 +1013,7 @@ fn check_canonical_sources(
             .iter()
             .find(|fence| {
                 fence.source.as_ref().is_some_and(|source| {
-                    source.path == "crates/concord-examples/src/getting_started/domain_tree.rs"
-                        && source.anchor == "domain_tree_contract"
+                    source.path == DOMAIN_TREE_SOURCE && source.anchor == "domain_tree_contract"
                 })
             });
         if !full_contract.is_some_and(|fence| {
@@ -680,9 +1061,250 @@ fn check_retired_language(
         for finding in retired_surface_findings(&content) {
             errors.push(format!("{key}: {finding}"));
         }
+        if is_user_documentation(&key) {
+            for finding in retired_v3_surface_findings(&content, true) {
+                errors.push(format!("{key}: {finding}"));
+            }
+        } else if key.ends_with(".rs") {
+            for finding in retired_v3_surface_findings(&content, false) {
+                errors.push(format!("{key}: {finding}"));
+            }
+        }
         counts.retired_files += 1;
     }
     Ok(())
+}
+
+/// README and `docs/` are the user documentation this checker holds to the
+/// complete v3 retirement list; maintainer documents keep their own rules.
+fn is_user_documentation(relative_path: &str) -> bool {
+    relative_path == "README.md"
+        || (relative_path.starts_with("docs/") && relative_path.ends_with(".md"))
+}
+
+/// A line that explicitly names the retired version or the migration
+/// contract is migration context, not an active claim.
+fn is_migration_context(line: &str) -> bool {
+    line.contains("v2.1")
+        || line.contains("v2.0")
+        || line.contains("§25")
+        || line.contains("C3-MIGRATE")
+        || Regex::new(r"\bv2\b")
+            .expect("migration context regex")
+            .is_match(line)
+}
+
+/// v3 retired caller and DSL surfaces (§14.2, §16, §25.2), checked line by
+/// line. Explicit migration context is exempt: a line naming the retired
+/// version (see [`is_migration_context`]) and, in Markdown, every line of a
+/// section headed "Migrating from v2…" or "Migration from v2…". In Markdown
+/// the caller-surface patterns apply to every line and the DSL-shaped patterns
+/// to inline code spans.
+fn retired_v3_surface_findings(content: &str, markdown: bool) -> Vec<String> {
+    let surface = [
+        (
+            r"\.paginate\s*\(",
+            "retired `.paginate(...)` terminal; use `pages`, `collect_prefix` or `collect_all`",
+        ),
+        (
+            r"\bPageLimit\b",
+            "retired `PageLimit` selector; choose an explicit traversal terminal",
+        ),
+        (r"\bPaginatedRequest\b", "retired `PaginatedRequest` type"),
+        (
+            r"\.try_bind\s*\(",
+            "retired runtime `try_bind`; bind with `owner.bind(endpoint)`",
+        ),
+        (
+            r"\.body_(?:codec|spec)\s*::",
+            "retired runtime body builder; use `body_repr::<B, T>(input)`",
+        ),
+    ]
+    .map(|(pattern, message)| (Regex::new(pattern).expect("v3 surface regex"), message));
+    let dsl = [
+        (r"^vars\s*\{", "retired `vars` declaration; write `values`"),
+        (r"^host\s*\[", "retired `host` clause; write `subdomain`"),
+        (
+            r"^path\s+(?:replace\s+)?\[",
+            "retired path atom list; write a relative `path` template",
+        ),
+        (
+            r"\busing\s+[A-Z]",
+            "retired `using` representation; write `via`",
+        ),
+        (
+            r"=\s*default\s*(?:[;,)]|$)",
+            "retired `= default` initializer; write `#[default]`",
+        ),
+    ]
+    .map(|(pattern, message)| (Regex::new(pattern).expect("v3 DSL regex"), message));
+
+    let mut findings = Vec::new();
+    let mut exempt_level: Option<usize> = None;
+    let mut in_fence = false;
+    for (index, line) in content.lines().enumerate() {
+        let trimmed = line.trim_start();
+        let mut dsl_candidates = Vec::new();
+        if markdown {
+            if trimmed.starts_with("```") {
+                in_fence = !in_fence;
+                continue;
+            }
+            if !in_fence {
+                if let Some((level, title)) = heading(trimmed) {
+                    if exempt_level.is_some_and(|open| level <= open) {
+                        exempt_level = None;
+                    }
+                    if is_migration_heading(title) {
+                        exempt_level = Some(level);
+                    }
+                }
+            }
+            if exempt_level.is_some() {
+                continue;
+            }
+            // DSL fences are checked as a whole by `retired_v3_dsl_findings`;
+            // `text` fences may show display provenance such as the
+            // `endpoint.category` origin of an expanded contract view.
+            if !in_fence {
+                dsl_candidates.extend(inline_code_spans(line));
+            }
+        }
+        if is_migration_context(line) {
+            continue;
+        }
+        for (regex, message) in &surface {
+            if regex.is_match(line) {
+                findings.push(format!("line {}: {message}", index + 1));
+            }
+        }
+        for candidate in &dsl_candidates {
+            for (regex, message) in &dsl {
+                if regex.is_match(candidate.trim()) {
+                    findings.push(format!("line {}: {message}", index + 1));
+                }
+            }
+            if redundant_endpoint_qualification(candidate) {
+                findings.push(format!(
+                    "line {}: retired `endpoint.x` qualification; write the bare local name",
+                    index + 1
+                ));
+            }
+        }
+    }
+    findings
+}
+
+/// A heading that opens an explicit v2 migration section, optionally after a
+/// section number (`## 17. Migration from v2.1`).
+fn is_migration_heading(title: &str) -> bool {
+    let title = title
+        .trim_start_matches(|character: char| character.is_ascii_digit() || character == '.')
+        .trim_start()
+        .to_ascii_lowercase();
+    title.starts_with("migrating from v2") || title.starts_with("migration from v2")
+}
+
+/// Retired v3 DSL forms inside a `concord`/`concord-pseudocode` fence. String
+/// literal contents are ignored, so a legacy rate label such as
+/// `"endpoint.item_id"` is data, not a reference.
+fn retired_v3_dsl_findings(body: &str) -> Vec<String> {
+    let code = strip_string_literals(body);
+    let patterns = [
+        (
+            r"(?m)^\s*path\s+(?:replace\s+)?\[",
+            "retired path atom list; write a relative `path` template",
+        ),
+        (
+            r"=\s*default\s*[;,)]",
+            "retired `= default` initializer; write `#[default]`",
+        ),
+        (
+            r"(?m)^\s*retry\b",
+            "retired `retry` DSL clause; install a `RetryPolicy` at runtime",
+        ),
+        (r"\bvars\s*\.", "retired `vars.*` reference"),
+    ];
+    let mut findings = patterns
+        .into_iter()
+        .filter(|(pattern, _)| {
+            Regex::new(pattern)
+                .expect("retired v3 DSL regex")
+                .is_match(&code)
+        })
+        .map(|(_, message)| message.to_owned())
+        .collect::<Vec<_>>();
+    if code.lines().any(redundant_endpoint_qualification)
+        || Regex::new(r"\{\s*endpoint\s*\.")
+            .expect("template hole regex")
+            .is_match(body)
+    {
+        findings.push("retired `endpoint.x` qualification; write the bare local name".to_owned());
+    }
+    findings
+}
+
+/// `endpoint.name` used as a value reference (not a Rust method call such as
+/// `endpoint.description()`).
+fn redundant_endpoint_qualification(text: &str) -> bool {
+    let regex = Regex::new(r"\bendpoint\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)")
+        .expect("endpoint qualification regex");
+    regex.captures_iter(text).any(|captures| {
+        let end = captures.get(0).expect("whole match").end();
+        !text[end..].trim_start().starts_with('(')
+    })
+}
+
+fn strip_string_literals(body: &str) -> String {
+    let mut result = String::with_capacity(body.len());
+    let mut in_string = false;
+    let mut escaped = false;
+    for character in body.chars() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+                result.push('"');
+            } else if character == '\n' {
+                result.push('\n');
+            }
+        } else {
+            if character == '"' {
+                in_string = true;
+            }
+            result.push(character);
+        }
+    }
+    result
+}
+
+fn inline_code_spans(line: &str) -> Vec<String> {
+    let mut spans = Vec::new();
+    let mut current = String::new();
+    let mut in_code = false;
+    for character in line.chars() {
+        if character == '`' {
+            if in_code {
+                spans.push(std::mem::take(&mut current));
+            }
+            in_code = !in_code;
+        } else if in_code {
+            current.push(character);
+        }
+    }
+    spans
+}
+
+/// `(level, title)` of an ATX Markdown heading line.
+fn heading(trimmed: &str) -> Option<(usize, &str)> {
+    let hashes = trimmed.bytes().take_while(|byte| *byte == b'#').count();
+    if !(1..=6).contains(&hashes) || !trimmed[hashes..].starts_with(' ') {
+        return None;
+    }
+    Some((hashes, trimmed[hashes..].trim()))
 }
 
 fn retired_fence_findings(fence: &Fence) -> Vec<String> {
@@ -702,7 +1324,6 @@ fn retired_fence_findings(fence: &Fence) -> Vec<String> {
             (r"\[\s*host(?:\s*[,\]])", "retired `host` rate dimension"),
             (r"\bfmt\s*\[", "retired `fmt` formatter"),
             (r"#\[body\]", "retired `#[body]` marker"),
-            (r"\busing\b", "retired body/result `using` form"),
             (
                 r"(?m)^\s*accept(?:\s+off)?\s*;",
                 "retired endpoint `accept` override",
@@ -735,16 +1356,30 @@ fn retired_fence_findings(fence: &Fence) -> Vec<String> {
                 findings.push(message.to_owned());
             }
         }
+        if retired_using_form(&fence.body) {
+            findings.push("retired body/result `using` form".to_owned());
+        }
     }
     findings
 }
 
+/// v3 keeps `using` only as a rate window source (spec §12.1 `window_source`):
+/// `rate_limit "<id>" key [...] (cost n)? using <set>;`, or a standalone
+/// `using <set>;` line inside a policy or inline attachment (a snake_case set
+/// name, which keeps a split-line v2 `using Json;` retired). Every other
+/// `using` is the retired v2 body/result representation form.
+fn retired_using_form(body: &str) -> bool {
+    let token = Regex::new(r"\busing\b").expect("retired DSL regex");
+    let window_source = Regex::new(
+        r#"^\s*(?:rate_limit\s+"[^"]*"\s+key\s*\[[^\]]*\]\s*(?:cost\s+[0-9][0-9_]*\s+)?using\s+[A-Za-z_][A-Za-z0-9_]*|using\s+[a-z_][a-z0-9_]*)\s*;\s*(?://.*)?$"#,
+    )
+    .expect("window source regex");
+    body.lines()
+        .any(|line| token.is_match(line) && !window_source.is_match(line))
+}
+
 fn retired_surface_findings(content: &str) -> Vec<String> {
     let patterns = [
-        (
-            r"\.clear_[A-Za-z_][A-Za-z0-9_]*\s*\(",
-            "retired `clear_*` control",
-        ),
         (
             r#"\.accept\s*\(\s*(?:\"|String::|[A-Za-z_])|\.accept_off\s*\("#,
             "retired endpoint/runtime `accept` override",
@@ -759,24 +1394,46 @@ fn retired_surface_findings(content: &str) -> Vec<String> {
             "retired `with_*` optional-value control",
         ),
     ];
-    patterns
-        .into_iter()
-        .filter(|(pattern, _)| {
-            Regex::new(pattern)
-                .expect("retired surface regex")
-                .is_match(content)
+    let mut findings = Vec::new();
+    if retired_clear_control(content) {
+        findings.push("retired `clear_*` control".to_owned());
+    }
+    findings.extend(
+        patterns
+            .into_iter()
+            .filter(|(pattern, _)| {
+                Regex::new(pattern)
+                    .expect("retired surface regex")
+                    .is_match(content)
+            })
+            .map(|(_, message)| message.to_owned()),
+    );
+    findings
+}
+
+/// v3 keeps `clear_*` only as the local credential control
+/// `client.credentials().clear_x()` (§11.3); every other `.clear_*(` call is
+/// the retired v2 optional-value control.
+fn retired_clear_control(content: &str) -> bool {
+    Regex::new(r"\.clear_[A-Za-z_][A-Za-z0-9_]*\s*\(")
+        .expect("retired clear regex")
+        .find_iter(content)
+        .any(|found| {
+            !content[..found.start()]
+                .trim_end()
+                .ends_with("credentials()")
         })
-        .map(|(_, message)| message.to_owned())
-        .collect()
 }
 
 fn is_retired_allowlisted(relative_path: &str) -> bool {
     relative_path == "docs/migration_v2_1.md"
+        || relative_path == "docs/migration_v3.md"
         || relative_path.starts_with("dev_doc/history/")
         || relative_path.starts_with("crates/concord/tests/ui/fail/")
         || relative_path.starts_with("crates/concord-macros/src/syntax/")
         || relative_path == "dev_doc/documentation_contract.md"
-        || relative_path == "tools/xtask/src/migration.rs"
+        || relative_path.starts_with("tools/xtask/src/migration/")
+        || relative_path.starts_with("tools/xtask/fixtures/migrate_v3/")
         || relative_path == "tools/xtask/src/docs_check.rs"
 }
 
@@ -830,6 +1487,24 @@ fn check_release_truth(
             ));
         }
     }
+    for error in version_banner_errors(
+        version,
+        &read(&root.join("README.md"))?,
+        &read(&root.join("docs/README.md"))?,
+    ) {
+        errors.push(error);
+    }
+    for path in markdown_files {
+        let key = relative(root, path);
+        if !is_user_documentation(&key) || is_retired_allowlisted(&key) {
+            continue;
+        }
+        for stale in stale_version_mentions(version, &read(path)?) {
+            errors.push(format!(
+                "{key}: stale version `{stale}` in active user documentation (workspace is `{version}`)"
+            ));
+        }
+    }
     if version.contains("beta") {
         if !status.contains("integration candidate / beta")
             || !status.contains("Publication:** disabled")
@@ -841,10 +1516,12 @@ fn check_release_truth(
                     .to_owned(),
             );
         }
-    } else if version == "2.1.0"
+    } else if !version.contains('-')
         && !status.contains("stable local release candidate accepted for merge")
     {
-        errors.push("stable 2.1.0 requires the final accepted lifecycle text".to_owned());
+        errors.push(format!(
+            "stable {version} requires the final accepted lifecycle text"
+        ));
     }
 
     for manifest in [
@@ -1000,101 +1677,23 @@ fn check_language_projection_agreement(
     root: &Path,
     errors: &mut Vec<String>,
 ) -> Result<(), String> {
-    let declaration = read(&root.join("crates/concord-macros/src/syntax/declaration.rs"))?;
-    for (message, required) in [
-        ("unsupported client entry", &["`request`", "`response`"][..]),
-        ("unsupported scope entry", &["`request`", "`response`"][..]),
-        ("unsupported endpoint clause", &["`status`"][..]),
-    ] {
-        let diagnostic = declaration
-            .lines()
-            .find(|line| line.contains(message))
-            .unwrap_or_default();
-        if required.iter().any(|clause| !diagnostic.contains(clause)) {
-            errors.push(format!(
-                "parser fallback `{message}` does not name all current legal clauses"
-            ));
-        }
-    }
-    for snapshot in [
-        "crates/concord/tests/ui/fail/syntax/second_client.stderr",
-        "crates/concord/tests/ui/fail/syntax/malformed.stderr",
-        "crates/concord/tests/ui/fail/syntax/unsupported_endpoint_clause.stderr",
-    ] {
-        if !root.join(snapshot).is_file() {
-            errors.push(format!("missing parser fallback UI snapshot {snapshot}"));
-        }
-    }
-
-    let credentials = read(&root.join("crates/concord-macros/src/syntax/credentials.rs"))?;
+    check_parser_clause_agreement(root, errors)?;
+    check_grammar_keyword_agreement(root, errors)?;
+    check_optional_secret_agreement(root, errors)?;
+    check_generated_name_agreement(root, errors)?;
+    check_rate_dimension_agreement(root, errors)?;
+    check_retired_v2_diagnostics(root, errors)?;
     let spec = read(&root.join("docs/spec.md"))?;
-    let optional_secret_fixture =
-        root.join("crates/concord/tests/ui/fail/syntax/optional_static_secret_deferred.rs");
-    if !credentials.contains("optional static secrets are deferred for v2.1")
-        || !optional_secret_fixture.is_file()
-        || !read(&optional_secret_fixture)?.contains("secret optional_api_key?;")
-    {
-        errors.push(
-            "optional static secret rejection must agree across parser and focused UI fixture"
-                .to_owned(),
-        );
-    }
-    let active_optional_secret = Regex::new(r"(?m)^\s*secret\s+[A-Za-z_][A-Za-z0-9_]*\s*\?\s*;")
-        .expect("optional secret regex");
-    if active_optional_secret.is_match(&spec) {
-        errors.push("docs/spec.md still admits optional static secret syntax".to_owned());
-    }
 
-    let symbols = read(&root.join("crates/concord-macros/src/semantic/symbols.rs"))?;
-    let auth = read(&root.join("crates/concord-macros/src/semantic/auth.rs"))?;
-    if symbols.contains("format!(\"with_") || auth.contains("format!(\"with_") {
-        errors.push("semantic generated-name model still reserves `with_*`".to_owned());
-    }
-    let emit_root = root.join("crates/concord-macros/src");
-    for path in collect_files(&emit_root, "rs")? {
-        let source = read(&path)?;
-        if source.contains("format!(\"with_")
-            || source.contains("format_ident!(\"with_")
-            || source.contains("format!(\"clear_")
-            || source.contains("format_ident!(\"clear_")
-        {
+    // §14.2 / §25.2: the traversal terminals replaced `.paginate(PageLimit)`;
+    // the normative pages name the v3 terminals instead.
+    let pagination = read(&root.join("docs/pagination.md"))?;
+    for terminal in [".pages(", ".collect_prefix(", ".collect_all("] {
+        if !pagination.contains(terminal) && !spec.contains(terminal) {
             errors.push(format!(
-                "{}: generated optional-control alias construction remains",
-                relative(root, &path)
+                "normative docs must show the v3 traversal terminal `{terminal}`"
             ));
         }
-    }
-    for fixture in [
-        "crates/concord/tests/ui/pass/language/with_namespace_released.rs",
-        "crates/concord/tests/ui/fail/capabilities/with_optional_control_absent.rs",
-    ] {
-        if !root.join(fixture).is_file() {
-            errors.push(format!(
-                "missing generated-name agreement fixture {fixture}"
-            ));
-        }
-    }
-
-    let rate_syntax = read(&root.join("crates/concord-macros/src/syntax/rate_limits.rs"))?;
-    let rate_descriptions = read(&root.join("crates/concord-macros/src/emit/descriptions.rs"))?;
-    let rate_snapshot = read(&root.join(
-        "crates/concord/tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.stderr",
-    ))
-    .unwrap_or_default();
-    if !rate_syntax.contains("`origin`, `endpoint`, or declared bare formal names")
-        || !rate_descriptions
-            .contains("NormalizedRateLimitDimension::Origin { .. } => \"origin\".to_owned()")
-        || rate_snapshot.contains("only `host`")
-    {
-        errors.push(
-            "active rate diagnostics and descriptions must name `origin`, not retired `host`"
-                .to_owned(),
-        );
-    }
-    if !spec.contains("PageLimit::")
-        && !read(&root.join("docs/pagination.md"))?.contains("PageLimit::")
-    {
-        errors.push("normative docs must contain an explicit PageLimit example".to_owned());
     }
     if !spec.contains("request explicit;")
         || !spec.contains("response explicit;")
@@ -1114,13 +1713,11 @@ fn check_language_projection_agreement(
     ] {
         for path in collect_files(&root.join(directory), "rs")? {
             let source = read(&path)?;
-            for retired in ["ResponseBodySpec", "SafeRequestPlan", "response_bytes"] {
-                if source.contains(retired) {
-                    errors.push(format!(
-                        "{}: retired public symbol `{retired}` remains in active implementation source",
-                        relative(root, &path)
-                    ));
-                }
+            for finding in retired_implementation_symbols(&source) {
+                errors.push(format!(
+                    "{}: retired public symbol `{finding}` remains in active implementation source",
+                    relative(root, &path)
+                ));
             }
         }
     }
@@ -1153,6 +1750,592 @@ fn check_language_projection_agreement(
     Ok(())
 }
 
+/// Earlier Concord releases that active user documentation must not present
+/// as the current product.
+const RETIRED_CONCORD_VERSIONS: &[&str] = &["2.1.0-beta.1", "2.0.0"];
+
+/// The README and documentation index titles name the workspace major.
+fn version_banner_errors(version: &str, readme: &str, index: &str) -> Vec<String> {
+    let major = version.split('.').next().unwrap_or(version);
+    let banner = Regex::new(&format!(r"\bConcord v{}\b", regex::escape(major)))
+        .expect("version banner regex");
+    let mut errors = Vec::new();
+    for (label, content) in [("README.md", readme), ("docs/README.md", index)] {
+        let title = content.lines().find_map(|line| {
+            heading(line.trim_start())
+                .filter(|(level, _)| *level == 1)
+                .map(|(_, title)| title)
+        });
+        match title {
+            Some(title) if banner.is_match(title) => {}
+            Some(title) => errors.push(format!(
+                "{label}: title `{title}` must name `Concord v{major}` for workspace `{version}`"
+            )),
+            None => errors.push(format!(
+                "{label}: missing a top-level title naming `Concord v{major}`"
+            )),
+        }
+    }
+    errors
+}
+
+/// Retired Concord versions mentioned outside explicit migration context.
+fn stale_version_mentions(version: &str, content: &str) -> Vec<&'static str> {
+    let mut found = RETIRED_CONCORD_VERSIONS
+        .iter()
+        .copied()
+        .filter(|retired| *retired != version)
+        .filter(|retired| {
+            content
+                .lines()
+                .any(|line| !is_migration_context(line) && line.contains(retired))
+        })
+        .collect::<Vec<_>>();
+    found.dedup();
+    found
+}
+
+/// The parser's fallback diagnostics name every legal clause of the §3.2
+/// grammar for the owner kind.
+fn check_parser_clause_agreement(root: &Path, errors: &mut Vec<String>) -> Result<(), String> {
+    let declaration = read(&root.join("crates/concord-macros/src/syntax/declaration.rs"))?;
+    for (message, clauses) in [
+        ("unsupported client entry", CLIENT_CLAUSES),
+        ("unsupported scope entry", SCOPE_CLAUSES),
+        ("unsupported endpoint clause", ENDPOINT_CLAUSES),
+    ] {
+        for error in fallback_clause_errors(&declaration, message, clauses) {
+            errors.push(error);
+        }
+    }
+    for snapshot in [
+        "crates/concord/tests/ui/fail/syntax/second_client.stderr",
+        "crates/concord/tests/ui/fail/syntax/malformed.stderr",
+        "crates/concord/tests/ui/fail/syntax/unsupported_endpoint_clause.stderr",
+    ] {
+        if !root.join(snapshot).is_file() {
+            errors.push(format!("missing parser fallback UI snapshot {snapshot}"));
+        }
+    }
+    Ok(())
+}
+
+fn fallback_clause_errors(source: &str, message: &str, clauses: &[&str]) -> Vec<String> {
+    let Some(diagnostic) = source.lines().find(|line| line.contains(message)) else {
+        return vec![format!("parser fallback `{message}` is missing")];
+    };
+    let missing = clauses
+        .iter()
+        .filter(|clause| !diagnostic.contains(*clause))
+        .copied()
+        .collect::<Vec<_>>();
+    if missing.is_empty() {
+        Vec::new()
+    } else {
+        vec![format!(
+            "parser fallback `{message}` does not name all current legal clauses (missing {})",
+            missing.join(", ")
+        )]
+    }
+}
+
+/// Every v3 grammar keyword is a parser keyword and a quoted terminal of the
+/// normative grammar in `docs/spec.md`; retired v2 keywords are not.
+fn check_grammar_keyword_agreement(root: &Path, errors: &mut Vec<String>) -> Result<(), String> {
+    let keywords = read(&root.join("crates/concord-macros/src/syntax/keyword.rs"))?;
+    let spec = read(&root.join("docs/spec.md"))?;
+    for error in grammar_keyword_errors(&keywords, &spec) {
+        errors.push(error);
+    }
+    Ok(())
+}
+
+fn grammar_keyword_errors(keyword_source: &str, spec: &str) -> Vec<String> {
+    let declared = Regex::new(r"custom_keyword!\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)")
+        .expect("keyword regex")
+        .captures_iter(keyword_source)
+        .map(|captures| captures[1].to_owned())
+        .collect::<HashSet<_>>();
+    let mut errors = Vec::new();
+    for keyword in V3_KEYWORDS {
+        if !declared.contains(*keyword) {
+            errors.push(format!(
+                "crates/concord-macros/src/syntax/keyword.rs: v3 grammar keyword `{keyword}` is not declared"
+            ));
+        }
+        if !spec.contains(&format!("\"{keyword}\"")) {
+            errors.push(format!(
+                "docs/spec.md: the grammar does not quote v3 terminal \"{keyword}\""
+            ));
+        }
+    }
+    for retired in RETIRED_V2_KEYWORDS {
+        if spec.contains(&format!("\"{retired}\"")) {
+            errors.push(format!(
+                "docs/spec.md: the grammar quotes retired v2 keyword \"{retired}\""
+            ));
+        }
+    }
+    errors
+}
+
+/// §11.1: `secret NAME?;` is rejected by the parser, pinned by a focused UI
+/// fixture, and never admitted by the normative docs.
+fn check_optional_secret_agreement(root: &Path, errors: &mut Vec<String>) -> Result<(), String> {
+    let credentials = read(&root.join("crates/concord-macros/src/syntax/credentials.rs"))?;
+    let fixture_path = root.join(OPTIONAL_SECRET_FIXTURE);
+    let fixture = read(&fixture_path).unwrap_or_default();
+    let snapshot = read(&fixture_path.with_extension("stderr")).unwrap_or_default();
+    if !credentials.contains(OPTIONAL_SECRET_REJECTION)
+        || !fixture.contains("secret optional_api_key?;")
+        || !snapshot.contains("[C3-AUTH]")
+        || !snapshot.contains(OPTIONAL_SECRET_REJECTION)
+    {
+        errors.push(
+            "optional static secret rejection must agree across parser and focused UI fixture"
+                .to_owned(),
+        );
+    }
+    let active_optional_secret = Regex::new(r"(?m)^\s*secret\s+[A-Za-z_][A-Za-z0-9_]*\s*\?\s*;")
+        .expect("optional secret regex");
+    for document in ["docs/spec.md", "docs/auth.md"] {
+        let content = read(&root.join(document))?;
+        if active_optional_secret.is_match(&content) {
+            errors.push(format!(
+                "{document} still admits optional static secret syntax"
+            ));
+        }
+    }
+    if !read(&root.join("docs/auth.md"))?
+        .to_ascii_lowercase()
+        .contains(OPTIONAL_SECRET_REJECTION)
+    {
+        errors.push(format!(
+            "docs/auth.md must state that {OPTIONAL_SECRET_REJECTION}"
+        ));
+    }
+    Ok(())
+}
+
+/// The macro builds exactly the v3 value-control and credential-control
+/// names, no retired alias construction remains, and the generated core
+/// method names reserved by the macro are documented.
+fn check_generated_name_agreement(root: &Path, errors: &mut Vec<String>) -> Result<(), String> {
+    for (path, construction) in GENERATED_NAME_CONSTRUCTIONS {
+        if !read(&root.join(path))?.contains(construction) {
+            errors.push(format!(
+                "{path}: generated-name construction `{construction}` is missing"
+            ));
+        }
+    }
+    for path in collect_files(&root.join("crates/concord-macros/src"), "rs")? {
+        let source = read(&path)?;
+        if source.contains("format!(\"with_")
+            || source.contains("format_ident!(\"with_")
+            || source.contains("prefixed_ident(\"with\"")
+            || source.contains("format!(\"clear_")
+            || source.contains("format_ident!(\"clear_")
+        {
+            errors.push(format!(
+                "{}: generated optional-control alias construction remains",
+                relative(root, &path)
+            ));
+        }
+    }
+    for fixture in [
+        "crates/concord/tests/ui/pass/language/with_namespace_released.rs",
+        "crates/concord/tests/ui/fail/capabilities/with_optional_control_absent.rs",
+        "crates/concord/tests/ui/fail/capabilities/clear_optional_control_absent.rs",
+    ] {
+        if !root.join(fixture).is_file() {
+            errors.push(format!(
+                "missing generated-name agreement fixture {fixture}"
+            ));
+        }
+    }
+    let names = read(&root.join("crates/concord-macros/src/semantic/names.rs"))?;
+    let generated_client = read(&root.join("docs/generated_client.md"))?;
+    for constant in ["CLIENT_METHODS", "BUILDER_METHODS", "REQUEST_METHODS"] {
+        let methods = const_string_list(&names, constant);
+        if methods.is_empty() {
+            errors.push(format!(
+                "crates/concord-macros/src/semantic/names.rs: reserved method list `{constant}` was not found"
+            ));
+        }
+        for method in methods {
+            if matches!(method.as_str(), "clone" | "into_future" | "default") {
+                continue;
+            }
+            if !generated_client.contains(&format!("`{method}`"))
+                && !generated_client.contains(&format!("{method}("))
+            {
+                errors.push(format!(
+                    "docs/generated_client.md does not document generated core method `{method}` ({constant})"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The quoted strings of `const NAME: &[&str] = &[ ... ];` in `source`.
+fn const_string_list(source: &str, name: &str) -> Vec<String> {
+    let Some(start) = source.find(&format!("const {name}: &[&str] = &[")) else {
+        return Vec::new();
+    };
+    let rest = &source[start..];
+    let Some(end) = rest.find("];") else {
+        return Vec::new();
+    };
+    Regex::new(r#""([^"]+)""#)
+        .expect("string list regex")
+        .captures_iter(&rest[..end])
+        .map(|captures| captures[1].to_owned())
+        .collect()
+}
+
+/// Rate diagnostics, generated docs and core schema name `origin`, never the
+/// retired `host` dimension.
+fn check_rate_dimension_agreement(root: &Path, errors: &mut Vec<String>) -> Result<(), String> {
+    let syntax = read(&root.join("crates/concord-macros/src/syntax/rate_limits.rs"))?;
+    let generated_docs = read(&root.join("crates/concord-macros/src/emit/docs.rs"))?;
+    let schema = read(&root.join("crates/concord-core/src/rate_limit/schema.rs"))?;
+    let snapshot = read(&root.join(
+        "crates/concord/tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.stderr",
+    ))
+    .unwrap_or_default();
+    if !syntax.contains("a key dimension is `origin`, `endpoint`")
+        || !generated_docs.contains("BoundDim::Origin => \"origin\".to_owned()")
+        || !schema.contains("pub const ORIGIN_LABEL: &str = \"origin\";")
+        || snapshot.contains("only `host`")
+    {
+        errors.push(
+            "active rate diagnostics and descriptions must name `origin`, not retired `host`"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
+/// Every retired v2 surface the documentation calls removed is rejected by
+/// the product with a precise diagnostic (MIGRATE-03).
+fn check_retired_v2_diagnostics(root: &Path, errors: &mut Vec<String>) -> Result<(), String> {
+    for (fixture, needle, diagnostic) in RETIRED_V2_DIAGNOSTICS {
+        let path = root.join(fixture);
+        if !path.is_file() {
+            errors.push(format!("missing retired-v2 diagnostic fixture {fixture}"));
+            continue;
+        }
+        let source = read(&path)?;
+        let snapshot = read(&path.with_extension("stderr")).unwrap_or_default();
+        if !source.contains(needle) || !snapshot.contains(diagnostic) {
+            errors.push(format!(
+                "{fixture}: retired v2 form `{needle}` must be rejected with `{diagnostic}`"
+            ));
+        }
+    }
+    // §16.2 / RUNTIME-02: v2.1 dynamic credential selection is removed; a
+    // runtime endpoint can only remove inherited placements.
+    let runtime = read(&root.join("crates/concord-core/src/request/runtime_endpoint/mod.rs"))?;
+    let authentication =
+        Regex::new(r"pub fn ([A-Za-z0-9_]*(?:auth|credential)[A-Za-z0-9_]*)\s*[<(]")
+            .expect("runtime auth regex")
+            .captures_iter(&runtime)
+            .map(|captures| captures[1].to_owned())
+            .collect::<Vec<_>>();
+    if authentication != ["auth_off", "auth_remove"] {
+        errors.push(format!(
+            "runtime endpoints must offer only `auth_off`/`auth_remove` authentication operations; found {authentication:?}"
+        ));
+    }
+    Ok(())
+}
+
+/// Retired v2 public symbols in implementation source. `response_bytes` is
+/// retired only as the v2 terminal method; `cap_response_bytes` and
+/// `acquired_response_bytes` are v3 API.
+fn retired_implementation_symbols(source: &str) -> Vec<&'static str> {
+    let mut found = Vec::new();
+    for retired in ["ResponseBodySpec", "SafeRequestPlan"] {
+        if source.contains(retired) {
+            found.push(retired);
+        }
+    }
+    if Regex::new(r"(?:\bfn\s+|\.)response_bytes\s*[<(]")
+        .expect("response bytes regex")
+        .is_match(source)
+    {
+        found.push("response_bytes()");
+    }
+    found
+}
+
+/// §7.2: the facade root re-exports the required convenience names and role
+/// modules, and the generated-client guide lists the same root exports.
+fn check_facade_exports(root: &Path, errors: &mut Vec<String>) -> Result<(), String> {
+    let source = read(&root.join("crates/concord/src/lib.rs"))?;
+    let file = syn::parse_file(&source)
+        .map_err(|error| format!("could not parse crates/concord/src/lib.rs: {error}"))?;
+    let mut root_names = HashSet::new();
+    let mut modules = HashMap::<String, HashSet<String>>::new();
+    let mut api_macro = false;
+    for item in &file.items {
+        match item {
+            syn::Item::Use(item) if matches!(item.vis, syn::Visibility::Public(_)) => {
+                collect_use_names(&item.tree, &mut root_names);
+            }
+            syn::Item::Mod(item) if matches!(item.vis, syn::Visibility::Public(_)) => {
+                let mut names = HashSet::new();
+                if let Some((_, items)) = &item.content {
+                    for inner in items {
+                        if let syn::Item::Use(inner) = inner {
+                            if matches!(inner.vis, syn::Visibility::Public(_)) {
+                                collect_use_names(&inner.tree, &mut names);
+                            }
+                        }
+                    }
+                }
+                modules.insert(item.ident.to_string(), names);
+            }
+            syn::Item::Macro(item)
+                if item.ident.as_ref().is_some_and(|ident| ident == "api")
+                    && item
+                        .attrs
+                        .iter()
+                        .any(|attribute| attribute.path().is_ident("macro_export")) =>
+            {
+                api_macro = true;
+            }
+            _ => {}
+        }
+    }
+    if !api_macro {
+        errors.push(
+            "crates/concord/src/lib.rs: the facade must export `api!` at its root".to_owned(),
+        );
+    }
+    for name in FACADE_ROOT_EXPORTS {
+        if !root_names.contains(*name) {
+            errors.push(format!(
+                "crates/concord/src/lib.rs: required root re-export `{name}` is missing (§7.2)"
+            ));
+        }
+    }
+    for module in FACADE_ROLE_MODULES {
+        if !modules.contains_key(*module) {
+            errors.push(format!(
+                "crates/concord/src/lib.rs: role module `{module}` is missing (§7.2)"
+            ));
+        }
+    }
+    if !modules
+        .get("rate_limit")
+        .is_some_and(|names| names.contains("LocalRateLimiter"))
+    {
+        errors.push(
+            "crates/concord/src/lib.rs: `rate_limit::LocalRateLimiter` must be reachable (§7.2)"
+                .to_owned(),
+        );
+    }
+    let guide = read(&root.join("docs/generated_client.md"))?;
+    for name in FACADE_ROOT_EXPORTS {
+        if !guide.contains(&format!("`{name}`")) {
+            errors.push(format!(
+                "docs/generated_client.md does not list facade root export `{name}`"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn collect_use_names(tree: &syn::UseTree, names: &mut HashSet<String>) {
+    match tree {
+        syn::UseTree::Path(path) => collect_use_names(&path.tree, names),
+        syn::UseTree::Name(name) => {
+            names.insert(name.ident.to_string());
+        }
+        syn::UseTree::Rename(rename) => {
+            names.insert(rename.rename.to_string());
+        }
+        syn::UseTree::Group(group) => {
+            for tree in &group.items {
+                collect_use_names(tree, names);
+            }
+        }
+        syn::UseTree::Glob(_) => {}
+    }
+}
+
+/// V3-O05: the README feature matrix lists exactly the facade's Cargo
+/// features and marks exactly its default set.
+fn check_feature_matrix(root: &Path, errors: &mut Vec<String>) -> Result<(), String> {
+    let manifest = read(&root.join("crates/concord/Cargo.toml"))?;
+    let (features, defaults) = manifest_features(&manifest);
+    let readme = read(&root.join("README.md"))?;
+    match feature_table(&readme, FEATURE_MATRIX_HEADING) {
+        Some(rows) => {
+            for error in feature_matrix_errors(&features, &defaults, &rows) {
+                errors.push(format!("README.md: {error}"));
+            }
+        }
+        None => errors.push(format!(
+            "README.md: missing the `{FEATURE_MATRIX_HEADING}` table checked against crates/concord/Cargo.toml"
+        )),
+    }
+    Ok(())
+}
+
+/// `(features, default features)` of a manifest's `[features]` table.
+fn manifest_features(manifest: &str) -> (BTreeSet<String>, BTreeSet<String>) {
+    let mut features = BTreeSet::new();
+    let mut defaults = BTreeSet::new();
+    let quoted = Regex::new(r#""([^"]+)""#).expect("quoted regex");
+    for line in manifest
+        .lines()
+        .skip_while(|line| line.trim() != "[features]")
+        .skip(1)
+        .take_while(|line| !line.trim().starts_with('['))
+    {
+        let Some((name, value)) = line.split_once('=') else {
+            continue;
+        };
+        let name = name.trim();
+        if name == "default" {
+            defaults.extend(
+                quoted
+                    .captures_iter(value)
+                    .map(|captures| captures[1].to_owned()),
+            );
+        } else if !name.is_empty() && !name.starts_with('#') {
+            features.insert(name.to_owned());
+        }
+    }
+    (features, defaults)
+}
+
+/// `(feature, default)` rows of the Markdown table under `title`.
+fn feature_table(markdown: &str, title: &str) -> Option<Vec<(String, bool)>> {
+    let mut lines = markdown.lines();
+    lines.find(|line| heading(line.trim_start()).is_some_and(|(_, text)| text == title))?;
+    let mut rows = Vec::new();
+    let mut started = false;
+    for line in lines {
+        let trimmed = line.trim();
+        if !trimmed.starts_with('|') {
+            if started || heading(trimmed).is_some() {
+                break;
+            }
+            continue;
+        }
+        started = true;
+        let columns = trimmed.split('|').map(str::trim).collect::<Vec<_>>();
+        let Some(name) = columns
+            .get(1)
+            .and_then(|cell| cell.strip_prefix('`'))
+            .and_then(|cell| cell.strip_suffix('`'))
+        else {
+            continue;
+        };
+        let default = columns
+            .get(2)
+            .is_some_and(|cell| cell.eq_ignore_ascii_case("yes"));
+        rows.push((name.to_owned(), default));
+    }
+    Some(rows)
+}
+
+fn feature_matrix_errors(
+    features: &BTreeSet<String>,
+    defaults: &BTreeSet<String>,
+    rows: &[(String, bool)],
+) -> Vec<String> {
+    let mut errors = Vec::new();
+    let mut documented = BTreeSet::new();
+    for (name, default) in rows {
+        if !documented.insert(name.clone()) {
+            errors.push(format!("feature `{name}` is listed more than once"));
+        }
+        if !features.contains(name) {
+            errors.push(format!(
+                "feature `{name}` is documented but not declared by crates/concord/Cargo.toml"
+            ));
+        }
+        if *default != defaults.contains(name) {
+            errors.push(format!(
+                "feature `{name}` default marking disagrees with crates/concord/Cargo.toml"
+            ));
+        }
+    }
+    for name in features.difference(&documented) {
+        errors.push(format!(
+            "feature `{name}` of crates/concord/Cargo.toml is not documented"
+        ));
+    }
+    errors
+}
+
+/// The user docs show the exact `migrate-v3` and `contract` tool usage and
+/// the migration guide documents every stable diagnostic with its severity.
+fn check_tool_agreement(root: &Path, errors: &mut Vec<String>) -> Result<(), String> {
+    let guide = read(&root.join("docs/migration_v3.md"))?;
+    let usage = format!("cargo run -p concord-xtask -- {}", crate::migration::USAGE);
+    if !guide.contains(&usage) {
+        errors.push(format!(
+            "docs/migration_v3.md must show the exact tool usage `{usage}`"
+        ));
+    }
+    let report = read(&root.join("tools/xtask/src/migration/report.rs"))?;
+    for error in migration_code_errors(&report, &guide) {
+        errors.push(format!("docs/migration_v3.md: {error}"));
+    }
+    let observation = read(&root.join("docs/planning_and_observation.md"))?;
+    let contract_usage = format!("cargo run -p concord-xtask -- {}", crate::contract::USAGE);
+    if !observation.contains(&contract_usage) {
+        errors.push(format!(
+            "docs/planning_and_observation.md must show the exact tool usage `{contract_usage}`"
+        ));
+    }
+    if !observation.contains(concord_inspect::CONTRACT_FORMAT) {
+        errors.push(format!(
+            "docs/planning_and_observation.md must name the `{}` format",
+            concord_inspect::CONTRACT_FORMAT
+        ));
+    }
+    Ok(())
+}
+
+fn migration_code_errors(report: &str, guide: &str) -> Vec<String> {
+    let tool = Regex::new(r#""(C3-MIGRATE-[A-Z0-9-]+)",\s*(Error|Warning|Note),"#)
+        .expect("migration code regex")
+        .captures_iter(report)
+        .map(|captures| (captures[1].to_owned(), captures[2].to_ascii_lowercase()))
+        .collect::<BTreeMap<_, _>>();
+    let documented = Regex::new(r"(?m)^\|\s*`(C3-MIGRATE-[A-Z0-9-]+)`\s*\|\s*([a-z]+)\s*\|")
+        .expect("documented code regex")
+        .captures_iter(guide)
+        .map(|captures| (captures[1].to_owned(), captures[2].to_owned()))
+        .collect::<BTreeMap<_, _>>();
+    let mut errors = Vec::new();
+    if tool.is_empty() {
+        errors.push("no C3-MIGRATE codes found in the migration tool".to_owned());
+    }
+    for (code, severity) in &tool {
+        match documented.get(code) {
+            None => errors.push(format!("tool diagnostic `{code}` is not documented")),
+            Some(documented) if documented != severity => errors.push(format!(
+                "`{code}` is documented as {documented} but the tool reports {severity}"
+            )),
+            Some(_) => {}
+        }
+    }
+    for code in documented.keys() {
+        if !tool.contains_key(code) {
+            errors.push(format!("documents unknown diagnostic `{code}`"));
+        }
+    }
+    errors
+}
+
 fn package_name(manifest: &str) -> Option<&str> {
     manifest
         .lines()
@@ -1183,7 +2366,7 @@ fn active_markdown_files(root: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(files)
 }
 
-fn collect_files(directory: &Path, extension: &str) -> Result<Vec<PathBuf>, String> {
+pub(crate) fn collect_files(directory: &Path, extension: &str) -> Result<Vec<PathBuf>, String> {
     if !directory.is_dir() {
         return Ok(Vec::new());
     }
@@ -1339,7 +2522,7 @@ fn normalize_lexically(path: &Path) -> PathBuf {
     normalized
 }
 
-fn relative(root: &Path, path: &Path) -> String {
+pub(crate) fn relative(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .unwrap_or(path)
         .to_string_lossy()
@@ -1390,6 +2573,36 @@ mod tests {
         }
     }
 
+    /// Regression: the v3 window-source `using` (§12.1) is current syntax, while
+    /// every v2 body/result `using` representation form stays retired.
+    #[test]
+    fn window_source_using_is_current_and_representation_using_is_retired() {
+        let retired_using = "retired body/result `using` form".to_owned();
+        for current in [
+            "rate_limit \"concord.riot.21\" key [origin] using standard;",
+            "rate_limit \"catalog.write\" key [origin, \"tenant\" = tenant] cost 2 using standard;",
+            "policy reads(tenant) {\n    id \"catalog.read\";\n    key [origin];\n    using standard;\n}",
+            "rate_limit {\n    id \"catalog.read\";\n    key [origin];\n    using standard; // numbers only\n}",
+        ] {
+            assert!(
+                !retired_fence_findings(&fence("concord", current)).contains(&retired_using),
+                "flagged: {current}"
+            );
+        }
+        for retired in [
+            "POST create() -> Item using Json;",
+            "POST create(body body: Item using Json) -> Item;",
+            "GET item()\n    -> Item\n    using Json;",
+            "rate_limit \"concord.riot.21\" key [origin] using standard; GET x() -> T using Json;",
+        ] {
+            assert!(
+                retired_fence_findings(&fence("concord-pseudocode", retired))
+                    .contains(&retired_using),
+                "not flagged: {retired}"
+            );
+        }
+    }
+
     #[test]
     fn current_dsl_first_lines_are_classified() {
         for current in [
@@ -1434,6 +2647,11 @@ mod tests {
     #[test]
     fn retired_language_allowlist_is_explicit_and_path_bounded() {
         assert!(is_retired_allowlisted("docs/migration_v2_1.md"));
+        assert!(is_retired_allowlisted("docs/migration_v3.md"));
+        assert!(is_retired_allowlisted(
+            "tools/xtask/src/migration/declaration.rs"
+        ));
+        assert!(!is_retired_allowlisted("tools/xtask/src/migration.rs"));
         assert!(is_retired_allowlisted("dev_doc/history/old_audit.md"));
         assert!(is_retired_allowlisted(
             "crates/concord/tests/ui/fail/retired.rs"
@@ -1449,5 +2667,389 @@ mod tests {
         let source =
             "[kept](docs/spec.md) ` [inline](missing.md) `\n```text\n[fenced](missing.md)\n```";
         assert_eq!(markdown_links(source), ["docs/spec.md"]);
+    }
+
+    fn anchored(anchor: &str, start: usize) -> Fence {
+        Fence {
+            language: "rust".to_owned(),
+            start,
+            body: String::new(),
+            source: Some(SourceReference {
+                path: "crates/concord-examples/src/getting_started/minimal.rs".to_owned(),
+                anchor: anchor.to_owned(),
+                line: start - 1,
+            }),
+        }
+    }
+
+    /// §11.3: v3 keeps `clear_*` only as the local credential control on
+    /// `client.credentials()`; every other `.clear_*(` stays retired.
+    #[test]
+    fn credential_clear_is_current_and_value_clear_is_retired() {
+        for current in [
+            "client.credentials().clear_session()",
+            "client\n    .credentials()\n    .clear_session()?;",
+        ] {
+            assert!(
+                !retired_surface_findings(current)
+                    .contains(&"retired `clear_*` control".to_owned()),
+                "flagged: {current}"
+            );
+        }
+        for retired in ["request.clear_locale()", "builder\n    .clear_tenant()"] {
+            assert!(
+                retired_surface_findings(retired).contains(&"retired `clear_*` control".to_owned()),
+                "not flagged: {retired}"
+            );
+        }
+    }
+
+    /// §14.2 / §25.2: `.paginate(PageLimit::…)` was retained by v2.1 but is a
+    /// retired surface in v3, outside explicit migration context.
+    #[test]
+    fn v3_surface_retirements_respect_migration_context() {
+        let retired = "let prefix = request.paginate(PageLimit::Prefix(2)).await?;";
+        let findings = retired_v3_surface_findings(retired, false);
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.contains("`.paginate(...)`"))
+        );
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.contains("`PageLimit`"))
+        );
+        assert!(
+            retired_v3_surface_findings(
+                "// v2.1 `.paginate(PageLimit::Prefix(2))` is `.collect_prefix(2)`",
+                false
+            )
+            .is_empty()
+        );
+        assert!(
+            retired_v3_surface_findings("// §25.2: `.paginate(Prefix(n))` becomes", false)
+                .is_empty()
+        );
+        for retired in [
+            "let bound = endpoint.try_bind(&client)?;",
+            "builder.body_codec::<Codec>(input)",
+            // Split so the release-audit placeholder scan does not match this fixture text.
+            concat!("let request: PaginatedRequest<Item> = ", "todo", "!();"),
+        ] {
+            assert!(
+                !retired_v3_surface_findings(retired, false).is_empty(),
+                "not flagged: {retired}"
+            );
+        }
+        let markdown = "# Guide\n\nUse `request.collect_all(n)`.\n\n## Migrating from v2.1\n\n| `endpoint.try_bind(&owner)` | `owner.bind(endpoint)` |\n\n## Current\n\n`endpoint.try_bind(&owner)`\n";
+        let findings = retired_v3_surface_findings(markdown, true);
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert!(findings[0].starts_with("line 11:"), "{findings:?}");
+
+        assert!(is_migration_heading("Migrating from v2.1"));
+        assert!(is_migration_heading(
+            "17. Migration from v2.1 (retired forms)"
+        ));
+        assert!(!is_migration_heading("Migration notes"));
+        assert!(!is_migration_heading("Current v3 surface"));
+    }
+
+    #[test]
+    fn v3_markdown_dsl_spans_and_fence_lines_are_checked() {
+        for retired in [
+            "Write `path [\"items\", id]` for a route.",
+            "Declare `vars { tenant: String; }` first.",
+            "Use `host [\"api\"]` for labels.",
+            "Bodies use `using Json`.",
+            "Initialize with `locale: String = default;`.",
+            "Reference `endpoint.id` in the template.",
+            "```text\nlet pages = request.paginate(PageLimit::Prefix(2));\n```",
+        ] {
+            assert!(
+                !retired_v3_surface_findings(retired, true).is_empty(),
+                "not flagged: {retired}"
+            );
+        }
+        for current in [
+            "Call `endpoint.description()` to read the static facts.",
+            "Write `path \"items/{id}\";` and `#[default] tags: Vec<String>`.",
+            "Rate windows use `using standard;` inside a policy.",
+            // An expanded contract view shows display provenance, not syntax.
+            "```text\n    category <- endpoint.category, omitted when absent\n```",
+        ] {
+            assert!(
+                retired_v3_surface_findings(current, true).is_empty(),
+                "flagged: {current}"
+            );
+        }
+    }
+
+    #[test]
+    fn v3_dsl_fences_reject_retired_forms_but_not_string_data() {
+        for retired in [
+            "GET item(id: String) -> Item {\n    path [\"items\", id];\n}",
+            "values { query value: String = default; }",
+            "client Api {\n    retry reqwest_default;\n}",
+            "GET item(id: String) -> Item {\n    path \"items/{endpoint.id}\";\n}",
+            "headers { \"X-Id\" = endpoint.id; }",
+            "headers { \"X-Tenant\" = vars.tenant; }",
+        ] {
+            assert!(
+                !retired_v3_dsl_findings(retired).is_empty(),
+                "not flagged: {retired}"
+            );
+        }
+        for current in [
+            "key [origin, endpoint, \"endpoint.item_id\" = item_id];",
+            "credential session = endpoint authenticate;",
+            "#[default] query(\"tag\") each tags: Vec<String>;",
+            "path replace \"legacy/{client.api_version}\";",
+        ] {
+            assert!(
+                retired_v3_dsl_findings(current).is_empty(),
+                "flagged: {current}"
+            );
+        }
+    }
+
+    #[test]
+    fn tutorial_must_await_before_internals() {
+        let ordered = [anchored("first_api", 3), anchored("first_request", 9), {
+            let mut fence = anchored("domain_tree_planning", 20);
+            fence.body = "let endpoint = CatalogApi::unbound();".to_owned();
+            fence
+        }];
+        assert!(tutorial_order_errors("docs/quick_start.md", &ordered).is_empty());
+
+        let reversed = [
+            anchored("first_api", 3),
+            anchored("runtime_endpoint", 9),
+            anchored("domain_tree_await_request", 20),
+        ];
+        let errors = tutorial_order_errors("docs/quick_start.md", &reversed);
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("docs/quick_start.md:9"), "{errors:?}");
+
+        let mut marker = fence("text", "request.with_options(&options).await");
+        marker.start = 5;
+        let errors = tutorial_order_errors(
+            "docs/quick_start.md",
+            &[marker, anchored("first_request", 12)],
+        );
+        assert_eq!(errors.len(), 1, "{errors:?}");
+
+        let errors = tutorial_order_errors("docs/quick_start.md", &[anchored("first_api", 3)]);
+        assert!(
+            errors[0].contains("anchored ordinary `.await`"),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn version_banners_follow_the_workspace_major() {
+        assert!(
+            version_banner_errors(
+                "3.0.0-beta.1",
+                "# Concord v3\n\nText",
+                "intro\n# Concord v3 documentation"
+            )
+            .is_empty()
+        );
+        let errors = version_banner_errors(
+            "3.0.0-beta.1",
+            "# Concord v2.1\n",
+            "## Concord v3 documentation\n",
+        );
+        assert_eq!(errors.len(), 2, "{errors:?}");
+        assert!(errors[0].contains("README.md: title `Concord v2.1`"));
+        assert!(errors[1].contains("docs/README.md: missing a top-level title"));
+        assert!(
+            !version_banner_errors("3.0.0-beta.1", "# Concord v30\n", "# Concord v3\n").is_empty()
+        );
+    }
+
+    #[test]
+    fn stale_versions_are_reported_outside_migration_context() {
+        assert_eq!(
+            stale_version_mentions("3.0.0-beta.1", "This is `2.1.0-beta.1`."),
+            ["2.1.0-beta.1"]
+        );
+        assert!(
+            stale_version_mentions(
+                "3.0.0-beta.1",
+                "Upgrading from Concord v2.1 (`2.1.0-beta.1`) is covered separately."
+            )
+            .is_empty()
+        );
+        assert!(stale_version_mentions("2.1.0-beta.1", "This is `2.1.0-beta.1`.").is_empty());
+    }
+
+    #[test]
+    fn parser_fallbacks_name_every_grammar_clause() {
+        let declaration = include_str!("../../../crates/concord-macros/src/syntax/declaration.rs");
+        for (message, clauses) in [
+            ("unsupported client entry", CLIENT_CLAUSES),
+            ("unsupported scope entry", SCOPE_CLAUSES),
+            ("unsupported endpoint clause", ENDPOINT_CLAUSES),
+        ] {
+            assert!(
+                fallback_clause_errors(declaration, message, clauses).is_empty(),
+                "{message}"
+            );
+        }
+        let stale = "\"unsupported endpoint clause; expected `path`, `query`\"";
+        let errors = fallback_clause_errors(stale, "unsupported endpoint clause", ENDPOINT_CLAUSES);
+        assert!(errors[0].contains("`absent on`"), "{errors:?}");
+        assert!(
+            fallback_clause_errors("", "unsupported scope entry", SCOPE_CLAUSES)[0]
+                .contains("is missing")
+        );
+    }
+
+    #[test]
+    fn grammar_keywords_agree_with_the_parser_and_the_spec_grammar() {
+        let keywords = include_str!("../../../crates/concord-macros/src/syntax/keyword.rs");
+        let complete_spec = V3_KEYWORDS
+            .iter()
+            .map(|keyword| format!("\"{keyword}\""))
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(grammar_keyword_errors(keywords, &complete_spec).is_empty());
+
+        let incomplete = complete_spec.replace("\"when_present\"", "") + " \"vars\"";
+        let errors = grammar_keyword_errors(keywords, &incomplete);
+        assert_eq!(errors.len(), 2, "{errors:?}");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("\"when_present\""))
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("retired v2 keyword \"vars\""))
+        );
+
+        let missing_keyword = keywords.replace("syn::custom_keyword!(windows);", "");
+        assert!(
+            grammar_keyword_errors(&missing_keyword, &complete_spec)
+                .iter()
+                .any(|error| error.contains("`windows` is not declared"))
+        );
+    }
+
+    #[test]
+    fn reserved_generated_methods_are_parsed_from_the_macro() {
+        let names = include_str!("../../../crates/concord-macros/src/semantic/names.rs");
+        let request = const_string_list(names, "REQUEST_METHODS");
+        for method in [
+            "timeout",
+            "reset_timeout",
+            "cancel_with",
+            "with_options",
+            "plan",
+            "response",
+        ] {
+            assert!(request.iter().any(|name| name == method), "{method}");
+        }
+        assert!(const_string_list(names, "CLIENT_METHODS").contains(&"unbound".to_owned()));
+        assert!(
+            const_string_list(names, "BUILDER_METHODS").contains(&"configure_runtime".to_owned())
+        );
+        assert!(const_string_list(names, "MISSING_METHODS").is_empty());
+        for (path, construction) in GENERATED_NAME_CONSTRUCTIONS {
+            let source = match *path {
+                "crates/concord-macros/src/semantic/names.rs" => names,
+                "crates/concord-macros/src/semantic/auth.rs" => {
+                    include_str!("../../../crates/concord-macros/src/semantic/auth.rs")
+                }
+                other => panic!("unexpected source {other}"),
+            };
+            assert!(source.contains(construction), "{construction}");
+        }
+    }
+
+    #[test]
+    fn retired_implementation_symbols_distinguish_v3_byte_caps() {
+        assert!(retired_implementation_symbols("pub fn cap_response_bytes(self) {}").is_empty());
+        assert!(retired_implementation_symbols("summary.acquired_response_bytes()").is_empty());
+        assert!(retired_implementation_symbols("self.response_bytes\n").is_empty());
+        assert_eq!(
+            retired_implementation_symbols("pub fn response_bytes(self) -> X"),
+            ["response_bytes()"]
+        );
+        assert_eq!(
+            retired_implementation_symbols("request.response_bytes().await"),
+            ["response_bytes()"]
+        );
+        assert_eq!(
+            retired_implementation_symbols("let plan: SafeRequestPlan;"),
+            ["SafeRequestPlan"]
+        );
+    }
+
+    #[test]
+    fn feature_matrix_matches_the_manifest() {
+        let manifest = "[package]\nname = \"concord\"\n\n[features]\ndefault = [\"tls\", \"http2\"]\ntls = []\nhttp2 = []\njson = [\"x/json\"]\n\n[dependencies]\n";
+        let (features, defaults) = manifest_features(manifest);
+        assert_eq!(
+            features.iter().map(String::as_str).collect::<Vec<_>>(),
+            ["http2", "json", "tls"]
+        );
+        assert_eq!(
+            defaults.iter().map(String::as_str).collect::<Vec<_>>(),
+            ["http2", "tls"]
+        );
+        let readme = "# T\n\n## Cargo features\n\n| Feature | Default | Adds |\n|---|---|---|\n| `tls` | yes | TLS |\n| `http2` | yes | h2 |\n| `json` | no | Json |\n\nAfter.\n";
+        let rows = feature_table(readme, "Cargo features").expect("table");
+        assert!(feature_matrix_errors(&features, &defaults, &rows).is_empty());
+
+        let drifted = readme
+            .replace(
+                "| `json` | no | Json |",
+                "| `json` | yes | Json |\n| `csv` | no | CSV |",
+            )
+            .replace("| `http2` | yes | h2 |\n", "");
+        let rows = feature_table(&drifted, "Cargo features").expect("table");
+        let errors = feature_matrix_errors(&features, &defaults, &rows);
+        assert_eq!(errors.len(), 3, "{errors:?}");
+        assert!(feature_table("# T\n", "Cargo features").is_none());
+
+        let real = include_str!("../../../crates/concord/Cargo.toml");
+        let (features, defaults) = manifest_features(real);
+        assert!(features.contains("rate-limit") && features.contains("multipart"));
+        assert!(defaults.contains("default-tls") && !defaults.contains("json"));
+    }
+
+    #[test]
+    fn migration_guide_must_document_every_tool_code_with_its_severity() {
+        let report = r#"
+            ParseRust => "C3-MIGRATE-PARSE-RUST", Error, false, "x";
+            KeyReplace => "C3-MIGRATE-KEY-REPLACE", Note, true, "y";
+        "#;
+        let guide =
+            "| `C3-MIGRATE-PARSE-RUST` | error | fix |\n| `C3-MIGRATE-KEY-REPLACE` | note | ok |\n";
+        assert!(migration_code_errors(report, guide).is_empty());
+        let drifted =
+            "| `C3-MIGRATE-PARSE-RUST` | warning | fix |\n| `C3-MIGRATE-GONE` | note | ok |\n";
+        let errors = migration_code_errors(report, drifted);
+        assert_eq!(errors.len(), 3, "{errors:?}");
+
+        let real = include_str!("migration/report.rs");
+        let tool_codes = Regex::new(r#""(C3-MIGRATE-[A-Z0-9-]+)",\s*(Error|Warning|Note),"#)
+            .expect("regex")
+            .captures_iter(real)
+            .count();
+        assert!(tool_codes >= 40, "parsed only {tool_codes} tool codes");
+    }
+
+    #[test]
+    fn user_documentation_scope_is_readme_and_docs() {
+        assert!(is_user_documentation("README.md"));
+        assert!(is_user_documentation("docs/auth.md"));
+        assert!(!is_user_documentation("FINAL.md"));
+        assert!(!is_user_documentation("dev_doc/internals.md"));
+        assert!(!is_user_documentation("docs/diagram.svg"));
     }
 }

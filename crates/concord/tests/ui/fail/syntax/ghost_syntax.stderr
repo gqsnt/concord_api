@@ -1,101 +1,113 @@
-error: a `secret` declaration is valid only inside the client `credentials { ... }` block
- --> tests/ui/fail/syntax/ghost_syntax.rs:7:9
-  |
-7 |         secret token;
-  |         ^^^^^^
-
-error: a `credential` declaration is valid only inside the client `credentials { ... }` block
-  --> tests/ui/fail/syntax/ghost_syntax.rs:15:9
+error: [C3-OWNER] `secret` and `credential` declarations in client `FlatSecretApi` belong inside the client `credentials { ... }` block
+  --> tests/ui/fail/syntax/ghost_syntax.rs:11:9
    |
-15 |         credential token = bearer(secret.token);
+11 |         secret token;
+   |         ^^^^^^
+
+error: [C3-OWNER] `secret` and `credential` declarations in client `FlatCredentialApi` belong inside the client `credentials { ... }` block
+  --> tests/ui/fail/syntax/ghost_syntax.rs:18:9
+   |
+18 |         credential token = bearer(secret.token);
    |         ^^^^^^^^^^
 
-error: `default { ... }` is not DSL syntax; use `#[default]` on a value in `values { ... }` or a scope or endpoint parameter list
-  --> tests/ui/fail/syntax/ghost_syntax.rs:23:9
+error: [C3-OWNER] unsupported client entry in client `DefaultBlockApi`; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause
+  --> tests/ui/fail/syntax/ghost_syntax.rs:25:9
    |
-23 |         default { timeout 1s; }
+25 |         default { timeout 1s; }
    |         ^^^^^^^
 
-error: `defaults { ... }` is not DSL syntax; use `#[default]` on individual values
-  --> tests/ui/fail/syntax/ghost_syntax.rs:31:9
+error: [C3-OWNER] unsupported client entry in client `DefaultsBlockApi`; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause
+  --> tests/ui/fail/syntax/ghost_syntax.rs:32:9
    |
-31 |         defaults { timeout 1s; }
+32 |         defaults { timeout 1s; }
    |         ^^^^^^^^
 
-error: `policies { ... }` is not DSL syntax; define rate-limit profiles in the client `rate_limits { ... }` block and install retry policy through the generated builder
+error: [C3-OWNER] unsupported client entry in client `PoliciesBlockApi`; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause
   --> tests/ui/fail/syntax/ghost_syntax.rs:39:9
    |
 39 |         policies { }
    |         ^^^^^^^^
 
-error: behavior profiles are not DSL syntax; configure decision gates, completion observation, and runtime policy through the generated builder
-  --> tests/ui/fail/syntax/ghost_syntax.rs:47:9
+error: [C3-OWNER] unsupported client entry in client `BehaviorsBlockApi`; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause
+  --> tests/ui/fail/syntax/ghost_syntax.rs:46:9
    |
-47 |         behaviors { }
+46 |         behaviors { }
    |         ^^^^^^^^^
 
-error: behavior profiles are not DSL syntax; configure decision gates, completion observation, and runtime policy through the generated builder
-  --> tests/ui/fail/syntax/ghost_syntax.rs:55:9
+error: [C3-OWNER] unsupported client entry in client `BehaviorApi`; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause
+  --> tests/ui/fail/syntax/ghost_syntax.rs:53:9
    |
-55 |         behavior finite;
+53 |         behavior finite;
    |         ^^^^^^^^
 
-error: `prefix` is not DSL syntax; use `path [...]` for path atoms or `subdomain [...]` for generated DNS labels
-  --> tests/ui/fail/syntax/ghost_syntax.rs:63:9
+error: [C3-OWNER] unsupported client entry in client `PrefixApi`; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause
+  --> tests/ui/fail/syntax/ghost_syntax.rs:60:9
    |
-63 |         prefix ["v1"];
+60 |         prefix ["v1"];
    |         ^^^^^^
 
-error: `params { ... }` is not DSL syntax; declare values in a scope or endpoint parameter list and shape query parameters with `query { ... }`
-  --> tests/ui/fail/syntax/ghost_syntax.rs:71:9
+error: [C3-OWNER] unsupported client entry in client `ParamsApi`; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause
+  --> tests/ui/fail/syntax/ghost_syntax.rs:67:9
    |
-71 |         params { "id" = client.id; }
+67 |         params { "id" = id; }
    |         ^^^^^^
 
-error: `profile` is not a DSL keyword; define a rate-limit profile with `rate_limits { NAME(formals...) { key [...]; allow N per D; } }`
-  --> tests/ui/fail/syntax/ghost_syntax.rs:79:9
+error: [C3-OWNER] unsupported client entry in client `ProfileApi`; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause
+  --> tests/ui/fail/syntax/ghost_syntax.rs:74:9
    |
-79 |         profile standard { }
+74 |         profile standard { }
    |         ^^^^^^^
 
-error: `access_token` is not DSL syntax; declare a secret and a bearer credential inside `credentials { ... }`
-  --> tests/ui/fail/syntax/ghost_syntax.rs:87:9
+error: [C3-OWNER] unsupported client entry in client `AccessTokenApi`; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause
+  --> tests/ui/fail/syntax/ghost_syntax.rs:81:9
    |
-87 |         access_token token: String;
+81 |         access_token token: String;
    |         ^^^^^^^^^^^^
 
-error: `auth certificate` is not DSL syntax; supply application client-identity PEM with `.configure_http(|http| http.identity_pem(pem))` on the generated builder
-  --> tests/ui/fail/syntax/ghost_syntax.rs:95:16
+error: [C3-AUTH] an auth placement of client `CertificateApi` is `bearer`, `basic`, `authorization`, `header "Name" =` or `query "name" =` followed by a credential name
+  --> tests/ui/fail/syntax/ghost_syntax.rs:88:16
    |
-95 |         auth { certificate; }
+88 |         auth { certificate; }
    |                ^^^^^^^^^^^
 
-error: authentication combinators are not DSL syntax; declare the required ordered placements directly inside `auth { ... }`
-   --> tests/ui/fail/syntax/ghost_syntax.rs:103:16
+error: [C3-AUTH] an auth placement of client `AuthCombinatorApi` is `bearer`, `basic`, `authorization`, `header "Name" =` or `query "name" =` followed by a credential name
+  --> tests/ui/fail/syntax/ghost_syntax.rs:95:16
+   |
+95 |         auth { any; }
+   |                ^^^
+
+error: [C3-AUTH] an auth placement of client `AllAuthCombinatorApi` is `bearer`, `basic`, `authorization`, `header "Name" =` or `query "name" =` followed by a credential name
+   --> tests/ui/fail/syntax/ghost_syntax.rs:102:16
     |
-103 |         auth { any; }
+102 |         auth { all; }
     |                ^^^
 
-error: authentication combinators are not DSL syntax; declare the required ordered placements directly inside `auth { ... }`
-   --> tests/ui/fail/syntax/ghost_syntax.rs:111:16
+error: [C3-AUTH] an auth placement of client `OneOfAuthCombinatorApi` is `bearer`, `basic`, `authorization`, `header "Name" =` or `query "name" =` followed by a credential name
+   --> tests/ui/fail/syntax/ghost_syntax.rs:109:16
     |
-111 |         auth { all; }
-    |                ^^^
-
-error: authentication combinators are not DSL syntax; declare the required ordered placements directly inside `auth { ... }`
-   --> tests/ui/fail/syntax/ghost_syntax.rs:119:16
-    |
-119 |         auth { one_of; }
+109 |         auth { one_of; }
     |                ^^^^^^
 
-error: authentication combinators are not DSL syntax; declare the required ordered placements directly inside `auth { ... }`
-   --> tests/ui/fail/syntax/ghost_syntax.rs:127:16
+error: [C3-AUTH] an auth placement of client `OptionalAuthCombinatorApi` is `bearer`, `basic`, `authorization`, `header "Name" =` or `query "name" =` followed by a credential name
+   --> tests/ui/fail/syntax/ghost_syntax.rs:116:16
     |
-127 |         auth { optional; }
+116 |         auth { optional; }
     |                ^^^^^^^^
 
-error: bracketed interpolation is not DSL syntax; concatenate public atoms with `concat [...]`
-   --> tests/ui/fail/syntax/ghost_syntax.rs:138:15
+error: [C3-ATOM] bracketed interpolation is not DSL syntax (in endpoint `InterpolationApi::read`); concatenate atoms with `concat [...]`
+   --> tests/ui/fail/syntax/ghost_syntax.rs:126:34
     |
-138 |         path [["items-", endpoint.id]];
-    |               ^
+126 |             headers { "X-Item" = ["items-", id]; }
+    |                                  ^
+
+error: [C3-ATOM] DNS labels of client `HostTemplateApi` are a typed atom list, not a host template: write `subdomain ["api"];` or `subdomain [region, "api"];`
+   --> tests/ui/fail/syntax/ghost_syntax.rs:136:19
+    |
+136 |         subdomain "{tenant}.api";
+    |                   ^^^^^^^^^^^^^^
+
+error: [C3-PATH] a hole names one declared total value: `{name}`, `{owner.name}` or `{name via Adapter}`; it cannot evaluate expressions or select optional structure (path template of endpoint `ExpressionHoleApi::read`, template bytes 6..16)
+   --> tests/ui/fail/syntax/ghost_syntax.rs:147:18
+    |
+147 |             path "items/{id.len()}";
+    |                  ^^^^^^^^^^^^^^^^^^

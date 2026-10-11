@@ -1,5 +1,7 @@
 # Gate 3 anonymized results
 
+**Status:** Part of the v2.1 Gate 3 packet described in [`README.md`](README.md); not revised for v3.
+
 - Exact candidate full SHA: `0f72e8653ee0fc08ea7de0e606f01c8d130b53c2`
 - Facilitator: **pending; do not record identifying data here**
 - Human participants completed: **0**

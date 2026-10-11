@@ -1,5 +1,5 @@
-error: unknown binding `host` for rate-limit profile `account_reads`
-  --> tests/ui/fail/rate_limits/rate_limit_bind_builtin_dimension.rs:16:34
+error: [C3-RATE] policy `account_reads` has no formal `host`; bindings are exact (attachment in client `Api`), so bind only the policy's declared formals
+  --> tests/ui/fail/rate_limits/rate_limit_bind_builtin_dimension.rs:18:34
    |
-16 |         rate_limit account_reads(host = client.tenant, account = client.tenant);
+18 |         rate_limit account_reads(host = tenant, account = tenant);
    |                                  ^^^^

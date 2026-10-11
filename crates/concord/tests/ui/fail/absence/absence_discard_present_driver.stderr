@@ -1,0 +1,57 @@
+error[E0277]: [C3-REP] `concord::__private::HeadAbsence<concord::Discard>` is not a response representation for result type `Option<()>`
+  --> tests/ui/fail/absence/absence_discard_present_driver.rs:14:13
+   |
+14 |             absent on 404;
+   |             ^^^^^^ selected as the response representation of a `Option<()>` result
+   |
+   = help: the trait `ResponseRepresentation<Option<()>>` is not implemented for `concord::__private::HeadAbsence<concord::Discard>`
+   = note: a result needs `ResponseRepresentation<Option<()>>` or a complete buffered `DecodeBody` decoder whose `Output` is `Option<()>`; a request-only representation cannot decode a response, and with `absent on` the result is `Option<T>` decoded by a buffered representation of `T`
+   = note: write `-> Option<()> via R` with a representation producing this result, or select a direction default with `response R;` on an owner
+help: the trait `ResponseRepresentation<O>` is implemented for `concord::__private::HeadAbsence<R>`
+  --> $WORKSPACE/crates/concord-core/src/response/absence.rs
+   |
+   | / impl<R, O> ResponseRepresentation<O> for HeadAbsence<R>
+   | | where
+   | |     O: OptionalOutcome,
+   | |     R: ResponseRepresentation<O::Present, Driver = Buffered>,
+   | |_____________________________________________________________^
+note: required by a bound in `concord::__private::EndpointSpec::Response`
+  --> $WORKSPACE/crates/concord-core/src/request/endpoint.rs
+   |
+   |     type Response: ResponseRepresentation<Self::Output>;
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `EndpointSpec::Response`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [C3-REP] `concord::__private::HeadAbsence<concord::Discard>` is not a response representation for result type `Option<()>`
+  --> tests/ui/fail/absence/absence_discard_present_driver.rs:14:13
+   |
+14 |             absent on 404;
+   |             ^^^^^^ selected as the response representation of a `Option<()>` result
+   |
+   = help: the trait `ResponseRepresentation<Option<()>>` is not implemented for `concord::__private::HeadAbsence<concord::Discard>`
+   = note: a result needs `ResponseRepresentation<Option<()>>` or a complete buffered `DecodeBody` decoder whose `Output` is `Option<()>`; a request-only representation cannot decode a response, and with `absent on` the result is `Option<T>` decoded by a buffered representation of `T`
+   = note: write `-> Option<()> via R` with a representation producing this result, or select a direction default with `response R;` on an owner
+help: the trait `ResponseRepresentation<O>` is implemented for `concord::__private::HeadAbsence<R>`
+  --> $WORKSPACE/crates/concord-core/src/response/absence.rs
+   |
+   | / impl<R, O> ResponseRepresentation<O> for HeadAbsence<R>
+   | | where
+   | |     O: OptionalOutcome,
+   | |     R: ResponseRepresentation<O::Present, Driver = Buffered>,
+   | |_____________________________________________________________^
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0271]: type mismatch resolving `<Discard as ResponseRepresentation<()>>::Driver == Buffered`
+  --> tests/ui/fail/absence/absence_discard_present_driver.rs:12:53
+   |
+12 |         DELETE remove(id: String) -> Option<()> via Discard {
+   |                                                     ^^^^^^^ expected `Buffered`, found `DiscardDriver`
+   |
+note: required by a bound in `concord::__private::expected_absence`
+  --> $WORKSPACE/crates/concord-core/src/__private.rs
+   |
+   | pub fn expected_absence<O, R>(codes: &'static [u16]) -> ExpectedAbsence<O, HeadAbsence<R>>
+   |        ---------------- required by a bound in this function
+...
+   |     R: ResponseRepresentation<O::Present, Driver = Buffered>,
+   |                                           ^^^^^^^^^^^^^^^^^ required by this bound in `expected_absence`

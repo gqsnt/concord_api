@@ -1,5 +1,11 @@
-error: pagination-controlled value `endpoint.cursor` cannot partition a rate-limit policy
-  --> tests/ui/fail/rate_limits/rate_limit_pagination_dimension.rs:10:93
+error: [C3-PAGE] cursor destination `offset` of endpoint `TotalCursorApi::list` participates in the effective rate key of `concord.rate_limit_pagination_dimension.2`; page-live values cannot be quota dimensions, so key the rate policy on a value the cursor does not change
+  --> tests/ui/fail/rate_limits/rate_limit_pagination_dimension.rs:26:27
    |
-10 |         rate_limit { id "concord.rate_limit_pagination_dimension.1"; cost 1;  key [endpoint.cursor]; allow 1 per 1s; }
-   |                                                                                             ^^^^^^
+26 |                 cursor -> offset;
+   |                           ^^^^^^
+
+error: note: the rate attachment is here
+  --> tests/ui/fail/rate_limits/rate_limit_pagination_dimension.rs:19:13
+   |
+19 |             rate_limit {
+   |             ^^^^^^^^^^

@@ -1,0 +1,30 @@
+error[E0277]: [C3-PLACE] `IntoValue` is sealed: `Tag` into `ItemId` is not a library-owned conversion
+  --> tests/ui/fail/capabilities/value_conversion_registration_sealed.rs:19:28
+   |
+19 | impl IntoValue<ItemId> for Tag {
+   |                            ^^^ downstream crates cannot register ordinary-value conversions
+   |
+help: the trait `concord_core::value::conversion_seal::Allowed<ItemId>` is not implemented for `Tag`
+  --> tests/ui/fail/capabilities/value_conversion_registration_sealed.rs:17:1
+   |
+17 | pub struct Tag(pub String);
+   | ^^^^^^^^^^^^^^
+   = note: the complete conversion set is identity, `&str -> String` and `&String -> String`; a registration could change inference for unrelated fields
+   = note: construct the exact `ItemId` value explicitly at the call site instead
+help: the following other types implement trait `concord_core::value::conversion_seal::Allowed<T>`
+  --> $WORKSPACE/crates/concord-core/src/value.rs
+   |
+   |     impl Allowed<String> for &str {}
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&str`
+   |     impl Allowed<String> for &String {}
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&std::string::String`
+note: required by a bound in `IntoValue`
+  --> $WORKSPACE/crates/concord-core/src/value.rs
+   |
+   | pub trait IntoValue<T>: conversion_seal::Allowed<T> {
+   |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `IntoValue`
+   = note: `IntoValue` is a "sealed trait", because to implement it you also need to implement `concord_core::value::conversion_seal::Allowed`, which is not accessible; this is usually done to force you to use one of the provided types that already implement it
+   = help: the following types implement the trait:
+             &str
+             &std::string::String
+             T

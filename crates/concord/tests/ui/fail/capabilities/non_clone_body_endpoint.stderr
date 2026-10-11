@@ -1,17 +1,70 @@
-error[E0599]: no method named `clone` found for struct `Upload` in the current scope
-  --> tests/ui/fail/capabilities/non_clone_body_endpoint.rs:16:22
+error[E0599]: no method named `clone` found for struct `UploadEndpoint` in the current scope
+  --> tests/ui/fail/capabilities/non_clone_body_endpoint.rs:26:22
    |
- 5 | / api! {
- 6 | |     client UploadApi {
- 7 | |         timeout 30s;
- 8 | |         base "http://upload.example.test/";
+ 9 | / api! {
+10 | |     client UploadApi {
+11 | |         timeout 30s;
+12 | |         base "http://upload.example.test/";
 ...  |
-11 | |     POST upload(body body: ::concord::body::RequestStream via Binary) -> Bytes via Binary;
-12 | | }}
-   | |__- method `clone` not found for this struct
+18 | | }
+   | |_- method `clone` not found for this struct
 ...
-16 |       let _ = endpoint.clone();
-   |                        ^^^^^ method not found in `Upload`
+26 |       let _ = endpoint.clone();
+   |                        ^^^^^ method not found in `UploadEndpoint`
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following trait defines an item `clone`, perhaps you need to implement it:
+           candidate #1: `Clone`
+
+error[E0599]: no method named `clone` found for struct `UploadRequest` in the current scope
+  --> tests/ui/fail/capabilities/non_clone_body_endpoint.rs:27:68
+   |
+ 9 | / api! {
+10 | |     client UploadApi {
+11 | |         timeout 30s;
+12 | |         base "http://upload.example.test/";
+...  |
+18 | | }
+   | |_- method `clone` not found for this struct
+...
+27 |       let _ = client.upload(RequestStream::from_bytes(Bytes::new())).clone();
+   |                                                                      ^^^^^ method not found in `UploadRequest`
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following trait defines an item `clone`, perhaps you need to implement it:
+           candidate #1: `Clone`
+
+error[E0599]: no method named `clone` found for struct `StoreEndpoint` in the current scope
+  --> tests/ui/fail/capabilities/non_clone_body_endpoint.rs:28:42
+   |
+ 9 | / api! {
+10 | |     client UploadApi {
+11 | |         timeout 30s;
+12 | |         base "http://upload.example.test/";
+...  |
+18 | | }
+   | |_- method `clone` not found for this struct
+...
+28 |       let _ = UploadApi::unbound().store().clone();
+   |                                            ^^^^^ method not found in `StoreEndpoint`
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following trait defines an item `clone`, perhaps you need to implement it:
+           candidate #1: `Clone`
+
+error[E0599]: no method named `clone` found for struct `upload_api::StoreRequest` in the current scope
+  --> tests/ui/fail/capabilities/non_clone_body_endpoint.rs:29:28
+   |
+ 9 | / api! {
+10 | |     client UploadApi {
+11 | |         timeout 30s;
+12 | |         base "http://upload.example.test/";
+...  |
+18 | | }
+   | |_- method `clone` not found for this struct
+...
+29 |       let _ = client.store().clone();
+   |                              ^^^^^ method not found in `upload_api::StoreRequest`
    |
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following trait defines an item `clone`, perhaps you need to implement it:

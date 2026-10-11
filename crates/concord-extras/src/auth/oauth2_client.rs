@@ -6,8 +6,8 @@ use std::time::{Duration, Instant};
 use bytes::Bytes;
 use concord_core::contracts::{
     AccessToken, AuthError, AuthErrorKind, BoxFuture, CredentialProvider, CredentialRequest,
-    HeaderValue, Method, ProviderBody, ProviderRequest, RecoveryMode, SecretString, StatusCode,
-    Url,
+    HeaderValue, Method, ProviderBody, ProviderOrigin, ProviderRequest, RecoveryMode, SecretString,
+    StatusCode, Url,
 };
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 
@@ -35,8 +35,13 @@ pub const MAX_OAUTH2_AUTHORIZATION_HEADER_BYTES: usize = 32_768;
 /// bounds configuration strings, encoded headers, request and response bodies,
 /// and the enclosing credential operation. Encoding lengths are checked before
 /// final output allocation.
+///
+/// The provider declares exactly one helper origin — the validated origin of
+/// its token URL — through [`CredentialProvider::http_origins`], so Concord's
+/// provider HTTP helper refuses every other destination.
 pub struct OAuth2ClientCredentials {
     token_url: Url,
+    token_origin: [ProviderOrigin; 1],
     client_id: SecretString,
     client_secret: SecretString,
     scope: Option<Box<str>>,
@@ -108,6 +113,10 @@ impl CredentialProvider for OAuth2ClientCredentials {
 
     fn recovery_mode(&self) -> RecoveryMode {
         RecoveryMode::Refresh
+    }
+
+    fn http_origins(&self) -> &[ProviderOrigin] {
+        &self.token_origin
     }
 }
 
@@ -244,6 +253,11 @@ impl OAuth2ClientCredentialsBuilder {
                 OAuth2ClientCredentialsBuildErrorKind::InvalidTokenUrl,
             )
         })?;
+        let token_origin = ProviderOrigin::from_url(&token_url).map_err(|_| {
+            OAuth2ClientCredentialsBuildError::new(
+                OAuth2ClientCredentialsBuildErrorKind::InvalidTokenUrl,
+            )
+        })?;
         let client_id = self.client_id.ok_or_else(|| {
             OAuth2ClientCredentialsBuildError::new(
                 OAuth2ClientCredentialsBuildErrorKind::MissingClientId,
@@ -256,6 +270,7 @@ impl OAuth2ClientCredentialsBuilder {
         })?;
         Ok(OAuth2ClientCredentials {
             token_url,
+            token_origin: [token_origin],
             client_id,
             client_secret,
             scope: self.scope,
@@ -872,6 +887,30 @@ mod tests {
             expires >= before + Duration::from_secs(3_599)
                 && expires <= Instant::now() + Duration::from_secs(3_600)
         }));
+    }
+
+    #[test]
+    fn oauth_declares_exactly_its_validated_token_origin() {
+        let provider = provider(None);
+        let declared = provider.http_origins();
+        assert_eq!(declared.len(), 1);
+        assert_eq!(declared[0].as_str(), "https://auth.example.test");
+        assert!(declared[0].matches(
+            &Url::parse("https://auth.example.test/oauth/token?tenant=protected").expect("URL")
+        ));
+        assert!(
+            !declared[0].matches(&Url::parse("https://other.example.test/token").expect("URL"))
+        );
+
+        let explicit_port = OAuth2ClientCredentials::builder("https://Auth.Example.TEST:8443/t")
+            .client_id(CLIENT_ID)
+            .client_secret(CLIENT_SECRET)
+            .build()
+            .expect("OAuth provider with explicit port");
+        assert_eq!(
+            explicit_port.http_origins()[0].as_str(),
+            "https://auth.example.test:8443"
+        );
     }
 
     #[test]

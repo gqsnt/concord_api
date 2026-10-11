@@ -1,5 +1,5 @@
-error: subdomain shaping requires a DNS-domain fixed base; IP-literal bases cannot receive generated labels
- --> tests/ui/fail/syntax/ipv4_host_prefix.rs:5:9
+error: [C3-ATOM] generated subdomain labels require a domain base host; the base is an IP literal (subdomain of client `Ipv4HostApi`), so remove the `subdomain` clause or declare a DNS base
+ --> tests/ui/fail/syntax/ipv4_host_prefix.rs:9:9
   |
-5 |         subdomain replace ["api"];
+9 |         subdomain replace ["api"];
   |         ^^^^^^^^^

@@ -1,11 +1,23 @@
-error: an effective rate-limit plan contains a duplicate policy ID
-  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_effective_duplicate.rs:15:16
+error: [C3-RATE] endpoint `Api::read` would carry rate identity `service.shared` twice with different bindings, schema or cost (the other attachment is from Api); a conflicting repeated identity on one endpoint is an error, so give one policy a distinct ID or attach it identically
+  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_effective_duplicate.rs:18:13
    |
-15 |             id "service.shared";
-   |                ^^^^^^^^^^^^^^^^
+18 |             rate_limit {
+   |             ^^^^^^^^^^
 
-error: the first effective policy via this ID is here
- --> tests/ui/fail/rate_limits/rate_limit_explicit_id_effective_duplicate.rs:8:16
-  |
-8 |             id "service.shared";
-  |                ^^^^^^^^^^^^^^^^
+error: note: the other attachment is here
+  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_effective_duplicate.rs:11:9
+   |
+11 |         rate_limit {
+   |         ^^^^^^^^^^
+
+error: [C3-RATE] endpoint `NamedApi::read` would carry rate identity `service.tenant` twice with different bindings, schema or cost (the other attachment is from NamedApi); a conflicting repeated identity on one endpoint is an error, so give one policy a distinct ID or attach it identically
+  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_effective_duplicate.rs:42:13
+   |
+42 |             rate_limit per_tenant(tenant = client.other);
+   |             ^^^^^^^^^^
+
+error: note: the other attachment is here
+  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_effective_duplicate.rs:39:9
+   |
+39 |         rate_limit per_tenant(tenant = tenant);
+   |         ^^^^^^^^^^

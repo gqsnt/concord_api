@@ -1,5 +1,7 @@
 # Gate 10 reviewer tasks and rubric
 
+**Status:** Part of the v2.1 Gate 10 packet described in [`README.md`](README.md); not revised for v3.
+
 Using public/generated documentation and supplied normal entry points only:
 
 1. Find the common client-construction path, including required values and

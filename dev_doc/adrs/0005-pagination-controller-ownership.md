@@ -1,6 +1,7 @@
 # ADR 0005 — Pagination controller owns page interpretation
 
-- **Status:** Selected and mechanically supported on Windows/Linux by controller, real-API, safety, completion, and limit evidence
+- **Status:** Superseded for v3 by [ADR 0017](0017-init-cursor-pagination-and-distinct-terminals.md); controller ownership of page interpretation is carried forward, while initialization, cursor mapping and terminals change.
+- **v2.1 status (historical):** Selected and mechanically supported on Windows/Linux by controller, real-API, safety, completion, and limit evidence.
 
 ## Decision
 

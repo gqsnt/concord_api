@@ -1,5 +1,5 @@
-error: a named rate-limit attachment must be `rate_limit PROFILE(bindings...);`
- --> tests/ui/fail/rate_limits/rate_limit_off_exclusive.rs:7:23
-  |
-7 |         rate_limit off;
-  |                       ^
+error: [C3-RATE] there is no `rate_limit off` in endpoint `Api::read`: rate attachments are additive and no descendant can disable an ancestor constraint (RATE-01); move the attachment to the owners it should cover instead
+  --> tests/ui/fail/rate_limits/rate_limit_off_exclusive.rs:14:24
+   |
+14 |             rate_limit off;
+   |                        ^^^

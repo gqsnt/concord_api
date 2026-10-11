@@ -400,12 +400,45 @@ where
 }
 
 /// Synchronous application classification of retryable managed failures.
+///
+/// # Extension contract
+///
+/// * **Ownership.** The policy owns the classifier behind an `Arc`; clones of
+///   a [`RetryPolicy`] share it.
+/// * **Concurrency.** `classify` may run concurrently on many threads for
+///   different operations; implementations must be `Send + Sync` and must not
+///   block.
+/// * **Cancellation.** The call is synchronous and trusted to return
+///   promptly. Core checks the operation deadline before and after the call;
+///   time spent in it consumes the operation's budget, and core cannot
+///   preempt a callback that blocks.
+/// * **Input sensitivity.** [`RetryAttempt`] holds only sanitized facts: the
+///   endpoint ID, method, public logical host, attempt indexes, the semantic
+///   failure (`Connect`, `Transport`, or a rejected status with the parsed
+///   server delay) and the settled dispatch knowledge. It never contains
+///   headers, bodies, credentials, URLs or native errors.
+/// * **Errors.** The classifier cannot fail; a panic unwinds through the
+///   operation like any other application panic.
+/// * **Resource obligations.** The call must keep its CPU and memory use
+///   prompt and finite and must not retain the borrowed input; core bounds
+///   how often it is consulted through the policy's finite retry count.
+/// * **Negative capabilities.** A decision is appetite, never authority: it
+///   cannot declare dispatch certainty, cannot bypass the effect, body,
+///   policy-count, send/replay-cap, retry-load-budget, server-delay, deadline
+///   or rate-admission gates, and is never consulted for accepted-response
+///   conversion, controller or stream failures, which are terminal.
 pub trait RetryClassifier: Send + Sync + 'static {
     /// Returns whether Concord should request another managed attempt.
     fn classify(&self, attempt: RetryAttempt<'_>) -> RetryDecision;
 }
 
 /// Safe borrowed context for one failed visible managed attempt.
+///
+/// A classifier recommends appetite, never authority: a `Retry` decision is
+/// only one of the conjunctive gates (replayable body, settled no-dispatch or
+/// safe/idempotent effect, remaining policy count, remaining aggregate
+/// send/replay caps, shared retry-load budget, server minimum within
+/// willingness and the remaining deadline, and a new rate admission).
 #[derive(Clone, Copy)]
 pub struct RetryAttempt<'a> {
     endpoint: &'a str,
@@ -415,6 +448,7 @@ pub struct RetryAttempt<'a> {
     attempt: AttemptInfo,
     retries_performed: u32,
     failure: RetryFailure,
+    dispatch_knowledge: DispatchKnowledge,
 }
 
 impl<'a> RetryAttempt<'a> {
@@ -430,6 +464,7 @@ impl<'a> RetryAttempt<'a> {
         attempt: AttemptInfo,
         retries_performed: u32,
         failure: RetryFailure,
+        dispatch_knowledge: DispatchKnowledge,
     ) -> Self {
         Self {
             endpoint,
@@ -439,10 +474,22 @@ impl<'a> RetryAttempt<'a> {
             attempt,
             retries_performed,
             failure,
+            dispatch_knowledge,
         }
     }
 
-    /// Returns the stable generated or runtime endpoint identity.
+    /// Returns what the operation journal settled about dispatch for the
+    /// failed attempt. `NotDispatched` appears only with a positive core
+    /// proof that the application request was not submitted; a `Connect`
+    /// category alone is `PossiblyDispatched`.
+    #[must_use]
+    pub const fn dispatch_knowledge(&self) -> DispatchKnowledge {
+        self.dispatch_knowledge
+    }
+
+    /// Returns the operational endpoint ID: an explicit `id` pin or a
+    /// navigation-derived ID for a generated endpoint, the validated ID of a
+    /// runtime endpoint.
     #[must_use]
     pub const fn endpoint(&self) -> &'a str {
         self.endpoint
@@ -496,6 +543,7 @@ impl fmt::Debug for RetryAttempt<'_> {
             .field("attempt", &self.attempt)
             .field("retries_performed", &self.retries_performed)
             .field("failure", &self.failure)
+            .field("dispatch_knowledge", &self.dispatch_knowledge)
             .finish()
     }
 }
@@ -519,21 +567,28 @@ pub enum RetryFailure {
 
 impl RetryFailure {
     /// Returns the managed failure stage represented by this classifier input.
+    ///
+    /// A native `Connect` or `Transport` failure happened after the
+    /// application request was handed to the transport, so both report
+    /// `DuringDispatchOrUnknown`.
     #[must_use]
     pub const fn stage(self) -> FailureStage {
         match self {
-            Self::Connect => FailureStage::BeforeDispatch,
-            Self::Transport => FailureStage::DuringDispatchOrUnknown,
+            Self::Connect | Self::Transport => FailureStage::DuringDispatchOrUnknown,
             Self::RejectedStatus { .. } => FailureStage::RejectedResponse,
         }
     }
 
-    /// Returns Concord's dispatch knowledge for this classifier input.
+    /// Returns the knowledge implied by the failure category alone.
+    ///
+    /// A category never proves that nothing was submitted: `Connect` and
+    /// `Transport` are both `PossiblyDispatched` here. The settled per-attempt
+    /// fact (which can be `NotDispatched` only with positive core proof) is
+    /// [`RetryAttempt::dispatch_knowledge`].
     #[must_use]
     pub const fn dispatch_knowledge(self) -> DispatchKnowledge {
         match self {
-            Self::Connect => DispatchKnowledge::NotDispatched,
-            Self::Transport => DispatchKnowledge::PossiblyDispatched,
+            Self::Connect | Self::Transport => DispatchKnowledge::PossiblyDispatched,
             Self::RejectedStatus { .. } => DispatchKnowledge::ResponseObserved,
         }
     }

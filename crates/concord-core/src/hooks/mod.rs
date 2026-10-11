@@ -11,8 +11,8 @@ pub use crate::body::BodyKind;
 pub(crate) use debug::DebugDispatcher;
 pub use events::{
     AttemptInfo, AttemptStarted, CompletionOutcome, OperationEvent, OperationFinished,
-    PaginationFinished, RequestTarget, ResponseHeadObserved, StreamFinished, StreamKind,
-    StreamOutcome,
+    PaginationFinished, ProviderAcquisitionFinished, RequestTarget, ResponseHeadObserved,
+    StreamFinished, StreamKind, StreamOutcome,
 };
 
 /// A boxed, sendable future used by asynchronous semantic extension contracts.
@@ -34,22 +34,39 @@ pub enum DebugLevel {
 
 /// Synchronous, read-only observation of managed lifecycle evidence.
 ///
-/// An observer receives bounded, value-free request events, returns no decision,
-/// and cannot directly transform the caller's result. Exact URLs and header
-/// names or values are absent. Calls are
-/// synchronous, may overlap across threads, and must be prompt, finite,
-/// nonblocking, and non-panicking. Core contains a panic but cannot preempt a
-/// synchronous callback that blocks or runs forever. Time spent in an
-/// intermediate callback reduces the operation's remaining budget; core checks
-/// that budget after the callback before starting more remote work. A final
-/// callback runs after result fixation and may delay delivery beyond the
-/// nominal deadline without changing that result.
-/// Applications that export asynchronously must close over a separately owned
-/// bounded queue/sink with an explicit backpressure and shutdown policy.
+/// # Extension contract
+///
+/// * **Ownership.** The client runtime owns the observer behind an `Arc`;
+///   every clone of the client shares it. Events borrow operation-owned data
+///   and must not be retained past the call.
+/// * **Concurrency.** Calls are synchronous and may overlap across threads
+///   for different operations.
+/// * **Cancellation.** Calls must be prompt, finite and nonblocking.
+///   Time spent in an intermediate callback reduces the operation's remaining
+///   budget; core checks the deadline after the callback before starting more
+///   remote work. The final `OperationFinished`/`PaginationFinished`
+///   callback runs **after result fixation**: a slow final callback delays
+///   delivery beyond the nominal deadline but cannot change the fixed result.
+///   A started operation whose future is dropped emits one `Cancelled`
+///   completion synchronously from its drop guard.
+/// * **Input sensitivity.** Events are bounded and value-free: no request or
+///   response body, credential material, private placement, raw rate key,
+///   exact URL, header name or value, or native HTTP object.
+/// * **Errors.** The callback cannot fail. When Rust is built to unwind, a
+///   panic is contained by core's panic boundary and counted only in a
+///   bounded private health diagnostic; an aborting process cannot be
+///   contained.
+/// * **Resource obligations.** Core never creates a detached observer or
+///   exporter thread, task or queue. Applications that export asynchronously
+///   must close over a separately owned bounded queue/sink with an explicit
+///   backpressure and shutdown policy.
+/// * **Negative capabilities.** An observer returns no decision: it cannot
+///   mutate, veto or retry an operation, cannot perform asynchronous work
+///   through core and cannot transform the caller's result.
 pub trait OperationObserver: Send + Sync + 'static {
     /// Observes one sanitized event. Panics are contained by the core runtime
     /// and counted only in a private bounded diagnostic; observer health is not
-    /// publicly observable in v2.1. Core never creates a detached task for this
+    /// publicly observable. Core never creates a detached task for this
     /// callback.
     fn observe(&self, _event: OperationEvent<'_>) {}
 }

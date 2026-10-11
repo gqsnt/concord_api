@@ -1,6 +1,7 @@
 # ADR 0013 — Observer panic diagnostics
 
-- **Status:** Selected and mechanically supported on Windows/Linux; public reporting deferred
+- **Status:** Retained unchanged in v3.0.0-beta.1 (v3 specification §13.3 EXEC-04); public reporting remains deferred.
+- **v2.1 status (historical):** Selected and mechanically supported on Windows/Linux; public reporting deferred. That platform evidence is v2.1 evidence; v3 was not run on Windows.
 
 ## Decision
 

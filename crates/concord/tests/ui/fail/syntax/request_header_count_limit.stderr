@@ -1,5 +1,5 @@
-error: one effective request head permits at most 256 public headers
-  --> tests/ui/fail/syntax/request_header_count_limit.rs:11:9
+error: [C3-PLACE] endpoint `HeaderCountLimit::fetch` always emits 257 public headers; one effective request head permits at most 256 public headers, so drop inherited headers with `headers replace { ... }` or combine values
+  --> tests/ui/fail/syntax/request_header_count_limit.rs:12:13
    |
-11 |     GET fetch() -> () via concord::Empty {
-   |         ^^^^^
+12 |         GET fetch() -> () via Empty {
+   |             ^^^^^

@@ -1,6 +1,12 @@
 # Gate 3 unfamiliar-human final-surface comprehension packet
 
-This packet is ready for a facilitator who is not scoring their own Concord
+**Status:** v2.1 packet, not run. Its tasks target the v2.1 surface
+(`set_x(Option<T>)` exact setters, `PageLimit::Prefix`/`CompleteWithin`,
+`endpoint.`-qualified references); it must be
+revised to the v3 surface before it can produce v3 comprehension evidence. The
+v3 lifecycle is owned by [`../release_gate_status.md`](../release_gate_status.md).
+
+This packet was written to be ready for a facilitator who is not scoring their own Concord
 implementation work. It does not compare syntax variants: `with_x` is absent
 from v2.1, and reopening it requires a separate paired, counterbalanced study
 with four to six qualifying participants.

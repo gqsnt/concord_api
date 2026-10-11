@@ -1,6 +1,9 @@
 # Local Concord v2.1 beta integration
 
-**Status:** Active local-merge evidence boundary
+**Status:** Historical v2.1 local-merge evidence from the v2.1 repository,
+superseded by the v3 lifecycle in
+[`../release_gate_status.md`](../release_gate_status.md). The `main` branch and
+SHAs below belong to that repository's history, not to this v3 tree.
 
 - Pre-merge `main`: `f7464c58f4a60b7332547e8f91039a269171a6ff`
 - Verified release parent: `bc4efb03f6d3a2c8b6c39bd203157e6a192d6e4e`
