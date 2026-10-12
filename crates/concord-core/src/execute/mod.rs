@@ -22,7 +22,7 @@ use crate::body::{
 };
 use crate::client::ClientCore;
 use crate::controls::{CallOptions, RequestControlState};
-use crate::endpoint::EndpointId;
+use crate::endpoint::{EndpointId, ResponseAcquisition};
 use crate::error::{
     ApiError, ConfigurationErrorKind, DispatchKnowledge, ErrorCategory, ErrorJournal, FailureStage,
 };
@@ -37,8 +37,8 @@ use crate::request::{
 };
 use crate::response::{
     AcceptedBytesSelection, ApiResponse, BodyDisposition, DeclaredResponse, ExecutionMeta,
-    ExpectedAbsence, ResponseHead, ResponseInput, ResponseRepresentation, ResponseSelection,
-    body_disposition, completion_outcome, execute_response,
+    ExpectedAbsence, ResponseDriver, ResponseHead, ResponseInput, ResponseRepresentation,
+    ResponseSelection, body_disposition, completion_outcome, execute_response,
 };
 use crate::retry::{
     RetryAttempt, RetryDecision, RetryFailure, RetryPolicy, ServerDelayHint, parse_server_delay,
@@ -878,32 +878,42 @@ where
     // whole-operation cap instant and the request's cancellation signals.
     // After handoff this executor performs no policy retry, authentication
     // recovery or native replay.
-    let stream = crate::response::StreamContext::for_accepted_response(
-        core.operation_observer().clone(),
-        head,
-        core.stream_limits(),
-        deadline,
-        operation_id,
-        context.parent_operation_id,
-        attempt_info,
-        context.page_index,
-        status,
+    // Select by the actual driver: accepted-bytes overrides and wrapper
+    // representations need not use the declared endpoint acquisition mode.
+    let stream = (S::Driver::ACQUISITION == ResponseAcquisition::Streaming).then(|| {
+        crate::response::StreamContext::for_accepted_response(
+            core.operation_observer().clone(),
+            head,
+            core.stream_limits(),
+            deadline,
+            operation_id,
+            context.parent_operation_id,
+            attempt_info,
+            context.page_index,
+            status,
+        )
+    });
+    let stream_handoff = stream.as_ref().map(|stream| stream.handoff.clone());
+    let stream_limit = stream.as_ref().map_or_else(
+        || narrow_limit(core.stream_limits().bytes, response_cap),
+        |stream| stream.limits.bytes,
     );
-    let stream_handoff = stream.handoff.clone();
     let (output, response_body_bytes) = execute_response::<E::Response, E::Output, S>(
         ResponseInput {
             response,
             limit: narrow_limit(core.response_body_limit(), response_cap),
-            stream_limit: stream.limits.bytes,
+            stream_limit,
             deadline,
             endpoint: head.endpoint_id().clone(),
             method: head.method().clone(),
-            stream: Some(stream),
+            stream,
         },
         &response_head,
     )
     .await?;
-    stream_handoff.mark_delivered();
+    if let Some(handoff) = stream_handoff {
+        handoff.mark_delivered();
+    }
     Ok((
         ApiResponse::new(
             head.logical_url().clone(),
