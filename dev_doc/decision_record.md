@@ -80,15 +80,15 @@ before any showcase cleanup. The per-decision records are ADRs 0014–0026 in th
 
 ## Evidence state
 
-The v3 contract is implemented in this tree. It was validated only on Linux
-x86_64 with `rustc 1.95.0`; native Windows, the pinned `1.97.1` toolchain and the
-MSRV `1.86` toolchain were not run. Command results are recorded in the
-implementation report (`IMPLEMENTATION_REPORT.md`, produced separately).
+R7 source qualification uses native Windows and Linux/WSL, pin `1.97.1` and
+MSRV `1.86.0`, with full maintained implementation gates passing on candidate
+`e19c7bf`. [R7 validation](reviews/r7_validation.md) owns exact source/command
+evidence and limitations; the earlier Linux 1.95 evidence remains historical.
 
 This record does not claim:
 
 - unfamiliar-human comprehension or independent Rustdoc/semantic-diff review;
-- Windows, pinned-toolchain or MSRV validation of v3;
+- full independently re-established external Edition 1 conformance;
 - license authority, package control or publication readiness.
 
 Implementation gaps against the specification found while writing these

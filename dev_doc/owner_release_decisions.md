@@ -2,9 +2,11 @@
 
 **Status:** REQUIRED OWNER DECISION FOR BETA INTEGRATION AND STABLE PUBLICATION
 
-No repository file, task input or observed Git history supplies the decisions
-below. The v3 implementation delivers an unpublished `3.0.0-beta.1` with
-`publish = false` everywhere and makes none of these decisions. Gate 0 cannot
+The 2026-10-12 R7 commission explicitly authorizes the V3 import, corrections
+and ordinary `concord-v3` source-branch push to `gqsnt/concord_api`. It does not
+supply the remaining merge, license, namespace, tags or publication decisions.
+The implementation remains `3.0.0-beta.1` with `publish = false` everywhere.
+Gate 0 cannot
 pass, and stable release or publication is forbidden, until an authorized
 project owner completes this packet. The lifecycle is owned by
 [`release_gate_status.md`](release_gate_status.md).
@@ -13,8 +15,8 @@ project owner completes this packet. The lifecycle is owned by
 
 | Decision | Owner answer |
 |---|---|
-| Integrate the `3.0.0-beta.1` source candidate into a release branch, given that native Windows, pinned-toolchain `1.97.1` and MSRV `1.86` checks were not run | **REQUIRED OWNER DECISION** |
-| Which local branch is the integration target (this repository has no `main` branch; `release-audit` expects one as its merge base) | **REQUIRED OWNER DECISION** |
+| Merge or integrate the qualified beta into main or a release branch | **REQUIRED OWNER DECISION**; R7 does not authorize a merge |
+| Current source branch and preserved main merge base | **Observed**: `concord-v3`, main `3765907`; source push authorized, no main integration |
 | License policy: exact SPDX expression or approved `license-file` policy | **REQUIRED OWNER DECISION** |
 | Approved public package names for façade, core, macros, extras and, if published, `concord-inspect` | **REQUIRED OWNER DECISION** |
 | Is this the first registry publication for the approved namespace? | **REQUIRED OWNER DECISION** |
@@ -24,7 +26,7 @@ project owner completes this packet. The lifecycle is owned by
 | Official homepage URL, or explicit decision that no separate homepage exists | **REQUIRED OWNER DECISION** |
 | Public package README policy/path | **REQUIRED OWNER DECISION** |
 | Human-comprehension and independent-review evidence required before public compatibility freeze, if any | **REQUIRED OWNER DECISION** |
-| Is any push (for example a review branch solely for CI evidence) authorized? | **REQUIRED OWNER DECISION**; absent authorization means **NO PUSH** |
+| R7 source-branch push | **AUTHORIZED** by the present owner commission; ordinary push only, exact remote verification in delivered receipt |
 
 Record the deciding owner/role and date without adding secrets or personal
 contact information. Package names must be rechecked immediately after approval

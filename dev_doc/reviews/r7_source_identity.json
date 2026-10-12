@@ -1,0 +1,21 @@
+{
+  "commit": "e19c7bf0a096d77713c0c8b413f0a7f678080245",
+  "compiled_input_git_objects": {
+    ".config": "2d40a5531b96e56fb5e9f7c3bfd50565d0c12689",
+    "fixtures": "9ef6241be3ca7170186a6396c305b356d7b141bb",
+    "rustfmt.toml": "c0c5cfb554c366ff3ea8e67968850ee3bd114ed9",
+    "crates": "b9c4e94c06c7d9651bc5a54a106b8ad7d3810ca6",
+    "tools": "23d551d8f8563b8902011f60103f0b2c0676eca5",
+    "tests": "f55323464d6ce3c4cddc4d7ffe2ed091b500f129",
+    ".github": "348586ed19f20fa63583fd1d5eddd6122016f89e",
+    "scripts": "8b5dcf6fc9691bc1f4d42124934fceaf81e35c80",
+    "Cargo.toml": "5c84c790f11ef1b3db3d9940a7df4e0b0bd06b91",
+    "Cargo.lock": "801ee3725ca68ca3bb9441e3e7d5aa6798db5b8a",
+    "justfile": "254ef179083321a5635ce1adc79696aa84136a5b",
+    "rust-toolchain.toml": "6b964eba5393850b1e9e50415017d27042052594",
+    "deny.toml": "0c7d7e174a0edd8768e821ba10915a2927db12fc",
+    ".gitattributes": "185e3b2072b442f5299f2425c8ab5b505cca9ee7",
+    ".gitignore": "ed043396e734dadff6906db2af78ea4094f56822"
+  },
+  "aggregate_sha256": "ada56ca67a10a8f70a90c74e2ceb471e817d47a79854e0191995ad9f8d7d10e0"
+}
