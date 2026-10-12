@@ -90,7 +90,7 @@ fn value_spec(context: &Context<'_>, value: &Value) -> TokenStream {
             quote!(.stable_constant(#path))
         }
         Initializer::Stable(stable) => {
-            let literal = text(&super::owner::stable_tokens(stable));
+            let literal = text(&super::owner::stable_tokens(context, stable));
             quote!(.stable_literal(#literal))
         }
     };
@@ -295,9 +295,12 @@ fn encoding_id(
     span: proc_macro2::Span,
 ) -> TokenStream {
     let p = context.p();
-    let ty = &context.model.value(key).ty;
+    let ty = context.rust_type(&context.model.value(key).ty);
     let tokens = match via {
-        Some(encoder) => quote!(<#encoder as #p::RateKeyEncoder<#ty>>::ENCODING_ID),
+        Some(encoder) => {
+            let encoder = context.rust_type(encoder);
+            quote!(<#encoder as #p::RateKeyEncoder<#ty>>::ENCODING_ID)
+        }
         None => quote!(<#ty as #p::RateKeyPart>::ENCODING_ID),
     };
     super::located_at(tokens, span)
@@ -471,9 +474,9 @@ fn endpoint_spec(context: &Context<'_>, index: usize) -> TokenStream {
         .collect();
     if let Some(body) = &entry.body {
         let name = lit(&body.logical);
-        let ty = &body.ty;
-        let ty_text = text(ty);
-        let representation = &body.representation;
+        let ty_text = text(&body.ty);
+        let ty = context.rust_type(&body.ty);
+        let representation = context.rust_type(&body.representation);
         let optional = body.optional.then(|| quote!(.optional()));
         let via = body.via.as_ref().map(|via| {
             let via = text(via);
@@ -503,9 +506,9 @@ fn endpoint_spec(context: &Context<'_>, index: usize) -> TokenStream {
         let id = lit(&entry.id);
         quote!(.id(#id))
     });
-    let output = &entry.output;
-    let output_text = text(output);
-    let response = &entry.response;
+    let output_text = text(&entry.output);
+    let output = context.rust_type(&entry.output);
+    let response = context.rust_type(&entry.response);
     let result = if entry.absence.is_some() {
         quote!(#f::inspection::ResultSpec::from_representation::<#response, <#output as #p::OptionalOutcome>::Present>(#output_text))
     } else {
@@ -556,7 +559,7 @@ fn endpoint_spec(context: &Context<'_>, index: usize) -> TokenStream {
                     quote!(.init_constant(#field, #path))
                 }
                 InitValue::Stable(stable) => {
-                    let literal = text(&super::owner::stable_tokens(stable));
+                    let literal = text(&super::owner::stable_tokens(context, stable));
                     quote!(.init_literal(#field, #literal))
                 }
             }

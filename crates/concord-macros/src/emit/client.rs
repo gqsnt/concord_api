@@ -57,6 +57,7 @@ pub(crate) fn material_type(context: &Context<'_>, credential: &Credential) -> T
             quote!(#output)
         }
         CredentialSource::Custom { provider } => {
+            let provider = context.rust_type(provider);
             quote!(<#provider as #f::auth::CredentialProvider>::Material)
         }
     }
@@ -279,7 +280,7 @@ fn builder_items(context: &Context<'_>) -> TokenStream {
     for value in &root.values {
         let field = &value.field;
         let initial = &value.initial_field;
-        let ty = &value.ty;
+        let ty = context.rust_type(&value.ty);
         let deprecated = docs::deprecated_attr(&value.meta);
         let controls = &value.controls;
         if value.is_required_input() {
@@ -322,7 +323,7 @@ fn builder_items(context: &Context<'_>) -> TokenStream {
             });
             continue;
         }
-        let slot = owner::slot_type(value);
+        let slot = owner::slot_type(context, value);
         fields.push(quote!(#field: #slot,));
         if value.is_initialized() {
             fields.push(quote!(#initial: ::std::sync::Arc<#ty>,));
@@ -411,6 +412,7 @@ fn builder_items(context: &Context<'_>) -> TokenStream {
                     .push(quote!(let #field = #p::GeneratedCredential::endpoint(&core);));
             }
             CredentialSource::Custom { provider } => {
+                let provider = context.rust_type(provider);
                 let provider_field =
                     syn::Ident::new(&format!("p_{}", credential.logical), credential.name.span());
                 let method = &credential.name;

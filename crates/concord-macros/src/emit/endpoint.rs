@@ -26,17 +26,17 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
     let client = &model.client.name;
     let client_path = supers(owner.depth + 1);
     let root_module = supers(owner.depth);
-    let output = &endpoint.output;
-    let response = &endpoint.response;
+    let output = context.rust_type(&endpoint.output);
+    let response = context.rust_type(&endpoint.response);
     let id = lit(&endpoint.id);
 
     // ---- storage ----
     let value_storage = endpoint
         .values
         .iter()
-        .map(|value| value_fields(value, true));
+        .map(|value| value_fields(context, value, true));
     let body_storage = endpoint.body.as_ref().map(|body| {
-        let ty = &body.ty;
+        let ty = context.rust_type(&body.ty);
         if body.optional {
             quote!(__body: ::std::option::Option<#ty>,)
         } else {
@@ -51,11 +51,11 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
             Positional::Value(value) => {
                 let value = &endpoint.values[*value];
                 let field = &value.field;
-                let ty = &value.ty;
+                let ty = context.rust_type(&value.ty);
                 quote!(#field: #ty)
             }
             Positional::Body => {
-                let ty = &endpoint.body.as_ref().expect("body").ty;
+                let ty = context.rust_type(&endpoint.body.as_ref().expect("body").ty);
                 quote!(__body: #ty)
             }
         });
@@ -135,12 +135,12 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
     let (input, body_spec, into_body) = match &endpoint.body {
         None => (quote!(()), quote!(#p::EmptyBody), quote!(())),
         Some(body) => {
-            let ty = &body.ty;
-            let representation = &body.representation;
+            let ty = context.rust_type(&body.ty);
+            let representation = context.rust_type(&body.representation);
             if body.optional {
                 // DIAG-01: the optional-body adapter's `RequestRepresentation`
                 // obligation is reported at the selected representation.
-                let span = syn::spanned::Spanned::span(representation);
+                let span = syn::spanned::Spanned::span(&representation);
                 let open = located_at(quote!(#p::OptionalRequestRepresentation<), span);
                 let close = located_at(quote!(>), span);
                 let adapter = quote!(#open #representation #close);
@@ -192,11 +192,11 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
 
     // ---- pagination ----
     let pageable = endpoint.pagination.as_ref().map(|pagination| {
-        let controller = &pagination.controller;
-        let init_type = &pagination.init_type;
+        let controller = context.rust_type(&pagination.controller);
+        let init_type = context.rust_path(&pagination.init_type);
         let init_fields = pagination.fields.iter().map(|(field, value)| {
             let expr = match value {
-                InitValue::Stable(stable) => stable_tokens(stable),
+                InitValue::Stable(stable) => stable_tokens(context, stable),
                 InitValue::Value(key) => {
                     let field = value_field_expr(model, access, *key);
                     if model.value(*key).optional {
@@ -210,7 +210,7 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
         });
         let cursor_types = pagination.cursor.iter().map(|index| {
             let value = &endpoint.values[*index];
-            let ty = &value.ty;
+            let ty = context.rust_type(&value.ty);
             if value.optional {
                 quote!(::std::option::Option<#ty>)
             } else {
@@ -352,13 +352,13 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
             Positional::Value(value) => {
                 let value = &endpoint.values[*value];
                 let name = &value.name;
-                let ty = &value.ty;
+                let ty = context.rust_type(&value.ty);
                 quote!(#name: impl #f::IntoValue<#ty>)
             }
             Positional::Body => {
                 let body = endpoint.body.as_ref().expect("body");
                 let name = &body.name;
-                let ty = &body.ty;
+                let ty = context.rust_type(&body.ty);
                 quote!(#name: #ty)
             }
         })
@@ -370,7 +370,7 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
             Positional::Value(value) => {
                 let value = &endpoint.values[*value];
                 let name = &value.name;
-                let ty = &value.ty;
+                let ty = context.rust_type(&value.ty);
                 quote!(#f::IntoValue::<#ty>::into_value(#name))
             }
             Positional::Body => {
@@ -662,7 +662,7 @@ fn body_controls(context: &Context<'_>, index: usize) -> TokenStream {
     if !body.optional {
         return TokenStream::new();
     }
-    let ty = &body.ty;
+    let ty = context.rust_type(&body.ty);
     let controls = &body.controls;
     let set = controls.set.as_ref().expect("optional body set");
     let replace = controls.replace.as_ref().expect("optional body replace");
@@ -715,7 +715,7 @@ fn terminals(context: &Context<'_>, index: usize) -> TokenStream {
     let p = context.p();
     let endpoint = &model.endpoints[index];
     let spec = &endpoint.surface.spec_type;
-    let output = &endpoint.output;
+    let output = context.rust_type(&endpoint.output);
     let accepted_bytes = endpoint.expose_accepted_bytes.then(|| {
         quote! {
             /// Selects the explicit accepted-bytes terminal: origin, auth, rate,

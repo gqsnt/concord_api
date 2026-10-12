@@ -10,6 +10,12 @@ example.
 
 ## 1. Lexical conventions
 
+Authored Rust `self::`, `super::`, repeated parent, `crate::`, absolute and
+imported paths retain their lexical bindings at the `api!` invocation. The
+generator rebases explicit lexical paths in Rust syntax, including nested
+generic/qualified types, adapters, representations, constants and pagination
+initializers. Exported contract descriptions keep the authored spelling.
+
 A declaration is parsed as Rust token trees with a real Rust syntax parser.
 Identifiers and type paths are passed to Rust; the macro never assigns protocol
 meaning by recognizing `Option`, `Vec`, an alias or a qualified spelling.

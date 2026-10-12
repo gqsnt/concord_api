@@ -18,6 +18,7 @@ use crate::semantic::{
 /// value types keep their own spans, so a type that does not resolve is still
 /// reported where it is written.
 fn placement_call(
+    context: &Context<'_>,
     span: Span,
     method: TokenStream,
     adapter: Option<(&syn::Type, &syn::Type)>,
@@ -26,6 +27,8 @@ fn placement_call(
     let args = located_at(quote!((#args)), span);
     match adapter {
         Some((adapter, ty)) => {
+            let adapter = context.rust_type(adapter);
+            let ty = context.rust_type(ty);
             let method = located_at(quote!(#method::<), span);
             let comma = located_at(quote!(,), span);
             let close = located_at(quote!(>), span);
@@ -68,12 +71,13 @@ fn write_call(
 ) -> TokenStream {
     match via {
         Some(adapter) => placement_call(
+            context,
             span,
             quote!(writer.write_with),
             Some((adapter, &context.model.value(value).ty)),
             reference,
         ),
-        None => placement_call(span, quote!(writer.write), None, reference),
+        None => placement_call(context, span, quote!(writer.write), None, reference),
     }
 }
 
@@ -191,12 +195,13 @@ pub(crate) fn emission_readers(
                 let ty = &context.model.value(*value).ty;
                 let call = match via {
                     Some(adapter) => placement_call(
+                        context,
                         *span,
                         quote!(sink.each_with),
                         Some((adapter, ty)),
                         quote!(values),
                     ),
-                    None => placement_call(*span, quote!(sink.each), None, quote!(values)),
+                    None => placement_call(context, *span, quote!(sink.each), None, quote!(values)),
                 };
                 if optional {
                     let field = value_field_expr(context.model, access, *value);
@@ -216,12 +221,13 @@ pub(crate) fn emission_readers(
                 let ty = &context.model.value(*value).ty;
                 let call = match via {
                     Some(adapter) => placement_call(
+                        context,
                         *span,
                         quote!(sink.value_with),
                         Some((adapter, ty)),
                         quote!(value),
                     ),
-                    None => placement_call(*span, quote!(sink.value), None, quote!(value)),
+                    None => placement_call(context, *span, quote!(sink.value), None, quote!(value)),
                 };
                 if optional {
                     let field = value_field_expr(context.model, access, *value);
@@ -336,12 +342,19 @@ pub(crate) fn rate_declaration(
             let ty = &context.model.value(*value).ty;
             let part = match via {
                 Some(encoder) => placement_call(
+                    context,
                     *span,
                     quote!(part_with),
                     Some((encoder, ty)),
                     quote!(#label, #reference),
                 ),
-                None => placement_call(*span, quote!(part), None, quote!(#label, #reference)),
+                None => placement_call(
+                    context,
+                    *span,
+                    quote!(part),
+                    None,
+                    quote!(#label, #reference),
+                ),
             };
             quote!(.#part)
         }

@@ -13,6 +13,7 @@ mod docs;
 mod endpoint;
 mod head;
 mod owner;
+mod rust_paths;
 
 use std::time::Duration;
 
@@ -25,16 +26,30 @@ use crate::semantic::{Model, Site, VRef};
 pub(crate) const GENERATED_CONTRACT_VERSION: u32 = 34;
 
 pub(crate) fn generate(model: &Model, facade: &TokenStream) -> TokenStream {
-    let context = Context { model, f: facade };
+    let context = Context {
+        model,
+        f: facade,
+        rust_depth: 1,
+    };
     client::generate(&context)
 }
 
 pub(crate) struct Context<'a> {
     pub(crate) model: &'a Model,
     pub(crate) f: &'a TokenStream,
+    /// Generated module distance from the `api!` invocation.
+    pub(crate) rust_depth: usize,
 }
 
 impl Context<'_> {
+    pub(crate) fn rust_type(&self, ty: &syn::Type) -> syn::Type {
+        rust_paths::ty(ty, self.rust_depth)
+    }
+
+    pub(crate) fn rust_path(&self, path: &syn::Path) -> syn::Path {
+        rust_paths::path(path, self.rust_depth)
+    }
+
     /// `F::__private`.
     pub(crate) fn p(&self) -> TokenStream {
         let f = self.f;

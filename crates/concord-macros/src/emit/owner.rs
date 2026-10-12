@@ -14,6 +14,11 @@ use crate::semantic::{
 
 /// The complete module of one owner (recursively including its scopes).
 pub(crate) fn module(context: &Context<'_>, owner: usize, root_items: TokenStream) -> TokenStream {
+    let context = &Context {
+        model: context.model,
+        f: context.f,
+        rust_depth: context.model.owners[owner].depth + 1,
+    };
     let model = context.model;
     let entry = &model.owners[owner];
     let module_name = entry.surface.module_path.last().expect("owner module");
@@ -54,8 +59,8 @@ pub(crate) fn module(context: &Context<'_>, owner: usize, root_items: TokenStrea
 }
 
 /// Storage type of one value's current selection.
-pub(crate) fn slot_type(value: &Value) -> TokenStream {
-    let ty = &value.ty;
+pub(crate) fn slot_type(context: &Context<'_>, value: &Value) -> TokenStream {
+    let ty = context.rust_type(&value.ty);
     if value.optional {
         quote!(::std::option::Option<::std::sync::Arc<#ty>>)
     } else {
@@ -63,7 +68,7 @@ pub(crate) fn slot_type(value: &Value) -> TokenStream {
     }
 }
 
-pub(crate) fn stable_tokens(value: &StableValue) -> TokenStream {
+pub(crate) fn stable_tokens(context: &Context<'_>, value: &StableValue) -> TokenStream {
     match value {
         StableValue::Str(literal) => quote!(#literal),
         StableValue::Char(literal) => quote!(#literal),
@@ -82,33 +87,40 @@ pub(crate) fn stable_tokens(value: &StableValue) -> TokenStream {
                 quote!(#literal)
             }
         }
-        StableValue::Path(path) => quote!(#path),
+        StableValue::Path(path) => {
+            let path = context.rust_path(path);
+            quote!(#path)
+        }
     }
 }
 
 /// Expression evaluating one value's initializer once (`Arc<T>`).
 pub(crate) fn initializer_expr(context: &Context<'_>, value: &Value) -> TokenStream {
     let f = context.f;
-    let ty = &value.ty;
+    let ty = context.rust_type(&value.ty);
     match &value.init {
         Initializer::None => unreachable!("initialized value"),
         Initializer::Default(span) => {
             quote::quote_spanned!(*span=> ::std::sync::Arc::new(<#ty as ::std::default::Default>::default()))
         }
         Initializer::Stable(stable) => {
-            let tokens = stable_tokens(stable);
+            let tokens = stable_tokens(context, stable);
             quote!(::std::sync::Arc::new(#f::IntoValue::<#ty>::into_value(#tokens)))
         }
     }
 }
 
 /// Field declarations (current + retained initial) for one value.
-pub(crate) fn value_fields(value: &Value, retain_initial: bool) -> TokenStream {
+pub(crate) fn value_fields(
+    context: &Context<'_>,
+    value: &Value,
+    retain_initial: bool,
+) -> TokenStream {
     let field = &value.field;
-    let slot = slot_type(value);
+    let slot = slot_type(context, value);
     let initial = (retain_initial && value.is_initialized()).then(|| {
         let initial = &value.initial_field;
-        let ty = &value.ty;
+        let ty = context.rust_type(&value.ty);
         quote!(#initial: ::std::sync::Arc<#ty>,)
     });
     quote!(#field: #slot, #initial)
@@ -154,7 +166,7 @@ pub(crate) fn value_controls(
     let methods = values.iter().map(|value| {
         let field = &value.field;
         let initial = &value.initial_field;
-        let ty = &value.ty;
+        let ty = context.rust_type(&value.ty);
         let controls = &value.controls;
         let deprecated = docs::deprecated_attr(&value.meta);
         let mut out = Vec::new();
@@ -250,7 +262,10 @@ fn state(context: &Context<'_>, owner: usize) -> TokenStream {
             let material = super::client::material_type(context, credential);
             quote!(#field: #p::GeneratedCredential<#material>,)
         });
-        let values = entry.values.iter().map(|value| value_fields(value, false));
+        let values = entry
+            .values
+            .iter()
+            .map(|value| value_fields(context, value, false));
         quote! {
             #[doc(hidden)]
             pub struct __State {
@@ -260,11 +275,14 @@ fn state(context: &Context<'_>, owner: usize) -> TokenStream {
             }
         }
     } else {
-        let values = entry.values.iter().map(|value| value_fields(value, true));
+        let values = entry
+            .values
+            .iter()
+            .map(|value| value_fields(context, value, true));
         let arguments = entry.positional.iter().map(|index| {
             let value = &entry.values[*index];
             let field = &value.field;
-            let ty = &value.ty;
+            let ty = context.rust_type(&value.ty);
             quote!(#field: #ty)
         });
         let (statements, fields) = value_initializers(context, &entry.values);
@@ -535,13 +553,13 @@ fn scope_handle(context: &Context<'_>, owner: usize) -> TokenStream {
     let arguments = entry.positional.iter().map(|index| {
         let value = &entry.values[*index];
         let name = &value.name;
-        let ty = &value.ty;
+        let ty = context.rust_type(&value.ty);
         quote!(#name: impl #f::IntoValue<#ty>)
     });
     let conversions = entry.positional.iter().map(|index| {
         let value = &entry.values[*index];
         let name = &value.name;
-        let ty = &value.ty;
+        let ty = context.rust_type(&value.ty);
         quote!(#f::IntoValue::<#ty>::into_value(#name))
     });
     let arguments = quote!(#(#arguments),*);
@@ -623,13 +641,13 @@ fn unbound(context: &Context<'_>, owner: usize) -> TokenStream {
     let arguments = entry.positional.iter().map(|index| {
         let value = &entry.values[*index];
         let name = &value.name;
-        let ty = &value.ty;
+        let ty = context.rust_type(&value.ty);
         quote!(#name: impl #f::IntoValue<#ty>)
     });
     let conversions = entry.positional.iter().map(|index| {
         let value = &entry.values[*index];
         let name = &value.name;
-        let ty = &value.ty;
+        let ty = context.rust_type(&value.ty);
         quote!(#f::IntoValue::<#ty>::into_value(#name))
     });
     let nav_doc = format!(

@@ -1049,20 +1049,15 @@ fn constant_paths_and_adapters_shadowed_by_generated_names_are_rejected() {
             "the support module of scope",
         ],
     );
-    assert_err(
-        quote! {
-            client A {
-                base "https://a.test/";
-                response Json;
-                GET items(query count: u32 = super::PAGE) -> T;
-            }
-        },
-        &[
-            "[C3-GENERATED]",
-            "`super::PAGE`",
-            "absolute `crate::...` path",
-        ],
-    );
+    // R7 rebases explicit lexical paths; only bare generated-name collisions
+    // remain rejected. Native emitter controls verify the resulting bindings.
+    ok(quote! {
+        client A {
+            base "https://a.test/";
+            response Json;
+            GET items(query count: u32 = super::PAGE) -> T;
+        }
+    });
     assert_err(
         quote! {
             client A {
@@ -1075,21 +1070,18 @@ fn constant_paths_and_adapters_shadowed_by_generated_names_are_rejected() {
         },
         &["[C3-GENERATED]", "ItemRequest"],
     );
-    assert_err(
-        quote! {
-            client A {
-                base "https://a.test/";
-                response Json;
-                GET feed(query offset: u64 = 0) -> T {
-                    paginate via crate::Pages {
-                        init self::Start { offset: offset, size: crate::SIZE };
-                        cursor -> offset;
-                    }
+    ok(quote! {
+        client A {
+            base "https://a.test/";
+            response Json;
+            GET feed(query offset: u64 = 0) -> T {
+                paginate via crate::Pages {
+                    init self::Start { offset: offset, size: crate::SIZE };
+                    cursor -> offset;
                 }
             }
-        },
-        &["[C3-GENERATED]", "`self::Start`"],
-    );
+        }
+    });
     // Absolute and crate-rooted spellings of the same items are accepted.
     ok(quote! {
         client A {

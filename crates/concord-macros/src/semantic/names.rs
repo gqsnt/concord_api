@@ -514,13 +514,9 @@ fn check_leading_segment(
 ) -> syn::Result<()> {
     let name = super::surface::canonical_ident(first);
     if name == "self" || name == "super" {
-        return Err(coded(
-            first.span(),
-            Code::Generated,
-            format!(
-                "{what_kind} `{rendered}` in this declaration starts with `{name}::`, which would resolve relative to the generated support modules rather than the declaration's module; name it by an absolute `crate::...` path or import it"
-            ),
-        ));
+        // The emitter rebases explicit lexical paths to the invocation's
+        // module, including nested generic and qualified paths.
+        return Ok(());
     }
     if let Some((_, what)) = generated.iter().find(|(generated, _)| *generated == name) {
         return Err(coded(
@@ -683,9 +679,8 @@ fn in_owner(error: syn::Error, label: &str) -> syn::Error {
     combined.expect("a syn::Error carries at least one message")
 }
 
-/// Rejects user-written types, adapters and constant paths that a generated
-/// name of the same spelling (or a relative `self`/`super` prefix) would
-/// silently re-resolve inside the generated support modules.
+/// Rejects bare names that generated support items could shadow. Explicit
+/// lexical paths are preserved by the emitter rather than rejected here.
 pub(crate) fn check_shadowing(resolver: &Resolver) -> syn::Result<()> {
     let model = &resolver.model;
     for index in 0..model.owners.len() {
