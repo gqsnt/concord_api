@@ -17,7 +17,8 @@ stable-release decisions remain open.
 This is the sole authoritative lifecycle record. [R7 validation](reviews/r7_validation.md)
 and [handoff](reviews/r7_handoff.md) record source-specific commands and limits;
 [the ledger](claim_evidence_ledger.md), README and FINAL summarize this record.
-The final documentation commit preserves all compiled inputs. Its terminal
+The final documentation commit preserves the separately qualified library and
+CI/fixture input identities. Its terminal
 audit/export and pushed SHA belong to the separate post-commit receipt.
 
 ## Current integration state
@@ -87,8 +88,13 @@ receipt; full implementation qualification belongs to the candidate above.
 | Unfamiliar-human comprehension and independent human review | **Unknown** — no qualifying participant/reviewer evidence supplied. |
 | Stable compatibility freeze, version, tags and registry publication | **Blocked** — reserved owner decisions in [the release packet](owner_release_decisions.md). |
 
-Dependency license-policy success ignores private unpublished workspace packages
-as configured; it does not supply the project's license or registry authority.
+Default-feature dependency license-policy success ignores private unpublished
+workspace packages as configured; it does not supply the project's license or
+registry authority. CI's all-features audit rejects BSD-3-Clause in
+`alloc-no-stdlib`, `alloc-stdlib` and `brotli` (reproduced natively, exit 4).
+That dependency-policy decision remains **Blocked — owner authority required**;
+no allowlist change or advisory ignore was made. Locked fixture fetching and
+explicit pinned Rust sources correct the earlier CI setup failures.
 
 ## History
 

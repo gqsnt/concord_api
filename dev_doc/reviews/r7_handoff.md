@@ -3,10 +3,15 @@
 Repository: [gqsnt/concord_api](https://github.com/gqsnt/concord_api).
 Source branch: [concord-v3](https://github.com/gqsnt/concord_api/tree/concord-v3).
 Implementation candidate: `e19c7bf0a096d77713c0c8b413f0a7f678080245`.
-The commit containing this handoff adds only documentation/evidence records.
+The library/tool/test trees and root lock retain that qualification. Post-push
+CI follow-ups add fixture dependency fetches, pinned Rust source availability and
+patched fixture Rustls; scoped native repeats qualify those changes.
 Its exact pushed SHA, remote verification and CI snapshot are recorded in the
 separate post-commit `push_receipt.json` delivered with the final source ZIP and
 outer handoff. No later self-referential source commit is needed.
+CI's all-features license check remains rejected for three BSD-3-Clause Brotli
+dependencies. The existing allowlist is preserved for the owner's policy decision;
+default-feature dependency audits pass. Exact scope is in validation.
 
 The supplied R6 commit and parent were absent. Import commit
 `16f61c0753b313b8c559a4a57dd3dfbe1d2e7345` was made on preserved real main

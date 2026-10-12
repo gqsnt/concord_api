@@ -1,8 +1,10 @@
 # Concord V3 R7 validation
 
 Implementation candidate: `e19c7bf0a096d77713c0c8b413f0a7f678080245`.
-Final handoff changes are documentation only; the terminal receipt compares
-compiled input tree identities and records exact final-commit audits and export.
+The library/tool/test trees and root dependency lock retain that qualified identity.
+Post-push CI follow-ups change only fixture dependencies and validation setup;
+scoped repeat checks below qualify those inputs. The terminal receipt compares
+both identities and records exact final-commit audits and export.
 Native commands, exits, UTC times, tracked overlay digests, untracked test hashes
 and log hashes are in [the evidence index](r7_evidence_index.json). Full logs remain
 outside Git in `concord-r7-artifacts-20261012/logs` and accompany the returned handoff.
@@ -76,6 +78,37 @@ UI refresh reviewed 14 facade and 2 core expectations under 1.97.1; rejection
 obligations remain. No old failure or interrupted receipt was overwritten.
 The initial handoff docs check also rejected missing mandatory lifecycle/policy
 phrases; those truthful canonical phrases were restored and the check passed.
+
+## Post-push CI follow-ups and reserved policy result
+
+The first pushed commit `6764dfd` completed six CI jobs successfully. Fixture and
+MSRV semantic checks failed with missing `zlib-rs`: their separate fixture lock
+was not fetched before offline compilation. The UI job lacked Rust source excerpts
+used by the reviewed pinned expectations. Commits `b71e19f` and `1950dca` add locked
+fixture fetches and explicitly install `rust-src`; no offline or diagnostic check
+was weakened. The fixture lock also moves Rustls 0.23.43 to patched 0.23.45.
+
+Native scoped repeats pass: `ci-followup-windows` and `ci-followup-linux` run MSRV
+and fixtures; `ci-followup-ui-windows` and `ci-followup-ui-linux` run the complete
+UI matrix, with Windows workflow syntax. `ci-cold-fetch` followed by
+`ci-cold-offline-metadata` resolves the entire fixture graph in a new task Cargo
+home. `ci-fixture-deny2` passes the standalone default-feature dependency audit.
+The full implementation matrices remain bound to `e19c7bf`; runtime Rust source
+and the root lock have not changed. Exact receipt sources are in the evidence index.
+
+The corrected CI run `38193487598` passed its fixture and MSRV stages but its
+all-features dependency license check rejects BSD-3-Clause in `alloc-no-stdlib`,
+`alloc-stdlib`, and `brotli`. `cargo deny --all-features check` reproduces this
+natively (`ci-native-all-feature-deny`, exit 4): advisories, bans and sources pass;
+licenses fail. The earlier `just deny` passes cover default features only. The
+license allowlist is unchanged. This is a reserved owner policy/publication
+decision, not a correctness-test waiver. Options are owner-approved narrow
+dependency exceptions or a separately authorized feature/dependency change;
+the beta review branch preserves the rejection and existing feature surface.
+
+The Windows Git archive prototype converted unspecified text to CRLF. Final
+export disables that conversion and checks every ZIP entry against committed
+blob bytes. The incomplete prototype is retained separately and is not delivered.
 
 ## R7-S01 performance scope
 
