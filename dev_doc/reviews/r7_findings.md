@@ -53,3 +53,9 @@ Pinned 1.97.1 UI expectations were refreshed only after reviewing each mismatch:
 trait help/source excerpts and a more precise absence output-type span; two core
 diagnostics add standard-library excerpts or list the new opaque cooldown field.
 No invalid fixture was converted to a pass fixture and no diagnostic test removed.
+
+Fresh dependency policy found RUSTSEC-2026-0285 in the imported locked Rustls
+0.23.42. The lockfile moves only Rustls to patched 0.23.45 and its WebPKI dependency
+to 0.103.15. No advisory ignore or policy relaxation was added. Platform gates
+started before this discovery are interrupted historical attempts; final
+qualification uses the repaired locked dependency set.
