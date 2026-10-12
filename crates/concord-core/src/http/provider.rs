@@ -1,7 +1,9 @@
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
+#[cfg(test)]
+use std::time::SystemTime;
 
 use bytes::{Bytes, BytesMut};
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
@@ -700,6 +702,7 @@ impl ProviderHttpInner {
             builder = builder.body(body.clone());
         }
 
+        let mut rejection_delay = None;
         let operation = async {
             #[cfg(test)]
             let response = {
@@ -732,6 +735,15 @@ impl ProviderHttpInner {
                     .map_err(|error| auth_http_error(reqwest_category(error, false)))?
             };
             journal.record_head(response.status());
+            let arrived_at = OperationDeadline::now();
+            let server_delay = crate::retry::parse_server_delay(
+                response.headers(),
+                self.wall_clock.now(),
+                arrived_at,
+            );
+            if !response.status().is_success() {
+                rejection_delay = server_delay;
+            }
 
             if response
                 .content_length()
@@ -743,16 +755,30 @@ impl ProviderHttpInner {
                 response,
                 effective_response_limit,
                 self.failure_cooldown_cap,
-                self.wall_clock.now(),
+                server_delay,
             )
             .await
         };
-        match effective_timeout {
+        let result = match effective_timeout {
             Some(timeout) => tokio::time::timeout(timeout, operation)
                 .await
-                .map_err(|_| AuthError::new(AuthErrorKind::Acquisition))?,
+                .unwrap_or_else(|_| Err(AuthError::new(AuthErrorKind::Acquisition))),
             None => operation.await,
-        }
+        };
+        // Only a received rejection head supplies cooldown authority. Keep the
+        // body error's kind and journal, and consume elapsed acquisition time
+        // from the cap anchored at arrival. Dropped work does not run this path.
+        result.map_err(|error| {
+            match rejection_delay
+                .map(|hint| {
+                    hint.bounded_remaining_at(OperationDeadline::now(), self.failure_cooldown_cap)
+                })
+                .filter(|delay| !delay.is_zero())
+            {
+                Some(delay) => error.with_retry_after(delay),
+                None => error,
+            }
+        })
     }
 
     #[cfg(test)]
@@ -824,12 +850,10 @@ async fn collect_provider_response(
     mut response: reqwest::Response,
     limit: usize,
     failure_cooldown_cap: Duration,
-    wall_time: SystemTime,
+    server_delay: Option<crate::retry::ServerDelayHint>,
 ) -> Result<ProviderResponse, AuthError> {
     let status = response.status();
     let headers = response.headers().clone();
-    let server_delay =
-        crate::retry::parse_server_delay(&headers, wall_time, OperationDeadline::now());
     let mut collected = BytesMut::new();
     let mut progress = ResponseChunkProgress::default();
     loop {
@@ -873,6 +897,160 @@ fn auth_http_error(category: ErrorCategory) -> AuthError {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test(start_paused = true)]
+    async fn r8_no_head_accepted_bad_body_and_elapsed_delay_do_not_create_cooldown() {
+        for scenario in ["no-head", "accepted", "elapsed"] {
+            let executor = DeterministicExecutor::new();
+            let mut headers = HeaderMap::new();
+            headers.insert("retry-after", HeaderValue::from_static("1"));
+            let mut response = ScriptedResponse::status(
+                if scenario == "accepted" {
+                    StatusCode::OK
+                } else {
+                    StatusCode::TOO_MANY_REQUESTS
+                },
+                Bytes::new(),
+            )
+            .headers(headers);
+            if scenario == "no-head" {
+                response = response.delivery_gate(Gate::closed());
+            } else {
+                response = response.body_gate(Gate::closed());
+            }
+            executor.provider().queue_response(response).unwrap();
+            let provider = inner(&executor, 64, 64, TlsCapability::Available);
+            let error = error(
+                send_declared(
+                    &provider,
+                    None,
+                    ProviderRequest::new(
+                        Method::GET,
+                        Url::parse("https://provider.example.test/token").unwrap(),
+                    )
+                    .timeout(Duration::from_secs(2)),
+                )
+                .await,
+            );
+            assert_eq!(error.kind(), AuthErrorKind::Acquisition);
+            assert_eq!(error.retry_after(), None, "scenario={scenario}");
+            assert_eq!(executor.provider().request_count().unwrap(), 1);
+        }
+    }
+    #[tokio::test(start_paused = true)]
+    async fn r8_rejected_body_timeout_retains_remaining_delay() {
+        for status in [
+            StatusCode::TOO_MANY_REQUESTS,
+            StatusCode::SERVICE_UNAVAILABLE,
+            StatusCode::OK,
+        ] {
+            let executor = DeterministicExecutor::new();
+            let mut headers = HeaderMap::new();
+            headers.insert("retry-after", HeaderValue::from_static("10"));
+            executor
+                .provider()
+                .queue_response(
+                    ScriptedResponse::status(status, Bytes::from_static(b"private-body"))
+                        .headers(headers)
+                        .body_gate(Gate::closed()),
+                )
+                .unwrap();
+            let mut provider = inner(&executor, 64, 64, TlsCapability::Available);
+            provider.failure_cooldown_cap = Duration::from_secs(5);
+            let error = error(
+                send_declared(
+                    &provider,
+                    None,
+                    ProviderRequest::new(
+                        Method::GET,
+                        Url::parse("https://provider.example.test/token").unwrap(),
+                    )
+                    .timeout(Duration::from_secs(2)),
+                )
+                .await,
+            );
+            println!(
+                "R8 timeout status={status} kind={:?} delay={:?}",
+                error.kind(),
+                error.retry_after()
+            );
+            assert_eq!(error.kind(), AuthErrorKind::Acquisition);
+            assert_eq!(
+                error.retry_after(),
+                if status.is_success() {
+                    None
+                } else {
+                    Some(Duration::from_secs(3))
+                }
+            );
+            assert_eq!(executor.provider().request_count().unwrap(), 1);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn r8_body_error_delay_controls_and_configured_date_clock() {
+        struct FrozenClock {
+            time: SystemTime,
+            calls: AtomicUsize,
+        }
+        impl crate::runtime::WallClock for FrozenClock {
+            fn now(&self) -> SystemTime {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                self.time
+            }
+        }
+        let wall = SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000);
+        let future_date = httpdate::fmt_http_date(wall + Duration::from_secs(10));
+        let past_date = httpdate::fmt_http_date(wall - Duration::from_secs(10));
+        for (fields, expected) in [
+            (vec![], None),
+            (vec!["0"], None),
+            (vec!["bogus"], None),
+            (vec!["10", "10"], None),
+            (vec![past_date.as_str()], None),
+            (vec!["10"], Some(Duration::from_secs(5))),
+            (
+                vec!["999999999999999999999999"],
+                Some(Duration::from_secs(5)),
+            ),
+            (vec![future_date.as_str()], Some(Duration::from_secs(5))),
+        ] {
+            let clock = Arc::new(FrozenClock {
+                time: wall,
+                calls: AtomicUsize::new(0),
+            });
+            let executor = DeterministicExecutor::new();
+            let mut headers = HeaderMap::new();
+            for field in fields {
+                headers.append("retry-after", HeaderValue::from_str(field).unwrap());
+            }
+            executor
+                .provider()
+                .queue_response(
+                    ScriptedResponse::status(StatusCode::TOO_MANY_REQUESTS, Bytes::new())
+                        .headers(headers)
+                        .body_read_failure("private-read-failure"),
+                )
+                .unwrap();
+            let mut provider = inner(&executor, 64, 64, TlsCapability::Available);
+            provider.wall_clock = clock.clone();
+            provider.failure_cooldown_cap = Duration::from_secs(5);
+            let error = error(
+                send_declared(
+                    &provider,
+                    None,
+                    ProviderRequest::new(
+                        Method::GET,
+                        Url::parse("https://provider.example.test/token").unwrap(),
+                    ),
+                )
+                .await,
+            );
+            assert_eq!(error.kind(), AuthErrorKind::Acquisition);
+            assert_eq!(error.retry_after(), expected);
+            assert_eq!(clock.calls.load(Ordering::SeqCst), 1);
+            assert!(!format!("{error} {error:?}").contains("private-read-failure"));
+        }
+    }
     use std::future::Future;
     use std::io;
     use std::pin::Pin;
@@ -1401,7 +1579,7 @@ mod tests {
             ),
             64,
             Duration::from_secs(60),
-            crate::runtime::system_wall_time(),
+            None,
         )
         .await
         .expect("provider response");
@@ -1421,7 +1599,7 @@ mod tests {
             native_response(chunks, &polls, &dropped),
             64,
             Duration::from_secs(60),
-            crate::runtime::system_wall_time(),
+            None,
         ));
         let mut context = Context::from_waker(Waker::noop());
 
@@ -1449,7 +1627,7 @@ mod tests {
                 ),
                 64,
                 Duration::from_secs(60),
-                crate::runtime::system_wall_time(),
+                None,
             )
             .await,
         );
@@ -1470,12 +1648,7 @@ mod tests {
         let collection = tokio::spawn(async move {
             tokio::time::timeout(
                 Duration::from_secs(1),
-                collect_provider_response(
-                    response,
-                    64,
-                    Duration::from_secs(60),
-                    crate::runtime::system_wall_time(),
-                ),
+                collect_provider_response(response, 64, Duration::from_secs(60), None),
             )
             .await
         });
@@ -1503,7 +1676,7 @@ mod tests {
                 native_response(chunks, &polls, &dropped),
                 64,
                 Duration::from_secs(60),
-                crate::runtime::system_wall_time(),
+                None,
             )
             .await,
         );

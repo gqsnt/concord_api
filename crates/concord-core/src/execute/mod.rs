@@ -739,15 +739,15 @@ where
                 return Err(error);
             }
             journal.enter(FailureStage::CredentialPreflight);
-            match run_auth(
+            prepared_auth = match run_auth(
                 journal,
                 env,
                 applied_auth.recover_attributed(challenge_index, env.provider_http()),
             )
             .await
             {
-                Ok(true) => {}
-                Ok(false) => {
+                Ok(Some(plan)) => plan,
+                Ok(None) => {
                     // An authorized refresh that yields no usable material
                     // never permits a replay.
                     let _ = applied_auth.apply_terminal_challenge(challenge_index);
@@ -760,13 +760,7 @@ where
                     let _ = applied_auth.apply_terminal_challenge(challenge_index);
                     return Err(error);
                 }
-            }
-            prepared_auth = run_auth(
-                journal,
-                env,
-                applied_auth.preflight_current(env.provider_http()),
-            )
-            .await?;
+            };
             journal.record_recovered_authentication();
             continue;
         }

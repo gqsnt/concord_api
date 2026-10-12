@@ -738,29 +738,29 @@ impl PreparedAuthPlan {
     }
 
     /// Runs source-authorized recovery for the attributed placement and
-    /// reports whether it yielded usable material. Static and endpoint-backed
+    /// retains its usable preparation in the next plan. Static and endpoint-backed
     /// sources never recover here (they are rejected by the caller instead).
     pub(crate) async fn recover_attributed(
         &self,
         index: usize,
         http: ProviderHttp<'_>,
-    ) -> Result<bool, AuthError> {
+    ) -> Result<Option<Self>, AuthError> {
         let placement = self
             .placements
             .get(index)
             .ok_or_else(|| AuthError::new(AuthErrorKind::Internal))?;
-        Ok(placement
+        let Some(recovered) = placement
             .credential
             .recover(&placement.prepared, http)
             .await?
-            .is_some())
-    }
-
-    pub(crate) async fn preflight_current(
-        &self,
-        http: ProviderHttp<'_>,
-    ) -> Result<Self, AuthError> {
-        let mut cache: HashMap<usize, ErasedPrepared> = HashMap::new();
+        else {
+            return Ok(None);
+        };
+        // Every placement of the challenged slot shares the exact recovered
+        // preparation, including its operation-local short-lived proof. Other
+        // slots still run ordinary preflight. Finalization after admission
+        // rechecks identity, expiry, rejection and any active refresh.
+        let mut cache = HashMap::from([(placement.credential.key(), recovered)]);
         let mut placements = Vec::with_capacity(self.placements.len());
         for placement in &self.placements {
             let key = placement.credential.key();
@@ -779,7 +779,7 @@ impl PreparedAuthPlan {
                 prepared,
             });
         }
-        Ok(Self { placements })
+        Ok(Some(Self { placements }))
     }
 
     /// Phase-6 freshness comparison: whether `other` applies exactly the same

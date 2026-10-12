@@ -233,7 +233,7 @@ async fn oauth_form_body_uses_runtime_provider_limit_before_transport() {
     const SCOPE_SENTINEL: &str = "oauth-runtime-limit-scope-sentinel-73e0";
     let server = TlsServer::start().expect("bounded OAuth provider TLS server");
     server
-        .queue_response(200, br#"{"access_token":"unused"}"#)
+        .queue_response(200, br#"{"access_token":"unused","token_type":"bearer"}"#)
         .expect("defensive provider response");
     let token_url = server.url("localhost", "/request-limit-sentinel-93c1");
     let certificate = server.certificate_pem();

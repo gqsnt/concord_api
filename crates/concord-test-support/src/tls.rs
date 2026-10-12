@@ -173,6 +173,7 @@ struct TlsResponse {
     status: u16,
     headers: Vec<(String, String)>,
     body: Vec<u8>,
+    wire_parts: Option<Vec<(Duration, Vec<u8>)>>,
 }
 
 struct Shared {
@@ -339,6 +340,30 @@ impl TlsServer {
                     .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
                     .collect(),
                 body: body.into(),
+                wire_parts: None,
+            });
+        Ok(())
+    }
+
+    /// Queues exact HTTP wire parts, each sent after its finite delay. The
+    /// connection closes after the last part, allowing truncated-body probes.
+    pub fn queue_wire_response(&self, parts: Vec<(Duration, Vec<u8>)>) -> io::Result<()> {
+        if parts.len() > 16
+            || parts
+                .iter()
+                .any(|(delay, bytes)| *delay > Duration::from_secs(5) || bytes.len() > 1024 * 1024)
+        {
+            return Err(io::Error::other("TLS wire fixture exceeds its bounds"));
+        }
+        self.shared
+            .responses
+            .lock()
+            .map_err(|_| io::Error::other("TLS response queue mutex poisoned"))?
+            .push_back(TlsResponse {
+                status: 200,
+                headers: Vec::new(),
+                body: Vec::new(),
+                wire_parts: Some(parts),
             });
         Ok(())
     }
@@ -480,7 +505,19 @@ fn handle_tls(tcp: TcpStream, connection_id: u64, config: Arc<ServerConfig>, sha
                 status: 200,
                 headers: Vec::new(),
                 body: b"ok".to_vec(),
+                wire_parts: None,
             });
+        if let Some(parts) = response.wire_parts {
+            for (delay, bytes) in parts {
+                std::thread::sleep(delay);
+                if stream.write_all(&bytes).is_err() || stream.flush().is_err() {
+                    return;
+                }
+            }
+            stream.conn.send_close_notify();
+            let _ = stream.flush();
+            return;
+        }
         let extra_headers: String = response
             .headers
             .iter()
