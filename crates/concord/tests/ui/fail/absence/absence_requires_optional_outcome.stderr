@@ -59,10 +59,10 @@ help: the trait `ResponseRepresentation<O>` is implemented for `concord::__priva
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: [C3-REP] `concord::Bytes` cannot carry expected absence
-  --> tests/ui/fail/absence/absence_requires_optional_outcome.rs:13:13
+  --> tests/ui/fail/absence/absence_requires_optional_outcome.rs:11:33
    |
-13 |             absent on 404;
-   |             ^^^^^^ `absent on` requires an `Option<T>` result
+11 |         GET find(id: String) -> Bytes via Binary {
+   |                                 ^^^^^ `absent on` requires an `Option<T>` result
    |
    = help: the trait `OptionalOutcome` is not implemented for `concord::Bytes`
    = note: head-only expected absence is sealed to `Option<T>` results (aliases included): the present payload is `T` and a declared absent status yields `None`
@@ -74,4 +74,11 @@ help: the trait `OptionalOutcome` is implemented for `Option<T>`
    | | where
    | |     T: Send + 'static,
    | |______________________^
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+note: required by a bound in `concord::__private::expected_absence`
+  --> $WORKSPACE/crates/concord-core/src/__private.rs
+   |
+   | pub fn expected_absence<O, R>(codes: &'static [u16]) -> ExpectedAbsence<O, HeadAbsence<R>>
+   |        ---------------- required by a bound in this function
+   | where
+   |     O: OptionalOutcome,
+   |        ^^^^^^^^^^^^^^^ required by this bound in `expected_absence`

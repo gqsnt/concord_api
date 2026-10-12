@@ -14,14 +14,14 @@ error[E0277]: [C3-PAGE] `concord::Binary` does not promise page-stable request b
    = help: the trait `PageRequestRepresentation<concord::RequestStream>` is not implemented for `concord::Binary`
    = note: pagination requires the explicit `PageRequestRepresentation<concord::RequestStream>` opt-in; `Clone` alone does not establish the page-body promise
    = note: select a page-capable representation with `via R` (such as `Json`, `Text` or `Binary`), implement `PageRequestRepresentation<concord::RequestStream>` when every clone prepares the same body, or remove `paginate`
-help: the following other types implement trait `PageRequestRepresentation<Input>`
+help: `concord::Binary` implements trait `PageRequestRepresentation<Input>`
   --> $WORKSPACE/crates/concord-core/src/body/spec.rs
    |
    | impl PageRequestRepresentation<Bytes> for Binary {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Binary` implements `PageRequestRepresentation<concord::Bytes>`
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `PageRequestRepresentation<concord::Bytes>`
 ...
    | impl PageRequestRepresentation<Vec<u8>> for Binary {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Binary` implements `PageRequestRepresentation<Vec<u8>>`
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `PageRequestRepresentation<Vec<u8>>`
 note: required by a bound in `BodySpec::page_capable_for`
   --> $WORKSPACE/crates/concord-core/src/inspection/endpoint.rs
    |
@@ -96,14 +96,14 @@ error[E0277]: [C3-PAGE] `concord::Binary` does not promise page-stable request b
    = help: the trait `PageRequestRepresentation<concord::RequestStream>` is not implemented for `concord::Binary`
    = note: pagination requires the explicit `PageRequestRepresentation<concord::RequestStream>` opt-in; `Clone` alone does not establish the page-body promise
    = note: select a page-capable representation with `via R` (such as `Json`, `Text` or `Binary`), implement `PageRequestRepresentation<concord::RequestStream>` when every clone prepares the same body, or remove `paginate`
-help: the following other types implement trait `PageRequestRepresentation<Input>`
+help: `concord::Binary` implements trait `PageRequestRepresentation<Input>`
   --> $WORKSPACE/crates/concord-core/src/body/spec.rs
    |
    | impl PageRequestRepresentation<Bytes> for Binary {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Binary` implements `PageRequestRepresentation<concord::Bytes>`
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `PageRequestRepresentation<concord::Bytes>`
 ...
    | impl PageRequestRepresentation<Vec<u8>> for Binary {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Binary` implements `PageRequestRepresentation<Vec<u8>>`
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `PageRequestRepresentation<Vec<u8>>`
 note: required by a bound in `concord::__private::pages_request`
   --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
    |
@@ -145,14 +145,14 @@ error[E0277]: [C3-PAGE] `concord::Binary` does not promise page-stable request b
    = help: the trait `PageRequestRepresentation<concord::RequestStream>` is not implemented for `concord::Binary`
    = note: pagination requires the explicit `PageRequestRepresentation<concord::RequestStream>` opt-in; `Clone` alone does not establish the page-body promise
    = note: select a page-capable representation with `via R` (such as `Json`, `Text` or `Binary`), implement `PageRequestRepresentation<concord::RequestStream>` when every clone prepares the same body, or remove `paginate`
-help: the following other types implement trait `PageRequestRepresentation<Input>`
+help: `concord::Binary` implements trait `PageRequestRepresentation<Input>`
   --> $WORKSPACE/crates/concord-core/src/body/spec.rs
    |
    | impl PageRequestRepresentation<Bytes> for Binary {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Binary` implements `PageRequestRepresentation<concord::Bytes>`
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `PageRequestRepresentation<concord::Bytes>`
 ...
    | impl PageRequestRepresentation<Vec<u8>> for Binary {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Binary` implements `PageRequestRepresentation<Vec<u8>>`
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `PageRequestRepresentation<Vec<u8>>`
 note: required by a bound in `concord::__private::collect_prefix_request`
   --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
    |
@@ -194,14 +194,14 @@ error[E0277]: [C3-PAGE] `concord::Binary` does not promise page-stable request b
    = help: the trait `PageRequestRepresentation<concord::RequestStream>` is not implemented for `concord::Binary`
    = note: pagination requires the explicit `PageRequestRepresentation<concord::RequestStream>` opt-in; `Clone` alone does not establish the page-body promise
    = note: select a page-capable representation with `via R` (such as `Json`, `Text` or `Binary`), implement `PageRequestRepresentation<concord::RequestStream>` when every clone prepares the same body, or remove `paginate`
-help: the following other types implement trait `PageRequestRepresentation<Input>`
+help: `concord::Binary` implements trait `PageRequestRepresentation<Input>`
   --> $WORKSPACE/crates/concord-core/src/body/spec.rs
    |
    | impl PageRequestRepresentation<Bytes> for Binary {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Binary` implements `PageRequestRepresentation<concord::Bytes>`
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `PageRequestRepresentation<concord::Bytes>`
 ...
    | impl PageRequestRepresentation<Vec<u8>> for Binary {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Binary` implements `PageRequestRepresentation<Vec<u8>>`
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `PageRequestRepresentation<Vec<u8>>`
 note: required by a bound in `concord::__private::collect_all_request`
   --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
    |

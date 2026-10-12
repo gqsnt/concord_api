@@ -82,6 +82,9 @@ help: the type constructed contains `&'static str` due to the type of the argume
    |                                                          this argument influences the type of `Some`
 note: tuple variant defined here
   --> $RUST/core/src/option.rs
+   |
+   |     Some(#[stable(feature = "rust1", since = "1.0.0")] T),
+   |     ^^^^
 help: try using a conversion method
    |
 37 |     let _ = ConversionApi::builder().replace_region(Some("eu".to_string()));
@@ -104,6 +107,9 @@ help: the type constructed contains `&'static str` due to the type of the argume
    |                                                              this argument influences the type of `Some`
 note: tuple variant defined here
   --> $RUST/core/src/option.rs
+   |
+   |     Some(#[stable(feature = "rust1", since = "1.0.0")] T),
+   |     ^^^^
 help: try using a conversion method
    |
 38 |     let _ = ConversionApi::builder().set_region_if_some(Some("eu".to_string()));

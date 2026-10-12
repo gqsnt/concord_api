@@ -84,6 +84,9 @@ error[E0277]: a value of type `Vec<(&HeaderName, &HeaderValue)>` cannot be built
 help: the trait `FromIterator<(&HeaderName, SanitizedHeaderValue<'_>)>` is not implemented for `Vec<(&HeaderName, &HeaderValue)>`
       but trait `FromIterator<(&HeaderName, &HeaderValue)>` is implemented for it
   --> $RUST/alloc/src/vec/mod.rs
+   |
+   | impl<T> FromIterator<T> for Vec<T> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    = help: for that trait implementation, expected `&HeaderValue`, found `SanitizedHeaderValue<'_>`
 note: the method call chain might not have had the expected associated types
   --> tests/ui/fail/raw_sanitized_headers.rs:42:55
@@ -94,3 +97,6 @@ note: the method call chain might not have had the expected associated types
    |                                               this expression has type `SanitizedHeaders<'_>`
 note: required by a bound in `collect`
   --> $RUST/core/src/iter/traits/iterator.rs
+   |
+   |     fn collect<B: FromIterator<Self::Item>>(self) -> B
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Iterator::collect`

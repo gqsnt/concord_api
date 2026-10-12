@@ -23,7 +23,7 @@ was not supplied; full external-spec conformance was not independently establish
 | R7-06 | `cargo test -p concord --test r7_ndjson --all-features --locked`: encoder sent exactly 1 MiB JSON plus LF; buffered conversion and stream framing rejected it. | JSON payload ceiling stays 1,048,576 bytes; bounded staging and default runtime full-frame cap are 1,048,578 bytes for CRLF. Runtime caps count delimiters. Exact/excess, LF/CRLF/EOF, one large/split/one-byte chunk fixtures, blank lines, malformed tails, body/record caps pass. CSV's own framing ceiling is retained. |
 | R7-07 | `cargo test -p concord-inspect --lib --all-features --locked r7_duplicate`: a changed duplicate owner was silently structurally equal. | Validate effective indexed keys before lossy indexing: top-level/composite/nested identities, endpoint IDs and positional fallback collisions. Scalar reference arrays retain positional semantics. Native identical/changed/order variants, safe diagnostics and CLI check rejection pass. This is uniqueness validation, not full schema validation. |
 | R7-08 | `cargo test -p concord --test r7_oauth_delay --all-features --locked`: real TLS 429 with Retry-After caused 2 immediate helper exchanges. | Core parses the helper delay once at head arrival; remaining time is capped and anchored before body consumption. OAuth errors retain positive rejection hints for the existing slot cooldown. Real TLS 429/503 recovery and native delta/date/zero/malformed/duplicate/overlarge/anchoring controls pass. No new retry loop. |
-| R7-S01 | R6 creates stream-only handoff/correlation/cancellation state for all selected drivers. | Performance disposition and paired source-specific evidence are recorded in `r7_validation.md` after measurement. |
+| R7-S01 | R6 creates stream-only handoff/correlation/cancellation state for all selected drivers. | **CONFIRMED_FIXED** for the narrow allocation obligation: selected-driver gating removes one allocation and 24 bytes per measured buffered execution, warm and cold. Boxed future remains 5,888 bytes; streaming/accepted-bytes/wrapper controls pass. No latency or general V3-O07 acceptance claim. Paired measurements are recorded in `r7_validation.md`. |
 
 Native probes found an adjacent Windows fixture defect: accepted sockets inherited
 nonblocking mode and chunked response writes truncated with `WouldBlock`. The
@@ -47,3 +47,9 @@ initialization stack overflow on Windows. Sequential builder assignments alone
 still overflowed; endpoint construction now runs in separate private function
 frames, preserving contract order and exported text. Its source-specific result is retained separately
 from the optional execution allocation comparison.
+
+Pinned 1.97.1 UI expectations were refreshed only after reviewing each mismatch:
+14 facade diagnostics retained their rejection obligations, with compiler wording,
+trait help/source excerpts and a more precise absence output-type span; two core
+diagnostics add standard-library excerpts or list the new opaque cooldown field.
+No invalid fixture was converted to a pass fixture and no diagnostic test removed.

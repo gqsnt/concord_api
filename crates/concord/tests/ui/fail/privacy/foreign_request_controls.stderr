@@ -82,6 +82,9 @@ error[E0599]: `Wrapped` is not a future
            which is required by `&mut Wrapped: IntoFuture`
 note: the trait `Future` must be implemented
   --> $RUST/core/src/future/future.rs
+   |
+   | pub trait Future {
+   | ^^^^^^^^^^^^^^^^
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following traits define an item `into_future`, perhaps you need to implement one of them:
            candidate #1: `IntoFuture`

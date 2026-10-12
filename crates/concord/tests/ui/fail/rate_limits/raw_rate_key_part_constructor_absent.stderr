@@ -1,5 +1,5 @@
-error[E0599]: no function or associated item named `new` found for struct `RateLimitKeyPart` in the current scope
+error[E0599]: no associated function or constant named `new` found for struct `RateLimitKeyPart` in the current scope
  --> tests/ui/fail/rate_limits/raw_rate_key_part_constructor_absent.rs:4:31
   |
 4 |     let _ = RateLimitKeyPart::new("tenant", b"unframed");
-  |                               ^^^ function or associated item not found in `RateLimitKeyPart`
+  |                               ^^^ associated function or constant not found in `RateLimitKeyPart`

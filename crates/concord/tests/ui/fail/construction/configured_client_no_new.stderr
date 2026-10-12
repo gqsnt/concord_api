@@ -1,4 +1,4 @@
-error[E0599]: no function or associated item named `new` found for struct `ConfiguredApi` in the current scope
+error[E0599]: no associated function or constant named `new` found for struct `ConfiguredApi` in the current scope
   --> tests/ui/fail/construction/configured_client_no_new.rs:38:28
    |
  6 | / api! {
@@ -7,10 +7,10 @@ error[E0599]: no function or associated item named `new` found for struct `Confi
  9 | |         base "https://configured.example.test/";
 ...  |
 22 | | }
-   | |_- function or associated item `new` not found for this struct
+   | |_- associated function or constant `new` not found for this struct
 ...
 38 |       let _ = ConfiguredApi::new(
-   |                              ^^^ function or associated item not found in `ConfiguredApi`
+   |                              ^^^ associated function or constant not found in `ConfiguredApi`
    |
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following traits define an item `new`, perhaps you need to implement one of them:
@@ -18,7 +18,7 @@ error[E0599]: no function or associated item named `new` found for struct `Confi
            candidate #2: `brotli::enc::threading::AnyBoxConstructor`
            candidate #3: `ring::aead::BoundKey`
 
-error[E0599]: no function or associated item named `new` found for struct `SecretOnlyApi` in the current scope
+error[E0599]: no associated function or constant named `new` found for struct `SecretOnlyApi` in the current scope
   --> tests/ui/fail/construction/configured_client_no_new.rs:42:28
    |
 24 | / api! {
@@ -27,10 +27,10 @@ error[E0599]: no function or associated item named `new` found for struct `Secre
 27 | |         credentials {
 ...  |
 35 | | }
-   | |_- function or associated item `new` not found for this struct
+   | |_- associated function or constant `new` not found for this struct
 ...
 42 |       let _ = SecretOnlyApi::new();
-   |                              ^^^ function or associated item not found in `SecretOnlyApi`
+   |                              ^^^ associated function or constant not found in `SecretOnlyApi`
    |
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following traits define an item `new`, perhaps you need to implement one of them:

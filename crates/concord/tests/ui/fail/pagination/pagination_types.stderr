@@ -11,13 +11,11 @@ help: the trait `concord::pagination::PaginationController<Rows>` is not impleme
     | ^^^^^^^^^^^^^^^^^^^^^^^^
     = note: the controller must implement `PaginationController<Rows>`, where `Rows` is the endpoint's declared result (one decoded page)
     = note: select a controller for this page type with `paginate via Controller { ... }`, or declare the page type the controller accepts as the endpoint result
-    = help: the following other types implement trait `concord::pagination::PaginationController<P>`:
-              `LinkCursorPagination` implements `concord::pagination::PaginationController<Page>`
-              `NextHeaderPagination` implements `concord::pagination::PaginationController<Page>`
-              `PagePagination` implements `concord::pagination::PaginationController<Page>`
-              `TuplePages` implements `concord::pagination::PaginationController<Rows>`
-              `concord::pagination::CursorPagination<C>` implements `concord::pagination::PaginationController<Page>`
-              `concord::pagination::OffsetPagination` implements `concord::pagination::PaginationController<Page>`
+help: the trait `concord::pagination::PaginationController<Rows>` is implemented for `TuplePages`
+   --> tests/ui/fail/pagination/pagination_types.rs:57:1
+    |
+ 57 | impl PaginationController<Rows> for TuplePages {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 note: required by a bound in `concord::__private::PageableEndpoint::Controller`
    --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
     |
@@ -37,13 +35,11 @@ help: the trait `concord::pagination::PaginationController<Rows>` is not impleme
     | ^^^^^^^^^^^^^^^^^^^^^^^^
     = note: the controller must implement `PaginationController<Rows>`, where `Rows` is the endpoint's declared result (one decoded page)
     = note: select a controller for this page type with `paginate via Controller { ... }`, or declare the page type the controller accepts as the endpoint result
-    = help: the following other types implement trait `concord::pagination::PaginationController<P>`:
-              `LinkCursorPagination` implements `concord::pagination::PaginationController<Page>`
-              `NextHeaderPagination` implements `concord::pagination::PaginationController<Page>`
-              `PagePagination` implements `concord::pagination::PaginationController<Page>`
-              `TuplePages` implements `concord::pagination::PaginationController<Rows>`
-              `concord::pagination::CursorPagination<C>` implements `concord::pagination::PaginationController<Page>`
-              `concord::pagination::OffsetPagination` implements `concord::pagination::PaginationController<Page>`
+help: the trait `concord::pagination::PaginationController<Rows>` is implemented for `TuplePages`
+   --> tests/ui/fail/pagination/pagination_types.rs:57:1
+    |
+ 57 | impl PaginationController<Rows> for TuplePages {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: [C3-PAGE] `NotController` is not a pagination controller for page type `Rows`
@@ -59,13 +55,11 @@ help: the trait `concord::pagination::PaginationController<Rows>` is not impleme
     | ^^^^^^^^^^^^^^^^^^^^^^^^
     = note: the controller must implement `PaginationController<Rows>`, where `Rows` is the endpoint's declared result (one decoded page)
     = note: select a controller for this page type with `paginate via Controller { ... }`, or declare the page type the controller accepts as the endpoint result
-    = help: the following other types implement trait `concord::pagination::PaginationController<P>`:
-              `LinkCursorPagination` implements `concord::pagination::PaginationController<Page>`
-              `NextHeaderPagination` implements `concord::pagination::PaginationController<Page>`
-              `PagePagination` implements `concord::pagination::PaginationController<Page>`
-              `TuplePages` implements `concord::pagination::PaginationController<Rows>`
-              `concord::pagination::CursorPagination<C>` implements `concord::pagination::PaginationController<Page>`
-              `concord::pagination::OffsetPagination` implements `concord::pagination::PaginationController<Page>`
+help: the trait `concord::pagination::PaginationController<Rows>` is implemented for `TuplePages`
+   --> tests/ui/fail/pagination/pagination_types.rs:57:1
+    |
+ 57 | impl PaginationController<Rows> for TuplePages {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0560]: struct `concord::pagination::OffsetInit` has no field named `limit`
@@ -99,6 +93,9 @@ error[E0308]: mismatched types
                found reference `&std::string::String`
 note: method defined here
    --> $RUST/core/src/clone.rs
+    |
+    |     fn clone(&self) -> Self;
+    |        ^^^^^
     = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0308]: mismatched types
