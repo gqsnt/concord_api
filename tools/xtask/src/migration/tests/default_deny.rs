@@ -17,7 +17,7 @@
 use super::*;
 
 /// The second reviewer's probe declaration, verbatim.
-const REVIEW2_API: &str = r#"use concord::{api, Empty};
+pub(super) const REVIEW2_API: &str = r#"use concord::{api, Empty};
 api! {
     client Api {
         base "https://review.example.test/";

@@ -34,15 +34,62 @@ struct ClientInner {
 }
 
 impl ClientCore {
+    /// Collects independent safe input/configuration failures before construction.
+    /// No native client, credential slot, callback, provider acquisition,
+    /// operation identity or remote schema registration is created here.
+    pub(crate) fn preflight_build(
+        fixed_base: &str,
+        http: &HttpConfigBuilder,
+        runtime: &RuntimeConfigBuilder,
+        requires_limiter: bool,
+        missing: Vec<(&'static str, crate::error::ClientInputKind)>,
+    ) -> Result<(), ClientBuildError> {
+        let mut errors = Vec::new();
+        if !missing.is_empty() {
+            errors.push(ClientBuildError::missing_inputs(missing));
+        }
+        // Preserve the earlier primary validation ordering.
+        for result in [
+            runtime.validate_rate_limit_key_limit(),
+            runtime.validate_generated_rate_limits(requires_limiter),
+            runtime.validate_provider_configuration(),
+            runtime.validate_stream_configuration(),
+            runtime.validate_limit_configuration(),
+        ] {
+            if let Err(error) = result {
+                errors.push(error);
+            }
+        }
+        let base = match parse_fixed_base(fixed_base) {
+            Ok(base) => Some(base),
+            Err(error) => {
+                errors.push(error);
+                None
+            }
+        };
+        if let Err(error) = http.validate_startup_configuration() {
+            errors.push(error);
+        }
+        if let Some(base) = base {
+            if let Err(error) = http.validate_fixed_base(&base) {
+                errors.push(error);
+            }
+        }
+        if let Err(error) = http.validate_material_configuration() {
+            errors.push(error);
+        }
+        match ClientBuildError::collect(errors) {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
+    }
+
     pub(crate) fn build(
         fixed_base: &str,
         http: HttpConfigBuilder,
         runtime: RuntimeConfigBuilder,
     ) -> Result<Self, ClientBuildError> {
-        runtime.validate_rate_limit_key_limit()?;
-        runtime.validate_provider_configuration()?;
-        runtime.validate_stream_configuration()?;
-        runtime.validate_limit_configuration()?;
+        Self::preflight_build(fixed_base, &http, &runtime, false, Vec::new())?;
         let base_url = parse_fixed_base(fixed_base)?;
         let runtime = runtime.resolve();
         let http = http.resolve()?;
@@ -70,10 +117,7 @@ impl ClientCore {
         runtime: RuntimeConfigBuilder,
         executor: &concord_test_support::executor::DeterministicExecutor,
     ) -> Result<Self, ClientBuildError> {
-        runtime.validate_rate_limit_key_limit()?;
-        runtime.validate_provider_configuration()?;
-        runtime.validate_stream_configuration()?;
-        runtime.validate_limit_configuration()?;
+        Self::preflight_build(fixed_base, &http, &runtime, false, Vec::new())?;
         let base_url = parse_fixed_base(fixed_base)?;
         let runtime = runtime.resolve();
         let http = http.resolve()?;
@@ -597,5 +641,254 @@ mod tests {
             &first.inner.runtime.rate_limiter,
             &first_limiter
         ));
+    }
+}
+
+#[cfg(all(test, feature = "default-tls"))]
+mod review_primary_precedence {
+    use super::*;
+    use std::time::Duration;
+
+    fn checked(
+        base: &str,
+        http: HttpConfigBuilder,
+        runtime: RuntimeConfigBuilder,
+        expected: &[ClientBuildErrorKind],
+    ) -> ClientBuildError {
+        let error = ClientCore::preflight_build(base, &http, &runtime, false, Vec::new())
+            .expect_err("expected independent preflight diagnostics");
+        assert_eq!(error.kind(), expected[0]);
+        assert_eq!(
+            error.diagnostics().map(|d| d.kind()).collect::<Vec<_>>(),
+            expected
+        );
+        assert!(std::error::Error::source(&error).is_none());
+        error
+    }
+
+    #[test]
+    fn mixed_failures_preserve_runtime_base_startup_transport_material_order() {
+        use ClientBuildErrorKind::*;
+        let oversized_root = vec![b'r'; crate::http::MAX_ROOT_CERTIFICATE_BYTES + 1];
+        let oversized_identity = vec![b'i'; crate::http::MAX_IDENTITY_PEM_BYTES + 1];
+
+        // Structural startup wins over the later transport restriction and
+        // native setting, while each independent diagnostic remains once.
+        checked(
+            "http://review.invalid/",
+            HttpConfigBuilder::new()
+                .require_https()
+                .add_root_certificate_pem(&oversized_root)
+                .connect_timeout(Duration::MAX),
+            RuntimeConfigBuilder::new(),
+            &[InvalidRootCertificate, HttpsRequired, HttpConfiguration],
+        );
+
+        // The first structural setter keeps its primary identity, with the
+        // other rejected material domain reported once before transport.
+        checked(
+            "http://review.invalid/",
+            HttpConfigBuilder::new()
+                .require_https()
+                .identity_pem(&oversized_identity)
+                .add_root_certificate_pem(&oversized_root),
+            RuntimeConfigBuilder::new(),
+            &[InvalidClientIdentity, InvalidRootCertificate, HttpsRequired],
+        );
+
+        let error = checked(
+            "invalid-base",
+            HttpConfigBuilder::new()
+                .require_https()
+                .add_root_certificate_pem(&oversized_root)
+                .connect_timeout(Duration::MAX),
+            RuntimeConfigBuilder::new().request_body_limit(0),
+            &[
+                RuntimeConfiguration,
+                InvalidBaseUrl,
+                InvalidRootCertificate,
+                HttpConfiguration,
+            ],
+        );
+        assert_eq!(error.input_field(), Some("request_body_limit"));
+
+        // Retained, structurally bounded malformed PEM is validated after
+        // transport restriction, as it was in the original construction path.
+        checked(
+            "http://review.invalid/",
+            HttpConfigBuilder::new()
+                .require_https()
+                .add_root_certificate_pem(b"private-root-sentinel")
+                .connect_timeout(Duration::MAX),
+            RuntimeConfigBuilder::new(),
+            &[HttpsRequired, HttpConfiguration, InvalidRootCertificate],
+        );
+    }
+
+    #[test]
+    fn individual_failures_and_valid_zero_controls_discriminate_the_mixed_oracle() {
+        use ClientBuildErrorKind::*;
+        let oversized_root = vec![b'r'; crate::http::MAX_ROOT_CERTIFICATE_BYTES + 1];
+        checked(
+            "http://review.invalid/",
+            HttpConfigBuilder::new().require_https(),
+            RuntimeConfigBuilder::new(),
+            &[HttpsRequired],
+        );
+        checked(
+            "https://review.invalid/",
+            HttpConfigBuilder::new().add_root_certificate_pem(&oversized_root),
+            RuntimeConfigBuilder::new(),
+            &[InvalidRootCertificate],
+        );
+        checked(
+            "invalid-base",
+            HttpConfigBuilder::new(),
+            RuntimeConfigBuilder::new(),
+            &[InvalidBaseUrl],
+        );
+        checked(
+            "https://review.invalid/",
+            HttpConfigBuilder::new().connect_timeout(Duration::MAX),
+            RuntimeConfigBuilder::new(),
+            &[HttpConfiguration],
+        );
+        checked(
+            "https://review.invalid/",
+            HttpConfigBuilder::new().add_root_certificate_pem(b"private-root-sentinel"),
+            RuntimeConfigBuilder::new(),
+            &[InvalidRootCertificate],
+        );
+        ClientCore::preflight_build(
+            "https://review.invalid/",
+            &HttpConfigBuilder::new()
+                .require_https()
+                .connect_timeout(Duration::ZERO),
+            &RuntimeConfigBuilder::new(),
+            false,
+            Vec::new(),
+        )
+        .expect("valid HTTPS and native-zero positive control");
+        ClientCore::preflight_build(
+            "http://review.invalid/",
+            &HttpConfigBuilder::new(),
+            &RuntimeConfigBuilder::new(),
+            false,
+            Vec::new(),
+        )
+        .expect("valid unrestricted HTTP positive control");
+    }
+}
+
+#[cfg(all(test, feature = "default-tls"))]
+mod review_limiter_snapshot_diagnostic {
+    use super::*;
+    use crate::rate_limit::{
+        Enforcement, LimiterCapability, MAX_RATE_LIMIT_KEY_BYTES, RateLimitError, RateLimitPermit,
+        RateLimitRequest, RateLimiter,
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct SnapshotLimiter {
+        key_limit: usize,
+        descriptor: LimiterCapability,
+        key_calls: AtomicUsize,
+        descriptor_calls: AtomicUsize,
+        acquisitions: AtomicUsize,
+    }
+    impl RateLimiter for SnapshotLimiter {
+        fn capability(&self) -> LimiterCapability {
+            self.descriptor_calls.fetch_add(1, Ordering::SeqCst);
+            self.descriptor
+        }
+        fn preparation_key_limit(&self) -> usize {
+            self.key_calls.fetch_add(1, Ordering::SeqCst);
+            self.key_limit
+        }
+        fn acquire<'a>(
+            &'a self,
+            _: RateLimitRequest<'a>,
+        ) -> crate::hooks::BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
+            self.acquisitions.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { panic!("preflight must not acquire") })
+        }
+    }
+
+    #[test]
+    fn selected_limiter_is_one_snapshot_diagnostic_but_independent_setting_is_retained() {
+        for (label, bad_key, bad_descriptor, bad_body) in [
+            ("valid", false, false, false),
+            ("key-only", true, false, false),
+            ("descriptor-only", false, true, false),
+            ("both-members", true, true, false),
+            ("both-plus-independent-setting", true, true, true),
+        ] {
+            let limiter = Arc::new(SnapshotLimiter {
+                key_limit: if bad_key {
+                    MAX_RATE_LIMIT_KEY_BYTES + 1
+                } else {
+                    1024
+                },
+                descriptor: if bad_descriptor {
+                    LimiterCapability::new(Enforcement::Local, "", 0)
+                } else {
+                    LimiterCapability::new(Enforcement::Local, "review.snapshot", 1)
+                },
+                key_calls: AtomicUsize::new(0),
+                descriptor_calls: AtomicUsize::new(0),
+                acquisitions: AtomicUsize::new(0),
+            });
+            let mut runtime = RuntimeConfigBuilder::new().rate_limiter(limiter.clone());
+            if bad_body {
+                runtime = runtime.request_body_limit(0);
+            }
+            assert_eq!(limiter.key_calls.load(Ordering::SeqCst), 1, "{label}");
+            assert_eq!(
+                limiter.descriptor_calls.load(Ordering::SeqCst),
+                1,
+                "{label}"
+            );
+            let result = ClientCore::preflight_build(
+                "https://review.invalid/",
+                &HttpConfigBuilder::new(),
+                &runtime,
+                true,
+                Vec::new(),
+            );
+            if bad_key || bad_descriptor {
+                let error = result.expect_err(label);
+                assert_eq!(error.kind(), ClientBuildErrorKind::RuntimeConfiguration);
+                assert_eq!(error.input_field(), None);
+                assert_eq!(error.input_kind(), None);
+                let diagnostics = error.diagnostics().collect::<Vec<_>>();
+                assert_eq!(
+                    diagnostics.len(),
+                    if bad_body { 2 } else { 1 },
+                    "{label}: {error:?}"
+                );
+                assert_eq!(diagnostics[0].input_field(), None);
+                if bad_body {
+                    assert_eq!(diagnostics[1].input_field(), Some("request_body_limit"));
+                }
+                assert!(std::error::Error::source(&error).is_none());
+            } else {
+                result.expect("valid selected limiter metadata");
+            }
+            assert_eq!(
+                limiter.key_calls.load(Ordering::SeqCst),
+                1,
+                "preflight {label}"
+            );
+            assert_eq!(
+                limiter.descriptor_calls.load(Ordering::SeqCst),
+                1,
+                "preflight {label}"
+            );
+            assert_eq!(
+                limiter.acquisitions.load(Ordering::SeqCst),
+                0,
+                "preflight {label}"
+            );
+        }
     }
 }

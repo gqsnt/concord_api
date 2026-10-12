@@ -23,7 +23,7 @@ use quote::quote;
 use crate::semantic::{Model, Site, VRef};
 
 /// Generated-code contract version shared with core.
-pub(crate) const GENERATED_CONTRACT_VERSION: u32 = 34;
+pub(crate) const GENERATED_CONTRACT_VERSION: u32 = 35;
 
 pub(crate) fn generate(model: &Model, facade: &TokenStream) -> TokenStream {
     let context = Context {

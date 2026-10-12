@@ -1041,11 +1041,22 @@ applies when
 - a file of the package has an `extern crate` item that makes a Concord crate
   name denote another crate (`extern crate other as concord;`,
   `extern crate concord_core as concord;`, or `extern crate self as concord;`
-  outside the Concord package itself), whatever the manifest declares; or one
+  outside the genuine Concord library target), whatever the manifest declares; or one
   that renames a Concord crate (`extern crate concord as c;`) when the
   manifest does not prove that crate to be the Concord package (it is
   declared as above, or is the package's own library). The reason names the
   item and its `file:line` relative to the package.
+
+An `extern crate self as concord` alias denotes the actual crate target.
+The package's binaries, tests, examples and benches cannot borrow the library's
+identity for this alias. Within the actual Concord library, a local `api`
+definition or foreign re-export does not establish Concord macro ownership.
+A re-export is accepted only when source resolution proves its canonical
+`concord_macros::api` or `concord_macros::__api` origin; unknown expansions,
+conditional bindings, unresolved origins and ambiguous mounts remain unresolved.
+The tool leaves those macro tokens unchanged. The namespace proof is bound to
+the exact indexed path and source bytes; if a file changes before rewriting,
+rerun against a stable source tree instead of relying on an earlier proof.
 
 A file whose nearest manifest has no `[package]` table (a virtual workspace
 manifest, or a manifest that is not a package manifest) belongs to no package

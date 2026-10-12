@@ -418,8 +418,11 @@ impl ApiError {
         self.last_attempt().map(|facts| facts.attempt())
     }
 
-    /// Returns the zero-based page index when this was a pagination page or
-    /// traversal failure.
+    /// Returns the journal's zero-based page index, when recorded.
+    ///
+    /// Direct and credential-storage operations use zero. Pagination page
+    /// and traversal failures identify the current fetch or decision page.
+    /// Errors without recorded page correlation return `None`.
     #[must_use]
     pub fn page_index(&self) -> Option<u32> {
         self.journal

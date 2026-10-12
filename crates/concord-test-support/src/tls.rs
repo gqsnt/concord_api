@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::io::{self, Read, Write};
+use std::io::{self, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -483,7 +483,7 @@ fn handle_tls(tcp: TcpStream, connection_id: u64, config: Arc<ServerConfig>, sha
     tcp.set_nodelay(true)
         .expect("failed to disable Nagle on the TLS loopback connection");
     let connection = ServerConnection::new(config).expect("failed to create TLS connection");
-    let mut stream = StreamOwned::new(connection, tcp);
+    let mut stream = BufReader::new(StreamOwned::new(connection, tcp));
     loop {
         let Some(request) = read_request(&mut stream, connection_id) else {
             return;
@@ -510,12 +510,13 @@ fn handle_tls(tcp: TcpStream, connection_id: u64, config: Arc<ServerConfig>, sha
         if let Some(parts) = response.wire_parts {
             for (delay, bytes) in parts {
                 std::thread::sleep(delay);
-                if stream.write_all(&bytes).is_err() || stream.flush().is_err() {
+                if stream.get_mut().write_all(&bytes).is_err() || stream.get_mut().flush().is_err()
+                {
                     return;
                 }
             }
-            stream.conn.send_close_notify();
-            let _ = stream.flush();
+            stream.get_mut().conn.send_close_notify();
+            let _ = stream.get_mut().flush();
             return;
         }
         let extra_headers: String = response
@@ -528,61 +529,213 @@ fn handle_tls(tcp: TcpStream, connection_id: u64, config: Arc<ServerConfig>, sha
             response.status,
             response.body.len()
         );
-        if stream.write_all(head.as_bytes()).is_err() || stream.write_all(&response.body).is_err() {
+        if stream.get_mut().write_all(head.as_bytes()).is_err()
+            || stream.get_mut().write_all(&response.body).is_err()
+        {
             return;
         }
-        if stream.flush().is_err() {
+        if stream.get_mut().flush().is_err() {
             return;
         }
     }
 }
 
-fn read_request(stream: &mut impl Read, connection_id: u64) -> Option<TlsRequest> {
+/// Parses one bounded HTTP/1 request. The connection-owned BufReader retains
+/// read-ahead for the next request. Unsupported/ambiguous framing closes the
+/// fixture connection without recording a successful empty-body request.
+fn read_request(stream: &mut impl io::BufRead, connection_id: u64) -> Option<TlsRequest> {
     const MAX_HEAD_BYTES: usize = 16 * 1024;
     const MAX_BODY_BYTES: usize = 1024 * 1024;
-
-    let mut bytes = Vec::new();
-    let mut block = [0_u8; 1024];
-    while bytes.windows(4).all(|window| window != b"\r\n\r\n") {
-        let count = stream.read(&mut block).ok()?;
-        if count == 0 || bytes.len() + count > MAX_HEAD_BYTES {
-            return None;
-        }
-        bytes.extend_from_slice(&block[..count]);
-    }
-    let end = bytes.windows(4).position(|window| window == b"\r\n\r\n")?;
-    let text = std::str::from_utf8(&bytes[..end]).ok()?;
-    let mut lines = text.split("\r\n");
-    let mut request_line = lines.next()?.split_whitespace();
-    let method = request_line.next()?.to_owned();
-    let target = request_line.next()?.to_owned();
-    let headers = lines
-        .filter_map(|line| line.split_once(':'))
-        .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_owned()))
-        .collect::<Vec<_>>();
-    let body_length = headers
-        .iter()
-        .find(|(name, _)| name == "content-length")
-        .map_or(Some(0), |(_, value)| value.parse::<usize>().ok())?;
-    if body_length > MAX_BODY_BYTES {
+    const MAX_TRAILER_BYTES: usize = 8 * 1024;
+    // Counts all consumed framing too, bounding tiny chunks and extensions.
+    let mut wire_budget = MAX_BODY_BYTES + 64 * 1024;
+    let mut head_budget = MAX_HEAD_BYTES;
+    let first = bounded_line(stream, &mut head_budget, &mut wire_budget)?;
+    let mut parts = std::str::from_utf8(&first).ok()?.split_whitespace();
+    let method = parts.next()?.to_owned();
+    let target = parts.next()?.to_owned();
+    if !matches!(parts.next()?, "HTTP/1.0" | "HTTP/1.1") || parts.next().is_some() {
         return None;
     }
-    let body_start = end + 4;
-    let total = body_start.checked_add(body_length)?;
-    while bytes.len() < total {
-        let count = stream.read(&mut block).ok()?;
-        if count == 0 || bytes.len() + count > total {
+    let mut headers = Vec::new();
+    loop {
+        let line = bounded_line(stream, &mut head_budget, &mut wire_budget)?;
+        if line.is_empty() {
+            break;
+        }
+        let (name, value) = std::str::from_utf8(&line).ok()?.split_once(':')?;
+        if name.is_empty() || !name.bytes().all(header_name_byte) {
             return None;
         }
-        bytes.extend_from_slice(&block[..count]);
+        if value
+            .bytes()
+            .any(|byte| byte < 0x20 && byte != b'\t' || byte == 0x7f)
+        {
+            return None;
+        }
+        headers.push((name.to_ascii_lowercase(), value.trim().to_owned()));
     }
+    let lengths = headers
+        .iter()
+        .filter(|(name, _)| name == "content-length")
+        .collect::<Vec<_>>();
+    let encodings = headers
+        .iter()
+        .filter(|(name, _)| name == "transfer-encoding")
+        .collect::<Vec<_>>();
+    if lengths.len() > 1
+        || encodings.len() > 1
+        || !lengths.is_empty() && !encodings.is_empty()
+        || headers.iter().any(|(name, _)| name == "expect")
+    {
+        return None;
+    }
+    let body = if let Some((_, encoding)) = encodings.first() {
+        if !encoding.eq_ignore_ascii_case("chunked") {
+            return None;
+        }
+        let mut body = Vec::new();
+        loop {
+            let mut line_budget = MAX_HEAD_BYTES;
+            let line = bounded_line(stream, &mut line_budget, &mut wire_budget)?;
+            let line = std::str::from_utf8(&line).ok()?;
+            let (size, extension) = line
+                .split_once(';')
+                .map_or((line, None), |(a, b)| (a, Some(b)));
+            if size.is_empty()
+                || !size.bytes().all(|byte| byte.is_ascii_hexdigit())
+                || extension
+                    .is_some_and(|value| value.bytes().any(|byte| !(0x20..=0x7e).contains(&byte)))
+            {
+                return None;
+            }
+            let size = usize::from_str_radix(size, 16).ok()?;
+            if size == 0 {
+                let mut trailer_budget = MAX_TRAILER_BYTES;
+                loop {
+                    let line = bounded_line(stream, &mut trailer_budget, &mut wire_budget)?;
+                    if line.is_empty() {
+                        break;
+                    }
+                    let (name, value) = std::str::from_utf8(&line).ok()?.split_once(':')?;
+                    if name.is_empty()
+                        || !name.bytes().all(header_name_byte)
+                        || name.eq_ignore_ascii_case("content-length")
+                        || name.eq_ignore_ascii_case("transfer-encoding")
+                        || value
+                            .bytes()
+                            .any(|byte| byte < 0x20 && byte != b'\t' || byte == 0x7f)
+                    {
+                        return None;
+                    }
+                }
+                break;
+            }
+            let total = body.len().checked_add(size)?;
+            if total > MAX_BODY_BYTES {
+                return None;
+            }
+            wire_budget = wire_budget.checked_sub(size.checked_add(2)?)?;
+            let start = body.len();
+            body.resize(total, 0);
+            stream.read_exact(&mut body[start..]).ok()?;
+            let mut ending = [0_u8; 2];
+            stream.read_exact(&mut ending).ok()?;
+            if ending != *b"\r\n" {
+                return None;
+            }
+        }
+        body
+    } else {
+        let length = match lengths.first() {
+            Some((_, value))
+                if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) =>
+            {
+                value.parse::<usize>().ok()?
+            }
+            Some(_) => return None,
+            None => 0,
+        };
+        if length > MAX_BODY_BYTES {
+            return None;
+        }
+        wire_budget.checked_sub(length)?;
+        let mut body = vec![0; length];
+        stream.read_exact(&mut body).ok()?;
+        body
+    };
     Some(TlsRequest {
         connection_id,
         method,
         target,
         headers,
-        body: bytes[body_start..total].to_vec(),
+        body,
     })
+}
+
+fn header_name_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte)
+}
+
+/// No read_until allocation: both line and total framing budgets apply before
+/// retaining each byte. Every accepted line ends with an exact CRLF.
+fn bounded_line(
+    stream: &mut impl io::BufRead,
+    line_budget: &mut usize,
+    wire_budget: &mut usize,
+) -> Option<Vec<u8>> {
+    let mut line = Vec::new();
+    loop {
+        *line_budget = line_budget.checked_sub(1)?;
+        *wire_budget = wire_budget.checked_sub(1)?;
+        let mut byte = [0_u8; 1];
+        stream.read_exact(&mut byte).ok()?;
+        line.push(byte[0]);
+        if byte[0] == b'\n' {
+            if line.len() < 2 || line[line.len() - 2] != b'\r' {
+                return None;
+            }
+            line.truncate(line.len() - 2);
+            return Some(line);
+        }
+    }
+}
+
+#[cfg(test)]
+mod s5_framing_regressions {
+    use super::*;
+    use std::io::{BufReader, Cursor};
+
+    #[test]
+    fn content_length_and_chunked_preserve_next_request() {
+        for wire in [
+            b"POST /one HTTP/1.1\r\nContent-Length: 5\r\n\r\nhelloGET /two HTTP/1.1\r\n\r\n".as_slice(),
+            b"POST /one HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n2;fixture=yes\r\nhe\r\n3\r\nllo\r\n0\r\nX-Fixture: yes\r\n\r\nGET /two HTTP/1.1\r\n\r\n".as_slice(),
+        ] {
+            let mut reader = BufReader::new(Cursor::new(wire));
+            let first = read_request(&mut reader, 7).expect("first request");
+            assert_eq!(first.body, b"hello");
+            let second = read_request(&mut reader, 7).expect("buffered next request");
+            assert_eq!(second.target, "/two");
+            assert_eq!(second.connection_id, 7);
+        }
+    }
+
+    #[test]
+    fn malformed_or_over_budget_framing_never_records_empty_success() {
+        for wire in [
+            "POST / HTTP/1.1\r\nContent-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
+            "POST / HTTP/1.1\r\nContent-Length: 5\r\nContent-Length: 5\r\n\r\nhello",
+            "POST / HTTP/1.1\r\nTransfer-Encoding: gzip, chunked\r\n\r\n0\r\n\r\n",
+            "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n1\r\nxXX0\r\n\r\n",
+            "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n100001\r\n",
+            "POST / HTTP/1.1\r\nContent-Length: 5\r\n\r\nhell",
+        ] {
+            assert!(read_request(&mut BufReader::new(Cursor::new(wire)), 0).is_none());
+        }
+        let long = format!("POST / HTTP/1.1\r\nX: {}\r\n\r\n", "x".repeat(16 * 1024));
+        assert!(read_request(&mut BufReader::new(Cursor::new(long)), 0).is_none());
+    }
 }
 
 /// Decodes every `-----BEGIN {label}-----` block of fixture PEM text.

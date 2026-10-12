@@ -495,7 +495,7 @@ pub(crate) fn run(root: &Path) -> Result<(), String> {
 fn check_markdown(
     root: &Path,
     path: &Path,
-    normalized_fixture: &str,
+    normalized_fixture: &[String],
     heading_cache: &mut HashMap<PathBuf, HeadingIndex>,
     counts: &mut Counts,
     errors: &mut Vec<String>,
@@ -547,7 +547,7 @@ fn check_markdown(
             counts.dsl += 1;
             if fence.body.trim().is_empty() {
                 errors.push(format!("{location}: empty DSL fence"));
-            } else if !normalized_fixture.contains(&normalize_source(&fence.body)) {
+            } else if !source_contains(normalized_fixture, &fence.body) {
                 errors.push(format!(
                     "{location}: normalized DSL block is absent from crates/concord-examples/src/docs_spec.rs"
                 ));
@@ -577,11 +577,7 @@ fn check_markdown(
     }
 
     for target in markdown_links(&content) {
-        if target.is_empty()
-            || target.starts_with('#')
-            || has_uri_scheme(&target)
-            || target.starts_with("//")
-        {
+        if target.is_empty() || has_uri_scheme(&target) || target.starts_with("//") {
             continue;
         }
         let (file_part, fragment) = target
@@ -589,14 +585,15 @@ fn check_markdown(
             .map_or((target.as_str(), None), |(file, fragment)| {
                 (file, Some(fragment))
             });
-        if file_part.is_empty() {
-            continue;
-        }
         let Some(parent) = path.parent() else {
             errors.push(format!("{relative_path}: cannot resolve link {target}"));
             continue;
         };
-        let resolved = normalize_lexically(&parent.join(file_part));
+        let resolved = if file_part.is_empty() {
+            normalize_lexically(path)
+        } else {
+            normalize_lexically(&parent.join(file_part))
+        };
         if !resolved.starts_with(root) {
             errors.push(format!(
                 "{relative_path}: link escapes repository root: {target}"
@@ -2501,11 +2498,83 @@ fn has_uri_scheme(target: &str) -> bool {
         })
 }
 
-fn normalize_source(source: &str) -> String {
-    source
-        .chars()
-        .filter(|character| !character.is_whitespace())
-        .collect()
+// Ignore Rust trivia between tokens, never bytes within a literal. Keeping a
+// vector also prevents substring matches from starting inside another token.
+fn normalize_source(source: &str) -> Vec<String> {
+    fn append(stream: proc_macro2::TokenStream, out: &mut Vec<String>) {
+        use proc_macro2::{Delimiter, TokenTree};
+        let mut tokens = stream.into_iter().peekable();
+        while let Some(token) = tokens.next() {
+            match token {
+                TokenTree::Group(group) => {
+                    let delimiter = match group.delimiter() {
+                        Delimiter::Parenthesis => "()",
+                        Delimiter::Brace => "{}",
+                        Delimiter::Bracket => "[]",
+                        Delimiter::None => "none",
+                    };
+                    out.push(format!("open:{delimiter}"));
+                    append(group.stream(), out);
+                    out.push(format!("close:{delimiter}"));
+                }
+                TokenTree::Ident(ident) => out.push(format!("ident:{ident}")),
+                TokenTree::Literal(literal) => out.push(format!("literal:{literal}")),
+                TokenTree::Punct(punct) => {
+                    // Joint spacing matters for compound Rust punctuation
+                    // and the lifetime introducer. Other adjacency, e.g.
+                    // &'a vs & 'a or ::< vs :: <, is formatting trivia.
+                    let joint = punct.spacing() == proc_macro2::Spacing::Joint
+                        && match tokens.peek() {
+                            Some(TokenTree::Punct(next)) => matches!(
+                                (punct.as_char(), next.as_char()),
+                                (':', ':')
+                                    | ('-', '>')
+                                    | ('=', '>')
+                                    | ('=', '=')
+                                    | ('!', '=')
+                                    | ('<', '=')
+                                    | ('>', '=')
+                                    | ('&', '&')
+                                    | ('|', '|')
+                                    | ('<', '<')
+                                    | ('>', '>')
+                                    | ('+', '=')
+                                    | ('-', '=')
+                                    | ('*', '=')
+                                    | ('/', '=')
+                                    | ('%', '=')
+                                    | ('^', '=')
+                                    | ('&', '=')
+                                    | ('|', '=')
+                                    | ('.', '.')
+                                    | ('.', '=')
+                            ),
+                            Some(TokenTree::Ident(_)) => punct.as_char() == '\'',
+                            _ => false,
+                        };
+                    out.push(format!("punct:{}:{joint}", punct.as_char()));
+                }
+            }
+        }
+    }
+    match source.parse::<proc_macro2::TokenStream>() {
+        Ok(stream) => {
+            let mut tokens = Vec::new();
+            append(stream, &mut tokens);
+            tokens
+        }
+        // A partial fragment that cannot tokenize gets exact-byte comparison;
+        // malformed text must never become equal through whitespace erasure.
+        Err(_) => vec![format!("unparsed:{source}")],
+    }
+}
+
+fn source_contains(fixture: &[String], source: &str) -> bool {
+    let candidate = normalize_source(source);
+    !candidate.is_empty()
+        && fixture
+            .windows(candidate.len())
+            .any(|window| window == candidate)
 }
 
 fn normalize_lexically(path: &Path) -> PathBuf {
@@ -3051,5 +3120,157 @@ mod tests {
         assert!(!is_user_documentation("FINAL.md"));
         assert!(!is_user_documentation("dev_doc/internals.md"));
         assert!(!is_user_documentation("docs/diagram.svg"));
+    }
+}
+
+#[cfg(test)]
+mod s5_literal_comparison_regressions {
+    use super::*;
+
+    #[test]
+    fn literal_bytes_and_token_boundaries_survive_comparison() {
+        assert_eq!(
+            normalize_source("fn f() { foo ( 1 ); }"),
+            normalize_source("fn f(){foo(1);}")
+        );
+        for (before, after) in [
+            (r#"let s = "a b";"#, r#"let s = "ab";"#),
+            (r##"let s = r#"a b"#;"##, r##"let s = r#"ab"#;"##),
+            ("let c = ' ';", "let c = 'x';"),
+            ("let xy = 1;", "let x y = 1;"),
+            ("x >= y", "x > = y"),
+        ] {
+            assert_ne!(normalize_source(before), normalize_source(after));
+        }
+        assert!(!source_contains(&normalize_source("foobar"), "foo"));
+        assert!(source_contains(
+            &normalize_source("api! { GET f() -> (); }"),
+            "GET f() -> ();"
+        ));
+        assert_ne!(
+            normalize_source("'unterminated a b"),
+            normalize_source("'unterminated ab")
+        );
+    }
+}
+
+#[cfg(test)]
+mod s5_doc_trust_probes {
+    use super::*;
+    fn root(label: &str) -> PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "s5-doc-trust-{label}-{}-{nonce}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&dir).expect("new temporary docs root");
+        dir.canonicalize().expect("root")
+    }
+    #[test]
+    fn s5_self_fragment_negative_is_checked() {
+        let root = root("fragment");
+        let path = root.join("probe.md");
+        std::fs::write(
+            &path,
+            "# Existing\n\n[positive](#existing)\n[negative](#missing)\n",
+        )
+        .expect("probe");
+        let mut errors = Vec::new();
+        let mut counts = Counts::default();
+        check_markdown(
+            &root,
+            &path,
+            &[],
+            &mut HashMap::new(),
+            &mut counts,
+            &mut errors,
+        )
+        .expect("run checker");
+        std::fs::remove_file(&path).expect("remove owned file");
+        std::fs::remove_dir(&root).expect("remove owned empty directory");
+        println!(
+            "S5_SELF_FRAGMENT_ERRORS={errors:?} checked_fragments={}",
+            counts.fragments
+        );
+        assert!(
+            errors.iter().any(|e| e.contains("missing")),
+            "same-document missing fragments must be rejected"
+        );
+    }
+    #[test]
+    fn s5_source_anchor_literal_whitespace_is_not_erased() {
+        let root = root("literal");
+        let source_dir = root.join("crates/concord-examples/src");
+        std::fs::create_dir_all(&source_dir).expect("owned source directories");
+        let source = source_dir.join("probe.rs");
+        std::fs::write(
+            &source,
+            "// ANCHOR: example\nfn example() { let _ = \"a b\"; }\n// ANCHOR_END: example\n",
+        )
+        .expect("source");
+        let path = root.join("probe.md");
+        let write_fence = |literal: &str| {
+            std::fs::write(&path,format!("<!-- concord-source: crates/concord-examples/src/probe.rs#example -->\n```rust\nfn example() {{ let _ = \"{literal}\"; }}\n```\n")).expect("fence")
+        };
+        let run = || {
+            let mut errors = Vec::new();
+            check_markdown(
+                &root,
+                &path,
+                &[],
+                &mut HashMap::new(),
+                &mut Counts::default(),
+                &mut errors,
+            )
+            .expect("run checker");
+            errors
+        };
+        write_fence("a b");
+        assert!(run().is_empty(), "exact source anchor positive control");
+        write_fence("ab");
+        let errors = run();
+        std::fs::remove_file(&source).expect("remove owned source");
+        std::fs::remove_file(&path).expect("remove owned doc");
+        for dir in [
+            &source_dir,
+            &root.join("crates/concord-examples"),
+            &root.join("crates"),
+            &root,
+        ] {
+            std::fs::remove_dir(dir).expect("remove owned empty directory");
+        }
+        println!("S5_LITERAL_ANCHOR_ERRORS={errors:?}");
+        assert!(
+            errors.iter().any(|e| e.contains("differs")),
+            "changing a string literal in an anchored fence must fail"
+        );
+    }
+}
+
+#[cfg(test)]
+mod s5_docs_token_neighbors {
+    use super::*;
+    #[test]
+    fn token_trivia_and_literal_controls() {
+        assert_eq!(
+            normalize_source("foo /* harmless comment */ (1)"),
+            normalize_source("foo(1)")
+        );
+        assert_eq!(
+            normalize_source("fn f<'a>(s: &'a str) {}"),
+            normalize_source("fn f < 'a > (s: & 'a str){}")
+        );
+        for (a, b) in [
+            (r#"b"a b""#, r#"b"ab""#),
+            (r##"br#"a b"#"##, r##"br#"ab"#"##),
+            ("' '", "'x'"),
+            ("foo bar", "foobar"),
+            ("/* unterminated a b", "/* unterminated ab"),
+        ] {
+            assert_ne!(normalize_source(a), normalize_source(b));
+        }
     }
 }

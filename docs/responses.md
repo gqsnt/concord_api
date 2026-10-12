@@ -47,12 +47,13 @@ pub async fn with_metadata(client: &ResponseApi) -> Result<ApiResponse<String>, 
 ```
 
 `ApiResponse<O>` exposes `status()`, `version()`, `headers()`, `url()`,
-`metadata()`, `value()` and `into_value()`. The URL is credential-sanitized but
+`metadata()`, `body_disposition()`, `value()` and `into_value()`. The URL is credential-sanitized but
 may contain ordinary public data, and the actual headers may be sensitive:
 these accessors are explicit application-data access, not safe automatic
 logging. `Debug` omits raw values. `metadata()` is an `ExecutionMeta` snapshot
 (endpoint ID, method, page index, attempts started, policy retries, whether
-authentication was recovered, and the body disposition).
+authentication was recovered, and provider-acquisition facts when present).
+`body_disposition()` reports this response's complete, open, or unread body outcome.
 
 `.accepted_bytes()` exists only with `expose accepted_bytes;`:
 
@@ -159,7 +160,7 @@ for the paired `ExampleCodec`.
 |---|---|---|
 | `Json` (feature `json`) | `T: DeserializeOwned + Send` via `Buffered` | negotiates `application/json`; requires a valid `application/json` or `application/*+json` Content-Type, otherwise `InvalidMediaType` before decoding; invalid JSON is a conversion error |
 | `Text` | `String` via `Buffered` | invalid UTF-8 is a conversion error |
-| `Binary` | `Bytes`, `Vec<u8>` via `Buffered`; `ByteStream` via `Streaming` | no JSON/text conversion |
+| `Binary` | `Bytes`, `Vec<u8>` via `Buffered`; `ByteStream` via `Streaming` | no JSON/text conversion; an absent Content-Type is accepted, while a present type must be `application/octet-stream` |
 | `Empty` | `()` via `Buffered` | validates an empty accepted body; a nonempty body is an error, not silently discarded |
 | `Discard` | `()` via `DiscardDriver` | reports a discarded, unread body, not EOF |
 | `NdJson` (feature `ndjson`) | `Vec<T>`, `ItemStream<T>` | framed records; empty lines ignored; a final nonempty line without LF is parsed once (request records: see [Request bodies](request_bodies.md)) |

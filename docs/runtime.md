@@ -123,6 +123,15 @@ client with a reachable rate policy; a limiter whose key capability cannot
 admit the declared keys; and an `https` base without an enabled TLS feature
 (`TlsUnavailable`).
 
+`ClientBuildError::diagnostics()` iterates the independent, value-free preflight
+diagnostics. The existing `kind()`, `input_field()` and `input_kind()` accessors
+describe the primary error, and `missing_fields()` lists all missing generated
+inputs. Preflight checks those inputs and plain configuration before resolving
+values, creating credential slots or calling provider metadata. Checks that
+depend on resolved values and supplied providers follow successful preflight.
+Duration preferences must fit the portable 100-year control bound. Cooldown
+caps and native HTTP duration settings retain their existing zero semantics.
+
 ## Centralized limits
 
 Constants and runtime fields have one owner in core; generated metadata, docs,

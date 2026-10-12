@@ -465,28 +465,47 @@ fn resolve_attachment(
     }
 }
 
-/// Canonical structural identity used for repeated-attachment
-/// deduplication: policy identity, typed binding expressions, window schema
-/// and effective cost.
-fn structural_key(rate: &RateUse) -> String {
-    let dims = rate
+#[derive(Eq, PartialEq)]
+enum RateSourceKey {
+    Named(usize, Vec<super::VRef>),
+    Inline,
+}
+
+#[derive(Eq, PartialEq)]
+enum RateDimensionKey {
+    Origin,
+    Endpoint,
+    Custom(String, super::VRef, Option<String>),
+}
+
+#[derive(Eq, PartialEq)]
+struct RateStructuralKey {
+    source: RateSourceKey,
+    id: String,
+    dimensions: Vec<RateDimensionKey>,
+    windows: Vec<(std::time::Duration, u32)>,
+    cost: u32,
+}
+
+/// Framed structural identity; arbitrary valid labels cannot impersonate
+/// another dimension, value reference or encoder. Canonical window ordering
+/// preserves the prior schema equivalence, while dimension order is exact.
+fn structural_key(rate: &RateUse) -> RateStructuralKey {
+    let dimensions = rate
         .dims
         .iter()
         .map(|dim| match dim {
-            BoundDim::Origin => "origin".to_owned(),
-            BoundDim::Endpoint => "endpoint".to_owned(),
+            BoundDim::Origin => RateDimensionKey::Origin,
+            BoundDim::Endpoint => RateDimensionKey::Endpoint,
             BoundDim::Custom {
                 label, value, via, ..
-            } => format!(
-                "{label}={:?}/{}",
-                value,
-                via.as_ref()
-                    .map(|via| via.to_token_stream().to_string())
-                    .unwrap_or_default()
+            } => RateDimensionKey::Custom(
+                label.clone(),
+                *value,
+                via.as_ref().map(|via| via.to_token_stream().to_string()),
             ),
         })
-        .collect::<Vec<_>>()
-        .join(",");
+        .collect();
     let mut windows = rate
         .windows
         .iter()
@@ -494,10 +513,16 @@ fn structural_key(rate: &RateUse) -> String {
         .collect::<Vec<_>>();
     windows.sort();
     let source = match &rate.source {
-        RateSource::Named { policy, .. } => format!("named:{policy}"),
-        RateSource::Inline { .. } => "inline".to_owned(),
+        RateSource::Named { policy, bindings } => RateSourceKey::Named(*policy, bindings.clone()),
+        RateSource::Inline { .. } => RateSourceKey::Inline,
     };
-    format!("{source}|{}|{dims}|{windows:?}|{}", rate.id, rate.cost)
+    RateStructuralKey {
+        source,
+        id: rate.id.clone(),
+        dimensions,
+        windows,
+        cost: rate.cost,
+    }
 }
 
 /// `label` is the diagnostic owner label of the composing site.
@@ -654,4 +679,35 @@ pub(crate) fn validate_identities(resolver: &Resolver) -> syn::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod s4_rate_identity_regressions {
+    fn resolve(keys: &str) -> Result<crate::semantic::Model, syn::Error> {
+        let source = format!(
+            "client RateIdentity {{ base \"https://fixture.test/\"; values {{ tenant: String = \"fixture\"; }} {keys} GET read() -> () via Empty; }}"
+        );
+        crate::semantic::resolve(crate::syntax::parse(source.parse().unwrap()).unwrap())
+    }
+    #[test]
+    fn conflicting_dimension_labels_cannot_impersonate_structural_key_syntax() {
+        let first =
+            "rate_limit { id \"s4.collision\"; key [\"A\"=tenant,\"B\"=tenant]; allow 10 per 1s; }";
+        for second in [
+            "rate_limit { id \"s4.collision\"; key [\"A=VRef { site: Owner(0), index: 0 }/,B\"=tenant]; allow 10 per 1s; }",
+            "rate_limit { id \"s4.collision\"; key [\"C\"=tenant]; allow 10 per 1s; }",
+            "rate_limit { id \"s4.collision\"; key [\"B\"=tenant,\"A\"=tenant]; allow 10 per 1s; }",
+        ] {
+            let error = resolve(&format!("{first} {second}"))
+                .err()
+                .expect("conflicting schema must reject");
+            assert!(error.to_string().contains("C3-RATE"));
+        }
+        let identical = resolve(&format!("{first} {first}")).expect("identical attachment dedup");
+        assert_eq!(identical.endpoints[0].effective_rates.len(), 1);
+        let single=resolve("rate_limit { id \"s4.single\"; key [\"A=VRef { site: Owner(0), index: 0 }/,B\"=tenant]; allow 10 per 1s; }").unwrap();
+        assert_eq!(single.endpoints[0].effective_rates[0].dims.len(), 1);
+        // Canonical window ordering is intentionally preserved.
+        resolve("rate_limit { id \"s4.windows\"; key [\"tenant\"=tenant]; allow 10 per 1s; allow 20 per 2s; } rate_limit { id \"s4.windows\"; key [\"tenant\"=tenant]; allow 20 per 2s; allow 10 per 1s; }").unwrap();
+    }
 }

@@ -1088,7 +1088,16 @@ fn generated_live_to_deprecated_no_op_value_is_disclosed() {
     }));
     assert!(report.has_axis(Axis::Wire), "the header is no longer sent");
     assert!(report.changes().iter().any(|change| {
-        change.collection() == "diagnostics" && change.record() == "C3-PLACE:Shop:legacy"
+        change.collection() == "diagnostics"
+            && [change.before(), change.after()]
+                .into_iter()
+                .flatten()
+                .any(|record| {
+                    record.get("code").and_then(serde_json::Value::as_str) == Some("C3-PLACE")
+                        && record.get("owner").and_then(serde_json::Value::as_str) == Some("Shop")
+                        && record.get("subject").and_then(serde_json::Value::as_str)
+                            == Some("legacy")
+                })
     }));
     assert!(report.to_text().contains("deprecated_no_op"));
     assert!(!report.has_axis(Axis::Unknown));

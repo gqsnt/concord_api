@@ -66,9 +66,7 @@ pub(crate) fn deprecated_attr(meta: &Meta) -> TokenStream {
 fn timeout_text(timeout: Option<Duration>) -> String {
     match timeout {
         Some(duration) => human_duration(duration),
-        None => {
-            "the client default (30 s unless the runtime configuration selects another)".to_owned()
-        }
+        None => "30 s (root default)".to_owned(),
     }
 }
 
@@ -936,5 +934,53 @@ mod tests {
         assert!(!allows_deprecated(
             &support_module(&plain, "plain_api").attrs
         ));
+    }
+}
+
+#[cfg(test)]
+mod s4_timeout_doc_regression {
+    #[test]
+    fn generated_default_timeout_documentation_matches_the_contract() {
+        assert_eq!(super::timeout_text(None), "30 s (root default)");
+        assert_eq!(
+            super::timeout_text(Some(std::time::Duration::from_secs(7))),
+            "7 s"
+        );
+        let source =
+            "client TimeoutDoc { base \"https://fixture.test/\"; GET read() -> () via Empty; }";
+        let model =
+            crate::semantic::resolve(crate::syntax::parse(source.parse().unwrap()).unwrap())
+                .unwrap();
+        let emitted = crate::emit::generate(&model, &quote::quote!(::concord));
+        let file = syn::parse2::<syn::File>(emitted).unwrap();
+        fn docs(items: &[syn::Item], text: &mut String) {
+            for item in items {
+                let attrs = match item {
+                    syn::Item::Struct(s) => Some(&s.attrs),
+                    syn::Item::Mod(m) => Some(&m.attrs),
+                    _ => None,
+                };
+                if let Some(attrs) = attrs {
+                    for attr in attrs.iter().filter(|a| a.path().is_ident("doc")) {
+                        if let syn::Meta::NameValue(meta) = &attr.meta {
+                            if let syn::Expr::Lit(lit) = &meta.value {
+                                if let syn::Lit::Str(lit) = &lit.lit {
+                                    text.push_str(&lit.value());
+                                }
+                            }
+                        }
+                    }
+                }
+                if let syn::Item::Mod(module) = item {
+                    if let Some((_, items)) = &module.content {
+                        docs(items, text);
+                    }
+                }
+            }
+        }
+        let mut text = String::new();
+        docs(&file.items, &mut text);
+        assert!(text.contains("30 s (root default)"));
+        assert!(!text.contains("unless the runtime configuration"));
     }
 }

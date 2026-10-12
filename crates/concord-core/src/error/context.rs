@@ -3,12 +3,44 @@ use std::fmt;
 
 use super::{ClientBuildErrorKind, ClientInputKind, ConfigurationErrorKind};
 
+/// One value-free client-build diagnostic.
+///
+/// Names are static library setter/declaration identifiers, never supplied
+/// values, secrets, native causes or provider error text.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ClientBuildDiagnostic {
+    kind: ClientBuildErrorKind,
+    input_field: Option<&'static str>,
+    input_kind: Option<ClientInputKind>,
+}
+
+impl ClientBuildDiagnostic {
+    /// Returns this diagnostic's stable failure kind.
+    #[must_use]
+    pub const fn kind(&self) -> ClientBuildErrorKind {
+        self.kind
+    }
+
+    /// Returns the associated static field/setting name, if any.
+    #[must_use]
+    pub const fn input_field(&self) -> Option<&'static str> {
+        self.input_field
+    }
+
+    /// Returns the field's semantic input role, if any.
+    #[must_use]
+    pub const fn input_kind(&self) -> Option<ClientInputKind> {
+        self.input_kind
+    }
+}
+
 /// A safe client-construction failure.
 pub struct ClientBuildError {
     kind: ClientBuildErrorKind,
     input_field: Option<&'static str>,
     input_kind: Option<ClientInputKind>,
     missing: Vec<(&'static str, ClientInputKind)>,
+    additional: Vec<ClientBuildDiagnostic>,
 }
 
 impl ClientBuildError {
@@ -18,6 +50,7 @@ impl ClientBuildError {
             input_field: None,
             input_kind: None,
             missing: Vec::new(),
+            additional: Vec::new(),
         }
     }
 
@@ -27,6 +60,7 @@ impl ClientBuildError {
             input_field: Some(field),
             input_kind: Some(input_kind),
             missing: Vec::new(),
+            additional: Vec::new(),
         }
     }
 
@@ -36,6 +70,7 @@ impl ClientBuildError {
             input_field: Some(field),
             input_kind: Some(ClientInputKind::Secret),
             missing: Vec::new(),
+            additional: Vec::new(),
         }
     }
 
@@ -47,6 +82,7 @@ impl ClientBuildError {
             input_field: Some(field),
             input_kind: None,
             missing: Vec::new(),
+            additional: Vec::new(),
         }
     }
 
@@ -59,6 +95,7 @@ impl ClientBuildError {
             input_field: Some(field),
             input_kind: Some(ClientInputKind::CredentialProvider),
             missing: Vec::new(),
+            additional: Vec::new(),
         }
     }
 
@@ -71,7 +108,55 @@ impl ClientBuildError {
             input_field: first.map(|(field, _)| field),
             input_kind: first.map(|(_, kind)| kind),
             missing,
+            additional: Vec::new(),
         }
+    }
+
+    pub(crate) const fn invalid_http_setting(field: &'static str) -> Self {
+        Self {
+            kind: ClientBuildErrorKind::HttpConfiguration,
+            input_field: Some(field),
+            input_kind: None,
+            missing: Vec::new(),
+            additional: Vec::new(),
+        }
+    }
+
+    /// Iterates every independent, value-free build diagnostic.
+    ///
+    /// Missing inputs retain declaration order. The primary error accessors
+    /// keep the first diagnostic's existing meaning; additional diagnostics
+    /// never replace that primary identity. No operational work is performed.
+    pub fn diagnostics(&self) -> impl Iterator<Item = ClientBuildDiagnostic> + '_ {
+        let primary = self.missing.is_empty().then_some(ClientBuildDiagnostic {
+            kind: self.kind,
+            input_field: self.input_field,
+            input_kind: self.input_kind,
+        });
+        self.missing
+            .iter()
+            .map(|&(field, kind)| ClientBuildDiagnostic {
+                kind: ClientBuildErrorKind::MissingInput,
+                input_field: Some(field),
+                input_kind: Some(kind),
+            })
+            .chain(primary)
+            .chain(self.additional.iter().copied())
+    }
+
+    /// Adds already-safe diagnostics without changing primary accessors.
+    pub(crate) fn append(&mut self, other: Self) {
+        self.additional.extend(other.diagnostics());
+    }
+
+    /// Collects a finite validation pass in its deterministic source order.
+    pub(crate) fn collect(errors: impl IntoIterator<Item = Self>) -> Option<Self> {
+        let mut errors = errors.into_iter();
+        let mut first = errors.next()?;
+        for error in errors {
+            first.append(error);
+        }
+        Some(first)
     }
 
     /// Returns every missing required generated input, in declaration order,
@@ -79,13 +164,20 @@ impl ClientBuildError {
     /// one field. Names are static setter identifiers, never values.
     #[must_use]
     pub fn missing_fields(&self) -> Vec<(&'static str, ClientInputKind)> {
-        if !self.missing.is_empty() {
-            return self.missing.clone();
-        }
-        match (self.kind, self.input_field, self.input_kind) {
-            (ClientBuildErrorKind::MissingInput, Some(field), Some(kind)) => vec![(field, kind)],
-            _ => Vec::new(),
-        }
+        self.diagnostics()
+            .filter_map(|diagnostic| {
+                match (
+                    diagnostic.kind,
+                    diagnostic.input_field,
+                    diagnostic.input_kind,
+                ) {
+                    (ClientBuildErrorKind::MissingInput, Some(field), Some(kind)) => {
+                        Some((field, kind))
+                    }
+                    _ => None,
+                }
+            })
+            .collect()
     }
 
     /// Returns the stable construction failure kind.
@@ -122,6 +214,15 @@ impl fmt::Display for ClientBuildError {
             };
             write!(formatter, ": {reason} {input_kind:?} field `{field}`")?;
         }
+        if let Some(field) = self.input_field.filter(|_| self.input_kind.is_none()) {
+            write!(formatter, ": setting `{field}`")?;
+        }
+        for diagnostic in &self.additional {
+            write!(formatter, "; {:?}", diagnostic.kind)?;
+            if let Some(field) = diagnostic.input_field {
+                write!(formatter, " field `{field}`")?;
+            }
+        }
         if self.missing.len() > 1 {
             write!(
                 formatter,
@@ -141,6 +242,7 @@ impl fmt::Debug for ClientBuildError {
             .field("input_field", &self.input_field)
             .field("input_kind", &self.input_kind)
             .field("missing", &self.missing)
+            .field("additional", &self.additional)
             .finish()
     }
 }
@@ -200,6 +302,7 @@ mod tests {
             ClientBuildErrorKind::LimiterUnavailable => 10,
             ClientBuildErrorKind::Internal => 11,
             ClientBuildErrorKind::InvalidProviderOrigins => 12,
+            ClientBuildErrorKind::HttpConfiguration => 13,
         }
     }
 
@@ -234,6 +337,7 @@ mod tests {
             ClientBuildErrorKind::LimiterUnavailable,
             ClientBuildErrorKind::Internal,
             ClientBuildErrorKind::InvalidProviderOrigins,
+            ClientBuildErrorKind::HttpConfiguration,
         ];
 
         for (index, kind) in kinds.iter().copied().enumerate() {

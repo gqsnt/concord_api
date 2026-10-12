@@ -1472,17 +1472,21 @@ fn resolve_owner_attachments(
 // ---------------------------------------------------------------------------
 
 fn to_snake_case(name: &str) -> String {
+    let name = name.strip_prefix("r#").unwrap_or(name);
     let characters = name.chars().collect::<Vec<_>>();
-    let mut output = String::with_capacity(name.len());
+    let mut output = String::with_capacity(name.len() + 4);
     for (index, character) in characters.iter().copied().enumerate() {
         if character.is_uppercase() {
-            let previous_is_lowercase = index > 0
-                && (characters[index - 1].is_lowercase() || characters[index - 1].is_ascii_digit());
-            let next_is_lowercase = characters
-                .get(index + 1)
-                .is_some_and(|next| next.is_lowercase());
-            if index > 0 && (previous_is_lowercase || next_is_lowercase) {
-                output.push('_');
+            if index > 0 {
+                let previous = characters[index - 1];
+                let previous_is_word_tail = previous.is_lowercase() || previous.is_ascii_digit();
+                let acronym_end = previous.is_uppercase()
+                    && characters
+                        .get(index + 1)
+                        .is_some_and(|next| next.is_lowercase());
+                if previous_is_word_tail || acronym_end {
+                    output.push('_');
+                }
             }
             output.extend(character.to_lowercase());
         } else {

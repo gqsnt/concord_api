@@ -166,6 +166,8 @@ dependencies = [
  "reqwest",
  "rustls",
  "tokio",
+ "tower-http",
+ "tower-service",
  "url",
 ]
 

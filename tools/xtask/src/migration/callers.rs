@@ -516,10 +516,14 @@ fn declares_rate_limits(children: &[Child]) -> bool {
 pub(crate) struct DeclIndex {
     clients: Vec<ClientIndex>,
     model: CrateModel,
+    /// Refined per-file API provenance, bound to the exact original source.
+    api_imports: std::collections::BTreeMap<PathBuf, (String, Imports)>,
     /// `(value name, optional)` of every value declared by the other crates
     /// of the migration run: a call of their setters from this crate is
     /// reported, never rewritten.
     other_crate_values: Vec<(String, bool)>,
+    /// Diagnostic-only candidate values, never owners or generated entities.
+    possible_values: Vec<(String, bool)>,
     /// The v3-only generated method names of the other crates of the run
     /// (see [`DeclIndex::v3_only`]): a call of such a name on another crate's
     /// type is reported.
@@ -549,6 +553,23 @@ impl DeclIndex {
     /// Indexes every declaration of one crate and models its modules, items
     /// and imports. Files that do not parse are reported when migrated.
     pub(crate) fn build(layout: &Layout, sources: &[(PathBuf, String)]) -> Self {
+        Self::build_with_source_proof(layout, sources, true)
+    }
+
+    /// Explicit declaration context of caller-semantic unit fixtures only.
+    #[cfg(test)]
+    pub(crate) fn build_test_declaration_context(
+        layout: &Layout,
+        sources: &[(PathBuf, String)],
+    ) -> Self {
+        Self::build_with_source_proof(layout, sources, false)
+    }
+
+    fn build_with_source_proof(
+        layout: &Layout,
+        sources: &[(PathBuf, String)],
+        source_proof: bool,
+    ) -> Self {
         let mut parsed = sources
             .iter()
             .filter_map(|(path, source)| {
@@ -593,6 +614,127 @@ impl DeclIndex {
             index.bare_api.insert(path.to_path_buf(), proof.clone());
             imports.prove_bare_api(proof);
         }
+        // These candidate names support only unresolved-call diagnostics.
+        // No provisional owner/entity enters either source namespace model.
+        let mut possible = Self::default();
+        for (_, file, imports) in &parsed {
+            for invocation in find_api_invocations(file, imports) {
+                if let Ok(api) = syntax::parse_api(invocation.tokens, file.base) {
+                    possible.add(&api);
+                }
+            }
+        }
+        index.possible_values = possible.value_names();
+        if source_proof {
+            // First model only actual source namespaces. Callback None inserts
+            // no hypothetical generated items; every pending API remains opaque.
+            // Explicit module paths may locate a separate complete domain target,
+            // but an opaque/unknown target cannot prove namespace absence.
+            let namespaces = {
+                let files = parsed
+                    .iter()
+                    .map(|(path, parsed, imports)| SourceFile {
+                        path,
+                        parsed,
+                        imports,
+                    })
+                    .collect::<Vec<_>>();
+                CrateModel::build(layout, &files, &|_, _| None)
+            };
+            for (path, file, imports) in &mut parsed {
+                let proof = |anchor: Option<usize>, leading: bool, glob: &[String], name: &str| {
+                    let Some((number, module)) = namespaces.file(path) else {
+                        return false;
+                    };
+                    if namespaces.other_mount(number).is_some() {
+                        return false;
+                    }
+                    let scope = match anchor {
+                        Some(offset) => match offset
+                            .checked_add(file.base)
+                            .and_then(|offset| namespaces.anchor(number, offset))
+                        {
+                            Some(scope) => scope,
+                            None => return false,
+                        },
+                        None => module,
+                    };
+                    namespaces.glob_namespace_absent(scope, leading, glob, name)
+                };
+                let mut refined = Imports::collect_with_namespace(
+                    &file.file,
+                    Some(&proof),
+                    None,
+                    layout
+                        .concord_own
+                        .as_deref()
+                        .filter(|_| namespaces.own_library_api_source(path)),
+                );
+                if let Some(bare) = index.bare_api.get(*path) {
+                    refined.prove_bare_api(bare.clone());
+                }
+                *imports = refined;
+            }
+            // Refined lexical/import/glob provenance is still not generated
+            // authority. Build another source-only model to keep every OTHER
+            // opaque expansion, and refuse origins with such uncertainty.
+            let origin_model = {
+                let files = parsed
+                    .iter()
+                    .map(|(path, parsed, imports)| SourceFile {
+                        path,
+                        parsed,
+                        imports,
+                    })
+                    .collect::<Vec<_>>();
+                CrateModel::build(layout, &files, &|_, _| None)
+            };
+            for (path, file, imports) in &mut parsed {
+                let at = |anchor: Option<usize>| {
+                    let (number, module) = origin_model.file(path)?;
+                    if origin_model.other_mount(number).is_some() {
+                        return None;
+                    }
+                    match anchor {
+                        Some(offset) => offset
+                            .checked_add(file.base)
+                            .and_then(|offset| origin_model.anchor(number, offset)),
+                        None => Some(module),
+                    }
+                };
+                let absence =
+                    |anchor: Option<usize>, leading: bool, glob: &[String], name: &str| {
+                        at(anchor).is_some_and(|scope| {
+                            origin_model.glob_namespace_absent(scope, leading, glob, name)
+                        })
+                    };
+                let source = |anchor: Option<usize>, name: &str| {
+                    at(anchor)
+                        .is_some_and(|scope| origin_model.namespace_source_stable(scope, name))
+                };
+                let mut refined = Imports::collect_with_namespace(
+                    &file.file,
+                    Some(&absence),
+                    Some(&source),
+                    layout
+                        .concord_own
+                        .as_deref()
+                        .filter(|_| origin_model.own_library_api_source(path)),
+                );
+                if let Some(bare) = index.bare_api.get(*path) {
+                    refined.prove_bare_api(bare.clone());
+                }
+                *imports = refined;
+            }
+        }
+        for (path, _, imports) in &parsed {
+            if let Some((_, source)) = sources.iter().find(|(candidate, _)| candidate == *path) {
+                index
+                    .api_imports
+                    .insert(path.to_path_buf(), (source.clone(), imports.clone()));
+            }
+        }
+        // Only the refined origins now contribute actual generated items.
         for (file, (_, parsed, imports)) in parsed.iter().enumerate() {
             for invocation in find_api_invocations(parsed, imports) {
                 if let Ok(api) = syntax::parse_api(invocation.tokens, parsed.base) {
@@ -644,6 +786,14 @@ impl DeclIndex {
     /// Concord's by its crate; `None` for a file this index does not hold.
     pub(crate) fn bare_api_proof(&self, path: &std::path::Path) -> Option<Result<(), String>> {
         self.bare_api.get(path).cloned()
+    }
+
+    /// Reuses refined provenance only for this exact path and source bytes.
+    /// Changed/wrapped source cannot inherit offsets from a prior parse.
+    pub(crate) fn imports_for(&self, path: &std::path::Path, source: &str) -> Option<Imports> {
+        self.api_imports
+            .get(path)
+            .and_then(|(original, imports)| (original == source).then(|| imports.clone()))
     }
 
     /// The public v2.1 generated items of one client, at its `api!`:
@@ -844,6 +994,13 @@ impl DeclIndex {
             .any(|(value, optional)| value == name && *optional);
         if optional_here {
             return Some("in this crate");
+        }
+        if self
+            .possible_values
+            .iter()
+            .any(|(value, optional)| value == name && *optional)
+        {
+            return Some("in source tokens whose API macro origin is not proved");
         }
         self.other_crate_values
             .iter()

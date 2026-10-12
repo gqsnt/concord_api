@@ -1288,3 +1288,7 @@ mod recovery;
 mod recovery_authority;
 mod source_recovery;
 mod store;
+
+mod auth_query_bounds;
+mod auth_recovery_admission;
+mod head_deadline;

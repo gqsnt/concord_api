@@ -5,7 +5,15 @@ use concord_core::contracts::ErrorCategory;
 
 #[test]
 fn generated_contract_version_matches_generic_specification_capability() {
-    assert_eq!(GENERATED_CONTRACT_VERSION, 34);
+    assert_eq!(GENERATED_CONTRACT_VERSION, 35);
+}
+
+const _: () = concord_core::__private::assert_generated_contract(35);
+
+#[test]
+#[should_panic(expected = "concord macro/core contract mismatch")]
+fn prior_generated_build_contract_is_refused() {
+    concord_core::__private::assert_generated_contract(34);
 }
 
 #[test]

@@ -78,6 +78,9 @@ struct LimitSelection {
     pagination_total_bytes_invalid: bool,
     pagination_identity_invalid: bool,
     aggregate_sends_invalid: bool,
+    runtime_timeout_invalid: bool,
+    auth_cooldown_invalid: bool,
+    rate_cooldown_invalid: bool,
 }
 
 /// Records which managed-stream setters last received an invalid value.
@@ -171,7 +174,13 @@ impl RuntimeConfigBuilder {
     /// timeout selection can replace and reset to that retained effective value.
     #[must_use]
     pub fn runtime_endpoint_timeout(mut self, duration: Duration) -> Self {
-        self.config.runtime_endpoint_timeout = Some(duration);
+        match crate::controls::validate_positive_duration(duration) {
+            Ok(duration) => {
+                self.config.runtime_endpoint_timeout = Some(duration);
+                self.limit_selection.runtime_timeout_invalid = false;
+            }
+            Err(_) => self.limit_selection.runtime_timeout_invalid = true,
+        }
         self
     }
 
@@ -455,14 +464,24 @@ impl RuntimeConfigBuilder {
     /// Sets the finite authentication failure cooldown cap, including zero.
     #[must_use]
     pub fn auth_failure_cooldown_cap(mut self, duration: Duration) -> Self {
-        self.config.auth_failure_cooldown_cap = duration;
+        if duration <= crate::controls::MAX_CONTROL_DURATION {
+            self.config.auth_failure_cooldown_cap = duration;
+            self.limit_selection.auth_cooldown_invalid = false;
+        } else {
+            self.limit_selection.auth_cooldown_invalid = true;
+        }
         self
     }
 
     /// Sets the finite server-directed rate-limit cooldown cap, including zero.
     #[must_use]
     pub fn rate_limit_cooldown_cap(mut self, duration: Duration) -> Self {
-        self.config.rate_limit_cooldown_cap = duration;
+        if duration <= crate::controls::MAX_CONTROL_DURATION {
+            self.config.rate_limit_cooldown_cap = duration;
+            self.limit_selection.rate_cooldown_invalid = false;
+        } else {
+            self.limit_selection.rate_cooldown_invalid = true;
+        }
         self
     }
 
@@ -581,7 +600,7 @@ impl RuntimeConfigBuilder {
         self
     }
 
-    /// Reports the first provider-helper setter whose latest selection was
+    /// Reports every provider-helper setter whose latest selection was
     /// invalid.
     pub(crate) fn validate_provider_configuration(
         &self,
@@ -595,16 +614,15 @@ impl RuntimeConfigBuilder {
             (selection.timeout_invalid, "provider_timeout"),
         ]
         .into_iter()
-        .find_map(|(invalid, setting)| invalid.then_some(setting));
-        match invalid {
-            Some(setting) => Err(crate::error::ClientBuildError::invalid_runtime_setting(
-                setting,
-            )),
+        .filter_map(|(invalid, setting)| invalid.then_some(setting))
+        .map(crate::error::ClientBuildError::invalid_runtime_setting);
+        match crate::error::ClientBuildError::collect(invalid) {
+            Some(error) => Err(error),
             None => Ok(()),
         }
     }
 
-    /// Reports the first managed-stream setter whose latest selection was
+    /// Reports every managed-stream setter whose latest selection was
     /// invalid.
     pub(crate) fn validate_stream_configuration(
         &self,
@@ -618,16 +636,15 @@ impl RuntimeConfigBuilder {
             (selection.frame_limit_invalid, "stream_frame_limit"),
         ]
         .into_iter()
-        .find_map(|(invalid, setting)| invalid.then_some(setting));
-        match invalid {
-            Some(setting) => Err(crate::error::ClientBuildError::invalid_runtime_setting(
-                setting,
-            )),
+        .filter_map(|(invalid, setting)| invalid.then_some(setting))
+        .map(crate::error::ClientBuildError::invalid_runtime_setting);
+        match crate::error::ClientBuildError::collect(invalid) {
+            Some(error) => Err(error),
             None => Ok(()),
         }
     }
 
-    /// Reports the first body/status/pagination count setter whose latest
+    /// Reports every body/status/pagination count setter whose latest
     /// selection was invalid (§20.4 primitive count setters).
     pub(crate) fn validate_limit_configuration(
         &self,
@@ -648,13 +665,18 @@ impl RuntimeConfigBuilder {
                 "pagination_identity_limit",
             ),
             (selection.aggregate_sends_invalid, "aggregate_max_sends"),
+            (
+                selection.runtime_timeout_invalid,
+                "runtime_endpoint_timeout",
+            ),
+            (selection.auth_cooldown_invalid, "auth_failure_cooldown_cap"),
+            (selection.rate_cooldown_invalid, "rate_limit_cooldown_cap"),
         ]
         .into_iter()
-        .find_map(|(invalid, setting)| invalid.then_some(setting));
-        match invalid {
-            Some(setting) => Err(crate::error::ClientBuildError::invalid_runtime_setting(
-                setting,
-            )),
+        .filter_map(|(invalid, setting)| invalid.then_some(setting))
+        .map(crate::error::ClientBuildError::invalid_runtime_setting);
+        match crate::error::ClientBuildError::collect(invalid) {
+            Some(error) => Err(error),
             None => Ok(()),
         }
     }
@@ -679,22 +701,38 @@ impl RuntimeConfigBuilder {
         }
     }
 
-    pub(crate) fn prepare_generated_rate_limits(
-        self,
+    pub(crate) fn validate_generated_rate_limits(
+        &self,
         requires_limiter: bool,
-    ) -> Result<Self, crate::error::ClientBuildError> {
-        self.validate_rate_limit_key_limit()?;
-        // Every v3 key has at least one dimension, so a limiter that admits
-        // zero key bytes is explicitly incompatible with any declared policy.
+    ) -> Result<(), crate::error::ClientBuildError> {
         if requires_limiter
             && (self.limiter_selection == LimiterSelection::Fallback
                 || self.config.rate_limit_key_limit == 0)
         {
-            return Err(crate::error::ClientBuildError::new(
+            Err(crate::error::ClientBuildError::new(
                 crate::error::ClientBuildErrorKind::LimiterUnavailable,
-            ));
+            ))
+        } else {
+            Ok(())
         }
-        Ok(self)
+    }
+
+    pub(crate) fn prepare_generated_rate_limits(
+        self,
+        requires_limiter: bool,
+    ) -> Result<Self, crate::error::ClientBuildError> {
+        let error = crate::error::ClientBuildError::collect(
+            [
+                self.validate_rate_limit_key_limit(),
+                self.validate_generated_rate_limits(requires_limiter),
+            ]
+            .into_iter()
+            .filter_map(Result::err),
+        );
+        match error {
+            Some(error) => Err(error),
+            None => Ok(self),
+        }
     }
 }
 

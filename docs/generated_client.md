@@ -332,6 +332,22 @@ The facade re-exports at its root (§7.2): `api!`, `ApiError`,
 `rate-limit` feature), `concord::retry` and `concord::inspection`.
 `concord::prelude` gathers the common declaration imports.
 
+## Generated-code compatibility
+
+The facade, macro compiler and core share generated-code contract version
+**35** (BRIDGE-01). Each `api!` expansion emits a const guard against the
+facade's core-owned version. Keep these packages matched: a different
+generated-code contract is rejected during compilation. The doc-hidden
+`__private` bridge is an integration surface for generated code.
+
+Contract35 builders validate all missing required inputs and independent
+configuration selections together before resolving their retained inputs or
+constructing native client state. The primary `ClientBuildError` remains
+available, with safe additional diagnostics for the other independent
+failures. Preflight does not acquire credentials, admit a request or perform
+network work. This generated-code version is separate from the versioned
+`concord.contract/3` description document format.
+
 ## Generated rustdoc
 
 Generated documentation is real rustdoc on the methods you call (§2.3, §19.2).

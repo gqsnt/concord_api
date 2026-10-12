@@ -228,6 +228,7 @@ pub(crate) struct ApplicationHttp {
     https_only: bool,
     status_body_limit: Option<NonZeroUsize>,
     retry_after_cap: Duration,
+    decoding: super::content_decoding::ContentDecoding,
     #[cfg(test)]
     development: Option<ApplicationChannel>,
 }
@@ -246,6 +247,7 @@ impl ApplicationHttp {
             https_only,
             status_body_limit,
             retry_after_cap,
+            decoding: super::content_decoding::ContentDecoding::disabled(),
             #[cfg(test)]
             development: None,
         }
@@ -254,6 +256,14 @@ impl ApplicationHttp {
     #[cfg(test)]
     pub(super) const fn https_only(&self) -> bool {
         self.https_only
+    }
+
+    pub(super) fn with_decoding(
+        mut self,
+        decoding: super::content_decoding::ContentDecoding,
+    ) -> Self {
+        self.decoding = decoding;
+        self
     }
 
     #[cfg(test)]
@@ -456,7 +466,7 @@ impl ApplicationHttp {
         };
 
         Ok(ApplicationResponse {
-            native: Some(native),
+            native: Some(self.decoding.response(native).await),
             endpoint: endpoint.clone(),
             method: method.clone(),
             progress: ResponseChunkProgress::default(),

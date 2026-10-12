@@ -53,7 +53,7 @@ pub(crate) fn material_type(context: &Context<'_>, credential: &Credential) -> T
         CredentialSource::Bearer { .. } => quote!(#f::auth::AccessToken),
         CredentialSource::Basic { .. } => quote!(#f::auth::BasicCredential),
         CredentialSource::Endpoint { endpoint, .. } => {
-            let output = &context.model.endpoints[*endpoint].output;
+            let output = context.rust_type(&context.model.endpoints[*endpoint].output);
             quote!(#output)
         }
         CredentialSource::Custom { provider } => {
@@ -527,13 +527,10 @@ fn builder_items(context: &Context<'_>) -> TokenStream {
             pub fn build(self) -> ::std::result::Result<super::#client, #f::ClientBuildError> {
                 let mut missing: ::std::vec::Vec<(&'static str, #f::error::ClientInputKind)> = ::std::vec::Vec::new();
                 #(#missing)*
-                if !missing.is_empty() {
-                    return ::std::result::Result::Err(#p::missing_inputs_error(missing));
-                }
-                #(#resolve)*
                 let http = self.__http.unwrap_or_else(#p::default_http_config);
                 let runtime = self.__runtime.unwrap_or_else(#p::default_runtime_config);
-                let runtime = #p::prepare_generated_rate_limits(runtime, #requires_limiter)?;
+                #p::preflight_generated_build(#base, &http, &runtime, #requires_limiter, missing)?;
+                #(#resolve)*
                 let core = #p::build_client_core(#base, http, runtime)?;
                 #(#credential_statements)*
                 #(#unused_secrets)*

@@ -3,6 +3,7 @@
 pub(crate) mod application;
 pub(crate) mod build;
 mod config;
+mod content_decoding;
 #[cfg(test)]
 mod development;
 mod limits;

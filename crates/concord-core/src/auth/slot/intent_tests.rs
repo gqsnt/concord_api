@@ -13,6 +13,8 @@ use crate::hooks::BoxFuture;
 
 use super::*;
 
+mod s1_replacement_overflow;
+
 #[derive(Debug)]
 struct Session(u32);
 

@@ -10,7 +10,7 @@ pub use category::{
     AuthErrorKind, ClientBuildErrorKind, ClientInputKind, ConfigurationErrorKind,
     DispatchKnowledge, ErrorCategory, FailureStage, PaginationErrorKind, RateLimitErrorKind,
 };
-pub use context::{ClientBuildError, ConfigurationError};
+pub use context::{ClientBuildDiagnostic, ClientBuildError, ConfigurationError};
 pub(crate) use journal::ErrorJournal;
 pub use journal::{
     AttemptFacts, OperationCounts, ProviderAcquisitionFacts, ProviderAcquisitionOutcome,

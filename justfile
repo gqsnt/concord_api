@@ -99,12 +99,13 @@ verify: fmt check lint test ui msrv fixtures docs package deny workflow analyzer
 # implementation (spec §28.2): format, check/clippy/test across default,
 # no-default and all features, facade/core UI suites (named explicitly: their
 # targets set `test = false`), MSRV library checks, feature fixtures, docs, the
-# two-crate downstream package, xtask tools (contract, migrate-v3), benchmark
+# two-crate downstream workspace and extracted archive consumers, xtask tools
+# (contract, migrate-v3), benchmark
 # compilation and the clean source export. It uses plain `cargo test` (the
 # documented nextest equivalent). External license/registry/tag/human-release
-# gates (`deny`, `workflow`, `package`, `release-audit`) stay in the separate
+# gates (`deny`, `workflow`, `release-audit`) stay in the separate
 # release report and are deliberately not part of this recipe.
-verify-implementation: fmt check lint-matrix test-matrix ui-matrix msrv fixtures docs downstream tools bench source-export
+verify-implementation: fmt check lint-matrix test-matrix ui-matrix msrv fixtures docs downstream package tools bench source-export
 
 lint-matrix:
     cargo clippy --workspace --all-targets --locked -- -D warnings

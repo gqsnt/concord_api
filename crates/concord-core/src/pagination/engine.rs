@@ -201,6 +201,8 @@ where
     final_status: Option<StatusCode>,
     policy_retries: u32,
     recovered_authentication: bool,
+    // Current fetch/decision correlation is independent of received-page count.
+    active_page_index: u32,
     in_flight: Option<MeterSnapshot>,
     observed: bool,
     drop_report: DropReport,
@@ -267,6 +269,7 @@ where
             final_status: None,
             policy_retries: 0,
             recovered_authentication: false,
+            active_page_index: 0,
             in_flight: None,
             observed: false,
             drop_report,
@@ -374,6 +377,7 @@ where
             return Err(Stop::failed(self.internal_error()));
         };
         let page_index = self.summary.pages_received;
+        self.active_page_index = page_index;
 
         self.check_deadline(FailureStage::BeforeDispatch)?;
         if self.options.controls().is_cancelled() {
@@ -417,7 +421,15 @@ where
             }
         };
         self.account_page(&executed, before);
-        if self.meter.bytes_exceeded() {
+        // Preserve endpoint status/challenge classification despite failed capture.
+        // The shared meter still records the acquired bytes in the summary.
+        let fixed_rejection = executed.result.as_ref().err().is_some_and(|error| {
+            matches!(
+                error.category(),
+                ErrorCategory::HttpStatus | ErrorCategory::AuthenticationRejected
+            )
+        });
+        if self.meter.bytes_exceeded() && !fixed_rejection {
             return Err(
                 self.decision_stop(PaginationErrorKind::CollectedResponseByteCeilingExceeded)
             );
@@ -681,10 +693,7 @@ where
         error.with_journal(ErrorJournal {
             operation_id: self.summary.operation_id,
             parent_operation_id: None,
-            page_index: self
-                .summary
-                .operation_id
-                .map(|_| self.summary.pages_received),
+            page_index: self.summary.operation_id.map(|_| self.active_page_index),
             stage,
             aggregate: self.summary.dispatch_knowledge,
             last_attempt: None,

@@ -505,3 +505,52 @@ async fn immediate_two_state_and_long_cycles_are_withheld_before_delivery() {
         }
     }
 }
+
+#[tokio::test]
+async fn rejected_body_meter_keeps_status() {
+    let harness = Harness::configured(|r| r.pagination_total_response_body_limit(8));
+    harness.queue_status(StatusCode::SERVICE_UNAVAILABLE, "0123456789abcdef");
+    let error = prefix(harness.core.clone(), PageEndpoint::new("initial"), 2)
+        .await
+        .expect_err("the status is rejected");
+    assert_eq!(harness.requests(), 1);
+    assert_eq!(
+        error.last_response_status(),
+        Some(StatusCode::SERVICE_UNAVAILABLE)
+    );
+    assert_eq!(
+        error.dispatch_knowledge(),
+        DispatchKnowledge::ResponseObserved
+    );
+    assert_eq!(summary_of(&error).acquired_response_bytes(), 16);
+    assert_eq!(error.category(), ErrorCategory::HttpStatus);
+    assert_eq!(error.http_status(), Some(StatusCode::SERVICE_UNAVAILABLE));
+}
+
+#[tokio::test]
+async fn rejected_body_meter_positive_controls() {
+    let roomy = Harness::configured(|r| r.pagination_total_response_body_limit(64));
+    roomy.queue_status(StatusCode::SERVICE_UNAVAILABLE, "0123456789abcdef");
+    let error = prefix(roomy.core.clone(), PageEndpoint::new("initial"), 2)
+        .await
+        .expect_err("rejected status");
+    assert_eq!(roomy.requests(), 1);
+    assert_eq!(error.category(), ErrorCategory::HttpStatus);
+    assert_eq!(error.http_status(), Some(StatusCode::SERVICE_UNAVAILABLE));
+    assert_eq!(summary_of(&error).acquired_response_bytes(), 16);
+    let direct = Harness::new();
+    direct.queue_status(StatusCode::SERVICE_UNAVAILABLE, "0123456789abcdef");
+    let error = direct
+        .request(PageEndpoint::new("initial"))
+        .with_options(&CallOptions::new().cap_response_bytes(NonZeroUsize::new(8).unwrap()))
+        .await
+        .err()
+        .expect("direct status");
+    assert_eq!(direct.requests(), 1);
+    assert_eq!(error.category(), ErrorCategory::HttpStatus);
+    assert_eq!(error.http_status(), Some(StatusCode::SERVICE_UNAVAILABLE));
+    assert_eq!(
+        error.dispatch_knowledge(),
+        DispatchKnowledge::ResponseObserved
+    );
+}

@@ -1252,6 +1252,7 @@ fn migrate_on_this_thread(input: &Path, settings: &Settings) -> Result<Migration
                 package: package.then(|| key.clone()),
                 library: targets.library,
                 library_path: targets.library_path,
+                concord_own: concord_own.clone(),
                 target_paths: targets.target_paths,
                 edition: targets.edition,
                 base: key.clone(),
@@ -1441,7 +1442,27 @@ fn migrate_source_at(
             };
         }
     };
-    let mut imports = Imports::collect(&parsed.file);
+    let mut imports = match path {
+        Some(path) => match index.imports_for(path, source) {
+            Some(imports) => imports,
+            None => {
+                return SourceOutcome {
+                    converted: source.to_owned(),
+                    edits: 0,
+                    declarations: 0,
+                    diagnostics: vec![locate(RawDiagnostic::new(
+                        Code::ApiMacroUnresolved,
+                        0,
+                        "the source bytes/path do not match the indexed namespace proof; the file was left unchanged. Rerun migration against a stable source tree",
+                    ))],
+                    identities: Vec::new(),
+                };
+            }
+        },
+        // Only the cfg(test) standalone snippet compatibility helper has no
+        // source path. Production migrate() always carries exact authority.
+        None => Imports::collect(&parsed.file),
+    };
     if imports.has_bare_api() {
         // A file its crate's index does not hold is its own crate root.
         let proof = path
@@ -1515,7 +1536,21 @@ fn migrate_source_at(
             standalone: true,
             ..Layout::default()
         };
-        crate_index = DeclIndex::build(&layout, &[(own_path.clone(), source.to_owned())]);
+        #[cfg(test)]
+        {
+            crate_index = if path.is_none() {
+                DeclIndex::build_test_declaration_context(
+                    &layout,
+                    &[(own_path.clone(), source.to_owned())],
+                )
+            } else {
+                DeclIndex::build(&layout, &[(own_path.clone(), source.to_owned())])
+            };
+        }
+        #[cfg(not(test))]
+        {
+            crate_index = DeclIndex::build(&layout, &[(own_path.clone(), source.to_owned())]);
+        }
         (&crate_index, crate_index.file_scope(&own_path))
     } else {
         (index, path.and_then(|path| index.file_scope(path)))

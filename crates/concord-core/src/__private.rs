@@ -376,6 +376,22 @@ pub fn prepare_generated_rate_limits(
     runtime.prepare_generated_rate_limits(requires_limiter)
 }
 
+/// Validates generated missing inputs and independent configuration selections.
+///
+/// Must run before generated value/provider resolution or native construction.
+/// Names are static declaration identifiers. The primary error identity is
+/// preserved while safe additional diagnostics remain available to callers.
+#[doc(hidden)]
+pub fn preflight_generated_build(
+    fixed_base: &str,
+    http: &crate::http::HttpConfigBuilder,
+    runtime: &crate::runtime::RuntimeConfigBuilder,
+    requires_limiter: bool,
+    missing: Vec<(&'static str, ClientInputKind)>,
+) -> Result<(), ClientBuildError> {
+    ClientCore::preflight_build(fixed_base, http, runtime, requires_limiter, missing)
+}
+
 /// Builds one private shared core for generated client storage.
 #[doc(hidden)]
 pub fn build_client_core(

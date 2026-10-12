@@ -63,6 +63,8 @@ pub struct HttpConfigBuilder {
     #[cfg(feature = "default-tls")]
     root_certificates_total_bytes: usize,
     startup_error: Option<ClientBuildErrorKind>,
+    root_input_invalid: bool,
+    identity_input_invalid: bool,
 }
 
 impl HttpConfigBuilder {
@@ -94,6 +96,8 @@ impl HttpConfigBuilder {
             #[cfg(feature = "default-tls")]
             root_certificates_total_bytes: 0,
             startup_error: None,
+            root_input_invalid: false,
+            identity_input_invalid: false,
         }
     }
 
@@ -206,7 +210,7 @@ impl HttpConfigBuilder {
     #[cfg(feature = "default-tls")]
     #[must_use]
     pub fn add_root_certificate_pem(mut self, pem: impl AsRef<[u8]>) -> Self {
-        if self.startup_error.is_some() {
+        if self.root_input_invalid {
             return self;
         }
         let pem = pem.as_ref();
@@ -215,7 +219,15 @@ impl HttpConfigBuilder {
             && pem.len() <= MAX_ROOT_CERTIFICATE_BYTES
             && next_total.is_some_and(|total| total <= MAX_ROOT_CERTIFICATES_TOTAL_BYTES);
         if !valid {
-            self.startup_error = Some(ClientBuildErrorKind::InvalidRootCertificate);
+            self.root_input_invalid = true;
+            self.startup_error
+                .get_or_insert(ClientBuildErrorKind::InvalidRootCertificate);
+            return self;
+        }
+        if self.startup_error.is_some() {
+            if reqwest::Certificate::from_pem_bundle(pem).map_or(true, |parsed| parsed.is_empty()) {
+                self.root_input_invalid = true;
+            }
             return self;
         }
         self.config.root_certificates_pem.push(pem.to_vec());
@@ -234,12 +246,20 @@ impl HttpConfigBuilder {
     #[cfg(feature = "default-tls")]
     #[must_use]
     pub fn identity_pem(mut self, pem: impl AsRef<[u8]>) -> Self {
-        if self.startup_error.is_some() {
+        if self.identity_input_invalid {
             return self;
         }
         let pem = pem.as_ref();
         if pem.len() > MAX_IDENTITY_PEM_BYTES {
-            self.startup_error = Some(ClientBuildErrorKind::InvalidClientIdentity);
+            self.identity_input_invalid = true;
+            self.startup_error
+                .get_or_insert(ClientBuildErrorKind::InvalidClientIdentity);
+            return self;
+        }
+        if self.startup_error.is_some() {
+            if reqwest::Identity::from_pem(pem).is_err() {
+                self.identity_input_invalid = true;
+            }
             return self;
         }
         self.config.identity_pem = Some(pem.to_vec());
@@ -270,11 +290,99 @@ impl HttpConfigBuilder {
         self
     }
 
-    pub(crate) fn resolve(self) -> Result<HttpConfig, ClientBuildError> {
-        match self.startup_error {
-            Some(kind) => Err(ClientBuildError::new(kind)),
-            None => Ok(self.config),
+    /// Reports latched startup errors without parsing retained material.
+    pub(crate) fn validate_startup_configuration(&self) -> Result<(), ClientBuildError> {
+        let mut errors = Vec::new();
+        if let Some(kind) = self.startup_error {
+            errors.push(ClientBuildError::new(kind));
         }
+        for (invalid, kind) in [
+            (
+                self.root_input_invalid,
+                ClientBuildErrorKind::InvalidRootCertificate,
+            ),
+            (
+                self.identity_input_invalid,
+                ClientBuildErrorKind::InvalidClientIdentity,
+            ),
+        ] {
+            if invalid && self.startup_error != Some(kind) {
+                errors.push(ClientBuildError::new(kind));
+            }
+        }
+        match ClientBuildError::collect(errors) {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
+    }
+
+    /// Validates retained PEM and native setting selections without construction.
+    pub(crate) fn validate_material_configuration(&self) -> Result<(), ClientBuildError> {
+        let mut errors = Vec::new();
+        for (duration, setting) in [
+            (self.config.connect_timeout, "connect_timeout"),
+            (self.config.read_timeout, "read_timeout"),
+            (self.config.pool_idle_timeout, "pool_idle_timeout"),
+            (self.config.tcp_keepalive, "tcp_keepalive"),
+        ] {
+            // Preserve native zero semantics; reject only unrepresentable durations.
+            if duration.is_some_and(|duration| duration > crate::controls::MAX_CONTROL_DURATION) {
+                errors.push(ClientBuildError::invalid_http_setting(setting));
+            }
+        }
+        #[cfg(feature = "default-tls")]
+        {
+            if !self.root_input_invalid
+                && self.config.root_certificates_pem.iter().any(|pem| {
+                    reqwest::Certificate::from_pem_bundle(pem)
+                        .map_or(true, |parsed| parsed.is_empty())
+                })
+            {
+                errors.push(ClientBuildError::new(
+                    ClientBuildErrorKind::InvalidRootCertificate,
+                ));
+            }
+            if !self.identity_input_invalid
+                && self
+                    .config
+                    .identity_pem
+                    .as_ref()
+                    .is_some_and(|pem| reqwest::Identity::from_pem(pem).is_err())
+            {
+                errors.push(ClientBuildError::new(
+                    ClientBuildErrorKind::InvalidClientIdentity,
+                ));
+            }
+        }
+        match ClientBuildError::collect(errors) {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
+    }
+
+    /// Pure validation for callers that do not interleave transport restrictions.
+    #[cfg(test)]
+    pub(crate) fn validate_configuration(&self) -> Result<(), ClientBuildError> {
+        match ClientBuildError::collect(
+            [
+                self.validate_startup_configuration(),
+                self.validate_material_configuration(),
+            ]
+            .into_iter()
+            .filter_map(Result::err),
+        ) {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
+    }
+
+    pub(crate) fn validate_fixed_base(&self, base: &url::Url) -> Result<(), ClientBuildError> {
+        super::build::ManagedHttp::validate_fixed_base(&self.config, base)
+    }
+
+    pub(crate) fn resolve(self) -> Result<HttpConfig, ClientBuildError> {
+        self.validate_startup_configuration()?;
+        Ok(self.config)
     }
 }
 
@@ -574,5 +682,51 @@ mod tests {
         assert!(config.disable_gzip);
         assert!(config.disable_brotli);
         assert!(config.disable_deflate);
+    }
+}
+
+#[cfg(all(test, feature = "default-tls"))]
+mod review_build_preflight {
+    use super::*;
+    #[test]
+    fn structural_failure_stops_material_retention_but_records_other_invalid_domain() {
+        let oversized_root = vec![b'r'; MAX_ROOT_CERTIFICATE_BYTES + 1];
+        let oversized_identity = vec![b'i'; MAX_IDENTITY_PEM_BYTES + 1];
+        for (http, primary) in [
+            (
+                HttpConfigBuilder::new()
+                    .add_root_certificate_pem(&oversized_root)
+                    .identity_pem(&oversized_identity),
+                ClientBuildErrorKind::InvalidRootCertificate,
+            ),
+            (
+                HttpConfigBuilder::new()
+                    .identity_pem(&oversized_identity)
+                    .add_root_certificate_pem(&oversized_root),
+                ClientBuildErrorKind::InvalidClientIdentity,
+            ),
+            (
+                HttpConfigBuilder::new()
+                    .add_root_certificate_pem(&oversized_root)
+                    .identity_pem(b"private-identity-sentinel"),
+                ClientBuildErrorKind::InvalidRootCertificate,
+            ),
+            (
+                HttpConfigBuilder::new()
+                    .identity_pem(&oversized_identity)
+                    .add_root_certificate_pem(b"private-root-sentinel"),
+                ClientBuildErrorKind::InvalidClientIdentity,
+            ),
+        ] {
+            assert!(http.config.root_certificates_pem.is_empty());
+            assert_eq!(http.root_certificates_total_bytes, 0);
+            assert!(http.config.identity_pem.is_none());
+            let failure = http
+                .validate_configuration()
+                .expect_err("invalid root and identity");
+            assert_eq!(failure.kind(), primary);
+            assert_eq!(failure.diagnostics().count(), 2);
+            assert!(!format!("{failure:?}").contains("private-"));
+        }
     }
 }

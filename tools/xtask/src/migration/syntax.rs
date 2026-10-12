@@ -1081,7 +1081,13 @@ fn parse_atom(input: ParseStream<'_>, cx: &Cx, depth: usize) -> syn::Result<Atom
         let minus: Token![-] = input.parse()?;
         let literal: LitInt = input.parse()?;
         Atom::Int {
-            text: format!("-{}", literal.base10_digits()),
+            // Integer formatting in v2 evaluates unary minus: -0 writes "0".
+            // Do not range-parse other literals or reject previously accepted values.
+            text: if literal.base10_digits().bytes().all(|byte| byte == b'0') {
+                "0".to_owned()
+            } else {
+                format!("-{}", literal.base10_digits())
+            },
             range: cx.span(minus.spans[0]).start..cx.span(literal.span()).end,
         }
     } else if input.peek(LitInt) {

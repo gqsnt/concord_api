@@ -40,9 +40,10 @@ pub use concord_macros::__api as __concord_api;
 pub use concord_core::contracts::ItemStream;
 pub use concord_core::contracts::{
     ApiError, ApiResponse, AtomEncoder, AtomError, AtomErrorKind, Binary, BoundedAtomWriter,
-    ByteStream, Bytes, CallOptions, CancellationToken, ClientBuildError, ControlError,
-    ControlSummary, Discard, DispatchKnowledge, Empty, ExecutionMeta, IntoValue, OperationId,
-    OrderedValues, RequestAtom, RequestControls, RequestStream, SecretString, StoreOutcome, Text,
+    ByteStream, Bytes, CallOptions, CancellationToken, ClientBuildDiagnostic, ClientBuildError,
+    ControlError, ControlSummary, Discard, DispatchKnowledge, Empty, ExecutionMeta, IntoValue,
+    OperationId, OrderedValues, RequestAtom, RequestControls, RequestStream, SecretString,
+    StoreOutcome, Text,
 };
 pub use concord_extras::atom::DisplayAtom;
 
@@ -149,12 +150,12 @@ pub mod inspection {
 pub mod error {
     pub use concord_core::contracts::{
         ApiError, AttemptFacts, AuthError, AuthErrorKind, BodyError, BodyErrorKind,
-        ClientBuildError, ClientBuildErrorKind, ClientInputKind, CodecError, CodecErrorKind,
-        ConfigurationError, ConfigurationErrorKind, DispatchKnowledge, ErrorCategory, FailureStage,
-        HttpResponseFailure, OperationCounts, PaginationError, PaginationErrorKind,
-        ProviderAcquisitionFacts, ProviderAcquisitionOutcome, RateLimitError, RateLimitErrorKind,
-        ResponseBodyError, ResponseBodyErrorKind, StatusBody, StatusBodyDecodeError,
-        StatusBodyDecodeErrorKind, StatusBodyState,
+        ClientBuildDiagnostic, ClientBuildError, ClientBuildErrorKind, ClientInputKind, CodecError,
+        CodecErrorKind, ConfigurationError, ConfigurationErrorKind, DispatchKnowledge,
+        ErrorCategory, FailureStage, HttpResponseFailure, OperationCounts, PaginationError,
+        PaginationErrorKind, ProviderAcquisitionFacts, ProviderAcquisitionOutcome, RateLimitError,
+        RateLimitErrorKind, ResponseBodyError, ResponseBodyErrorKind, StatusBody,
+        StatusBodyDecodeError, StatusBodyDecodeErrorKind, StatusBodyState,
     };
 }
 

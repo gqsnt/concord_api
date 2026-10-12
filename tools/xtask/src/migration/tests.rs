@@ -1180,7 +1180,7 @@ fn catalog_baseline_contract_preserves_labels_ids_and_order() {
 #[test]
 fn riot_declaration_converts_all_endpoints_with_identity_and_sharing() {
     let source = fixture("riot_v2_1.rs.txt");
-    let outcome = convert(&source);
+    let outcome = convert_riot_with_original_context(&source);
     let converted = &outcome.converted;
     assert!(errors(&outcome).is_empty(), "{:?}", errors(&outcome));
     assert_eq!(outcome.identities.len(), 46);
@@ -1339,13 +1339,15 @@ fn check_exit_status_and_json_report_are_stable() {
         "Cargo.toml",
         "[package]\nname = \"clean\"\nversion = \"0.0.0\"\nedition = \"2024\"\n",
     );
-    clean.write("src/lib.rs", &fixture("riot_v2_1.rs.txt"));
+    // The original module depends on crate::riot::domain::*; give namespace
+    // proof its real original context instead of an unresolved root snippet.
+    let riot_input = write_original_riot_context(&clean, &fixture("riot_v2_1.rs.txt"));
     let report = TempDir::new("report");
     let report_path = report.0.join("report.json");
     assert_eq!(
         run_status(&[
             "--input".to_owned(),
-            clean.0.display().to_string(),
+            riot_input.display().to_string(),
             "--check".to_owned(),
             "--report".to_owned(),
             report_path.display().to_string(),
@@ -1612,8 +1614,15 @@ pub fn calls(client: Pages, n: u32, limit: PageLimit) {
 #[test]
 fn migration_output_is_a_fixed_point() {
     for name in ["catalog_contract_v2_1.rs.txt", "riot_v2_1.rs.txt"] {
-        let first = convert(&fixture(name));
-        let second = convert(&first.converted);
+        let contextual = |source: &str| {
+            if name == "riot_v2_1.rs.txt" {
+                convert_riot_with_original_context(source)
+            } else {
+                convert(source)
+            }
+        };
+        let first = contextual(&fixture(name));
+        let second = contextual(&first.converted);
         assert_eq!(second.converted, first.converted, "{name}");
         assert_eq!(second.edits, 0, "{name}");
         assert!(
@@ -4037,3 +4046,682 @@ mod removed_member_review;
 mod removed_member_review_r5;
 /// R4-01: generated members v2.1 emitted and v3 removed (R5 tests).
 mod removed_members;
+
+// A namespace-dependent fixture needs its real original module graph. These
+// helpers add context; captured input and golden output files remain immutable.
+fn write_original_riot_context(workspace: &TempDir, riot: &str) -> PathBuf {
+    workspace.write("src/lib.rs", "pub mod riot;\n");
+    let mut files = Vec::new();
+    golden_files(&golden_root(), &mut files);
+    let generated = COMPILED_FIXTURES
+        .iter()
+        .map(|(_, target)| *target)
+        .collect::<Vec<_>>();
+    for file in files
+        .iter()
+        .filter(|file| file.starts_with("riot/") && !generated.contains(&file.as_str()))
+    {
+        let text =
+            fs::read_to_string(golden_root().join(file)).expect("original Riot support source");
+        workspace.write(&format!("src/{file}"), &text);
+    }
+    workspace.write(
+        "src/riot/api/data_dragon.rs",
+        &fixture("data_dragon_v2_1.rs.txt"),
+    );
+    workspace.write("src/riot/usage.rs", &fixture("riot_usage_v2_1.rs.txt"));
+    workspace.write("src/riot/api/riot.rs", riot)
+}
+
+fn convert_riot_with_original_context(source: &str) -> SourceOutcome {
+    let workspace = TempDir::new("riot-source-context");
+    workspace.write(
+        "Cargo.toml",
+        "[package]\nname = \"riot-context\"\nversion = \"0.0.0\"\nedition = \"2024\"\n",
+    );
+    let path = write_original_riot_context(&workspace, source);
+    let migration = migrate(&path, &Settings::default()).expect("original namespace context");
+    let file = migration
+        .files
+        .into_iter()
+        .find(|file| file.relative == "riot.rs")
+        .expect("only requested Riot file");
+    assert_eq!(
+        file.original, source,
+        "context must not change original fixture bytes"
+    );
+    SourceOutcome {
+        converted: file.converted,
+        edits: file.edits,
+        declarations: migration.declarations,
+        diagnostics: migration.diagnostics,
+        identities: migration.identities,
+    }
+}
+
+fn namespace_case(domain: Option<&str>, root_prefix: &str, import: &str) -> super::Migration {
+    let workspace = TempDir::new("namespace-proof");
+    workspace.write("Cargo.toml", "[package]\nname = \"namespace-proof\"\nversion = \"0.0.0\"\nedition = \"2024\"\n[dependencies]\nconcord = \"3\"\n");
+    if let Some(domain) = domain {
+        workspace.write("src/domain.rs", domain);
+    }
+    let source = format!(
+        "{root_prefix}\nuse concord::api;\n{import}\napi! {{ client NamespaceProbe {{ base \"https://namespace.example.test/\"; timeout 5s; GET read() -> () via concord::Empty {{ path [\"ok\"]; }} }} }}\n"
+    );
+    workspace.write("src/lib.rs", &source);
+    migrate(&workspace.0.join("src/lib.rs"), &Settings::default()).expect("namespace migration")
+}
+
+#[test]
+fn s5_namespace_real_target_and_alias_positive_controls() {
+    for import in [
+        "use crate::domain::*;",
+        "use crate::domain as exported; use exported::*;",
+    ] {
+        let migration =
+            namespace_case(Some("pub struct DomainValue;\n"), "pub mod domain;", import);
+        assert!(
+            migration
+                .converted("lib.rs")
+                .unwrap()
+                .contains("path \"ok\";")
+        );
+        assert!(
+            !migration
+                .diagnostics
+                .iter()
+                .any(|d| d.code == Code::ApiMacroUnresolved)
+        );
+    }
+    let original = fixture("riot_v2_1.rs.txt");
+    let result = convert_riot_with_original_context(&original);
+    assert!(errors(&result).is_empty(), "{:?}", errors(&result));
+    assert_eq!(result.identities.len(), 46);
+}
+
+#[test]
+fn s5_namespace_unknown_or_foreign_targets_never_supply_absence_proof() {
+    for (label, domain) in [
+        ("missing", None),
+        ("external glob", Some("pub use unknown_external::*;\n")),
+        ("local concord module", Some("pub mod concord {}\n")),
+        (
+            "pub reexport",
+            Some("mod hidden { pub mod concord {} } pub use hidden::*;\n"),
+        ),
+        (
+            "conditional binding",
+            Some("#[cfg(feature=\"conditional\")] pub mod concord {}\n"),
+        ),
+        ("opaque macro", Some("make_namespace!();\n")),
+        (
+            "pending API",
+            Some(
+                "use concord::api; api! { client UnknownEmissions { base \"https://unknown.example.test/\"; GET f() -> () via concord::Empty { path [\"x\"]; } } }\n",
+            ),
+        ),
+    ] {
+        let migration = namespace_case(domain, "pub mod domain;", "use crate::domain::*;");
+        let file = migration
+            .files
+            .iter()
+            .find(|file| file.relative == "lib.rs")
+            .unwrap();
+        assert_eq!(
+            file.original, file.converted,
+            "{label}: no speculative edits"
+        );
+        assert!(
+            migration
+                .diagnostics
+                .iter()
+                .any(|d| d.code == Code::ApiMacroUnresolved),
+            "{label}: unresolved ownership must be reported"
+        );
+    }
+    let repeated = namespace_case(
+        Some("pub struct DomainValue;\n"),
+        "#[path=\"domain.rs\"] mod one; #[path=\"domain.rs\"] mod two;",
+        "use crate::one::*;",
+    );
+    let file = repeated
+        .files
+        .iter()
+        .find(|file| file.relative == "lib.rs")
+        .unwrap();
+    assert_eq!(
+        file.original, file.converted,
+        "repeated mounts may not lend a single-origin proof"
+    );
+    assert!(
+        repeated
+            .diagnostics
+            .iter()
+            .any(|d| d.code == Code::ApiMacroUnresolved)
+    );
+}
+
+#[test]
+fn s5_namespace_omitted_riot_context_stays_unresolved() {
+    let source = fixture("riot_v2_1.rs.txt");
+    let outcome = convert(&source);
+    assert_eq!(outcome.converted, source);
+    assert!(codes(&outcome).contains(&"C3-MIGRATE-API-MACRO-UNRESOLVED"));
+}
+
+#[test]
+fn s5_namespace_macro_generated_without_glob_is_unresolved() {
+    let workspace = TempDir::new("generated-namespace");
+    let source = include_str!("../../tests/fixtures/trust_generated_namespace.rs");
+    let input = workspace.write("input.rs", source);
+    let migration = migrate(&input, &Settings::default()).expect("standalone source origin");
+    let file = migration
+        .files
+        .iter()
+        .find(|file| file.relative == "input.rs")
+        .expect("input");
+    assert_eq!(
+        file.original, file.converted,
+        "unknown producer must not authorize foreign token edits"
+    );
+    assert!(
+        migration
+            .diagnostics
+            .iter()
+            .any(|d| d.code == Code::ApiMacroUnresolved)
+    );
+}
+
+#[test]
+fn s5_namespace_prefixes_and_exact_module_block_scopes() {
+    let body = r#"use concord::api; use crate::domain::*;
+api! { client ScopedNamespace { base "https://scope.example.test/"; timeout 5s;
+GET f() -> () via concord::Empty { path ["scope"]; } } }"#;
+    for prefix in [
+        "",
+        "\u{feff}",
+        "#!/usr/bin/env rust-script\n",
+        "\u{feff}#!/usr/bin/env rust-script\n",
+    ] {
+        for scope in [
+            format!("mod nested {{ {body} }}"),
+            format!("fn configure() {{ {body} }}"),
+        ] {
+            let workspace = TempDir::new("namespace-prefix");
+            workspace.write("Cargo.toml", "[package]\nname=\"prefix-context\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[dependencies]\nconcord=\"3\"\n");
+            workspace.write("src/domain.rs", "pub struct UnicodeContext;\n");
+            let source =
+                format!("{prefix}// Unicode Ï€ before anchored scopes\npub mod domain;\n{scope}\n");
+            let input = workspace.write("src/lib.rs", &source);
+            let migration = migrate(&input, &Settings::default()).expect("exact prefix scope");
+            assert!(
+                migration
+                    .converted("lib.rs")
+                    .expect("source")
+                    .contains("path \"scope\";"),
+                "prefix/scope failed: {:?}",
+                migration
+                    .diagnostics
+                    .iter()
+                    .map(|d| d.render())
+                    .collect::<Vec<_>>()
+            );
+            assert!(
+                !migration
+                    .diagnostics
+                    .iter()
+                    .any(|d| d.code == Code::ApiMacroUnresolved)
+            );
+            let shadowed = source.replace("use concord::api;", "mod concord {} use concord::api;");
+            workspace.write("src/lib.rs", &shadowed);
+            let refused = migrate(&input, &Settings::default()).expect("local shadow");
+            assert_eq!(refused.converted("lib.rs"), Some(shadowed.as_str()));
+            assert!(
+                refused
+                    .diagnostics
+                    .iter()
+                    .any(|d| d.code == Code::ApiMacroUnresolved)
+            );
+        }
+    }
+}
+
+#[test]
+fn s5_namespace_declared_api_support_namespace_is_not_positive_origin_evidence() {
+    let migration = namespace_case(None, "", "");
+    assert!(
+        !migration
+            .diagnostics
+            .iter()
+            .any(|d| d.code == Code::ApiMacroUnresolved)
+    );
+    let workspace = TempDir::new("concord-support-shadow");
+    workspace.write("Cargo.toml", "[package]\nname=\"support-shadow\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[dependencies]\nconcord=\"3\"\n");
+    let source = "use concord::api; api! { client Concord { base \"https://scope.example.test/\"; GET f() -> () via concord::Empty { path [\"x\"]; } } }";
+    let input = workspace.write("src/lib.rs", source);
+    let migration = migrate(&input, &Settings::default()).expect("potential generated namespace");
+    assert_eq!(migration.converted("lib.rs"), Some(source));
+    assert!(
+        migration
+            .diagnostics
+            .iter()
+            .any(|d| d.code == Code::ApiMacroUnresolved)
+    );
+}
+
+#[test]
+fn s5_namespace_source_path_and_bytes_must_match_actual_index() {
+    let workspace = TempDir::new("namespace-exact-source");
+    let source = "use concord::api; api! { client ExactSource { base \"https://exact.example.test/\"; GET f() -> () via concord::Empty { path [\"x\"]; } } }";
+    let path = workspace.write("input.rs", source);
+    let layout = super::resolve::Layout {
+        base: workspace.0.clone(),
+        standalone: true,
+        ..Default::default()
+    };
+    let index = DeclIndex::build(&layout, &[(path.clone(), source.to_owned())]);
+    let control = super::migrate_source_at(
+        "input.rs",
+        source,
+        &index,
+        Some(&path),
+        &Settings::default(),
+    );
+    assert!(
+        control.converted.contains("path \"x\";"),
+        "{:?}",
+        errors(&control)
+    );
+    let changed = format!("generate_namespace!();\n{source}");
+    workspace.write("input.rs", &changed);
+    for (selected, bytes) in [
+        (&path, changed.as_str()),
+        (&workspace.0.join("unindexed.rs"), source),
+    ] {
+        let result = super::migrate_source_at(
+            "input.rs",
+            bytes,
+            &index,
+            Some(selected),
+            &Settings::default(),
+        );
+        assert_eq!(result.converted, bytes);
+        assert_eq!(result.edits, 0);
+        assert!(codes(&result).contains(&"C3-MIGRATE-API-MACRO-UNRESOLVED"));
+    }
+}
+
+#[test]
+fn s5_namespace_self_alias_is_bound_to_library_target_and_source_macro_origin() {
+    let foreign = include_str!("../../tests/fixtures/trust_foreign_self_binary.rs");
+    for target in [
+        "src/main.rs",
+        "src/bin/foreign.rs",
+        "examples/foreign.rs",
+        "tests/foreign.rs",
+        "src/lib.rs",
+    ] {
+        let workspace = TempDir::new("namespace-own-target");
+        workspace.write(
+            "Cargo.toml",
+            "[package]\nname=\"concord\"\nversion=\"3.0.0\"\nedition=\"2024\"\n",
+        );
+        if target != "src/lib.rs" {
+            workspace.write("src/lib.rs", "pub struct LibraryMarker;\n");
+        }
+        let input = workspace.write(target, foreign);
+        let migration = migrate(&input, &Settings::default()).expect("actual own target");
+        let file = migration
+            .files
+            .iter()
+            .find(|file| file.original == foreign)
+            .expect("foreign target");
+        assert_eq!(
+            file.converted, foreign,
+            "{target}: package name is not macro origin"
+        );
+        assert!(
+            migration
+                .diagnostics
+                .iter()
+                .any(|d| d.code == Code::ApiMacroUnresolved),
+            "{target}"
+        );
+    }
+}
+
+#[test]
+fn s5_namespace_other_attribute_derive_and_statement_expansions_remain_unknown() {
+    for prefix in [
+        "#[unknown_attribute] struct Source;",
+        "#[derive(UnknownDerive)] struct Source;",
+        "generate_namespace!();",
+    ] {
+        let migration = namespace_case(None, prefix, "");
+        let file = migration
+            .files
+            .iter()
+            .find(|file| file.relative == "lib.rs")
+            .expect("input");
+        assert_eq!(file.original, file.converted, "{prefix}");
+        assert!(
+            migration
+                .diagnostics
+                .iter()
+                .any(|d| d.code == Code::ApiMacroUnresolved),
+            "{prefix}"
+        );
+    }
+}
+
+#[test]
+fn s5_namespace_own_library_canonical_macro_reexports_use_resolved_origins() {
+    for prefix in [
+        "pub use ::concord_macros::__api as api;",
+        "pub use ::concord_macros::api;",
+        "extern crate concord_macros as canonical; pub use canonical::__api as api;",
+    ] {
+        let workspace = TempDir::new("canonical-own-macro");
+        workspace.write("Cargo.toml", "[package]\nname=\"concord\"\nversion=\"3.0.0\"\nedition=\"2024\"\n[dependencies]\nconcord_macros={package=\"concord-macros\",version=\"3\"}\n");
+        let source = format!(
+            "{prefix}\nextern crate self as concord;\nconcord::api! {{ client CanonicalSource {{ base \"https://canonical.example.test/\"; GET f() -> () via concord::Empty {{ path [\"x\"]; }} }} }}\n"
+        );
+        let input = workspace.write("src/lib.rs", &source);
+        let migration = migrate(&input, &Settings::default()).expect("resolved canonical source");
+        assert!(
+            migration
+                .converted("lib.rs")
+                .expect("library")
+                .contains("path \"x\";"),
+            "{prefix}: {:?}",
+            migration
+                .diagnostics
+                .iter()
+                .map(|d| d.render())
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            !migration
+                .diagnostics
+                .iter()
+                .any(|d| d.code == Code::ApiMacroUnresolved),
+            "{prefix}"
+        );
+    }
+    for prefix in [
+        "pub use ::application_macros::api;",
+        "mod concord_macros { pub use crate::application_api as api; } pub use concord_macros::api;",
+        "#[cfg(feature=\"maybe\")] pub use ::concord_macros::api;",
+    ] {
+        let workspace = TempDir::new("noncanonical-own-macro");
+        workspace.write(
+            "Cargo.toml",
+            "[package]\nname=\"concord\"\nversion=\"3.0.0\"\nedition=\"2024\"\n",
+        );
+        let source = format!(
+            "{prefix}\nextern crate self as concord;\nconcord::api! {{ client ForeignSource {{ base \"https://foreign.example.test/\"; GET f() -> () {{ path [\"foreign\"]; }} }} }}\n"
+        );
+        let input = workspace.write("src/lib.rs", &source);
+        let migration = migrate(&input, &Settings::default()).expect("foreign source");
+        assert_eq!(
+            migration.converted("lib.rs"),
+            Some(source.as_str()),
+            "{prefix}"
+        );
+        assert!(
+            migration
+                .diagnostics
+                .iter()
+                .any(|d| d.code == Code::ApiMacroUnresolved),
+            "{prefix}"
+        );
+    }
+}
+
+#[test]
+fn s5_known_standard_macro_and_attribute_origins_do_not_create_namespace_opacity() {
+    let workspace = TempDir::new("known-source-origins");
+    workspace.write("Cargo.toml", "[package]\nname=\"known-origins\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[dependencies]\nconcord=\"3\"\ntokio=\"1\"\n");
+    let source = r#"use concord::{api, Empty};
+thread_local! { static SOURCE_COUNTER: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+#[derive(Clone)] struct SourceValue;
+#[tokio::test] async fn source_test() {}
+#[test] fn ordinary_test() {}
+api! { client KnownOrigins { base "https://origins.example.test/";
+GET f(x?: u32) -> () via Empty { path ["x"]; query { "x" = endpoint.x; } } } }
+fn exact(r: known_origins::FRequest) { let _ = r.set_x(None); }
+"#;
+    let input = workspace.write("src/lib.rs", source);
+    let migration = migrate(&input, &Settings::default()).expect("known origins");
+    let output = migration.converted("lib.rs").expect("library");
+    assert!(output.contains("path \"x\";"));
+    assert!(output.contains("r.replace_x(None)"));
+    assert!(
+        !migration
+            .diagnostics
+            .iter()
+            .any(|d| d.code == Code::ApiMacroUnresolved)
+    );
+}
+
+#[test]
+fn s5_impl_only_macro_namespace_proof_preserves_trait_incompleteness() {
+    let workspace = TempDir::new("impl-namespace-separation");
+    workspace.write("Cargo.toml", "[package]\nname=\"impl-source\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[dependencies]\nconcord=\"3\"\n");
+    let source = r#"use concord::{api, Empty};
+api! { client ImplSource { base "https://impl.example.test/";
+GET f(x?: u32) -> () via Empty { path ["x"]; query { "x" = endpoint.x; } } } }
+pub trait Ext { fn set_x(self, _: Option<u32>) -> u32 where Self: Sized { 1 } }
+macro_rules! impl_only { ($t:ty) => { impl Ext for $t {} }; }
+impl_only!(::std::boxed::Box<impl_source::FRequest>);
+fn guarded(r: ::std::boxed::Box<impl_source::FRequest>) { let _ = r.set_x(None); }
+"#;
+    let input = workspace.write("src/lib.rs", source);
+    let migration = migrate(&input, &Settings::default()).expect("impl-only context");
+    let output = migration.converted("lib.rs").expect("library");
+    assert!(output.contains("path \"x\";"));
+    assert!(output.contains("r.set_x(None)"));
+    assert!(
+        !migration
+            .diagnostics
+            .iter()
+            .any(|d| d.code == Code::ApiMacroUnresolved)
+    );
+    assert!(
+        migration
+            .diagnostics
+            .iter()
+            .any(|d| d.code == Code::SetterUnresolved && d.message.contains("impl_only!")),
+        "{:?}",
+        migration
+            .diagnostics
+            .iter()
+            .map(|d| d.render())
+            .collect::<Vec<_>>()
+    );
+    // Root expansion leaves ordinary lexical lookup uncertain; the explicit
+    // std Box path above proves this receiver before testing trait uncertainty.
+    // Removing the invocation must let that same receiver rewrite, proving
+    // the negative reached actual crate trait incompleteness rather than an
+    // unrelated unresolved receiver or an absent generated setter.
+    let ordinary = source.replace("impl_only!(::std::boxed::Box<impl_source::FRequest>);", "");
+    workspace.write("src/lib.rs", &ordinary);
+    let control = migrate(&input, &Settings::default()).expect("no impl invocation");
+    let ordinary_output = control.converted("lib.rs").expect("library");
+    assert!(ordinary_output.contains("r.replace_x(None)"));
+    assert!(
+        !control
+            .diagnostics
+            .iter()
+            .any(|d| d.code == Code::ApiMacroUnresolved)
+    );
+    assert!(
+        !control
+            .diagnostics
+            .iter()
+            .any(|d| d.code == Code::SetterUnresolved)
+    );
+    // Keep the producer at the root: a sibling-only mod would not shadow
+    // this root's Concord import and would be a different namespace case.
+    let producer = source.replace("impl Ext for $t {}", "mod concord {} impl Ext for $t {}");
+    workspace.write("src/lib.rs", &producer);
+    let refused = migrate(&input, &Settings::default()).expect("namespace producer");
+    assert_eq!(refused.converted("lib.rs"), Some(producer.as_str()));
+    assert!(
+        refused
+            .diagnostics
+            .iter()
+            .any(|d| d.code == Code::ApiMacroUnresolved)
+    );
+}
+
+#[test]
+fn s5_unproved_declaration_names_provide_only_negative_caller_diagnostics() {
+    let workspace = TempDir::new("diagnostic-only-namespace");
+    workspace.write("Cargo.toml", "[package]\nname=\"negative-names\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[lib]\npath=\"src/actual.rs\"\n");
+    workspace.write(
+        "src/actual.rs",
+        "pub struct Foreign; impl Foreign { pub fn set_x(self, _: Option<u32>) {} }\n",
+    );
+    workspace.write("src/lib.rs", default_deny::REVIEW2_API);
+    let source = "fn call(r: negative_names::Foreign) { r.set_x(None); }\n";
+    workspace.write("tests/caller.rs", source);
+    let migration = migrate(&workspace.0, &Settings::default()).expect("negative-only names");
+    assert_eq!(migration.converted("tests/caller.rs"), Some(source));
+    assert!(
+        migration
+            .diagnostics
+            .iter()
+            .any(|d| d.file == "tests/caller.rs"
+                && d.code == Code::SetterUnresolved
+                && d.message.contains("not generated by this crate"))
+    );
+}
+
+#[test]
+fn s5_thread_local_forwarded_item_attributes_do_not_borrow_standard_authority() {
+    for payload in [
+        "#[unknown_attribute] static VALUE: u32 = 0;",
+        "#[cfg_attr(feature=\"maybe\", unknown_attribute)] static VALUE: u32 = 0;",
+    ] {
+        let prefix = format!("thread_local! {{ {payload} }}");
+        let migration = namespace_case(None, &prefix, "");
+        let file = migration
+            .files
+            .iter()
+            .find(|file| file.relative == "lib.rs")
+            .expect("input");
+        assert_eq!(file.original, file.converted, "{payload}");
+        assert!(
+            migration
+                .diagnostics
+                .iter()
+                .any(|d| d.code == Code::ApiMacroUnresolved)
+        );
+    }
+    let ordinary = namespace_case(
+        None,
+        "thread_local! { #[allow(non_upper_case_globals)] static VALUE: u32 = 0; }",
+        "",
+    );
+    assert!(
+        ordinary
+            .converted("lib.rs")
+            .expect("input")
+            .contains("path \"ok\";")
+    );
+}
+
+#[test]
+fn s5_unmodeled_metavariable_token_producers_never_supply_namespace_absence() {
+    for template in ["${concat(namespace)}", "$$", "$[tokens]"] {
+        let prefix = format!(
+            "macro_rules! unknown_template {{ () => {{ {template} }}; }} unknown_template!();"
+        );
+        let migration = namespace_case(None, &prefix, "");
+        let file = migration
+            .files
+            .iter()
+            .find(|file| file.relative == "lib.rs")
+            .expect("input");
+        assert_eq!(
+            file.original, file.converted,
+            "unmodeled transcriber: {template}"
+        );
+        assert!(
+            migration
+                .diagnostics
+                .iter()
+                .any(|d| d.code == Code::ApiMacroUnresolved)
+        );
+    }
+}
+
+#[test]
+fn s5_reflexive_self_import_never_invents_a_canonical_api_provider() {
+    let workspace = TempDir::new("self-glob-foreign-source");
+    workspace.write(
+        "Cargo.toml",
+        "[package]\nname=\"concord\"\nversion=\"3.0.0\"\nedition=\"2024\"\n",
+    );
+    let source = include_str!("../../tests/fixtures/trust_self_glob_api.rs");
+    let input = workspace.write("src/lib.rs", source);
+    let migration = migrate(&input, &Settings::default()).expect("actual library root");
+    assert_eq!(migration.converted("lib.rs"), Some(source));
+    assert!(
+        migration
+            .diagnostics
+            .iter()
+            .any(|d| d.code == Code::ApiMacroUnresolved)
+    );
+}
+
+#[test]
+fn s5_unknown_standard_item_token_producers_do_not_supply_namespace_proof() {
+    let source = include_str!("../../tests/fixtures/trust_std_cfg_select.rs");
+    let workspace = TempDir::new("unknown-standard-producer");
+    let input = workspace.write("input.rs", source);
+    let migration = migrate(&input, &Settings::default()).expect("standard source prefix");
+    assert_eq!(migration.converted("input.rs"), Some(source));
+    assert!(
+        migration
+            .diagnostics
+            .iter()
+            .any(|d| d.code == Code::ApiMacroUnresolved)
+    );
+}
+
+#[test]
+fn s5_thread_local_initializers_preserve_whole_crate_trait_uncertainty() {
+    let workspace = TempDir::new("thread-local-impl-input");
+    workspace.write("Cargo.toml", "[package]\nname=\"thread-impl\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[dependencies]\nconcord=\"3\"\n");
+    let review_api = default_deny::REVIEW2_API;
+    let source = format!(
+        "pub mod generated {{\n{review_api}\n}}\npub trait Ext {{ fn set_x(self, _: Option<u32>) -> u32 where Self:Sized {{ 0 }} }}\nmacro_rules! add_impl {{ () => {{ {{ impl Ext for Box<generated::api::ItemRequest> {{}} 0 }} }}; }}\nstd::thread_local! {{ static VALUE: u32 = add_impl!(); }}\nfn call(r: Box<generated::api::ItemRequest>) {{ let _ = r.set_x(None); }}\n"
+    );
+    let input = workspace.write("src/lib.rs", &source);
+    let migration = migrate(&input, &Settings::default()).expect("forwarded initializer");
+    let output = migration.converted("lib.rs").expect("source");
+    assert!(output.contains("r.set_x(None)"));
+    assert!(
+        !migration
+            .diagnostics
+            .iter()
+            .any(|d| d.code == Code::ApiMacroUnresolved)
+    );
+    assert!(
+        migration
+            .diagnostics
+            .iter()
+            .any(|d| d.code == Code::SetterUnresolved && d.message.contains("thread_local!"))
+    );
+    let ordinary = source.replace("static VALUE: u32 = add_impl!();", "static VALUE: u32 = 0;");
+    workspace.write("src/lib.rs", &ordinary);
+    let control = migrate(&input, &Settings::default()).expect("ordinary initializer");
+    assert!(
+        control
+            .converted("lib.rs")
+            .expect("source")
+            .contains("r.replace_x(None)")
+    );
+}

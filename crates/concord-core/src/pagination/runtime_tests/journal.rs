@@ -59,3 +59,35 @@ async fn traversal_decision_failure_uses_the_traversal_journal() {
     assert_eq!(error.last_response_status(), Some(StatusCode::OK));
     assert!(error.may_have_reached_server());
 }
+
+#[tokio::test]
+async fn decision_failure_retains_decided_page() {
+    let harness = Harness::new();
+    harness.queue("only|initial");
+    let error = prefix(harness.core.clone(), PageEndpoint::new("initial"), 5)
+        .await
+        .expect_err("repeated continuation");
+    assert_eq!(harness.requests(), 1);
+    assert_eq!(
+        error.pagination_kind(),
+        Some(PaginationErrorKind::RepeatedRequest)
+    );
+    assert_eq!(error.failure_stage(), FailureStage::PaginationDecision);
+    assert_eq!(summary_of(&error).pages_received(), 1);
+    assert_eq!(error.last_response_status(), Some(StatusCode::OK));
+    assert_eq!(error.page_index(), Some(0));
+}
+
+#[tokio::test]
+async fn later_page_failure_positive_control() {
+    let harness = Harness::new();
+    harness.queue("first|second");
+    harness.queue_status(StatusCode::SERVICE_UNAVAILABLE, "unavailable");
+    let error = prefix(harness.core.clone(), PageEndpoint::new("initial"), 5)
+        .await
+        .expect_err("second page rejection");
+    assert_eq!(harness.requests(), 2);
+    assert_eq!(error.page_index(), Some(1));
+    assert_eq!(error.http_status(), Some(StatusCode::SERVICE_UNAVAILABLE));
+    assert_eq!(error.failure_stage(), FailureStage::RejectedResponse);
+}

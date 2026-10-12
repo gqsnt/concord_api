@@ -159,7 +159,6 @@ pub fn validate_document(value: &Value) -> Result<(), InspectError> {
         ("policies", &["id"][..]),
         ("window_sets", &["name"][..]),
         ("dependencies", &["kind", "reference"][..]),
-        ("diagnostics", &["code", "owner", "subject"][..]),
     ] {
         validate_keys(
             object[collection].as_array().expect("validated collection"),
@@ -167,6 +166,11 @@ pub fn validate_document(value: &Value) -> Result<(), InspectError> {
             collection,
         )?;
     }
+    validate_diagnostic_keys(
+        object["diagnostics"]
+            .as_array()
+            .expect("validated diagnostics"),
+    )?;
     let mut endpoint_ids = BTreeSet::new();
     for endpoint in object["endpoints"].as_array().expect("validated endpoints") {
         if let Some(id) = endpoint.get("id") {
@@ -188,6 +192,47 @@ pub fn validate_document(value: &Value) -> Result<(), InspectError> {
     }
     validate_nested_keys(value)?;
     Ok(())
+}
+
+/// Collision-free identity of a represented diagnostic. Message, severity,
+/// correction and any future represented fields are part of its identity.
+/// Scalars retain the diff's positional fallback; malformed supplied stable
+/// fields are rejected separately by validation.
+pub(crate) fn diagnostic_record_key(record: &Value) -> Option<String> {
+    record.as_object()?;
+    Some(format!("diagnostic:{}", to_canonical_string(record)))
+}
+
+fn validate_diagnostic_keys(items: &[Value]) -> Result<(), InspectError> {
+    let mut keys = BTreeSet::new();
+    for (position, record) in items.iter().enumerate() {
+        for field in ["code", "owner", "subject"] {
+            if let Some(value) = record.get(field) {
+                if !value.as_str().is_some_and(|value| !value.is_empty()) {
+                    return Err(InspectError::new(
+                        InspectErrorKind::InvalidRecordKey,
+                        "diagnostics",
+                    ));
+                }
+            }
+        }
+        let key = diagnostic_record_key(record).unwrap_or_else(|| format!("#{position}"));
+        if !keys.insert(key) {
+            return Err(InspectError::new(
+                InspectErrorKind::DuplicateKey,
+                "diagnostics",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Collision-free framing of the supplied components of a composite key.
+/// Array order and string bytes are identity; separators inside a component
+/// cannot impersonate boundaries. Single-field and positional keys retain
+/// their established accepted-domain and display policy.
+pub(crate) fn composite_record_key(parts: &[&str]) -> String {
+    to_canonical_string(&json!(parts))
 }
 
 // Validate the exact keys used by diff indexing, including its positional
@@ -221,7 +266,11 @@ fn validate_keys(
         let key = if missing {
             format!("#{position}")
         } else {
-            parts.join(":")
+            if parts.len() == 1 {
+                parts[0].to_owned()
+            } else {
+                composite_record_key(&parts)
+            }
         };
         if !keys.insert(key) {
             return Err(InspectError::new(

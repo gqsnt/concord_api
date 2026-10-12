@@ -7,7 +7,9 @@ use serde_json::{Map, Value, json};
 
 use crate::canonical::to_canonical_string;
 use crate::error::InspectError;
-use crate::export::{TOP_LEVEL_KEYS, validate_document};
+use crate::export::{
+    TOP_LEVEL_KEYS, composite_record_key, diagnostic_record_key, validate_document,
+};
 
 /// The format name of the structural diff report produced by
 /// [`DiffReport::to_json`].
@@ -602,11 +604,9 @@ pub fn diff_documents(before: &Value, after: &Value) -> Result<DiffReport, Inspe
         &renames,
         "dependencies",
         |record| {
-            Some(format!(
-                "{}:{}",
-                string(record, "kind")?,
-                string(record, "reference")?
-            ))
+            let kind = string(record, "kind")?;
+            let reference = string(record, "reference")?;
+            Some(composite_record_key(&[&kind, &reference]))
         },
     );
     diff_keyed(
@@ -615,25 +615,13 @@ pub fn diff_documents(before: &Value, after: &Value) -> Result<DiffReport, Inspe
         &after,
         &renames,
         "diagnostics",
-        |record| {
-            Some(format!(
-                "{}:{}:{}",
-                string(record, "code")?,
-                string(record, "owner")?,
-                string(record, "subject")?
-            ))
-        },
+        diagnostic_record_key,
     );
 
     let mut unresolved = Vec::new();
-    let redacted = |document: &Document<'_>| {
-        array(document.root, "dependencies")
-            .iter()
-            .filter(|record| string(record, "kind").as_deref() == Some("redacted_literal"))
-            .filter_map(|record| string(record, "reference"))
-            .collect::<BTreeSet<_>>()
-    };
-    for location in redacted(&before).intersection(&redacted(&after)) {
+    let before_redacted = redacted_locations(&before);
+    let after_redacted = redacted_locations(&after);
+    for location in before_redacted.union(&after_redacted) {
         unresolved.push(Unresolved {
             location: location.clone(),
             axis: Axis::OpaqueDependency,
@@ -645,6 +633,51 @@ pub fn diff_documents(before: &Value, after: &Value) -> Result<DiffReport, Inspe
         changes,
         unresolved,
     })
+}
+
+/// Discover redaction evidence from the represented payload independently
+/// of the redundant dependency index. Missing/malformed locations use an
+/// unambiguous JSON-pointer position instead of suppressing uncertainty.
+fn collect_redacted_markers(value: &Value, pointer: &str, locations: &mut BTreeSet<String>) {
+    match value {
+        Value::Object(object) => {
+            if object.get("redacted").and_then(Value::as_bool) == Some(true)
+                || object.get("kind").and_then(Value::as_str) == Some("redacted")
+            {
+                let location = object
+                    .get("location")
+                    .and_then(Value::as_str)
+                    .filter(|location| !location.is_empty())
+                    .map_or_else(|| format!("json:{pointer}"), str::to_owned);
+                locations.insert(location);
+            }
+            for (key, nested) in object {
+                let escaped = key.replace('~', "~0").replace('/', "~1");
+                collect_redacted_markers(nested, &format!("{pointer}/{escaped}"), locations);
+            }
+        }
+        Value::Array(array) => {
+            for (index, nested) in array.iter().enumerate() {
+                collect_redacted_markers(nested, &format!("{pointer}/{index}"), locations);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn redacted_locations(document: &Document<'_>) -> BTreeSet<String> {
+    let mut locations = array(document.root, "dependencies")
+        .iter()
+        .filter(|record| string(record, "kind").as_deref() == Some("redacted_literal"))
+        .filter_map(|record| string(record, "reference"))
+        .collect::<BTreeSet<_>>();
+    // Scan borrowed root children; cloning a potentially large untrusted
+    // document is unnecessary, and no secret/fingerprint is reconstructed.
+    for (key, value) in document.root {
+        let escaped = key.replace('~', "~0").replace('/', "~1");
+        collect_redacted_markers(value, &format!("/{escaped}"), &mut locations);
+    }
+    locations
 }
 
 fn string(record: &Value, key: &str) -> Option<String> {

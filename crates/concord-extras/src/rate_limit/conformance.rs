@@ -16,8 +16,10 @@
 //! * State written by a pre-v3 peer that registered no schema is not assumed
 //!   compatible: it fails closed until an operator installs an explicit
 //!   schema lock ([`InMemorySharedStore::install_schema_lock`]).
-//! * Registration storage is finite (4,096 by default) and never evicts an
-//!   active contract; only an explicit operator retirement
+//! * Registration storage is finite (4,096 identities by default), counting
+//!   both registered schemas and legacy continuity markers. Converting a
+//!   legacy marker to its explicit schema lock reuses that identity's slot.
+//!   No active contract is evicted; only an explicit operator retirement
 //!   ([`InMemorySharedStore::retire_schema`]) removes one, which is a reviewed
 //!   state reset.
 //! * Admission is atomic and conjunctive: either every window of every policy
@@ -217,6 +219,17 @@ impl InMemorySharedStore {
         if state.registrations.contains_key(&id) {
             return Err(schema_conflict());
         }
+        if state.legacy.contains(&id) {
+            return Ok(());
+        }
+        let occupied = state
+            .registrations
+            .len()
+            .checked_add(state.legacy.len())
+            .ok_or_else(internal_error)?;
+        if occupied >= self.inner.registration_capacity {
+            return Err(state_capacity());
+        }
         state.legacy.insert(id);
         Ok(())
     }
@@ -246,7 +259,14 @@ impl InMemorySharedStore {
                 Err(schema_conflict())
             };
         }
-        if state.registrations.len() >= self.inner.registration_capacity {
+        // Converting an already retained legacy identity occupies the same
+        // slot; a new identity must fit beside every active schema and marker.
+        let occupied = state
+            .registrations
+            .len()
+            .checked_add(state.legacy.len())
+            .ok_or_else(internal_error)?;
+        if !state.legacy.contains(&id) && occupied >= self.inner.registration_capacity {
             return Err(state_capacity());
         }
         state.legacy.remove(&id);
@@ -336,7 +356,8 @@ impl InMemorySharedLimiter {
         let registrations = state
             .registrations
             .len()
-            .checked_add(pending.len())
+            .checked_add(state.legacy.len())
+            .and_then(|occupied| occupied.checked_add(pending.len()))
             .ok_or_else(internal_error)?;
         if registrations > self.store.inner.registration_capacity {
             return Err(state_capacity());

@@ -51,11 +51,11 @@ pub use crate::endpoint::{
     StatusSource, TimeoutSelection,
 };
 pub use crate::error::{
-    ApiError, AttemptFacts, AuthErrorKind, ClientBuildError, ClientBuildErrorKind, ClientInputKind,
-    ConfigurationError, ConfigurationErrorKind, DispatchKnowledge, ErrorCategory, FailureStage,
-    HttpResponseFailure, OperationCounts, PaginationErrorKind, ProviderAcquisitionFacts,
-    ProviderAcquisitionOutcome, RateLimitErrorKind, StatusBody, StatusBodyDecodeError,
-    StatusBodyDecodeErrorKind, StatusBodyState,
+    ApiError, AttemptFacts, AuthErrorKind, ClientBuildDiagnostic, ClientBuildError,
+    ClientBuildErrorKind, ClientInputKind, ConfigurationError, ConfigurationErrorKind,
+    DispatchKnowledge, ErrorCategory, FailureStage, HttpResponseFailure, OperationCounts,
+    PaginationErrorKind, ProviderAcquisitionFacts, ProviderAcquisitionOutcome, RateLimitErrorKind,
+    StatusBody, StatusBodyDecodeError, StatusBodyDecodeErrorKind, StatusBodyState,
 };
 pub use crate::execute::MAX_VISIBLE_ATTEMPTS_PER_OPERATION;
 pub use crate::execute::StoreRequest;

@@ -69,3 +69,13 @@ required-features = ["json", "rate-limit"]
 
 [lints]
 workspace = true
+
+[[test]]
+name = "content_coding"
+path = "tests/content_coding.rs"
+required-features = ["ndjson", "default-tls", "gzip", "brotli", "deflate"]
+
+[[test]]
+name = "provider_compression"
+path = "tests/provider_compression.rs"
+required-features = ["default-tls", "oauth2-client", "gzip", "brotli", "deflate"]

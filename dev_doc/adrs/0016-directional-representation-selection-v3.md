@@ -38,8 +38,10 @@ conflicted with v3's inspection and pagination laws:
   `const ACCEPT: Option<&'static str>`; descriptions and plans read the
   constant without calling converter code. An invalid `ACCEPT` (for example one
   with injected line breaks) never reaches a request: a runtime descriptor
-  rejects it at `build()`, and a generated endpoint rejects it when its request
-  head is prepared for a plan or an execution. `NotFound<R>` forwards
+  rejects it at `RuntimeEndpointBuilder::build()`, and each generated endpoint
+  validates it with a const assertion during expansion, before a client can
+  exist. Head preparation constructs the header from the already-validated
+  constant. `NotFound<R>` forwards
   `R::ACCEPT`.
 - **Driver-based page eligibility (REP-02).** The `PageResponseRepresentation`
   gate is removed. A page type is eligible when its representation uses the

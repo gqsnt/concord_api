@@ -238,4 +238,100 @@ if ($LASTEXITCODE -ne 0) {
     throw 'downstream packaged-artifact run failed'
 }
 
+# Preserve the existing standalone unbound consumer above. In addition, run
+# the genuine two-crate acceptance sources against the extracted public crates.
+# Only the non-public loopback test harness comes from the workspace. It has
+# no dependency on any public Concord crate; verify that boundary below.
+$apiFixture = PackageAt 'tests/downstream/concord-downstream-api/Cargo.toml'
+$appFixture = PackageAt 'tests/downstream/concord-downstream-app/Cargo.toml'
+$supportFixture = PackageAt 'crates/concord-test-support/Cargo.toml'
+if (@($supportFixture.dependencies | Where-Object { $_.name -in $packages }).Count -ne 0) {
+    throw 'test support must not resolve public Concord packages from the source workspace'
+}
+$serdeFixture = @($apiFixture.dependencies | Where-Object { $_.name -eq 'serde' })
+$tokioFixture = @($appFixture.dependencies | Where-Object { $_.name -eq 'tokio' })
+if ($serdeFixture.Count -ne 1 -or $tokioFixture.Count -ne 1) {
+    throw 'could not resolve explicit downstream fixture dependency requirements'
+}
+$serdeRequirement = $serdeFixture[0].req
+$tokioRequirement = $tokioFixture[0].req
+$supportPath = CargoPath (Join-Path $root 'crates/concord-test-support')
+$twoRoot = Join-Path $runRoot 'two-consumers'
+$apiRoot = Join-Path $twoRoot 'api'
+$appRoot = Join-Path $twoRoot 'app'
+[System.IO.Directory]::CreateDirectory($apiRoot) | Out-Null
+[System.IO.Directory]::CreateDirectory($appRoot) | Out-Null
+Copy-Item -LiteralPath (Join-Path $root 'tests/downstream/concord-downstream-api/src') -Destination $apiRoot -Recurse
+Copy-Item -LiteralPath (Join-Path $root 'tests/downstream/concord-downstream-app/src') -Destination $appRoot -Recurse
+Copy-Item -LiteralPath (Join-Path $root 'tests/downstream/concord-downstream-app/tests') -Destination $appRoot -Recurse
+$twoManifest = @"
+[workspace]
+members = ["api", "app"]
+resolver = "3"
+
+[patch.crates-io]
+"$facadeName" = { path = "$concordPath" }
+"$coreName" = { path = "$corePath" }
+"$extrasName" = { path = "$extrasPath" }
+"$macrosName" = { path = "$macrosPath" }
+"@
+$apiManifest = @"
+[package]
+name = "concord-downstream-api"
+version = "$version"
+edition = "2024"
+publish = false
+
+[dependencies]
+concord = { package = "$facadeName", version = "=$version", default-features = false, features = ["default-tls", "json"] }
+serde = { version = "$serdeRequirement", features = ["derive"] }
+"@
+$appManifest = @"
+[package]
+name = "concord-downstream-app"
+version = "$version"
+edition = "2024"
+publish = false
+
+[dependencies]
+concord = { package = "$facadeName", version = "=$version", default-features = false, features = ["default-tls", "json"] }
+concord-downstream-api = { version = "=$version", path = "../api" }
+
+[dev-dependencies]
+concord-test-support = { path = "$supportPath", default-features = false, features = ["loopback"] }
+tokio = { version = "$tokioRequirement", features = ["macros", "rt-multi-thread", "time"] }
+"@
+$twoManifestPath = Join-Path $twoRoot 'Cargo.toml'
+[System.IO.File]::WriteAllText($twoManifestPath, $twoManifest)
+[System.IO.File]::WriteAllText((Join-Path $apiRoot 'Cargo.toml'), $apiManifest)
+[System.IO.File]::WriteAllText((Join-Path $appRoot 'Cargo.toml'), $appManifest)
+& cargo generate-lockfile --manifest-path $twoManifestPath
+if ($LASTEXITCODE -ne 0) { throw 'two-consumer archive lockfile generation failed' }
+$twoMetadata = & cargo metadata --manifest-path $twoManifestPath --locked --format-version 1 | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) { throw 'two-consumer archive metadata failed' }
+foreach ($packageName in $packages) {
+    $resolved = @($twoMetadata.packages | Where-Object { $_.name -eq $packageName })
+    $expectedManifest = [System.IO.Path]::GetFullPath((Join-Path $unpackedRoot "$packageName-$version/Cargo.toml"))
+    if ($resolved.Count -ne 1 -or $null -ne $resolved[0].source -or $resolved[0].version -ne $version -or
+        [System.IO.Path]::GetFullPath($resolved[0].manifest_path) -ne $expectedManifest) {
+        throw "two consumers did not resolve exactly the extracted $packageName-$version archive"
+    }
+}
+foreach ($fixtureName in @('concord-downstream-api', 'concord-downstream-app')) {
+    if (@($twoMetadata.packages | Where-Object { $_.name -eq $fixtureName }).Count -ne 1) {
+        throw "missing distinct real consumer crate $fixtureName"
+    }
+}
+# Explicit doctests include the foreign-controls/generated-seal/driver-seal
+# compile-fail contracts with genuine binding/typed-key positive controls.
+& cargo test --manifest-path $twoManifestPath --workspace --locked
+if ($LASTEXITCODE -ne 0) { throw 'two-consumer archive runtime tests failed' }
+& cargo test --manifest-path $twoManifestPath --workspace --doc --locked
+if ($LASTEXITCODE -ne 0) { throw 'two-consumer archive doctest contracts failed' }
+foreach ($packageName in $packages) {
+    $archive = Join-Path $cargoTarget "package/$packageName-$version.crate"
+    Write-Output "archive identity: $packageName $((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash)"
+}
+Write-Output "two-consumer extracted-archive proof passed: public packages=$($packages -join ',') consumers=$twoRoot test-support=$supportPath"
+
 Write-Output "packaged downstream verification passed: version=$version path=$runRoot"

@@ -80,8 +80,8 @@ other gate (see [Retry](retry.md)).
 |---|---|---|
 | `Json` (feature `json`) | `T: Serialize` | bounded serialization, `application/json`; page-stable for `Clone` inputs |
 | `Text` | `String` | UTF-8 text, `text/plain; charset=utf-8`; page-stable |
-| `Binary` | `Bytes`, `Vec<u8>` | raw bytes, no media type; page-stable |
-| `Binary` | `RequestStream` | raw bytes from a lazy one-shot stream |
+| `Binary` | `Bytes`, `Vec<u8>` | raw bytes, `application/octet-stream`; page-stable |
+| `Binary` | `RequestStream` | raw bytes, `application/octet-stream`, from a lazy one-shot stream |
 | `NdJson` (feature `ndjson`) | `Vec<T>`, `T: Serialize` | one compact JSON value + LF per record, in order, `application/x-ndjson`; each record at most 1 MiB; page-stable for `Clone` inputs |
 | `Multipart` (feature `multipart`) | `MultipartBody` | request-only `multipart/form-data` |
 | `PreparedBody` | `PreparedBody` | the caller's own prepared body, as built |

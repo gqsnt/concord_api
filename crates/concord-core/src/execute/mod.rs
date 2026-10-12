@@ -1210,8 +1210,9 @@ fn observe_response_head(
     endpoint_id: &EndpointId,
     event: ResponseHeadObserved<'_>,
 ) -> Result<(), ApiError> {
-    check_deadline(deadline, endpoint_id, event.method)?;
     let method = event.method.clone();
+    // This is factual notification of an already received head. A synchronous
+    // earlier callback cannot erase it when it consumes the remaining time.
     crate::hooks::observe(
         core.operation_observer().as_ref(),
         OperationEvent::ResponseHeadObserved(event),
@@ -1423,52 +1424,69 @@ async fn send_attempt(
         body.kind,
         body.known_length,
     );
-    let mut response = match deadline.run(execution).await {
-        // The deadline elapsed with the handoff outstanding: the journal
-        // settles it as `PossiblyDispatched`.
-        Err(_) => return Err(timeout_error(head.endpoint_id(), head.method())),
+    let mut received_head = None;
+    let execution = async {
+        let mut response = execution.await?;
+        // Facts transfer synchronously with native ownership, before the outer
+        // deadline's post-check can discard an otherwise ready response.
+        let status = response.status();
+        journal.record_head(status);
+        journal.enter(if head.accepted_status().contains(status) {
+            FailureStage::ResponseAcquisition
+        } else {
+            FailureStage::RejectedResponse
+        });
+        if let Some(meter) = meter {
+            meter.record_response_head();
+            response.meter_acquired_bytes(meter.acquired_bytes());
+        }
+        let arrived_at = OperationDeadline::now();
+        let response_wall_time = core.response_wall_time();
+        let server_delay = parse_server_delay(response.headers(), response_wall_time, arrived_at);
+        let response_event = ResponseHeadObserved {
+            operation_id: journal.operation_id(),
+            parent_operation_id: context.parent_operation_id,
+            endpoint: head.endpoint(),
+            method: head.method(),
+            target: head.request_target(),
+            page_index: context.page_index,
+            attempt,
+            status,
+            content_length: parsed_content_length(response.headers()),
+            server_delay: server_delay.map(ServerDelayHint::delay),
+        };
+        received_head = Some((server_delay, response_event));
+        Ok::<_, crate::http::application::DispatchFailure>(response)
+    };
+    let response = match deadline.run(execution).await {
+        Err(_) => {
+            // Output remains abandoned. This emits neutral evidence of a head
+            // actually received, never limiter feedback/retry/challenge/body work.
+            if let Some((_, response_event)) = received_head.take() {
+                core.debug_dispatcher(head.debug())
+                    .response_head(&response_event);
+                crate::hooks::observe(
+                    core.operation_observer().as_ref(),
+                    OperationEvent::ResponseHeadObserved(response_event),
+                );
+            }
+            return Err(timeout_error(head.endpoint_id(), head.method()));
+        }
         Ok(Err(failure)) => {
             journal.settle_transport_failure(failure.proven_not_submitted);
             return Err(failure.error);
         }
         Ok(Ok(response)) => response,
     };
-
-    // Phase 8: the received head is recorded before any later work.
-    let status = response.status();
-    journal.record_head(status);
-    journal.enter(if head.accepted_status().contains(status) {
-        FailureStage::ResponseAcquisition
-    } else {
-        FailureStage::RejectedResponse
-    });
-    if let Some(meter) = meter {
-        meter.record_response_head();
-        response.meter_acquired_bytes(meter.acquired_bytes());
-    }
-
-    let response_wall_time = core.response_wall_time();
-    let server_delay = parse_server_delay(
-        response.headers(),
-        response_wall_time,
-        OperationDeadline::now(),
-    );
-    let response_event = ResponseHeadObserved {
-        operation_id: journal.operation_id(),
-        parent_operation_id: context.parent_operation_id,
-        endpoint: head.endpoint(),
-        method: head.method(),
-        target: head.request_target(),
-        page_index: context.page_index,
-        attempt,
-        status,
-        content_length: parsed_content_length(response.headers()),
-        server_delay: server_delay.map(ServerDelayHint::delay),
-    };
+    let (server_delay, response_event) = received_head
+        .take()
+        .expect("a returned native response has recorded head facts");
+    let status = response_event.status;
     core.debug_dispatcher(head.debug())
         .response_head(&response_event);
-    observe_rate_limit_response(core, context, attempt, head, status, server_delay);
-    check_deadline(deadline, head.endpoint_id(), head.method())?;
+    if deadline.check().is_ok() {
+        observe_rate_limit_response(core, context, attempt, head, status, server_delay);
+    }
     observe_response_head(core, deadline, head.endpoint_id(), response_event)?;
     Ok(AttemptResponse {
         response,

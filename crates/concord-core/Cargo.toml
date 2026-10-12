@@ -12,9 +12,9 @@ default-tls = ["dep:rustls", "reqwest/rustls-no-provider"]
 http2 = ["reqwest/http2", "dep:h2"]
 records = []
 multipart = ["reqwest/multipart"]
-gzip = ["reqwest/gzip"]
-brotli = ["reqwest/brotli"]
-deflate = ["reqwest/deflate"]
+gzip = ["reqwest/gzip", "dep:tower-http", "dep:tower-service", "tower-http/decompression-gzip"]
+brotli = ["reqwest/brotli", "dep:tower-http", "dep:tower-service", "tower-http/decompression-br"]
+deflate = ["reqwest/deflate", "dep:tower-http", "dep:tower-service", "tower-http/decompression-deflate"]
 
 [dependencies]
 bytes.workspace = true
@@ -27,6 +27,8 @@ mime.workspace = true
 reqwest = { workspace = true, features = ["stream"] }
 rustls = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "sync", "time"] }
+tower-http = { workspace = true, optional = true }
+tower-service = { workspace = true, optional = true }
 url.workspace = true
 
 [dev-dependencies]

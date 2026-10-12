@@ -249,6 +249,8 @@ pub enum ClientBuildErrorKind {
     InvalidClientIdentity,
     /// The private native HTTP client could not be built.
     HttpClientBuild,
+    /// A native HTTP configuration selection was invalid before construction.
+    HttpConfiguration,
     /// Runtime configuration was invalid.
     RuntimeConfiguration,
     /// A required rate limiter was unavailable.

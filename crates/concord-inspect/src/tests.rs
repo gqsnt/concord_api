@@ -69,6 +69,12 @@ fn r7_indexed_keys_reject_identical_changed_reordered_and_nested_duplicates_safe
                     vec![record, duplicate]
                 };
                 document[collection] = serde_json::json!(pair);
+                if collection == "diagnostics" && changed {
+                    // Full represented identity preserves a changed unknown
+                    // field as a distinct diagnostic, rather than losing it.
+                    crate::validate_document(&document).expect("distinct represented diagnostics");
+                    continue;
+                }
                 let error = crate::validate_document(&document).expect_err("duplicate indexed key");
                 assert_eq!(error.kind(), InspectErrorKind::DuplicateKey);
                 let rendered = format!("{error} {error:?}");

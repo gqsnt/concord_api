@@ -34,6 +34,7 @@ pub(super) struct ProviderHttpInner {
     max_sends: u32,
     timeout: Duration,
     failure_cooldown_cap: Duration,
+    decoding: super::content_decoding::ContentDecoding,
     wall_clock: Arc<dyn crate::runtime::WallClock>,
     #[cfg(test)]
     development: Option<ProviderChannel>,
@@ -610,6 +611,7 @@ impl ProviderHttpInner {
             failure_cooldown_cap: Duration::from_secs(
                 crate::runtime::defaults::DEFAULT_AUTH_FAILURE_COOLDOWN_SECONDS,
             ),
+            decoding: super::content_decoding::ContentDecoding::disabled(),
             #[cfg(test)]
             development: None,
         }
@@ -617,6 +619,14 @@ impl ProviderHttpInner {
 
     pub(super) fn with_failure_cooldown_cap(mut self, cap: Duration) -> Self {
         self.failure_cooldown_cap = cap;
+        self
+    }
+
+    pub(super) fn with_decoding(
+        mut self,
+        decoding: super::content_decoding::ContentDecoding,
+    ) -> Self {
+        self.decoding = decoding;
         self
     }
 
@@ -722,7 +732,7 @@ impl ProviderHttpInner {
                 )
                 .__with_native(native_url, &headers);
                 journal.record_handoff();
-                self.execute_at_boundary(builder, boundary)
+                self.receive_at_boundary(builder, boundary)
                     .await
                     .map_err(auth_http_error)?
             };
@@ -744,6 +754,7 @@ impl ProviderHttpInner {
             if !response.status().is_success() {
                 rejection_delay = server_delay;
             }
+            let response = self.decoding.response(response).await;
 
             if response
                 .content_length()
@@ -801,6 +812,19 @@ impl ProviderHttpInner {
         request: reqwest::RequestBuilder,
         boundary: BoundaryRequest,
     ) -> Result<reqwest::Response, ErrorCategory> {
+        let response = self.receive_at_boundary(request, boundary).await?;
+        let response = self.decoding.response(response).await;
+        self.validate_response(response)
+    }
+
+    // The managed helper records head/rejection evidence before decoding and
+    // size checks, exactly as its non-test native path does.
+    #[cfg(test)]
+    async fn receive_at_boundary(
+        &self,
+        request: reqwest::RequestBuilder,
+        boundary: BoundaryRequest,
+    ) -> Result<reqwest::Response, ErrorCategory> {
         let response = if let Some(development) = &self.development {
             drop(request);
             development
@@ -814,7 +838,7 @@ impl ProviderHttpInner {
                 .await
                 .map_err(|error| reqwest_category(error, false))?
         };
-        self.validate_response(response)
+        Ok(response)
     }
 }
 

@@ -177,7 +177,7 @@ fn excessive_nesting(text: &str) -> Option<usize> {
 
 /// Names brought into scope by `use` items anywhere in one file, and how
 /// each macro invocation that may be Concord's `api!` resolves.
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct Imports {
     names: HashMap<String, Vec<String>>,
     globs: Vec<Vec<String>>,
@@ -213,12 +213,22 @@ pub(crate) enum ApiMacro {
 
 impl Imports {
     pub(crate) fn collect(file: &syn::File) -> Self {
+        Self::collect_with_namespace(file, None, None, None)
+    }
+
+    pub(crate) fn collect_with_namespace(
+        file: &syn::File,
+        namespace: Option<&NamespaceProof<'_>>,
+        source_origin: Option<&NamespaceOriginProof<'_>>,
+        own_library: Option<&str>,
+    ) -> Self {
         let mut imports = Self::default();
         let mut collector = ImportCollector {
             imports: &mut imports,
         };
         collector.visit_file(file);
-        let (api_macros, defines_api_macro_rules) = ApiScopes::classify(file);
+        let (api_macros, defines_api_macro_rules) =
+            ApiScopes::classify(file, namespace, source_origin, own_library);
         imports.api_macros = api_macros;
         imports.defines_api_macro_rules = defines_api_macro_rules;
         imports
@@ -243,7 +253,7 @@ impl Imports {
         self.bare_api = Some(proof);
     }
 
-    /// The `api`-named macro invocations that are not proved to be Concord's
+    /// The `api`-named invocations and explicit possible aliases not proved to be Concord's
     /// `api!`: `(offset in the parsed text, reason)`, in source order.
     pub(crate) fn unresolved_api_macros(&self) -> Vec<(usize, &str)> {
         let mut unresolved = self
@@ -365,6 +375,12 @@ pub(crate) fn bare_api_proof(
 struct ApiScope {
     /// The enclosing scope (a block's parent, a module's parent module).
     parent: Option<usize>,
+    /// Parsed-file byte offset of the module name/block opening; None at root.
+    anchor: Option<usize>,
+    /// Own-library extern aliases. Package identity still needs manifest proof.
+    extern_self: HashSet<String>,
+    /// Explicit extern aliases also affect leading :: paths.
+    extern_aliases: HashMap<String, String>,
     /// Whether this is a module (else a block).
     module: bool,
     /// Inline child modules by name.
@@ -397,7 +413,13 @@ enum ApiAnswer {
 /// `api!` with nothing of that name imported — the `#[macro_use]`/prelude
 /// spelling. A path to another crate, a `crate::` path, another crate's glob
 /// or an ambiguity is not proved to be Concord's macro.
-struct ApiScopes {
+pub(crate) type NamespaceProof<'a> = dyn Fn(Option<usize>, bool, &[String], &str) -> bool + 'a;
+pub(crate) type NamespaceOriginProof<'a> = dyn Fn(Option<usize>, &str) -> bool + 'a;
+
+struct ApiScopes<'a> {
+    namespace: Option<&'a NamespaceProof<'a>>,
+    source_origin: Option<&'a NamespaceOriginProof<'a>>,
+    own_library: Option<&'a str>,
     scopes: Vec<ApiScope>,
     stack: Vec<usize>,
     /// `(first segment offset, leading ::, segments, scope)` of every macro
@@ -407,11 +429,24 @@ struct ApiScopes {
 
 const API_DEPTH: usize = 16;
 
-impl ApiScopes {
+fn api_ident(ident: &syn::Ident) -> String {
+    let text = ident.to_string();
+    text.strip_prefix("r#").unwrap_or(&text).to_owned()
+}
+
+impl ApiScopes<'_> {
     /// Every candidate invocation's resolution, and whether the file defines
     /// a `macro_rules! api`.
-    fn classify(file: &syn::File) -> (HashMap<usize, ApiMacro>, bool) {
-        let mut walker = Self {
+    fn classify(
+        file: &syn::File,
+        namespace: Option<&NamespaceProof<'_>>,
+        source_origin: Option<&NamespaceOriginProof<'_>>,
+        own_library: Option<&str>,
+    ) -> (HashMap<usize, ApiMacro>, bool) {
+        let mut walker = ApiScopes {
+            namespace,
+            source_origin,
+            own_library,
             scopes: vec![ApiScope {
                 module: true,
                 ..ApiScope::default()
@@ -459,11 +494,14 @@ impl ApiScopes {
                     ApiMacro::Bare
                 }
                 ApiAnswer::NotFound => ApiMacro::Unresolved {
-                    named_api,
+                    named_api: true,
                     reason: "the path does not name an import of Concord's `api!` in this file"
                         .to_owned(),
                 },
-                ApiAnswer::Other(reason) => ApiMacro::Unresolved { named_api, reason },
+                ApiAnswer::Other(reason) => ApiMacro::Unresolved {
+                    named_api: true,
+                    reason,
+                },
             };
             resolved.insert(*offset, resolution);
         }
@@ -494,20 +532,32 @@ impl ApiScopes {
                 ));
             }
             if let Some(paths) = table.imports.get(name) {
-                if paths
-                    .iter()
-                    .any(|(_, path)| path.as_slice() != [name.to_owned()])
-                {
+                if paths.iter().any(|(leading, path)| {
+                    path.as_slice() != [name.to_owned()]
+                        && !(*leading
+                            && path.as_slice() == ["self".to_owned()]
+                            && table.extern_self.contains(name)
+                            && self.own_library == Some(name))
+                }) {
                     return Some(format!(
                         "an import named `{name}` where the invocation is takes precedence over the `{name}` crate in its path"
                     ));
                 }
             }
-            if let Some((_, glob)) = table
-                .globs
-                .iter()
-                .find(|(_, glob)| !glob.first().is_some_and(|first| is_concord_crate(first)))
+            if self
+                .source_origin
+                .is_some_and(|proof| !proof(table.anchor, name))
             {
+                return Some(format!(
+                    "the source namespace of `{name}` may be supplied or shadowed by an unknown item, statement, attribute or derive expansion; macro ownership is not proved"
+                ));
+            }
+            if let Some((_, glob)) = table.globs.iter().find(|(leading, glob)| {
+                !glob.first().is_some_and(|first| is_concord_crate(first))
+                    && !self
+                        .namespace
+                        .is_some_and(|proof| proof(table.anchor, *leading, glob, name))
+            }) {
                 return Some(format!(
                     "the glob import `{}::*` where the invocation is may bring a module `{name}` into scope, which would take precedence over the `{name}` crate in its path",
                     glob.join("::")
@@ -529,11 +579,12 @@ impl ApiScopes {
         scope
     }
 
-    fn push(&mut self, module: bool, name: Option<String>) -> usize {
+    fn push(&mut self, module: bool, name: Option<String>, anchor: usize) -> usize {
         let parent = self.top();
         let id = self.scopes.len();
         self.scopes.push(ApiScope {
             parent: Some(parent),
+            anchor: Some(anchor),
             module,
             ..ApiScope::default()
         });
@@ -548,12 +599,12 @@ impl ApiScopes {
         let scope = self.top();
         match tree {
             syn::UseTree::Path(path) => {
-                prefix.push(path.ident.to_string());
+                prefix.push(api_ident(&path.ident));
                 self.use_tree(leading, prefix, &path.tree);
                 prefix.pop();
             }
             syn::UseTree::Name(name) => {
-                let ident = name.ident.to_string();
+                let ident = api_ident(&name.ident);
                 let (key, path) = if ident == "self" {
                     let Some(last) = prefix.last().cloned() else {
                         return;
@@ -573,11 +624,11 @@ impl ApiScopes {
             syn::UseTree::Rename(rename) => {
                 let mut path = prefix.clone();
                 if rename.ident != "self" {
-                    path.push(rename.ident.to_string());
+                    path.push(api_ident(&rename.ident));
                 }
                 self.scopes[scope]
                     .imports
-                    .entry(rename.rename.to_string())
+                    .entry(api_ident(&rename.rename))
                     .or_default()
                     .push((leading, path));
             }
@@ -602,6 +653,35 @@ impl ApiScopes {
             return ApiAnswer::NotFound;
         };
         if is_concord_crate(first) {
+            if leading {
+                let mut current = Some(scope);
+                while let Some(id) = current {
+                    let table = &self.scopes[id];
+                    if let Some(actual) = table.extern_aliases.get(first) {
+                        if actual != first
+                            && !(actual == "self" && self.own_library == Some(first.as_str()))
+                        {
+                            return ApiAnswer::Other(format!(
+                                "the extern alias `{first}` is not proved to name its Concord package"
+                            ));
+                        }
+                    }
+                    if self
+                        .source_origin
+                        .is_some_and(|proof| !proof(table.anchor, first))
+                    {
+                        return ApiAnswer::Other(format!(
+                            "the source namespace of `{first}` may contain an unknown expansion or extern alias"
+                        ));
+                    }
+                    current = table.parent;
+                }
+            }
+            if !leading {
+                if let Some(reason) = self.shadowed_crate(scope, first) {
+                    return ApiAnswer::Other(reason);
+                }
+            }
             return if prefix.is_empty() {
                 ApiAnswer::Other(format!("`{first}` names a crate, not a macro"))
             } else if last == "api" {
@@ -692,6 +772,15 @@ impl ApiScopes {
         path: &[String],
         depth: usize,
     ) -> ApiAnswer {
+        // Check at the scope where `use` is written, before module_of drops
+        // block-local declarations. The recursive resolver repeats this guard.
+        if !leading {
+            if let Some(first) = path.first().filter(|first| is_concord_crate(first)) {
+                if let Some(reason) = self.shadowed_crate(scope, first) {
+                    return ApiAnswer::Other(reason);
+                }
+            }
+        }
         match path {
             [single] if !leading && !is_concord_crate(single) => {
                 ApiAnswer::Other(format!("the import `{single}` is not followed to a macro"))
@@ -713,6 +802,35 @@ impl ApiScopes {
             return ApiAnswer::Other("a glob import of an empty path".to_owned());
         };
         if is_concord_crate(first) {
+            if leading {
+                let mut current = Some(scope);
+                while let Some(id) = current {
+                    let table = &self.scopes[id];
+                    if let Some(actual) = table.extern_aliases.get(first) {
+                        if actual != first
+                            && !(actual == "self" && self.own_library == Some(first.as_str()))
+                        {
+                            return ApiAnswer::Other(format!(
+                                "the extern alias `{first}` is not proved to name its Concord package"
+                            ));
+                        }
+                    }
+                    if self
+                        .source_origin
+                        .is_some_and(|proof| !proof(table.anchor, first))
+                    {
+                        return ApiAnswer::Other(format!(
+                            "the source namespace of `{first}` may contain an unknown expansion or extern alias"
+                        ));
+                    }
+                    current = table.parent;
+                }
+            }
+            if !leading {
+                if let Some(reason) = self.shadowed_crate(scope, first) {
+                    return ApiAnswer::Other(reason);
+                }
+            }
             // Concord's facade root and prelude export `api`; its other
             // modules export no macro.
             let facade = first == "concord"
@@ -774,33 +892,44 @@ impl ApiScopes {
     }
 }
 
-impl<'ast> Visit<'ast> for ApiScopes {
+impl<'ast> Visit<'ast> for ApiScopes<'_> {
     fn visit_item_extern_crate(&mut self, node: &'ast syn::ItemExternCrate) {
         let scope = self.top();
         let name = node
             .rename
             .as_ref()
-            .map_or_else(|| node.ident.to_string(), |(_, rename)| rename.to_string());
+            .map_or_else(|| api_ident(&node.ident), |(_, rename)| api_ident(rename));
         self.scopes[scope]
             .imports
-            .entry(name)
+            .entry(name.clone())
             .or_default()
-            .push((true, vec![node.ident.to_string()]));
+            .push((true, vec![api_ident(&node.ident)]));
+        self.scopes[scope]
+            .extern_aliases
+            .insert(name.clone(), api_ident(&node.ident));
+        if node.ident == "self" {
+            // Only package-level extern_crate_reasons may accept this alias.
+            self.scopes[scope].extern_self.insert(name);
+        }
     }
 
     fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
         let scope = self.top();
-        self.scopes[scope].modules.insert(node.ident.to_string());
+        self.scopes[scope].modules.insert(api_ident(&node.ident));
         if node.content.is_none() {
             return;
         }
-        self.push(true, Some(node.ident.to_string()));
+        self.push(
+            true,
+            Some(api_ident(&node.ident)),
+            node.ident.span().byte_range().start,
+        );
         syn::visit::visit_item_mod(self, node);
         self.stack.pop();
     }
 
     fn visit_block(&mut self, node: &'ast syn::Block) {
-        self.push(false, None);
+        self.push(false, None, node.brace_token.span.open().byte_range().start);
         syn::visit::visit_block(self, node);
         self.stack.pop();
     }
@@ -812,7 +941,7 @@ impl<'ast> Visit<'ast> for ApiScopes {
     fn visit_item_macro(&mut self, node: &'ast syn::ItemMacro) {
         if let Some(ident) = &node.ident {
             let scope = self.top();
-            self.scopes[scope].macro_rules.insert(ident.to_string());
+            self.scopes[scope].macro_rules.insert(api_ident(ident));
         }
         syn::visit::visit_item_macro(self, node);
     }
@@ -823,7 +952,7 @@ impl<'ast> Visit<'ast> for ApiScopes {
                 node.tokens.clone().into_iter().next()
             {
                 let scope = self.top();
-                self.scopes[scope].macro_rules.insert(name.to_string());
+                self.scopes[scope].macro_rules.insert(api_ident(&name));
             }
             return;
         }
@@ -834,10 +963,7 @@ impl<'ast> Visit<'ast> for ApiScopes {
             .path
             .segments
             .iter()
-            .map(|segment| {
-                let text = segment.ident.to_string();
-                text.strip_prefix("r#").map_or(text.clone(), str::to_owned)
-            })
+            .map(|segment| api_ident(&segment.ident))
             .collect();
         self.invocations.push((
             first.ident.span().byte_range().start,

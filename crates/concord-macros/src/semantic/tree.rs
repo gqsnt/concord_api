@@ -25,6 +25,15 @@ pub(crate) fn build(api: SourceApi) -> syn::Result<Resolver> {
     let client = api.client;
     let client_logical = canonical_ident(&client.name);
     let module = snake_ident(&client.name);
+    if client_logical == canonical_ident(&module) {
+        return Err(coded(
+            client.name.span(),
+            Code::Generated,
+            format!(
+                "client `{client_logical}` emits a client type `{client_logical}` and support module `{client_logical}` in the same Rust namespace; rename the client so its type and snake-case support module have distinct names"
+            ),
+        ));
+    }
     let builder = Ident::new(&format!("{client_logical}Builder"), client.name.span());
     let mut state = TreeState {
         owners: Vec::new(),
@@ -392,5 +401,32 @@ fn register_body(body: &BodyDecl) -> Body {
         representation_origin: String::new(),
         position: body.position,
         controls: ValueControls::default(),
+    }
+}
+
+#[cfg(test)]
+mod s4_client_module_collision_regressions {
+    #[test]
+    fn client_and_support_module_names_must_not_collide() {
+        for name in ["r#type", "catalog", "already_snake"] {
+            let source = format!(
+                "client {name} {{ base \"https://fixture.test/\"; GET read() -> () via Empty; }}"
+            );
+            let parsed = crate::syntax::parse(source.parse().unwrap()).unwrap();
+            let error = crate::semantic::resolve(parsed)
+                .err()
+                .expect("ambiguous generated symbols");
+            assert!(error.to_string().contains("C3-GENERATED"));
+            assert!(error.to_string().contains("client type"));
+            assert!(error.to_string().contains("support module"));
+        }
+        let parsed = crate::syntax::parse(
+            "client r#HTTPStatus { base \"https://fixture.test/\"; GET read() -> () via Empty; }"
+                .parse()
+                .unwrap(),
+        )
+        .unwrap();
+        let model = crate::semantic::resolve(parsed).unwrap();
+        assert_eq!(model.endpoints[0].id, "http_status.read");
     }
 }

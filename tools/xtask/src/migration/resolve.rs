@@ -293,6 +293,8 @@ pub(crate) struct Layout {
     /// The library's source file when `Cargo.toml` names one (`[lib] path`);
     /// otherwise `src/lib.rs`.
     pub(crate) library_path: Option<PathBuf>,
+    /// Existing manifest authority for a genuine Concord own-library alias.
+    pub(crate) concord_own: Option<String>,
     /// The source files of the `[[bin]]`, `[[test]]`, `[[example]]` and
     /// `[[bench]]` targets `Cargo.toml` names explicitly.
     pub(crate) target_paths: Vec<PathBuf>,
@@ -378,10 +380,18 @@ struct Table {
     /// Items this model cannot see may exist here: a name that is not found
     /// is unknown rather than absent.
     opaque: bool,
+    /// Opacity from missing source/unknown attrs/derives, never API emissions.
+    opaque_other: bool,
+    /// A potential API's requested support namespaces, used only to deny
+    /// self-shadowing. They supply no positive names or generated entities.
+    pending_api_namespaces: HashSet<String>,
+    pending_api_header_unknown: bool,
     /// Like `opaque`, because a macro invoked here (in item or statement
     /// position) may expand to items (kept apart so that macro's own name
     /// can still be resolved).
     expanded: bool,
+    /// A source namespace may be introduced by an unknown expansion.
+    namespace_expanded: bool,
     /// Names a `#[cfg]`/`#[cfg_attr]`-gated declaration (or an attribute
     /// macro) may define, import or shadow here: unknown.
     uncertain: HashSet<String>,
@@ -1186,6 +1196,14 @@ fn tokens_impl_free(tokens: &TokenStream, shadowed: &dyn Fn(&str) -> bool) -> bo
     for (index, tree) in trees.iter().enumerate() {
         match tree {
             TokenTree::Ident(ident) if ident == "impl" => return false,
+            TokenTree::Punct(punct) if punct.as_char() == '$' => {
+                let supported = matches!(trees.get(index + 1), Some(TokenTree::Ident(_)))
+                    || matches!(trees.get(index + 1), Some(TokenTree::Group(group))
+                        if group.delimiter() == proc_macro2::Delimiter::Parenthesis);
+                if !supported {
+                    return false;
+                }
+            }
             TokenTree::Punct(punct) if punct.as_char() == '#' => return false,
             TokenTree::Punct(punct) if punct.as_char() == '!' => {
                 let invoked = match (
@@ -1207,6 +1225,44 @@ fn tokens_impl_free(tokens: &TokenStream, shadowed: &dyn Fn(&str) -> bool) -> bo
                 return false;
             }
             _ => {}
+        }
+    }
+    true
+}
+
+/// Strict negative template proof, not macro expansion. Every definition and
+/// exact invocation must lack namespace keywords, attributes or invocations.
+fn tokens_namespace_free(tokens: &TokenStream) -> bool {
+    let trees = tokens.clone().into_iter().collect::<Vec<_>>();
+    for (index, tree) in trees.iter().enumerate() {
+        let safe = match tree {
+            TokenTree::Ident(ident) => !matches!(
+                canonical(ident).as_str(),
+                "mod"
+                    | "use"
+                    | "extern"
+                    | "type"
+                    | "struct"
+                    | "enum"
+                    | "union"
+                    | "trait"
+                    | "macro_rules"
+                    | "macro"
+                    | "include"
+                    | "include_str"
+                    | "include_bytes"
+            ),
+            TokenTree::Punct(punct) if punct.as_char() == '$' => {
+                matches!(trees.get(index + 1), Some(TokenTree::Ident(_)))
+                    || matches!(trees.get(index + 1),
+                Some(TokenTree::Group(group)) if group.delimiter() == proc_macro2::Delimiter::Parenthesis)
+            }
+            TokenTree::Punct(punct) => !matches!(punct.as_char(), '#' | '!'),
+            TokenTree::Group(group) => tokens_namespace_free(&group.stream()),
+            TokenTree::Literal(_) => true,
+        };
+        if !safe {
+            return false;
         }
     }
     true
@@ -1481,6 +1537,184 @@ impl CrateModel {
         self.anchors.get(&(file, offset)).copied()
     }
 
+    /// Proves that a particular source glob's complete visible namespace
+    /// cannot supply `name`. This is stricter than ordinary lookup: an external
+    /// glob, enum container, missing file, opaque expansion or unknown view
+    /// cannot establish absence. No generated items are used by the seed model.
+    pub(crate) fn glob_namespace_absent(
+        &self,
+        from: ScopeId,
+        leading_colon: bool,
+        segments: &[String],
+        name: &str,
+    ) -> bool {
+        if self.synthetic.contains(&self.root_of(from)) {
+            return false;
+        }
+        let path = UsePath {
+            leading_colon,
+            segments: segments.to_vec(),
+        };
+        let mut cx = Lookup::new();
+        let Res::Found(containers) = self.resolve_use(from, &path, Ns::Type, &mut cx) else {
+            return false;
+        };
+        if containers.is_empty() {
+            return false;
+        }
+        let mut stack = HashSet::new();
+        let mut budget = 4096_usize;
+        containers.into_iter().all(|container| match container {
+            Entity::Scope(scope) => {
+                self.namespace_absent(scope, from, name, &mut stack, &mut budget)
+            }
+            _ => false,
+        })
+    }
+
+    fn namespace_absent(
+        &self,
+        scope: ScopeId,
+        from: ScopeId,
+        name: &str,
+        stack: &mut HashSet<ScopeId>,
+        budget: &mut usize,
+    ) -> bool {
+        if *budget == 0 || stack.len() > MAX_DEPTH {
+            return false;
+        }
+        *budget -= 1;
+        let table = &self.scopes[scope].table;
+        if table.opaque
+            || table.expanded
+            || table.uncertain_globs
+            || table.uncertain.contains(name)
+            || self.synthetic.contains(&self.root_of(scope))
+            || self
+                .files
+                .values()
+                .any(|(file, module)| self.mounts.contains_key(file) && self.within(scope, *module))
+        {
+            return false;
+        }
+        // Check actual visibility from the original importer. Pub re-exports
+        // through a private submodule keep that view, not the target's own view.
+        for (_, vis) in table.types.get(name).into_iter().flatten() {
+            if self.visible(vis, scope, from) != Some(false) {
+                return false;
+            }
+        }
+        for (_, vis) in table.imports.get(name).into_iter().flatten() {
+            if self.visible(vis, scope, from) != Some(false) {
+                return false;
+            }
+        }
+        // A known cycle supplies nothing new by itself; all other branches
+        // of each visited namespace still must be inspected before success.
+        if !stack.insert(scope) {
+            return true;
+        }
+        let mut absent = true;
+        for (glob, vis) in &table.globs {
+            match self.visible(vis, scope, from) {
+                Some(false) => continue,
+                Some(true) => {}
+                None => {
+                    absent = false;
+                    break;
+                }
+            }
+            let mut cx = Lookup::new();
+            let Res::Found(containers) = self.resolve_use(scope, glob, Ns::Type, &mut cx) else {
+                absent = false;
+                break;
+            };
+            if containers.is_empty()
+                || !containers.into_iter().all(|container| match container {
+                    Entity::Scope(target) => {
+                        self.namespace_absent(target, from, name, stack, budget)
+                    }
+                    _ => false,
+                })
+            {
+                absent = false;
+                break;
+            }
+        }
+        stack.remove(&scope);
+        absent
+    }
+
+    /// An own-self alias is authority only in the actual package library,
+    /// never its binary/test/example/bench targets or an ambiguous mount.
+    /// A source-local api re-export/definition is not the canonical macro.
+    pub(crate) fn own_library_api_source(&self, path: &Path) -> bool {
+        let Some((file, module)) = self.file(path) else {
+            return false;
+        };
+        if self.other_mount(file).is_some() {
+            return false;
+        }
+        let Some((_, library)) = &self.library else {
+            return false;
+        };
+        if self.root_of(module) != *library {
+            return false;
+        }
+        let table = &self.scopes[*library].table;
+        if table.types.contains_key("api")
+            || table.values.contains_key("api")
+            || table.uncertain.contains("api")
+            || self.macro_rules.contains("api")
+        {
+            return false;
+        }
+        if !table.imports.contains_key("api") {
+            return true;
+        }
+        // The canonical import is established by the existing model's full
+        // source/alias/visibility/edition resolution, not its written suffix.
+        // An explicit external path can resolve despite pending emissions;
+        // foreign, local, ambiguous or unresolved origins never suffice.
+        let mut cx = Lookup::new();
+        matches!(self.macro_import(*library, "api", false, &mut cx),
+            MacroOrigin::Path(origin)
+                if matches!(origin.as_slice(), [krate, name]
+                    if krate == "concord_macros" && matches!(name.as_str(), "api" | "__api")))
+    }
+
+    /// The already-resolved external/prelude candidate may not derive its
+    /// source namespace from another unknown expansion. Pending API output
+    /// remains opaque, and contributes no positive names to this check.
+    pub(crate) fn namespace_source_stable(&self, mut scope: ScopeId, name: &str) -> bool {
+        loop {
+            let table = &self.scopes[scope].table;
+            if table.opaque_other
+                || table.namespace_expanded
+                || table.uncertain_globs
+                || table.uncertain.contains(name)
+                || table.pending_api_header_unknown
+                || table.pending_api_namespaces.contains(name)
+                || self.synthetic.contains(&self.root_of(scope))
+                || self.files.values().any(|(file, module)| {
+                    self.mounts.contains_key(file) && self.within(scope, *module)
+                })
+            {
+                return false;
+            }
+            match self.scopes[scope].kind {
+                ScopeKind::Block { parent, .. } => scope = parent,
+                // Parent expansions can introduce extern aliases/macro-use
+                // bindings; source uncertainty is not local-name lookup.
+                ScopeKind::Module {
+                    parent: Some(parent),
+                    ..
+                } => scope = parent,
+                ScopeKind::Module { parent: None, .. } => return true,
+            }
+        }
+    }
+
     // ----- lookup -------------------------------------------------------------
 
     /// Looks `name` up among the items, imports and globs of one scope, as
@@ -1578,7 +1812,15 @@ impl CrateModel {
             cx.gated(name);
             return Res::Unknown;
         }
-        if table.opaque || table.expanded {
+        let trusted_prefix = matches!(
+            name,
+            "std" | "core" | "alloc" | "serde" | "log" | "tracing" | "tokio"
+        );
+        let pending_api_only = table.opaque
+            && !table.opaque_other
+            && !table.pending_api_header_unknown
+            && !table.pending_api_namespaces.contains(name);
+        if (table.opaque && !(pending_api_only && trusted_prefix)) || table.expanded {
             return Res::Unknown;
         }
         let mut from_globs = Vec::new();
@@ -2739,6 +2981,88 @@ impl CrateModel {
         }
     }
 
+    /// Known item macro origin does not make arbitrary forwarded attributes
+    /// inert. Parse thread_local's original static items and reject possible
+    /// attribute expansion or conditional attributes at the emitted site.
+    fn standard_item_namespace_free(
+        &self,
+        scope: ScopeId,
+        name: &str,
+        tokens: &TokenStream,
+    ) -> bool {
+        if name != "thread_local" {
+            return STD_PRELUDE_MACROS.contains(&name) && name != "include";
+        }
+        let Ok(file) = syn::parse2::<syn::File>(tokens.clone()) else {
+            return false;
+        };
+        file.attrs.is_empty()
+            && file.items.iter().all(|item| match item {
+                Item::Static(item) => {
+                    let effects = attribute_effects(&item.attrs);
+                    !effects.gated
+                        && !effects.gated_path
+                        && !effects.may_be_macro()
+                        && self
+                            .unknown_attribute_macro(Some(scope), &item.attrs)
+                            .is_none()
+                }
+                _ => false,
+            })
+    }
+
+    /// A forwarded static attribute or initializer can generate impls even
+    /// when the standard macro path is known. Retain whole-crate uncertainty.
+    fn standard_item_impl_free(&self, scope: ScopeId, name: &str, tokens: &TokenStream) -> bool {
+        let shadowed = |nested: &str| self.macro_rules.contains(nested);
+        if name != "thread_local" {
+            return STD_PRELUDE_MACROS.contains(&name)
+                && name != "include"
+                && tokens_impl_free(tokens, &shadowed);
+        }
+        if !self.standard_item_namespace_free(scope, name, tokens) {
+            return false;
+        }
+        let Ok(file) = syn::parse2::<syn::File>(tokens.clone()) else {
+            return false;
+        };
+        file.items.iter().all(|item| match item {
+            Item::Static(item) => tokens_impl_free(&item.expr.to_token_stream(), &shadowed),
+            _ => false,
+        })
+    }
+
+    /// A bounded local template can add impls without a source namespace.
+    /// Ordinary expansion uncertainty and trait incompleteness are retained.
+    fn namespace_free_local_macro(
+        &self,
+        scope: ScopeId,
+        path: &syn::Path,
+        tokens: &TokenStream,
+    ) -> bool {
+        let segments = segments_of(path);
+        let [name] = segments.as_slice() else {
+            return false;
+        };
+        if path.leading_colon.is_some()
+            || !self.macro_rules.contains(name)
+            || !tokens_namespace_free(tokens)
+        {
+            return false;
+        }
+        let Some(definitions) = self.macro_definitions.get(name) else {
+            return false;
+        };
+        if !definitions.iter().all(tokens_namespace_free) {
+            return false;
+        }
+        let mut cx = Lookup::new();
+        matches!(
+            self.macro_import(scope, name, true, &mut cx),
+            MacroOrigin::NotImported
+        ) && self.prelude_macros_unshadowed()
+    }
+
     /// Whether a macro invocation at `scope` is proved unable to expand to a
     /// trait implementation or a method: a standard-library macro other than
     /// `include!`, a `log`/`tracing` expression macro, or a crate-local
@@ -2747,7 +3071,7 @@ impl CrateModel {
     /// that no import of another macro of that name may replace.
     fn impl_free_macro(&self, scope: ScopeId, path: &syn::Path, tokens: &TokenStream) -> bool {
         if let Some(name) = self.std_macro(Some(scope), path) {
-            return name != "include";
+            return self.standard_item_impl_free(scope, &name, tokens);
         }
         if self.binding_free_macro(Some(scope), path) {
             return true;
@@ -2935,7 +3259,19 @@ impl CrateModel {
             });
         }
         if origins.is_empty() {
-            if table.opaque || table.uncertain_globs || (table.expanded && !ignore_expanded) {
+            let trusted_macro = STD_PRELUDE_MACROS.contains(&name)
+                || STD_DERIVES.contains(&name)
+                || PRELUDE_ATTRIBUTE_MACROS.contains(&name)
+                || self
+                    .macro_definitions
+                    .get(name)
+                    .is_some_and(|definitions| definitions.iter().all(tokens_namespace_free));
+            let pending_api_only =
+                table.opaque && !table.opaque_other && !table.pending_api_header_unknown;
+            if (table.opaque && !(pending_api_only && trusted_macro))
+                || table.uncertain_globs
+                || (table.expanded && !ignore_expanded)
+            {
                 return MacroOrigin::Unknown;
             }
             for (glob, vis) in &table.globs {
@@ -3231,7 +3567,7 @@ impl CrateModel {
         // attribute macro may emit a `mod tokio`), so the decisions repeat
         // until none changes; each only ever turns known into unknown.
         let mut statement_macros = std::mem::take(&mut builder.statement_macros);
-        statement_macros.sort_by_key(|(scope, _)| *scope);
+        statement_macros.sort_by_key(|(scope, _, _)| *scope);
         let macro_sites = std::mem::take(&mut builder.macro_sites);
         let derive_sites = std::mem::take(&mut builder.derive_sites);
         let item_macros = std::mem::take(&mut builder.item_macros);
@@ -3260,6 +3596,7 @@ impl CrateModel {
                         let table = &mut model.scopes[site.scope].table;
                         table.uncertain.extend(names.iter().cloned());
                         table.opaque = true;
+                        table.opaque_other = true;
                         format!(
                             "the crate uses the attribute macro `{attribute}` ({location}), which may replace its item and generate trait implementations the tool cannot see"
                         )
@@ -3273,24 +3610,32 @@ impl CrateModel {
                 };
                 model.mark_incomplete(site.scope, reason);
             }
-            for ((scope, path), decided) in item_macros.iter().zip(&mut unknown_items) {
+            for ((scope, path, tokens), decided) in item_macros.iter().zip(&mut unknown_items) {
                 if *decided {
                     continue;
                 }
                 let standard = model
                     .std_macro(Some(*scope), path)
-                    .is_some_and(|name| name != "include");
+                    .is_some_and(|name| model.standard_item_namespace_free(*scope, &name, tokens));
                 if !standard {
                     *decided = true;
                     changed = true;
                     model.scopes[*scope].table.expanded = true;
+                    if !model.namespace_free_local_macro(*scope, path, tokens) {
+                        model.scopes[*scope].table.namespace_expanded = true;
+                    }
                 }
             }
-            for ((scope, path), decided) in statement_macros.iter().zip(&mut unknown_statements) {
+            for ((scope, path, tokens), decided) in
+                statement_macros.iter().zip(&mut unknown_statements)
+            {
                 if !*decided && !model.binding_free_macro(Some(*scope), path) {
                     *decided = true;
                     changed = true;
                     model.scopes[*scope].table.expanded = true;
+                    if !model.namespace_free_local_macro(*scope, path, tokens) {
+                        model.scopes[*scope].table.namespace_expanded = true;
+                    }
                 }
             }
             // A derive of another crate may add items (so names are unknown
@@ -3300,6 +3645,7 @@ impl CrateModel {
                     *decided = true;
                     changed = true;
                     model.scopes[site.scope].table.opaque = true;
+                    model.scopes[site.scope].table.opaque_other = true;
                     model.mark_incomplete(
                         site.scope,
                         format!(
@@ -3355,10 +3701,10 @@ struct Builder<'a, 'f> {
     /// Module children known while mapping files (tables are filled later).
     children: HashMap<(ScopeId, String), ScopeId>,
     /// Statement macros of blocks, decided after every file is collected.
-    statement_macros: Vec<(ScopeId, syn::Path)>,
+    statement_macros: Vec<(ScopeId, syn::Path, TokenStream)>,
     /// Item-position macros other than `api!` and `macro_rules!`, decided
     /// likewise.
-    item_macros: Vec<(ScopeId, syn::Path)>,
+    item_macros: Vec<(ScopeId, syn::Path, TokenStream)>,
     /// Every macro invocation, classified after every file is collected.
     macro_sites: Vec<MacroSite>,
     /// Every derive macro applied to an item, classified likewise.
@@ -4129,6 +4475,7 @@ impl Builder<'_, '_> {
                         ),
                         _ => {
                             self.model.scopes[scope].table.opaque = true;
+                            self.model.scopes[scope].table.opaque_other = true;
                             continue;
                         }
                     };
@@ -4180,6 +4527,7 @@ impl Builder<'_, '_> {
             }
             _ => {
                 model.scopes[scope].table.opaque = true;
+                model.scopes[scope].table.opaque_other = true;
                 let location = self.location(
                     file,
                     item.to_token_stream()
@@ -4220,7 +4568,34 @@ impl Builder<'_, '_> {
             match (self.generated)(file, offset) {
                 Some(items) => return self.define_generated(scope, items),
                 // Not a v2.1 declaration: its generated names are unknown.
-                None => self.model.scopes[scope].table.opaque = true,
+                None => {
+                    let table = &mut self.model.scopes[scope].table;
+                    table.opaque = true;
+                    // This is a pending API, not a proven generated origin.
+                    // Retain full opacity for glob-target completeness. For
+                    // source-origin queries, other opacity/expansions remain
+                    // separate and are never waived by this marker.
+                    let mut tokens = mac.tokens.clone().into_iter();
+                    let mut namespace = None;
+                    while let Some(token) = tokens.next() {
+                        if matches!(token, proc_macro2::TokenTree::Ident(ref ident) if ident == "client")
+                        {
+                            namespace = match tokens.next() {
+                                Some(proc_macro2::TokenTree::Ident(ident)) => {
+                                    Some(to_snake_case(&canonical(&ident)))
+                                }
+                                _ => None,
+                            };
+                            break;
+                        }
+                    }
+                    match namespace {
+                        Some(namespace) => {
+                            table.pending_api_namespaces.insert(namespace);
+                        }
+                        None => table.pending_api_header_unknown = true,
+                    }
+                }
             }
         } else if defines_macro || mac.path.is_ident("macro_rules") {
             if let Some(proc_macro2::TokenTree::Ident(name)) = mac.tokens.clone().into_iter().next()
@@ -4239,11 +4614,13 @@ impl Builder<'_, '_> {
         } else if statement {
             // Decided once the whole crate is collected (the macro's path is
             // resolved through imports that may be collected later).
-            self.statement_macros.push((scope, mac.path.clone()));
+            self.statement_macros
+                .push((scope, mac.path.clone(), mac.tokens.clone()));
         } else {
             // Likewise: a standard macro other than `include!` (such as
             // `thread_local!`) defines no type, import or macro.
-            self.item_macros.push((scope, mac.path.clone()));
+            self.item_macros
+                .push((scope, mac.path.clone(), mac.tokens.clone()));
         }
         Vec::new()
     }

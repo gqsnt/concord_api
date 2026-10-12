@@ -687,32 +687,45 @@ where
     {
         let spec = SourceSpec::provider(Arc::new(provider), self.max_origins)
             .map_err(|_| AuthError::new(AuthErrorKind::InvalidConfiguration))?;
-        let previous = {
+        let (result, retired, previous) = {
             let mut selected = lock(&self.selected)?;
             let current = Arc::clone(&selected);
             if current.source != CredentialSource::Provider {
                 return Err(AuthError::new(AuthErrorKind::InvalidConfiguration));
             }
-            let state = lock(&current.state)?;
+            let mut state = lock(&current.state)?;
             if state.exhausted {
                 return Err(internal_error());
             }
-            let epoch = state
-                .intent_epoch
-                .checked_add(1)
-                .ok_or_else(internal_error)?;
-            let replacement = CredentialSlot::new(
-                spec,
-                current.cooldown_cap,
-                None,
-                epoch,
-                Arc::clone(&current.versions),
-            );
-            drop(state);
-            std::mem::replace(&mut *selected, replacement)
+            match state.intent_epoch.checked_add(1) {
+                Some(epoch) => {
+                    let replacement = CredentialSlot::new(
+                        spec,
+                        current.cooldown_cap,
+                        None,
+                        epoch,
+                        Arc::clone(&current.versions),
+                    );
+                    drop(state);
+                    (
+                        Ok(()),
+                        Retired::none(),
+                        Some(std::mem::replace(&mut *selected, replacement)),
+                    )
+                }
+                None => {
+                    // AUTH-03: an attempted counter advance that cannot succeed
+                    // permanently fails closed, including a live provider flight.
+                    // The selected provider source and never-wrapping counters stay.
+                    (Err(internal_error()), state.exhaust(), None)
+                }
+            }
         };
+        // Publish retirement/wake followers and drop material after BOTH selector
+        // and slot locks have been released; reuse existing ordered retirement.
+        retired.release()?;
         drop(previous);
-        Ok(())
+        result
     }
 
     pub(crate) fn is_set(&self) -> bool {

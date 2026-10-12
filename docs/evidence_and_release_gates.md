@@ -152,9 +152,12 @@ just verify-implementation
 `just verify-implementation` runs the machine validation owned by the
 unpublished beta implementation (format, the check/clippy/test matrix, the
 explicitly named UI suites, MSRV, fixtures, docs and `doc-audit`, the two-crate
-downstream package, xtask tools, benchmark compilation and the source export).
-External license, registry, tag and human release gates (`deny`, `workflow`,
-`package`, `release-audit`) stay in the separate release report.
+downstream workspace, extracted public archives and their two-crate consumer
+proof, xtask tools, benchmark compilation and the source export).
+The `package` gate checks local archives, normalized manifests, Rustdoc and
+downstream behavior; it does not publish them. External license, registry, tag
+and human release gates (`deny`, `workflow`, `release-audit`) stay in the
+separate release report.
 
 Individual gates can be run directly, for example
 `cargo test --workspace --all-features`, `cargo test --workspace --doc --all-features`

@@ -216,6 +216,8 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tower-http",
+ "tower-service",
  "trybuild",
  "url",
 ]

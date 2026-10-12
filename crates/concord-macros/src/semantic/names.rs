@@ -605,61 +605,101 @@ fn check_rates(rates: &[RateUse], generated: &[(String, String)]) -> syn::Result
     Ok(())
 }
 
-/// Checks a type path (not behind a qualified self) and its generic arguments.
-fn check_type_path(path: &syn::Path, generated: &[(String, String)]) -> syn::Result<()> {
-    if path.leading_colon.is_none() {
-        if let Some(first) = path.segments.first() {
-            let name = super::surface::canonical_ident(&first.ident);
-            if let Some((_, what)) = generated.iter().find(|(generated, _)| *generated == name) {
-                return Err(coded(
-                    first.ident.span(),
-                    Code::Generated,
-                    format!(
-                        "type `{name}` in this declaration would resolve to {what} inside the generated support modules; name the type by an absolute path (for example `crate::models::{name}`) or rename it"
-                    ),
-                ));
-            }
-            if path.segments.len() > 1 {
-                check_leading_segment(&first.ident, &render_path(path), "type path", generated)?;
-            }
-        }
-    }
-    check_generic_arguments(path, generated)
+/// Walk every represented Rust type/expression child using syn's existing
+/// visitor. Qualified-self association tails are not lexical roots; trait
+/// prefixes and qself types are. Expression singletons are value-namespace
+/// names, so generated type names alone must not reject them.
+struct ShadowWalker<'a> {
+    generated: &'a [(String, String)],
+    error: Option<syn::Error>,
 }
 
-fn check_generic_arguments(path: &syn::Path, generated: &[(String, String)]) -> syn::Result<()> {
-    for segment in &path.segments {
-        if let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments {
-            for argument in &arguments.args {
-                if let syn::GenericArgument::Type(inner) = argument {
-                    check_type(inner, generated)?;
+impl ShadowWalker<'_> {
+    fn root(&mut self, path: &syn::Path, check_singleton: bool, kind: &str) {
+        if self.error.is_some()
+            || path.leading_colon.is_some()
+            || (!check_singleton && path.segments.len() < 2)
+        {
+            return;
+        }
+        if let Some(first) = path.segments.first() {
+            // Preserve the existing C3-GENERATED wording for all prior type
+            // root cases; newly traversed type roots use that same contract.
+            if check_singleton {
+                let name = super::surface::canonical_ident(&first.ident);
+                if let Some((_, what)) = self
+                    .generated
+                    .iter()
+                    .find(|(generated, _)| *generated == name)
+                {
+                    self.error = Some(coded(
+                        first.ident.span(),
+                        Code::Generated,
+                        format!(
+                            "type `{name}` in this declaration would resolve to {what} inside the generated support modules; name the type by an absolute path (for example `crate::models::{name}`) or rename it"
+                        ),
+                    ));
+                    return;
                 }
             }
+            self.error =
+                check_leading_segment(&first.ident, &render_path(path), kind, self.generated).err();
         }
     }
-    Ok(())
+}
+
+impl syn::visit_mut::VisitMut for ShadowWalker<'_> {
+    fn visit_type_path_mut(&mut self, node: &mut syn::TypePath) {
+        // <T>::Assoc has no trait-prefix root; <T as Trait>::Assoc does.
+        if node.qself.as_ref().is_none_or(|qself| qself.position > 0) {
+            self.root(&node.path, true, "type path");
+        }
+        syn::visit_mut::visit_type_path_mut(self, node);
+    }
+
+    fn visit_trait_bound_mut(&mut self, node: &mut syn::TraitBound) {
+        self.root(&node.path, true, "trait path");
+        syn::visit_mut::visit_trait_bound_mut(self, node);
+    }
+
+    fn visit_expr_path_mut(&mut self, node: &mut syn::ExprPath) {
+        if let Some(qself) = &node.qself {
+            if qself.position > 0 {
+                self.root(&node.path, true, "qualified constant trait path");
+            }
+        } else {
+            self.root(&node.path, false, "constant path");
+        }
+        syn::visit_mut::visit_expr_path_mut(self, node);
+    }
+
+    fn visit_macro_mut(&mut self, node: &mut syn::Macro) {
+        // Macro tokens are opaque; preserve the existing lexical namespace
+        // check for a qualified macro path without interpreting token bodies.
+        self.root(&node.path, false, "macro path");
+        syn::visit_mut::visit_macro_mut(self, node);
+    }
+}
+
+fn check_type_path(path: &syn::Path, generated: &[(String, String)]) -> syn::Result<()> {
+    use syn::visit_mut::VisitMut as _;
+    let mut walker = ShadowWalker {
+        generated,
+        error: None,
+    };
+    walker.root(path, true, "type path");
+    walker.visit_path_mut(&mut path.clone());
+    walker.error.map_or(Ok(()), Err)
 }
 
 fn check_type(ty: &syn::Type, generated: &[(String, String)]) -> syn::Result<()> {
-    match ty {
-        syn::Type::Path(path) => match &path.qself {
-            Some(qself) => {
-                check_type(&qself.ty, generated)?;
-                check_generic_arguments(&path.path, generated)
-            }
-            None => check_type_path(&path.path, generated),
-        },
-        syn::Type::Reference(reference) => check_type(&reference.elem, generated),
-        syn::Type::Slice(slice) => check_type(&slice.elem, generated),
-        syn::Type::Array(array) => check_type(&array.elem, generated),
-        syn::Type::Paren(paren) => check_type(&paren.elem, generated),
-        syn::Type::Group(group) => check_type(&group.elem, generated),
-        syn::Type::Tuple(tuple) => tuple
-            .elems
-            .iter()
-            .try_for_each(|elem| check_type(elem, generated)),
-        _ => Ok(()),
-    }
+    use syn::visit_mut::VisitMut as _;
+    let mut walker = ShadowWalker {
+        generated,
+        error: None,
+    };
+    walker.visit_type_mut(&mut ty.clone());
+    walker.error.map_or(Ok(()), Err)
 }
 
 /// Names the owning declaration in a shadowing diagnostic (DIAG-01): the
@@ -767,4 +807,68 @@ fn check_endpoint_shadowing(model: &super::Model, index: usize) -> syn::Result<(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod s4_shadow_walker_regressions {
+    use super::*;
+    #[test]
+    fn nested_rust_syntax_checks_every_lexical_type_root() {
+        let generated = vec![
+            (
+                "ReadRequest".to_owned(),
+                "a generated request type".to_owned(),
+            ),
+            ("read".to_owned(), "a generated scope module".to_owned()),
+        ];
+        for text in [
+            "fn(ReadRequest)",
+            "fn() -> ReadRequest",
+            "unsafe extern \"C\" fn(*const ReadRequest) -> ()",
+            "Box<dyn Fn(ReadRequest) -> ()>",
+            "Box<dyn Fn() -> ReadRequest>",
+            "impl Fn(ReadRequest) -> ()",
+            "impl Fn() -> ReadRequest",
+            "<u32 as ReadRequest>::Assoc",
+            "<ReadRequest as crate::Trait>::Assoc",
+            "Wrapper<Item = ReadRequest>",
+            "Wrapper<Assoc<ReadRequest> = u32>",
+            "Wrapper<{ <u32 as ReadRequest>::N }>",
+            "[u8; read::N]",
+            "Wrapper<{ read::N }>",
+            "Box<dyn read::Trait>",
+        ] {
+            let ty = syn::parse_str::<syn::Type>(text).unwrap();
+            let error = check_type(&ty, &generated).expect_err(text);
+            assert!(
+                error.to_string().contains("C3-GENERATED"),
+                "{text}: {error}"
+            );
+        }
+        for text in [
+            "fn(crate::ReadRequest) -> crate::ReadRequest",
+            "fn(super::ReadRequest) -> self::ReadRequest",
+            "Box<dyn Fn(crate::ReadRequest) -> super::ReadRequest>",
+            "<u32 as crate::ReadRequest>::Assoc",
+            "<u32>::ReadRequest",
+            "Wrapper<ReadRequest = u32>", // association LHS is not a lexical root
+            "[u8; ReadRequest]",          // standalone constant is in value namespace
+            "Wrapper<{ ReadRequest }>",
+            "Wrapper<{ <u32 as crate::ReadRequest>::N }>",
+            "Box<dyn ::std::ops::Fn(u32) -> u32>",
+        ] {
+            check_type(&syn::parse_str(text).unwrap(), &generated)
+                .unwrap_or_else(|e| panic!("{text}: {e}"));
+        }
+    }
+    #[test]
+    fn real_declaration_rejects_fn_pointer_capture_before_emission() {
+        let source = "client FunctionPaths { base \"https://fixture.test/\"; GET read(query cb: fn(ReadRequest) via CallbackWire) -> () via Empty; }";
+        let parsed = crate::syntax::parse(source.parse().unwrap()).unwrap();
+        let error = crate::semantic::resolve(parsed)
+            .err()
+            .expect("generated request shadows authored alias");
+        assert!(error.to_string().contains("C3-GENERATED"));
+        assert!(error.to_string().contains("endpoint `FunctionPaths::read`"));
+    }
 }

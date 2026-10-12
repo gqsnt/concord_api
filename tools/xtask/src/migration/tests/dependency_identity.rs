@@ -332,7 +332,7 @@ fn extern_crate_alias_of_a_concord_name_is_refused() {
     // only in the Concord package itself.
     let own = "extern crate self as concord;\n";
     let concord_package = named_manifest("concord");
-    let migration = migrate_app_with(own, &[("app/Cargo.toml", concord_package.as_str())]);
+    let migration = migrate_own_with_canonical_context(own, &concord_package);
     assert_migrated(&migration, "the Concord package");
     let migration = migrate_app_with(own, &[("app/Cargo.toml", genuine.as_str())]);
     assert_refused(
@@ -461,4 +461,19 @@ fn virtual_manifest_keeps_the_documented_assumption() {
     assert!(identity_diagnostics(&migration).is_empty());
     let converted = migration.converted("src/lib.rs").expect("library");
     assert!(converted.contains("GET item(query x?: u32)"), "{converted}");
+}
+
+/// The old own-package snippet supplied no actual api origin. Give its
+/// unchanged body a child-module context below a canonical provider export;
+/// this fixture proves source identity, not hidden-entry native expansion.
+fn migrate_own_with_canonical_context(prefix: &str, manifest: &str) -> Migration {
+    let tree = TempDir::new("own-canonical-context");
+    tree.write("app/Cargo.toml", &format!("{manifest}\n[dependencies]\nconcord_macros = {{ package = \"concord-macros\", version = \"3\" }}\nconcord_core = {{ package = \"concord-core\", version = \"3\" }}\n"));
+    let original = format!("{prefix}{LIB}mod plain;\n");
+    let source = format!(
+        "pub use ::concord_macros::__api as api;\npub use ::concord_core::contracts::Empty;\npub mod own_context {{\n{original}\n}}\n"
+    );
+    tree.write("app/src/lib.rs", &source);
+    tree.write("app/src/own_context/plain.rs", PLAIN);
+    migrate(&tree.0.join("app"), &Settings::default()).expect("complete own source context")
 }

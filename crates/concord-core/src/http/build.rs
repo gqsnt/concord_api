@@ -100,6 +100,7 @@ impl ManagedHttp {
 
         let application = build_native_client(application)?;
         let provider = build_native_client(provider)?;
+        let decoding = super::content_decoding::ContentDecoding::from_config(&http);
         Ok(Self {
             application: ApplicationHttp::new(
                 application,
@@ -107,7 +108,8 @@ impl ManagedHttp {
                 application_https_only,
                 runtime.status_body_limit,
                 runtime.rate_limit_cooldown_cap,
-            ),
+            )
+            .with_decoding(decoding),
             provider: ProviderHttpInner::new(
                 provider,
                 tls,
@@ -117,7 +119,8 @@ impl ManagedHttp {
                 runtime.provider_timeout,
                 Arc::clone(&runtime.wall_clock),
             )
-            .with_failure_cooldown_cap(runtime.auth_failure_cooldown_cap),
+            .with_failure_cooldown_cap(runtime.auth_failure_cooldown_cap)
+            .with_decoding(decoding),
         })
     }
 

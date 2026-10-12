@@ -50,7 +50,7 @@ Diagnostics carry a stable `[C3-…]` code (`syntax/diagnostics.rs`).
 ## Generated surface and the bridge
 
 - Generated code targets the façade's versioned `__private` bridge; the bridge
-  checks `GENERATED_CONTRACT_VERSION` (currently 34) during const evaluation, so
+  checks `GENERATED_CONTRACT_VERSION` (currently 35) during const evaluation, so
   a macro/core mismatch is a deterministic compile error (BRIDGE-01).
 - Every client and scope handle implements core's `OwnerProjection`, the single
   source of what an endpoint inherits: host labels, path segments, the owner's
