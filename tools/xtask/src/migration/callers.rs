@@ -42,7 +42,7 @@ use super::resolve::{
     canonical, concord_config, concord_config_builder, item_attributes, path_text,
     std_trait_method, to_pascal_case, to_snake_case,
 };
-use super::rust_file::SourceNamespace;
+use super::rust_file::{ApiCrateOrigin, SourceNamespace};
 use super::rust_file::{Imports, find_api_invocations, is_concord_crate, parse_rust};
 use super::syntax::{self, Api, Child, ValueDecl};
 
@@ -691,6 +691,32 @@ impl DeclIndex {
                     };
                     namespaces.namespace_source_stable(scope, name, namespace)
                 };
+                let crate_proof = |anchor: Option<usize>, name: &str, mode| {
+                    let Some((number, module)) = namespaces.file(path) else {
+                        return ApiCrateOrigin::Denied;
+                    };
+                    if namespaces.other_mount(number).is_some() {
+                        return ApiCrateOrigin::Denied;
+                    }
+                    let scope = match anchor {
+                        Some(offset) => match offset
+                            .checked_add(file.base)
+                            .and_then(|offset| namespaces.anchor(number, offset))
+                        {
+                            Some(scope) => scope,
+                            None => return ApiCrateOrigin::Denied,
+                        },
+                        None => module,
+                    };
+                    namespaces.api_crate_origin(
+                        path,
+                        scope,
+                        name,
+                        mode,
+                        false,
+                        layout.concord_own.as_deref(),
+                    )
+                };
                 let mut refined = Imports::collect_with_namespace(
                     &file.file,
                     Some(&proof),
@@ -699,6 +725,7 @@ impl DeclIndex {
                         .concord_own
                         .as_deref()
                         .filter(|_| namespaces.own_library_api_source(path, false)),
+                    Some(&crate_proof),
                 );
                 if let Some(bare) = index.bare_api.get(*path) {
                     refined.prove_bare_api(bare.clone());
@@ -743,6 +770,18 @@ impl DeclIndex {
                         origin_model.namespace_source_stable(scope, name, namespace)
                     })
                 };
+                let crate_proof = |anchor: Option<usize>, name: &str, mode| {
+                    at(anchor).map_or(ApiCrateOrigin::Denied, |scope| {
+                        origin_model.api_crate_origin(
+                            path,
+                            scope,
+                            name,
+                            mode,
+                            true,
+                            layout.concord_own.as_deref(),
+                        )
+                    })
+                };
                 let mut refined = Imports::collect_with_namespace(
                     &file.file,
                     Some(&absence),
@@ -751,6 +790,7 @@ impl DeclIndex {
                         .concord_own
                         .as_deref()
                         .filter(|_| origin_model.own_library_api_source(path, true)),
+                    Some(&crate_proof),
                 );
                 if let Some(bare) = index.bare_api.get(*path) {
                     refined.prove_bare_api(bare.clone());

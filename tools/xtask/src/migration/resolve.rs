@@ -67,7 +67,10 @@ use syn::punctuated::Punctuated;
 use syn::visit::Visit;
 use syn::{Expr, Item, Meta, Stmt, Token, Type};
 
-use super::rust_file::{Imports, ParsedFile, SourceNamespace, bare_api_proof, is_concord_crate};
+use super::rust_file::{
+    ApiCrateOrigin, ApiPathMode, Imports, ParsedFile, SourceNamespace, bare_api_proof,
+    is_concord_crate,
+};
 
 pub(crate) type ScopeId = usize;
 
@@ -360,6 +363,9 @@ enum ScopeKind {
 
 #[derive(Default)]
 struct Table {
+    /// Literal extern declarations, kept distinct from arbitrary type scopes
+    /// and written use imports when following the actual extern prelude.
+    extern_origins: HashMap<String, Vec<Entity>>,
     /// Root-visible literal macro definitions/exports. Negative provenance
     /// only; ordinary private child definitions do not populate this set.
     root_macros: HashSet<String>,
@@ -1744,6 +1750,60 @@ impl CrateModel {
             MacroOrigin::Path(origin)
                 if matches!(origin.as_slice(), [krate, name]
                     if krate == "concord_macros" && matches!(name.as_str(), "api" | "__api")))
+    }
+
+    /// Carries actual extern identity across source-file boundaries. A failed
+    /// own-root proof is Denied, never an implicit external-facade proof.
+    pub(crate) fn api_crate_origin(
+        &self,
+        path: &Path,
+        scope: ScopeId,
+        name: &str,
+        mode: ApiPathMode,
+        source_proof: bool,
+        own_name: Option<&str>,
+    ) -> ApiCrateOrigin {
+        let root = self.root_of(scope);
+        let rooted = matches!(
+            mode,
+            ApiPathMode::Absolute | ApiPathMode::Import { leading: true }
+        ) || matches!(mode, ApiPathMode::Import { .. })
+            && matches!(self.edition, Edition::Rust2015);
+        let mut current = if rooted { root } else { scope };
+        let literal = loop {
+            if let Some(origins) = self.scopes[current].table.extern_origins.get(name) {
+                break Some(origins);
+            }
+            if current == root {
+                break None;
+            }
+            current = match self.scopes[current].kind {
+                ScopeKind::Block { parent, .. } => parent,
+                ScopeKind::Module {
+                    parent: Some(parent),
+                    ..
+                } => parent,
+                ScopeKind::Module { parent: None, .. } => root,
+            };
+        };
+        match literal.map(Vec::as_slice) {
+            Some([Entity::External(actual)]) if actual.as_slice() == [name] => {
+                ApiCrateOrigin::AssumedExternal
+            }
+            Some([Entity::Scope(actual)])
+                if *actual == root
+                    && own_name == Some(name)
+                    && self
+                        .library
+                        .as_ref()
+                        .is_some_and(|(library, owner)| library == name && *owner == root)
+                    && self.own_library_api_source(path, source_proof) =>
+            {
+                ApiCrateOrigin::CanonicalOwnRoot
+            }
+            Some(_) => ApiCrateOrigin::Denied,
+            None => ApiCrateOrigin::AssumedExternal,
+        }
     }
 
     /// The already-resolved external/prelude candidate may not derive its
@@ -4597,6 +4657,12 @@ impl Builder<'_, '_> {
                 } else {
                     Entity::External(vec![canonical(&item.ident)])
                 };
+                model.scopes[scope]
+                    .table
+                    .extern_origins
+                    .entry(name.clone())
+                    .or_default()
+                    .push(entity.clone());
                 model.define(scope, Ns::Type, name.clone(), entity, Vis::of(&item.vis));
                 vec![name]
             }

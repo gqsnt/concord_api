@@ -541,6 +541,85 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
     }
     fs::write(&app_manifest_path, app_manifest).unwrap();
 
+    // A child file still resolves a genuine leading external facade despite
+    // an unrelated same-name module at the root. Prove native validity before
+    // asking the CLI to preserve this already-V3 declaration byte for byte.
+    let genuine = include_str!("fixtures/trust_absolute_2024_positive.rs");
+    let (genuine_header, genuine_body) = genuine.split_once("::concord::api!").unwrap();
+    for (label, user_source) in [
+        (
+            "genuine-child-leading",
+            format!("::concord::api!{genuine_body}"),
+        ),
+        (
+            "genuine-child-imported",
+            format!("use ::concord::api;\napi!{genuine_body}"),
+        ),
+    ] {
+        let input = owned.0.join(label);
+        fs::create_dir_all(input.join("src")).unwrap();
+        fs::write(input.join("Cargo.toml"), "[package]\nname=\"genuine-child\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[dependencies]\nconcord=\"3\"\n").unwrap();
+        let main_source = format!("{genuine_header}\nmod user;\nfn main() {{ user::verify(); }}\n");
+        let files = [
+            ("main.rs", main_source.as_str()),
+            ("user.rs", user_source.as_str()),
+        ];
+        for (file, bytes) in files {
+            fs::write(input.join("src").join(file), bytes).unwrap();
+            fs::write(root.join("app/src").join(file), bytes).unwrap();
+        }
+        let before = cargo(
+            root,
+            &["run", "--locked", "--offline", "-p", "bare-origin-app"],
+        );
+        let output = owned.0.join(format!("converted-{label}"));
+        let report_path = owned.0.join(format!("{label}.json"));
+        let result = Command::new(env!("CARGO_BIN_EXE_concord-xtask"))
+            .args(["migrate-v3", "--input"])
+            .arg(&input)
+            .args(["--apply", "--output"])
+            .arg(&output)
+            .arg("--report")
+            .arg(&report_path)
+            .output()
+            .unwrap();
+        let report: serde_json::Value =
+            serde_json::from_slice(&fs::read(report_path).unwrap()).unwrap();
+        assert_eq!(result.status.code(), Some(0), "{label}: {report}");
+        assert_eq!(report["summary"]["automated_edits"], 0);
+        assert_eq!(report["summary"]["declarations"], 0);
+        assert_eq!(report["diagnostics"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            report["diagnostics"][0]["code"],
+            "C3-MIGRATE-ALREADY-V3"
+        );
+        for (file, bytes) in files {
+            assert_eq!(
+                fs::read_to_string(input.join("src").join(file)).unwrap(),
+                bytes,
+                "protected {label}/{file}"
+            );
+            assert_eq!(
+                fs::read_to_string(output.join("src").join(file)).unwrap(),
+                bytes,
+                "whole output {label}/{file}"
+            );
+            fs::write(
+                root.join("app/src").join(file),
+                fs::read(output.join("src").join(file)).unwrap(),
+            )
+            .unwrap();
+        }
+        let after = cargo(
+            root,
+            &["run", "--locked", "--offline", "-p", "bare-origin-app"],
+        );
+        assert_eq!(
+            before.stdout, after.stdout,
+            "genuine child native behavior {label}"
+        );
+    }
+
     // A canonical-looking import in the default child cannot prove a
     // library's own export when cfg_attr selects an attributed alternative.
     // This consumer is an actual library package named concord, invoked by
@@ -614,12 +693,20 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
         ("own-subpath-glob", ""),
         ("own-subpath-leading-glob", ""),
         ("own-subpath-block-import", ""),
+        ("own-child-root", ""),
+        ("own-child-leading", ""),
+        ("own-child-prelude", ""),
+        ("own-child-imported", ""),
+        ("own-child-glob", ""),
+        ("own-child-leading-glob", ""),
     ] {
         let input = owned.0.join(label);
         fs::create_dir_all(input.join("src")).unwrap();
         fs::write(input.join("Cargo.toml"), "[package]\nname=\"concord\"\nversion=\"3.0.0\"\nedition=\"2024\"\n[lib]\npath=\"src/lib.rs\"\n[dependencies]\nconcord_macros={package=\"concord-macros\",version=\"3\"}\nsol_origin_attr={path=\"../producer\"}\n[features]\nalt=[]\n").unwrap();
         let source = if label == "own-root-glob" {
             include_str!("fixtures/trust_own_root_glob.rs").to_owned()
+        } else if label.starts_with("own-child") {
+            include_str!("fixtures/trust_own_child_root.rs").to_owned()
         } else if label.starts_with("own-subpath") {
             let source = include_str!("fixtures/trust_own_subpath.rs");
             match label {
@@ -670,11 +757,33 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
                 "extern crate self as concord;\n{attribute}\nmod hidden;\npub(crate) use hidden::api;\n{declaration}"
             )
         };
-        for (file, bytes) in [
+        let user_source = if label.starts_with("own-child") {
+            let source = include_str!("fixtures/trust_own_child_user.rs");
+            Some(match label {
+                "own-child-root" => source.to_owned(),
+                "own-child-leading" => source.replace("concord::api!", "::concord::api!"),
+                "own-child-prelude" => source.replace("concord::api!", "concord::prelude::api!"),
+                "own-child-imported" => source.replace("concord::api!", "use concord::api;\napi!"),
+                "own-child-glob" => {
+                    source.replace("concord::api!", "use concord::prelude::*;\napi!")
+                }
+                "own-child-leading-glob" => {
+                    source.replace("concord::api!", "use ::concord::prelude::*;\napi!")
+                }
+                _ => unreachable!(),
+            })
+        } else {
+            None
+        };
+        let mut files = vec![
             ("lib.rs", source.as_str()),
             ("hidden.rs", default_child),
             ("alt.rs", alternate_child),
-        ] {
+        ];
+        if let Some(user_source) = user_source.as_deref() {
+            files.push(("user.rs", user_source));
+        }
+        for &(file, bytes) in &files {
             fs::write(input.join("src").join(file), bytes).unwrap();
             fs::write(own_root.join("owner/src").join(file), bytes).unwrap();
         }
@@ -713,11 +822,7 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
                 .iter()
                 .any(|entry| entry["code"] == "C3-MIGRATE-API-MACRO-UNRESOLVED")
         );
-        for (file, bytes) in [
-            ("lib.rs", source.as_str()),
-            ("hidden.rs", default_child),
-            ("alt.rs", alternate_child),
-        ] {
+        for &(file, bytes) in &files {
             assert_eq!(
                 fs::read_to_string(input.join("src").join(file)).unwrap(),
                 bytes,

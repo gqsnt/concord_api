@@ -213,7 +213,7 @@ pub(crate) enum ApiMacro {
 
 impl Imports {
     pub(crate) fn collect(file: &syn::File) -> Self {
-        Self::collect_with_namespace(file, None, None, None)
+        Self::collect_with_namespace(file, None, None, None, None)
     }
 
     pub(crate) fn collect_with_namespace(
@@ -221,6 +221,7 @@ impl Imports {
         namespace: Option<&NamespaceProof<'_>>,
         source_origin: Option<&NamespaceOriginProof<'_>>,
         own_library: Option<&str>,
+        crate_origin: Option<&ApiCrateProof<'_>>,
     ) -> Self {
         let mut imports = Self::default();
         let mut collector = ImportCollector {
@@ -228,7 +229,7 @@ impl Imports {
         };
         collector.visit_file(file);
         let (api_macros, defines_api_macro_rules) =
-            ApiScopes::classify(file, namespace, source_origin, own_library);
+            ApiScopes::classify(file, namespace, source_origin, own_library, crate_origin);
         imports.api_macros = api_macros;
         imports.defines_api_macro_rules = defines_api_macro_rules;
         imports
@@ -447,10 +448,27 @@ pub(crate) enum SourceNamespace {
 pub(crate) type NamespaceOriginProof<'a> =
     dyn Fn(Option<usize>, &str, SourceNamespace) -> bool + 'a;
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(crate) enum ApiCrateOrigin {
+    AssumedExternal,
+    CanonicalOwnRoot,
+    Denied,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ApiPathMode {
+    Relative,
+    Absolute,
+    Import { leading: bool },
+}
+
+pub(crate) type ApiCrateProof<'a> = dyn Fn(Option<usize>, &str, ApiPathMode) -> ApiCrateOrigin + 'a;
+
 struct ApiScopes<'a> {
     namespace: Option<&'a NamespaceProof<'a>>,
     source_origin: Option<&'a NamespaceOriginProof<'a>>,
     own_library: Option<&'a str>,
+    crate_origin: Option<&'a ApiCrateProof<'a>>,
     scopes: Vec<ApiScope>,
     stack: Vec<usize>,
     /// `(first segment offset, leading ::, segments, scope)` of every macro
@@ -473,11 +491,13 @@ impl ApiScopes<'_> {
         namespace: Option<&NamespaceProof<'_>>,
         source_origin: Option<&NamespaceOriginProof<'_>>,
         own_library: Option<&str>,
+        crate_origin: Option<&ApiCrateProof<'_>>,
     ) -> (HashMap<usize, ApiMacro>, bool) {
         let mut walker = ApiScopes {
             namespace,
             source_origin,
             own_library,
+            crate_origin,
             scopes: vec![ApiScope {
                 module: true,
                 ..ApiScope::default()
@@ -692,7 +712,27 @@ impl ApiScopes<'_> {
 
     /// Only the external facade root/prelude and known package roots export
     /// api. Own-self source proof currently establishes the root alone.
-    fn api_export_path(&self, scope: usize, path: &[String]) -> bool {
+    fn api_export_path(&self, scope: usize, path: &[String], mode: ApiPathMode) -> bool {
+        let Some(first) = path.first() else {
+            return false;
+        };
+        let origin = self.crate_origin.map_or_else(
+            || {
+                if self.own_self_alias(scope, first) {
+                    ApiCrateOrigin::CanonicalOwnRoot
+                } else {
+                    ApiCrateOrigin::AssumedExternal
+                }
+            },
+            |proof| proof(self.scopes[scope].anchor, first, mode),
+        );
+        match origin {
+            ApiCrateOrigin::Denied => return false,
+            ApiCrateOrigin::CanonicalOwnRoot => {
+                return matches!(path, [krate, name] if is_concord_crate(krate) && name == "api");
+            }
+            ApiCrateOrigin::AssumedExternal => {}
+        }
         match path {
             [krate, name] => is_concord_crate(krate) && name == "api",
             [krate, module, name] => {
@@ -707,6 +747,28 @@ impl ApiScopes<'_> {
 
     /// Resolves a macro path used in `scope`.
     fn resolve(&self, scope: usize, leading: bool, segments: &[String], depth: usize) -> ApiAnswer {
+        self.resolve_with_mode(
+            scope,
+            leading,
+            segments,
+            depth,
+            if leading {
+                ApiPathMode::Absolute
+            } else {
+                ApiPathMode::Relative
+            },
+        )
+    }
+
+    /// Retain a use path's original scope and rooted meaning through lookup.
+    fn resolve_with_mode(
+        &self,
+        scope: usize,
+        leading: bool,
+        segments: &[String],
+        depth: usize,
+        mode: ApiPathMode,
+    ) -> ApiAnswer {
         if depth > API_DEPTH {
             return ApiAnswer::Other("its imports nest too deeply to be followed".to_owned());
         }
@@ -757,7 +819,7 @@ impl ApiScopes<'_> {
             }
             return if prefix.is_empty() {
                 ApiAnswer::Other(format!("`{first}` names a crate, not a macro"))
-            } else if self.api_export_path(scope, segments) {
+            } else if self.api_export_path(scope, segments, mode) {
                 ApiAnswer::Concord
             } else {
                 ApiAnswer::Other(format!("`{}` is not Concord's `api!`", segments.join("::")))
@@ -857,7 +919,7 @@ impl ApiScopes<'_> {
             }
         }
         if path.first().is_some_and(|first| is_concord_crate(first))
-            && !self.api_export_path(scope, path)
+            && !self.api_export_path(scope, path, ApiPathMode::Import { leading })
         {
             return ApiAnswer::Other("this import path has no proved Concord api export at the scope where it is written".to_owned());
         }
@@ -874,7 +936,9 @@ impl ApiScopes<'_> {
             [single] if !leading && !is_concord_crate(single) => {
                 ApiAnswer::Other(format!("the import `{single}` is not followed to a macro"))
             }
-            _ => self.resolve(self.module_of(scope), leading, path, depth),
+            _ => {
+                self.resolve_with_mode(scope, leading, path, depth, ApiPathMode::Import { leading })
+            }
         }
     }
 
@@ -936,7 +1000,8 @@ impl ApiScopes<'_> {
             }
             let mut exported = path.to_vec();
             exported.push(name.to_owned());
-            let facade = first == "concord" && self.api_export_path(scope, &exported);
+            let facade = first == "concord"
+                && self.api_export_path(scope, &exported, ApiPathMode::Import { leading });
             return if facade && name == "api" {
                 if self.source_origin.is_some_and(|proof| {
                     !proof(self.scopes[scope].anchor, name, SourceNamespace::Macro)

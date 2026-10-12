@@ -87,6 +87,19 @@ application callback or Drop under a credential lock. Neutral evidence of an
 actually received head is distinct from completing abandoned acquisition work.
 The owner-authorized R8 abandonment/cooldown policy is retained.
 
+The cross-file follow-up carries an explicit crate-origin classification into
+both source-only and final API classification. A child's absent local self
+alias cannot turn a root `extern crate self as concord` into an external SDK.
+Literal extern origins remain separate from ordinary type/import bindings;
+relative, absolute and edition-specific import modes retain the original
+scope. Own-root approval still requires the actual library name, its exact
+root and the canonical source proof, and approves only its root API export.
+Denied or competing literal origins cannot fall back to an external prefix.
+Native child-file foreign controls require valid originals, zero CLI edits,
+whole-file equality, the unresolved diagnostic and unchanged native behavior.
+Genuine external child-file controls independently require the already-V3
+diagnostic and the actual facade's successful native behavior.
+
 POL-01 remains an owner license-policy decision for BSD-3-Clause dependencies.
 V3-O07 performance acceptance requires workload-specific actual measurements
 and an acceptance decision; no universal acceptable cost or speed improvement

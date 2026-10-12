@@ -5123,3 +5123,46 @@ fn readable_child_macro_export_blocks_weak_glob_without_blocking_private_child()
             .any(|entry| entry.code == Code::ApiMacroUnresolved)
     );
 }
+
+#[test]
+fn own_library_child_file_retains_actual_extern_origin() {
+    let workspace = TempDir::new("own-child-file-origin");
+    workspace.write("Cargo.toml", "[package]\nname=\"concord\"\nversion=\"3.0.0\"\nedition=\"2024\"\n[lib]\npath=\"src/lib.rs\"\n[dependencies]\nconcord_macros={package=\"concord-macros\",version=\"3\"}\n");
+    let foreign_root = "extern crate self as concord;\n#[macro_export]\nmacro_rules! application_api {($($t:tt)*)=>{pub const CONFIG:&str=stringify!($($t)*);};}\npub use crate::application_api as api;\npub mod prelude {pub use crate::application_api as api;}\npub mod user;\n";
+    let body = r#"{client ForeignChild{base "http://foreign.example.test/";GET read()->(){path ["child-foreign"];}}}"#;
+    for invocation in [
+        "concord::api!",
+        "::concord::api!",
+        "concord::prelude::api!",
+        "use concord::api;\napi!",
+        "use concord::prelude::*;\napi!",
+    ] {
+        let source = format!("{invocation}{body}\n");
+        workspace.write("src/lib.rs", foreign_root);
+        workspace.write("src/user.rs", &source);
+        let result = migrate(&workspace.0, &Settings::default()).unwrap();
+        assert_eq!(result.converted("src/user.rs"), Some(source.as_str()));
+        assert_eq!(result.declarations, 0);
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|entry| entry.code == Code::ApiMacroUnresolved)
+        );
+    }
+    // Canonical root provenance across files is a source-origin positive,
+    // separately from the real facade-envelope native SDK controls.
+    workspace.write("src/lib.rs", "extern crate self as concord;\npub use ::concord_macros::__api as api;\npub mod prelude {pub use crate::application_api as api;}\n#[macro_export]\nmacro_rules! application_api {($($t:tt)*)=>{};}\npub mod user;\n");
+    workspace.write("src/user.rs", &format!("concord::api!{body}\n"));
+    let result = migrate(&workspace.0, &Settings::default()).unwrap();
+    assert_eq!(result.declarations, 1);
+    workspace.write("src/user.rs", &format!("concord::prelude::api!{body}\n"));
+    let result = migrate(&workspace.0, &Settings::default()).unwrap();
+    assert_eq!(result.declarations, 0);
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|entry| entry.code == Code::ApiMacroUnresolved)
+    );
+}
