@@ -1752,8 +1752,9 @@ impl CrateModel {
                     if krate == "concord_macros" && matches!(name.as_str(), "api" | "__api")))
     }
 
-    /// Carries actual extern identity across source-file boundaries. A failed
-    /// own-root proof is Denied, never an implicit external-facade proof.
+    /// Carries actual prefix identity across source-file boundaries. A failed
+    /// own-root proof is Denied, never an implicit external-facade proof, even
+    /// when the root was reached through an ordinary use rather than extern.
     pub(crate) fn api_crate_origin(
         &self,
         path: &Path,
@@ -1786,23 +1787,66 @@ impl CrateModel {
                 ScopeKind::Module { parent: None, .. } => root,
             };
         };
+        let own_origin = |actual: ScopeId| {
+            actual == root
+                && own_name == Some(name)
+                && self
+                    .library
+                    .as_ref()
+                    .is_some_and(|(library, owner)| library == name && *owner == root)
+                && self.own_library_api_source(path, source_proof)
+        };
         match literal.map(Vec::as_slice) {
             Some([Entity::External(actual)]) if actual.as_slice() == [name] => {
                 ApiCrateOrigin::AssumedExternal
             }
-            Some([Entity::Scope(actual)])
-                if *actual == root
-                    && own_name == Some(name)
-                    && self
-                        .library
-                        .as_ref()
-                        .is_some_and(|(library, owner)| library == name && *owner == root)
-                    && self.own_library_api_source(path, source_proof) =>
-            {
+            Some([Entity::Scope(actual)]) if own_origin(*actual) => {
                 ApiCrateOrigin::CanonicalOwnRoot
             }
             Some(_) => ApiCrateOrigin::Denied,
-            None => ApiCrateOrigin::AssumedExternal,
+            None => {
+                // Ordinary imports can resolve to this actual library too.
+                // In particular, 2015 leading/use paths can reach a root
+                // `use crate as concord` without any literal extern entry.
+                // Resolve in the same original path mode before falling back
+                // to the existing external-name assumption. A resolved scope
+                // never acquires that assumption merely by not being extern.
+                let mut cx = Lookup::new();
+                cx.stable_macro_source = true;
+                let segments = vec![name.to_owned()];
+                let answer = match mode {
+                    ApiPathMode::Relative => {
+                        self.resolve_segments(scope, false, &segments, Ns::Type, &mut cx)
+                    }
+                    ApiPathMode::Absolute => {
+                        self.resolve_segments(scope, true, &segments, Ns::Type, &mut cx)
+                    }
+                    ApiPathMode::Import { leading } => self.resolve_use(
+                        scope,
+                        &UsePath {
+                            leading_colon: leading,
+                            segments,
+                        },
+                        Ns::Type,
+                        &mut cx,
+                    ),
+                };
+                match answer {
+                    Res::Found(entities) => match entities.as_slice() {
+                        [Entity::External(actual)] if actual.as_slice() == [name] => {
+                            ApiCrateOrigin::AssumedExternal
+                        }
+                        [Entity::Scope(actual)] if own_origin(*actual) => {
+                            ApiCrateOrigin::CanonicalOwnRoot
+                        }
+                        _ => ApiCrateOrigin::Denied,
+                    },
+                    // Source namespace/opacity and lexical/import guards run
+                    // independently before this shape classification. Their
+                    // established no-binding external assumptions are kept.
+                    Res::NotFound | Res::Unknown => ApiCrateOrigin::AssumedExternal,
+                }
+            }
         }
     }
 

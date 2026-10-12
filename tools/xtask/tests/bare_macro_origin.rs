@@ -589,10 +589,7 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
         assert_eq!(report["summary"]["automated_edits"], 0);
         assert_eq!(report["summary"]["declarations"], 0);
         assert_eq!(report["diagnostics"].as_array().unwrap().len(), 1);
-        assert_eq!(
-            report["diagnostics"][0]["code"],
-            "C3-MIGRATE-ALREADY-V3"
-        );
+        assert_eq!(report["diagnostics"][0]["code"], "C3-MIGRATE-ALREADY-V3");
         for (file, bytes) in files {
             assert_eq!(
                 fs::read_to_string(input.join("src").join(file)).unwrap(),
@@ -677,6 +674,8 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
     let default_child = "pub(crate) use concord_macros::api;\n";
     let alternate_child =
         "#[sol_origin_attr::replace_macro_use]\nstruct Placeholder;\npub(crate) use api;\n";
+    let own_manifest_path = own_root.join("owner/Cargo.toml");
+    let own_manifest = fs::read_to_string(&own_manifest_path).unwrap();
     for (label, attribute) in [
         ("own-always", r#"#[cfg_attr(all(), path="alt.rs")]"#),
         ("own-boolean", r#"#[cfg_attr(true, path="alt.rs")]"#),
@@ -699,14 +698,32 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
         ("own-child-imported", ""),
         ("own-child-glob", ""),
         ("own-child-leading-glob", ""),
+        ("own-imported-root-leading", ""),
+        ("own-imported-root-import", ""),
+        ("own-imported-root-leading-import", ""),
+        ("own-imported-root-glob", ""),
+        ("own-imported-root-leading-glob", ""),
     ] {
         let input = owned.0.join(label);
         fs::create_dir_all(input.join("src")).unwrap();
-        fs::write(input.join("Cargo.toml"), "[package]\nname=\"concord\"\nversion=\"3.0.0\"\nedition=\"2024\"\n[lib]\npath=\"src/lib.rs\"\n[dependencies]\nconcord_macros={package=\"concord-macros\",version=\"3\"}\nsol_origin_attr={path=\"../producer\"}\n[features]\nalt=[]\n").unwrap();
+        let edition = if label.starts_with("own-imported-root") {
+            "2015"
+        } else {
+            "2024"
+        };
+        fs::write(input.join("Cargo.toml"), format!("[package]\nname=\"concord\"\nversion=\"3.0.0\"\nedition=\"{edition}\"\n[lib]\npath=\"src/lib.rs\"\n[dependencies]\nconcord_macros={{package=\"concord-macros\",version=\"3\"}}\nsol_origin_attr={{path=\"../producer\"}}\n[features]\nalt=[]\n")).unwrap();
+        fs::write(
+            &own_manifest_path,
+            own_manifest.replace("edition=\"2024\"", &format!("edition=\"{edition}\"")),
+        )
+        .unwrap();
         let source = if label == "own-root-glob" {
             include_str!("fixtures/trust_own_root_glob.rs").to_owned()
         } else if label.starts_with("own-child") {
             include_str!("fixtures/trust_own_child_root.rs").to_owned()
+        } else if label.starts_with("own-imported-root") {
+            include_str!("fixtures/trust_own_child_root.rs")
+                .replace("extern crate self as concord;", "use crate as concord;")
         } else if label.starts_with("own-subpath") {
             let source = include_str!("fixtures/trust_own_subpath.rs");
             match label {
@@ -757,7 +774,9 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
                 "extern crate self as concord;\n{attribute}\nmod hidden;\npub(crate) use hidden::api;\n{declaration}"
             )
         };
-        let user_source = if label.starts_with("own-child") {
+        let user_source = if label.starts_with("own-child")
+            || label.starts_with("own-imported-root")
+        {
             let source = include_str!("fixtures/trust_own_child_user.rs");
             Some(match label {
                 "own-child-root" => source.to_owned(),
@@ -769,6 +788,19 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
                 }
                 "own-child-leading-glob" => {
                     source.replace("concord::api!", "use ::concord::prelude::*;\napi!")
+                }
+                "own-imported-root-leading" => source.replace("concord::api!", "::concord::api!"),
+                "own-imported-root-import" => {
+                    source.replace("concord::api!", "use concord::api;\napi!")
+                }
+                "own-imported-root-leading-import" => {
+                    source.replace("concord::api!", "use ::concord::api;\napi!")
+                }
+                "own-imported-root-glob" => {
+                    source.replace("concord::api!", "use concord::*;\napi!")
+                }
+                "own-imported-root-leading-glob" => {
+                    source.replace("concord::api!", "use ::concord::*;\napi!")
                 }
                 _ => unreachable!(),
             })

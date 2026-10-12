@@ -5166,3 +5166,37 @@ fn own_library_child_file_retains_actual_extern_origin() {
             .any(|entry| entry.code == Code::ApiMacroUnresolved)
     );
 }
+
+#[test]
+fn own_library_imported_root_requires_canonical_origin() {
+    let workspace = TempDir::new("own-imported-root-origin");
+    workspace.write("Cargo.toml", "[package]\nname=\"concord\"\nversion=\"3.0.0\"\nedition=\"2015\"\n[lib]\npath=\"src/lib.rs\"\n[dependencies]\nconcord_macros={package=\"concord-macros\",version=\"3\"}\n");
+    let root = "use crate as concord;\n#[macro_export]\nmacro_rules! application_api {($($t:tt)*)=>{pub const CONFIG:&str=stringify!($($t)*);};}\npub use crate::application_api as api;\npub mod prelude {pub use crate::application_api as api;}\npub mod user;\n";
+    let body = r#"{client ForeignChild{base "http://foreign.example.test/";GET read()->(){path ["child-foreign"];}}}"#;
+    for invocation in [
+        "::concord::api!",
+        "use concord::api;\napi!",
+        "use ::concord::api;\napi!",
+        "use concord::*;\napi!",
+        "use ::concord::prelude::*;\napi!",
+    ] {
+        let source = format!("{invocation}{body}\n");
+        workspace.write("src/lib.rs", root);
+        workspace.write("src/user.rs", &source);
+        let result = migrate(&workspace.0, &Settings::default()).unwrap();
+        assert_eq!(result.converted("src/user.rs"), Some(source.as_str()));
+        assert_eq!(result.declarations, 0);
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|entry| entry.code == Code::ApiMacroUnresolved)
+        );
+    }
+    // This is a canonical producer SOURCE-ORIGIN positive. Native validity
+    // of the facade envelope is covered separately by genuine SDK controls.
+    workspace.write("src/lib.rs", "use crate as concord;\nextern crate concord_macros;\npub use concord_macros::__api as api;\npub mod user;\n");
+    workspace.write("src/user.rs", &format!("::concord::api!{body}\n"));
+    let result = migrate(&workspace.0, &Settings::default()).unwrap();
+    assert_eq!(result.declarations, 1);
+}

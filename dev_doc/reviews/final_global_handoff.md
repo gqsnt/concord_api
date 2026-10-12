@@ -100,6 +100,14 @@ whole-file equality, the unresolved diagnostic and unchanged native behavior.
 Genuine external child-file controls independently require the already-V3
 diagnostic and the actual facade's successful native behavior.
 
+The same own-root rule applies when the prefix resolves through an ordinary
+import, including Rust2015 `use crate as concord` reached from a child by a
+leading or import path. Absence of a literal extern entry is not proof that a
+resolved local scope is external. Mode-aware existing prefix resolution feeds
+the canonical own-root check; modern external-prelude paths retain their
+actual external meaning and established no-binding assumptions. Canonical
+source-only positives and real facade native controls retain separate scopes.
+
 POL-01 remains an owner license-policy decision for BSD-3-Clause dependencies.
 V3-O07 performance acceptance requires workload-specific actual measurements
 and an acceptance decision; no universal acceptable cost or speed improvement
