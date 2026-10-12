@@ -15,7 +15,9 @@ use concord_core::records::{
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+/// JSON payload bytes, excluding the optional LF or CRLF terminator.
 const MAX_STAGED_RECORD_BYTES: usize = 1024 * 1024;
+const MAX_FRAME_BYTES: usize = MAX_STAGED_RECORD_BYTES + 2;
 const NDJSON_MEDIA_TYPE: &str = "application/x-ndjson";
 
 /// Typed newline-delimited JSON request and response records.
@@ -25,8 +27,8 @@ const NDJSON_MEDIA_TYPE: &str = "application/x-ndjson";
 /// never contains a raw line break, so every record is exactly one frame. The
 /// encoder writes directly into a buffer capped by
 /// [`RequestBodyContext::body_limit`] and stops at the first encoded excess
-/// byte (never serialize-then-truncate); a single record larger than the 1 MiB
-/// record frame bound is rejected as a limit failure. The prepared body owns
+/// byte (never serialize-then-truncate); a JSON payload larger than 1 MiB
+/// is rejected as a limit failure, before its LF is appended. The prepared body owns
 /// the one exact `application/x-ndjson` media type. An empty vector is an
 /// empty body with that media type.
 ///
@@ -41,8 +43,9 @@ const NDJSON_MEDIA_TYPE: &str = "application/x-ndjson";
 /// decoder and sealed core driver. The stream yields exactly one correlated
 /// `ApiError` on a decoding failure and then ends, and it inherits the core
 /// stream lease, idle, byte and record limits.
-/// Undecoded staging per line is bounded to 1 MiB (and to the runtime stream
-/// frame limit when that is smaller). Parser text, raw lines, and JSON values
+/// The built-in JSON payload ceiling is 1 MiB, excluding LF or CRLF.
+/// Staging includes delimiters and is bounded to 1 MiB + 2 bytes (and to the
+/// runtime stream frame limit when that is smaller). Parser text, raw lines, and JSON values
 /// are absent from errors. This type is available through the independent
 /// `ndjson` feature and does not require the general endpoint `json` feature.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -73,6 +76,9 @@ where
     }
 
     fn decode_line(bytes: &[u8], eof: bool) -> Result<Option<T>, RecordError> {
+        if bytes.len() > MAX_STAGED_RECORD_BYTES {
+            return Err(RecordError::new(RecordErrorKind::LimitExceeded));
+        }
         if bytes.iter().all(u8::is_ascii_whitespace) {
             return Ok(None);
         }
@@ -147,8 +153,7 @@ where
     }
 
     fn max_buffered_bytes() -> NonZeroUsize {
-        NonZeroUsize::new(MAX_STAGED_RECORD_BYTES)
-            .expect("the built-in NDJSON staging bound is positive")
+        NonZeroUsize::new(MAX_FRAME_BYTES).expect("the built-in NDJSON staging bound is positive")
     }
 }
 
@@ -173,7 +178,7 @@ fn encode_records<T: Serialize>(records: &[T], limit: usize) -> Result<Bytes, Bo
     for record in records {
         writer.start_record();
         let written = serde_json::to_writer(&mut writer, record)
-            .and_then(|()| writer.write_all(b"\n").map_err(serde_json::Error::io));
+            .and_then(|()| writer.finish_record().map_err(serde_json::Error::io));
         if let Err(error) = written {
             drop(error);
             let kind = if writer.limit_exceeded {
@@ -209,6 +214,15 @@ impl BoundedRecordWriter {
     fn start_record(&mut self) {
         self.record_start = self.bytes.len();
     }
+
+    fn finish_record(&mut self) -> io::Result<()> {
+        if self.bytes.len() >= self.limit {
+            self.limit_exceeded = true;
+            return Err(io::Error::other("ndjson request body limit exceeded"));
+        }
+        self.bytes.push(b'\n');
+        Ok(())
+    }
 }
 
 impl Write for BoundedRecordWriter {
@@ -217,7 +231,7 @@ impl Write for BoundedRecordWriter {
         let frame = total.map(|total| total - self.record_start);
         match (total, frame) {
             (Some(total), Some(frame))
-                if total <= self.limit && frame <= MAX_STAGED_RECORD_BYTES + 1 =>
+                if total <= self.limit && frame <= MAX_STAGED_RECORD_BYTES =>
             {
                 self.bytes.extend_from_slice(bytes);
                 Ok(bytes.len())
@@ -398,7 +412,7 @@ mod tests {
         );
         assert_eq!(
             NdJsonDecoder::<Value>::max_buffered_bytes().get(),
-            1024 * 1024
+            MAX_FRAME_BYTES
         );
 
         fn complete_page_spec<S>()

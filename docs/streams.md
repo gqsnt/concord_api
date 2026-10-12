@@ -39,6 +39,18 @@ api! {
 
 ## Consuming a stream
 
+Decoder callbacks are synchronous. Core checks lease, idle and cancellation
+again after each callback before yielding a record or completing EOF, including
+callbacks that consume bytes and return `None`. A callback may finish after a
+limit; its record is then withheld and staged/native state is released.
+
+NDJSON's built-in limit is a 1,048,576-byte JSON payload, excluding LF or CRLF.
+Its driver stages at most that payload plus two delimiter bytes. The runtime
+frame cap counts the entire staged frame, including delimiters, and defaults
+to 1,048,578 bytes; a smaller configured cap remains a hard ceiling. Buffered
+and streaming NDJSON share the driver and payload check. CSV keeps its own
+unchanged framing bound. Aggregate body and record limits remain independent.
+
 <!-- concord-source: crates/concord-examples/src/request_response/bodies.rs#consume_byte_stream -->
 ```rust
 pub async fn download_size(client: &BodyApi) -> Result<u64, concord::ApiError> {
@@ -107,7 +119,7 @@ After the response head, a stream runs under a lease (STREAM-02):
 | Cumulative idle time during pending reads | 30 seconds | `stream_idle_timeout(Duration)` |
 | Decoded nonempty body bytes | 16 MiB | `stream_response_limit(usize)` |
 | Records | 100,000 | `stream_max_records(usize)` |
-| Bytes per framed record | 1 MiB | `stream_frame_limit(usize)` |
+| Bytes per framed record, including delimiters | 1 MiB + 2 bytes | `stream_frame_limit(usize)` |
 
 All are positive and finite; trusted runtime configuration can change them and
 call options can narrow them (`CallOptions::cap_stream_lifetime`,

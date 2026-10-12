@@ -9,6 +9,8 @@ pub(super) enum RecordStep<R> {
     Record(R),
     NeedInput,
     Done,
+    /// The owning stream's callback boundary check stopped decoding.
+    Interrupted,
 }
 
 pub(super) struct RecordDriver<D>
@@ -65,6 +67,15 @@ where
     }
 
     pub(super) fn advance(&mut self) -> Result<RecordStep<D::Record>, RecordError> {
+        self.advance_checked(&mut || false)
+    }
+
+    /// Check after every synchronous callback, including consuming `None`
+    /// progress that would otherwise continue inside this driver.
+    pub(super) fn advance_checked(
+        &mut self,
+        interrupted: &mut dyn FnMut() -> bool,
+    ) -> Result<RecordStep<D::Record>, RecordError> {
         if self.done {
             return Ok(RecordStep::Done);
         }
@@ -80,6 +91,12 @@ where
                 self.decoder.decode(&mut self.staging)
             };
             let after = self.staging.len();
+
+            if interrupted() {
+                drop(decoded);
+                self.release();
+                return Ok(RecordStep::Interrupted);
+            }
 
             if after > before || matches!(&decoded, Ok(Some(_)) if after >= before) {
                 return Err(self.terminate(RecordErrorKind::Internal));
@@ -236,6 +253,7 @@ mod tests {
                     }
                 }
                 RecordStep::Done => return Ok(records),
+                RecordStep::Interrupted => unreachable!("unchecked driver"),
             }
         }
     }

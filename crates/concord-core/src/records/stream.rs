@@ -58,7 +58,10 @@ trait ErasedRecords<T>: Send {
     fn needs_input(&self) -> bool;
     fn supply_input(&mut self, chunk: Bytes) -> Result<(), RecordError>;
     fn finish_input(&mut self) -> Result<(), RecordError>;
-    fn advance(&mut self) -> Result<RecordStep<T>, RecordError>;
+    fn advance(
+        &mut self,
+        interrupted: &mut dyn FnMut() -> bool,
+    ) -> Result<RecordStep<T>, RecordError>;
     fn release(&mut self);
     #[cfg(test)]
     fn staging_is_empty(&self) -> bool;
@@ -80,8 +83,11 @@ where
         Self::finish_input(self)
     }
 
-    fn advance(&mut self) -> Result<RecordStep<D::Record>, RecordError> {
-        Self::advance(self)
+    fn advance(
+        &mut self,
+        interrupted: &mut dyn FnMut() -> bool,
+    ) -> Result<RecordStep<D::Record>, RecordError> {
+        Self::advance_checked(self, interrupted)
     }
 
     fn release(&mut self) {
@@ -118,7 +124,7 @@ const fn stream_error_kind(kind: RecordErrorKind) -> StreamErrorKind {
 /// # Records and framing
 ///
 /// Each record's staged bytes are bounded by the smaller of the decoder's
-/// `max_buffered_bytes` and the runtime frame limit (1 MiB by default,
+/// `max_buffered_bytes` and the runtime frame limit (1 MiB + 2 bytes by default,
 /// `RuntimeConfigBuilder::stream_frame_limit`); the first excess byte is
 /// rejected before it is retained and the oversized record is never yielded.
 /// At most the runtime record limit (100,000 by default,
@@ -277,7 +283,17 @@ impl<T> ItemStream<T> {
                 continue;
             }
 
-            match self.records.advance() {
+            let mut boundary_error = None;
+            let step = self.records.advance(&mut || {
+                boundary_error = self.body.core.precheck().err();
+                boundary_error.is_some()
+            });
+            if let Some(error) = boundary_error {
+                drop(step);
+                self.records.release();
+                return Poll::Ready(Some(Err(error)));
+            }
+            match step {
                 Ok(RecordStep::Record(record)) => {
                     let limit = self.body.core.limits().records.get();
                     if self.body.core.delivered_records() >= limit {
@@ -297,6 +313,9 @@ impl<T> ItemStream<T> {
                     return Poll::Ready(None);
                 }
                 Err(error) => return self.fail(error),
+                Ok(RecordStep::Interrupted) => {
+                    return self.fail(RecordError::new(RecordErrorKind::Internal));
+                }
             }
         }
     }

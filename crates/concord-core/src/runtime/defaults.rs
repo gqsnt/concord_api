@@ -19,8 +19,10 @@ pub const DEFAULT_STREAM_LIFETIME_SECONDS: u64 = 300;
 pub const DEFAULT_STREAM_IDLE_SECONDS: u64 = 30;
 /// Default maximum records yielded by one managed item stream.
 pub const DEFAULT_STREAM_MAX_RECORDS: usize = 100_000;
-/// Default maximum staged bytes of one framed stream record.
-pub const DEFAULT_STREAM_FRAME_BYTES: usize = 1_048_576;
+/// Default maximum staged bytes of one framed stream record, including delimiters.
+/// Allows a 1 MiB NDJSON JSON payload and its two-byte CRLF terminator;
+/// each decoder retains its own independent payload/framing bound.
+pub const DEFAULT_STREAM_FRAME_BYTES: usize = 1_048_578;
 /// Default captured terminal-status-body byte ceiling.
 pub const DEFAULT_STATUS_BODY_BYTES: usize = 65_536;
 /// Default credential-provider request-body byte ceiling.

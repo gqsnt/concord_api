@@ -1085,6 +1085,162 @@ fn item_stream_is_send_and_unpin() {
     assert_send_unpin::<ItemBatches<Vec<u8>>>();
 }
 
+#[derive(Clone, Copy)]
+enum R7SlowBoundary {
+    Record,
+    EofRecord,
+    EofDone,
+    ConsumingNone,
+}
+
+struct R7SlowDecoder {
+    boundary: R7SlowBoundary,
+    callbacks: Arc<AtomicUsize>,
+    cancellation: Option<crate::controls::CancellationToken>,
+}
+
+impl RecordDecoder for R7SlowDecoder {
+    type Record = Vec<u8>;
+
+    fn start(_head: &ResponseHead<'_>) -> Result<Self, RecordError> {
+        unreachable!("constructed by the native lease probe")
+    }
+
+    fn decode(&mut self, buffer: &mut BytesMut) -> Result<Option<Vec<u8>>, RecordError> {
+        if buffer.is_empty() {
+            return Ok(None);
+        }
+        match self.boundary {
+            R7SlowBoundary::Record | R7SlowBoundary::ConsumingNone => {
+                self.callbacks.fetch_add(1, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(300));
+                if let Some(token) = &self.cancellation {
+                    token.cancel();
+                }
+                if matches!(self.boundary, R7SlowBoundary::ConsumingNone) {
+                    let _ = buffer.split_to(1);
+                    Ok(None)
+                } else {
+                    Ok(Some(buffer.split_to(buffer.len()).to_vec()))
+                }
+            }
+            R7SlowBoundary::EofRecord | R7SlowBoundary::EofDone => Ok(None),
+        }
+    }
+
+    fn decode_eof(&mut self, buffer: &mut BytesMut) -> Result<Option<Vec<u8>>, RecordError> {
+        self.callbacks.fetch_add(1, Ordering::SeqCst);
+        std::thread::sleep(Duration::from_millis(300));
+        let value = buffer.split_to(buffer.len()).to_vec();
+        Ok(matches!(self.boundary, R7SlowBoundary::EofRecord).then_some(value))
+    }
+
+    fn max_buffered_bytes() -> NonZeroUsize {
+        NonZeroUsize::new(64).unwrap()
+    }
+}
+
+async fn r7_assert_decoder_boundary(boundaries: &[R7SlowBoundary]) {
+    for &boundary in boundaries {
+        let probe = SourceProbe::default();
+        let callbacks = Arc::new(AtomicUsize::new(0));
+        let body = byte_stream(
+            ready_source([Ok(Bytes::from_static(b"ab"))], &probe),
+            ENDPOINT,
+            StreamLimits {
+                lifetime: Duration::from_millis(250),
+                ..limits(1024)
+            },
+        );
+        let mut records = item_stream(
+            R7SlowDecoder {
+                boundary,
+                callbacks: callbacks.clone(),
+                cancellation: None,
+            },
+            body,
+            64,
+        );
+        let outcome = records.next().await;
+        assert!(
+            callbacks.load(Ordering::SeqCst) > 0,
+            "decoder actually ran before expiry"
+        );
+        let error = outcome
+            .expect("one terminal lease error")
+            .expect_err("withhold decoded record");
+        assert_eq!(kind(&error), Some(StreamErrorKind::LeaseExpired));
+        assert_eq!(
+            callbacks.load(Ordering::SeqCst),
+            1,
+            "stop repeated None progress at the callback boundary"
+        );
+        assert_eq!(records.summary().delivered_records(), 0);
+        assert_eq!(records.summary().state(), StreamState::Failed);
+        assert!(records.staging_is_empty());
+        assert!(records.body_is_released());
+        assert!(probe.dropped());
+        assert!(records.next().await.is_none());
+    }
+}
+
+#[tokio::test]
+async fn r7_decoder_record_is_withheld_after_lease_expiry() {
+    r7_assert_decoder_boundary(&[R7SlowBoundary::Record]).await;
+}
+
+#[tokio::test]
+async fn r7_decoder_eof_record_is_withheld_after_lease_expiry() {
+    r7_assert_decoder_boundary(&[R7SlowBoundary::EofRecord]).await;
+}
+
+#[tokio::test]
+async fn r7_decoder_eof_success_is_withheld_after_lease_expiry() {
+    r7_assert_decoder_boundary(&[R7SlowBoundary::EofDone]).await;
+}
+
+#[tokio::test]
+async fn r7_decoder_consuming_none_stops_at_the_expired_callback_boundary() {
+    r7_assert_decoder_boundary(&[R7SlowBoundary::ConsumingNone]).await;
+}
+
+#[tokio::test]
+async fn r7_decoder_cancellation_during_callback_withholds_the_record_and_releases_state() {
+    let token = crate::controls::CancellationToken::new();
+    let probe = SourceProbe::default();
+    let callbacks = Arc::new(AtomicUsize::new(0));
+    let body = ByteStream::open(
+        ready_source([Ok(Bytes::from_static(b"ab"))], &probe),
+        context(
+            ENDPOINT,
+            limits(1024),
+            crate::hooks::default_operation_observer(),
+            vec![token.clone()],
+            None,
+        ),
+    );
+    let mut records = item_stream(
+        R7SlowDecoder {
+            boundary: R7SlowBoundary::Record,
+            callbacks: callbacks.clone(),
+            cancellation: Some(token),
+        },
+        body,
+        64,
+    );
+    let error = records
+        .next()
+        .await
+        .unwrap()
+        .expect_err("cancelled callback record is withheld");
+    assert_eq!(kind(&error), Some(StreamErrorKind::Cancelled));
+    assert_eq!(callbacks.load(Ordering::SeqCst), 1);
+    assert_eq!(records.summary().delivered_records(), 0);
+    assert!(records.staging_is_empty());
+    assert!(records.body_is_released());
+    assert!(records.next().await.is_none());
+}
+
 #[test]
 fn per_poll_empty_chunk_budget_spans_several_reads_of_one_record() {
     let probe = SourceProbe::default();

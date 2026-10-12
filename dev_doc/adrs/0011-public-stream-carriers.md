@@ -28,7 +28,7 @@ delivered chunk never counts.
 
 `StreamCore` (`response/stream.rs`, shared by `ByteStream` and the framing
 layer of `ItemStream<T>` in `records/stream.rs`) evaluates that predicate at
-two points and has no detached timer task:
+three points and has no detached timer task:
 
 1. **Precheck**, at the start of every poll (after the cancellation check),
    before the source is polled again and before an already staged record is
@@ -44,6 +44,13 @@ two points and has no detached timer task:
    was read from the transport and counts in `acquired_bytes`. Cancellation is
    not judged here; a signal raised during the read is observed at the next
    poll.
+
+3. **Decoder completion (R7-03).** The record driver exposes a check after
+   every synchronous `decode`/`decode_eof` callback, including consuming `None`
+   progress inside one driver advance. The owning stream evaluates the same
+   cancellation/lease/idle precheck before fixing record delivery or EOF. A
+   callback that crosses the lease may finish, but its record or successful
+   EOF is withheld and staged/native state is released.
 
 Consequently an outstanding pending acquisition whose idle budget ran out —
 for example after the caller dropped its `next` future and the producer became

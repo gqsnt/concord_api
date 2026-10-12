@@ -84,6 +84,7 @@ where
                 }
             }
             RecordStep::Done => return Ok(records),
+            RecordStep::Interrupted => unreachable!("buffered driver has no stream boundary"),
         }
     }
 }

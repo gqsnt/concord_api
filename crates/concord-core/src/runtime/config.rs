@@ -794,7 +794,7 @@ mod tests {
         assert_eq!(config.stream_max_records.get(), DEFAULT_STREAM_MAX_RECORDS);
         assert_eq!(config.stream_max_records.get(), 100_000);
         assert_eq!(config.stream_frame_limit.get(), DEFAULT_STREAM_FRAME_BYTES);
-        assert_eq!(config.stream_frame_limit.get(), 1_048_576);
+        assert_eq!(config.stream_frame_limit.get(), 1_048_578);
         assert_eq!(config.stream_response_limit.get(), 16 * 1_048_576);
     }
 

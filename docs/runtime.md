@@ -97,7 +97,7 @@ except where a disable method exists.
 | `pagination_identity_limit` | positive `usize` bytes | 4 MiB |
 | `aggregate_max_sends` | positive `u32`; intersected with per-call `cap_sends` | 2,000 per aggregate |
 | `stream_lifetime`, `stream_idle_timeout` | positive `Duration` | 5 min, 30 s |
-| `stream_max_records`, `stream_frame_limit` | positive `usize` | 100,000, 1 MiB |
+| `stream_max_records`, `stream_frame_limit` | positive `usize` | 100,000, 1 MiB + 2 bytes |
 | `auth_failure_cooldown_cap`, `rate_limit_cooldown_cap` | finite `Duration`; zero disables retaining that cooldown | 60 s each |
 | `rate_limiter` | `Arc<dyn RateLimiter>` | none: required when any rate policy is reachable |
 | `retry_policy` / `disable_retry_policy` | `RetryPolicy` / none | no retry |
@@ -143,7 +143,7 @@ never wraparound, hidden truncation or an unbounded fallback.
 | Policy retries | off by default; installed default 2, hard 16 per direct request or page |
 | Auth recovery replays | at most 1 per direct request or page |
 | Transport-private tries | at most 2 per visible attempt |
-| Stream lease / idle / records / frame | 5 min / 30 s / 100,000 / 1 MiB |
+| Stream lease / idle / records / frame | 5 min / 30 s / 100,000 / 1 MiB + 2 bytes |
 | Empty chunks | 1,024 consecutive; at most 32 per poll before yielding |
 | Formatted public atom | 65,536 bytes |
 | Logical and sanitized URL | 131,072 bytes each |
