@@ -472,13 +472,18 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
             r#"#[cfg_attr(feature="alt", path="alt.rs")]"#,
         ),
         ("own-direct", r#"#[path="alt.rs"]"#),
+        ("own-root-glob", ""),
     ] {
         let input = owned.0.join(label);
         fs::create_dir_all(input.join("src")).unwrap();
         fs::write(input.join("Cargo.toml"), "[package]\nname=\"concord\"\nversion=\"3.0.0\"\nedition=\"2024\"\n[lib]\npath=\"src/lib.rs\"\n[dependencies]\nconcord_macros={package=\"concord-macros\",version=\"3\"}\nsol_origin_attr={path=\"../producer\"}\n[features]\nalt=[]\n").unwrap();
-        let source = format!(
-            "extern crate self as concord;\n{attribute}\nmod hidden;\npub(crate) use hidden::api;\n{declaration}"
-        );
+        let source = if label == "own-root-glob" {
+            include_str!("fixtures/trust_own_root_glob.rs").to_owned()
+        } else {
+            format!(
+                "extern crate self as concord;\n{attribute}\nmod hidden;\npub(crate) use hidden::api;\n{declaration}"
+            )
+        };
         for (file, bytes) in [
             ("lib.rs", source.as_str()),
             ("hidden.rs", default_child),

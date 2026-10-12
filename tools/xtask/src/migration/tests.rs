@@ -4967,3 +4967,34 @@ fn boolean_cfg_attributes_preserve_path_and_macro_uncertainty() {
     assert!(effects.may_be_macro());
     assert_eq!(attribute_applies(&attributes, "macro_use"), Some(false));
 }
+
+#[test]
+fn own_library_root_glob_requires_canonical_macro_origin() {
+    let workspace = TempDir::new("own-root-glob-origin");
+    workspace.write("Cargo.toml", "[package]\nname=\"concord\"\nversion=\"3.0.0\"\nedition=\"2024\"\n[lib]\npath=\"src/lib.rs\"\n[dependencies]\nconcord_macros={package=\"concord-macros\",version=\"3\"}\n");
+    let source = include_str!("../../tests/fixtures/trust_own_root_glob.rs");
+    workspace.write("src/lib.rs", source);
+    let result = migrate(&workspace.0, &Settings::default()).unwrap();
+    assert_eq!(result.converted("src/lib.rs"), Some(source));
+    assert_eq!(result.declarations, 0);
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|entry| entry.code == Code::ApiMacroUnresolved)
+    );
+    // Source-origin positive, separately from native facade-envelope tests.
+    let source = source.replace(
+        "mod exported { pub use crate::application_api as api; }",
+        "mod exported { pub use ::concord_macros::__api as api; }",
+    );
+    workspace.write("src/lib.rs", &source);
+    let result = migrate(&workspace.0, &Settings::default()).unwrap();
+    assert_eq!(result.declarations, 1);
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|entry| entry.code == Code::ApiMacroUnresolved)
+    );
+}

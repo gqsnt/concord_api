@@ -41,6 +41,9 @@ and Rust controls retain the complete foreign bytes and genuine positive plans.
 Own-library exports retain source provenance at the root and through every
 resolved import scope. A first source-only pass identifies pending invocations;
 the final pass still denies other unknown expansions and unread/gated sources.
+Stable source alone never establishes a canonical export: root globs also
+require the resolved concord-macros api/__api origin, with weak-name absence
+and recursive target provenance retained before ownership is granted.
 Boolean cfg predicates share the all/any/not evaluation in every attribute
 query. Inert false attributes contribute no uncertainty; unreadable cfg_attr
 cannot erase a possible alternate path or an item-replacing attribute macro.

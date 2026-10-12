@@ -1718,9 +1718,11 @@ impl CrateModel {
         {
             return false;
         }
-        if !table.imports.contains_key("api") {
-            return !source_proof
-                || self.namespace_source_stable(*library, "api", SourceNamespace::Macro);
+        if source_proof
+            && !table.imports.contains_key("api")
+            && !self.namespace_source_stable(*library, "api", SourceNamespace::Macro)
+        {
+            return false;
         }
         // The canonical import is established by the existing model's full
         // source/alias/visibility/edition resolution, not its written suffix.
@@ -1732,7 +1734,10 @@ impl CrateModel {
         // generated authority. Only the second pass checks source stability
         // of the root and every import scope before granting ownership.
         cx.stable_macro_source = source_proof;
-        matches!(self.macro_import(*library, "api", false, &mut cx),
+        // A root glob must resolve the macro too: namespace stability alone
+        // does not establish a canonical export. Only pass one may ignore an
+        // invocation's as-yet-unclassified expansion, and grants no owners.
+        matches!(self.macro_import(*library, "api", !source_proof, &mut cx),
             MacroOrigin::Path(origin)
                 if matches!(origin.as_slice(), [krate, name]
                     if krate == "concord_macros" && matches!(name.as_str(), "api" | "__api")))
@@ -3320,6 +3325,11 @@ impl CrateModel {
         cx: &mut Lookup,
         visited: &mut HashSet<View>,
     ) -> MacroOrigin {
+        if cx.stable_macro_source
+            && !self.namespace_source_stable(scope, name, SourceNamespace::MacroPath)
+        {
+            return MacroOrigin::Unknown;
+        }
         if visited.len() > MAX_DEPTH {
             return MacroOrigin::Unknown;
         }
@@ -3357,7 +3367,7 @@ impl CrateModel {
                     .is_some_and(|definitions| definitions.iter().all(tokens_namespace_free));
             let pending_api_only =
                 table.opaque && !table.opaque_other && !table.pending_api_header_unknown;
-            if (table.opaque && !(pending_api_only && trusted_macro))
+            if (table.opaque && !(pending_api_only && (trusted_macro || cx.stable_macro_source)))
                 || table.uncertain_globs
                 || (table.expanded && !ignore_expanded)
             {
