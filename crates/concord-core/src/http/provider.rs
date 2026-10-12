@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use bytes::{Bytes, BytesMut};
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
@@ -32,6 +32,7 @@ pub(super) struct ProviderHttpInner {
     max_sends: u32,
     timeout: Duration,
     failure_cooldown_cap: Duration,
+    wall_clock: Arc<dyn crate::runtime::WallClock>,
     #[cfg(test)]
     development: Option<ProviderChannel>,
 }
@@ -594,6 +595,7 @@ impl ProviderHttpInner {
         response_limit: NonZeroUsize,
         max_sends: u32,
         timeout: Duration,
+        wall_clock: Arc<dyn crate::runtime::WallClock>,
     ) -> Self {
         Self {
             client,
@@ -602,6 +604,7 @@ impl ProviderHttpInner {
             response_limit,
             max_sends,
             timeout,
+            wall_clock,
             failure_cooldown_cap: Duration::from_secs(
                 crate::runtime::defaults::DEFAULT_AUTH_FAILURE_COOLDOWN_SECONDS,
             ),
@@ -740,6 +743,7 @@ impl ProviderHttpInner {
                 response,
                 effective_response_limit,
                 self.failure_cooldown_cap,
+                self.wall_clock.now(),
             )
             .await
         };
@@ -820,14 +824,12 @@ async fn collect_provider_response(
     mut response: reqwest::Response,
     limit: usize,
     failure_cooldown_cap: Duration,
+    wall_time: SystemTime,
 ) -> Result<ProviderResponse, AuthError> {
     let status = response.status();
     let headers = response.headers().clone();
-    let server_delay = crate::retry::parse_server_delay(
-        &headers,
-        std::time::SystemTime::now(),
-        OperationDeadline::now(),
-    );
+    let server_delay =
+        crate::retry::parse_server_delay(&headers, wall_time, OperationDeadline::now());
     let mut collected = BytesMut::new();
     let mut progress = ResponseChunkProgress::default();
     loop {
@@ -949,6 +951,7 @@ mod tests {
             NonZeroUsize::new(response_limit).expect("response limit"),
             4,
             Duration::from_secs(30),
+            crate::runtime::default_wall_clock(),
         )
         .with_development(executor.provider())
     }
@@ -1101,6 +1104,7 @@ mod tests {
             NonZeroUsize::new(64).expect("limit"),
             4,
             Duration::from_secs(5),
+            crate::runtime::default_wall_clock(),
         )
         .with_development(executor.provider());
         let origins = declared("https://provider.example.test");
@@ -1331,6 +1335,56 @@ mod tests {
         assert_eq!(response.retry_after(), Some(Duration::ZERO));
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn r7_provider_date_delay_uses_the_configured_wall_clock_once() {
+        struct FrozenClock {
+            time: SystemTime,
+            calls: AtomicUsize,
+        }
+        impl crate::runtime::WallClock for FrozenClock {
+            fn now(&self) -> SystemTime {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                self.time
+            }
+        }
+        let clock = Arc::new(FrozenClock {
+            time: SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000),
+            calls: AtomicUsize::new(0),
+        });
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "retry-after",
+            HeaderValue::from_str(&httpdate::fmt_http_date(
+                clock.time + Duration::from_secs(10),
+            ))
+            .unwrap(),
+        );
+        let executor = DeterministicExecutor::new();
+        executor
+            .provider()
+            .queue_response(
+                ScriptedResponse::status(StatusCode::TOO_MANY_REQUESTS, Bytes::new())
+                    .headers(headers),
+            )
+            .unwrap();
+        let mut provider = inner(&executor, 64, 64, TlsCapability::Available);
+        provider.wall_clock = clock.clone();
+        let response = send_declared(
+            &provider,
+            None,
+            ProviderRequest::new(
+                Method::GET,
+                Url::parse("https://provider.example.test/token").unwrap(),
+            ),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.retry_after(), Some(Duration::from_secs(10)));
+        tokio::time::advance(Duration::from_secs(2)).await;
+        assert_eq!(response.retry_after(), Some(Duration::from_secs(8)));
+        assert_eq!(clock.calls.load(Ordering::SeqCst), 1);
+    }
+
     #[tokio::test]
     async fn provider_response_suppresses_empty_chunks() {
         let polls = Arc::new(AtomicUsize::new(0));
@@ -1347,6 +1401,7 @@ mod tests {
             ),
             64,
             Duration::from_secs(60),
+            crate::runtime::system_wall_time(),
         )
         .await
         .expect("provider response");
@@ -1366,6 +1421,7 @@ mod tests {
             native_response(chunks, &polls, &dropped),
             64,
             Duration::from_secs(60),
+            crate::runtime::system_wall_time(),
         ));
         let mut context = Context::from_waker(Waker::noop());
 
@@ -1393,6 +1449,7 @@ mod tests {
                 ),
                 64,
                 Duration::from_secs(60),
+                crate::runtime::system_wall_time(),
             )
             .await,
         );
@@ -1413,7 +1470,12 @@ mod tests {
         let collection = tokio::spawn(async move {
             tokio::time::timeout(
                 Duration::from_secs(1),
-                collect_provider_response(response, 64, Duration::from_secs(60)),
+                collect_provider_response(
+                    response,
+                    64,
+                    Duration::from_secs(60),
+                    crate::runtime::system_wall_time(),
+                ),
             )
             .await
         });
@@ -1441,6 +1503,7 @@ mod tests {
                 native_response(chunks, &polls, &dropped),
                 64,
                 Duration::from_secs(60),
+                crate::runtime::system_wall_time(),
             )
             .await,
         );

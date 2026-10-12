@@ -1,5 +1,6 @@
 use crate::error::{ClientBuildError, ClientBuildErrorKind};
 use crate::runtime::RuntimeConfig;
+use std::sync::Arc;
 
 use super::application::ApplicationHttp;
 use super::config::{HttpConfig, ProtocolMode, ProviderRetry};
@@ -114,6 +115,7 @@ impl ManagedHttp {
                 runtime.provider_response_limit,
                 runtime.provider_max_sends,
                 runtime.provider_timeout,
+                Arc::clone(&runtime.wall_clock),
             )
             .with_failure_cooldown_cap(runtime.auth_failure_cooldown_cap),
         })
