@@ -994,9 +994,12 @@ pub(crate) fn cfg_constant(predicate: &Meta) -> Option<bool> {
     };
     let operator = list.path.get_ident()?.to_string();
     let operands = list
-        .parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
+        .parse_args_with(Punctuated::<CfgPredicate, Token![,]>::parse_terminated)
         .ok()?;
-    let values = operands.iter().map(cfg_constant).collect::<Vec<_>>();
+    let values = operands
+        .iter()
+        .map(CfgPredicate::constant)
+        .collect::<Vec<_>>();
     match operator.as_str() {
         "all" if values.iter().all(|value| *value == Some(true)) => Some(true),
         "all" if values.contains(&Some(false)) => Some(false),
@@ -1007,6 +1010,48 @@ pub(crate) fn cfg_constant(predicate: &Meta) -> Option<bool> {
             _ => None,
         },
         _ => None,
+    }
+}
+
+/// Boolean literals are Rust cfg predicates, but are not `syn::Meta` paths.
+enum CfgPredicate {
+    Boolean(syn::LitBool),
+    Meta(Meta),
+}
+
+impl syn::parse::Parse for CfgPredicate {
+    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
+        if input.peek(syn::LitBool) {
+            input.parse().map(Self::Boolean)
+        } else {
+            input.parse().map(Self::Meta)
+        }
+    }
+}
+
+impl CfgPredicate {
+    fn constant(&self) -> Option<bool> {
+        match self {
+            Self::Boolean(value) => Some(value.value),
+            Self::Meta(meta) => cfg_constant(meta),
+        }
+    }
+}
+
+struct CfgAttrArgs {
+    predicate: CfgPredicate,
+    attributes: Punctuated<Meta, Token![,]>,
+}
+
+impl syn::parse::Parse for CfgAttrArgs {
+    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
+        let predicate = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let attributes = Punctuated::parse_terminated(input)?;
+        Ok(Self {
+            predicate,
+            attributes,
+        })
     }
 }
 
@@ -1028,6 +1073,8 @@ pub(crate) struct AttributeEffects {
     pub(crate) macro_attributes: Vec<syn::Path>,
     /// A `#[derive]` whose list the model cannot read.
     pub(crate) unreadable_derive: bool,
+    /// An unreadable cfg_attr can select a path or an item-replacing macro.
+    pub(crate) unreadable_cfg_attr: bool,
     /// The derive macros applied to the declaration.
     pub(crate) derives: Vec<syn::Path>,
 }
@@ -1035,7 +1082,7 @@ pub(crate) struct AttributeEffects {
 impl AttributeEffects {
     /// Whether one of the attributes may be a macro.
     pub(crate) fn may_be_macro(&self) -> bool {
-        self.unreadable_derive || !self.macro_attributes.is_empty()
+        self.unreadable_derive || self.unreadable_cfg_attr || !self.macro_attributes.is_empty()
     }
 }
 
@@ -1066,9 +1113,9 @@ fn classify_attribute(meta: &Meta, certain: bool, effects: &mut AttributeEffects
     if path.is_ident("cfg") {
         let constant = match meta {
             Meta::List(list) => list
-                .parse_args::<Meta>()
+                .parse_args::<CfgPredicate>()
                 .ok()
-                .and_then(|predicate| cfg_constant(&predicate)),
+                .and_then(|predicate| predicate.constant()),
             _ => None,
         };
         if !(certain && constant == Some(true)) {
@@ -1076,26 +1123,21 @@ fn classify_attribute(meta: &Meta, certain: bool, effects: &mut AttributeEffects
         }
     } else if path.is_ident("cfg_attr") {
         let arguments = match meta {
-            Meta::List(list) => list
-                .parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
-                .ok(),
+            Meta::List(list) => list.parse_args::<CfgAttrArgs>().ok(),
             _ => None,
         };
         let Some(arguments) = arguments else {
             effects.gated = true;
+            effects.gated_path = true;
+            effects.unreadable_cfg_attr = true;
             return;
         };
-        let mut arguments = arguments.into_iter();
-        let Some(predicate) = arguments.next() else {
-            effects.gated = true;
-            return;
-        };
-        let constant = cfg_constant(&predicate);
+        let constant = arguments.predicate.constant();
         if constant == Some(false) {
             return;
         }
         let applies_always = certain && constant == Some(true);
-        for inner in arguments {
+        for inner in arguments.attributes {
             if inner.path().is_ident("path") {
                 effects.gated |= !applies_always;
                 effects.gated_path = true;
@@ -1140,20 +1182,17 @@ pub(crate) fn attribute_applies(attributes: &[syn::Attribute], name: &str) -> Op
         let Meta::List(list) = meta else {
             return None;
         };
-        let Ok(arguments) = list.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
-        else {
+        let Ok(arguments) = list.parse_args::<CfgAttrArgs>() else {
             // An unreadable `cfg_attr` may apply anything.
             return Some(false);
         };
-        let mut arguments = arguments.into_iter();
-        let predicate = arguments.next()?;
-        let constant = cfg_constant(&predicate);
+        let constant = arguments.predicate.constant();
         if constant == Some(false) {
             return None;
         }
         let certain = certain && constant == Some(true);
         let mut applies = None;
-        for inner in arguments {
+        for inner in arguments.attributes {
             match meta_applies(&inner, name, certain) {
                 Some(true) => return Some(true),
                 Some(false) => applies = Some(false),
@@ -1322,6 +1361,9 @@ struct Lookup {
     /// The first other cause found that made a looked-up path unknown (an
     /// edition the manifest does not determine), for diagnostics.
     other: Option<String>,
+    /// Canonical own-library macro exports must retain source stability at
+    /// every scope traversed by their import/alias resolution.
+    stable_macro_source: bool,
 }
 
 /// `(scope, name, namespace, private entries visible, same crate, the
@@ -1339,6 +1381,7 @@ impl Lookup {
             memo: HashMap::new(),
             gated: None,
             other: None,
+            stable_macro_source: false,
         }
     }
 
@@ -1649,7 +1692,7 @@ impl CrateModel {
     /// An own-self alias is authority only in the actual package library,
     /// never its binary/test/example/bench targets or an ambiguous mount.
     /// A source-local api re-export/definition is not the canonical macro.
-    pub(crate) fn own_library_api_source(&self, path: &Path) -> bool {
+    pub(crate) fn own_library_api_source(&self, path: &Path, source_proof: bool) -> bool {
         let Some((file, module)) = self.file(path) else {
             return false;
         };
@@ -1663,6 +1706,11 @@ impl CrateModel {
             return false;
         }
         let table = &self.scopes[*library].table;
+        if source_proof
+            && !self.namespace_source_stable(*library, "api", SourceNamespace::MacroPath)
+        {
+            return false;
+        }
         if table.types.contains_key("api")
             || table.values.contains_key("api")
             || table.uncertain.contains("api")
@@ -1671,13 +1719,19 @@ impl CrateModel {
             return false;
         }
         if !table.imports.contains_key("api") {
-            return true;
+            return !source_proof
+                || self.namespace_source_stable(*library, "api", SourceNamespace::Macro);
         }
         // The canonical import is established by the existing model's full
         // source/alias/visibility/edition resolution, not its written suffix.
         // An explicit external path can resolve despite pending emissions;
         // foreign, local, ambiguous or unresolved origins never suffice.
         let mut cx = Lookup::new();
+        // The first source-only pass identifies pending API invocations so
+        // they do not count as OTHER unknown expansions. It inserts no
+        // generated authority. Only the second pass checks source stability
+        // of the root and every import scope before granting ownership.
+        cx.stable_macro_source = source_proof;
         matches!(self.macro_import(*library, "api", false, &mut cx),
             MacroOrigin::Path(origin)
                 if matches!(origin.as_slice(), [krate, name]
@@ -1712,7 +1766,8 @@ impl CrateModel {
                 || table.namespace_expanded
                 || table.uncertain_globs
                 || table.uncertain.contains(name)
-                || table.pending_api_header_unknown
+                || (!matches!(namespace, SourceNamespace::MacroPath)
+                    && table.pending_api_header_unknown)
                 // Known pending API support modules/types can shadow a crate
                 // path, but cannot define a bare macro. They never contribute
                 // positive origin authority in either namespace.
@@ -1743,6 +1798,11 @@ impl CrateModel {
     /// Looks `name` up among the items, imports and globs of one scope, as
     /// seen from `from` (which decides the visibility of its entries).
     fn lookup_in(&self, scope: ScopeId, name: &str, ns: Ns, from: ScopeId, cx: &mut Lookup) -> Res {
+        if cx.stable_macro_source
+            && !self.namespace_source_stable(scope, name, SourceNamespace::MacroPath)
+        {
+            return Res::Unknown;
+        }
         let from_module = self.module_of(from);
         let private_visible = self.within(from_module, self.module_of(scope));
         let table = &self.scopes[scope].table;
@@ -3184,6 +3244,9 @@ impl CrateModel {
         attributes: &[syn::Attribute],
     ) -> Option<String> {
         let effects = attribute_effects(attributes);
+        if effects.unreadable_cfg_attr {
+            return Some("#[cfg_attr(..)]".to_owned());
+        }
         if effects.unreadable_derive {
             return Some("#[derive(..)]".to_owned());
         }

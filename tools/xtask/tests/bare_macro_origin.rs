@@ -146,6 +146,14 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
             .unwrap(),
         facade.join("Cargo.toml")
     );
+    let boolean_item = include_str!("fixtures/trust_bare_item_attribute.rs").replace(
+        "#[sol_origin_attr::capture_item]",
+        "#[cfg_attr(true, sol_origin_attr::capture_item)]",
+    );
+    assert_ne!(
+        boolean_item,
+        include_str!("fixtures/trust_bare_item_attribute.rs")
+    );
     for (label, source, foreign, child) in [
         (
             "extern",
@@ -159,6 +167,7 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
             true,
             None,
         ),
+        ("boolean-item", boolean_item.as_str(), true, None),
         (
             "genuine",
             include_str!("fixtures/trust_bare_genuine.rs"),
@@ -270,6 +279,24 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
             true,
             true,
         ),
+        (
+            "boolean-path",
+            "#[cfg_attr(true, path=\"alt.rs\")]",
+            false,
+            true,
+        ),
+        (
+            "boolean-path-glob",
+            "#[cfg_attr(true, path=\"alt.rs\")]",
+            true,
+            true,
+        ),
+        (
+            "boolean-false",
+            "#[cfg_attr(false, path=\"alt.rs\")]",
+            false,
+            false,
+        ),
         ("direct-path", "#[path=\"alt.rs\"]", false, true),
         ("complete-inert", "", false, false),
     ] {
@@ -379,4 +406,159 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
             "package-mode native behavior for {label}"
         );
     }
+
+    // A canonical-looking import in the default child cannot prove a
+    // library's own export when cfg_attr selects an attributed alternative.
+    // This consumer is an actual library package named concord, invoked by
+    // a distinct runner; the foreign attribute producer remains exact.
+    let own_root = owned.0.join("own-native-workspace");
+    fs::create_dir_all(own_root.join("owner/src")).unwrap();
+    fs::create_dir_all(own_root.join("runner/src")).unwrap();
+    let macros = facade.parent().unwrap().join("concord-macros");
+    let portable = |path: &Path| {
+        let path = path.to_string_lossy();
+        path.strip_prefix(r"\\?\")
+            .unwrap_or(&path)
+            .replace('\\', "/")
+    };
+    fs::write(
+        own_root.join("Cargo.toml"),
+        "[workspace]\nmembers=[\"owner\",\"runner\"]\nresolver=\"3\"\n",
+    )
+    .unwrap();
+    fs::write(own_root.join("owner/Cargo.toml"), format!("[package]\nname=\"concord\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[lib]\npath=\"src/lib.rs\"\n[dependencies]\nconcord_macros={{package=\"concord-macros\",path=\"{}\"}}\nsol_origin_attr={{path=\"{}\"}}\n[features]\nalt=[]\n", portable(&macros), portable(&root.join("sol_origin_attr")))).unwrap();
+    fs::write(own_root.join("owner/src/lib.rs"), "pub fn verify() {}\n").unwrap();
+    fs::write(own_root.join("runner/Cargo.toml"), "[package]\nname=\"own-origin-runner\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[dependencies]\nown_library={package=\"concord\",path=\"../owner\"}\n[features]\nalt=[\"own_library/alt\"]\n").unwrap();
+    fs::write(
+        own_root.join("runner/src/main.rs"),
+        "fn main() { own_library::verify(); }\n",
+    )
+    .unwrap();
+    fs::write(own_root.join("Cargo.lock"), &workspace_lock_bytes).unwrap();
+    let own_metadata = cargo(
+        &own_root,
+        &["metadata", "--offline", "--format-version", "1"],
+    );
+    assert!(
+        registry_packages(&own_root.join("Cargo.lock"))
+            .is_subset(&registry_packages(&workspace_lock))
+    );
+    let own_metadata: serde_json::Value = serde_json::from_slice(&own_metadata.stdout).unwrap();
+    let own_packages = own_metadata["packages"].as_array().unwrap();
+    let own_package = own_packages
+        .iter()
+        .filter(|package| package["name"] == "concord")
+        .collect::<Vec<_>>();
+    assert_eq!(own_package.len(), 1);
+    assert!(own_package[0]["source"].is_null());
+    assert_eq!(
+        Path::new(own_package[0]["manifest_path"].as_str().unwrap())
+            .canonicalize()
+            .unwrap(),
+        own_root.join("owner/Cargo.toml").canonicalize().unwrap()
+    );
+    let foreign = include_str!("fixtures/trust_bare_unread.rs");
+    let declaration = foreign[foreign.find("api! {").unwrap()..]
+        .replacen("api! {", "concord::api! {", 1)
+        .replace("fn main()", "pub fn verify()");
+    let default_child = "pub(crate) use concord_macros::api;\n";
+    let alternate_child =
+        "#[sol_origin_attr::replace_macro_use]\nstruct Placeholder;\npub(crate) use api;\n";
+    for (label, attribute) in [
+        ("own-always", r#"#[cfg_attr(all(), path="alt.rs")]"#),
+        ("own-boolean", r#"#[cfg_attr(true, path="alt.rs")]"#),
+        (
+            "own-feature",
+            r#"#[cfg_attr(feature="alt", path="alt.rs")]"#,
+        ),
+        ("own-direct", r#"#[path="alt.rs"]"#),
+    ] {
+        let input = owned.0.join(label);
+        fs::create_dir_all(input.join("src")).unwrap();
+        fs::write(input.join("Cargo.toml"), "[package]\nname=\"concord\"\nversion=\"3.0.0\"\nedition=\"2024\"\n[lib]\npath=\"src/lib.rs\"\n[dependencies]\nconcord_macros={package=\"concord-macros\",version=\"3\"}\nsol_origin_attr={path=\"../producer\"}\n[features]\nalt=[]\n").unwrap();
+        let source = format!(
+            "extern crate self as concord;\n{attribute}\nmod hidden;\npub(crate) use hidden::api;\n{declaration}"
+        );
+        for (file, bytes) in [
+            ("lib.rs", source.as_str()),
+            ("hidden.rs", default_child),
+            ("alt.rs", alternate_child),
+        ] {
+            fs::write(input.join("src").join(file), bytes).unwrap();
+            fs::write(own_root.join("owner/src").join(file), bytes).unwrap();
+        }
+        let before = cargo(
+            &own_root,
+            &[
+                "run",
+                "--locked",
+                "--offline",
+                "-p",
+                "own-origin-runner",
+                "--features",
+                "alt",
+            ],
+        );
+        let output = owned.0.join(format!("converted-{label}"));
+        let report_path = owned.0.join(format!("{label}.json"));
+        let result = Command::new(env!("CARGO_BIN_EXE_concord-xtask"))
+            .args(["migrate-v3", "--input"])
+            .arg(&input)
+            .args(["--apply", "--output"])
+            .arg(&output)
+            .arg("--report")
+            .arg(&report_path)
+            .output()
+            .unwrap();
+        let report: serde_json::Value =
+            serde_json::from_slice(&fs::read(&report_path).unwrap()).unwrap();
+        assert_eq!(result.status.code(), Some(1), "{label}: {report}");
+        assert_eq!(report["summary"]["automated_edits"], 0);
+        assert_eq!(report["summary"]["declarations"], 0);
+        assert!(
+            report["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| entry["code"] == "C3-MIGRATE-API-MACRO-UNRESOLVED")
+        );
+        for (file, bytes) in [
+            ("lib.rs", source.as_str()),
+            ("hidden.rs", default_child),
+            ("alt.rs", alternate_child),
+        ] {
+            assert_eq!(
+                fs::read_to_string(input.join("src").join(file)).unwrap(),
+                bytes,
+                "protected {label}/{file}"
+            );
+            assert_eq!(
+                fs::read_to_string(output.join("src").join(file)).unwrap(),
+                bytes,
+                "whole output {label}/{file}"
+            );
+            fs::write(
+                own_root.join("owner/src").join(file),
+                fs::read(output.join("src").join(file)).unwrap(),
+            )
+            .unwrap();
+        }
+        let after = cargo(
+            &own_root,
+            &[
+                "run",
+                "--locked",
+                "--offline",
+                "-p",
+                "own-origin-runner",
+                "--features",
+                "alt",
+            ],
+        );
+        assert_eq!(
+            before.stdout, after.stdout,
+            "actual own-library native behavior {label}"
+        );
+    }
+    assert_eq!(fs::read(&workspace_lock).unwrap(), workspace_lock_bytes);
 }

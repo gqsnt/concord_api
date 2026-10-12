@@ -38,6 +38,12 @@ import/invocation sources, treats root-wide macro uncertainty separately from
 explicit crate paths, and checks weak Concord globs before granting origin.
 Known Concord macro-use imports preserve standard expression macros. Real CLI
 and Rust controls retain the complete foreign bytes and genuine positive plans.
+Own-library exports retain source provenance at the root and through every
+resolved import scope. A first source-only pass identifies pending invocations;
+the final pass still denies other unknown expansions and unread/gated sources.
+Boolean cfg predicates share the all/any/not evaluation in every attribute
+query. Inert false attributes contribute no uncertainty; unreadable cfg_attr
+cannot erase a possible alternate path or an item-replacing attribute macro.
 The bounded follow-up also treats a live `cfg_attr(path = ...)` child as an
 unmodelled source, including constant-true and nested predicates: indexing its
 default file cannot prove the alternate file's macro namespace. Package-mode
@@ -62,6 +68,14 @@ is inferred from this review. Technical package verification does not authorize
 registry publication, a final-name/version decision, tags or merging main.
 Existing historical review records, protected inputs, foreign worktrees and
 the owner's configuration remain preserved.
+
+The maintained archive pair keeps its original downstream directory depth and
+the exact recorded input required by its include_str test. CI fetches the
+workspace lock before offline native controls. The deadline-observer test has
+a larger scheduling entry margin with the same twenty-fold virtual overrun and
+its original result, event, send and completion assertions. These support
+changes require clean-candidate Windows/Linux and CI qualification; predecessor
+setup and timing failures remain separate evidence.
 
 Reproduce technical validation with `just verify-implementation` on the clean
 candidate. That includes pin/MSRV, feature matrices, compiler contracts,

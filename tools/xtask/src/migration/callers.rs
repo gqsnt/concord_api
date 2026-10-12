@@ -668,7 +668,7 @@ impl DeclIndex {
                     layout
                         .concord_own
                         .as_deref()
-                        .filter(|_| namespaces.own_library_api_source(path)),
+                        .filter(|_| namespaces.own_library_api_source(path, false)),
                 );
                 if let Some(bare) = index.bare_api.get(*path) {
                     refined.prove_bare_api(bare.clone());
@@ -720,7 +720,7 @@ impl DeclIndex {
                     layout
                         .concord_own
                         .as_deref()
-                        .filter(|_| origin_model.own_library_api_source(path)),
+                        .filter(|_| origin_model.own_library_api_source(path, true)),
                 );
                 if let Some(bare) = index.bare_api.get(*path) {
                     refined.prove_bare_api(bare.clone());

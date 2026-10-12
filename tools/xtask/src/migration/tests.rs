@@ -4878,3 +4878,92 @@ fn bare_macro_authority_cannot_ignore_cfg_attr_selected_child_paths() {
             .any(|entry| entry.code == Code::ApiMacroUnresolved)
     );
 }
+
+#[test]
+fn own_library_macro_export_retains_traversed_source_provenance() {
+    let workspace = TempDir::new("own-library-gated-export");
+    workspace.write("Cargo.toml", "[package]\nname=\"concord\"\nversion=\"3.0.0\"\nedition=\"2024\"\n[dependencies]\nconcord_macros={package=\"concord-macros\",version=\"3\"}\n");
+    workspace.write("src/hidden.rs", "pub(crate) use concord_macros::api;\n");
+    workspace.write(
+        "src/alt.rs",
+        "#[unknown_attribute]\nstruct Placeholder;\npub(crate) use api;\n",
+    );
+    let declaration = "concord::api! { client Foreign { base \"http://foreign.example.test/\"; GET f() -> () { path [\"foreign\"]; } } }\n";
+    for attribute in [
+        r#"#[cfg_attr(all(), path="alt.rs")]"#,
+        r#"#[cfg_attr(all(), cfg_attr(all(), path="alt.rs"))]"#,
+        r#"#[cfg_attr(true, path="alt.rs")]"#,
+        r#"#[cfg_attr(all(true, not(false)), path="alt.rs")]"#,
+    ] {
+        let source = format!(
+            "extern crate self as concord;\n{attribute}\nmod hidden;\npub(crate) use hidden::api;\n{declaration}"
+        );
+        workspace.write("src/lib.rs", &source);
+        let result = migrate(&workspace.0, &Settings::default()).unwrap();
+        assert_eq!(result.converted("src/lib.rs"), Some(source.as_str()));
+        assert_eq!(result.declarations, 0);
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|entry| entry.code == Code::ApiMacroUnresolved)
+        );
+    }
+    // A canonical strong root import does not derive authority from the
+    // unrelated unread child's namespace.
+    let source = format!(
+        "pub use ::concord_macros::api;\nextern crate self as concord;\nmod unrelated;\n{declaration}"
+    );
+    workspace.write("src/lib.rs", &source);
+    let result = migrate(&workspace.0, &Settings::default()).unwrap();
+    assert_eq!(result.declarations, 1);
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|entry| entry.code == Code::ApiMacroUnresolved)
+    );
+}
+
+#[test]
+fn boolean_cfg_attributes_preserve_path_and_macro_uncertainty() {
+    use super::resolve::{attribute_applies, attribute_effects};
+    let attrs = |source: &str| {
+        syn::parse_file(source)
+            .unwrap()
+            .items
+            .into_iter()
+            .find_map(|item| {
+                if let syn::Item::Mod(module) = item {
+                    Some(module.attrs)
+                } else {
+                    None
+                }
+            })
+            .unwrap()
+    };
+    for predicate in ["true", "all(true, not(false))", "any(false, true)"] {
+        let attributes = attrs(&format!(
+            "#[cfg_attr({predicate}, path=\"other.rs\", unknown_macro, macro_use)] mod child;"
+        ));
+        let effects = attribute_effects(&attributes);
+        assert!(effects.gated_path);
+        assert!(effects.may_be_macro());
+        assert_eq!(attribute_applies(&attributes, "macro_use"), Some(true));
+    }
+    for predicate in ["false", "all(true, false)", "not(true)"] {
+        let attributes = attrs(&format!(
+            "#[cfg_attr({predicate}, path=\"other.rs\", unknown_macro, macro_use)] mod child;"
+        ));
+        let effects = attribute_effects(&attributes);
+        assert!(!effects.gated_path);
+        assert!(!effects.may_be_macro());
+        assert_eq!(attribute_applies(&attributes, "macro_use"), None);
+    }
+    // Future/unreadable predicate syntax supplies no negative namespace proof.
+    let attributes = attrs("#[cfg_attr(42, path=\"other.rs\", unknown_macro)] mod child;");
+    let effects = attribute_effects(&attributes);
+    assert!(effects.gated_path && effects.gated && effects.unreadable_cfg_attr);
+    assert!(effects.may_be_macro());
+    assert_eq!(attribute_applies(&attributes, "macro_use"), Some(false));
+}

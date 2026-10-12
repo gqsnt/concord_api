@@ -257,16 +257,24 @@ $serdeRequirement = $serdeFixture[0].req
 $tokioRequirement = $tokioFixture[0].req
 $supportPath = CargoPath (Join-Path $root 'crates/concord-test-support')
 $twoRoot = Join-Path $runRoot 'two-consumers'
-$apiRoot = Join-Path $twoRoot 'api'
-$appRoot = Join-Path $twoRoot 'app'
+$apiRoot = Join-Path $twoRoot 'tests/downstream/concord-downstream-api'
+$appRoot = Join-Path $twoRoot 'tests/downstream/concord-downstream-app'
 [System.IO.Directory]::CreateDirectory($apiRoot) | Out-Null
 [System.IO.Directory]::CreateDirectory($appRoot) | Out-Null
 Copy-Item -LiteralPath (Join-Path $root 'tests/downstream/concord-downstream-api/src') -Destination $apiRoot -Recurse
 Copy-Item -LiteralPath (Join-Path $root 'tests/downstream/concord-downstream-app/src') -Destination $appRoot -Recurse
 Copy-Item -LiteralPath (Join-Path $root 'tests/downstream/concord-downstream-app/tests') -Destination $appRoot -Recurse
+# Preserve the original relative include_str paths and exact recording bytes.
+$fixtureRoot = Join-Path $twoRoot 'fixtures/migration'
+[System.IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
+Copy-Item -LiteralPath (Join-Path $root 'fixtures/migration/v2_1_catalog_recording.json') -Destination $fixtureRoot
+if ((Get-FileHash -LiteralPath (Join-Path $fixtureRoot 'v2_1_catalog_recording.json') -Algorithm SHA256).Hash -ne
+    (Get-FileHash -LiteralPath (Join-Path $root 'fixtures/migration/v2_1_catalog_recording.json') -Algorithm SHA256).Hash) {
+    throw 'downstream archive recording bytes changed'
+}
 $twoManifest = @"
 [workspace]
-members = ["api", "app"]
+members = ["tests/downstream/concord-downstream-api", "tests/downstream/concord-downstream-app"]
 resolver = "3"
 
 [patch.crates-io]
@@ -295,7 +303,7 @@ publish = false
 
 [dependencies]
 concord = { package = "$facadeName", version = "=$version", default-features = false, features = ["default-tls", "json"] }
-concord-downstream-api = { version = "=$version", path = "../api" }
+concord-downstream-api = { version = "=$version", path = "../concord-downstream-api" }
 
 [dev-dependencies]
 concord-test-support = { path = "$supportPath", default-features = false, features = ["loopback"] }

@@ -434,6 +434,9 @@ pub(crate) type NamespaceProof<'a> = dyn Fn(Option<usize>, bool, &[String], &str
 pub(crate) enum SourceNamespace {
     Crate,
     Macro,
+    /// A strong macro import's source path: lexical stability, without the
+    /// crate-wide absence proof required by bare and weak-glob lookup.
+    MacroPath,
 }
 pub(crate) type NamespaceOriginProof<'a> =
     dyn Fn(Option<usize>, &str, SourceNamespace) -> bool + 'a;

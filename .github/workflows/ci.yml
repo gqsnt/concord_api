@@ -61,6 +61,8 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-test
+      - name: Fetch the workspace lock before offline native origin controls
+        run: cargo fetch --locked
       - run: cargo nextest run --profile ci --workspace --exclude concord-macros --lib --tests --examples --locked
       - run: cargo nextest run --profile ci --workspace --exclude concord-macros --lib --tests --examples --all-features --locked
 

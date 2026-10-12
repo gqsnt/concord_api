@@ -57,7 +57,7 @@ The v2.1 file split was replaced; responsibilities moved as follows.
 | `pagination/controller.rs`, `engine.rs`, `terminals.rs`, `summary.rs`, `bridge.rs`, `meter.rs`, `identity.rs`, `limits.rs` | Init/Cursor controller contract; `Pages`/`CollectPrefix`/`CollectAll`; `TraversalSummary` | `engine.rs`, `terminals.rs`, `summary.rs`, `bridge.rs`, `meter.rs` new; `execute.rs`, `pending.rs` (`PageLimit`) removed |
 | `rate_limit/schema.rs`, `rate_limit/declaration.rs`, `rate_limit/canonical.rs`, `rate_limit/limiter.rs` | Policy schemas and limiter capability; typed key encoding with `ENCODING_ID`; atomic admission contract | `schema.rs`, `declaration.rs` new |
 | `retry/`, `runtime/config.rs`, `hooks/`, `redaction/`, `http/` | Replay authority, primitive-count configuration (§20.4), read-only observation, redaction, transport | updated |
-| `__private.rs`, `generated_contract.rs` | Versioned generated-code bridge (contract version 34) | updated |
+| `__private.rs`, `generated_contract.rs` | Versioned generated-code bridge (contract version 35) | updated |
 
 ## Other crates and tools
 
