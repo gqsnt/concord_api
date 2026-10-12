@@ -15,6 +15,10 @@ pub enum InspectErrorKind {
     /// The document contains a floating-point number (the format is
     /// integer/string only).
     NonIntegerNumber,
+    /// Two indexed records have the same effective structural key.
+    DuplicateKey,
+    /// An indexed record or its supplied key has an invalid JSON type.
+    InvalidRecordKey,
 }
 
 /// A value-free inspection tooling error.
@@ -46,6 +50,8 @@ impl fmt::Display for InspectError {
             InspectErrorKind::UnsupportedFormat => "document is not concord.contract/3",
             InspectErrorKind::MissingKey => "document is missing a required key",
             InspectErrorKind::NonIntegerNumber => "document contains a non-integer number",
+            InspectErrorKind::DuplicateKey => "document contains duplicate indexed keys",
+            InspectErrorKind::InvalidRecordKey => "document contains an invalid indexed key",
         };
         write!(formatter, "{label} ({})", self.detail)
     }

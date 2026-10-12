@@ -26,6 +26,89 @@ fn diff(before: CatalogMutation, after: CatalogMutation) -> DiffReport {
     .expect("valid documents")
 }
 
+#[test]
+fn r7_duplicate_owner_cannot_disappear_into_snapshot_equality() {
+    let before = export_value(&catalog(CatalogMutation::Baseline));
+    let mut after = before.clone();
+    let owners = after["owners"].as_array_mut().unwrap();
+    let mut duplicate = owners[0].clone();
+    duplicate["r7_private_sentinel"] = serde_json::json!("private-body-sentinel");
+    owners.insert(0, duplicate);
+    let result = diff_documents(&before, &after);
+    assert!(
+        result.is_err(),
+        "duplicate owner was silently accepted: {result:?}"
+    );
+}
+
+#[test]
+fn r7_indexed_keys_reject_identical_changed_reordered_and_nested_duplicates_safely() {
+    let baseline = export_value(&catalog(CatalogMutation::Baseline));
+    for (collection, fields) in [
+        ("owners", &["path"][..]),
+        ("endpoints", &["path"][..]),
+        ("policies", &["id"][..]),
+        ("window_sets", &["name"][..]),
+        ("dependencies", &["kind", "reference"][..]),
+        ("diagnostics", &["code", "owner", "subject"][..]),
+    ] {
+        for changed in [false, true] {
+            for reverse in [false, true] {
+                let mut document = baseline.clone();
+                let mut record = serde_json::json!({});
+                for field in fields {
+                    record[*field] = serde_json::json!("private-key-sentinel");
+                }
+                let mut duplicate = record.clone();
+                if changed {
+                    duplicate["unknown"] = serde_json::json!("private-body-sentinel");
+                }
+                let pair = if reverse {
+                    vec![duplicate, record]
+                } else {
+                    vec![record, duplicate]
+                };
+                document[collection] = serde_json::json!(pair);
+                let error = crate::validate_document(&document).expect_err("duplicate indexed key");
+                assert_eq!(error.kind(), InspectErrorKind::DuplicateKey);
+                let rendered = format!("{error} {error:?}");
+                assert!(!rendered.contains("private-key-sentinel"));
+                assert!(!rendered.contains("private-body-sentinel"));
+            }
+        }
+    }
+    for (collection, key) in [
+        ("values", "name"),
+        ("secrets", "name"),
+        ("credentials", "name"),
+        ("rate", "id"),
+        ("coverage", "id"),
+    ] {
+        for records in [
+            serde_json::json!([{key: "x"}, {key: "x"}]),
+            serde_json::json!([{}, {key: "#0"}]),
+        ] {
+            let mut document = baseline.clone();
+            document["client"][collection] = records;
+            assert_eq!(
+                crate::validate_document(&document).unwrap_err().kind(),
+                InspectErrorKind::DuplicateKey
+            );
+        }
+        let mut malformed = baseline.clone();
+        malformed["client"][collection] = serde_json::json!([{key: 123}]);
+        assert_eq!(
+            crate::validate_document(&malformed).unwrap_err().kind(),
+            InspectErrorKind::InvalidRecordKey
+        );
+    }
+    assert!(crate::validate_document(&baseline).is_ok());
+    assert_eq!(
+        parse_document(&to_canonical_string(&baseline)).unwrap(),
+        baseline
+    );
+}
+
 fn field_changes<'a>(report: &'a DiffReport, record: &str, field: &str) -> Vec<&'a crate::Change> {
     report
         .changes()

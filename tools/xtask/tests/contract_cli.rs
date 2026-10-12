@@ -25,6 +25,49 @@ fn text(bytes: &[u8]) -> String {
 }
 
 #[test]
+fn r7_contract_check_rejects_duplicate_snapshot_records_with_value_safe_diagnostics() {
+    let path = scratch("r7-duplicates.json");
+    let filename = path.to_str().unwrap();
+    assert!(
+        xtask(&[
+            "contract",
+            "export",
+            "--target",
+            "fixture-catalog",
+            "--output",
+            filename
+        ])
+        .status
+        .success()
+    );
+    let mut value: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    let owners = value["owners"].as_array_mut().unwrap();
+    let mut duplicate = owners[0].clone();
+    duplicate["secret"] = serde_json::json!("r7-private-body-sentinel");
+    owners.insert(0, duplicate);
+    fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+    let result = xtask(&[
+        "contract",
+        "check",
+        "--target",
+        "fixture-catalog",
+        "--snapshot",
+        filename,
+    ]);
+    assert!(
+        !result.status.success(),
+        "duplicate snapshot must not check equal"
+    );
+    let diagnostics = format!("{}{}", text(&result.stdout), text(&result.stderr));
+    assert!(
+        diagnostics.contains("duplicate indexed keys"),
+        "{diagnostics}"
+    );
+    assert!(!diagnostics.contains("r7-private-body-sentinel"));
+}
+
+#[test]
 fn export_check_and_diff_round_trip_through_the_binary() {
     let snapshot = scratch("catalog.contract.json");
     let path = snapshot.to_str().expect("utf-8 path");

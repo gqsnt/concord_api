@@ -1,5 +1,6 @@
 //! `ContractDescription` → `concord.contract/3` structural JSON.
 
+use std::collections::BTreeSet;
 use std::time::Duration;
 
 use concord_core::contracts::BodyKind;
@@ -110,7 +111,8 @@ pub fn export_string(contract: &ContractDescription) -> String {
 /// # Errors
 ///
 /// Returns [`InspectError`] for invalid JSON, a wrong `format`, a missing or
-/// mistyped top-level key, or any floating-point number.
+/// mistyped top-level key, any floating-point number, or invalid/duplicate
+/// indexed record keys. Uniqueness checks do not establish full schema validity.
 pub fn parse_document(text: &str) -> Result<Value, InspectError> {
     let value = serde_json::from_str::<Value>(text)
         .map_err(|_| InspectError::new(InspectErrorKind::InvalidJson, "snapshot"))?;
@@ -118,7 +120,8 @@ pub fn parse_document(text: &str) -> Result<Value, InspectError> {
     Ok(value)
 }
 
-/// Validates the top-level structure and the integer/string-only rule.
+/// Validates top-level structure, the integer/string-only rule and uniqueness
+/// of keys used by snapshot diff indexes. This is not complete schema validation.
 ///
 /// # Errors
 ///
@@ -149,6 +152,113 @@ pub fn validate_document(value: &Value) -> Result<(), InspectError> {
             InspectErrorKind::NonIntegerNumber,
             "number",
         ));
+    }
+    for (collection, fields) in [
+        ("owners", &["path"][..]),
+        ("endpoints", &["path"][..]),
+        ("policies", &["id"][..]),
+        ("window_sets", &["name"][..]),
+        ("dependencies", &["kind", "reference"][..]),
+        ("diagnostics", &["code", "owner", "subject"][..]),
+    ] {
+        validate_keys(
+            object[collection].as_array().expect("validated collection"),
+            fields,
+            collection,
+        )?;
+    }
+    let mut endpoint_ids = BTreeSet::new();
+    for endpoint in object["endpoints"].as_array().expect("validated endpoints") {
+        if let Some(id) = endpoint.get("id") {
+            let id = id
+                .get("value")
+                .and_then(Value::as_str)
+                .filter(|id| !id.is_empty())
+                .ok_or(InspectError::new(
+                    InspectErrorKind::InvalidRecordKey,
+                    "endpoints.id",
+                ))?;
+            if !endpoint_ids.insert(id) {
+                return Err(InspectError::new(
+                    InspectErrorKind::DuplicateKey,
+                    "endpoints.id",
+                ));
+            }
+        }
+    }
+    validate_nested_keys(value)?;
+    Ok(())
+}
+
+// Validate the exact keys used by diff indexing, including its positional
+// fallback. Missing keys remain representable; malformed supplied keys and
+// collisions with an explicit `#position` are rejected before any indexing.
+fn validate_keys(
+    items: &[Value],
+    fields: &[&str],
+    collection: &'static str,
+) -> Result<(), InspectError> {
+    let mut keys = BTreeSet::new();
+    for (position, item) in items.iter().enumerate() {
+        // Some exported nested arrays (for example credential secret
+        // references) contain scalar names and are indexed positionally.
+        // Match the diff's fallback instead of treating them as records.
+        let record = item.as_object();
+        let mut parts = Vec::new();
+        let mut missing = false;
+        for field in fields {
+            match record.and_then(|record| record.get(*field)) {
+                Some(Value::String(value)) if !value.is_empty() => parts.push(value.as_str()),
+                None => missing = true,
+                _ => {
+                    return Err(InspectError::new(
+                        InspectErrorKind::InvalidRecordKey,
+                        collection,
+                    ));
+                }
+            }
+        }
+        let key = if missing {
+            format!("#{position}")
+        } else {
+            parts.join(":")
+        };
+        if !keys.insert(key) {
+            return Err(InspectError::new(
+                InspectErrorKind::DuplicateKey,
+                collection,
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_nested_keys(value: &Value) -> Result<(), InspectError> {
+    match value {
+        Value::Object(object) => {
+            for (field, nested) in object {
+                if let Value::Array(items) = nested {
+                    let indexed = match field.as_str() {
+                        "values" => Some(("name", "values")),
+                        "secrets" => Some(("name", "secrets")),
+                        "credentials" => Some(("name", "credentials")),
+                        "rate" => Some(("id", "rate")),
+                        "coverage" => Some(("id", "coverage")),
+                        _ => None,
+                    };
+                    if let Some((key, collection)) = indexed {
+                        validate_keys(items, &[key], collection)?;
+                    }
+                }
+                validate_nested_keys(nested)?;
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                validate_nested_keys(item)?;
+            }
+        }
+        _ => {}
     }
     Ok(())
 }
