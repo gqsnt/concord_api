@@ -9,6 +9,101 @@ use concord_core::rate_limit::{
     RateLimitPolicy, RateLimitWindow,
 };
 
+#[tokio::test(start_paused = true)]
+async fn r7_public_feedback_capacity_pressure_blocks_and_recovers_without_debit() {
+    let limiter = Arc::new(LocalRateLimiter::new().cooldown_capacity(1).unwrap());
+    let first = plan(vec![policy("r7", "A", 1, &[(1, Duration::from_secs(100))])]);
+    let second = Arc::new(plan(vec![policy(
+        "r7",
+        "B",
+        1,
+        &[(1, Duration::from_secs(100))],
+    )]));
+    observe(
+        &limiter,
+        &first,
+        None,
+        StatusCode::TOO_MANY_REQUESTS,
+        Duration::from_secs(60),
+    )
+    .await;
+    observe(
+        &limiter,
+        &second,
+        None,
+        StatusCode::TOO_MANY_REQUESTS,
+        Duration::from_secs(60),
+    )
+    .await;
+    let pending = spawn_acquire(limiter.clone(), second.clone(), None);
+    tokio::task::yield_now().await;
+    assert!(
+        !pending.is_finished(),
+        "lost B feedback must not admit B immediately"
+    );
+    assert_eq!(
+        limiter.test_quota_entry_count(),
+        0,
+        "cooldown wait never debits or registers quota"
+    );
+    pending.abort();
+    let _ = pending.await;
+    tokio::time::advance(Duration::from_secs(10)).await;
+    acquire(&limiter, &second, None).await;
+    assert_eq!(limiter.state.lock().unwrap().cooldowns.len(), 0);
+    assert!(!limiter.internal_failed.load(AtomicOrdering::Acquire));
+}
+
+#[tokio::test(start_paused = true)]
+async fn r7_public_multikey_feedback_extends_one_finite_barrier_without_partial_debit() {
+    let limiter = Arc::new(LocalRateLimiter::new().cooldown_capacity(1).unwrap());
+    let a = policy("a", "tenant", 1, &[(1, Duration::from_secs(100))]);
+    let b = policy("b", "tenant", 1, &[(1, Duration::from_secs(100))]);
+    let both = Arc::new(plan(vec![a.clone(), b]));
+    observe_feedback(
+        &limiter,
+        &plan(vec![a]),
+        None,
+        StatusCode::TOO_MANY_REQUESTS,
+        Some(Duration::from_secs(3)),
+        Duration::from_secs(10),
+    )
+    .await;
+    observe_feedback(
+        &limiter,
+        &both,
+        None,
+        StatusCode::TOO_MANY_REQUESTS,
+        Some(Duration::from_secs(5)),
+        Duration::from_secs(10),
+    )
+    .await;
+    tokio::time::advance(Duration::from_secs(2)).await;
+    observe_feedback(
+        &limiter,
+        &both,
+        None,
+        StatusCode::TOO_MANY_REQUESTS,
+        Some(Duration::from_secs(5)),
+        Duration::from_secs(10),
+    )
+    .await;
+    let first = spawn_acquire(limiter.clone(), both.clone(), None);
+    let second = spawn_acquire(limiter.clone(), both.clone(), None);
+    tokio::task::yield_now().await;
+    assert!(!first.is_finished() && !second.is_finished());
+    assert_eq!(limiter.test_quota_entry_count(), 0);
+    assert_eq!(limiter.state.lock().unwrap().cooldowns.len(), 1);
+    first.abort();
+    second.abort();
+    let _ = first.await;
+    let _ = second.await;
+    tokio::time::advance(Duration::from_secs(5)).await;
+    acquire(&limiter, &both, None).await;
+    assert_eq!(limiter.test_quota_entry_count(), 2);
+    assert!(!limiter.internal_failed.load(AtomicOrdering::Acquire));
+}
+
 fn policy(id: &str, key: &str, cost: u32, windows: &[(u32, Duration)]) -> RateLimitPolicy {
     RateLimitPolicy::new(
         RateLimitId::new(id).expect("ID"),
@@ -58,6 +153,7 @@ async fn try_acquire(
 ) -> Result<RateLimitPermit, RateLimitError> {
     limiter
         .acquire(RateLimitRequest {
+            cooldown_origin: None,
             endpoint: "RateApi::get",
             method: &Method::GET,
             logical_origin,
@@ -77,6 +173,7 @@ fn spawn_acquire(
     tokio::spawn(async move {
         limiter
             .acquire(RateLimitRequest {
+                cooldown_origin: None,
                 endpoint: "RateApi::get",
                 method: &Method::GET,
                 logical_origin,
@@ -99,6 +196,7 @@ async fn observe(
     let limiter_object: Arc<dyn RateLimiter> = limiter.clone();
     limiter_object.observe(RateLimitResponse {
         request: RateLimitRequest {
+            cooldown_origin: None,
             endpoint: "RateApi::get",
             method: &Method::GET,
             logical_origin,
@@ -124,6 +222,7 @@ async fn observe_feedback(
     let limiter_object: Arc<dyn RateLimiter> = limiter.clone();
     limiter_object.observe(RateLimitResponse {
         request: RateLimitRequest {
+            cooldown_origin: None,
             endpoint: "RateApi::get",
             method: &Method::GET,
             logical_origin,
@@ -1021,13 +1120,27 @@ async fn active_cooldown_is_not_evicted() {
     let rejected = spawn_acquire(Arc::clone(&limiter), Arc::clone(&plan), Some("second.test"));
     tokio::task::yield_now().await;
     assert!(!retained.is_finished());
-    assert!(rejected.is_finished());
+    assert!(
+        !rejected.is_finished(),
+        "capacity pressure retains a finite conservative barrier"
+    );
+    assert!(
+        limiter
+            .state
+            .lock()
+            .unwrap()
+            .cooldowns
+            .contains_key(&CooldownKey::LogicalOrigin("first.test".to_owned()))
+    );
+    tokio::time::advance(Duration::from_secs(10)).await;
     rejected
         .await
         .expect("rejected host task")
-        .expect("capacity failure installed no cooldown");
-    retained.abort();
-    let _ = retained.await;
+        .expect("finite capacity barrier expired");
+    retained
+        .await
+        .expect("retained host task")
+        .expect("original cooldown expired naturally");
 }
 
 #[tokio::test(start_paused = true)]
@@ -1288,6 +1401,7 @@ async fn local_limiter_rejects_first_excess_without_sensitive_output() {
     let error = rate_error(
         limiter
             .acquire(RateLimitRequest {
+                cooldown_origin: None,
                 endpoint: "RateApi::get",
                 method: &Method::GET,
                 logical_origin: Some("https://example.test"),
@@ -1324,6 +1438,7 @@ fn poisoned_state_fails_future_acquisition_closed() {
     let empty = RateLimitPlan::empty();
     limiter.observe(RateLimitResponse {
         request: RateLimitRequest {
+            cooldown_origin: None,
             endpoint: "RateApi::get",
             method: &Method::GET,
             logical_origin: None,
@@ -1339,6 +1454,7 @@ fn poisoned_state_fails_future_acquisition_closed() {
     assert!(limiter.internal_failed.load(AtomicOrdering::Acquire));
     let error = rate_error(
         runtime.block_on(limiter.acquire(RateLimitRequest {
+            cooldown_origin: None,
             endpoint: "RateApi::get",
             method: &Method::GET,
             logical_origin: None,

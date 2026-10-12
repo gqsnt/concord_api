@@ -1,5 +1,34 @@
+use std::collections::hash_map::RandomState;
+use std::fmt;
+use std::hash::BuildHasher;
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::time::Duration;
+
+/// Opaque process-local identity of a normalized logical origin for cooldown state.
+///
+/// Core supplies this independently of quota dimensions. Formatting and the
+/// public API never expose or retain the underlying host or origin text.
+/// It is not a persistent quota key or a cross-process schema identity.
+#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct CooldownOrigin([u64; 2]);
+
+impl CooldownOrigin {
+    pub(crate) fn new(origin: String) -> Self {
+        // Fixed bounded process-private salts prevent public Hash/Ord from
+        // exposing the raw string's hash or lexical ordering. A digest
+        // collision can only conservatively combine cooldowns, never lose one.
+        static SALTS: LazyLock<[RandomState; 2]> =
+            LazyLock::new(|| [RandomState::new(), RandomState::new()]);
+        Self([SALTS[0].hash_one(&origin), SALTS[1].hash_one(&origin)])
+    }
+}
+
+impl fmt::Debug for CooldownOrigin {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("CooldownOrigin(<opaque>)")
+    }
+}
 
 use http::{Method, StatusCode};
 
@@ -22,6 +51,9 @@ pub use crate::runtime::defaults::DEFAULT_RATE_LIMIT_KEY_BYTES;
 /// canonical window schema, and limiter namespace/algorithm identity. It
 /// never carries request bodies, credentials or raw headers.
 pub struct RateLimitRequest<'a> {
+    /// Opaque logical-origin identity for future cooldown admission, including
+    /// empty plans. This grants no quota dimension or access to host text.
+    pub cooldown_origin: Option<&'a CooldownOrigin>,
     /// Operational endpoint ID (an explicit `id` pin or navigation-derived).
     pub endpoint: &'a str,
     /// Application HTTP method.
@@ -246,6 +278,7 @@ mod tests {
         let empty = RateLimitPlan::empty();
         NoopRateLimiter::new()
             .acquire(RateLimitRequest {
+                cooldown_origin: None,
                 endpoint: "rate.api.get",
                 method: &method,
                 logical_origin: None,
@@ -258,6 +291,7 @@ mod tests {
             .expect("noop grants empty plan");
         FallbackRateLimiter
             .acquire(RateLimitRequest {
+                cooldown_origin: None,
                 endpoint: "rate.api.get",
                 method: &method,
                 logical_origin: None,

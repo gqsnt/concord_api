@@ -1156,12 +1156,16 @@ impl HeadBuilder {
         }
         let observed_url: Arc<str> = observed_url.into();
         let (rate_limit_plan, rate_limit_logical_origin) = self.resolve_rate_limits()?;
+        let cooldown_origin = self
+            .rate_limit_origin()
+            .map(crate::rate_limit::CooldownOrigin::new);
         Ok(PreparedHead {
             meta: self.meta,
             logical_url: self.logical_url,
             host_withheld: self.host_withheld,
             observed_url,
             rate_limit_logical_origin,
+            cooldown_origin,
             public_headers: self.public_headers,
             pagination_sensitive_headers: self.pagination_sensitive_headers,
             timeout: self.timeout,
@@ -1183,6 +1187,7 @@ pub struct PreparedHead {
     host_withheld: bool,
     observed_url: Arc<str>,
     rate_limit_logical_origin: Option<Arc<str>>,
+    cooldown_origin: Option<crate::rate_limit::CooldownOrigin>,
     public_headers: HeaderMap,
     pagination_sensitive_headers: HashSet<HeaderName>,
     timeout: Option<Duration>,
@@ -1340,6 +1345,10 @@ impl PreparedHead {
 
     pub(crate) fn rate_limit_logical_origin(&self) -> Option<&str> {
         self.rate_limit_logical_origin.as_deref()
+    }
+
+    pub(crate) fn cooldown_origin(&self) -> Option<&crate::rate_limit::CooldownOrigin> {
+        self.cooldown_origin.as_ref()
     }
 
     #[doc(hidden)]

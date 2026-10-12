@@ -1560,6 +1560,7 @@ fn probe(limiter: &LocalRateLimiter, capture: &Capture, plan: &RateLimitPlan) ->
     let method = concord::http::Method::from_bytes(capture.record.method.as_bytes())
         .expect("recorded method");
     let request = RateLimitRequest {
+        cooldown_origin: None,
         endpoint: &capture.record.endpoint_id,
         method: &method,
         logical_origin: capture.record.limiter.logical_origin.as_deref(),

@@ -34,6 +34,7 @@ async fn downstream_local_limiter_uses_public_contracts_and_core_cooldown_cap() 
 
     let plan = one_per_minute();
     let request = || RateLimitRequest {
+        cooldown_origin: None,
         endpoint: "RateApi::limited",
         method: &Method::GET,
         logical_origin: Some("https://example.test"),

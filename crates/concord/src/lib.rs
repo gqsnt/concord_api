@@ -206,10 +206,10 @@ pub mod pagination {
 pub mod rate_limit {
     pub use concord_core::contracts::{BoxFuture, RateLimitErrorKind};
     pub use concord_core::rate_limit::{
-        CanonicalKeyWriter, DEFAULT_RATE_LIMIT_KEY_BYTES, DEFAULT_RATE_SCHEMA_REGISTRATIONS,
-        ENDPOINT_LABEL, EncodedKeyPart, Enforcement, LimiterCapability,
-        MAX_RATE_KEY_ENCODING_ID_BYTES, MAX_RATE_LIMIT_ID_BYTES, MAX_RATE_LIMIT_KEY_BYTES,
-        MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS,
+        CanonicalKeyWriter, CooldownOrigin, DEFAULT_RATE_LIMIT_KEY_BYTES,
+        DEFAULT_RATE_SCHEMA_REGISTRATIONS, ENDPOINT_LABEL, EncodedKeyPart, Enforcement,
+        LimiterCapability, MAX_RATE_KEY_ENCODING_ID_BYTES, MAX_RATE_LIMIT_ID_BYTES,
+        MAX_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS,
         MAX_RATE_LIMIT_POLICIES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_POLICY,
         MAX_RATE_LIMITER_NAMESPACE_BYTES, NoopRateLimiter, ORIGIN_LABEL, RATE_KEY_FRAMING_VERSION,
         RateDimensionKind, RateDimensionSchema, RateKeyEncoder, RateKeyPart, RateLimitDeclaration,

@@ -1527,6 +1527,7 @@ async fn acquire_rate_limit_authority(
 ) -> Result<(), ApiError> {
     check_deadline(deadline, head.endpoint_id(), head.method())?;
     let request = RateLimitRequest {
+        cooldown_origin: head.cooldown_origin(),
         endpoint: head.endpoint(),
         method: head.method(),
         logical_origin: head.rate_limit_logical_origin(),
@@ -1557,6 +1558,7 @@ fn observe_rate_limit_response(
 ) {
     let response = RateLimitResponse {
         request: RateLimitRequest {
+            cooldown_origin: head.cooldown_origin(),
             endpoint: head.endpoint(),
             method: head.method(),
             logical_origin: head.rate_limit_logical_origin(),

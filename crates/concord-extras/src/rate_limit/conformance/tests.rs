@@ -47,6 +47,7 @@ async fn try_acquire(
 ) -> Result<RateLimitPermit, RateLimitError> {
     limiter
         .acquire(RateLimitRequest {
+            cooldown_origin: None,
             endpoint: "catalog.items.list",
             method: &Method::GET,
             logical_origin: plan
@@ -453,6 +454,7 @@ async fn mismatched_core_snapshot_and_unpolled_acquisition_change_nothing() {
     let limiter = store.limiter();
     let plan = plan_of(vec![resolve(tenant_reads())]);
     let request = |capability| RateLimitRequest {
+        cooldown_origin: None,
         endpoint: "catalog.items.list",
         method: &Method::GET,
         logical_origin: Some("https://eu.api.catalog.example.test:443"),

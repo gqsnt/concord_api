@@ -38,7 +38,8 @@ pub use canonical::{
 pub use declaration::RateLimitDeclaration;
 pub use error::RateLimitError;
 pub use limiter::{
-    DEFAULT_RATE_LIMIT_KEY_BYTES, NoopRateLimiter, RateLimitRequest, RateLimitResponse, RateLimiter,
+    CooldownOrigin, DEFAULT_RATE_LIMIT_KEY_BYTES, NoopRateLimiter, RateLimitRequest,
+    RateLimitResponse, RateLimiter,
 };
 pub use schema::{
     DEFAULT_RATE_SCHEMA_REGISTRATIONS, ENDPOINT_LABEL, Enforcement, LimiterCapability,

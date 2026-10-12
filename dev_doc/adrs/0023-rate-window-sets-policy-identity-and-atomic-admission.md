@@ -65,6 +65,14 @@ rate_limit "concord.riot.21" key [origin] using standard;
 
 ## Consequences
 
+R7-04/05 add an independent opaque process-local origin identity for empty-plan
+cooldown feedback without exposing previously withheld host text or changing
+quota schemas. Capacity pressure retains one finite limiter-object-wide barrier
+through the affected expiration; it neither evicts active cooldowns nor debits
+quota while waiting. The public context literal gains `cooldown_origin`; existing
+custom consumers pass `None` when constructing their own contexts. See
+[`docs/rate_limits.md`](../../docs/rate_limits.md) for the extension contract.
+
 - Custom limiters must implement all-or-none admission; this is a documented
   v3 migration change for adapters written to ADR 0008's weaker allowance.
 - Custom key parts must name an encoding contract; changing an encoding ID,

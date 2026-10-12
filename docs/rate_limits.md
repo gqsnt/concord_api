@@ -240,6 +240,14 @@ Standard server feedback (the one core-parsed server delay) affects only future
 admission; limiter feedback can never replace the current endpoint result.
 `RateLimitResponse` carries the status and that delay, not arbitrary headers.
 
+`RateLimitRequest::cooldown_origin` supplies an opaque, equality-only normalized
+process-local origin identity independently of quota dimensions, including empty plans.
+`logical_origin` remains absent unless the plan declares the `origin` dimension.
+The opaque identity retains no host text and reveals none through its API,
+formatting, public hashing or ordering; it is not a persistent schema key. Custom
+limiter context literals now include `cooldown_origin: None`; core-generated
+contexts supply the identity. This beta extension changes no bucket schema.
+
 ## The local limiter
 
 `LocalRateLimiter` keeps bounded object-local token buckets: each capacity
@@ -259,6 +267,14 @@ Capacity pressure rejects new state (`RateLimitErrorKind::StateCapacity`) rather
 than evicting active debt or an unexpired cooldown; the required capacity of a
 complete admission is checked before any insertion. Overflow, poisoning or
 inconsistency fails closed.
+
+A positive `429` delay installs an origin cooldown for an empty plan and bucket
+cooldowns otherwise. If keyed cooldown feedback exceeds capacity, one finite
+limiter-object-wide barrier retains the longest affected expiration. Admission
+waits without any quota debit until it expires, and cancellation releases the
+wait. Active cooldowns are preserved; state does not grow without bound and
+recoverable capacity pressure does not permanently poison the limiter. Feedback
+never changes the already-fixed response outcome.
 
 ## Shared limiters and continuity
 
