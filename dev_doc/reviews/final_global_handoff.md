@@ -108,6 +108,14 @@ the canonical own-root check; modern external-prelude paths retain their
 actual external meaning and established no-binding assumptions. Canonical
 source-only positives and real facade native controls retain separate scopes.
 
+Exact-name imports used by a relative crate path also retain their original
+edition-aware import proof. A child `use concord` in Rust2015 cannot obtain the
+external-prefix lexical exemption when its root import/reexport resolves
+through an opaque or expanded intermediate scope. The import proof runs in
+both classification passes before a pending API can be marked. Modern
+external-prelude and documented no-binding assumptions retain their scope;
+an unresolved import is not replaced by those assumptions.
+
 POL-01 remains an owner license-policy decision for BSD-3-Clause dependencies.
 V3-O07 performance acceptance requires workload-specific actual measurements
 and an acceptance decision; no universal acceptable cost or speed improvement

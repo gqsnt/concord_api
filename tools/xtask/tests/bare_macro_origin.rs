@@ -5,17 +5,20 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct OwnedDir(PathBuf);
 impl OwnedDir {
     fn new() -> Self {
+        static NEXT_DIRECTORY: AtomicUsize = AtomicUsize::new(0);
         let nonce = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
         let path = std::env::temp_dir().join(format!(
-            "concord-bare-origin-{}-{nonce}",
-            std::process::id()
+            "concord-bare-origin-{}-{nonce}-{}",
+            std::process::id(),
+            NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&path).unwrap();
         Self(path)
@@ -555,6 +558,12 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
             "genuine-child-imported",
             format!("use ::concord::api;\napi!{genuine_body}"),
         ),
+        (
+            "genuine-child-exact-import-noop",
+            format!(
+                "use concord;\nmacro_rules! noop {{()=>{{}};}}\nnoop!();\nconcord::api!{genuine_body}"
+            ),
+        ),
     ] {
         let input = owned.0.join(label);
         fs::create_dir_all(input.join("src")).unwrap();
@@ -889,4 +898,126 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
         );
     }
     assert_eq!(fs::read(&workspace_lock).unwrap(), workspace_lock_bytes);
+}
+
+#[test]
+fn actual_cli_exact_name_import_requires_intermediate_source_proof() {
+    let owned = OwnedDir::new();
+    let original_root = include_str!("fixtures/trust_opaque_exact_import_root.rs");
+    let original_child = include_str!("fixtures/trust_opaque_exact_import_user.rs");
+    let alternate_root = original_root
+        .replace(
+            "macro_rules! unit_item { () => { pub struct Unit; }; }\n",
+            "",
+        )
+        .replace("    unit_item!();\n", "")
+        .replace(
+            "use reexports::concord;",
+            "use reexports::*;\nmacro_rules! noop {()=>{};}\nnoop!();",
+        );
+    let leading_child = original_child.replace("use concord;\nconcord::api!", "::concord::api!");
+    let plain_root = original_root
+        .replace("macro_rules! unit_item { () => { pub struct Unit; }; }\n", "")
+        .replace("mod reexports {\n    pub(crate) use crate as concord;\n    unit_item!();\n}\nuse reexports::concord;", "use crate as concord;");
+    for (label, root_source, child_source) in [
+        ("opaque-reexport", original_root, original_child),
+        (
+            "expanded-root-glob",
+            alternate_root.as_str(),
+            original_child,
+        ),
+        (
+            "opaque-leading-control",
+            original_root,
+            leading_child.as_str(),
+        ),
+        (
+            "plain-exact-import-control",
+            plain_root.as_str(),
+            original_child,
+        ),
+    ] {
+        let input = owned.0.join(format!("input-{label}"));
+        fs::create_dir_all(input.join("src")).unwrap();
+        let manifest = "[package]\nname=\"concord\"\nversion=\"0.0.0\"\nedition=\"2015\"\n[lib]\npath=\"src/lib.rs\"\n";
+        let files = [
+            ("Cargo.toml", manifest),
+            ("src/lib.rs", root_source),
+            ("src/user.rs", child_source),
+        ];
+        let native = owned.0.join(format!("native-{label}"));
+        fs::create_dir_all(native.join("concord/src")).unwrap();
+        fs::create_dir_all(native.join("runner/src")).unwrap();
+        fs::write(
+            native.join("Cargo.toml"),
+            "[workspace]\nmembers=[\"concord\",\"runner\"]\nresolver=\"3\"\n",
+        )
+        .unwrap();
+        fs::write(native.join("runner/Cargo.toml"), "[package]\nname=\"exact-import-runner\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[dependencies]\nown_library={package=\"concord\",path=\"../concord\"}\n").unwrap();
+        let runner = "fn main() { own_library::verify(); }\n";
+        fs::write(native.join("runner/src/main.rs"), runner).unwrap();
+        for (file, bytes) in files {
+            fs::write(input.join(file), bytes).unwrap();
+            fs::write(native.join("concord").join(file), bytes).unwrap();
+        }
+        cargo(&native, &["metadata", "--offline", "--format-version", "1"]);
+        let lock = fs::read(native.join("Cargo.lock")).unwrap();
+        let before = cargo(
+            &native,
+            &["run", "--locked", "--offline", "-p", "exact-import-runner"],
+        );
+        let output = owned.0.join(format!("converted-{label}"));
+        let report_path = owned.0.join(format!("{label}.json"));
+        let result = Command::new(env!("CARGO_BIN_EXE_concord-xtask"))
+            .args(["migrate-v3", "--input"])
+            .arg(&input)
+            .args(["--apply", "--output"])
+            .arg(&output)
+            .arg("--report")
+            .arg(&report_path)
+            .output()
+            .unwrap();
+        let report: serde_json::Value =
+            serde_json::from_slice(&fs::read(report_path).unwrap()).unwrap();
+        assert_eq!(result.status.code(), Some(1), "{label}: {report}");
+        assert_eq!(report["summary"]["automated_edits"], 0);
+        assert_eq!(report["summary"]["declarations"], 0);
+        assert!(
+            report["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| entry["code"] == "C3-MIGRATE-API-MACRO-UNRESOLVED")
+        );
+        for (file, bytes) in files {
+            assert_eq!(
+                fs::read_to_string(input.join(file)).unwrap(),
+                bytes,
+                "protected {label}/{file}"
+            );
+            assert_eq!(
+                fs::read_to_string(output.join(file)).unwrap(),
+                bytes,
+                "whole output {label}/{file}"
+            );
+            fs::write(
+                native.join("concord").join(file),
+                fs::read(output.join(file)).unwrap(),
+            )
+            .unwrap();
+        }
+        let after = cargo(
+            &native,
+            &["run", "--locked", "--offline", "-p", "exact-import-runner"],
+        );
+        assert_eq!(
+            before.stdout, after.stdout,
+            "native exact-import behavior {label}"
+        );
+        assert_eq!(fs::read(native.join("Cargo.lock")).unwrap(), lock);
+        assert_eq!(
+            fs::read_to_string(native.join("runner/src/main.rs")).unwrap(),
+            runner
+        );
+    }
 }

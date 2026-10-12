@@ -5200,3 +5200,34 @@ fn own_library_imported_root_requires_canonical_origin() {
     let result = migrate(&workspace.0, &Settings::default()).unwrap();
     assert_eq!(result.declarations, 1);
 }
+
+#[test]
+fn exact_name_crate_import_retains_intermediate_source_proof() {
+    let workspace = TempDir::new("exact-import-intermediate-source");
+    workspace.write("Cargo.toml", "[package]\nname=\"concord\"\nversion=\"3.0.0\"\nedition=\"2015\"\n[lib]\npath=\"src/lib.rs\"\n");
+    let common = "#[macro_export]\nmacro_rules! application_api {($($t:tt)*)=>{pub const CONFIG:&str=stringify!($($t)*);};}\npub use crate::application_api as api;\npub mod user;\n";
+    let child = r#"use concord;
+concord::api!{client ForeignChild{base "http://foreign.example.test/";GET read()->(){path ["child-foreign"];}}}
+"#;
+    for root in [
+        format!(
+            "{common}\nmacro_rules! unit_item {{()=>{{pub struct Unit;}};}}\nmod reexports {{pub(crate) use crate as concord;unit_item!();}}\nuse reexports::concord;\n"
+        ),
+        format!(
+            "{common}\nmod reexports {{pub(crate) use crate as concord;}}\nuse reexports::*;\nmacro_rules! noop {{()=>{{}};}}\nnoop!();\n"
+        ),
+        format!("{common}\nuse crate as concord;\n"),
+    ] {
+        workspace.write("src/lib.rs", &root);
+        workspace.write("src/user.rs", child);
+        let result = migrate(&workspace.0, &Settings::default()).unwrap();
+        assert_eq!(result.converted("src/user.rs"), Some(child));
+        assert_eq!(result.declarations, 0);
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|entry| entry.code == Code::ApiMacroUnresolved)
+        );
+    }
+}

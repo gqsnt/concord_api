@@ -587,11 +587,25 @@ impl ApiScopes<'_> {
             }
             if let Some(paths) = table.imports.get(name) {
                 if paths.iter().any(|(leading, path)| {
-                    path.as_slice() != [name.to_owned()]
-                        && !(*leading
+                    if path.as_slice() == [name.to_owned()] {
+                        // The exact-name import is external-prelude syntax in
+                        // modern editions, but can bind a crate-root alias in
+                        // 2015. Follow its actual import proof before granting
+                        // this lexical exemption, including intermediate
+                        // opaque/expanded reexports outside this file.
+                        self.source_origin.is_some_and(|proof| {
+                            !proof(
+                                table.anchor,
+                                name,
+                                SourceNamespace::ImportCrate { leading: *leading },
+                            )
+                        })
+                    } else {
+                        !(*leading
                             && path.as_slice() == ["self".to_owned()]
                             && table.extern_self.contains(name)
                             && self.own_library == Some(name))
+                    }
                 }) {
                     return Some(format!(
                         "an import named `{name}` where the invocation is takes precedence over the `{name}` crate in its path"
