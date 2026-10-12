@@ -114,7 +114,8 @@ impl ManagedHttp {
                 runtime.provider_response_limit,
                 runtime.provider_max_sends,
                 runtime.provider_timeout,
-            ),
+            )
+            .with_failure_cooldown_cap(runtime.auth_failure_cooldown_cap),
         })
     }
 

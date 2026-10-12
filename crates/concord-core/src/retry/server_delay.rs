@@ -48,6 +48,12 @@ impl ServerDelayHint {
             .saturating_sub(now.saturating_duration_since(self.observed_at))
     }
 
+    pub(crate) fn bounded_remaining_at(self, now: Instant, cap: Duration) -> Duration {
+        self.delay
+            .min(cap)
+            .saturating_sub(now.saturating_duration_since(self.observed_at))
+    }
+
     #[allow(
         dead_code,
         reason = "retained for bounded event and vendor-hint expansion"

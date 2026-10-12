@@ -67,7 +67,14 @@ impl OAuth2ClientCredentials {
             )
             .body(ProviderBody::Bytes(parts.body));
         let response = context.http.send(request).await?;
-        decode_token_response(response.status(), response.body())
+        decode_token_response(response.status(), response.body()).map_err(|error| {
+            if !response.status().is_success() {
+                if let Some(delay) = response.retry_after().filter(|delay| !delay.is_zero()) {
+                    return error.with_retry_after(delay);
+                }
+            }
+            error
+        })
     }
 
     fn exchange_parts(&self, request_body_limit: NonZeroUsize) -> Result<ExchangeParts, AuthError> {

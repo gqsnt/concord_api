@@ -8,6 +8,14 @@ HTTPS (§11).
 
 ## Sources
 
+Proactive refresh uses a 60-second skew only when a refresh provider exists.
+Valid installed material without a provider remains usable until actual expiry.
+A provider result already acquired inside that skew carries its checked version
+through admission and bounded freshness restarts; a quota wait still rechecks
+actual expiry, rejection, replacement and an already-started proactive refresh.
+It does not trigger a new acquisition merely because its valid lifetime is
+shorter than the skew.
+
 <!-- concord-source: crates/concord-examples/src/authentication/api.rs#credential_declarations -->
 ```concord
 credentials {
@@ -266,6 +274,14 @@ implementation that panics cannot misreport the result; its panic then reaches
 whoever awaits the storage request.
 
 ## Custom providers
+
+The first-party OAuth2 client-credentials provider preserves a positive
+`Retry-After` on rejected token responses. Core parses delta seconds or an HTTP
+date once at head arrival, ignores malformed or duplicate fields, clamps to the
+configured authentication failure cooldown, and subtracts body-acquisition time.
+The provider passes the remaining hint to `AuthError`; the credential slot
+blocks later acquisitions until that bounded cooldown expires. No automatic
+OAuth retry loop is added, and provider response text stays out of errors.
 
 ```text
 pub trait CredentialProvider: Send + Sync + 'static {

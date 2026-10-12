@@ -31,6 +31,7 @@ pub(super) struct ProviderHttpInner {
     response_limit: NonZeroUsize,
     max_sends: u32,
     timeout: Duration,
+    failure_cooldown_cap: Duration,
     #[cfg(test)]
     development: Option<ProviderChannel>,
 }
@@ -393,6 +394,8 @@ pub struct ProviderResponse {
     status: StatusCode,
     headers: HeaderMap,
     body: Bytes,
+    server_delay: Option<crate::retry::ServerDelayHint>,
+    failure_cooldown_cap: Duration,
 }
 
 impl ProviderResponse {
@@ -406,6 +409,17 @@ impl ProviderResponse {
     #[must_use]
     pub const fn headers(&self) -> &HeaderMap {
         &self.headers
+    }
+
+    /// Validated server rejection delay still remaining from response-head
+    /// arrival, capped by the runtime's authentication failure cooldown.
+    /// Delta seconds and HTTP dates share core's standard parser; malformed
+    /// or duplicate fields yield no hint. This performs no retry or admission.
+    #[must_use]
+    pub fn retry_after(&self) -> Option<Duration> {
+        self.server_delay.map(|hint| {
+            hint.bounded_remaining_at(OperationDeadline::now(), self.failure_cooldown_cap)
+        })
     }
 
     /// Borrows the complete bounded provider response body.
@@ -588,9 +602,17 @@ impl ProviderHttpInner {
             response_limit,
             max_sends,
             timeout,
+            failure_cooldown_cap: Duration::from_secs(
+                crate::runtime::defaults::DEFAULT_AUTH_FAILURE_COOLDOWN_SECONDS,
+            ),
             #[cfg(test)]
             development: None,
         }
+    }
+
+    pub(super) fn with_failure_cooldown_cap(mut self, cap: Duration) -> Self {
+        self.failure_cooldown_cap = cap;
+        self
     }
 
     #[cfg(test)]
@@ -714,7 +736,12 @@ impl ProviderHttpInner {
             {
                 return Err(AuthError::new(AuthErrorKind::ResponseTooLarge));
             }
-            collect_provider_response(response, effective_response_limit).await
+            collect_provider_response(
+                response,
+                effective_response_limit,
+                self.failure_cooldown_cap,
+            )
+            .await
         };
         match effective_timeout {
             Some(timeout) => tokio::time::timeout(timeout, operation)
@@ -792,9 +819,15 @@ impl ProviderJournal {
 async fn collect_provider_response(
     mut response: reqwest::Response,
     limit: usize,
+    failure_cooldown_cap: Duration,
 ) -> Result<ProviderResponse, AuthError> {
     let status = response.status();
     let headers = response.headers().clone();
+    let server_delay = crate::retry::parse_server_delay(
+        &headers,
+        std::time::SystemTime::now(),
+        OperationDeadline::now(),
+    );
     let mut collected = BytesMut::new();
     let mut progress = ResponseChunkProgress::default();
     loop {
@@ -811,6 +844,8 @@ async fn collect_provider_response(
                 status,
                 headers,
                 body: collected.freeze(),
+                server_delay,
+                failure_cooldown_cap,
             });
         };
         let next = collected
@@ -1249,6 +1284,53 @@ mod tests {
         assert_eq!(executor.application().request_count().expect("count"), 0);
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn r7_provider_delay_is_validated_bounded_and_anchored_before_body_consumption() {
+        let wall = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000);
+        let observed = OperationDeadline::now();
+        for (fields, expected) in [
+            (vec!["10"], Some(Duration::from_secs(5))),
+            (vec!["0"], Some(Duration::ZERO)),
+            (vec!["bogus"], None),
+            (vec!["-1"], None),
+            (vec!["10", "10"], None),
+            (
+                vec!["999999999999999999999999999999"],
+                Some(Duration::from_secs(5)),
+            ),
+        ] {
+            let mut headers = HeaderMap::new();
+            for field in fields {
+                headers.append("retry-after", HeaderValue::from_str(field).unwrap());
+            }
+            let response = ProviderResponse {
+                status: StatusCode::TOO_MANY_REQUESTS,
+                body: Bytes::new(),
+                server_delay: crate::retry::parse_server_delay(&headers, wall, observed),
+                headers,
+                failure_cooldown_cap: Duration::from_secs(5),
+            };
+            assert_eq!(response.retry_after(), expected);
+        }
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "retry-after",
+            HeaderValue::from_str(&httpdate::fmt_http_date(wall + Duration::from_secs(10)))
+                .unwrap(),
+        );
+        let response = ProviderResponse {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            body: Bytes::new(),
+            server_delay: crate::retry::parse_server_delay(&headers, wall, observed),
+            headers,
+            failure_cooldown_cap: Duration::from_secs(5),
+        };
+        tokio::time::advance(Duration::from_secs(2)).await;
+        assert_eq!(response.retry_after(), Some(Duration::from_secs(3)));
+        tokio::time::advance(Duration::from_secs(3)).await;
+        assert_eq!(response.retry_after(), Some(Duration::ZERO));
+    }
+
     #[tokio::test]
     async fn provider_response_suppresses_empty_chunks() {
         let polls = Arc::new(AtomicUsize::new(0));
@@ -1264,6 +1346,7 @@ mod tests {
                 &dropped,
             ),
             64,
+            Duration::from_secs(60),
         )
         .await
         .expect("provider response");
@@ -1282,6 +1365,7 @@ mod tests {
         let mut collection = Box::pin(collect_provider_response(
             native_response(chunks, &polls, &dropped),
             64,
+            Duration::from_secs(60),
         ));
         let mut context = Context::from_waker(Waker::noop());
 
@@ -1308,6 +1392,7 @@ mod tests {
                     &dropped,
                 ),
                 64,
+                Duration::from_secs(60),
             )
             .await,
         );
@@ -1328,7 +1413,7 @@ mod tests {
         let collection = tokio::spawn(async move {
             tokio::time::timeout(
                 Duration::from_secs(1),
-                collect_provider_response(response, 64),
+                collect_provider_response(response, 64, Duration::from_secs(60)),
             )
             .await
         });
@@ -1351,8 +1436,14 @@ mod tests {
         let mut chunks = vec![Ok(Bytes::from_static(BODY_SENTINEL.as_bytes()))];
         chunks.extend(empty_chunks(MAX_EMPTY_RESPONSE_CHUNKS + 1));
 
-        let error =
-            error(collect_provider_response(native_response(chunks, &polls, &dropped), 64).await);
+        let error = error(
+            collect_provider_response(
+                native_response(chunks, &polls, &dropped),
+                64,
+                Duration::from_secs(60),
+            )
+            .await,
+        );
         let rendered = format!("{error} {error:?}");
         assert_eq!(error.kind(), AuthErrorKind::ResponseTooLarge);
         assert!(!rendered.contains(BODY_SENTINEL));
