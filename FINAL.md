@@ -5,10 +5,10 @@ Concord v3 is the single active language target. This tree carries
 package manifest. The v3 language, generated client, managed runtime,
 extensions, inspection tooling and the v2.1 → v3 migration tool are
 implemented in this tree; known gaps against the specification are listed in
-the [decision record](dev_doc/decision_record.md). R7 machine qualification passes the complete maintained implementation gate on
+the [decision record](dev_doc/decision_record.md). R8 machine qualification passes the complete maintained implementation gate on
 native Windows and Linux/WSL with pin `1.97.1` and MSRV `1.86.0`. Source-bound
-commands, historical failures and limits are in [R7 validation](dev_doc/reviews/r7_validation.md).
-The external Edition 1 was absent for R7 and full conformance was not independently
+commands, historical failures and limits are in [R8 validation](dev_doc/reviews/r8_validation.md).
+The external Edition 1 was absent for R8 and full conformance was not independently
 re-established. The ordinary `concord-v3` source-branch push is authorized;
 Publication, licensing and remote-release decisions are separate owner
 decisions that this implementation does not make.

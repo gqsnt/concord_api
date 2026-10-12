@@ -102,3 +102,16 @@ re-evaluated for v3**; their evidence refers to v2.1 SHAs.
 | C30 | the prior beta candidate passed its maintained repository checks | Supported | Historical `0f72e865...`: Windows `just verify` exit 0; explicit locked suite, packages, scale/performance, and Windows/Linux platform runs are recorded in `dev_doc/evidence/beta_candidate_0f72e865.md` | evidence record is shown inaccurate | historical beta evidence only; not final-convergence evidence |
 | C31 | macOS is required support for Concord v2.1 | Disconfirmed | Owner decision: Windows and Linux are supported and mandatory; macOS is not currently supported or release-gated | a later explicit owner support-boundary decision | platform policy |
 | C32 | the verified v2.1 beta is integrated locally into `main` without flattening release history | Observed | the merge commit containing this row has pre-merge `main` `f7464c58...` and verified release parent `bc4efb03...`; terminal topology/status checks are recorded in the operator handoff | merge topology differs, or a prohibited push/tag/publication/history rewrite is observed | local beta integration state |
+
+## C75 — R8 authentication correction qualification (2026-10-12)
+
+**Source scope:** `cef236aa2502df5653d77de2975051b5a6d49565`; final documentation changes retain compiled
+inputs, with exact final push identity in the delivered external receipt.
+**CONFIRMED_FIXED:** R8-01/02/03/04 on native discriminating BEFORE/AFTER paths.
+Complete maintained Windows native and Linux/WSL pin 1.97.1/MSRV 1.86.0 gates
+pass; Windows package/workflow/default deny and both analyzers pass. All-features
+deny exits 4 for owner-reserved POL-01 only. [R8 findings](reviews/r8_findings.md)
+and [validation](reviews/r8_validation.md) distinguish controls, setup failures,
+old evidence, platform/feature scope and public malformed-OAuth behavior change.
+No broad performance, human, external-spec, stable, license or publication
+acceptance follows. C74 and historical R7 evidence remain preserved.

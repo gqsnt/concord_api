@@ -2,10 +2,10 @@
 
 <!-- concord-release-status-owner -->
 
-- **Canonical lifecycle status:** Concord v3 unpublished beta source branch, R7 machine qualification (integration candidate / beta lifecycle).
+- **Canonical lifecycle status:** Concord v3 unpublished beta source branch, R8 machine qualification (integration candidate / beta lifecycle).
 - **Workspace version:** `3.0.0-beta.1`; every workspace package has `publish = false`.
 - **Publication:** disabled — all workspace packages remain unpublished.
-- **Recorded:** 2026-10-12. Implementation candidate `e19c7bf0a096d77713c0c8b413f0a7f678080245`.
+- **Recorded:** 2026-10-12. Implementation candidate `cef236aa2502df5653d77de2975051b5a6d49565`.
 - **Supported platforms:** Windows and Linux are supported and mandatory. macOS is not currently a supported or release-gated platform.
 
 **Beta integration decision:** OPEN — the owner retains merge/integration decisions;
@@ -21,7 +21,24 @@ The final documentation commit preserves the separately qualified library and
 CI/fixture input identities. Its terminal
 audit/export and pushed SHA belong to the separate post-commit receipt.
 
-## Current integration state
+## Current R8 integration state
+
+All four R8 findings are CONFIRMED_FIXED on native discriminating paths. New
+Windows native and Linux/WSL qualification passes `just verify-implementation`
+with pin 1.97.1 and MSRV 1.86.0. Windows package/workflow/default deny and both
+analyzers pass. All-feature deny on both platforms retains POL-01 (exit 4,
+BSD-3-Clause rejection for alloc-no-stdlib/alloc-stdlib/brotli); no license policy
+was changed. [R8 validation](reviews/r8_validation.md) and
+[handoff](reviews/r8_handoff.md) bind the new source/evidence. Later Markdown/JSON
+changes retain the exact compiled inputs; final SHA/tree, ordinary branch push,
+remote verification and CI are in the delivered post-commit receipt.
+
+The R8 commission authorizes ordinary source-branch push to concord-v3 only.
+Main/user/foreign work is preserved. Publication remains disabled; beta
+integration, legal authority, namespace, broader V3-O07 performance, external
+Edition 1, human review and stable publication decisions remain separate and open.
+
+## Historical R7 integration state
 
 | Item | State and evidence |
 |---|---|
