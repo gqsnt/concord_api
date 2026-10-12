@@ -246,7 +246,10 @@ async fn delayed_ttl(seconds: u64) -> (bool, usize) {
     let body = format!(
         r#"{{"access_token":"r8-private-token","token_type":"bearer","expires_in":{seconds}}}"#
     );
-    let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
+    let head = format!(
+        "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: {}\r\n\r\n",
+        body.len()
+    );
     let split = body.len() / 2;
     // Real std monotonic elapsed time, unpaused Tokio; the head and partial JSON
     // precede a delay longer than the short token's declared TTL.
@@ -276,13 +279,26 @@ async fn delayed_ttl(seconds: u64) -> (bool, usize) {
         result.is_ok(),
         requests.len() - applications
     );
+    assert_eq!(
+        result.as_ref().unwrap_err().auth_kind(),
+        Some(AuthErrorKind::Unavailable),
+        "expiry must be observed after a complete token body, not a transport failure"
+    );
+    assert_eq!(
+        requests.len() - applications,
+        2,
+        "bounded expiry reevaluation"
+    );
     (result.is_ok(), applications)
 }
 
 async fn delayed_positive() -> (bool, usize) {
     let server = TlsServer::start().unwrap();
     let body = br#"{"access_token":"r8-private-token","token_type":"bearer","expires_in":120}"#;
-    let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
+    let head = format!(
+        "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: {}\r\n\r\n",
+        body.len()
+    );
     server
         .queue_wire_response(vec![
             (Duration::ZERO, [head.as_bytes(), &body[..20]].concat()),
