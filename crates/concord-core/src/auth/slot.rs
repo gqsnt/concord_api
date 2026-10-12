@@ -312,6 +312,10 @@ pub(crate) struct PreparedCredential<M> {
     slot: Arc<CredentialSlot<M>>,
     version: u64,
     value: Arc<M>,
+    /// This preparation already evaluated proactive refresh for this exact
+    /// version while it was inside the skew. Finalization must still check
+    /// actual expiry, rejection and installation identity after every wait.
+    short_lived_checked: bool,
 }
 
 impl<M> Clone for PreparedCredential<M> {
@@ -320,6 +324,7 @@ impl<M> Clone for PreparedCredential<M> {
             slot: Arc::clone(&self.slot),
             version: self.version,
             value: Arc::clone(&self.value),
+            short_lived_checked: self.short_lived_checked,
         }
     }
 }
@@ -914,15 +919,16 @@ where
                 }
             }
             if !rejected_refresh {
-                match freshness(ready.expires_at, now) {
-                    Freshness::Fresh => {
-                        return Ok(PrepareAction::Ready(PreparedCredential {
-                            slot: Arc::clone(self),
-                            version: ready.version,
-                            value: Arc::clone(&ready.value),
-                        }));
-                    }
-                    Freshness::Expired | Freshness::ExpiringSoon => {}
+                let freshness = freshness(ready.expires_at, now);
+                if freshness == Freshness::Fresh
+                    || (freshness == Freshness::ExpiringSoon && self.provider.is_none())
+                {
+                    return Ok(PrepareAction::Ready(PreparedCredential {
+                        slot: Arc::clone(self),
+                        version: ready.version,
+                        value: Arc::clone(&ready.value),
+                        short_lived_checked: freshness == Freshness::ExpiringSoon,
+                    }));
                 }
             }
         }
@@ -1047,6 +1053,8 @@ where
                                     slot: Arc::clone(self),
                                     version,
                                     value,
+                                    short_lived_checked: freshness(expires_at, Instant::now())
+                                        == Freshness::ExpiringSoon,
                                 },
                                 journal.facts(ProviderAcquisitionOutcome::Installed),
                             ),
@@ -1132,7 +1140,7 @@ where
                 // without the slot mutex, then verify that the exact candidate
                 // is still installed and unrejected before selecting it.
                 let expires_at = value.expires_at();
-                let current = {
+                let (current, refreshing) = {
                     let mut state = lock(&self.state)?;
                     let current = !state.exhausted
                         && state.rejected_version != Some(version)
@@ -1144,7 +1152,7 @@ where
                             ready.expires_at = expires_at;
                         }
                     }
-                    current
+                    (current, state.in_flight.is_some())
                 };
                 if !current {
                     continue;
@@ -1156,16 +1164,26 @@ where
                             slot: Arc::clone(&self),
                             version,
                             value,
+                            short_lived_checked: false,
                         });
                     }
-                    Freshness::ExpiringSoon if provider_result == Some(version) => {
+                    Freshness::ExpiringSoon
+                        if self.provider.is_none()
+                            || (!refreshing
+                                && (provider_result == Some(version)
+                                    || (prepared.version == version
+                                        && prepared.short_lived_checked))) =>
+                    {
                         // A provider may deliberately return valid material
                         // with less than the proactive skew remaining. Accept
-                        // it once at this immediate send boundary.
+                        // it for this preparation, including admission
+                        // restarts. The exact version was checked above and
+                        // actual expiry is re-read after every quota wait.
                         return Ok(PreparedCredential {
                             slot: Arc::clone(&self),
                             version,
                             value,
+                            short_lived_checked: true,
                         });
                     }
                     Freshness::Expired if provider_result == Some(version) => {
@@ -1240,6 +1258,8 @@ where
                     slot: Arc::clone(self),
                     version: ready.version,
                     value: Arc::clone(&ready.value),
+                    short_lived_checked: freshness(ready.expires_at, now)
+                        == Freshness::ExpiringSoon,
                 }));
             }
         }

@@ -609,6 +609,14 @@ async fn manual_replacement_during_awaited_finalization_wins_selection() {
         .preflight(core.provider_http(None))
         .await
         .expect("initial short-lived material");
+    // A valid just-acquired short-lived token needs no second refresh (R7-01).
+    // Install genuinely expired material to exercise the awaited refresh race.
+    selector
+        .replace(TestMaterial {
+            id: 2,
+            expires_at: Some(Instant::now() - Duration::from_secs(1)),
+        })
+        .expect("expired intervening installation requires refresh");
 
     let replace = {
         let selector = Arc::clone(&selector);
@@ -686,7 +694,7 @@ async fn finalization_rejects_expired_output_but_accepts_valid_short_lived_mater
 
     for (lifetime, expected_calls, succeeds) in [
         (Duration::ZERO, 2, false),
-        (Duration::from_secs(30), 2, true),
+        (Duration::from_secs(30), 1, true),
     ] {
         let executor = DeterministicExecutor::new();
         let core = core(&executor);

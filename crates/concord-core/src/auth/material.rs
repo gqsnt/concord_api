@@ -151,8 +151,9 @@ impl fmt::Debug for SecretString {
 
 /// Credential material retained by a Concord credential slot.
 ///
-/// Core reads [`expires_at`](Self::expires_at) once, when the material is
-/// installed into a slot and before any slot lock is taken.
+/// Core reads [`expires_at`](Self::expires_at) at installation and again at
+/// final selection after admission waits, always outside the slot lock. Actual
+/// expiry is rechecked even for a valid short-lived provider result.
 ///
 /// # Extension contract
 ///

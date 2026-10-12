@@ -1283,6 +1283,7 @@ mod materialization;
 mod preflight;
 mod provider;
 mod provider_journal;
+mod r7_short_lived;
 mod recovery;
 mod recovery_authority;
 mod source_recovery;
