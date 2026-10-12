@@ -31,6 +31,17 @@ source-aware documentation checks, faithful bounded TLS request framing and
 the genuine two-consumer extracted-archive gate. Focused BEFORE reproductions
 and AFTER regressions are preserved externally, including failed setup attempts.
 
+The fresh impact review additionally found bare-macro origin losses through
+replacing attributes and unread child macros. Their native originals succeed;
+the erroneous conversions alter foreign tokens. The successor requires stable
+import/invocation sources, treats root-wide macro uncertainty separately from
+explicit crate paths, and checks weak Concord globs before granting origin.
+Known Concord macro-use imports preserve standard expression macros. Real CLI
+and Rust controls retain the complete foreign bytes and genuine positive plans.
+New head-policy tests exercise retry, refresh and absence at the deadline; they
+change no production deadline or abandoned-acquisition policy. The S4 protected
+credential fixture retains HTTPS and separately tests exact no-TLS refusal.
+
 Global constraints remain: one managed execution path, fixed total deadlines,
 mechanical replay plus effect/authority/caps, latest credential intent/version,
 monotone contact/head evidence, value-free errors, finite owned state, and no

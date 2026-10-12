@@ -30,13 +30,28 @@ mod outer {
 }
 #[test]
 fn endpoint_credential_paths_compile_and_bind() {
-    let client = outer::inner::CredentialPaths::new().unwrap();
-    client
-        .credentials()
-        .replace_session(outer::Token::try_new("s4-local-token").unwrap())
-        .unwrap();
-    let _ = client.nested().deeper().login().store_as_session();
-    assert!(client.read().plan().is_ok());
+    #[cfg(not(feature = "default-tls"))]
+    {
+        let error =
+            outer::inner::CredentialPaths::new().expect_err("protected fixture requires TLS");
+        assert_eq!(
+            error.kind(),
+            concord::error::ClientBuildErrorKind::TlsUnavailable
+        );
+    }
+    #[cfg(feature = "default-tls")]
+    {
+        let client = outer::inner::CredentialPaths::new().unwrap();
+        client
+            .credentials()
+            .replace_session(outer::Token::try_new("s4-local-token").unwrap())
+            .unwrap();
+        let _ = client.nested().deeper().login().store_as_session();
+        let _ = client
+            .read()
+            .plan()
+            .expect("bound endpoint credential plan");
+    }
 }
 
 pub type ReadRequest = u32;
@@ -72,7 +87,7 @@ fn function_pointer_authored_parameter_binding() {
 macro_rules! identity_case {
     ($module:ident,$client:ident,$snake:literal) => {
         mod $module {
-            concord::api! { client $client { base "https://fixture.test/"; GET read() -> () via concord::Empty; } }
+            concord::api! { client $client { base "http://fixture.test/"; GET read() -> () via concord::Empty; } }
             #[test]
             fn derived_contract_id_is_the_generated_plan_lookup_id() {
                 let expected=concat!($snake,".read");
@@ -91,7 +106,7 @@ identity_case!(all_acronym, ABC, "abc");
 identity_case!(underscore_acronym, Foo_HTTPStatus, "foo_http_status");
 identity_case!(raw, r#HTTPStatus, "http_status");
 
-concord::api! { client TimeoutMetadata { base "https://fixture.test/"; GET read() -> () via concord::Empty; } }
+concord::api! { client TimeoutMetadata { base "http://fixture.test/"; GET read() -> () via concord::Empty; } }
 #[test]
 fn runtime_endpoint_fallback_does_not_rewrite_generated_timeout() {
     let api = TimeoutMetadata::builder()

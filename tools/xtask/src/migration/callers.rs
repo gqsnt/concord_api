@@ -708,9 +708,10 @@ impl DeclIndex {
                             origin_model.glob_namespace_absent(scope, leading, glob, name)
                         })
                     };
-                let source = |anchor: Option<usize>, name: &str| {
-                    at(anchor)
-                        .is_some_and(|scope| origin_model.namespace_source_stable(scope, name))
+                let source = |anchor: Option<usize>, name: &str, namespace| {
+                    at(anchor).is_some_and(|scope| {
+                        origin_model.namespace_source_stable(scope, name, namespace)
+                    })
                 };
                 let mut refined = Imports::collect_with_namespace(
                     &file.file,

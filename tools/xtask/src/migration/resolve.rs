@@ -67,7 +67,7 @@ use syn::punctuated::Punctuated;
 use syn::visit::Visit;
 use syn::{Expr, Item, Meta, Stmt, Token, Type};
 
-use super::rust_file::{Imports, ParsedFile, bare_api_proof, is_concord_crate};
+use super::rust_file::{Imports, ParsedFile, SourceNamespace, bare_api_proof, is_concord_crate};
 
 pub(crate) type ScopeId = usize;
 
@@ -1686,7 +1686,25 @@ impl CrateModel {
     /// The already-resolved external/prelude candidate may not derive its
     /// source namespace from another unknown expansion. Pending API output
     /// remains opaque, and contributes no positive names to this check.
-    pub(crate) fn namespace_source_stable(&self, mut scope: ScopeId, name: &str) -> bool {
+    pub(crate) fn namespace_source_stable(
+        &self,
+        mut scope: ScopeId,
+        name: &str,
+        namespace: SourceNamespace,
+    ) -> bool {
+        // Macro exports and inner macro-use attributes in a child can supply
+        // a bare name at the crate root. An unread or expanding child is not
+        // negative evidence about that root-wide macro namespace. Explicit
+        // external crate paths still use their lexical namespace predicate.
+        if matches!(namespace, SourceNamespace::Macro) {
+            let root = self.root_of(scope);
+            if self.scopes.iter().enumerate().any(|(index, source)| {
+                self.root_of(index) == root
+                    && (source.table.opaque_other || source.table.namespace_expanded)
+            }) {
+                return false;
+            }
+        }
         loop {
             let table = &self.scopes[scope].table;
             if table.opaque_other
@@ -1694,7 +1712,11 @@ impl CrateModel {
                 || table.uncertain_globs
                 || table.uncertain.contains(name)
                 || table.pending_api_header_unknown
-                || table.pending_api_namespaces.contains(name)
+                // Known pending API support modules/types can shadow a crate
+                // path, but cannot define a bare macro. They never contribute
+                // positive origin authority in either namespace.
+                || (matches!(namespace, SourceNamespace::Crate)
+                    && table.pending_api_namespaces.contains(name))
                 || self.synthetic.contains(&self.root_of(scope))
                 || self.files.values().any(|(file, module)| {
                     self.mounts.contains_key(file) && self.within(scope, *module)
@@ -2919,6 +2941,7 @@ impl CrateModel {
             MacroOrigin::NotImported => {
                 let known = |krate: &String| {
                     matches!(krate.as_str(), "std" | "core" | "alloc" | "log" | "tracing")
+                        || is_concord_crate(krate)
                 };
                 if !self.macro_use.iter().all(known) {
                     // Another crate's `#[macro_use]` macros shadow the
@@ -2935,12 +2958,14 @@ impl CrateModel {
         }
     }
 
-    /// Whether no `#[macro_use]` crate other than the standard library, `log`
-    /// and `tracing` may shadow the standard prelude macros.
+    /// Whether every `#[macro_use]` crate has a known macro surface that does
+    /// not replace a standard prelude macro (Concord exports `api`, not these
+    /// expression/attribute macros).
     fn prelude_macros_unshadowed(&self) -> bool {
-        self.macro_use
-            .iter()
-            .all(|krate| matches!(krate.as_str(), "std" | "core" | "alloc" | "log" | "tracing"))
+        self.macro_use.iter().all(|krate| {
+            matches!(krate.as_str(), "std" | "core" | "alloc" | "log" | "tracing")
+                || is_concord_crate(krate)
+        })
     }
 
     /// The name of the standard-library macro a macro path resolves to at
@@ -4103,6 +4128,9 @@ impl Builder<'_, '_> {
                         .find_map(|candidate| self.file_index(candidate));
                     let target = existing.filter(|index| self.assigned[*index].is_none());
                     let child = self.model.new_module(scope, target.is_none());
+                    if target.is_none() {
+                        self.model.scopes[child].table.opaque_other = true;
+                    }
                     self.model.anchors.insert((file, offset), child);
                     self.children.insert((scope, name.clone()), child);
                     if attribute_effects(&module.attrs).gated_path {
@@ -4384,6 +4412,7 @@ impl Builder<'_, '_> {
                         let child = self.model.new_module(scope, item.content.is_none());
                         self.model.anchors.insert((file, offset), child);
                         if item.content.is_none() {
+                            self.model.scopes[child].table.opaque_other = true;
                             let location = self.location(file, item.ident.span());
                             self.model.mark_incomplete(
                                 scope,

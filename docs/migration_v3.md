@@ -833,8 +833,13 @@ Macro invocations are never expanded.
   `#[macro_use] extern crate concord`, no other crate's macros are imported
   with `#[macro_use]` there (the standard library, `log` and `tracing`
   export no `api!`), and no file of the crate defines a `macro_rules! api`
-  (which may be in textual scope, also through `#[macro_use] mod`). A
-  crate-local `macro_rules! api`, another crate's `api`, or a glob of another
+  (which may be in textual scope, also through `#[macro_use] mod`). The
+  import and invocation must have stable source provenance: a replacing
+  attribute, unread child module, or unknown child expansion cannot prove
+  the absence of a crate-wide exported macro or inner `#![macro_use]`.
+  A complete known child that supplies no such macro preserves the proof.
+  An unrelated child does not erase an explicitly imported API origin.
+  A crate-local `macro_rules! api`, another crate's `api`, or a glob of another
   crate disproves it, and `crate::` or cross-file paths are not followed;
   such an invocation is reported with `C3-MIGRATE-API-MACRO-UNRESOLVED` and
   left unchanged.

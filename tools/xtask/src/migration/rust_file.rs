@@ -205,7 +205,7 @@ pub(crate) enum ApiMacro {
     /// crate-local `macro_rules! api` (in textual scope, possibly through
     /// `#[macro_use] mod`) or another `#[macro_use]` crate may be the macro
     /// instead; the crate decides (see [`Imports::prove_bare_api`]).
-    Bare,
+    Bare { source_stable: bool },
     /// Not proved to be Concord's `api!` (the reason); an invocation named
     /// `api` is reported and not migrated.
     Unresolved { named_api: bool, reason: String },
@@ -244,7 +244,7 @@ impl Imports {
     pub(crate) fn has_bare_api(&self) -> bool {
         self.api_macros
             .values()
-            .any(|resolution| matches!(resolution, ApiMacro::Bare))
+            .any(|resolution| matches!(resolution, ApiMacro::Bare { .. }))
     }
 
     /// Records whether the crate proves that a bare `api!` of this file is
@@ -267,8 +267,14 @@ impl Imports {
                     },
                     _,
                 ) => Some((*offset, reason.as_str())),
-                (ApiMacro::Bare, Some(Err(reason))) => Some((*offset, reason.as_str())),
-                (ApiMacro::Bare, None) => Some((*offset, UNPROVED_BARE_API)),
+                (ApiMacro::Bare { .. }, Some(Err(reason))) => Some((*offset, reason.as_str())),
+                (ApiMacro::Bare { .. }, None) => Some((*offset, UNPROVED_BARE_API)),
+                (
+                    ApiMacro::Bare {
+                        source_stable: false,
+                    },
+                    Some(Ok(())),
+                ) => Some((*offset, UNSTABLE_BARE_API)),
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -308,7 +314,9 @@ impl Imports {
                 .get(&segment.ident.span().byte_range().start)
             {
                 Some(ApiMacro::Concord) => true,
-                Some(ApiMacro::Bare) => matches!(self.bare_api, Some(Ok(()))),
+                Some(ApiMacro::Bare { source_stable }) => {
+                    *source_stable && matches!(self.bare_api, Some(Ok(())))
+                }
                 _ => false,
             }
         })
@@ -317,10 +325,12 @@ impl Imports {
 
 /// Why a bare `api!` is not Concord's before its crate is examined.
 const UNPROVED_BARE_API: &str = "a bare `api!` with nothing of that name imported in this file names Concord's macro only through `#[macro_use] extern crate concord` at its crate root (edition 2024 has no prelude `api!`), which the tool could not examine";
+const UNSTABLE_BARE_API: &str = "the source namespace of a bare `api!` may be supplied or replaced by an unknown expansion; macro-use provenance is not proved";
 
 /// Whether a bare `api!` in a crate whose root has `root_items` is proved to
 /// be Concord's: the root imports Concord's macros with an unconditional
-/// `#[macro_use] extern crate concord`, no other crate's macros with
+/// `#[macro_use] extern crate concord` whose item cannot be replaced by an
+/// attribute, no other crate's macros with
 /// `#[macro_use]` (the standard library, `log` and `tracing` export no
 /// `api!`), and no file of the crate defines a `macro_rules! api`
 /// (`local_rules` names the first such file). `root` names the root file.
@@ -345,7 +355,13 @@ pub(crate) fn bare_api_proof(
             continue;
         };
         let name = extern_crate.ident.to_string();
-        let gated = super::resolve::attribute_effects(&extern_crate.attrs).gated;
+        let effects = super::resolve::attribute_effects(&extern_crate.attrs);
+        if effects.may_be_macro() {
+            return Err(format!(
+                "the macro-use extern item at the crate root `{root}` has an attribute that may replace it or supply another `api!`; its macro origin is not proved"
+            ));
+        }
+        let gated = effects.gated;
         match name.as_str() {
             "concord" | "concord_macros" if applies && !gated => proved = true,
             "concord" | "concord_macros" => conditional = true,
@@ -414,7 +430,13 @@ enum ApiAnswer {
 /// spelling. A path to another crate, a `crate::` path, another crate's glob
 /// or an ambiguity is not proved to be Concord's macro.
 pub(crate) type NamespaceProof<'a> = dyn Fn(Option<usize>, bool, &[String], &str) -> bool + 'a;
-pub(crate) type NamespaceOriginProof<'a> = dyn Fn(Option<usize>, &str) -> bool + 'a;
+#[derive(Clone, Copy)]
+pub(crate) enum SourceNamespace {
+    Crate,
+    Macro,
+}
+pub(crate) type NamespaceOriginProof<'a> =
+    dyn Fn(Option<usize>, &str, SourceNamespace) -> bool + 'a;
 
 struct ApiScopes<'a> {
     namespace: Option<&'a NamespaceProof<'a>>,
@@ -491,7 +513,10 @@ impl ApiScopes<'_> {
                 // only through `#[macro_use] extern crate concord`, which the
                 // crate decides.
                 ApiAnswer::NotFound if segments.len() == 1 && named_api && !*leading => {
-                    ApiMacro::Bare
+                    let source_stable = !walker.source_origin.is_some_and(|proof| {
+                        !proof(walker.scopes[*scope].anchor, "api", SourceNamespace::Macro)
+                    });
+                    ApiMacro::Bare { source_stable }
                 }
                 ApiAnswer::NotFound => ApiMacro::Unresolved {
                     named_api: true,
@@ -546,7 +571,7 @@ impl ApiScopes<'_> {
             }
             if self
                 .source_origin
-                .is_some_and(|proof| !proof(table.anchor, name))
+                .is_some_and(|proof| !proof(table.anchor, name, SourceNamespace::Crate))
             {
                 return Some(format!(
                     "the source namespace of `{name}` may be supplied or shadowed by an unknown item, statement, attribute or derive expansion; macro ownership is not proved"
@@ -668,7 +693,7 @@ impl ApiScopes<'_> {
                     }
                     if self
                         .source_origin
-                        .is_some_and(|proof| !proof(table.anchor, first))
+                        .is_some_and(|proof| !proof(table.anchor, first, SourceNamespace::Crate))
                     {
                         return ApiAnswer::Other(format!(
                             "the source namespace of `{first}` may contain an unknown expansion or extern alias"
@@ -817,7 +842,7 @@ impl ApiScopes<'_> {
                     }
                     if self
                         .source_origin
-                        .is_some_and(|proof| !proof(table.anchor, first))
+                        .is_some_and(|proof| !proof(table.anchor, first, SourceNamespace::Crate))
                     {
                         return ApiAnswer::Other(format!(
                             "the source namespace of `{first}` may contain an unknown expansion or extern alias"
@@ -836,7 +861,13 @@ impl ApiScopes<'_> {
             let facade = first == "concord"
                 && matches!(path, [_] | [_, _] if path.get(1).is_none_or(|second| second == "prelude"));
             return if facade && name == "api" {
-                ApiAnswer::Concord
+                if self.source_origin.is_some_and(|proof| {
+                    !proof(self.scopes[scope].anchor, name, SourceNamespace::Macro)
+                }) {
+                    ApiAnswer::Other("a weak Concord glob cannot prove this macro name when an unread or expanding source may supply a stronger crate-wide macro binding".to_owned())
+                } else {
+                    ApiAnswer::Concord
+                }
             } else {
                 ApiAnswer::NotFound
             };

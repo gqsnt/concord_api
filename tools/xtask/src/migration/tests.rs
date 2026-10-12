@@ -4725,3 +4725,106 @@ fn s5_thread_local_initializers_preserve_whole_crate_trait_uncertainty() {
             .contains("r.replace_x(None)")
     );
 }
+
+#[test]
+fn bare_macro_use_authority_requires_stable_import_and_invocation_sources() {
+    let workspace = TempDir::new("bare-api-source-origin");
+    workspace.write("Cargo.toml", "[package]\nname=\"bare-origin\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[dependencies]\nconcord=\"3\"\n");
+    let declaration = r#"api! { client Api { base "http://bare.example.test/";
+GET item(x?: u32) -> () via ::concord::Empty { path ["item"]; query { "x" = endpoint.x; } } } }
+fn call(r: api::ItemRequest) { let _ = r.set_x(None); }
+"#;
+    for prefix in [
+        "",
+        "#[allow(unused_imports)]\n",
+        "#[cfg_attr(any(), unknown_attribute)]\n",
+    ] {
+        let source = format!("{prefix}#[macro_use]\nextern crate concord;\n{declaration}");
+        let input = workspace.write("src/lib.rs", &source);
+        let result = migrate(&input, &Settings::default()).expect("genuine macro-use origin");
+        let output = result.converted("lib.rs").expect("source");
+        assert!(output.contains("path \"item\";"));
+        assert!(output.contains("r.replace_x(None)"));
+        assert!(
+            !result
+                .diagnostics
+                .iter()
+                .any(|entry| entry.code == Code::ApiMacroUnresolved)
+        );
+    }
+    for (prefix, item_attribute, extra) in [
+        ("#[unknown_attribute]\n", "", ""),
+        (
+            "#[cfg_attr(feature=\"maybe\", unknown_attribute)]\n",
+            "",
+            "",
+        ),
+        ("", "#[unknown_attribute]\n", ""),
+        (
+            "",
+            "#[cfg_attr(feature=\"maybe\", unknown_attribute)]\n",
+            "",
+        ),
+        (
+            "",
+            "",
+            "macro_rules! possible_api { () => { macro_rules! api { () => {} } } } possible_api!();\n",
+        ),
+    ] {
+        let source = format!(
+            "{prefix}#[macro_use]\nextern crate concord;\n{extra}{item_attribute}{declaration}"
+        );
+        let input = workspace.write("src/lib.rs", &source);
+        let result = migrate(&input, &Settings::default()).expect("unknown source origin");
+        assert_eq!(result.converted("lib.rs"), Some(source.as_str()));
+        assert_eq!(result.declarations, 0);
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|entry| entry.code == Code::ApiMacroUnresolved)
+        );
+    }
+}
+
+#[test]
+fn bare_macro_use_cannot_ignore_child_macro_namespace_authority() {
+    let workspace = TempDir::new("bare-api-child-origin");
+    workspace.write("Cargo.toml", "[package]\nname=\"bare-child-origin\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[dependencies]\nconcord=\"3\"\n");
+    let source = "#[macro_use]\nextern crate concord;\nmod hidden;\napi! { client Api { base \"http://bare.example.test/\"; GET item() -> () via ::concord::Empty { path [\"item\"]; } } }\n";
+    let input = workspace.write("src/lib.rs", source);
+    let missing = migrate(&input, &Settings::default()).unwrap();
+    assert_eq!(missing.converted("lib.rs"), Some(source));
+    assert_eq!(missing.declarations, 0);
+    assert!(
+        missing
+            .diagnostics
+            .iter()
+            .any(|d| d.code == Code::ApiMacroUnresolved)
+    );
+    workspace.write("src/hidden.rs", "pub fn inert() {}\n");
+    let complete = migrate(&workspace.0, &Settings::default()).unwrap();
+    assert_eq!(complete.declarations, 1);
+    assert!(
+        complete
+            .converted("src/lib.rs")
+            .unwrap()
+            .contains("path \"item\";")
+    );
+    assert!(
+        !complete
+            .diagnostics
+            .iter()
+            .any(|d| d.code == Code::ApiMacroUnresolved)
+    );
+    workspace.write("src/hidden.rs", "#[unknown_attribute]\nfn supply() {}\n");
+    let attributed = migrate(&workspace.0, &Settings::default()).unwrap();
+    assert_eq!(attributed.declarations, 0);
+    assert_eq!(attributed.converted("src/lib.rs"), Some(source));
+    assert!(
+        attributed
+            .diagnostics
+            .iter()
+            .any(|d| d.code == Code::ApiMacroUnresolved)
+    );
+}
