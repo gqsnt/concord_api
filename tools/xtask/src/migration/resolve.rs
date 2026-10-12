@@ -1016,7 +1016,7 @@ pub(crate) fn cfg_constant(predicate: &Meta) -> Option<bool> {
 /// Boolean literals are Rust cfg predicates, but are not `syn::Meta` paths.
 enum CfgPredicate {
     Boolean(syn::LitBool),
-    Meta(Meta),
+    Meta(Box<Meta>),
 }
 
 impl syn::parse::Parse for CfgPredicate {
@@ -1024,7 +1024,7 @@ impl syn::parse::Parse for CfgPredicate {
         if input.peek(syn::LitBool) {
             input.parse().map(Self::Boolean)
         } else {
-            input.parse().map(Self::Meta)
+            input.parse().map(Box::new).map(Self::Meta)
         }
     }
 }
