@@ -132,6 +132,8 @@ jobs:
       - run: cargo check -p concord-extras --lib --all-features --locked
       - run: cargo check -p concord --lib --all-features --locked
       - run: cargo check -p concord-core -p concord-macros -p concord-extras -p concord --lib --no-default-features --locked
+      - name: Fetch the standalone fixture lock before offline MSRV checks
+        run: cargo fetch --locked --manifest-path fixtures/Cargo.toml
       - run: cargo run --locked -p concord-xtask -- msrv-ui --locked
 
   fixtures_policy:
@@ -146,6 +148,8 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-fixtures
+      - name: Fetch the standalone fixture lock before offline checks
+        run: cargo fetch --locked --manifest-path fixtures/Cargo.toml
       - run: cargo run --locked -p concord-xtask -- fixtures --locked
       - name: Dependency and license policy
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25
