@@ -360,6 +360,9 @@ enum ScopeKind {
 
 #[derive(Default)]
 struct Table {
+    /// Root-visible literal macro definitions/exports. Negative provenance
+    /// only; ordinary private child definitions do not populate this set.
+    root_macros: HashSet<String>,
     /// `(entity, visibility)` per name in the type namespace.
     types: HashMap<String, Vec<(Entity, Vis)>>,
     /// `(entity, visibility)` per name in the value namespace.
@@ -1752,12 +1755,72 @@ impl CrateModel {
         name: &str,
         namespace: SourceNamespace,
     ) -> bool {
+        let prefix = match namespace {
+            SourceNamespace::AbsoluteCrate => Some((true, false)),
+            SourceNamespace::ImportCrate { leading } => Some((leading, true)),
+            _ => None,
+        };
+        if let Some((leading, importing)) = prefix {
+            // Modern prefixes retain ApiScopes' existing lexical/extern
+            // checks. Preserve the documented assumed Concord names when
+            // no root binding competes; a possible 2015 root binding needs
+            // the additional edition-aware positive identity proof.
+            if matches!(self.edition, Edition::Rust2018OrLater) {
+                return true;
+            }
+            let root = self.root_of(scope);
+            let table = &self.scopes[root].table;
+            if !table.types.contains_key(name)
+                && !table.imports.contains_key(name)
+                && !table.uncertain.contains(name)
+                && table.globs.is_empty()
+                && !table.uncertain_globs
+            {
+                return true;
+            }
+            // Keep Crate's complete negative source proof before asking the
+            // existing edition-aware resolver for positive prefix identity.
+            // Pending API output contributes no entity or import here.
+            if !self.namespace_source_stable(scope, name, SourceNamespace::Crate) {
+                return false;
+            }
+            let mut cx = Lookup::new();
+            cx.stable_macro_source = true;
+            let segments = vec![name.to_owned()];
+            let answer = if importing {
+                self.resolve_use(
+                    scope,
+                    &UsePath {
+                        leading_colon: leading,
+                        segments,
+                    },
+                    Ns::Type,
+                    &mut cx,
+                )
+            } else {
+                self.resolve_segments(scope, leading, &segments, Ns::Type, &mut cx)
+            };
+            return match answer {
+                Res::Found(entities) => match entities.as_slice() {
+                    [Entity::External(path)] => path.as_slice() == [name],
+                    [Entity::Scope(root)] => self
+                        .library
+                        .as_ref()
+                        .is_some_and(|(library, actual)| library == name && root == actual),
+                    _ => false,
+                },
+                Res::NotFound | Res::Unknown => false,
+            };
+        }
         // Macro exports and inner macro-use attributes in a child can supply
         // a bare name at the crate root. An unread or expanding child is not
         // negative evidence about that root-wide macro namespace. Explicit
         // external crate paths still use their lexical namespace predicate.
         if matches!(namespace, SourceNamespace::Macro) {
             let root = self.root_of(scope);
+            if self.scopes[root].table.root_macros.contains(name) {
+                return false;
+            }
             if self.scopes.iter().enumerate().any(|(index, source)| {
                 self.root_of(index) == root
                     && (source.table.opaque_other || source.table.namespace_expanded)
@@ -1908,7 +1971,9 @@ impl CrateModel {
             && !table.opaque_other
             && !table.pending_api_header_unknown
             && !table.pending_api_namespaces.contains(name);
-        if (table.opaque && !(pending_api_only && trusted_prefix)) || table.expanded {
+        if (table.opaque && !(pending_api_only && (trusted_prefix || cx.stable_macro_source)))
+            || table.expanded
+        {
             return Res::Unknown;
         }
         let mut from_globs = Vec::new();
@@ -4525,29 +4590,30 @@ impl Builder<'_, '_> {
                 if name == "_" {
                     return Vec::new();
                 }
-                let path = if item.ident == "self" {
-                    UsePath {
-                        leading_colon: false,
-                        segments: vec!["crate".to_owned()],
-                    }
+                // An extern declaration binds its crate directly. Modelling
+                // it as `use ::name` creates a self-import cycle in 2015.
+                let entity = if item.ident == "self" {
+                    Entity::Scope(model.root_of(scope))
                 } else {
-                    UsePath {
-                        leading_colon: true,
-                        segments: vec![canonical(&item.ident)],
-                    }
+                    Entity::External(vec![canonical(&item.ident)])
                 };
-                model.scopes[scope]
-                    .table
-                    .imports
-                    .entry(name.clone())
-                    .or_default()
-                    .push((path, Vis::of(&item.vis)));
+                model.define(scope, Ns::Type, name.clone(), entity, Vis::of(&item.vis));
                 vec![name]
             }
             Item::Macro(item) => {
                 let defines_macro = item.ident.is_some();
                 if let Some(ident) = &item.ident {
                     let name = canonical(ident);
+                    let root = self.model.root_of(scope);
+                    if item.mac.path.is_ident("macro_rules")
+                        && (scope == root
+                            || attribute_applies(&item.attrs, "macro_export").is_some())
+                    {
+                        self.model.scopes[root]
+                            .table
+                            .root_macros
+                            .insert(name.clone());
+                    }
                     self.model.macro_rules.insert(name.clone());
                     self.model
                         .macro_definitions

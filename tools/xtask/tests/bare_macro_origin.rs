@@ -154,6 +154,18 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
         boolean_item,
         include_str!("fixtures/trust_bare_item_attribute.rs")
     );
+    let prelude_genuine = include_str!("fixtures/trust_bare_genuine.rs").replacen(
+        "api! {",
+        "concord::prelude::api! {",
+        1,
+    );
+    let leading_genuine =
+        include_str!("fixtures/trust_bare_genuine.rs").replacen("api! {", "::concord::api! {", 1);
+    let leading_prelude_genuine = include_str!("fixtures/trust_bare_genuine.rs").replacen(
+        "api! {",
+        "::concord::prelude::api! {",
+        1,
+    );
     for (label, source, foreign, child) in [
         (
             "extern",
@@ -171,6 +183,14 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
         (
             "genuine",
             include_str!("fixtures/trust_bare_genuine.rs"),
+            false,
+            None,
+        ),
+        ("genuine-prelude", prelude_genuine.as_str(), false, None),
+        ("genuine-leading", leading_genuine.as_str(), false, None),
+        (
+            "genuine-leading-prelude",
+            leading_prelude_genuine.as_str(),
             false,
             None,
         ),
@@ -299,6 +319,8 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
         ),
         ("direct-path", "#[path=\"alt.rs\"]", false, true),
         ("complete-inert", "", false, false),
+        ("readable-export", "", true, true),
+        ("private-child", "", true, false),
     ] {
         let input_root = owned.0.join(format!("package-{label}"));
         fs::create_dir_all(input_root.join("src")).unwrap();
@@ -318,7 +340,13 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
                 "extern crate concord;\nuse concord::*;",
             );
         }
-        let child = "pub fn inert() {}\n";
+        let private_child =
+            include_str!("fixtures/trust_bare_unread_export.rs").replace("#[macro_export]\n", "");
+        let child = match label {
+            "readable-export" => include_str!("fixtures/trust_bare_unread_export.rs"),
+            "private-child" => private_child.as_str(),
+            _ => "pub fn inert() {}\n",
+        };
         let alternative = include_str!("fixtures/trust_bare_unread_export.rs");
         for (file, bytes) in [
             ("main.rs", source.as_str()),
@@ -407,6 +435,112 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
         );
     }
 
+    // Leading and use paths must retain the actual package edition. Each
+    // original and unchanged converted output runs against the real facade.
+    let app_manifest_path = root.join("app/Cargo.toml");
+    let app_manifest = fs::read_to_string(&app_manifest_path).unwrap();
+    let absolute_foreign = include_str!("fixtures/trust_absolute_2015.rs");
+    let absolute_import = absolute_foreign.replace("::concord::api!", "use concord::api;\napi!");
+    let absolute_glob = absolute_foreign.replace("::concord::api!", "use concord::*;\napi!");
+    let leading_import = absolute_foreign.replace("::concord::api!", "use ::concord::api;\napi!");
+    let leading_glob = absolute_foreign.replace("::concord::api!", "use ::concord::*;\napi!");
+    for (label, source, edition, foreign) in [
+        ("absolute-2015", absolute_foreign, "2015", true),
+        ("import-2015", absolute_import.as_str(), "2015", true),
+        ("glob-2015", absolute_glob.as_str(), "2015", true),
+        ("leading-import-2015", leading_import.as_str(), "2015", true),
+        ("leading-glob-2015", leading_glob.as_str(), "2015", true),
+        (
+            "absolute-2024-external",
+            include_str!("fixtures/trust_absolute_2024_positive.rs"),
+            "2024",
+            false,
+        ),
+    ] {
+        let input_root = owned.0.join(format!("package-{label}"));
+        fs::create_dir_all(input_root.join("src")).unwrap();
+        let manifest = format!(
+            "[package]\nname=\"absolute-origin\"\nversion=\"0.0.0\"\nedition=\"{edition}\"\n[dependencies]\nconcord=\"3\"\n"
+        );
+        fs::write(input_root.join("Cargo.toml"), &manifest).unwrap();
+        fs::write(
+            input_root.join("src/main.rs"),
+            format!("{source}\nfn main() {{ verify(); }}\n"),
+        )
+        .unwrap();
+        fs::write(
+            &app_manifest_path,
+            app_manifest.replace("edition=\"2024\"", &format!("edition=\"{edition}\"")),
+        )
+        .unwrap();
+        fs::write(
+            root.join("app/src/main.rs"),
+            fs::read(input_root.join("src/main.rs")).unwrap(),
+        )
+        .unwrap();
+        let before = cargo(
+            root,
+            &["run", "--locked", "--offline", "-p", "bare-origin-app"],
+        );
+        let output = owned.0.join(format!("converted-{label}"));
+        let report_path = owned.0.join(format!("{label}.json"));
+        let result = Command::new(env!("CARGO_BIN_EXE_concord-xtask"))
+            .args(["migrate-v3", "--input"])
+            .arg(&input_root)
+            .args(["--apply", "--output"])
+            .arg(&output)
+            .arg("--report")
+            .arg(&report_path)
+            .output()
+            .unwrap();
+        let report: serde_json::Value =
+            serde_json::from_slice(&fs::read(report_path).unwrap()).unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(i32::from(foreign)),
+            "{label}: {report}"
+        );
+        assert_eq!(report["summary"]["automated_edits"], 0);
+        assert_eq!(report["summary"]["declarations"], 0);
+        assert_eq!(
+            report["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| entry["code"] == "C3-MIGRATE-API-MACRO-UNRESOLVED"),
+            foreign
+        );
+        if !foreign {
+            assert_eq!(
+                report["diagnostics"].as_array().unwrap().len(),
+                1,
+                "recognized genuine declaration {label}"
+            );
+            assert_eq!(report["diagnostics"][0]["code"], "C3-MIGRATE-ALREADY-V3");
+        }
+        for file in ["Cargo.toml", "src/main.rs"] {
+            assert_eq!(
+                fs::read(output.join(file)).unwrap(),
+                fs::read(input_root.join(file)).unwrap(),
+                "complete {label}/{file}"
+            );
+        }
+        fs::write(
+            root.join("app/src/main.rs"),
+            fs::read(output.join("src/main.rs")).unwrap(),
+        )
+        .unwrap();
+        let after = cargo(
+            root,
+            &["run", "--locked", "--offline", "-p", "bare-origin-app"],
+        );
+        assert_eq!(
+            before.stdout, after.stdout,
+            "edition-native behavior {label}"
+        );
+    }
+    fs::write(&app_manifest_path, app_manifest).unwrap();
+
     // A canonical-looking import in the default child cannot prove a
     // library's own export when cfg_attr selects an attributed alternative.
     // This consumer is an actual library package named concord, invoked by
@@ -473,12 +607,64 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
         ),
         ("own-direct", r#"#[path="alt.rs"]"#),
         ("own-root-glob", ""),
+        ("own-subpath", ""),
+        ("own-subpath-leading", ""),
+        ("own-subpath-prelude", ""),
+        ("own-subpath-imported", ""),
+        ("own-subpath-glob", ""),
+        ("own-subpath-leading-glob", ""),
+        ("own-subpath-block-import", ""),
     ] {
         let input = owned.0.join(label);
         fs::create_dir_all(input.join("src")).unwrap();
         fs::write(input.join("Cargo.toml"), "[package]\nname=\"concord\"\nversion=\"3.0.0\"\nedition=\"2024\"\n[lib]\npath=\"src/lib.rs\"\n[dependencies]\nconcord_macros={package=\"concord-macros\",version=\"3\"}\nsol_origin_attr={path=\"../producer\"}\n[features]\nalt=[]\n").unwrap();
         let source = if label == "own-root-glob" {
             include_str!("fixtures/trust_own_root_glob.rs").to_owned()
+        } else if label.starts_with("own-subpath") {
+            let source = include_str!("fixtures/trust_own_subpath.rs");
+            match label {
+                "own-subpath" => source.to_owned(),
+                "own-subpath-leading" => source.replace("concord::m::api!", "::concord::m::api!"),
+                "own-subpath-prelude" => source
+                    .replace("mod m", "mod prelude")
+                    .replace("concord::m::api!", "concord::prelude::api!"),
+                "own-subpath-imported" | "own-subpath-glob" | "own-subpath-leading-glob" => {
+                    let (header, body) = source.split_once("concord::m::api!").unwrap();
+                    let (declaration, verify) = body.split_once("pub fn verify()").unwrap();
+                    let import = match label {
+                        "own-subpath-imported" => "use concord::m::api;",
+                        "own-subpath-glob" => "use concord::prelude::*;",
+                        _ => "use ::concord::prelude::*;",
+                    };
+                    let header = if label == "own-subpath-imported" {
+                        header.to_owned()
+                    } else {
+                        header.replace("mod m", "mod prelude")
+                    };
+                    format!(
+                        "{header}\nmod user {{ {import}\napi!{declaration}\npub fn verify(){verify}\n}}\npub fn verify(){{user::verify();}}\n"
+                    )
+                }
+                "own-subpath-block-import" => {
+                    let (header, body) = source.split_once("concord::m::api!").unwrap();
+                    let (declaration, verify) = body.split_once("pub fn verify()").unwrap();
+                    let verification = verify
+                        .trim()
+                        .strip_prefix('{')
+                        .unwrap()
+                        .trim()
+                        .strip_suffix('}')
+                        .unwrap();
+                    let import = "use concord::prelude::api;";
+                    let header = header
+                        .replace("extern crate self as concord;", "")
+                        .replace("mod m", "mod prelude");
+                    format!(
+                        "{header}\npub fn verify(){{extern crate self as concord;{import}\napi!{declaration}\n{verification}\n}}\n"
+                    )
+                }
+                _ => unreachable!(),
+            }
         } else {
             format!(
                 "extern crate self as concord;\n{attribute}\nmod hidden;\npub(crate) use hidden::api;\n{declaration}"

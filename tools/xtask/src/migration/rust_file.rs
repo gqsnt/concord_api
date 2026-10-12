@@ -433,6 +433,12 @@ pub(crate) type NamespaceProof<'a> = dyn Fn(Option<usize>, bool, &[String], &str
 #[derive(Clone, Copy)]
 pub(crate) enum SourceNamespace {
     Crate,
+    /// Leading invocation prefix, resolved against the actual Cargo edition.
+    AbsoluteCrate,
+    /// A use/glob prefix retains both its written scope and edition semantics.
+    ImportCrate {
+        leading: bool,
+    },
     Macro,
     /// A strong macro import's source path: lexical stability, without the
     /// crate-wide absence proof required by bare and weak-glob lookup.
@@ -669,6 +675,36 @@ impl ApiScopes<'_> {
         }
     }
 
+    /// An actual self alias is distinct from a package being eligible to
+    /// provide one. A local submodule's export has no facade authority.
+    fn own_self_alias(&self, mut scope: usize, name: &str) -> bool {
+        loop {
+            let table = &self.scopes[scope];
+            if let Some(actual) = table.extern_aliases.get(name) {
+                return actual == "self" && self.own_library == Some(name);
+            }
+            let Some(parent) = table.parent else {
+                return false;
+            };
+            scope = parent;
+        }
+    }
+
+    /// Only the external facade root/prelude and known package roots export
+    /// api. Own-self source proof currently establishes the root alone.
+    fn api_export_path(&self, scope: usize, path: &[String]) -> bool {
+        match path {
+            [krate, name] => is_concord_crate(krate) && name == "api",
+            [krate, module, name] => {
+                krate == "concord"
+                    && module == "prelude"
+                    && name == "api"
+                    && !self.own_self_alias(scope, krate)
+            }
+            _ => false,
+        }
+    }
+
     /// Resolves a macro path used in `scope`.
     fn resolve(&self, scope: usize, leading: bool, segments: &[String], depth: usize) -> ApiAnswer {
         if depth > API_DEPTH {
@@ -682,6 +718,15 @@ impl ApiScopes<'_> {
         };
         if is_concord_crate(first) {
             if leading {
+                if self.source_origin.is_some_and(|proof| {
+                    !proof(
+                        self.scopes[scope].anchor,
+                        first,
+                        SourceNamespace::AbsoluteCrate,
+                    )
+                }) {
+                    return ApiAnswer::Other("the absolute crate prefix is not proved to name Concord under this package's edition".to_owned());
+                }
                 let mut current = Some(scope);
                 while let Some(id) = current {
                     let table = &self.scopes[id];
@@ -712,7 +757,7 @@ impl ApiScopes<'_> {
             }
             return if prefix.is_empty() {
                 ApiAnswer::Other(format!("`{first}` names a crate, not a macro"))
-            } else if last == "api" {
+            } else if self.api_export_path(scope, segments) {
                 ApiAnswer::Concord
             } else {
                 ApiAnswer::Other(format!("`{}` is not Concord's `api!`", segments.join("::")))
@@ -800,6 +845,22 @@ impl ApiScopes<'_> {
         path: &[String],
         depth: usize,
     ) -> ApiAnswer {
+        if let Some(first) = path.first().filter(|first| is_concord_crate(first)) {
+            if self.source_origin.is_some_and(|proof| {
+                !proof(
+                    self.scopes[scope].anchor,
+                    first,
+                    SourceNamespace::ImportCrate { leading },
+                )
+            }) {
+                return ApiAnswer::Other("the import crate prefix is not proved to name Concord under this package's edition".to_owned());
+            }
+        }
+        if path.first().is_some_and(|first| is_concord_crate(first))
+            && !self.api_export_path(scope, path)
+        {
+            return ApiAnswer::Other("this import path has no proved Concord api export at the scope where it is written".to_owned());
+        }
         // Check at the scope where `use` is written, before module_of drops
         // block-local declarations. The recursive resolver repeats this guard.
         if !leading {
@@ -830,6 +891,15 @@ impl ApiScopes<'_> {
             return ApiAnswer::Other("a glob import of an empty path".to_owned());
         };
         if is_concord_crate(first) {
+            if self.source_origin.is_some_and(|proof| {
+                !proof(
+                    self.scopes[scope].anchor,
+                    first,
+                    SourceNamespace::ImportCrate { leading },
+                )
+            }) {
+                return ApiAnswer::Other("the glob crate prefix is not proved to name Concord under this package's edition".to_owned());
+            }
             if leading {
                 let mut current = Some(scope);
                 while let Some(id) = current {
@@ -861,8 +931,12 @@ impl ApiScopes<'_> {
             }
             // Concord's facade root and prelude export `api`; its other
             // modules export no macro.
-            let facade = first == "concord"
-                && matches!(path, [_] | [_, _] if path.get(1).is_none_or(|second| second == "prelude"));
+            if self.own_self_alias(scope, first) && path.len() != 1 {
+                return ApiAnswer::Other("an own-self alias only has a proved canonical api export at its root; local submodule exports are not facade provenance".to_owned());
+            }
+            let mut exported = path.to_vec();
+            exported.push(name.to_owned());
+            let facade = first == "concord" && self.api_export_path(scope, &exported);
             return if facade && name == "api" {
                 if self.source_origin.is_some_and(|proof| {
                     !proof(self.scopes[scope].anchor, name, SourceNamespace::Macro)

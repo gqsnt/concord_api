@@ -4998,3 +4998,128 @@ fn own_library_root_glob_requires_canonical_macro_origin() {
             .any(|entry| entry.code == Code::ApiMacroUnresolved)
     );
 }
+
+#[test]
+fn own_self_alias_does_not_certify_local_api_subpaths() {
+    let workspace = TempDir::new("own-subpath-origin");
+    workspace.write("Cargo.toml", "[package]\nname=\"concord\"\nversion=\"3.0.0\"\nedition=\"2024\"\n[lib]\npath=\"src/lib.rs\"\n[dependencies]\nconcord_macros={package=\"concord-macros\",version=\"3\"}\n");
+    let original = include_str!("../../tests/fixtures/trust_own_subpath.rs");
+    for path in [
+        "concord::m::api!",
+        "::concord::m::api!",
+        "concord::prelude::api!",
+        "::concord::prelude::api!",
+    ] {
+        let source = if path.contains("prelude") {
+            original.replace("mod m", "mod prelude")
+        } else {
+            original.to_owned()
+        }
+        .replace("concord::m::api!", path);
+        workspace.write("src/lib.rs", &source);
+        let result = migrate(&workspace.0, &Settings::default()).unwrap();
+        assert_eq!(
+            result.converted("src/lib.rs"),
+            Some(source.as_str()),
+            "{path}"
+        );
+        assert_eq!(result.declarations, 0, "{path}");
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|entry| entry.code == Code::ApiMacroUnresolved),
+            "{path}"
+        );
+    }
+    // Package eligibility does not mean an explicit external crate is self.
+    workspace.write("Cargo.toml", "[package]\nname=\"concord\"\nversion=\"3.0.0\"\nedition=\"2024\"\n[lib]\npath=\"src/lib.rs\"\n[dependencies]\nconcord_macros={package=\"concord-macros\",version=\"3\"}\nconcord={version=\"2\"}\n");
+    let source = original
+        .replace("extern crate self as concord;", "extern crate concord;")
+        .replace("concord::m::api!", "concord::prelude::api!");
+    workspace.write("src/lib.rs", &source);
+    let result = migrate(&workspace.0, &Settings::default()).unwrap();
+    assert_eq!(result.declarations, 1);
+}
+
+#[test]
+fn macro_prefix_proof_retains_absolute_and_import_edition_semantics() {
+    let workspace = TempDir::new("absolute-edition-origin");
+    let original = include_str!("../../tests/fixtures/trust_absolute_2015.rs");
+    for edition in ["2015", "unknown"] {
+        workspace.write("Cargo.toml", &format!("[package]\nname=\"absolute-origin\"\nversion=\"0.0.0\"\nedition=\"{edition}\"\n[dependencies]\nconcord=\"3\"\n"));
+        for source in [
+            original.to_owned(),
+            original.replace("::concord::api!", "use concord::api;\napi!"),
+            original.replace("::concord::api!", "use concord::*;\napi!"),
+            original.replace("::concord::api!", "use ::concord::api;\napi!"),
+            original.replace("::concord::api!", "use ::concord::*;\napi!"),
+        ] {
+            workspace.write("src/lib.rs", &source);
+            let result = migrate(&workspace.0, &Settings::default()).unwrap();
+            assert_eq!(result.converted("src/lib.rs"), Some(source.as_str()));
+            assert_eq!(result.declarations, 0);
+            assert!(
+                result
+                    .diagnostics
+                    .iter()
+                    .any(|entry| entry.code == Code::ApiMacroUnresolved)
+            );
+        }
+    }
+    // A modern leading path keeps external-prelude semantics despite a
+    // same-named local module. This is source-origin, not native expansion.
+    workspace.write("Cargo.toml", "[package]\nname=\"absolute-origin\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[dependencies]\nconcord=\"3\"\n");
+    workspace.write("src/lib.rs", original);
+    let result = migrate(&workspace.0, &Settings::default()).unwrap();
+    assert_eq!(result.declarations, 1);
+}
+
+#[test]
+fn readable_child_macro_export_blocks_weak_glob_without_blocking_private_child() {
+    let workspace = TempDir::new("readable-export-origin");
+    workspace.write("Cargo.toml", "[package]\nname=\"readable-origin\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[dependencies]\nconcord=\"3\"\n");
+    let source = include_str!("../../tests/fixtures/trust_glob_unread.rs");
+    workspace.write("src/main.rs", source);
+    workspace.write(
+        "src/hidden.rs",
+        include_str!("../../tests/fixtures/trust_bare_unread_export.rs"),
+    );
+    let result = migrate(&workspace.0, &Settings::default()).unwrap();
+    assert_eq!(result.converted("src/main.rs"), Some(source));
+    assert_eq!(result.declarations, 0);
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|entry| entry.code == Code::ApiMacroUnresolved)
+    );
+    // A private child macro is a different visibility fact. The genuine
+    // external facade remains recognized and only its bracket path migrates.
+    let private_child = include_str!("../../tests/fixtures/trust_bare_unread_export.rs")
+        .replace("#[macro_export]\n", "");
+    let genuine = include_str!("../../tests/fixtures/trust_bare_genuine.rs")
+        .replace(
+            "#[macro_use]\nextern crate concord;",
+            "extern crate concord;\nuse concord::*;\nmod hidden;",
+        )
+        .replace("path \"bare-positive\";", "path [\"bare-positive\"];");
+    workspace.write("src/main.rs", &genuine);
+    workspace.write("src/hidden.rs", &private_child);
+    let result = migrate(&workspace.0, &Settings::default()).unwrap();
+    assert_eq!(result.declarations, 1);
+    assert_eq!(
+        result.converted("src/main.rs"),
+        Some(
+            genuine
+                .replace("path [\"bare-positive\"];", "path \"bare-positive\";")
+                .as_str()
+        )
+    );
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|entry| entry.code == Code::ApiMacroUnresolved)
+    );
+}

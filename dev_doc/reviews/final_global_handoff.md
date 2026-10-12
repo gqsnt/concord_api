@@ -44,6 +44,29 @@ the final pass still denies other unknown expansions and unread/gated sources.
 Stable source alone never establishes a canonical export: root globs also
 require the resolved concord-macros api/__api origin, with weak-name absence
 and recursive target provenance retained before ownership is granted.
+Known Concord names do not certify arbitrary `api` subpaths. External facade
+root/prelude paths retain their supported shapes; an actual own-self alias
+currently has canonical source proof only at its root. Other own submodule
+exports remain unresolved until their actual target provenance can be proved.
+Direct paths, imports and globs share this boundary. Import proof is checked
+in its original scope before reducing to a module, retaining block-local
+`extern crate self` declarations. Native foreign-token controls and genuine
+external facade controls distinguish conservative refusal from false edits.
+Absolute invocation and use/glob prefixes also retain the manifest's actual
+edition when a possible root binding competes with the documented Concord-name
+assumption. The existing source resolver supplies exact external or own-library
+root identity after complete crate stability checks; local Rust 2015 root
+modules cannot acquire external facade authority. An actual extern declaration
+is a terminal crate binding, not a self-import cycle. The first refinement also
+rejects such foreign prefixes before building pending markers in the next
+source-only model. Modern lexical/extern checks and the existing no-competing-
+binding assumptions remain unchanged; source-only passes insert no generated
+authority. Unknown editions fail closed when the rooted meanings differ.
+Weak external globs also retain known root-visible macro definitions and
+macro_export facts from fully indexed children. These are per-crate negative
+markers, not generated authority; an ordinary private child macro does not
+become a root export. Native complete-child foreign and genuine controls
+distinguish these visibility facts.
 Boolean cfg predicates share the all/any/not evaluation in every attribute
 query. Inert false attributes contribute no uncertainty; unreadable cfg_attr
 cannot erase a possible alternate path or an item-replacing attribute macro.

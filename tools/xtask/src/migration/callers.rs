@@ -42,6 +42,7 @@ use super::resolve::{
     canonical, concord_config, concord_config_builder, item_attributes, path_text,
     std_trait_method, to_pascal_case, to_snake_case,
 };
+use super::rust_file::SourceNamespace;
 use super::rust_file::{Imports, find_api_invocations, is_concord_crate, parse_rust};
 use super::syntax::{self, Api, Child, ValueDecl};
 
@@ -661,10 +662,39 @@ impl DeclIndex {
                     };
                     namespaces.glob_namespace_absent(scope, leading, glob, name)
                 };
+                // Reject an edition-dependent foreign prefix before it can
+                // become a pending Concord marker in the next source model.
+                // Other source predicates retain this pass's previous None
+                // behavior; no generated owner/entity is inserted here.
+                let prefix_source = |anchor: Option<usize>, name: &str, namespace| {
+                    if !matches!(
+                        namespace,
+                        SourceNamespace::AbsoluteCrate | SourceNamespace::ImportCrate { .. }
+                    ) {
+                        return true;
+                    }
+                    let Some((number, module)) = namespaces.file(path) else {
+                        return false;
+                    };
+                    if namespaces.other_mount(number).is_some() {
+                        return false;
+                    }
+                    let scope = match anchor {
+                        Some(offset) => match offset
+                            .checked_add(file.base)
+                            .and_then(|offset| namespaces.anchor(number, offset))
+                        {
+                            Some(scope) => scope,
+                            None => return false,
+                        },
+                        None => module,
+                    };
+                    namespaces.namespace_source_stable(scope, name, namespace)
+                };
                 let mut refined = Imports::collect_with_namespace(
                     &file.file,
                     Some(&proof),
-                    None,
+                    Some(&prefix_source),
                     layout
                         .concord_own
                         .as_deref()
