@@ -1017,7 +1017,8 @@ pub(crate) struct AttributeEffects {
     /// A `#[cfg]` (or a `#[cfg_attr]` that may apply one) whose predicate is
     /// not trivially true: the declaration may not exist.
     pub(crate) gated: bool,
-    /// A `#[cfg_attr]` may give a module another `#[path]`.
+    /// A live `#[cfg_attr]` gives a module a `#[path]` the file mapper does
+    /// not model, even when its predicate is constant true.
     pub(crate) gated_path: bool,
     /// The attributes that may be macros, in order: every attribute that is
     /// not built in, a tool attribute, `cfg`, `cfg_attr` or `derive`, and the
@@ -1095,8 +1096,8 @@ fn classify_attribute(meta: &Meta, certain: bool, effects: &mut AttributeEffects
         }
         let applies_always = certain && constant == Some(true);
         for inner in arguments {
-            if !applies_always && inner.path().is_ident("path") {
-                effects.gated = true;
+            if inner.path().is_ident("path") {
+                effects.gated |= !applies_always;
                 effects.gated_path = true;
             }
             if !applies_always
@@ -4085,6 +4086,9 @@ impl Builder<'_, '_> {
             match &module.content {
                 Some((_, inner)) => {
                     let child = self.model.new_module(scope, false);
+                    if attribute_effects(&module.attrs).gated_path {
+                        self.model.scopes[child].table.opaque_other = true;
+                    }
                     self.model.anchors.insert((file, offset), child);
                     self.children.insert((scope, name.clone()), child);
                     // As rustc resolves it: `#[path]` on an inline module
@@ -4128,7 +4132,7 @@ impl Builder<'_, '_> {
                         .find_map(|candidate| self.file_index(candidate));
                     let target = existing.filter(|index| self.assigned[*index].is_none());
                     let child = self.model.new_module(scope, target.is_none());
-                    if target.is_none() {
+                    if target.is_none() || attribute_effects(&module.attrs).gated_path {
                         self.model.scopes[child].table.opaque_other = true;
                     }
                     self.model.anchors.insert((file, offset), child);

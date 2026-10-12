@@ -4828,3 +4828,53 @@ fn bare_macro_use_cannot_ignore_child_macro_namespace_authority() {
             .any(|d| d.code == Code::ApiMacroUnresolved)
     );
 }
+
+#[test]
+fn bare_macro_authority_cannot_ignore_cfg_attr_selected_child_paths() {
+    let workspace = TempDir::new("bare-api-gated-child-origin");
+    workspace.write("Cargo.toml", "[package]\nname=\"bare-gated-origin\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[dependencies]\nconcord=\"3\"\n[features]\nalt=[]\n");
+    workspace.write("src/hidden.rs", "pub fn inert() {}\n");
+    workspace.write(
+        "src/alt.rs",
+        include_str!("../../tests/fixtures/trust_bare_unread_export.rs"),
+    );
+    let declaration = include_str!("../../tests/fixtures/trust_bare_unread.rs");
+    for import in [
+        "#[macro_use]\nextern crate concord;",
+        "extern crate concord;\nuse concord::*;",
+    ] {
+        for attribute in [
+            "#[cfg_attr(all(), path=\"alt.rs\")]",
+            "#[cfg_attr(feature=\"alt\", path=\"alt.rs\")]",
+            "#[cfg_attr(all(), cfg_attr(all(), path=\"alt.rs\"))]",
+        ] {
+            let source = declaration
+                .replace("#[macro_use]\nextern crate concord;", import)
+                .replace("mod hidden;", &format!("{attribute}\nmod hidden;"));
+            workspace.write("src/main.rs", &source);
+            let result = migrate(&workspace.0, &Settings::default()).unwrap();
+            assert_eq!(result.converted("src/main.rs"), Some(source.as_str()));
+            assert_eq!(result.declarations, 0);
+            assert!(
+                result
+                    .diagnostics
+                    .iter()
+                    .any(|entry| entry.code == Code::ApiMacroUnresolved)
+            );
+        }
+    }
+    // A constant-false path attribute cannot select the foreign sibling.
+    let source = declaration.replace(
+        "mod hidden;",
+        "#[cfg_attr(any(), path=\"alt.rs\")]\nmod hidden;",
+    );
+    workspace.write("src/main.rs", &source);
+    let result = migrate(&workspace.0, &Settings::default()).unwrap();
+    assert_eq!(result.declarations, 1);
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|entry| entry.code == Code::ApiMacroUnresolved)
+    );
+}

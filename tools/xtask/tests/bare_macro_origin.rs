@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 //! Real CLI and Rust expansion controls for macro-use origin uncertainty.
 use quote::ToTokens;
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -44,6 +45,29 @@ fn cargo(root: &Path, arguments: &[&str]) -> std::process::Output {
         String::from_utf8_lossy(&output.stderr)
     );
     output
+}
+
+fn registry_packages(lock: &Path) -> BTreeSet<[Option<String>; 4]> {
+    let value: toml::Value = toml::from_str(&fs::read_to_string(lock).unwrap()).unwrap();
+    value["package"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|package| {
+            package
+                .get("source")
+                .and_then(toml::Value::as_str)
+                .is_some_and(|source| source.starts_with("registry+"))
+        })
+        .map(|package| {
+            ["name", "version", "source", "checksum"].map(|key| {
+                package
+                    .get(key)
+                    .and_then(toml::Value::as_str)
+                    .map(str::to_owned)
+            })
+        })
+        .collect()
 }
 
 #[test]
@@ -91,10 +115,19 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
     fs::write(crate_root.join("Cargo.toml"), "[package]\nname=\"sol_origin_attr\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[lib]\nproc-macro=true\npath=\"lib.rs\"\n").unwrap();
     fs::write(crate_root.join("lib.rs"), source).unwrap();
     fs::create_dir_all(root.join("app/src")).unwrap();
-    fs::write(root.join("app/Cargo.toml"), format!("[package]\nname=\"bare-origin-app\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[dependencies]\nconcord={{path=\"{facade_path}\",default-features=false}}\nsol_origin_attr={{path=\"../sol_origin_attr\"}}\n")).unwrap();
+    fs::write(root.join("app/Cargo.toml"), format!("[package]\nname=\"bare-origin-app\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[dependencies]\nconcord={{path=\"{facade_path}\",default-features=false}}\nsol_origin_attr={{path=\"../sol_origin_attr\"}}\n[features]\nalt=[]\n")).unwrap();
     fs::write(root.join("app/src/main.rs"), "fn main() {}\n").unwrap();
-    // Only this isolated consumer lock is generated; workspace pins stay fixed.
-    cargo(root, &["generate-lockfile", "--offline"]);
+    // Retain the fetched workspace versions when adding only these two local
+    // consumer packages. generate-lockfile would discard those version pins
+    // and can select a newer indexed crate absent from an offline CI cache.
+    let workspace_lock = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.lock");
+    let workspace_lock_bytes = fs::read(&workspace_lock).unwrap();
+    fs::write(root.join("Cargo.lock"), &workspace_lock_bytes).unwrap();
+    cargo(root, &["metadata", "--offline", "--format-version", "1"]);
+    assert!(
+        registry_packages(&root.join("Cargo.lock")).is_subset(&registry_packages(&workspace_lock))
+    );
+    assert_eq!(fs::read(&workspace_lock).unwrap(), workspace_lock_bytes);
     let metadata = cargo(
         root,
         &["metadata", "--locked", "--offline", "--format-version", "1"],
@@ -213,6 +246,137 @@ fn actual_cli_bare_macro_authority_respects_replacing_attributes() {
         assert_eq!(
             before.stdout, after.stdout,
             "native token/plan behavior for {label}"
+        );
+    }
+
+    // Package-mode indexing must not treat the default child's source as
+    // proof about an alternative selected by cfg_attr(path = ...).
+    for (label, attribute, glob, foreign) in [
+        (
+            "gated-always",
+            "#[cfg_attr(all(), path=\"alt.rs\")]",
+            false,
+            true,
+        ),
+        (
+            "gated-feature",
+            "#[cfg_attr(feature=\"alt\", path=\"alt.rs\")]",
+            false,
+            true,
+        ),
+        (
+            "gated-glob",
+            "#[cfg_attr(all(), path=\"alt.rs\")]",
+            true,
+            true,
+        ),
+        ("direct-path", "#[path=\"alt.rs\"]", false, true),
+        ("complete-inert", "", false, false),
+    ] {
+        let input_root = owned.0.join(format!("package-{label}"));
+        fs::create_dir_all(input_root.join("src")).unwrap();
+        fs::write(input_root.join("Cargo.toml"), "[package]\nname=\"package-origin\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[dependencies]\nconcord=\"3\"\n[features]\nalt=[]\n").unwrap();
+        let mut source = if foreign {
+            include_str!("fixtures/trust_bare_unread.rs").to_owned()
+        } else {
+            include_str!("fixtures/trust_bare_genuine.rs").replace(
+                "extern crate concord;",
+                "extern crate concord;\nmod hidden;",
+            )
+        };
+        source = source.replace("mod hidden;", &format!("{attribute}\nmod hidden;"));
+        if glob {
+            source = source.replace(
+                "#[macro_use]\nextern crate concord;",
+                "extern crate concord;\nuse concord::*;",
+            );
+        }
+        let child = "pub fn inert() {}\n";
+        let alternative = include_str!("fixtures/trust_bare_unread_export.rs");
+        for (file, bytes) in [
+            ("main.rs", source.as_str()),
+            ("hidden.rs", child),
+            ("alt.rs", alternative),
+        ] {
+            fs::write(input_root.join("src").join(file), bytes).unwrap();
+            fs::write(root.join("app/src").join(file), bytes).unwrap();
+        }
+        let before = cargo(
+            root,
+            &[
+                "run",
+                "--locked",
+                "--offline",
+                "-p",
+                "bare-origin-app",
+                "--features",
+                "alt",
+            ],
+        );
+        let output = owned.0.join(format!("converted-package-{label}"));
+        let report_path = owned.0.join(format!("package-{label}.json"));
+        let result = Command::new(env!("CARGO_BIN_EXE_concord-xtask"))
+            .args(["migrate-v3", "--input"])
+            .arg(&input_root)
+            .args(["--apply", "--output"])
+            .arg(&output)
+            .arg("--report")
+            .arg(&report_path)
+            .output()
+            .unwrap();
+        let report: serde_json::Value =
+            serde_json::from_slice(&fs::read(&report_path).unwrap()).unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(i32::from(foreign)),
+            "{label}: {report}"
+        );
+        assert_eq!(report["summary"]["automated_edits"], 0);
+        assert_eq!(report["summary"]["declarations"], 0);
+        assert_eq!(
+            report["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| entry["code"] == "C3-MIGRATE-API-MACRO-UNRESOLVED"),
+            foreign
+        );
+        for (file, bytes) in [
+            ("main.rs", source.as_str()),
+            ("hidden.rs", child),
+            ("alt.rs", alternative),
+        ] {
+            assert_eq!(
+                fs::read_to_string(input_root.join("src").join(file)).unwrap(),
+                bytes,
+                "protected {label}/{file}"
+            );
+            assert_eq!(
+                fs::read_to_string(output.join("src").join(file)).unwrap(),
+                bytes,
+                "whole output {label}/{file}"
+            );
+            fs::write(
+                root.join("app/src").join(file),
+                fs::read(output.join("src").join(file)).unwrap(),
+            )
+            .unwrap();
+        }
+        let after = cargo(
+            root,
+            &[
+                "run",
+                "--locked",
+                "--offline",
+                "-p",
+                "bare-origin-app",
+                "--features",
+                "alt",
+            ],
+        );
+        assert_eq!(
+            before.stdout, after.stdout,
+            "package-mode native behavior for {label}"
         );
     }
 }

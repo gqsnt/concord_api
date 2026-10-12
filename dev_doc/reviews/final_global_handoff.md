@@ -38,6 +38,12 @@ import/invocation sources, treats root-wide macro uncertainty separately from
 explicit crate paths, and checks weak Concord globs before granting origin.
 Known Concord macro-use imports preserve standard expression macros. Real CLI
 and Rust controls retain the complete foreign bytes and genuine positive plans.
+The bounded follow-up also treats a live `cfg_attr(path = ...)` child as an
+unmodelled source, including constant-true and nested predicates: indexing its
+default file cannot prove the alternate file's macro namespace. Package-mode
+native controls complement the standalone cases. Their isolated consumer starts
+from the unchanged workspace lock and checks exact registry dependency identity,
+so an offline gate does not depend on newer versions in the local index.
 New head-policy tests exercise retry, refresh and absence at the deadline; they
 change no production deadline or abandoned-acquisition policy. The S4 protected
 credential fixture retains HTTPS and separately tests exact no-TLS refusal.
