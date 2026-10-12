@@ -43,7 +43,7 @@ application executor; a frozen-clock native probe proves one head-time read and
 monotone remaining delay. No ambient wall clock is added outside its owner.
 
 The native 500-endpoint debug scale fixture also exposed a generated-contract
-initialization stack overflow on Windows. Emitting sequential builder assignments
-instead of one nested consuming call chain permits storage reuse without changing
-contract order or exported text. Its source-specific result is retained separately
+initialization stack overflow on Windows. Sequential builder assignments alone
+still overflowed; endpoint construction now runs in separate private function
+frames, preserving contract order and exported text. Its source-specific result is retained separately
 from the optional execution allocation comparison.

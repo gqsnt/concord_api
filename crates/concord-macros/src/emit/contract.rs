@@ -594,8 +594,10 @@ fn endpoint_spec(context: &Context<'_>, index: usize) -> TokenStream {
     }
 }
 
-/// The complete `ContractDescription::builder(...)...` expression (without
-/// the final `.build()`).
+/// The complete contract builder expression (without the final `.build()`).
+/// Keep each endpoint's construction temporaries in a separate frame. Debug
+/// builds otherwise reserve all endpoint temporaries in the initialization
+/// frame, even when the consuming builder calls are separate statements.
 pub(crate) fn contract_expr(context: &Context<'_>) -> TokenStream {
     let f = context.f;
     let model = context.model;
@@ -695,12 +697,23 @@ pub(crate) fn contract_expr(context: &Context<'_>) -> TokenStream {
     });
     let _ = docs::human_duration;
     quote! {
-        #f::inspection::ContractDescription::builder(#root, #base)
-            #(#secrets)*
-            #(#credentials)*
-            #(#window_sets)*
-            #(#policies)*
-            #(#scopes)*
-            #(#endpoints)*
+        {
+            let mut __concord_contract = #f::inspection::ContractDescription::builder(#root, #base);
+            #(__concord_contract = __concord_contract #secrets;)*
+            #(__concord_contract = __concord_contract #credentials;)*
+            #(__concord_contract = __concord_contract #window_sets;)*
+            #(__concord_contract = __concord_contract #policies;)*
+            #(__concord_contract = __concord_contract #scopes;)*
+            #({
+                #[inline(never)]
+                fn __concord_append_endpoint(
+                    builder: #f::inspection::ContractBuilder,
+                ) -> #f::inspection::ContractBuilder {
+                    builder #endpoints
+                }
+                __concord_contract = __concord_append_endpoint(__concord_contract);
+            })*
+            __concord_contract
+        }
     }
 }
