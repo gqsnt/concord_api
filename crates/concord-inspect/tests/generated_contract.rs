@@ -769,7 +769,7 @@ fn generated_mutation_corpus_detects_and_classifies_every_edit() {
             credential_source::Shop::contract(),
             &[AuthAuthority],
             &[Wire],
-            &[],
+            every_client_endpoint,
         ),
         (
             "change_literal",
@@ -790,14 +790,14 @@ fn generated_mutation_corpus_detects_and_classifies_every_edit() {
             change_default::Shop::contract(),
             &[PresenceAndDefaults, OpaqueDependency],
             &[Wire],
-            &[],
+            every_client_endpoint,
         ),
         (
             "add_default",
             add_default::Shop::contract(),
             &[PresenceAndDefaults, CallerApi],
             &[Wire],
-            &[],
+            every_client_endpoint,
         ),
         (
             "remove_representation_fence",
@@ -902,6 +902,16 @@ fn generated_mutation_corpus_detects_and_classifies_every_edit() {
             report.to_text()
         );
         let ids = endpoint_ids(&report);
+        if matches!(name, "credential_source" | "change_default" | "add_default") {
+            // Both credentials are selected, and both changed root values
+            // are inherited by every endpoint. Check the complete set;
+            // an empty expected list would make this obligation vacuous.
+            let expected = every_client_endpoint
+                .iter()
+                .map(|id| (*id).to_owned())
+                .collect::<BTreeSet<_>>();
+            assert_eq!(ids, expected, "{name}: exact affected endpoint set");
+        }
         for endpoint in endpoints {
             assert!(
                 ids.contains(*endpoint),
