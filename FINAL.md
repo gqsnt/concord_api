@@ -1,17 +1,21 @@
 # Concord v3 status summary
 
 Concord v3 is the single active language target. This tree carries
-`3.0.0-beta.1`, an **unpublished local beta** with `publish = false` in every
-package manifest. The v3 language, generated client, managed runtime,
-extensions, inspection tooling and the v2.1 → v3 migration tool are
-implemented in this tree; known gaps against the specification are listed in
-the [decision record](dev_doc/decision_record.md). R8 machine qualification passes the complete maintained implementation gate on
-native Windows and Linux/WSL with pin `1.97.1` and MSRV `1.86.0`. Source-bound
-commands, historical failures and limits are in [R8 validation](dev_doc/reviews/r8_validation.md).
-The external Edition 1 was absent for R8 and full conformance was not independently
-re-established. The ordinary `concord-v3` source-branch push is authorized;
-Publication, licensing and remote-release decisions are separate owner
-decisions that this implementation does not make.
+3.0.0-beta.1, an unpublished beta with publish = false in every package.
+The language, generated client, managed runtime, extensions, inspection and
+v2.1-to-v3 migration tool are substantially implemented.
+
+The [16 October source review](dev_doc/reviews/2026_10_16_review.md) examines
+commit ff1be9cb588bcc664c366a55abe555590e7de01e and retains the architecture
+with eight code corrections and two documentation corrections still open.
+Native Linux all-feature tests and structural audits pass; exact-commit CI
+retains POL-01. This does not close final supported-platform qualification,
+V3-O07 performance acceptance, integration or stable publication.
+
+R7/R8 validation remains historical and source-bound. The later
+[global handoff](dev_doc/reviews/final_global_handoff.md) records Edition 1
+availability and points to external final-return receipts. The current source
+review did not independently inspect those external inputs.
 
 This file does not define a status. The one authoritative lifecycle and gate
 record is [release-gate status](dev_doc/release_gate_status.md); the open owner

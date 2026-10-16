@@ -2,26 +2,45 @@
 
 <!-- concord-release-status-owner -->
 
-- **Canonical lifecycle status:** Concord v3 unpublished beta source branch, R8 machine qualification (integration candidate / beta lifecycle).
+- **Canonical lifecycle status:** Concord v3 unpublished beta source branch; current source review complete, technical closure OPEN pending retained corrections and final qualification.
 - **Workspace version:** `3.0.0-beta.1`; every workspace package has `publish = false`.
 - **Publication:** disabled — all workspace packages remain unpublished.
-- **Recorded:** 2026-10-12. Implementation candidate `cef236aa2502df5653d77de2975051b5a6d49565`.
+- **Recorded:** 2026-10-16. Reviewed source `ff1be9cb588bcc664c366a55abe555590e7de01e`; tree `82c12bde32343fba9418beba58dfe7355d1b8e8e`.
 - **Supported platforms:** Windows and Linux are supported and mandatory. macOS is not currently a supported or release-gated platform.
 
 **Beta integration decision:** OPEN — the owner retains merge/integration decisions;
-this commission authorizes only the qualified source-branch push.
+the present source review does not supply a new integration or publication decision.
 
 **Stable publication decision:** BLOCKED — owner legal/package authority and
 stable-release decisions remain open.
 
-This is the sole authoritative lifecycle record. [R7 validation](reviews/r7_validation.md)
-and [handoff](reviews/r7_handoff.md) record source-specific commands and limits;
-[the ledger](claim_evidence_ledger.md), README and FINAL summarize this record.
-The final documentation commit preserves the separately qualified library and
-CI/fixture input identities. Its terminal
-audit/export and pushed SHA belong to the separate post-commit receipt.
+This is the sole authoritative lifecycle record. The [16 October review](reviews/2026_10_16_review.md)
+records the current source findings and evidence limits. Earlier R7/R8 records
+retain their original source scope; their success does not qualify later production changes.
 
-## Current R8 integration state
+## Current reviewed source
+
+- The architectural direction is retained, but eight code findings (six P2,
+  two P3) and two documentation corrections remain open.
+- Native Linux Rust 1.97.1 all-feature Cargo tests: 1,977 passed, zero failures
+  and ignored tests. Explicit UI targets are separately covered by exact-commit CI.
+- docs-check, repository policy and release-audit pass on the reviewed clean SHA.
+  These structural checks are not evidence that every behavioral contract is closed.
+- Exact-commit CI run 38317897762 has eight successful jobs and one failed job.
+  The failure is POL-01: all-feature BSD-3-Clause dependency license policy.
+- Current Windows CI checks all targets/features, exports source and executes
+  four deterministic smoke tests. A complete current Windows implementation gate
+  was not independently executed or established by this review.
+- Reconcile the final corrected source with external qualification receipts,
+  normative obligations and complete Windows/Linux maintained gates.
+- V3-O07 workload performance acceptance and owner publication decisions remain open.
+
+The later [global handoff](reviews/final_global_handoff.md) records that Edition 1
+was available and identifies its hash. This review did not independently inspect
+that external specification or the complete external final return. Historical
+missing-document statements below are not assertions of current project-wide absence.
+
+## Historical R8 integration state
 
 All four R8 findings are CONFIRMED_FIXED on native discriminating paths. New
 Windows native and Linux/WSL qualification passes `just verify-implementation`

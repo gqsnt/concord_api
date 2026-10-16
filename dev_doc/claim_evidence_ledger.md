@@ -115,3 +115,15 @@ and [validation](reviews/r8_validation.md) distinguish controls, setup failures,
 old evidence, platform/feature scope and public malformed-OAuth behavior change.
 No broad performance, human, external-spec, stable, license or publication
 acceptance follows. C74 and historical R7 evidence remain preserved.
+
+## 16 October 2026 source review
+
+These claims apply only to ff1be9cb588bcc664c366a55abe555590e7de01e and the
+[review scope](reviews/2026_10_16_review.md). Earlier claim states retain their
+historical source meaning.
+
+| ID | Claim | State | Evidence/gate | Falsifier | Decision dependency |
+|---|---|---|---|---|---|
+| C76 | The reviewed source passes native Linux all-feature Cargo tests and structural docs/policy/release checks | Observed | External review packet: 1,977 passes; exact-source logs and clean source receipt | A maintained failure on those exact inputs | Source-specific machine evidence |
+| C77 | Exact-source CI retains the all-feature dependency-license rejection | Observed | Run 38317897762: eight jobs successful, one failed; POL-01 for three Brotli-related BSD-3-Clause dependencies | A later approved policy/result on a qualified candidate | Owner policy decision |
+| C78 | V3 technical closure and stable publication are accepted | Not established | Eight open code findings, two documentation corrections, current evidence reconciliation, V3-O07 and owner decisions in the 16 October review | Completed corrections, candidate qualification and explicit remaining decisions | Technical closure / stable publication |
