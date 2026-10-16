@@ -172,6 +172,13 @@ HTTPS and executes only with `default-tls`, as required by Concord's existing
 authentication policy; its generated declarations still compile without TLS.
 No authentication transport rule was relaxed. Native isolated checks pass
 without default features and with all features after this fixture correction.
+The isolated core suite subsequently exposed the same HTTPS assumption in a
+new expiry/Drop regression. Its fixture now builds a native HTTP capability
+and initializes ring explicitly for the dev-only Reqwest feature unification;
+Concord's TLS capability remains unchanged. The absolute parent deadline,
+terminal publication, unlocked destruction and `(1, 0)` counters are retained.
+All 700 isolated core unit tests and their doctests pass after this setup fix;
+the extras package also passes its independent no-default test invocation.
 
 Inspection of the CI MSRV log also established that the repository's pinned
 1.97.1 toolchain overrode the job's installed default 1.86.0. The seven Cargo

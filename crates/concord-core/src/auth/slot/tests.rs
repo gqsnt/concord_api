@@ -1140,9 +1140,14 @@ async fn provider_expiration_timeout_publishes_before_dropping_material_outside_
     );
     let slot = selector.selected().expect("selected slot");
     *lock(&slot_probe).expect("slot probe") = Some(Arc::downgrade(&slot));
+    // This test exercises credential metadata without sending any HTTP. Keep
+    // the native capability's construction independent of the TLS feature.
+    // Test dependencies enable reqwest's rustls-no-provider backend even when
+    // concord-core has no TLS feature, so initialize that test-only backend.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let core = crate::client::ClientCore::build(
-        "https://provider.example.test/",
-        crate::http::HttpConfigBuilder::new(),
+        "http://provider.example.test/",
+        crate::http::HttpConfigBuilder::new().allow_http(),
         crate::runtime::RuntimeConfigBuilder::new(),
     )
     .expect("provider core");
