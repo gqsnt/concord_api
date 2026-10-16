@@ -286,12 +286,12 @@ Registration has finite capacity (4,096 active schemas by default for the local
 conformance fixture) and never evicts active contracts. An unchanged encoding
 ID is a trusted promise; Concord cannot prove opaque encoder code unchanged.
 
-Cross-version continuity requires the same adapter namespace, key framing,
-labels, order, encodings, windows and algorithm interpretation. A changed ID,
-window or label is a reviewed state reset, not preservation. With the local
-limiter, a process restart resets state by definition. See the
-[migration guide](migration_v3.md) for capturing identities before conversion
-and [Extensions](extensions.md) for a custom limiter.
+State sharing requires the same V3 adapter namespace, key framing, labels,
+order, encodings, windows and algorithm interpretation. A changed ID, window
+or label changes state identity. With the local limiter, a process restart
+resets state by definition. Only current V3 schemas are supported; see the
+[version policy](version_policy.md) and [Extensions](extensions.md) for a
+custom limiter.
 
 ## Inspecting coverage
 

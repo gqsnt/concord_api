@@ -707,9 +707,9 @@ pub(crate) fn contract_expr(context: &Context<'_>) -> TokenStream {
             #({
                 #[inline(never)]
                 fn __concord_append_endpoint(
-                    builder: #f::inspection::ContractBuilder,
+                    __concord_builder: #f::inspection::ContractBuilder,
                 ) -> #f::inspection::ContractBuilder {
-                    builder #endpoints
+                    __concord_builder #endpoints
                 }
                 __concord_contract = __concord_append_endpoint(__concord_contract);
             })*

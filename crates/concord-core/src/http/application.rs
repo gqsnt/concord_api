@@ -350,8 +350,13 @@ impl ApplicationHttp {
                 failure,
             } => {
                 let builder = match known_length {
-                    Some(length) => builder.header(CONTENT_LENGTH, length),
-                    None => builder,
+                    Some(length) if length != 0 => builder.header(CONTENT_LENGTH, length),
+                    // Content-Length: 0 lets native transport skip the stream
+                    // entirely. Keep EOF framing until the managed source has
+                    // actually proved its zero-length promise. Positive exact
+                    // streams withhold their final chunk until that same EOF
+                    // validation, so their native length remains usable.
+                    Some(_) | None => builder,
                 };
                 (builder.body(body), Some(failure))
             }

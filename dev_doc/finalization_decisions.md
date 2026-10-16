@@ -1,23 +1,26 @@
-# v2.1 finalization decisions
+# V3 finalization decisions
 
-> **Historical decision worksheet — not current source of truth.** Selected
-> meanings are owned by the active specification and ADRs; release state is
-> owned by [`release_gate_status.md`](release_gate_status.md).
+These decisions resolve the current implementation choices. The
+[release-gate status](release_gate_status.md) records actual qualification;
+[owner decisions](owner_release_decisions.md) delimit later release actions.
 
-The following decisions must be resolved from prototype evidence before release freeze.
+| Question | Selected V3 decision | Evidence or remaining limit |
+|---|---|---|
+| Supported version | V3 only; one grammar, runtime and current state schema | ADR 0027; unsupported syntax and removed CLI/alias checks |
+| Representation shape | Directional generic traits and core-owned acquisition drivers | Representation matrix, UI and downstream consumers |
+| Parent representation defaults | Client/scope defaults, local exception and explicit fence | Effective contract/Rustdoc provenance; unfamiliar-human comprehension remains unmeasured |
+| Value controls | Payload `set_x`, exact optional `replace_x`, conditional `set_x_if_some`, omission and retained reset | Current value-shape matrix; no convenience aliases |
+| Query/header composition | One ordered symbolic program with word operations | Suppressed encoders do not run; sensitivity remains sticky |
+| Request bodies | One `PreparedBody` with media, length, bound and replay facts | Native H1/H2 exact-length and multipart corrections |
+| Streams | Managed carriers with finite byte, total lease and pending-read idle bounds | Acquisition and full consumption remain distinct outcomes |
+| Observation | Read-only, bounded and sanitized events | Observer containment and native privacy regressions |
+| Credentials | Explicit required secrets or declared providers; intent/version storage protocol | Provider callbacks and local expiry remain inside deadline/cancellation authority |
+| Rate state | Explicit ID, ordered labels and encoding schema; atomic all-or-none admission | Current V3 oracles and fail-closed schema registration |
+| Runtime limits | Preserve selected finite defaults; no workload-independent retuning | [Runtime documentation](../docs/runtime.md) and limit/config tests |
+| Empty chunks | 1,024 total for request/buffered/status/provider acquisition; 1,024 consecutive for acquired streams; 32 per poll | The distinct lifecycle bounds are intentional; the general defaults table must not erase that distinction |
+| Performance | Measure the corrected V3 against the previous V3 source on the same host/toolchain | Structural savings alone do not imply latency or workload acceptance |
+| Human review | V3 task packets ready; no invented participants or independent-human result | Unknown for public freeze; not a machine-beta blocker |
+| Version | `3.0.0-beta.1`, unpublished | Later merge/tag/publication decisions remain separate |
 
-| Decision | Initial target | Evidence | Finalization rule |
-|---|---|---|---|
-| representation trait/driver shape | generic directional pair with sealed core driver | Gate 1 passed mechanically | selected for prototype: exact pair traits plus a core-sealed acquisition driver |
-| inherited representation | client/scope default + inline exception + fence | Gate 2 mechanics passed; human comprehension unknown | selected for beta; public-freeze comprehension claim remains open |
-| optional `with_x` | removed | Human evidence was unavailable; ADR 0012 applies the mandated smaller-surface fallback | v2.1 exposes only exact `set_x`, `omit_x`, and `reset_x` controls |
-| query words | `when_present`, `append`, `each` | selected and mechanically supported; human comprehension unknown | expose one spelling only |
-| stream erasure | private boxed stream carriers | Gate 8 comparative evidence passed | retained: one construction allocation, zero polling allocations, throughput and size budgets met |
-| observer events | attempt started, response head, operation finished, pagination finished, stream finished | Gates 5 and 9 passed mechanically; operator task review unavailable | retain minimum read-only set for prototype; no mutation authority |
-| optional static secret | deferred from v2.1 | no owner requirement, implementation, or human/product evidence; ADR 0010 | reject with alternatives; revisit only for a representative multi-auth API |
-| contract metadata size | static/effective runtime-accessible descriptions | Gate 10 machine evidence passed through 1,000 endpoints; independent human first-screen review unavailable | retain for the beta; human penetrability remains unknown for public freeze |
-| project license | no license grant exists in repository or observed history | `cargo deny` rejects all four public packages; package archives otherwise pass downstream checks | project owner must select and supply the license; do not invent a grant or self-waive the check |
-| aggregate body reuse | deferred | pagination/body benchmark | do not add unless explicit capability earns measured value |
-| release version | `2.1.0-beta.1` | beta integration gates | retain beta and `publish = false`; stable `2.1.0` requires owner/publication gates |
-
-No finalization decision is made by retaining both alternatives as public aliases.
+The former V2 worksheet is retained in Git history. It does not add an active
+alias, converter, deferred V2 feature or separate execution path to V3.

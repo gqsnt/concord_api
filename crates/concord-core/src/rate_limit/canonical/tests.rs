@@ -1,4 +1,4 @@
-//! Exact canonical-byte compatibility with the captured Concord 2.1 baseline.
+//! Exact canonical-byte contracts for built-in and custom V3 rate keys.
 
 use super::*;
 
@@ -17,9 +17,9 @@ fn assert_encoding<T: RateKeyPart + ?Sized>(value: &T, encoding_id: &str, expect
     assert_eq!(hex(encoded.as_bytes()), expected_hex);
 }
 
-/// Verbatim framing of the Concord 2.1 `CanonicalKeyWriter::write_tagged_bytes`
-/// (baseline commit 3765907), used as an independent differential oracle.
-fn baseline_v2_1_record(type_tag: &str, value: &[u8]) -> Vec<u8> {
+/// Independent expression of the canonical framing contract:
+/// `u8(tag.len) || tag || u64_be(value.len) || value`.
+fn canonical_record(type_tag: &str, value: &[u8]) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&[type_tag.len() as u8]);
     bytes.extend_from_slice(type_tag.as_bytes());
@@ -28,7 +28,7 @@ fn baseline_v2_1_record(type_tag: &str, value: &[u8]) -> Vec<u8> {
     bytes
 }
 
-/// Label "tenant", value "tenant-a" from `v2_1_catalog_recording.json`.
+/// Label "tenant", value "tenant-a" from `v3_catalog_recording.json`.
 const FIXTURE_TENANT_A: &str = "0475746638000000000000000874656e616e742d61";
 /// The `origin` part of every `eu` Catalog recording.
 const FIXTURE_EU_ORIGIN: &str = "0475746638000000000000002768747470733a2f2f65752e6170692e636174616c6f672e6578616d706c652e746573743a343433";
@@ -40,7 +40,7 @@ const FIXTURE_NA1_ORIGIN: &str =
     "0475746638000000000000002168747470733a2f2f6e61312e6170692e72696f7467616d65732e636f6d3a343433";
 
 #[test]
-fn utf8_strings_match_the_captured_baseline_bytes() {
+fn utf8_strings_match_the_captured_contract_bytes() {
     assert_encoding("tenant-a", "concord.utf8/1", FIXTURE_TENANT_A);
     assert_encoding(
         &String::from("tenant-a"),
@@ -68,7 +68,7 @@ fn utf8_strings_match_the_captured_baseline_bytes() {
 }
 
 #[test]
-fn bool_and_char_match_the_baseline_tags_and_payloads() {
+fn bool_and_char_match_the_canonical_tags_and_payloads() {
     assert_encoding(&true, "concord.bool/1", "04626f6f6c000000000000000101");
     assert_encoding(&false, "concord.bool/1", "04626f6f6c000000000000000100");
     assert_encoding(&'A', "concord.char/1", "0463686172000000000000000400000041");
@@ -85,7 +85,7 @@ fn bool_and_char_match_the_baseline_tags_and_payloads() {
 }
 
 #[test]
-fn every_integer_width_matches_the_baseline_big_endian_bytes() {
+fn every_integer_width_matches_the_canonical_big_endian_bytes() {
     assert_encoding(&7_u8, "concord.u8/1", "027538000000000000000107");
     assert_encoding(&0x1234_u16, "concord.u16/1", "0375313600000000000000021234");
     assert_encoding(
@@ -129,7 +129,7 @@ fn every_integer_width_matches_the_baseline_big_endian_bytes() {
 }
 
 #[test]
-fn pointer_sized_integers_use_the_baseline_64_bit_conversion() {
+fn pointer_sized_integers_use_the_canonical_64_bit_conversion() {
     assert_encoding(
         &42_usize,
         "concord.usize/1",
@@ -149,11 +149,11 @@ fn pointer_sized_integers_use_the_baseline_64_bit_conversion() {
 }
 
 #[test]
-fn differential_oracle_matches_the_verbatim_v2_1_framing_for_every_builtin() {
+fn independent_oracle_matches_canonical_framing_for_every_builtin() {
     fn check<T: RateKeyPart + ?Sized>(value: &T, tag: &str, payload: &[u8]) {
         assert_eq!(
             encode(value).as_bytes(),
-            baseline_v2_1_record(tag, payload).as_slice()
+            canonical_record(tag, payload).as_slice()
         );
     }
     for text in ["", "a", "tenant-a", "client.tenant", "\u{1f600}\u{0}"] {
@@ -315,7 +315,7 @@ fn custom_parts_and_encoders_expose_their_encoding_id_separately_from_bytes() {
     assert_eq!(custom.encoding_id(), "com.example.tenant/1");
     assert_eq!(
         custom.as_bytes(),
-        baseline_v2_1_record("com.example.tenant", &9_u64.to_be_bytes()).as_slice(),
+        canonical_record("com.example.tenant", &9_u64.to_be_bytes()).as_slice(),
         "the ENCODING_ID is schema metadata and is not inserted into value bytes"
     );
 

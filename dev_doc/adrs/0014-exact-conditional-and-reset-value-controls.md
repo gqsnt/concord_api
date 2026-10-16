@@ -77,7 +77,7 @@ absent.
   `C3-MIGRATE-SETTER-UNRESOLVED` (error) for a manual decision. The model and
   its limits are recorded in the
   [decision record](../decision_record.md#migrate-03-receiver-identity-external-review-f03)
-  and in [`docs/migration_v3.md`](../../docs/migration_v3.md#receiver-identity).
+  and in [the historical conversion guide](https://github.com/gqsnt/concord_api/blob/ae6006184f3dc903fdfe66c572098ac810e2c6c5/docs/migration_v3.md#receiver-identity).
 - Generated method count grows by one method per configurable value
   (`set_x_if_some`) and one per optional value (`replace_x`); collision analysis
   covers every new prefix (CALL-01).

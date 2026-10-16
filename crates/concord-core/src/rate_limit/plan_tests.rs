@@ -18,7 +18,7 @@ use crate::request::RuntimeEndpoint;
 use crate::request::test_owner::{self, TestOwner};
 use crate::runtime::RuntimeConfigBuilder;
 
-/// The `origin` and `tenant` key parts of the captured Catalog baseline.
+/// The `origin` and `tenant` key parts of the captured V3 Catalog contract.
 const FIXTURE_EU_ORIGIN: &str = "0475746638000000000000002768747470733a2f2f65752e6170692e636174616c6f672e6578616d706c652e746573743a343433";
 const FIXTURE_TENANT_A: &str = "0475746638000000000000000874656e616e742d61";
 const KEY_SENTINEL: &str = "plan-key-value-sentinel-93aa";
@@ -221,7 +221,7 @@ fn bound_plans_disclose_schemas_and_actual_enforcement_without_limiter_work() {
 }
 
 #[tokio::test]
-async fn execution_requests_carry_the_build_snapshot_schemas_and_baseline_key_bytes() {
+async fn execution_requests_carry_the_build_snapshot_schemas_and_canonical_key_bytes() {
     let executor = DeterministicExecutor::new();
     executor
         .application()
@@ -270,7 +270,7 @@ async fn execution_requests_carry_the_build_snapshot_schemas_and_baseline_key_by
                 "concord.utf8/1",
                 FIXTURE_EU_ORIGIN.to_owned()
             ),
-            "the origin dimension equals the captured v2.1 bytes"
+            "the origin dimension equals the captured V3 bytes"
         );
         assert_eq!(
             request.parts[1],

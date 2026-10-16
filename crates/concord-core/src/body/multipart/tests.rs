@@ -258,13 +258,76 @@ async fn serialization_uses_one_boundary_and_exactly_matches_the_framed_length()
     );
     let b = boundary.as_str();
     let expected = format!(
-        "--{b}\r\nContent-Disposition: form-data; name*=utf-8''field%20one\r\nContent-Type: text/plain\r\n\r\nalpha\r\n--{b}\r\nContent-Disposition: form-data; name=\"upload\"; filename=\"a\\\"b\\\\c.bin\"\r\n\r\n\x00\x01binary\r\n--{b}--\r\n"
+        "--{b}\r\nContent-Disposition: form-data; name=\"field one\"\r\nContent-Type: text/plain\r\n\r\nalpha\r\n--{b}\r\nContent-Disposition: form-data; name=\"upload\"; filename=\"a\\\"b\\\\c.bin\"\r\n\r\n\x00\x01binary\r\n--{b}--\r\n"
     );
     assert_eq!(serialized, expected.as_bytes());
     assert_eq!(
         boundary.content_type().expect("content type"),
         HeaderValue::from_str(&format!("multipart/form-data; boundary={b}")).expect("header")
     );
+}
+
+#[tokio::test]
+async fn field_names_preserve_quoted_parameter_identity_and_framed_length() {
+    for (name, parameter) in [
+        ("field one", "name=\"field one\""),
+        ("semi; name", "name=\"semi; name\""),
+        ("slash\\name", "name=\"slash\\\\name\""),
+        ("é; x", "name=\"é; x\""),
+        ("quote\"name", "name=\"quote\\\"name\""),
+        ("tick' field", "name=\"tick' field\""),
+        ("percent%20name", "name=\"percent%20name\""),
+    ] {
+        let boundary = MultipartBoundary::generate();
+        let recipe = MultipartBody::new()
+            .part(name, text("value"))
+            .expect("part");
+        let length = recipe
+            .framing(&boundary)
+            .expect("framed length")
+            .length_hint();
+        let wire = serialize(recipe, &boundary).await.expect("serialized");
+        let expected = format!(
+            "--{}\r\nContent-Disposition: form-data; {parameter}\r\n\r\nvalue\r\n--{}--\r\n",
+            boundary.as_str(),
+            boundary.as_str(),
+        );
+        assert_eq!(wire, expected.as_bytes(), "field {name:?}");
+        assert_eq!(length, LengthHint::Exact(wire.len() as u64));
+    }
+}
+
+#[tokio::test]
+async fn empty_recipe_emits_a_counted_closing_boundary_and_remains_reusable() {
+    let boundary = MultipartBoundary::generate();
+    let recipe = MultipartBody::new();
+    let framing = recipe.framing(&boundary).expect("empty framing");
+    assert!(framing.reusable());
+    let replay = recipe
+        .clone_reusable()
+        .expect("valid recipe")
+        .expect("reusable");
+    let wire = serialize(recipe, &boundary)
+        .await
+        .expect("empty serialization");
+    let expected = format!("--{}--\r\n", boundary.as_str());
+    assert_eq!(wire, expected.as_bytes());
+    assert_eq!(
+        framing.bounds(),
+        (Some(wire.len() as u64), wire.len() as u64)
+    );
+    assert_eq!(serialize(replay, &boundary).await.expect("replay"), wire);
+
+    let prepared = PreparedBody::multipart(MultipartBody::new()).expect("empty multipart");
+    let LengthHint::Exact(length) = prepared.length_hint() else {
+        panic!("empty multipart has an exact nonzero framed length");
+    };
+    assert!(length > 0);
+    let error = prepared
+        .into_managed(NonZeroUsize::new(length as usize - 1).expect("positive smaller limit"))
+        .err()
+        .expect("closing boundary counts toward the body limit");
+    assert_eq!(error.kind(), BodyErrorKind::LimitExceeded);
 }
 
 #[tokio::test]

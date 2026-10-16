@@ -5,16 +5,16 @@
   [`release_gate_status.md`](release_gate_status.md)
 - **Decision owner:** Concord project owner, through the selected v3
   implementation specification (Edition 1, 25 September 2026)
-- **Date:** September 2026
+- **Date:** 2026-10-16 (current V3-only scope; original implementation decisions September 2026)
 
 ## Decision
 
-Implement the selected Concord v3 contract directly from the unchanged v2.1
-source export (branch `baseline-v2.1`, associated with commit
-`3765907aa2e424997bfd8f2fcdcc95275e6142f5`) as one language: no dual canonical
-grammar, no ambiguous old setter aliases, and a meaning-preserving migration
-before any showcase cleanup. The per-decision records are ADRs 0014–0026 in the
-[v3 ADR index](adrs/README.md).
+Implement Concord V3 as the only supported product: one canonical grammar,
+one managed runtime, current V3 tooling and no older-version aliases or
+conversion path. The owner's 16 October instruction supersedes the original
+migration and older-binary continuity requirements; [ADR 0027](adrs/0027-v3-only-product.md)
+records the scope change. ADRs 0014–0026 continue to define the unrelated V3
+semantics.
 
 ## Decisive properties
 
@@ -56,15 +56,13 @@ before any showcase cleanup. The per-decision records are ADRs 0014–0026 in th
     (ADR 0025).
 15. Effective contracts are exported as the versioned `concord.contract/3`
     structural format with axis-classified diffs (spec §18).
-16. Automatic migration caller rewrites are default-deny: `migrate-v3` edits a
-    call only after proving, over a bounded model of the crate, that it reaches
-    the generated item, and reports every other candidate (MIGRATE-03; see
-    [MIGRATE-03 receiver identity](#migrate-03-receiver-identity-external-review-f03)).
+16. Only the V3 language, public types, runtime and inspection format are
+    supported. An unsupported spelling is rejected, and current schema
+    registration cannot certify state from older binaries (ADR 0027).
 
 ## Costs accepted
 
-- a breaking v2.1 → v3 source and API migration, supported by
-  `docs/migration_v3.md` and the source-aware `migrate-v3` tool;
+- V3-only source and API support; applications target the canonical V3 interface;
 - more generated methods per value (`replace_x`, `set_x_if_some`);
 - stricter structural diagnostics for patch programs and names;
 - explicit rate labels, window sets and encoding IDs; atomic admission for
@@ -73,12 +71,11 @@ before any showcase cleanup. The per-decision records are ADRs 0014–0026 in th
 - strict page-fetch cancellation and finite stream leases;
 - a slow final observer can delay delivery of a storage result beyond its
   nominal deadline (it cannot change it);
-- default-deny migration: some genuine generated calls (for example inside an
-  item carrying an unknown attribute macro, or an auto-deref call in a crate
-  with a custom derive or a trait of another crate in scope) are reported
-  rather than rewritten and must be renamed by hand.
 
-## Evidence state
+## Historical implementation evidence
+
+The records below describe their original source revisions. Migration-tool
+repairs are historical after ADR 0027; they are not current product gates.
 
 R7 source qualification uses native Windows and Linux/WSL, pin `1.97.1` and
 MSRV `1.86.0`, with full maintained implementation gates passing on candidate
@@ -264,7 +261,7 @@ a bounded name-resolution model, default-deny wherever the model cannot see.
   between runs; name resolution is bounded at 48 steps (`MAX_DEPTH`).
 
 **Diagnostics** (severities from `tools/xtask/src/migration/report.rs`, matching
-the code table of [`docs/migration_v3.md`](../docs/migration_v3.md#diagnostic-codes)):
+the code table of [the historical diagnostic table](https://github.com/gqsnt/concord_api/blob/ae6006184f3dc903fdfe66c572098ac810e2c6c5/docs/migration_v3.md#diagnostic-codes)):
 
 | Code | Severity | Status after the repair |
 |---|---|---|
@@ -281,7 +278,7 @@ the code table of [`docs/migration_v3.md`](../docs/migration_v3.md#diagnostic-co
 | `C3-MIGRATE-DEPENDENCY-IDENTITY` | error | New (R3): the package manifest does not establish that the Concord crate names denote the genuine Concord packages; the file is left unchanged |
 
 **Limits of the model** (also in
-[`docs/migration_v3.md`](../docs/migration_v3.md#limits-of-the-model)):
+[the historical model limits](https://github.com/gqsnt/concord_api/blob/ae6006184f3dc903fdfe66c572098ac810e2c6c5/docs/migration_v3.md#limits-of-the-model)):
 textual `macro_rules!` scope is not modeled (a crate-local macro name counts
 as defined everywhere in its crate); only the listed external items are known
 (the standard library, Concord, the `log`/`tracing` expression macros,

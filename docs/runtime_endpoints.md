@@ -176,7 +176,7 @@ A runtime endpoint inherits every effective placement of its owner. It can only 
 .auth_remove(AuthTarget::query("api_key")?)    // private query placement
 ```
 
-A removal names the placement by its safe target identity. Binding fails if no effective placement owns that target. No runtime API can create a private target, select another credential source, change a challenge, or reintroduce a removed placement. The v2.1 dynamic credential selection is removed: declare a scope with the required `auth replace { … }` and bind there instead.
+A removal names the placement by its safe target identity. Binding fails if no effective placement owns that target. No runtime API can create a private target, select another credential source, change a challenge, or reintroduce a removed placement. Declare a scope with the required `auth replace { … }` and bind there to select a different credential source.
 
 Removing inherited authentication changes the request's declared security behavior. It is displayed prominently: `RequestPlan`'s `Debug` output starts with `runtime_authentication: INHERITED AUTHENTICATION REMOVED …` (or `… PARTIALLY REMOVED …`, naming the removed targets). `description().runtime_binding().authentication()` reports the disposition, and the plan's capabilities report the effective authentication. It is never described as preserving the owner's authorization semantics (RUNTIME-02).
 
@@ -201,26 +201,6 @@ The runtime `EndpointId` is checked at bind against the client's generated endpo
 - the runtime rate policy IDs and the effective policy count.
 
 The bound description's source path is `<Owner>::<runtime>`, and its route shape is structural (`<PreparedApi::regional route>/<runtime-segment>/…`).
-
-## Migrating from v2.1
-
-| v2.1 | v3 |
-|---|---|
-| `endpoint.try_bind(&owner)` | `owner.bind(endpoint)` |
-| `endpoint.plan(&owner)` | `owner.plan_runtime(&endpoint)` |
-| `Request<RuntimeEndpoint<..>>` | `BoundRuntimeRequest<R, O>` |
-| `RuntimeValue::sensitive(v)` with `*_value` methods | `*_sensitive(name, v)` methods |
-| `header(HeaderName, v)` | `header("name", v)` (validated `&str` key) |
-| `append_query`/`append_header` (+ `_each`) | `query_append`/`header_append` (+ `_each`, `_optional`) |
-| `query_each_when_present` | `query_when_present_each` |
-| `remove_query`/`remove_header` | `query_remove`/`header_remove` |
-| `headers_off()` | `header_off()` |
-| plain `query(k, v)` over an inherited key | `query_replace(k, v)` (a plain introduction now conflicts) |
-| `replace_path([..])` | `path_replace()` followed by `path(..)` calls |
-| `body(RequestBody::..)`, `body_codec::<C>(..)`, `body_spec::<S, _>(..)` | `body_repr::<B, T>(input)` (for example `PreparedBody`, `Binary`, `Multipart`, a codec) |
-| `accepted_bytes()`, `response_empty()`, `response_discard()` switches | one `response::<R, O>()`; `expose_accepted_bytes()` for the alternate terminal |
-| `auth(Auth::..)`, `replace_auth(..)` | removed; bind at a scope that declares the placement |
-| `rate_limit(RateLimitPolicy)` | `rate_limit(RateLimitDeclaration)` |
 
 ## Evidence
 

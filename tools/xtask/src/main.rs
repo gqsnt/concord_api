@@ -7,7 +7,6 @@ mod doc_rules;
 mod docs_check;
 mod fixtures;
 mod limit_drift;
-mod migration;
 mod msrv;
 mod policy;
 mod release_audit;
@@ -19,9 +18,6 @@ use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let arguments = env::args().skip(1).collect::<Vec<_>>();
-    if arguments.first().map(String::as_str) == Some("migrate-v3") {
-        return migration::run_command(&arguments[1..]);
-    }
     if arguments.first().map(String::as_str) == Some("contract") {
         return contract::run_command(&arguments[1..]);
     }
@@ -93,9 +89,8 @@ fn workspace_root() -> Result<PathBuf, String> {
 
 fn usage() -> String {
     format!(
-        "usage: cargo run -p concord-xtask -- <docs-check [--locked] | {} | fixtures [--locked] | {} | release-audit [--locked] | source-export [--locked] | {} | msrv-ui [--locked] | policy [--locked]>",
+        "usage: cargo run -p concord-xtask -- <docs-check [--locked] | {} | fixtures [--locked] | release-audit [--locked] | source-export [--locked] | {} | msrv-ui [--locked] | policy [--locked]>",
         doc_audit::USAGE,
-        migration::USAGE,
         contract::USAGE
     )
 }

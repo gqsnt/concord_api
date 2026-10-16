@@ -1053,3 +1053,111 @@ async fn provider_overflow_publishes_the_terminal_before_dropping_the_produced_v
     );
     *lock(&flight_probe).expect("flight probe") = None;
 }
+
+/// A late metadata callback must not allocate a version. Its discarded result
+/// is released only after the terminal reaches followers and outside the lock.
+#[tokio::test]
+async fn provider_expiration_timeout_publishes_before_dropping_material_outside_the_lock() {
+    use crate::operation::{OperationDeadline, TestClockGuard};
+
+    type SlotProbe = Arc<Mutex<Option<std::sync::Weak<CredentialSlot<DeadlineMaterial>>>>>;
+    type FlightProbe = Arc<Mutex<Option<Arc<Flight<DeadlineMaterial>>>>>;
+
+    struct DeadlineMaterial {
+        slot: SlotProbe,
+        flight: FlightProbe,
+        observed: Arc<Mutex<Option<(bool, bool)>>>,
+    }
+
+    impl CredentialMaterial for DeadlineMaterial {
+        fn expires_at(&self) -> Option<Instant> {
+            TestClockGuard::advance(Duration::from_secs(2));
+            None
+        }
+    }
+
+    impl Drop for DeadlineMaterial {
+        fn drop(&mut self) {
+            let slot = lock(&self.slot)
+                .expect("slot probe")
+                .as_ref()
+                .and_then(std::sync::Weak::upgrade)
+                .expect("live slot");
+            let unlocked = slot.state.try_lock().is_ok();
+            let flight = lock(&self.flight)
+                .expect("flight probe")
+                .clone()
+                .expect("flight");
+            let published = matches!(flight.result_now(), Ok(Some(FlightOutcome::Failed(_))));
+            *lock(&self.observed).expect("Drop observation") = Some((unlocked, published));
+        }
+    }
+
+    struct DeadlineProvider {
+        slot: SlotProbe,
+        flight: FlightProbe,
+        observed: Arc<Mutex<Option<(bool, bool)>>>,
+    }
+
+    impl CredentialProvider for DeadlineProvider {
+        type Material = DeadlineMaterial;
+
+        fn acquire<'a>(
+            &'a self,
+            _: CredentialRequest<'a>,
+        ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
+            let slot = lock(&self.slot)
+                .expect("slot probe")
+                .as_ref()
+                .and_then(std::sync::Weak::upgrade)
+                .expect("live slot");
+            *lock(&self.flight).expect("flight probe") = lock(&slot.state)
+                .expect("slot state")
+                .in_flight
+                .as_ref()
+                .map(|active| Arc::clone(&active.flight));
+            Box::pin(async move {
+                Ok(DeadlineMaterial {
+                    slot: Arc::clone(&self.slot),
+                    flight: Arc::clone(&self.flight),
+                    observed: Arc::clone(&self.observed),
+                })
+            })
+        }
+    }
+
+    let _clock = TestClockGuard::reset();
+    let slot_probe: SlotProbe = Arc::new(Mutex::new(None));
+    let flight_probe: FlightProbe = Arc::new(Mutex::new(None));
+    let observed = Arc::new(Mutex::new(None));
+    let selector = SlotSelector::provider(
+        DeadlineProvider {
+            slot: Arc::clone(&slot_probe),
+            flight: Arc::clone(&flight_probe),
+            observed: Arc::clone(&observed),
+        },
+        Duration::ZERO,
+    );
+    let slot = selector.selected().expect("selected slot");
+    *lock(&slot_probe).expect("slot probe") = Some(Arc::downgrade(&slot));
+    let core = crate::client::ClientCore::build(
+        "https://provider.example.test/",
+        crate::http::HttpConfigBuilder::new(),
+        crate::runtime::RuntimeConfigBuilder::new(),
+    )
+    .expect("provider core");
+    let deadline = OperationDeadline::new(OperationDeadline::now(), Some(Duration::from_secs(1)))
+        .expect("parent deadline");
+    let error = auth_error(
+        selector.preflight(core.provider_http(Some(deadline))).await,
+        "metadata callback consumed acquisition budget",
+    );
+    assert_eq!(error.kind(), AuthErrorKind::Acquisition);
+    assert_eq!(
+        *lock(&observed).expect("Drop observation"),
+        Some((true, true))
+    );
+    assert_eq!(selector.counters_for_test(), (1, 0));
+    assert!(!selector.is_set());
+    *lock(&flight_probe).expect("flight probe") = None;
+}

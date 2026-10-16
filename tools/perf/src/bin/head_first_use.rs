@@ -2,12 +2,9 @@
 //! and allocated bytes of the FIRST operation of one category in a fresh
 //! process, with no warm-up.
 //!
-//! This is the first-use companion of `head_cost` (which measures the warm,
-//! steady state and is unchanged). It uses the same declarations
-//! (`src/head_cost/declaration.rs`, v3 syntax; the v2.1 baseline copies
-//! `declaration_v2_1.rs.txt` over it inside a `git archive baseline-v2.1`
-//! export) and only caller calls that exist unchanged in Concord v2.1 and
-//! v3, so this file is copied byte-identically into the baseline export.
+//! This is the first-use companion of `head_cost`, which measures the warm
+//! steady state. Both use the current V3 declarations from
+//! `src/head_cost/declaration.rs`. Run each sample in a fresh process.
 //!
 //! Usage: `head_first_use <category>`; one process measures one category
 //! (run it in a fresh process per sample). The categories:

@@ -22,8 +22,6 @@ pub use crate::auth::{
     ChallengeRecovery, CredentialVersion, MAX_CREDENTIAL_FLIGHT_WAITERS, MAX_PROVIDER_ORIGIN_BYTES,
     ProviderOrigin, ProviderOriginError, ProviderOriginErrorKind, StoreOutcome,
 };
-#[allow(deprecated)]
-pub use crate::body::RequestBody;
 pub use crate::body::{
     BodyError, BodyErrorKind, BodyFactory, BodyKind, LengthHint, MAX_BODY_MEDIA_HINT_BYTES,
     MAX_EMPTY_REQUEST_CHUNKS, MAX_REQUEST_CONTENT_TYPE_BYTES, PageRequestRepresentation,

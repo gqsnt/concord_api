@@ -39,11 +39,6 @@ pub(crate) fn targets() -> Vec<ContractTarget> {
     {
         targets.push(ContractTarget {
             name: "catalog",
-            description: "concord-examples contracts::catalog_contract::CatalogApi",
-            contract: concord_examples::contracts::catalog_contract::CatalogApi::contract,
-        });
-        targets.push(ContractTarget {
-            name: "catalog-v3",
             description: "concord-examples contracts::catalog_v3::CatalogApi (canonical Catalog)",
             contract: concord_examples::contracts::catalog_v3::CatalogApi::contract,
         });

@@ -118,7 +118,7 @@ Catalog of [Modeling APIs](modeling_apis.md).
 | Streams | Acquisition is not consumption; finite configurable lease; pending-read idle accounting; explicit completion. |
 | Credential storage | The latest-started explicit installation intent supersedes earlier pending intents (`StoreOutcome::Superseded`). |
 | Runtime endpoints | The same owner projection and symbolic operations; no new origin, credential-source or quota-removal authority. |
-| Compatibility | A major version: one canonical grammar, no ambiguous old setter aliases, a source-aware `migrate-v3` tool. |
+| Version scope | V3 only: one canonical grammar and runtime, with no older-version aliases or migration tool. |
 
 ## What v3 deliberately separates
 

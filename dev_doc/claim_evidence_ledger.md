@@ -20,7 +20,11 @@ ledger did not observe. That historical evidence does not establish current plat
 adds source-bound native observations below; its commands and failures are in
 [the R7 validation](reviews/r7_validation.md).
 
-## v3 claims
+## Historical V3 claims and later dispositions
+
+Rows below retain the source scope of their cited runs. Current correction
+claims appear at the end; old converter claims C54/C70 are superseded by ADR
+0027 and are not promises of the current product.
 
 | ID | Claim | State | Evidence/gate | Falsifier | Decision dependency |
 |---|---|---|---|---|---|
@@ -47,8 +51,8 @@ adds source-bound native observations below; its commands and failures are in
 | C60 | `cargo run -p concord-xtask -- release-audit` passes on an exact commit | Unknown | run 8 (documentation branch): exit 1 at `docs-check` (missing `semantic/symbols.rs`, since fixed); the repository has no `main` branch, so the audit's `git merge-base main HEAD` step has no integration base — naming one is an owner decision. The implementation report records a scratch-clone run with `main` = the unmodified v2.1 baseline commit, which is not the owner's integration branch | an exit-0 audit on the owner's integration branch at the exact candidate commit | beta integration |
 | C61 | `cargo run -p concord-xtask -- docs-check` passes on an exact commit | Selected | run 7 (documentation branch) failed on the removed `semantic/symbols.rs`; the checker was re-pointed at the v3 macro sources (2026-09-26); recorded results in `IMPLEMENTATION_REPORT.md` | a nonzero run on the candidate commit | DOC-01 |
 | C62 | The façade and macro crate-level rustdoc describe the v3 value controls | Selected | corrected 2026-09-26 in `crates/concord/src/lib.rs` and `crates/concord-macros/src/lib.rs` (VALUE-03 wording); rustdoc `-D warnings` results in `IMPLEMENTATION_REPORT.md` | crate docs contradict the §4.3 matrix | DOC-01 |
-| C63 | Unfamiliar humans comprehend the v3 surface | Unknown | no participants; the `dx_study/` packet targets v2.1 | a revised protocol completed with real anonymized evidence | public freeze |
-| C64 | An independent reviewer can penetrate the v3 Rustdoc and `concord.contract/3` diff | Unknown | no review; the `rustdoc_review/` packet targets v2.1 | a completed independent review | public freeze |
+| C63 | Unfamiliar humans comprehend the v3 surface | Unknown | no qualifying participants; the `dx_study/` packet was updated to V3 on 16 October 2026 | a revised protocol completed with real anonymized evidence | public freeze |
+| C64 | An independent reviewer can penetrate the v3 Rustdoc and `concord.contract/3` diff | Unknown | no qualifying independent human review; the `rustdoc_review/` packet was updated to V3 on 16 October 2026 | a completed independent review | public freeze |
 | C65 | This repository grants a software license suitable for public packages | Unknown | no license file or manifest license field (`grep`, 2026-09-26) | an owner decision implemented consistently | Gate 0 |
 | C66 | Performance of v3 relative to the v2.1 baseline is measured on the same host and toolchain | Selected | `tools/perf/measurements/{expansion_scale,head_cost}_linux_2026-09-26_final.txt` and `ATTRIBUTION.md` (scale 1/10/100/500/1000, local and parent edits, cold/warm compile, allocations and steady head costs, v2.1 export built on the same host); planning time remains +3–7% on three rows, partly unexplained and within about ±5% run noise, so performance acceptance is not claimed | a same-host rerun contradicting the recorded numbers | V3-O07 |
 | C67 | Generated endpoints validate their static `ACCEPT` once before any client exists (spec §9.5) | Selected | the macro emits `const _: () = __private::assert_response_accept(...)` per endpoint (`crates/concord-macros/src/emit/endpoint.rs`, added 2026-09-26 after this ledger first recorded the gap); UI fixture `crates/concord/tests/ui/fail/capabilities/invalid_static_accept.rs`; runtime descriptors validate at `build()` (`static_accept_values_are_validated_once_at_compile_or_bind_time` in `crates/concord-core/src/execute/tests/body_outcomes.rs`) | an invalid static `ACCEPT` compiles or reaches a request | ADR 0016 |
@@ -126,4 +130,20 @@ historical source meaning.
 |---|---|---|---|---|---|
 | C76 | The reviewed source passes native Linux all-feature Cargo tests and structural docs/policy/release checks | Observed | External review packet: 1,977 passes; exact-source logs and clean source receipt | A maintained failure on those exact inputs | Source-specific machine evidence |
 | C77 | Exact-source CI retains the all-feature dependency-license rejection | Observed | Run 38317897762: eight jobs successful, one failed; POL-01 for three Brotli-related BSD-3-Clause dependencies | A later approved policy/result on a qualified candidate | Owner policy decision |
-| C78 | V3 technical closure and stable publication are accepted | Not established | Eight open code findings, two documentation corrections, current evidence reconciliation, V3-O07 and owner decisions in the 16 October review | Completed corrections, candidate qualification and explicit remaining decisions | Technical closure / stable publication |
+| C78 | V3 technical closure and stable publication are accepted | Unknown | Eight open code findings, two documentation corrections, current evidence reconciliation, V3-O07 and owner decisions in the 16 October review | Completed corrections, candidate qualification and explicit remaining decisions | Technical closure / stable publication |
+
+## 16 October 2026 direct correction candidate
+
+| ID | Claim | State | Evidence/gate | Falsifier | Decision dependency |
+|---|---|---|---|---|---|
+| C79 | V3 is the sole supported version; conversion, the old body alias and old-binary import are retired | Selected | Explicit owner instruction; ADR 0027; physical removal manifest and native CLI/UI boundary tests | A supported old grammar/runtime/import/alias remains | Current product scope |
+| C80 | The seven retained code findings have direct corrections and targeted native evidence | Observed | [Correction report](reviews/2026_10_16_corrections.md), agent cross-reviews and raw command receipts | A discriminating regression still escapes its corrected boundary | Final integrated gate |
+| C81 | Current V3 oracles preserve keys, schema, auth, identity and sharing | Observed | 92 Riot contexts, Catalog key oracle and 70 targeted schema/example/downstream tests; only the declared Riot User-Agent version changes | Unintended recording or key/state change | R01/R02/R06/R13 under V3-only scope |
+| C82 | Private Edition 1 and closure authority were independently inspected | Observed | Authorized reads and verified specification/prompt SHA-256 in the correction report | Hash or scope mismatch | Latest owner instruction supersedes older conversion obligations |
+| C83 | The corrected source completes all final machine/performance obligations | Candidate | Final maintained gate and source-bound performance campaign in progress; current status owns results | Any remaining required gate or unexplained material regression | O06/O07/O08 |
+
+C60's missing-main explanation was an earlier environment fact. The 16 October
+review observed a successful exact-source release audit and the preserved main
+`3765907aa2e424997bfd8f2fcdcc95275e6142f5`. This does not pre-qualify a later
+candidate. C63/C64 remain human Unknowns; preparing V3 protocols or performing
+an implementer review is a separate observation, not a participant result.

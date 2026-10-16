@@ -2,7 +2,7 @@
 // deprecated operation actually triggers the warning. Under
 // `#![deny(deprecated)]` each call site of a deprecated generated item is an
 // error: an endpoint constructor (bound and unbound), every value control of
-// a deprecated no-op migration bridge (§4.6), a scope navigation (bound and
+// a deprecated no-op value (§4.6), a scope navigation (bound and
 // unbound) and a client type. The declarations themselves, and the
 // non-deprecated items beside them, produce no deprecation diagnostic: the
 // generated support code never reports its own deprecated items.

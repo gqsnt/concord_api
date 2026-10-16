@@ -1,35 +1,17 @@
-//! Baseline recording harness (v3) with full state-equivalence against the
-//! captured v2.1 recordings (spec §24.2 MIGRATE-02; V3-R01, V3-R02).
+//! Current V3 Riot contract recordings and semantic edit regressions.
 //!
-//! The same harness that captured `fixtures/migration/v2_1_riot_recording.json`
-//! and `fixtures/migration/v2_1_catalog_recording.json` (its v2.1 source is
-//! kept verbatim in `fixtures/migration/baseline_recording_harness_v2_1.rs.txt`)
-//! now drives the meaning-preserving v3 Riot client and a v3 migration of the
-//! v2.1 Catalog contract through the real generated clients. A recording
-//! limiter captures the complete protected rate plan of every attempt and then
-//! denies admission, so no request reaches a network: denial happens before
-//! native handoff.
+//! The generated client is exercised for all 46 endpoints in two origins.
+//! A recording limiter captures each complete protected rate plan and denies
+//! admission before native handoff. The records retain endpoint identity,
+//! method, ordered public query/header occurrences, timeout, logical origin,
+//! policy IDs, costs, windows and canonical key bytes. Schema, capability and
+//! authentication descriptors are captured alongside those request facts.
 //!
-//! Equivalence is asserted field by field on exact recorded facts, never on a
-//! lossy description: endpoint ID, method, URL scheme/host/route, public query
-//! occurrences `(key, value)` in order, public header occurrences in order, the
-//! timeout selection, the limiter's endpoint/method/logical origin, and for
-//! every policy its ID, cost, source-order windows and complete ordered
-//! canonical key `(label, bytes)`. The v3-only schema facts (dimension kinds,
-//! encoding IDs, canonical windows, framing version) and the auth placement
-//! descriptors are asserted against expectations derived from the v2.1
-//! recording and the v2.1 declaration. The sharing relation between endpoint
-//! and key contexts is asserted structurally for both recordings and then
-//! confirmed dynamically with the real `LocalRateLimiter` on the actual
-//! generated v3 keys. The only permitted differences are the named
-//! [`EXCEPTIONS`], each tied to a spec rule and pinned to exact before/after
-//! values; an exception that no longer matches anything fails the test.
-//!
-//! The committed v3 recordings `fixtures/migration/v3_riot_recording.json` and
-//! `fixtures/migration/v3_catalog_recording.json` must equal the fresh
-//! recordings byte for byte, so a later showcase cleanup that changes any
-//! recorded state is detected. Set `CONCORD_BASELINE_RECORDING_OUT` /
-//! `CONCORD_BASELINE_CATALOG_RECORDING_OUT` to write fresh v3 recordings.
+//! Fresh output must match `fixtures/contracts/v3_riot_recording.json` byte
+//! for byte. Tests separately verify policy membership, bucket sharing through
+//! the real `LocalRateLimiter`, endpoint identities and private auth placement.
+//! The edit battery checks which observable axes change when a V3 declaration
+//! is edited. Set `CONCORD_BASELINE_RECORDING_OUT` to write a fresh recording.
 #![forbid(unsafe_code)]
 #![cfg(all(feature = "json", feature = "rate-limit", feature = "default-tls"))]
 
@@ -59,89 +41,20 @@ use concord_examples::riot::domain::*;
 use serde_json::Value;
 
 // ---------------------------------------------------------------------------
-// Captured baselines and committed v3 comparison recordings
+// Current V3 contract recording
 // ---------------------------------------------------------------------------
 
-const V2_1_RIOT: &str = include_str!("../../../fixtures/migration/v2_1_riot_recording.json");
-const V2_1_CATALOG: &str = include_str!("../../../fixtures/migration/v2_1_catalog_recording.json");
-const V2_1_HARNESS: &str =
-    include_str!("../../../fixtures/migration/baseline_recording_harness_v2_1.rs.txt");
-const V2_1_SHA256SUMS: &str = include_str!("../../../fixtures/migration/SHA256SUMS");
-const V3_RIOT: &str = include_str!("../../../fixtures/migration/v3_riot_recording.json");
-const V3_CATALOG: &str = include_str!("../../../fixtures/migration/v3_catalog_recording.json");
+const V3_RIOT: &str = include_str!("../../../fixtures/contracts/v3_riot_recording.json");
 
 /// Capability of the recording limiter. It is a process-local test double.
 const RECORDING_CAPABILITY: LimiterCapability =
     LimiterCapability::new(Enforcement::Local, "concord.baseline.recording", 1);
 
 // ---------------------------------------------------------------------------
-// Named, documented intentional differences
-// ---------------------------------------------------------------------------
-
-/// One intentional difference between the v2.1 and v3 recordings.
-///
-/// Every exception names the spec rule that selects the v3 behavior, is
-/// restricted to one endpoint ID and one public query key, and pins both the
-/// exact v2.1 recorded value and the exact v3 recorded value. Key names,
-/// occurrence order and every other recorded fact stay under exact equality.
-struct Exception {
-    name: &'static str,
-    rule: &'static str,
-    endpoint_id: &'static str,
-    query_key: &'static str,
-    v2_1_value: &'static str,
-    v3_value: &'static str,
-}
-
-/// The v2.1 plan projection replaced every pagination-controlled query value
-/// with the redaction marker, although neither value is sensitive. In v3 a
-/// public value is withheld from automatic observation only when it is
-/// explicitly `#[sensitive]` or matches the mandatory name-based rule
-/// (PRIVACY-01, §6.4); a pagination cursor/size is an ordinary public value
-/// that the plan shows with its page-controlled provenance (§18.5 shows
-/// `offset <- endpoint.offset, initialized 0, page-controlled`). The wire
-/// value, key, position and rate state are unchanged; only the plan's
-/// observation of these two non-sensitive values differs.
-const EXCEPTIONS: &[Exception] = &[
-    Exception {
-        name: "riot.match_ids.start.plan-observation",
-        rule: "PRIVACY-01 (§6.4); §18.5 page-controlled values are ordinary public values",
-        endpoint_id: "riot_api.regional.match_v5.match_ids_by_puuid",
-        query_key: "start",
-        v2_1_value: "%3Credacted%3E",
-        v3_value: "0",
-    },
-    Exception {
-        name: "riot.match_ids.count.plan-observation",
-        rule: "PRIVACY-01 (§6.4); §18.5 page-controlled values are ordinary public values",
-        endpoint_id: "riot_api.regional.match_v5.match_ids_by_puuid",
-        query_key: "count",
-        v2_1_value: "%3Credacted%3E",
-        v3_value: "20",
-    },
-    Exception {
-        name: "catalog.items_list.offset.plan-observation",
-        rule: "PRIVACY-01 (§6.4); §18.5 page-controlled values are ordinary public values",
-        endpoint_id: "catalog.items.list",
-        query_key: "offset",
-        v2_1_value: "%3Credacted%3E",
-        v3_value: "0",
-    },
-    Exception {
-        name: "catalog.items_list.count.plan-observation",
-        rule: "PRIVACY-01 (§6.4); §18.5 page-controlled values are ordinary public values",
-        endpoint_id: "catalog.items.list",
-        query_key: "count",
-        v2_1_value: "%3Credacted%3E",
-        v3_value: "25",
-    },
-];
-
-// ---------------------------------------------------------------------------
 // Comparable recording model
 // ---------------------------------------------------------------------------
 
-/// One recorded endpoint context, in the exact shape of the v2.1 recording.
+/// One recorded endpoint context in the committed V3 contract fixture.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Record {
     label: String,
@@ -577,8 +490,7 @@ async fn record_riot() -> Vec<Capture> {
             "mastery_by_champion",
             champion_mastery_v4().mastery_by_champion("puuid-a".to_owned(), 7)
         );
-        // v2.1 `set_count(Some(3))` was an exact outer-slot replacement; v3
-        // spells that `replace_count` (§25.2).
+        // `replace_count` performs an exact outer-slot replacement.
         both!(
             "top_masteries_by_puuid",
             champion_mastery_v4()
@@ -777,357 +689,7 @@ async fn record_riot() -> Vec<Capture> {
 }
 
 // ---------------------------------------------------------------------------
-// v3 migration of the v2.1 Catalog contract (separate baseline fixture)
-// ---------------------------------------------------------------------------
-
-/// The v2.1 Catalog contract of `crates/concord-examples/src/contracts/
-/// catalog_contract.rs` at the captured baseline, converted to v3 without any
-/// meaning change: the policy keeps its formal-derived `"tenant"` label and
-/// the write keeps its legacy `"client.tenant"` label (§24.2), explicit query
-/// and header blocks keep their order, and `authenticate` keeps its explicit
-/// `auth replace` fence.
-mod migrated {
-    use std::num::NonZeroU32;
-
-    use concord::auth::{CredentialMaterial, SecretCredential};
-    use concord::pagination::{OffsetInit, OffsetPagination};
-    use concord::{AtomError, BoundedAtomWriter, Json, RequestAtom, SecretString, api};
-
-    pub type TenantId = String;
-    pub type Locale = String;
-    pub type Region = String;
-    pub type Language = String;
-    pub type Category = String;
-    pub type Tag = String;
-    pub type ItemId = String;
-    pub type CommandId = String;
-    pub type PageSize = NonZeroU32;
-
-    pub const DEFAULT_PAGE_SIZE: PageSize = match NonZeroU32::new(25) {
-        Some(value) => value,
-        None => unreachable!(),
-    };
-
-    /// API version path segment.
-    pub struct ApiVersion(&'static str);
-
-    impl Default for ApiVersion {
-        fn default() -> Self {
-            Self("v2")
-        }
-    }
-
-    impl RequestAtom for ApiVersion {
-        fn write_atom(&self, output: &mut BoundedAtomWriter<'_>) -> Result<(), AtomError> {
-            output.push_str(self.0)
-        }
-    }
-
-    #[derive(serde::Serialize)]
-    pub struct LoginInput {
-        pub user: String,
-    }
-
-    #[derive(serde::Serialize)]
-    pub struct UpdateInput {
-        pub title: String,
-    }
-
-    #[derive(serde::Deserialize)]
-    #[expect(
-        dead_code,
-        reason = "decoded response DTO; the recording limiter denies before any response"
-    )]
-    pub struct ItemSummary {
-        pub id: String,
-    }
-
-    #[derive(serde::Deserialize)]
-    #[expect(
-        dead_code,
-        reason = "decoded response DTO; the recording limiter denies before any response"
-    )]
-    pub struct Item {
-        pub id: String,
-        pub title: String,
-    }
-
-    /// Endpoint-backed session material.
-    pub struct SessionToken(pub SecretString);
-
-    impl CredentialMaterial for SessionToken {}
-
-    impl SecretCredential for SessionToken {
-        fn expose_secret(&self) -> &str {
-            self.0.expose_secret()
-        }
-    }
-
-    impl<'de> serde::Deserialize<'de> for SessionToken {
-        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-            let value = String::deserialize(deserializer)?;
-            SecretString::try_new(value)
-                .map(Self)
-                .map_err(serde::de::Error::custom)
-        }
-    }
-
-    api! {
-        /// Typed client for the catalog service.
-        client CatalogApi {
-            base "https://catalog.example.test/root/";
-            timeout 20s;
-
-            values {
-                /// Tenant whose catalog is visible.
-                #[sensitive]
-                tenant: TenantId;
-
-                /// Optional localization preference.
-                locale?: Locale;
-
-                /// API version segment selected for this client snapshot.
-                #[default]
-                api_version: ApiVersion;
-            }
-
-            credentials {
-                secret bootstrap_key;
-                credential application_key = api_key(secret.bootstrap_key);
-                credential session = endpoint authenticate;
-            }
-
-            subdomain ["api"];
-            path "{api_version}";
-
-            query {
-                "tenant" = tenant;
-                "locale" = locale;
-            }
-
-            headers {
-                "X-Client-Version" = "2";
-            }
-
-            auth {
-                header "X-Bootstrap-Key" = application_key;
-            }
-
-            rate_limits {
-                policy tenant_reads(tenant) {
-                    id "catalog.tenant.read";
-                    key [origin, "tenant" = tenant];
-                    cost 1;
-                    allow 120 per 1m;
-                    allow 5_000 per 1h;
-                }
-            }
-
-            /// Creates a session credential.
-            POST authenticate(
-                body input: LoginInput via Json,
-            ) -> SessionToken via Json {
-                id "catalog.auth.login";
-                path "auth/session";
-                auth replace {
-                    header "X-Bootstrap-Key" = application_key;
-                }
-                effect non_idempotent;
-            }
-
-            scope regional(
-                region: Region,
-                language?: Language,
-            ) {
-                subdomain [region];
-                path "regions/{region}";
-
-                headers {
-                    "Accept-Language" = language;
-                }
-
-                auth replace {
-                    bearer session challenge unauthorized;
-                }
-
-                rate_limit tenant_reads(tenant = client.tenant);
-
-                /// Returns one page of item summaries.
-                GET item_summaries(
-                    category?: Category,
-                    offset: u64 = 0,
-                    count: PageSize = DEFAULT_PAGE_SIZE,
-                    tags: Vec<Tag>,
-                ) -> Vec<ItemSummary> via Json {
-                    id "catalog.items.list";
-                    path "items";
-                    query {
-                        "category" = category;
-                        "offset" = offset;
-                        "count" = count;
-                        "tag" = each tags;
-                    }
-                    paginate via OffsetPagination {
-                        init OffsetInit { offset: offset, page_size: count };
-                        cursor -> offset;
-                    }
-                }
-
-                /// Returns one item.
-                GET item(id: ItemId) -> Item via Json {
-                    id "catalog.item.get";
-                    path "items/{id}";
-                    expose accepted_bytes;
-                }
-
-                /// Applies an idempotent update identified by `command_id`.
-                PUT update_item(
-                    id: ItemId,
-                    #[sensitive]
-                    command_id: CommandId,
-                    body update: UpdateInput via Json,
-                ) -> Item via Json {
-                    id "catalog.item.update";
-                    path "items/{id}";
-                    headers {
-                        "Idempotency-Key" = command_id;
-                    }
-                    effect idempotent;
-                    rate_limit {
-                        id "catalog.item.write";
-                        key [origin, endpoint, "client.tenant" = client.tenant];
-                        cost 5;
-                        allow 30 per 1m;
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// The same write with the legacy `"client.tenant"` label renamed to
-/// `"tenant"`; every other recorded fact (ID, cost, window, origin, endpoint,
-/// tenant value) is identical. Used only to prove that a label is
-/// state-affecting (§12.3, V3-R02).
-mod relabeled {
-    use concord::{Json, api};
-
-    pub use super::migrated::{ItemId, Region, TenantId, UpdateInput};
-
-    api! {
-        client CatalogRelabeled {
-            base "https://catalog.example.test/root/";
-            timeout 20s;
-
-            values {
-                #[sensitive]
-                tenant: TenantId;
-            }
-
-            subdomain ["api"];
-
-            scope regional(region: Region) {
-                subdomain [region];
-                path "regions/{region}";
-
-                PUT update_item(id: ItemId, body update: UpdateInput via Json) -> () via concord::Discard {
-                    id "catalog.item.update";
-                    path "items/{id}";
-                    effect idempotent;
-                    rate_limit {
-                        id "catalog.item.write";
-                        key [origin, endpoint, "tenant" = client.tenant];
-                        cost 5;
-                        allow 30 per 1m;
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn catalog_client(tenant: &str, recorder: &Arc<Recorder>) -> migrated::CatalogApi {
-    let limiter = RecordingLimiter(Arc::clone(recorder));
-    let client = migrated::CatalogApi::builder()
-        .set_tenant(tenant)
-        .bootstrap_key(SecretString::try_new("catalog-bootstrap-sentinel").expect("secret"))
-        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(limiter)))
-        .build()
-        .expect("baseline Catalog client");
-    // v2.1 `credentials().session().set(token).await` is the synchronous,
-    // explicit local installation `replace_session` in v3 (§11.3).
-    client
-        .credentials()
-        .replace_session(migrated::SessionToken(
-            SecretString::try_new("session-sentinel").expect("session"),
-        ))
-        .expect("install session");
-    client
-}
-
-async fn record_catalog() -> Vec<Capture> {
-    use migrated::{CatalogApi, UpdateInput};
-    let recorder = Arc::new(Recorder::default());
-    let mut out = Vec::new();
-    for tenant in ["tenant-a", "tenant-b"] {
-        let client = catalog_client(tenant, &recorder);
-        for region in ["eu", "us"] {
-            let label = format!("{tenant}:{region}");
-            rec!(
-                out,
-                recorder,
-                client,
-                format!("{label}:item_summaries"),
-                CatalogApi::unbound()
-                    .regional(region.to_owned())
-                    .item_summaries(vec!["t1".to_owned(), "t2".to_owned()]),
-                client
-                    .regional(region.to_owned())
-                    .item_summaries(vec!["t1".to_owned(), "t2".to_owned()])
-            );
-            rec!(
-                out,
-                recorder,
-                client,
-                format!("{label}:item"),
-                CatalogApi::unbound()
-                    .regional(region.to_owned())
-                    .item("item-1".to_owned()),
-                client.regional(region.to_owned()).item("item-1".to_owned())
-            );
-            rec!(
-                out,
-                recorder,
-                client,
-                format!("{label}:update_item"),
-                CatalogApi::unbound()
-                    .regional(region.to_owned())
-                    .update_item(
-                        "item-1".to_owned(),
-                        "cmd-1".to_owned(),
-                        UpdateInput {
-                            title: "t".to_owned()
-                        }
-                    ),
-                client.regional(region.to_owned()).update_item(
-                    "item-1".to_owned(),
-                    "cmd-1".to_owned(),
-                    UpdateInput {
-                        title: "t".to_owned()
-                    }
-                )
-            );
-        }
-    }
-    assert_eq!(out.len(), 12);
-    if let Ok(path) = std::env::var("CONCORD_BASELINE_CATALOG_RECORDING_OUT") {
-        std::fs::write(path, render_recording(&out)).expect("write v3 recording");
-    }
-    out
-}
-
-// ---------------------------------------------------------------------------
-// v3 recording rendering (committed comparison fixtures)
+// V3 recording rendering (committed contract fixture)
 // ---------------------------------------------------------------------------
 
 fn json(value: &str) -> String {
@@ -1154,8 +716,8 @@ fn target_text(target: PlacementTarget) -> String {
     }
 }
 
-/// Renders one capture: the exact v2.1 line shape, followed by a `v3` member
-/// holding the v3-only schema, capability, identity and auth facts.
+/// Renders request and rate-plan facts with their V3 schema, capability,
+/// identity and authentication descriptors.
 fn render_capture(capture: &Capture) -> String {
     let record = &capture.record;
     let mut line = String::new();
@@ -1310,106 +872,12 @@ fn render_recording(captures: &[Capture]) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Equivalence assertions
+// Current contract assertions
 // ---------------------------------------------------------------------------
 
-fn split_url(url: &str) -> (&str, Vec<(&str, &str)>) {
-    match url.split_once('?') {
-        None => (url, Vec::new()),
-        Some((route, query)) => (
-            route,
-            query
-                .split('&')
-                .map(|pair| pair.split_once('=').unwrap_or((pair, "")))
-                .collect(),
-        ),
-    }
-}
-
-/// Asserts exact state-equivalence of one context, applying only the named
-/// exceptions. Returns the names of the exceptions it applied.
-fn assert_record_equivalent(v2_1: &Record, v3: &Record) -> Vec<&'static str> {
-    let label = &v2_1.label;
-    assert_eq!(v3.label, v2_1.label, "context order");
-    assert_eq!(v3.endpoint_id, v2_1.endpoint_id, "{label}: endpoint ID");
-    assert_eq!(v3.method, v2_1.method, "{label}: method");
-    assert_eq!(v3.timeout, v2_1.timeout, "{label}: timeout selection");
-    assert_eq!(
-        v3.headers, v2_1.headers,
-        "{label}: public header occurrences in order"
-    );
-    assert_eq!(
-        v3.limiter, v2_1.limiter,
-        "{label}: limiter endpoint/method/origin and every policy ID, cost, window and canonical key"
-    );
-
-    let (v2_route, v2_query) = split_url(&v2_1.observed_url);
-    let (v3_route, v3_query) = split_url(&v3.observed_url);
-    assert_eq!(v3_route, v2_route, "{label}: scheme, host and route shape");
-    assert_eq!(
-        v3_query.len(),
-        v2_query.len(),
-        "{label}: public query occurrence count ({} vs {})",
-        v2_1.observed_url,
-        v3.observed_url
-    );
-    let mut applied = Vec::new();
-    for (position, ((v2_key, v2_value), (v3_key, v3_value))) in
-        v2_query.iter().zip(v3_query.iter()).enumerate()
-    {
-        assert_eq!(
-            v3_key, v2_key,
-            "{label}: query key at occurrence {position}"
-        );
-        if v3_value == v2_value {
-            continue;
-        }
-        let exception = EXCEPTIONS
-            .iter()
-            .find(|exception| {
-                exception.endpoint_id == v2_1.endpoint_id && exception.query_key == *v2_key
-            })
-            .unwrap_or_else(|| {
-                panic!(
-                    "{label}: query `{v2_key}` value changed from `{v2_value}` to `{v3_value}` without a named exception"
-                )
-            });
-        assert_eq!(
-            (*v2_value, *v3_value),
-            (exception.v2_1_value, exception.v3_value),
-            "{label}: exception {} ({}) pins both values",
-            exception.name,
-            exception.rule
-        );
-        applied.push(exception.name);
-    }
-    applied
-}
-
-fn assert_equivalent(baseline: &[Record], captures: &[Capture], exception_prefix: &str) {
-    assert_eq!(captures.len(), baseline.len(), "context count");
-    let mut applied = BTreeSet::new();
-    for (v2_1, capture) in baseline.iter().zip(captures) {
-        applied.extend(assert_record_equivalent(v2_1, &capture.record));
-    }
-    for exception in EXCEPTIONS
-        .iter()
-        .filter(|exception| exception.name.starts_with(exception_prefix))
-    {
-        assert!(
-            applied.contains(exception.name),
-            "exception {} is stale: it no longer matches any recorded difference",
-            exception.name
-        );
-    }
-}
-
-/// Asserts the v3-only schema facts against expectations derived from the
-/// v2.1 recording: built-in dimensions keep their reserved labels and the
-/// `utf8` framing, custom dimensions keep their explicit labels (String
-/// values, `utf8`), windows are the v2.1 windows in canonical (duration,
-/// capacity) order, the framing version is the unchanged v2.1 framing, and
-/// the bound plan's value-free summary agrees with the admitted plan.
+/// Asserts the current schema contract: reserved built-in labels, explicit
+/// custom labels, UTF-8 encoding IDs, canonical window order and framing
+/// version. The bound plan summary must agree with the admitted plan.
 fn assert_schemas(captures: &[Capture]) {
     for capture in captures {
         let label = &capture.record.label;
@@ -1425,7 +893,10 @@ fn assert_schemas(captures: &[Capture]) {
         for (schema, policy) in capture.schemas.iter().zip(&capture.record.limiter.policies) {
             assert_eq!(schema.id, policy.id, "{label}");
             assert_eq!(schema.framing_version, RATE_KEY_FRAMING_VERSION, "{label}");
-            assert_eq!(RATE_KEY_FRAMING_VERSION, 1, "v2.1 framing is version 1");
+            assert_eq!(
+                RATE_KEY_FRAMING_VERSION, 1,
+                "the current key framing version is 1"
+            );
             let expected_dimensions = policy
                 .key
                 .iter()
@@ -1705,7 +1176,7 @@ const TOURNAMENT_V5: [&str; 7] = [
     "register_tournament",
 ];
 
-/// Per-endpoint attachments in v2.1: each ID covers exactly one endpoint in
+/// Per-endpoint attachments: each ID covers exactly one endpoint in
 /// each origin, even where windows are numerically equal to another ID's.
 const PER_ENDPOINT_POLICIES: [(&str, &str); 22] = [
     ("concord.riot.3", "champion_rotations"),
@@ -1812,162 +1283,53 @@ fn assert_riot_policy_membership(records: &[&Record]) {
 // Tests
 // ---------------------------------------------------------------------------
 
-/// A minimal SHA-256 (FIPS 180-4) used only to prove the captured baseline
-/// bytes this test compares against are the ones listed in `SHA256SUMS`.
-fn sha256(data: &[u8]) -> String {
-    const K: [u32; 64] = [
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
-        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
-        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
-        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
-        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
-        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
-        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
-        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
-        0xc67178f2,
-    ];
-    let mut state: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
-        0x5be0cd19,
-    ];
-    let mut message = data.to_vec();
-    let bit_length = u64::try_from(data.len()).expect("length") * 8;
-    message.push(0x80);
-    while message.len() % 64 != 56 {
-        message.push(0);
-    }
-    message.extend_from_slice(&bit_length.to_be_bytes());
-    for block in message.chunks_exact(64) {
-        let mut w = [0_u32; 64];
-        for (index, word) in block.chunks_exact(4).enumerate() {
-            w[index] = u32::from_be_bytes([word[0], word[1], word[2], word[3]]);
-        }
-        for index in 16..64 {
-            let s0 = w[index - 15].rotate_right(7)
-                ^ w[index - 15].rotate_right(18)
-                ^ (w[index - 15] >> 3);
-            let s1 = w[index - 2].rotate_right(17)
-                ^ w[index - 2].rotate_right(19)
-                ^ (w[index - 2] >> 10);
-            w[index] = w[index - 16]
-                .wrapping_add(s0)
-                .wrapping_add(w[index - 7])
-                .wrapping_add(s1);
-        }
-        let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = state;
-        for index in 0..64 {
-            let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
-            let choice = (e & f) ^ (!e & g);
-            let t1 = h
-                .wrapping_add(s1)
-                .wrapping_add(choice)
-                .wrapping_add(K[index])
-                .wrapping_add(w[index]);
-            let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
-            let majority = (a & b) ^ (a & c) ^ (b & c);
-            let t2 = s0.wrapping_add(majority);
-            h = g;
-            g = f;
-            f = e;
-            e = d.wrapping_add(t1);
-            d = c;
-            c = b;
-            b = a;
-            a = t1.wrapping_add(t2);
-        }
-        for (slot, value) in state.iter_mut().zip([a, b, c, d, e, f, g, h]) {
-            *slot = slot.wrapping_add(value);
-        }
-    }
-    state.iter().fold(String::new(), |mut out, word| {
-        write!(out, "{word:08x}").expect("write");
-        out
-    })
-}
-
-#[test]
-fn captured_v2_1_baseline_is_unchanged() {
-    assert_eq!(
-        sha256(b"abc"),
-        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-    );
-    let sums = V2_1_SHA256SUMS
-        .lines()
-        .map(|line| line.split_once("  ").expect("sha256sum line"))
-        .map(|(sum, path)| (path.trim(), sum.trim()))
-        .collect::<BTreeMap<_, _>>();
-    for (path, bytes) in [
-        ("fixtures/migration/v2_1_riot_recording.json", V2_1_RIOT),
-        (
-            "fixtures/migration/v2_1_catalog_recording.json",
-            V2_1_CATALOG,
-        ),
-        (
-            "fixtures/migration/baseline_recording_harness_v2_1.rs.txt",
-            V2_1_HARNESS,
-        ),
-    ] {
-        assert_eq!(
-            sums.get(path).copied(),
-            Some(sha256(bytes.as_bytes()).as_str()),
-            "{path} is the captured baseline"
-        );
-    }
-    assert_eq!(sums.len(), 3);
-}
-
-/// V3-R01 / MIGRATE-02: every Riot context keeps its endpoint ID, method,
-/// route, public query/header occurrences, timeout, logical origin and every
-/// policy ID, cost, window and canonical key byte; only the named plan
-/// observation exceptions differ.
+/// Every recorded request and rate-plan fact matches the current V3 oracle.
 #[tokio::test]
-async fn riot_v3_recording_is_state_equivalent_to_v2_1() {
-    let baseline = parse_recording(V2_1_RIOT);
-    assert_eq!(baseline.len(), 92);
+async fn riot_recorded_facts_match_the_current_contract() {
+    let expected = parse_recording(V3_RIOT);
+    assert_eq!(expected.len(), 92);
     let captures = record_riot().await;
-    assert_equivalent(&baseline, &captures, "riot.");
+    let actual = captures
+        .iter()
+        .map(|capture| capture.record.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(actual, expected);
 }
 
-/// The v3-only schema facts of every Riot policy are the v2.1 facts: origin
-/// labels/kinds, `utf8` encoding IDs, canonical windows and framing version,
-/// and the bound plan summary agrees with the admitted plan.
+/// Schema labels, kinds, encoding IDs, canonical windows and framing version
+/// agree with the current key contract and admitted plan.
 #[tokio::test]
-async fn riot_v3_policy_schemas_match_the_v2_1_key_contract() {
+async fn riot_policy_schemas_match_the_current_key_contract() {
     let captures = record_riot().await;
     assert_schemas(&captures);
 }
 
-/// MIGRATE-02: the sharing relation between endpoint/key contexts is
-/// identical, with two origins per route tree, all three originally
-/// scope-shared groups, the application buckets beside the method buckets,
-/// and per-endpoint IDs that are never merged even with equal windows. The
-/// relation is confirmed dynamically on the actual generated keys.
+/// The current sharing relation spans two origins, scope-shared and
+/// application buckets, and independent per-endpoint policy identities.
+/// The real limiter must enforce that relation on the actual generated keys.
 #[tokio::test(start_paused = true)]
-async fn riot_sharing_relation_is_preserved_and_enforced() {
-    let baseline = parse_recording(V2_1_RIOT);
+async fn riot_sharing_relation_matches_the_current_contract_and_is_enforced() {
+    let committed = parse_recording(V3_RIOT);
     let captures = record_riot().await;
-    let v2_records = baseline.iter().collect::<Vec<_>>();
-    let v3_records = captures
+    let expected_records = committed.iter().collect::<Vec<_>>();
+    let actual_records = captures
         .iter()
         .map(|capture| &capture.record)
         .collect::<Vec<_>>();
-    assert_uniform_windows(&v2_records);
-    assert_uniform_windows(&v3_records);
-    let before = sharing(&v2_records);
-    let after = sharing(&v3_records);
-    assert_eq!(after, before, "sharing relation");
-    assert_riot_groups(&before);
-    assert_riot_groups(&after);
-    assert_riot_policy_membership(&v2_records);
-    assert_riot_policy_membership(&v3_records);
-    assert_dynamic_sharing(&captures, &after);
+    assert_uniform_windows(&expected_records);
+    assert_uniform_windows(&actual_records);
+    let expected = sharing(&expected_records);
+    let actual = sharing(&actual_records);
+    assert_eq!(actual, expected, "sharing relation");
+    assert_riot_groups(&expected);
+    assert_riot_groups(&actual);
+    assert_riot_policy_membership(&expected_records);
+    assert_riot_policy_membership(&actual_records);
+    assert_dynamic_sharing(&captures, &actual);
 }
 
-/// Identity and auth placement of every Riot endpoint: derived v2.1 IDs are
-/// reproduced by v3 derivation (no pin needed; none was moved or renamed),
-/// and every endpoint keeps the one client-level private API-key header
-/// placement with no challenge attribution and no displaced placement.
+/// Every Riot endpoint has its navigation-derived identity and one private
+/// client-level API-key header, with no challenge or displaced placement.
 #[tokio::test]
 async fn riot_identity_and_auth_placement_are_preserved() {
     let captures = record_riot().await;
@@ -2010,245 +1372,17 @@ async fn riot_identity_and_auth_placement_are_preserved() {
     }
 }
 
-/// The fresh v3 Riot recording equals the committed v3 comparison fixture
+/// The fresh V3 Riot recording equals the committed contract fixture
 /// byte for byte (detects any later state change, including in cleanup).
 #[tokio::test]
 async fn riot_v3_recording_matches_committed_v3_fixture() {
     let captures = record_riot().await;
     assert_eq!(render_recording(&captures), V3_RIOT);
-    // The committed v3 fixture is itself state-equivalent to v2.1.
     assert_eq!(parse_recording(V3_RIOT).len(), 92);
-    let committed = parse_recording(V3_RIOT);
-    for (v2_1, v3) in parse_recording(V2_1_RIOT).iter().zip(&committed) {
-        assert_record_equivalent(v2_1, v3);
-    }
-}
-
-/// V3-R02 / MIGRATE-02: the separate Catalog migration fixture keeps the
-/// v2.1 keys byte for byte, including the legacy `"client.tenant"` label, for
-/// two tenants and two origins.
-#[tokio::test]
-async fn catalog_v3_recording_is_state_equivalent_to_v2_1() {
-    let baseline = parse_recording(V2_1_CATALOG);
-    assert_eq!(baseline.len(), 12);
-    let captures = record_catalog().await;
-    assert_equivalent(&baseline, &captures, "catalog.");
-    assert_schemas(&captures);
-    for capture in &captures {
-        let label = &capture.record.label;
-        assert_eq!(capture.id_source, IdSource::Explicit, "{label}");
-        assert_eq!(
-            capture.auth,
-            [AuthRecord {
-                target: PlacementTarget::Bearer,
-                credential: "session",
-                challenge: ChallengeRule::Unauthorized,
-                source: CredentialSourceKind::Endpoint,
-                origin: "CatalogApi::regional",
-            }],
-            "{label}"
-        );
-        assert_eq!(
-            capture.displaced,
-            [DisplacedRecord {
-                target: PlacementTarget::Header("X-Bootstrap-Key"),
-                credential: "application_key",
-                origin: "CatalogApi",
-                displaced_by: "CatalogApi::regional",
-                mode: AuthResetMode::Replace,
-            }],
-            "{label}"
-        );
-        if label.ends_with(":update_item") {
-            let write = capture
-                .record
-                .limiter
-                .policies
-                .iter()
-                .find(|policy| policy.id == "catalog.item.write")
-                .expect("write policy");
-            let dimension_labels = write
-                .key
-                .iter()
-                .map(|(dimension, _)| dimension.as_str())
-                .collect::<Vec<_>>();
-            assert_eq!(dimension_labels, ["origin", "endpoint", "client.tenant"]);
-        }
-    }
-}
-
-/// Catalog sharing: tenants and origins partition both policies; the read
-/// policy is shared by the three regional endpoints of one tenant and origin;
-/// the write policy covers only the update. Confirmed dynamically.
-#[tokio::test(start_paused = true)]
-async fn catalog_sharing_relation_is_preserved_and_enforced() {
-    let baseline = parse_recording(V2_1_CATALOG);
-    let captures = record_catalog().await;
-    let v2_records = baseline.iter().collect::<Vec<_>>();
-    let v3_records = captures
-        .iter()
-        .map(|capture| &capture.record)
-        .collect::<Vec<_>>();
-    assert_uniform_windows(&v2_records);
-    assert_uniform_windows(&v3_records);
-    let before = sharing(&v2_records);
-    let after = sharing(&v3_records);
-    assert_eq!(after, before, "sharing relation");
-    let contexts = ["tenant-a:eu", "tenant-a:us", "tenant-b:eu", "tenant-b:us"];
-    let expected = |names: &[&str]| -> BTreeSet<BTreeSet<String>> {
-        contexts
-            .iter()
-            .map(|context| labels(context, names))
-            .collect()
-    };
-    for relation in [&before, &after] {
-        assert_eq!(
-            groups(relation, "catalog.tenant.read"),
-            expected(&["item_summaries", "item", "update_item"])
-        );
-        assert_eq!(
-            groups(relation, "catalog.item.write"),
-            expected(&["update_item"])
-        );
-        assert_eq!(relation.len(), 2);
-    }
-    assert_dynamic_sharing(&captures, &after);
-}
-
-/// The fresh v3 Catalog recording equals the committed v3 comparison fixture.
-#[tokio::test]
-async fn catalog_v3_recording_matches_committed_v3_fixture() {
-    let captures = record_catalog().await;
-    assert_eq!(render_recording(&captures), V3_CATALOG);
-}
-
-/// V3-R02 / §12.3: renaming the legacy `"client.tenant"` label to `"tenant"`
-/// with the same policy ID, cost, window and tenant value changes the schema
-/// and the canonical key, and selects a different bucket; the preserved
-/// label reproduces the v2.1 bytes exactly.
-#[tokio::test(start_paused = true)]
-async fn catalog_client_tenant_label_is_state_affecting() {
-    let recorder = Arc::new(Recorder::default());
-    let limiter = RecordingLimiter(Arc::clone(&recorder));
-    let relabeled_client = relabeled::CatalogRelabeled::builder()
-        .set_tenant("tenant-a")
-        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(limiter)))
-        .build()
-        .expect("relabeled client");
-    let relabeled_request = relabeled_client.regional("eu").update_item(
-        "item-1",
-        migrated::UpdateInput {
-            title: "t".to_owned(),
-        },
-    );
-    let relabeled_plan = relabeled_request.plan().expect("plan");
-    let relabeled = record(
-        "tenant-a:eu:update_item",
-        &recorder,
-        relabeled_client
-            .plan(
-                &relabeled::CatalogRelabeled::unbound()
-                    .regional("eu")
-                    .update_item(
-                        "item-1",
-                        migrated::UpdateInput {
-                            title: "t".to_owned(),
-                        },
-                    ),
-            )
-            .expect("unbound plan"),
-        relabeled_plan,
-        relabeled_request.into_future(),
-    )
-    .await;
-
-    let preserved = record_catalog()
-        .await
-        .into_iter()
-        .find(|capture| capture.record.label == "tenant-a:eu:update_item")
-        .expect("preserved capture");
-    let baseline = parse_recording(V2_1_CATALOG)
-        .into_iter()
-        .find(|record| record.label == "tenant-a:eu:update_item")
-        .expect("baseline record");
-
-    let find = |capture: &Capture| -> (PolicyRecord, SchemaRecord, RateLimitPolicy) {
-        let index = capture
-            .record
-            .limiter
-            .policies
-            .iter()
-            .position(|policy| policy.id == "catalog.item.write")
-            .expect("write policy");
-        (
-            capture.record.limiter.policies[index].clone(),
-            capture.schemas[index].clone(),
-            capture.plan.policies()[index].clone(),
-        )
-    };
-    let (preserved_policy, preserved_schema, preserved_actual) = find(&preserved);
-    let (relabeled_policy, relabeled_schema, relabeled_actual) = find(&relabeled);
-    let baseline_policy = baseline
-        .limiter
-        .policies
-        .iter()
-        .find(|policy| policy.id == "catalog.item.write")
-        .expect("baseline write policy");
-
-    // The preserved label reproduces the captured v2.1 key exactly.
-    assert_eq!(&preserved_policy, baseline_policy);
-
-    // Same ID, cost, windows, origin/endpoint bytes and tenant value bytes.
-    assert_eq!(relabeled_policy.id, preserved_policy.id);
-    assert_eq!(relabeled_policy.cost, preserved_policy.cost);
-    assert_eq!(relabeled_policy.windows, preserved_policy.windows);
-    assert_eq!(relabeled_policy.key.len(), preserved_policy.key.len());
-    for (relabeled_part, preserved_part) in relabeled_policy.key.iter().zip(&preserved_policy.key) {
-        assert_eq!(relabeled_part.1, preserved_part.1, "value bytes are equal");
-    }
-    assert_eq!(
-        relabeled.record.limiter.logical_origin,
-        preserved.record.limiter.logical_origin
-    );
-
-    // ... yet the schema and the canonical key differ by the label alone.
-    assert_eq!(preserved_policy.key[2].0, "client.tenant");
-    assert_eq!(relabeled_policy.key[2].0, "tenant");
-    assert_ne!(
-        relabeled_policy.key, preserved_policy.key,
-        "canonical key changed"
-    );
-    assert_ne!(relabeled_schema, preserved_schema, "schema changed");
-    assert_ne!(
-        relabeled_actual.schema(),
-        preserved_actual.schema(),
-        "value-free schema descriptors differ"
-    );
-    assert_eq!(relabeled_schema.id, preserved_schema.id);
-    assert_eq!(
-        relabeled_schema.canonical_windows,
-        preserved_schema.canonical_windows
-    );
-
-    // One limiter object: exhausting the preserved bucket leaves the
-    // relabeled bucket untouched, and vice versa.
-    let limiter = LocalRateLimiter::new();
-    let preserved_probe = probe_plan(&preserved_actual);
-    let relabeled_probe = probe_plan(&relabeled_actual);
-    assert!(probe(&limiter, &preserved, &preserved_probe));
-    assert!(
-        !probe(&limiter, &preserved, &preserved_probe),
-        "preserved bucket exhausted"
-    );
-    assert!(
-        probe(&limiter, &relabeled, &relabeled_probe),
-        "relabeled bucket is separate"
-    );
-    assert!(!probe(&limiter, &relabeled, &relabeled_probe));
 }
 
 // ---------------------------------------------------------------------------
-// §24.2 edit battery: dynamic key/dispatch recordings of declaration edits
+// V3 edit battery: dynamic key/dispatch recordings of declaration edits
 // ---------------------------------------------------------------------------
 //
 // A Riot-shaped base client and eight edited copies are recorded through the
@@ -3482,7 +2616,7 @@ async fn edit_battery_quota_hoist_newly_covers_the_sibling() {
     );
 }
 
-/// MIGRATE-01: merging two equal-number definitions under one ID is a
+/// RATE-02: merging two equal-number definitions under one ID is a
 /// sharing change, not a refactor.
 #[tokio::test]
 async fn edit_battery_merging_equal_numbers_is_a_sharing_change() {

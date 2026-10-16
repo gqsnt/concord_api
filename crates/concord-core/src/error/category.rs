@@ -172,8 +172,8 @@ pub enum RateLimitErrorKind {
     Acquire,
     /// Rate limiting failed an internal invariant.
     Internal,
-    /// A shared limiter found an incompatible active schema (or unverified
-    /// legacy state) under the same policy ID and failed closed before any
+    /// A shared limiter found an incompatible active schema under the same
+    /// policy ID and failed closed before any
     /// state use.
     SchemaConflict,
 }

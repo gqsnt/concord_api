@@ -1,6 +1,6 @@
 //! Cross-platform documentation and active-language truth checks.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -428,7 +428,6 @@ pub(crate) fn run(root: &Path) -> Result<(), String> {
     }
 
     check_documentation_inventory(root, &mut counts, &mut errors)?;
-    check_documentation_index(root, &mut errors)?;
     check_canonical_sources(root, &mut counts, &mut errors)?;
     check_tutorial_order(root, &mut errors)?;
     check_retired_language(root, &markdown_files, &mut counts, &mut errors)?;
@@ -470,9 +469,7 @@ pub(crate) fn run(root: &Path) -> Result<(), String> {
         "validated {} local Markdown links and {} heading fragments",
         counts.links, counts.fragments
     );
-    println!(
-        "validated canonical docs/README.md inventory coverage and the v2.1 -> v3 migration link"
-    );
+    println!("validated canonical docs/README.md inventory coverage");
     println!(
         "validated {} machine-owned canonical source anchors and the tutorial order",
         counts.canonical_sources
@@ -482,9 +479,7 @@ pub(crate) fn run(root: &Path) -> Result<(), String> {
         counts.retired_files
     );
     println!("validated one release-status owner and parser/spec/generated-name agreement");
-    println!(
-        "validated facade root exports, the Cargo feature matrix and migrate-v3/contract tool agreement"
-    );
+    println!("validated facade root exports, the Cargo feature matrix and contract tool agreement");
     println!(
         "validated the EXT-01 extension contract of {} public traits, IDENTITY-01 endpoint-ID wording across {} product source files and the LIMIT-02 runtime limits section",
         rules.traits, rules.identity_files
@@ -900,28 +895,6 @@ fn check_documentation_inventory(
         }
     }
     counts.links += 0;
-    Ok(())
-}
-
-/// The documentation index routes v2.1 users to the v3 migration guide, and
-/// the v2.0 -> v2.1 guide is explicitly historical (§19.2, DOC-01).
-fn check_documentation_index(root: &Path, errors: &mut Vec<String>) -> Result<(), String> {
-    let index = read(&root.join("docs/README.md"))?;
-    let links = markdown_links(&index);
-    if !links.iter().any(|target| target == "migration_v3.md") {
-        errors.push("docs/README.md: must link the v2.1 -> v3 guide `migration_v3.md`".to_owned());
-    }
-    let historical = root.join("docs/migration_v2_1.md");
-    if historical.is_file() {
-        let content = read(&historical)?;
-        let header = content.lines().take(12).collect::<Vec<_>>().join("\n");
-        if !header.contains("Historical") || !header.contains("migration_v3.md") {
-            errors.push(
-                "docs/migration_v2_1.md: the v2.0 -> v2.1 guide must be marked Historical near its heading and point to migration_v3.md"
-                    .to_owned(),
-            );
-        }
-    }
     Ok(())
 }
 
@@ -1423,14 +1396,10 @@ fn retired_clear_control(content: &str) -> bool {
 }
 
 fn is_retired_allowlisted(relative_path: &str) -> bool {
-    relative_path == "docs/migration_v2_1.md"
-        || relative_path == "docs/migration_v3.md"
-        || relative_path.starts_with("dev_doc/history/")
+    relative_path.starts_with("dev_doc/history/")
         || relative_path.starts_with("crates/concord/tests/ui/fail/")
         || relative_path.starts_with("crates/concord-macros/src/syntax/")
         || relative_path == "dev_doc/documentation_contract.md"
-        || relative_path.starts_with("tools/xtask/src/migration/")
-        || relative_path.starts_with("tools/xtask/fixtures/migrate_v3/")
         || relative_path == "tools/xtask/src/docs_check.rs"
 }
 
@@ -2271,20 +2240,8 @@ fn feature_matrix_errors(
     errors
 }
 
-/// The user docs show the exact `migrate-v3` and `contract` tool usage and
-/// the migration guide documents every stable diagnostic with its severity.
+/// The user docs show the exact V3 contract tool usage and format.
 fn check_tool_agreement(root: &Path, errors: &mut Vec<String>) -> Result<(), String> {
-    let guide = read(&root.join("docs/migration_v3.md"))?;
-    let usage = format!("cargo run -p concord-xtask -- {}", crate::migration::USAGE);
-    if !guide.contains(&usage) {
-        errors.push(format!(
-            "docs/migration_v3.md must show the exact tool usage `{usage}`"
-        ));
-    }
-    let report = read(&root.join("tools/xtask/src/migration/report.rs"))?;
-    for error in migration_code_errors(&report, &guide) {
-        errors.push(format!("docs/migration_v3.md: {error}"));
-    }
     let observation = read(&root.join("docs/planning_and_observation.md"))?;
     let contract_usage = format!("cargo run -p concord-xtask -- {}", crate::contract::USAGE);
     if !observation.contains(&contract_usage) {
@@ -2299,38 +2256,6 @@ fn check_tool_agreement(root: &Path, errors: &mut Vec<String>) -> Result<(), Str
         ));
     }
     Ok(())
-}
-
-fn migration_code_errors(report: &str, guide: &str) -> Vec<String> {
-    let tool = Regex::new(r#""(C3-MIGRATE-[A-Z0-9-]+)",\s*(Error|Warning|Note),"#)
-        .expect("migration code regex")
-        .captures_iter(report)
-        .map(|captures| (captures[1].to_owned(), captures[2].to_ascii_lowercase()))
-        .collect::<BTreeMap<_, _>>();
-    let documented = Regex::new(r"(?m)^\|\s*`(C3-MIGRATE-[A-Z0-9-]+)`\s*\|\s*([a-z]+)\s*\|")
-        .expect("documented code regex")
-        .captures_iter(guide)
-        .map(|captures| (captures[1].to_owned(), captures[2].to_owned()))
-        .collect::<BTreeMap<_, _>>();
-    let mut errors = Vec::new();
-    if tool.is_empty() {
-        errors.push("no C3-MIGRATE codes found in the migration tool".to_owned());
-    }
-    for (code, severity) in &tool {
-        match documented.get(code) {
-            None => errors.push(format!("tool diagnostic `{code}` is not documented")),
-            Some(documented) if documented != severity => errors.push(format!(
-                "`{code}` is documented as {documented} but the tool reports {severity}"
-            )),
-            Some(_) => {}
-        }
-    }
-    for code in documented.keys() {
-        if !tool.contains_key(code) {
-            errors.push(format!("documents unknown diagnostic `{code}`"));
-        }
-    }
-    errors
 }
 
 fn package_name(manifest: &str) -> Option<&str> {
@@ -2715,12 +2640,6 @@ mod tests {
 
     #[test]
     fn retired_language_allowlist_is_explicit_and_path_bounded() {
-        assert!(is_retired_allowlisted("docs/migration_v2_1.md"));
-        assert!(is_retired_allowlisted("docs/migration_v3.md"));
-        assert!(is_retired_allowlisted(
-            "tools/xtask/src/migration/declaration.rs"
-        ));
-        assert!(!is_retired_allowlisted("tools/xtask/src/migration.rs"));
         assert!(is_retired_allowlisted("dev_doc/history/old_audit.md"));
         assert!(is_retired_allowlisted(
             "crates/concord/tests/ui/fail/retired.rs"
@@ -3089,28 +3008,6 @@ mod tests {
         let (features, defaults) = manifest_features(real);
         assert!(features.contains("rate-limit") && features.contains("multipart"));
         assert!(defaults.contains("default-tls") && !defaults.contains("json"));
-    }
-
-    #[test]
-    fn migration_guide_must_document_every_tool_code_with_its_severity() {
-        let report = r#"
-            ParseRust => "C3-MIGRATE-PARSE-RUST", Error, false, "x";
-            KeyReplace => "C3-MIGRATE-KEY-REPLACE", Note, true, "y";
-        "#;
-        let guide =
-            "| `C3-MIGRATE-PARSE-RUST` | error | fix |\n| `C3-MIGRATE-KEY-REPLACE` | note | ok |\n";
-        assert!(migration_code_errors(report, guide).is_empty());
-        let drifted =
-            "| `C3-MIGRATE-PARSE-RUST` | warning | fix |\n| `C3-MIGRATE-GONE` | note | ok |\n";
-        let errors = migration_code_errors(report, drifted);
-        assert_eq!(errors.len(), 3, "{errors:?}");
-
-        let real = include_str!("migration/report.rs");
-        let tool_codes = Regex::new(r#""(C3-MIGRATE-[A-Z0-9-]+)",\s*(Error|Warning|Note),"#)
-            .expect("regex")
-            .captures_iter(real)
-            .count();
-        assert!(tool_codes >= 40, "parsed only {tool_codes} tool codes");
     }
 
     #[test]

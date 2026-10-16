@@ -38,9 +38,9 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
     let body_storage = endpoint.body.as_ref().map(|body| {
         let ty = context.rust_type(&body.ty);
         if body.optional {
-            quote!(__body: ::std::option::Option<#ty>,)
+            quote!(__concord_body: ::std::option::Option<#ty>,)
         } else {
-            quote!(__body: #ty,)
+            quote!(__concord_body: #ty,)
         }
     });
     let derive_clone = clone.then(|| quote!(#[derive(Clone)]));
@@ -56,15 +56,15 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
             }
             Positional::Body => {
                 let ty = context.rust_type(&endpoint.body.as_ref().expect("body").ty);
-                quote!(__body: #ty)
+                quote!(__concord_body: #ty)
             }
         });
     let (statements, fields) = value_initializers(context, &endpoint.values);
     let body_init = endpoint.body.as_ref().map(|body| {
         if body.optional {
-            quote!(__body: ::std::option::Option::None,)
+            quote!(__concord_body: ::std::option::Option::None,)
         } else {
-            quote!(__body,)
+            quote!(__concord_body,)
         }
     });
 
@@ -73,13 +73,13 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
     let (presence, emit) = emission_readers(context, access, &endpoint.program);
     let owner_ref = quote!(&*self.__owner);
     let path = match &endpoint.path {
-        None => quote!(#p::OwnerProjection::push_path(#owner_ref, &mut builder)?;),
+        None => quote!(#p::OwnerProjection::push_path(#owner_ref, &mut __concord_builder)?;),
         Some(LocalPath::Append(template)) => {
             let segments = template
                 .segments
                 .iter()
                 .map(|segment| path_segment(context, access, segment));
-            quote!(#p::OwnerProjection::push_path(#owner_ref, &mut builder)?; #(#segments)*)
+            quote!(#p::OwnerProjection::push_path(#owner_ref, &mut __concord_builder)?; #(#segments)*)
         }
         Some(LocalPath::Replace(template)) => {
             let segments = template
@@ -92,34 +92,34 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
     };
     let program = if endpoint.program.ops.is_empty() {
         quote! {
-            #p::OwnerProjection::visit_program(#owner_ref, &mut |segments| {
-                #p::apply_head_program(&mut builder, segments)
+            #p::OwnerProjection::visit_program(#owner_ref, &mut |__concord_segments| {
+                #p::apply_head_program(&mut __concord_builder, __concord_segments)
             })?;
         }
     } else {
         quote! {
-            #p::OwnerProjection::visit_program(#owner_ref, &mut |inherited| {
+            #p::OwnerProjection::visit_program(#owner_ref, &mut |__concord_inherited| {
                 #p::visit_extended_program(
-                    inherited,
+                    __concord_inherited,
                     #p::ProgramSegment { ops: Self::__OPS, emissions: self },
-                    |segments| #p::apply_head_program(&mut builder, segments),
+                    |__concord_segments| #p::apply_head_program(&mut __concord_builder, __concord_segments),
                 )
             })?;
         }
     };
     let auth = match &endpoint.auth {
-        None => quote!(#p::OwnerProjection::push_auth(#owner_ref, &mut builder)?;),
+        None => quote!(#p::OwnerProjection::push_auth(#owner_ref, &mut __concord_builder)?;),
         Some(LocalAuth::Append(placements)) => {
             let placements = placements
                 .iter()
                 .map(|placement| auth_placement(context, access, placement));
-            quote!(#p::OwnerProjection::push_auth(#owner_ref, &mut builder)?; { let builder = &mut builder; #(#placements)* })
+            quote!(#p::OwnerProjection::push_auth(#owner_ref, &mut __concord_builder)?; { let __concord_builder = &mut __concord_builder; #(#placements)* })
         }
         Some(LocalAuth::Replace(placements)) => {
             let placements = placements
                 .iter()
                 .map(|placement| auth_placement(context, access, placement));
-            quote!({ let builder = &mut builder; #(#placements)* })
+            quote!({ let __concord_builder = &mut __concord_builder; #(#placements)* })
         }
         Some(LocalAuth::Off) => TokenStream::new(),
     };
@@ -128,7 +128,7 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
             .rates
             .iter()
             .map(|rate| rate_declaration(context, access, rate));
-        quote!(#p::OwnerProjection::push_rate_limits(#owner_ref, &mut builder)?; { let builder = &mut builder; #(#local)* })
+        quote!(#p::OwnerProjection::push_rate_limits(#owner_ref, &mut __concord_builder)?; { let __concord_builder = &mut __concord_builder; #(#local)* })
     };
 
     // ---- EndpointSpec ----
@@ -147,13 +147,13 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
                 (
                     quote!(::std::option::Option<#ty>),
                     adapter,
-                    quote!(self.__local.__body),
+                    quote!(self.__local.__concord_body),
                 )
             } else {
                 (
                     quote!(#ty),
                     quote!(#representation),
-                    quote!(self.__local.__body),
+                    quote!(self.__local.__concord_body),
                 )
             }
         }
@@ -221,7 +221,7 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
             .cursor
             .iter()
             .map(|index| {
-                syn::Ident::new(&format!("__cursor_{index}"), proc_macro2::Span::call_site())
+                syn::Ident::new(&format!("__concord_cursor_{index}"), proc_macro2::Span::mixed_site())
             })
             .collect();
         let assigns = pagination
@@ -240,7 +240,7 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
         // DIAG-01: a cursor/destination type mismatch is reported at the
         // `cursor -> ...` mapping; the destination types keep their spans.
         let cursor_span = pagination.cursor_span;
-        let assign = located_at(quote!(= cursor;), cursor_span);
+        let assign = located_at(quote!(= __concord_cursor;), cursor_span);
         let binding = if pagination.tuple {
             let pattern = located_at(quote!(let (#(#cursor_names),*):), cursor_span);
             quote!(#pattern (#(#cursor_types),*) #assign)
@@ -262,7 +262,7 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
             let body = endpoint
                 .body
                 .as_ref()
-                .map(|_| quote!(__body: ::std::clone::Clone::clone(&self.__local.__body),));
+                .map(|_| quote!(__concord_body: ::std::clone::Clone::clone(&self.__local.__concord_body),));
             quote! {
                 Self {
                     __owner: ::std::clone::Clone::clone(&self.__owner),
@@ -272,13 +272,13 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
         };
         let body_present = match &endpoint.body {
             None => quote!(false),
-            Some(body) if body.optional => quote!(self.__local.__body.is_some()),
+            Some(body) if body.optional => quote!(self.__local.__concord_body.is_some()),
             Some(_) => quote!(true),
         };
         let span = pagination.span;
         let init_assert = quote::quote_spanned!(span=> {
-            let init: #p::ControllerInit<Self> = #init_type { #(#init_fields),* };
-            init
+            let __concord_init: #p::ControllerInit<Self> = #init_type { #(#init_fields),* };
+            __concord_init
         });
         // DIAG-01: the controller's projections (`ControllerInit<Self>`,
         // `ControllerCursor<Self>`) are reported at the `paginate` clause;
@@ -291,7 +291,7 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
             span,
         );
         let cursor_signature = located_at(
-            quote!(fn apply_cursor(&mut self, cursor: #p::ControllerCursor<Self>)),
+            quote!(fn apply_cursor(&mut self, __concord_cursor: #p::ControllerCursor<Self>)),
             span,
         );
         quote! {
@@ -322,6 +322,29 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
     let owner_display = endpoint.display.clone();
     let controls = value_controls(context, &endpoint.values, &owner_display);
     let body_controls = body_controls(context, index);
+    // Required-only endpoints have no value mutation surface. Avoid emitting
+    // two unused generic helpers for every such endpoint in a large contract.
+    let has_value_controls = !controls.is_empty() || !body_controls.is_empty();
+    let request_update = has_value_controls.then(|| {
+        quote! {
+            fn __with(self, __concord_update: impl ::std::ops::FnOnce(&mut #local)) -> Self {
+                Self {
+                    __inner: #p::map_endpoint(self.__inner, |mut __concord_spec| {
+                        __concord_update(&mut __concord_spec.__local);
+                        __concord_spec
+                    }),
+                }
+            }
+        }
+    });
+    let intent_update = has_value_controls.then(|| {
+        quote! {
+            fn __with(mut self, __concord_update: impl ::std::ops::FnOnce(&mut #local)) -> Self {
+                __concord_update(&mut self.__local);
+                self
+            }
+        }
+    });
     let request_doc = docs::request(model, index);
     let deprecated = docs::deprecated_attr(&endpoint.meta);
     let terminals = terminals(context, index);
@@ -388,19 +411,19 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
         (
             quote!(::std::sync::Arc<__State>),
             quote!(::std::sync::Arc::clone(&self.__concord)),
-            quote!(self.__owner.__bind_owned(client)),
+            quote!(self.__owner.__bind_owned(__concord_client)),
         )
     } else {
         (
             quote!(__State),
             quote!(::std::clone::Clone::clone(&*self.__concord)),
-            quote!(self.__owner.__bind_owned_state(client)),
+            quote!(self.__owner.__bind_owned_state(__concord_client)),
         )
     };
     let plan_owner = if owner.kind == OwnerKind::Client {
-        quote!(let owner = self.__owner.__bind(client);)
+        quote!(let __concord_owner = self.__owner.__bind(__concord_client);)
     } else {
-        quote!(let owner = self.__owner.__bind_state(client);)
+        quote!(let __concord_owner = self.__owner.__bind_state(__concord_client);)
     };
 
     quote! {
@@ -437,26 +460,26 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
 
             fn prepare_head(
                 &self,
-                mut builder: #p::HeadBuilder,
+                mut __concord_builder: #p::HeadBuilder,
             ) -> ::std::result::Result<#p::PreparedHead, #f::ApiError> {
-                #p::OwnerProjection::push_host(#owner_ref, &mut builder)?;
+                #p::OwnerProjection::push_host(#owner_ref, &mut __concord_builder)?;
                 #path
                 #program
                 #auth
                 #rates
-                builder.finish()
+                __concord_builder.finish()
             }
         }
 
         impl #p::HeadEmissions for #view<'_> {
-            fn emission_present(&self, emission: u16) -> bool {
+            fn emission_present(&self, __concord_emission: u16) -> bool {
                 #presence
             }
 
             fn emit(
                 &self,
-                emission: u16,
-                sink: &mut #p::OccurrenceSink<'_>,
+                __concord_emission: u16,
+                __concord_sink: &mut #p::OccurrenceSink<'_>,
             ) -> ::std::result::Result<(), #f::AtomError> {
                 #emit
             }
@@ -489,9 +512,9 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
 
             fn prepare_head(
                 &self,
-                builder: #p::HeadBuilder,
+                __concord_builder: #p::HeadBuilder,
             ) -> ::std::result::Result<#p::PreparedHead, #f::ApiError> {
-                #view { __owner: &self.__owner, __local: &self.__local }.prepare_head(builder)
+                #view { __owner: &self.__owner, __local: &self.__local }.prepare_head(__concord_builder)
             }
 
             #absence
@@ -511,14 +534,7 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
         }
 
         impl #request {
-            fn __with(self, update: impl ::std::ops::FnOnce(&mut #local)) -> Self {
-                Self {
-                    __inner: #p::map_endpoint(self.__inner, |mut spec| {
-                        update(&mut spec.__local);
-                        spec
-                    }),
-                }
-            }
+            #request_update
 
             #controls
             #body_controls
@@ -535,24 +551,24 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
         }
 
         impl #f::RequestControls for #request {
-            fn with_options(self, options: &#f::CallOptions) -> Self {
-                Self::with_options(self, options)
+            fn with_options(self, __concord_options: &#f::CallOptions) -> Self {
+                Self::with_options(self, __concord_options)
             }
 
             fn control_summary(&self) -> #f::ControlSummary {
                 Self::control_summary(self)
             }
 
-            fn cancel_with(self, token: #f::CancellationToken) -> ::std::result::Result<Self, #f::ControlError> {
-                Self::cancel_with(self, token)
+            fn cancel_with(self, __concord_token: #f::CancellationToken) -> ::std::result::Result<Self, #f::ControlError> {
+                Self::cancel_with(self, __concord_token)
             }
         }
 
         #request_clone
 
         impl ::std::fmt::Debug for #request {
-            fn fmt(&self, formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                formatter
+            fn fmt(&self, __concord_formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                __concord_formatter
                     .debug_struct(#request_name)
                     .field("endpoint", &#id)
                     .field("controls", &self.control_summary())
@@ -569,10 +585,7 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
         }
 
         impl #intent {
-            fn __with(mut self, update: impl ::std::ops::FnOnce(&mut #local)) -> Self {
-                update(&mut self.__local);
-                self
-            }
+            #intent_update
 
             /// Returns this endpoint's value-free effective description.
             #[must_use]
@@ -585,8 +598,8 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
         }
 
         impl ::std::fmt::Debug for #intent {
-            fn fmt(&self, formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                formatter
+            fn fmt(&self, __concord_formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                __concord_formatter
                     .debug_struct(#intent_name)
                     .field("endpoint", &#id)
                     .finish_non_exhaustive()
@@ -598,13 +611,13 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
         impl #root_module GeneratedEndpoint for #intent {
             type Request = #request;
 
-            fn __concord_bind(self, client: &#client_path #client) -> #request {
+            fn __concord_bind(self, __concord_client: &#client_path #client) -> #request {
                 // The bound owner chain ends at `client`'s root state, so its
                 // core is the client's core; the consumed intent's snapshot
                 // moves into the projection without reference-count churn.
                 #request {
                     __inner: #p::request(
-                        #p::OwnerProjection::core(&*client.__concord),
+                        #p::OwnerProjection::core(&*__concord_client.__concord),
                         #spec { __owner: #owner_from_intent, __local: self.__local },
                     ),
                 }
@@ -612,15 +625,15 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
 
             fn __concord_plan(
                 &self,
-                client: &#client_path #client,
+                __concord_client: &#client_path #client,
             ) -> ::std::result::Result<#f::endpoint::RequestPlan, #f::ApiError> {
                 #plan_owner
-                let view = #view { __owner: &owner, __local: &self.__local };
+                let __concord_view = #view { __owner: &__concord_owner, __local: &self.__local };
                 #p::plan_unbound_request(
-                    #p::OwnerProjection::core(&*view.__owner),
+                    #p::OwnerProjection::core(&*__concord_view.__owner),
                     #spec::__description(),
                     #response_accept,
-                    |builder| view.prepare_head(builder),
+                    |__concord_builder| __concord_view.prepare_head(__concord_builder),
                 )
             }
         }
@@ -682,21 +695,21 @@ fn body_controls(context: &Context<'_>, index: usize) -> TokenStream {
     quote! {
         #[doc = #set_doc]
         #[must_use]
-        pub fn #set(self, value: #ty) -> Self {
-            self.__with(move |local| local.__body = ::std::option::Option::Some(value))
+        pub fn #set(self, __concord_value: #ty) -> Self {
+            self.__with(move |__concord_local| __concord_local.__concord_body = ::std::option::Option::Some(__concord_value))
         }
 
         #[doc = #replace_doc]
         #[must_use]
-        pub fn #replace(self, value: ::std::option::Option<#ty>) -> Self {
-            self.__with(move |local| local.__body = value)
+        pub fn #replace(self, __concord_value: ::std::option::Option<#ty>) -> Self {
+            self.__with(move |__concord_local| __concord_local.__concord_body = __concord_value)
         }
 
         #[doc = #if_some_doc]
         #[must_use]
-        pub fn #set_if_some(self, value: ::std::option::Option<#ty>) -> Self {
-            match value {
-                ::std::option::Option::Some(value) => self.__with(move |local| local.__body = ::std::option::Option::Some(value)),
+        pub fn #set_if_some(self, __concord_value: ::std::option::Option<#ty>) -> Self {
+            match __concord_value {
+                ::std::option::Option::Some(__concord_value) => self.__with(move |__concord_local| __concord_local.__concord_body = ::std::option::Option::Some(__concord_value)),
                 ::std::option::Option::None => self,
             }
         }
@@ -704,7 +717,7 @@ fn body_controls(context: &Context<'_>, index: usize) -> TokenStream {
         #[doc = #omit_doc]
         #[must_use]
         pub fn #omit(self) -> Self {
-            self.__with(|local| local.__body = ::std::option::Option::None)
+            self.__with(|__concord_local| __concord_local.__concord_body = ::std::option::Option::None)
         }
     }
 }
@@ -735,23 +748,23 @@ fn terminals(context: &Context<'_>, index: usize) -> TokenStream {
             /// Starts an inert, application-controlled page traversal of at most
             /// `maximum_pages` pages. Controls applied to this request are carried
             /// into the traversal; ordinary `.await` never paginates.
-            pub fn pages(self, maximum_pages: u32) -> #f::pagination::Pages<#p::PageItem<#spec>> {
-                (#p::pages_request)(self.__inner, maximum_pages)
+            pub fn pages(self, __concord_maximum_pages: u32) -> #f::pagination::Pages<#p::PageItem<#spec>> {
+                (#p::pages_request)(self.__inner, __concord_maximum_pages)
             }
 
             /// Collects the items of at most `maximum_pages` pages together with a
             /// truthful traversal summary; a page bound is not exhaustion.
-            pub fn collect_prefix(self, maximum_pages: u32) -> #f::pagination::CollectPrefix<#p::PageItem<#spec>> {
-                (#p::collect_prefix_request)(self.__inner, maximum_pages)
+            pub fn collect_prefix(self, __concord_maximum_pages: u32) -> #f::pagination::CollectPrefix<#p::PageItem<#spec>> {
+                (#p::collect_prefix_request)(self.__inner, __concord_maximum_pages)
             }
 
             /// Collects every item; fails unless the traversal is exhausted within
             /// `maximum_pages` pages.
             pub fn collect_all(
                 self,
-                maximum_pages: ::std::num::NonZeroU32,
+                __concord_maximum_pages: ::std::num::NonZeroU32,
             ) -> #f::pagination::CollectAll<#p::PageItem<#spec>> {
-                (#p::collect_all_request)(self.__inner, maximum_pages)
+                (#p::collect_all_request)(self.__inner, __concord_maximum_pages)
             }
         };
         located_at(terminals, pagination.span)
@@ -769,10 +782,10 @@ fn terminals(context: &Context<'_>, index: usize) -> TokenStream {
         quote! {
             #[doc = #doc]
             pub fn #method(self) -> #f::auth::StoreRequest {
-                let credential = #p::inspect_endpoint(&self.__inner, |spec| {
-                    ::std::clone::Clone::clone(&spec.__owner #(#parents)* .#field)
+                let __concord_credential = #p::inspect_endpoint(&self.__inner, |__concord_spec| {
+                    ::std::clone::Clone::clone(&__concord_spec.__owner #(#parents)* .#field)
                 });
-                #p::store_request(self.__inner, &credential)
+                #p::store_request(self.__inner, &__concord_credential)
             }
         }
     });
@@ -785,8 +798,8 @@ fn terminals(context: &Context<'_>, index: usize) -> TokenStream {
         /// # Errors
         ///
         /// Zero or unrepresentable durations are rejected before execution.
-        pub fn timeout(self, duration: ::std::time::Duration) -> ::std::result::Result<Self, #f::ControlError> {
-            ::std::result::Result::Ok(Self { __inner: self.__inner.timeout(duration)? })
+        pub fn timeout(self, __concord_duration: ::std::time::Duration) -> ::std::result::Result<Self, #f::ControlError> {
+            ::std::result::Result::Ok(Self { __inner: self.__inner.timeout(__concord_duration)? })
         }
 
         /// Restores the effective declared (or default) timeout. Caps are retained.
@@ -801,15 +814,15 @@ fn terminals(context: &Context<'_>, index: usize) -> TokenStream {
         /// # Errors
         ///
         /// A ninth distinct signal is rejected; existing signals are kept.
-        pub fn cancel_with(self, token: #f::CancellationToken) -> ::std::result::Result<Self, #f::ControlError> {
-            ::std::result::Result::Ok(Self { __inner: self.__inner.cancel_with(token)? })
+        pub fn cancel_with(self, __concord_token: #f::CancellationToken) -> ::std::result::Result<Self, #f::ControlError> {
+            ::std::result::Result::Ok(Self { __inner: self.__inner.cancel_with(__concord_token)? })
         }
 
         /// Intersects additional caps (componentwise minimum); caps only narrow
         /// execution and never grant a retry.
         #[must_use]
-        pub fn with_options(self, options: &#f::CallOptions) -> Self {
-            Self { __inner: self.__inner.with_options(options) }
+        pub fn with_options(self, __concord_options: &#f::CallOptions) -> Self {
+            Self { __inner: self.__inner.with_options(__concord_options) }
         }
 
         /// Returns the value-free effective control summary.

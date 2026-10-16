@@ -47,7 +47,7 @@ fn write_atom_parts(context: &Context<'_>, access: Access, atom: &RAtom) -> Toke
     let statements = parts.iter().map(|part| match part {
         RAtom::Literal { text, .. } => {
             let text = lit(text);
-            quote!(writer.push_str(#text)?;)
+            quote!(__concord_writer.push_str(#text)?;)
         }
         RAtom::Value { value, via, span } => {
             let reference = total_ref(context.model, access, *value);
@@ -73,11 +73,17 @@ fn write_call(
         Some(adapter) => placement_call(
             context,
             span,
-            quote!(writer.write_with),
+            quote!(__concord_writer.write_with),
             Some((adapter, &context.model.value(value).ty)),
             reference,
         ),
-        None => placement_call(context, span, quote!(writer.write), None, reference),
+        None => placement_call(
+            context,
+            span,
+            quote!(__concord_writer.write),
+            None,
+            reference,
+        ),
     }
 }
 
@@ -85,12 +91,12 @@ fn write_call(
 pub(crate) fn host_label(context: &Context<'_>, access: Access, label: &HostLabel) -> TokenStream {
     if let RAtom::Literal { text, .. } = &label.atom {
         let text = lit(text);
-        return quote!(builder.push_host_static(#text)?;);
+        return quote!(__concord_builder.push_host_static(#text)?;);
     }
     let sensitive = label.sensitive;
     let body = write_atom_parts(context, access, &label.atom);
     quote! {
-        builder.push_host_atoms(#sensitive, |writer| {
+        __concord_builder.push_host_atoms(#sensitive, |__concord_writer| {
             #body
             ::std::result::Result::Ok(())
         })?;
@@ -105,13 +111,13 @@ pub(crate) fn path_segment(
 ) -> TokenStream {
     if let Some(text) = segment.static_text() {
         let text = lit(text);
-        return quote!(builder.push_static(#text)?;);
+        return quote!(__concord_builder.push_static(#text)?;);
     }
     let sensitive = segment.sensitive;
     let statements = segment.parts.iter().map(|part| match part {
         SegPart::Literal(text) => {
             let text = lit(text);
-            quote!(writer.push_str(#text)?;)
+            quote!(__concord_writer.push_str(#text)?;)
         }
         SegPart::Value { value, via, span } => {
             let reference = total_ref(context.model, access, *value);
@@ -120,7 +126,7 @@ pub(crate) fn path_segment(
         }
     });
     quote! {
-        builder.push_path_atoms(#sensitive, |writer| {
+        __concord_builder.push_path_atoms(#sensitive, |__concord_writer| {
             #(#statements)*
             ::std::result::Result::Ok(())
         })?;
@@ -197,23 +203,29 @@ pub(crate) fn emission_readers(
                     Some(adapter) => placement_call(
                         context,
                         *span,
-                        quote!(sink.each_with),
+                        quote!(__concord_sink.each_with),
                         Some((adapter, ty)),
-                        quote!(values),
+                        quote!(__concord_values),
                     ),
-                    None => placement_call(context, *span, quote!(sink.each), None, quote!(values)),
+                    None => placement_call(
+                        context,
+                        *span,
+                        quote!(__concord_sink.each),
+                        None,
+                        quote!(__concord_values),
+                    ),
                 };
                 if optional {
                     let field = value_field_expr(context.model, access, *value);
                     quote! {
                         match #field.as_deref() {
-                            ::std::option::Option::Some(values) => #call,
+                            ::std::option::Option::Some(__concord_values) => #call,
                             ::std::option::Option::None => ::std::result::Result::Ok(()),
                         }
                     }
                 } else {
                     let reference = total_ref(context.model, access, *value);
-                    quote!({ let values = #reference; #call })
+                    quote!({ let __concord_values = #reference; #call })
                 }
             }
             Emission::Atom(RAtom::Value { value, via, span }) => {
@@ -223,29 +235,35 @@ pub(crate) fn emission_readers(
                     Some(adapter) => placement_call(
                         context,
                         *span,
-                        quote!(sink.value_with),
+                        quote!(__concord_sink.value_with),
                         Some((adapter, ty)),
-                        quote!(value),
+                        quote!(__concord_value),
                     ),
-                    None => placement_call(context, *span, quote!(sink.value), None, quote!(value)),
+                    None => placement_call(
+                        context,
+                        *span,
+                        quote!(__concord_sink.value),
+                        None,
+                        quote!(__concord_value),
+                    ),
                 };
                 if optional {
                     let field = value_field_expr(context.model, access, *value);
                     quote! {
                         match #field.as_deref() {
-                            ::std::option::Option::Some(value) => #call,
+                            ::std::option::Option::Some(__concord_value) => #call,
                             ::std::option::Option::None => ::std::result::Result::Ok(()),
                         }
                     }
                 } else {
                     let reference = total_ref(context.model, access, *value);
-                    quote!({ let value = #reference; #call })
+                    quote!({ let __concord_value = #reference; #call })
                 }
             }
             Emission::Atom(atom) => {
                 let body = write_atom_parts(context, access, atom);
                 quote! {
-                    sink.atom(|writer| {
+                    __concord_sink.atom(|__concord_writer| {
                         #body
                         ::std::result::Result::Ok(())
                     })
@@ -256,13 +274,13 @@ pub(crate) fn emission_readers(
     });
     (
         quote! {
-            match emission {
+            match __concord_emission {
                 #(#presence_arms)*
                 _ => false,
             }
         },
         quote! {
-            match emission {
+            match __concord_emission {
                 #(#emit_arms)*
                 _ => ::std::result::Result::Ok(()),
             }
@@ -294,25 +312,25 @@ pub(crate) fn auth_placement(
     // relocated span is not widened to the whole invocation.
     let statement = match &placement.kind {
         PlacementKind::Bearer => {
-            quote!(builder.push_auth(<#f::auth::Auth>::bearer(#reference).challenge(#challenge))?;)
+            quote!(__concord_builder.push_auth(<#f::auth::Auth>::bearer(#reference).challenge(#challenge))?;)
         }
         PlacementKind::Basic => {
-            quote!(builder.push_auth(<#f::auth::Auth>::basic(#reference).challenge(#challenge))?;)
+            quote!(__concord_builder.push_auth(<#f::auth::Auth>::basic(#reference).challenge(#challenge))?;)
         }
         PlacementKind::Authorization(None) => {
-            quote!(builder.push_auth(<#f::auth::Auth>::authorization(#reference).challenge(#challenge))?;)
+            quote!(__concord_builder.push_auth(<#f::auth::Auth>::authorization(#reference).challenge(#challenge))?;)
         }
         PlacementKind::Authorization(Some(scheme)) => {
             let scheme = lit(scheme);
-            quote!(builder.push_auth_result(<#f::auth::Auth>::authorization_with_scheme(#scheme, #reference).map(|auth| auth.challenge(#challenge)))?;)
+            quote!(__concord_builder.push_auth_result(<#f::auth::Auth>::authorization_with_scheme(#scheme, #reference).map(|__concord_auth| __concord_auth.challenge(#challenge)))?;)
         }
         PlacementKind::Header(name) => {
             let name = lit(&name.to_ascii_lowercase());
-            quote!(builder.push_auth_result(<#f::auth::Auth>::header(#p::HeaderName::from_static(#name), #reference).map(|auth| auth.challenge(#challenge)))?;)
+            quote!(__concord_builder.push_auth_result(<#f::auth::Auth>::header(#p::HeaderName::from_static(#name), #reference).map(|__concord_auth| __concord_auth.challenge(#challenge)))?;)
         }
         PlacementKind::Query(name) => {
             let name = lit(name);
-            quote!(builder.push_auth_result(<#f::auth::Auth>::query(#name, #reference).map(|auth| auth.challenge(#challenge)))?;)
+            quote!(__concord_builder.push_auth_result(<#f::auth::Auth>::query(#name, #reference).map(|__concord_auth| __concord_auth.challenge(#challenge)))?;)
         }
     };
     located_at(statement, placement.span)
@@ -369,7 +387,7 @@ pub(crate) fn rate_declaration(
         quote!(.cost(#cost))
     });
     quote! {
-        builder.push_rate_limit(
+        __concord_builder.push_rate_limit(
             #p::RateLimitDeclaration::new_static(#id) #(#dims)* #(#windows)* #cost
         )?;
     }

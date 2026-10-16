@@ -19,7 +19,7 @@ specification and the in-repository normative documents
 | `crates/concord-test-support` | Deterministic loopback servers, TLS server, CONNECT proxy and scripted helpers that use production semantics |
 | `crates/concord-examples` | Compile-checked examples: canonical §22 Catalog, §23 application examples, §17.2 envelope controller, Riot conversion, docs anchors and `docs_spec.rs` |
 | `tests/downstream/*` | Two real crates: an API crate that expands `api!` and an application crate that consumes the generated types (CALL-02) |
-| `tools/xtask` | `contract export/check/diff/list`, `migrate-v3`, `docs-check`, `release-audit`, `policy`, `fixtures`, `msrv-ui`, `source-export` |
+| `tools/xtask` | `contract export/check/diff/list`, `docs-check`, `release-audit`, `policy`, `fixtures`, `msrv-ui`, `source-export` |
 | `tools/perf` | Expansion-scale, overhead and stream-driver measurements |
 
 ## Compiler pipeline
@@ -179,7 +179,7 @@ resent.
   `extensions`, `public_api`, `current_language`, `v3_*`).
 - Examples and state-equivalence recordings (`crates/concord-examples/tests/`).
 - Two-crate downstream tests (`tests/downstream/`).
-- Tool tests (`tools/xtask`: migration, contract CLI) and `concord-inspect`
+- Tool tests (`tools/xtask`: V3 contract CLI) and `concord-inspect`
   tests.
 
 Test support uses the same public and core contracts and never adds a

@@ -4,7 +4,7 @@ error: [C3-MIGRATE] rate key labels are explicit in v3: write `"host" = host` (t
 14 |                 key [r#host];
    |                      ^^^^^^
 
-error: [C3-MIGRATE] rate key labels are explicit in v3: write `"host" = host` to preserve the legacy label (the inline rate policy of client `InlineHostApi`)
+error: [C3-MIGRATE] rate key labels are explicit in v3: write `"host" = host` to use an explicit label (the inline rate policy of client `InlineHostApi`)
   --> tests/ui/fail/rate_limits/rate_limit_raw_host_formal.rs:26:26
    |
 26 |             key [origin, host];

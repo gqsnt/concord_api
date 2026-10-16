@@ -198,7 +198,7 @@ fn value_line(value: &Value) -> String {
         ""
     };
     let deprecated = if value.is_deprecated() && !value.live {
-        ", deprecated no-op migration bridge"
+        ", deprecated no-op value"
     } else {
         ""
     };
@@ -278,7 +278,7 @@ pub(crate) fn control(value: &Value, kind: &str, owner: &str) -> String {
     }
     let body = match kind {
         "set" => format!(
-            "Selects a present `{name}` payload (`impl IntoValue<{ty}>`: identity, `&str`/`&String` to `String`)."
+            "Selects a present `{name}` payload (`impl IntoValue<{ty}>`: identity; borrowed strings only when the target is `String`)."
         ),
         "replace" => format!(
             "Replaces the outer slot of `{name}` exactly: `Some(v)` is present, `None` is absent. For a nested `Option` payload, `Some(None)` is a present inner `None`."

@@ -646,7 +646,7 @@ fn pagination_loop_overhead(
         .build()?;
     let started = Instant::now();
     for _ in 0..iterations {
-        // v2.1 `.paginate(PageLimit::Prefix(2))` is the v3 bounded prefix
+        // A bounded prefix is selected explicitly with the V3
         // terminal: at most two pages, the same two sends per iteration.
         let prefix = client.pages(0, std::num::NonZeroU32::MIN).collect_prefix(2);
         black_box(runtime.block_on(prefix.into_future())?);

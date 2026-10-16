@@ -2,7 +2,7 @@
 //! The canonical §22 Catalog as a first-class example: the §22.3 / §7.3 /
 //! §7.4 public signatures (V3-L01), the generated value matrix, the
 //! declaration-based Clone rule (V3-L11), and the §22 semantics: `inspect`'s
-//! exact replacement versus `item`'s `when_present` fallback, the legacy
+//! exact replacement versus `item`'s `when_present` fallback, the explicit
 //! `"client.tenant"` label and the pinned endpoint IDs (V3-R02).
 #![cfg(all(feature = "json", feature = "rate-limit", feature = "default-tls"))]
 
@@ -495,8 +495,8 @@ fn utf8_frame(value: &str) -> String {
 
 #[tokio::test]
 async fn write_policy_keeps_the_client_tenant_label_and_pinned_endpoint_id() {
-    // Captured v2.1 baseline bytes for tenant "tenant-a" in region "eu"
-    // (fixtures/migration/v2_1_catalog_recording.json).
+    // Captured V3 canonical bytes for tenant "tenant-a" in region "eu"
+    // (fixtures/contracts/v3_catalog_recording.json).
     const BASELINE_TENANT_A: &str = "0475746638000000000000000874656e616e742d61";
     const BASELINE_ENDPOINT: &str =
         "04757466380000000000000013636174616c6f672e6974656d2e757064617465";

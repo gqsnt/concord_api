@@ -94,9 +94,8 @@ pub struct RateLimitResponse<'a> {
 /// Each successful `acquire` admits the complete conjunctive plan (every
 /// window of every policy) atomically, or returns an error / keeps waiting
 /// without any new quota debit. Waiting or failed admission must not
-/// partially reserve a prefix of the plan. This strengthens the Concord 2.1
-/// contract, which permitted conservative partial reservations; custom
-/// limiters must be migrated.
+/// partially reserve a prefix of the plan. This contract applies to every
+/// selected limiter, including custom implementations.
 ///
 /// # Shared persistent adapters
 ///

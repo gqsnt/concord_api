@@ -28,6 +28,14 @@ api! {
             path "exact-upload";
         }
 
+        PUT exact_put(body input: ::concord::body::RequestStream via Binary) -> Bytes via Binary {
+            path "exact-put";
+        }
+
+        PUT prepared_upload(body input: ::concord::body::PreparedBody via ::concord::body::PreparedBody) -> Bytes via Binary {
+            path "prepared-upload";
+        }
+
         GET missing_media() -> ::concord::response::ByteStream via Binary {
             path "missing-media";
         }
@@ -53,6 +61,8 @@ api! {
         }
     }
 }
+
+mod native_request_lengths;
 
 fn client(server: &ScriptedServer) -> AnyStreamApi {
     let proxy = loopback_proxy(server);

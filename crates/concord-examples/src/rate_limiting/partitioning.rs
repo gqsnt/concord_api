@@ -4,10 +4,9 @@
 //! execution. Documentation owner: `docs/rate_limits.md`. Proving tests:
 //! `tests/construction.rs` and `tests/local_runtime.rs`.
 //!
-//! The root policy partitions by the built-in `endpoint` dimension, which in
-//! v3 consumes an explicitly pinned operational ID (IDENTITY-01); the pins
-//! below are the v2.1 navigation-derived IDs, so bucket bytes are unchanged.
-//! Inline value dimensions keep their v2.1 owner-qualified labels.
+//! The root policy partitions by the built-in `endpoint` dimension using an
+//! explicitly pinned operational ID (IDENTITY-01). Inline dimensions have
+//! explicit labels, so their names form part of the bucket contract.
 
 use std::error::Error;
 use std::sync::Arc;

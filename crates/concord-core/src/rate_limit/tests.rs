@@ -1,4 +1,4 @@
-//! Declaration, schema and baseline-fixture tests for labelled rate keys.
+//! Declaration, schema and current contract-fixture tests for labelled rate keys.
 
 use std::num::NonZeroU32;
 use std::time::Duration;
@@ -9,11 +9,10 @@ use super::*;
 use crate::error::RateLimitErrorKind;
 
 const CATALOG_RECORDING: &str =
-    include_str!("../../../../fixtures/migration/v2_1_catalog_recording.json");
-const RIOT_RECORDING: &str =
-    include_str!("../../../../fixtures/migration/v2_1_riot_recording.json");
+    include_str!("../../../../fixtures/contracts/v3_catalog_recording.json");
+const RIOT_RECORDING: &str = include_str!("../../../../fixtures/contracts/v3_riot_recording.json");
 
-/// Minimal JSON reader for the captured migration fixtures (test-only).
+/// Minimal JSON reader for the captured V3 contract fixtures (test-only).
 #[derive(Debug)]
 enum Json {
     Null,
@@ -209,7 +208,7 @@ fn unhex(text: &str) -> Vec<u8> {
         .collect()
 }
 
-/// Splits one baseline canonical record into its tag and payload.
+/// Splits one canonical contract record into its tag and payload.
 fn split_record(bytes: &[u8]) -> (&str, &[u8]) {
     let tag_length = usize::from(bytes[0]);
     let tag = std::str::from_utf8(&bytes[1..=tag_length]).expect("ASCII tag");
@@ -237,7 +236,7 @@ fn logical_origin_of(record: &Json) -> String {
 }
 
 #[test]
-fn v2_1_fixture_key_parts_reencode_to_identical_bytes() {
+fn v3_fixture_key_parts_reencode_to_identical_bytes() {
     let mut checked = 0_usize;
     for (name, recording) in recordings() {
         for record in recording.array() {
@@ -303,7 +302,7 @@ fn declaration_for(policy: &Json) -> RateLimitDeclaration {
 }
 
 #[test]
-fn v2_1_fixture_policies_resolve_from_labelled_declarations_byte_for_byte() {
+fn v3_fixture_policies_resolve_from_labelled_declarations_byte_for_byte() {
     let mut policies = 0_usize;
     for (name, recording) in recordings() {
         for record in recording.array() {
@@ -390,7 +389,7 @@ fn catalog_client_tenant_and_tenant_labels_share_bytes_but_not_schema_or_bucket(
     assert_eq!(
         read_tenant.array()[1].string(),
         write_tenant.array()[1].string(),
-        "the baseline value bytes are identical"
+        "the recorded value bytes are identical"
     );
 
     let origin = logical_origin_of(update);
@@ -408,7 +407,7 @@ fn catalog_client_tenant_and_tenant_labels_share_bytes_but_not_schema_or_bucket(
     assert_eq!(
         tenant.key().parts()[1].value(),
         unhex(read_tenant.array()[1].string()).as_slice(),
-        "the selected preserved key equals the baseline bytes"
+        "the selected key equals the recorded bytes"
     );
     assert_eq!(
         tenant.key().parts()[1].value(),

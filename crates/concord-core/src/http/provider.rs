@@ -15,6 +15,7 @@ use concord_test_support::executor::ProviderChannel;
 use concord_test_support::script::BoundaryRequest;
 
 use crate::auth::{AuthError, CredentialReason, ProviderOrigin};
+use crate::controls::RequestControlState;
 use crate::error::{
     AuthErrorKind, DispatchKnowledge, ErrorCategory, ProviderAcquisitionFacts,
     ProviderAcquisitionOutcome, reqwest_category,
@@ -97,6 +98,7 @@ pub(super) struct ProviderHttpInner {
 pub struct ProviderHttp<'a> {
     inner: Option<&'a ProviderHttpInner>,
     deadline: Option<OperationDeadline>,
+    controls: Option<&'a RequestControlState>,
     grant: Option<ProviderGrant<'a>>,
     scope: Option<ProviderScope<'a>>,
 }
@@ -444,6 +446,7 @@ impl<'a> ProviderHttp<'a> {
         Self {
             inner: Some(inner),
             deadline,
+            controls: None,
             grant: None,
             scope: None,
         }
@@ -454,6 +457,7 @@ impl<'a> ProviderHttp<'a> {
         ProviderHttp {
             inner: None,
             deadline: None,
+            controls: None,
             grant: None,
             scope: None,
         }
@@ -466,6 +470,22 @@ impl<'a> ProviderHttp<'a> {
     pub(crate) const fn scoped(mut self, scope: ProviderScope<'a>) -> Self {
         self.scope = Some(scope);
         self
+    }
+
+    /// Carries the leading operation's cancellation signals across synchronous
+    /// provider callbacks. The outer cancellation race cannot observe a signal
+    /// while one poll is still running such a callback.
+    pub(crate) const fn controlled(mut self, controls: Option<&'a RequestControlState>) -> Self {
+        self.controls = controls;
+        self
+    }
+
+    pub(crate) fn is_cancelled(self) -> bool {
+        self.controls.is_some_and(RequestControlState::is_cancelled)
+    }
+
+    pub(crate) fn check_active(self) -> Result<(), AuthError> {
+        check_provider_work(self.deadline, self.controls)
     }
 
     /// Returns the application operation this capability works for, if any.
@@ -491,21 +511,17 @@ impl<'a> ProviderHttp<'a> {
         'a: 'b,
     {
         let deadline = match self.inner {
-            Some(inner) => {
-                let limit = self
-                    .deadline
-                    .and_then(OperationDeadline::remaining)
-                    .map_or(inner.timeout, |remaining| remaining.min(inner.timeout));
-                OperationDeadline::new(OperationDeadline::now(), Some(limit))
-                    .ok()
-                    .or(self.deadline)
-            }
+            Some(inner) => OperationDeadline::new(OperationDeadline::now(), Some(inner.timeout))
+                .ok()
+                .map(|limit| earlier_deadline(self.deadline, limit))
+                .or(self.deadline),
             None => self.deadline,
         };
         (
             ProviderHttp {
                 inner: self.inner,
                 deadline,
+                controls: self.controls,
                 grant: Some(ProviderGrant {
                     origins,
                     sends,
@@ -572,6 +588,7 @@ impl<'a> ProviderHttp<'a> {
                 "provider HTTP origin is not declared by this credential provider",
             ));
         };
+        self.check_active()?;
         if !grant.sends.try_take() {
             return Err(AuthError::with_safe_message(
                 AuthErrorKind::Acquisition,
@@ -579,7 +596,7 @@ impl<'a> ProviderHttp<'a> {
             ));
         }
 
-        let future = inner.send_bounded(request, self.deadline, grant.journal);
+        let future = inner.send_bounded(request, self.deadline, self.controls, grant.journal);
         match self.deadline {
             Some(deadline) => deadline
                 .run(future)
@@ -666,6 +683,7 @@ impl ProviderHttpInner {
         &self,
         request: ProviderRequest,
         deadline: Option<OperationDeadline>,
+        controls: Option<&RequestControlState>,
         journal: &ProviderJournal,
     ) -> Result<ProviderResponse, AuthError> {
         let ProviderRequest {
@@ -677,13 +695,28 @@ impl ProviderHttpInner {
             response_limit,
         } = request;
 
+        // The local timeout starts before factory execution, and narrowing an
+        // acquisition budget retains its absolute deadline instead of restarting
+        // its remaining duration after the callback.
+        let deadline = match timeout {
+            Some(timeout) => {
+                let local = OperationDeadline::new(OperationDeadline::now(), Some(timeout))
+                    .map_err(|_| AuthError::new(AuthErrorKind::InvalidConfiguration))?;
+                Some(earlier_deadline(deadline, local))
+            }
+            None => deadline,
+        };
+        check_provider_work(deadline, controls)?;
+
         // Scheme/TLS validation occurs in ProviderHttp::send before this match,
         // so an unsafe URL cannot invoke application code in a body factory.
         let body = match body {
-            ProviderBody::Empty => None,
-            ProviderBody::Bytes(bytes) => Some(bytes),
-            ProviderBody::Factory(factory) => Some(factory.create()?),
+            ProviderBody::Empty => Ok(None),
+            ProviderBody::Bytes(bytes) => Ok(Some(bytes)),
+            ProviderBody::Factory(factory) => factory.create().map(Some),
         };
+        check_provider_work(deadline, controls)?;
+        let body = body?;
         if body
             .as_ref()
             .is_some_and(|bytes| bytes.len() > self.request_limit.get())
@@ -695,12 +728,6 @@ impl ProviderHttpInner {
             .map(NonZeroUsize::get)
             .unwrap_or(self.response_limit.get())
             .min(self.response_limit.get());
-        let effective_timeout = match (timeout, deadline.and_then(OperationDeadline::remaining)) {
-            (Some(request), Some(parent)) => Some(request.min(parent)),
-            (Some(request), None) => Some(request),
-            (None, Some(parent)) => Some(parent),
-            (None, None) => None,
-        };
         #[cfg(test)]
         let native_url = url.as_str().to_owned();
 
@@ -731,6 +758,7 @@ impl ProviderHttpInner {
                     body.clone(),
                 )
                 .__with_native(native_url, &headers);
+                check_provider_work(deadline, controls)?;
                 journal.record_handoff();
                 self.receive_at_boundary(builder, boundary)
                     .await
@@ -738,6 +766,7 @@ impl ProviderHttpInner {
             };
             #[cfg(not(test))]
             let response = {
+                check_provider_work(deadline, controls)?;
                 journal.record_handoff();
                 builder
                     .send()
@@ -770,8 +799,9 @@ impl ProviderHttpInner {
             )
             .await
         };
-        let result = match effective_timeout {
-            Some(timeout) => tokio::time::timeout(timeout, operation)
+        let result = match deadline {
+            Some(deadline) => deadline
+                .run(operation)
                 .await
                 .unwrap_or_else(|_| Err(AuthError::new(AuthErrorKind::Acquisition))),
             None => operation.await,
@@ -840,6 +870,31 @@ impl ProviderHttpInner {
         };
         Ok(response)
     }
+}
+
+fn earlier_deadline(
+    parent: Option<OperationDeadline>,
+    limit: OperationDeadline,
+) -> OperationDeadline {
+    parent
+        .filter(|parent| match (parent.expires_at(), limit.expires_at()) {
+            (Some(parent), Some(limit)) => parent <= limit,
+            (Some(_), None) => true,
+            _ => false,
+        })
+        .unwrap_or(limit)
+}
+
+fn check_provider_work(
+    deadline: Option<OperationDeadline>,
+    controls: Option<&RequestControlState>,
+) -> Result<(), AuthError> {
+    if controls.is_some_and(RequestControlState::is_cancelled)
+        || deadline.is_some_and(|deadline| deadline.check().is_err())
+    {
+        return Err(AuthError::new(AuthErrorKind::Acquisition));
+    }
+    Ok(())
 }
 
 /// Test-only: sends through a capability bound to exactly the request's own
@@ -1351,6 +1406,25 @@ mod tests {
         tokio::time::advance(Duration::from_secs(5)).await;
         assert_eq!(error(send.await).kind(), AuthErrorKind::Acquisition);
         assert_eq!(executor.provider().request_count().expect("count"), 1);
+    }
+
+    #[tokio::test]
+    async fn acquisition_preserves_the_shorter_parents_absolute_deadline() {
+        let executor = DeterministicExecutor::new();
+        let provider = inner(&executor, 64, 64, TlsCapability::Available);
+        let origins = declared("https://provider.example.test");
+        let budget = ProviderSendBudget::new(4);
+        let journal = ProviderJournal::for_test();
+        let parent = OperationDeadline::new(OperationDeadline::now(), Some(Duration::from_secs(5)))
+            .expect("parent deadline");
+        let (_, acquisition) = provider
+            .capability(Some(parent))
+            .for_acquisition(&origins, &budget, &journal);
+        assert_eq!(
+            acquisition.and_then(OperationDeadline::expires_at),
+            parent.expires_at(),
+            "credential acquisition must never restart the parent's remaining duration"
+        );
     }
 
     fn error<T>(result: Result<T, AuthError>) -> AuthError {

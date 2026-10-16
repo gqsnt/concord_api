@@ -44,9 +44,9 @@ build). Evidence follows these rules (TEST-01):
 | Canonical Catalog and application jobs | `crates/concord-examples/tests/catalog_v3.rs`, `tests/application.rs` (TLS loopback) |
 | Two-crate downstream contract | `tests/downstream/concord-downstream-api` and `concord-downstream-app` |
 | Runtime endpoints | `crates/concord-core/src/request/runtime_endpoint/tests.rs`, `crates/concord/tests/runtime/` |
-| Riot migration and state equivalence | `crates/concord-examples/tests/riot_contract.rs`, `tests/baseline_recording.rs` |
+| Riot V3 contract and rate-state relations | `crates/concord-examples/tests/riot_contract.rs`, `tests/baseline_recording.rs`, `fixtures/contracts/` |
 | Contract format, check and diff | `crates/concord-inspect` tests and `concord-xtask contract` |
-| Migration tool | `tools/xtask/src/migration/tests.rs`, `tools/xtask/tests/migrated_v3.rs` |
+| V3-only language and tooling boundary | rejected-form UI fixtures; `tools/xtask/tests/v3_cli.rs`; [version policy](version_policy.md) |
 | Documentation truth | `cargo run -p concord-xtask -- docs-check` and its unit tests; the plan tables in `docs/requests_and_values.md` are asserted by `crates/concord-examples/src/docs_spec.rs` tests |
 | Rendered rustdoc | `cargo run -p concord-xtask -- doc-audit` renders the canonical Catalog (and a deprecation fixture) with rustdoc and checks the visible caller contract text (V3-O01) |
 
@@ -60,7 +60,7 @@ build). Evidence follows these rules (TEST-01):
 - a Rust block is not an anchored excerpt of compiled code, or an anchored
   excerpt drifted from its source;
 - a local link or heading fragment is broken, or `docs/README.md` does not link
-  every document exactly once (including the v2.1 to v3 migration guide);
+  every document exactly once (including the V3-only version policy);
 - the tutorial shows unbound, runtime or control internals before an ordinary
   awaited result;
 - user documentation uses a retired v2 form outside an explicit migration
@@ -71,8 +71,7 @@ build). Evidence follows these rules (TEST-01):
 - a retired v2 surface is not rejected by a pinned UI fixture;
 - the facade does not re-export the §7.2 root names, or the README feature
   matrix disagrees with the facade manifest;
-- `docs/migration_v3.md` does not document every `C3-MIGRATE-*` code with its
-  exact severity and the exact tool usage, or the contract tooling usage in
+- the contract tooling usage in
   `docs/planning_and_observation.md` drifted;
 - release banners disagree with the workspace version.
 
@@ -108,7 +107,7 @@ bodies, credential ordering under concurrency, provider origin enforcement,
 replay authorities, retry budget and server delay, observer containment.
 
 **Gate 4: quotas, identity and runtime projection** (`V3-R01`-`V3-R13`). All
-46 Riot policies and sharing groups preserved, label and schema continuity,
+46 Riot endpoint plans and their declared sharing groups preserved, label and schema continuity,
 atomic admission, local limiter accounting, runtime owner projection with
 plan/send agreement, and typed rate-key encoding.
 

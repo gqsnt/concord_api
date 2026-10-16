@@ -37,8 +37,7 @@ HTTP clients. One client-shaped declaration projects into:
 | Inspect contracts and plans; observe operations | [Planning and observation](planning_and_observation.md) |
 | Build a dynamic endpoint | [Runtime endpoints](runtime_endpoints.md) |
 | Implement an extension | [Extensions](extensions.md) |
-| Migrate from Concord v2.1 | [v2.1 to v3 migration guide](migration_v3.md) |
-| Read the historical v2.0 to v2.1 guide | [Historical v2.1 migration guide](migration_v2_1.md) |
+| Understand the supported version | [V3 version policy](version_policy.md) |
 | Understand evidence and release gates | [Evidence and release gates](evidence_and_release_gates.md) |
 
 ## Normative order
@@ -53,7 +52,7 @@ Code in these documents is compiled: every `concord` DSL block is either a
 normalized excerpt of `crates/concord-examples/src/docs_spec.rs` or an anchored
 excerpt of a compiled example, and every Rust block is an anchored excerpt of
 compiled code. `cargo run -p concord-xtask -- docs-check` enforces this and the
-agreement of the grammar, generated names, feature matrix and migration tool
+agreement of the grammar, generated names, feature matrix and current tools
 with the implementation.
 
 ## Status

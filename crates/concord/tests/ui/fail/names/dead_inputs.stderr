@@ -10,13 +10,13 @@ error: [C3-NAME] required value `tenant` of client `DeadRequiredDeprecated` is u
 24 |             tenant: String;
    |             ^^^^^^
 
-error: [C3-NAME] value `verbose` of endpoint `DeadOptionalEndpoint::read` has no reachable semantic use; use it, remove it, or mark it `#[deprecated]` as an explicit no-op migration bridge
+error: [C3-NAME] value `verbose` of endpoint `DeadOptionalEndpoint::read` has no reachable semantic use; use it, remove it, or mark it `#[deprecated]` as an explicit deprecated no-op value
   --> tests/ui/fail/names/dead_inputs.rs:35:18
    |
 35 |         GET read(verbose?: bool) -> Bytes via Binary;
    |                  ^^^^^^^
 
-error: [C3-NAME] value `page` of scope `DeadInitializedScope::pages` has no reachable semantic use; use it, remove it, or mark it `#[deprecated]` as an explicit no-op migration bridge
+error: [C3-NAME] value `page` of scope `DeadInitializedScope::pages` has no reachable semantic use; use it, remove it, or mark it `#[deprecated]` as an explicit deprecated no-op value
   --> tests/ui/fail/names/dead_inputs.rs:43:21
    |
 43 |         scope pages(page: u32 = 1) {

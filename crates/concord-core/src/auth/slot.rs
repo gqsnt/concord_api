@@ -829,6 +829,7 @@ where
         http: ProviderHttp<'_>,
     ) -> Result<PreparedCredential<M>, AuthError> {
         for _ in 0..MAX_REEVALUATIONS {
+            http.check_active()?;
             let action = self.prepare_action(Instant::now())?;
             match self.run_action(action, http).await? {
                 FlightOutcome::Ready(ready, _) => return Ok(ready),
@@ -877,6 +878,7 @@ where
                 let (bound, acquisition_deadline) =
                     http.for_acquisition(&self.origins, &budget, &journal);
                 let provider_work = async {
+                    bound.check_active()?;
                     let context = CredentialRequest {
                         http: bound,
                         reason,
@@ -898,7 +900,7 @@ where
                 tokio::pin!(provider_work);
                 let (outcome, facts) = tokio::select! {
                     result = &mut provider_work => {
-                        self.finish_provider(&flight, epoch, result, &journal)?
+                        self.finish_provider(&flight, epoch, result, &journal, bound)?
                     }
                     // Only a superseding clear, replace or later intent
                     // retires a live leader's flight.
@@ -1027,11 +1029,24 @@ where
         epoch: u64,
         result: Result<M, AuthError>,
         journal: &ProviderJournal,
+        http: ProviderHttp<'_>,
     ) -> Result<(FlightOutcome<M>, ProviderAcquisitionFacts), AuthError> {
-        // Application-defined expiration is read before the slot lock.
-        let result = result.map(|value| {
-            let expires_at = value.expires_at();
-            (Arc::new(value), expires_at)
+        // Application-defined expiration is read outside the slot lock, under
+        // the same acquisition budget as acquire/refresh. Keep refused material
+        // until the flight is published, so its Drop cannot strand followers.
+        let mut discarded = None;
+        let result = result.and_then(|value| {
+            let value = Arc::new(value);
+            match http.check_active() {
+                Ok(()) => {
+                    let expires_at = value.expires_at();
+                    Ok((value, expires_at))
+                }
+                Err(error) => {
+                    discarded = Some(value);
+                    Err(error)
+                }
+            }
         });
         let (terminal, retired) = {
             let mut state = lock(&self.state)?;
@@ -1039,17 +1054,38 @@ where
                 && state.in_flight.as_ref().is_some_and(|active| {
                     Arc::ptr_eq(&active.flight, flight) && active.epoch == epoch
                 });
+            if http.is_cancelled() {
+                drop(state);
+                // Match cancellation by dropping a suspended leader: retire its
+                // flight before dropping the produced value. LeaderGuard settles
+                // the cancelled journal while run_auth retains the caller's
+                // Cancelled category.
+                self.cancel_leader(flight);
+                drop(result);
+                drop(discarded);
+                return Err(AuthError::new(AuthErrorKind::Acquisition));
+            }
             if !current {
                 // Superseded by a manual or explicit later intent: the
                 // produced material is dropped after the lock is released.
                 drop(state);
                 drop(result);
+                drop(discarded);
                 return Ok((
                     FlightOutcome::Reevaluate,
                     journal.facts(ProviderAcquisitionOutcome::Superseded),
                 ));
             }
             state.in_flight = None;
+            // This is the installation decision, after expires_at and after
+            // acquiring the lock. Never allocate a version for a late result.
+            let result = result.and_then(|(value, expires_at)| match http.check_active() {
+                Ok(()) => Ok((value, expires_at)),
+                Err(error) => {
+                    discarded = Some(value);
+                    Err(error)
+                }
+            });
             match result {
                 Ok((value, expires_at)) => match self.versions.allocate() {
                     Some(version) => {
@@ -1107,6 +1143,7 @@ where
                         FlightResult::Failed(error),
                         Retired {
                             ready: retired,
+                            value: discarded,
                             ..Retired::none()
                         },
                     )
@@ -1136,6 +1173,7 @@ where
     ) -> Result<PreparedCredential<M>, AuthError> {
         let mut provider_result = None;
         for _ in 0..MAX_REEVALUATIONS {
+            http.check_active()?;
             let candidate = {
                 let state = lock(&self.state)?;
                 if state.exhausted {
@@ -1153,6 +1191,7 @@ where
                 // without the slot mutex, then verify that the exact candidate
                 // is still installed and unrejected before selecting it.
                 let expires_at = value.expires_at();
+                http.check_active()?;
                 let (current, refreshing) = {
                     let mut state = lock(&self.state)?;
                     let current = !state.exhausted

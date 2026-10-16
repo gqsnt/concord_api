@@ -1,19 +1,11 @@
 //! Generated-surface snapshot (test only): the public inherent members the
 //! generator actually emits for representative declarations.
 //!
-//! The migration tool (`tools/xtask`, `migrate-v3`) keeps its own table of the
-//! names v3 generates that v2.1 did not, to report application trait methods
-//! those names would shadow (`C3-MIGRATE-GENERATED-NAME-SHADOW`). This test
-//! expands the migrated parity fixture
-//! (`tools/xtask/fixtures/generated_surface/surface_v3.rs.txt`) through the
-//! real generator, extracts every `pub fn` of every inherent `impl` block per
-//! generated type, and compares the result with the committed snapshot
-//! `tools/xtask/fixtures/generated_surface/v3_members.txt`. The xtask test
-//! `migration::tests::surface_parity` then checks the migrator's table against
-//! that snapshot and the frozen v2.1 member list. Emitting a new public member
-//! therefore fails this test until the snapshot is regenerated
-//! (`CONCORD_BLESS_SURFACE=1`), and then fails the xtask parity test until the
-//! migrator's table accounts for it.
+//! Expands a representative V3 fixture through the real generator, extracts
+//! every public inherent member and public re-export, and compares them with
+//! a committed snapshot. New emission sites must also be exercised by the
+//! fixture. Review intentional public surface changes before regenerating
+//! the snapshot with `CONCORD_BLESS_SURFACE=1`.
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -258,13 +250,13 @@ pub(crate) fn render(members: &[Member]) -> String {
 }
 
 fn fixtures() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tools/xtask/fixtures/generated_surface")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/generated_surface")
 }
 
 #[test]
-fn generated_public_members_match_the_migrator_snapshot() {
+fn generated_public_members_match_the_v3_snapshot() {
     let source = std::fs::read_to_string(fixtures().join("surface_v3.rs.txt"))
-        .expect("migrated parity fixture");
+        .expect("V3 public surface fixture");
     let mut all = Vec::new();
     let mut exports = Vec::new();
     for expansion in expand_source(&source) {
@@ -277,7 +269,7 @@ fn generated_public_members_match_the_migrator_snapshot() {
     exports.sort();
     exports.dedup();
     let rendered = format!(
-        "# Public inherent members the v3 generator emits for\n# tools/xtask/fixtures/generated_surface/surface_v3.rs.txt\n# (owner member receiver arity [hidden]; then public re-exports and type\n# aliases). Regenerate with\n# CONCORD_BLESS_SURFACE=1 cargo test -p concord-macros generated_public_members\n{}{}",
+        "# Public inherent members the v3 generator emits for\n# crates/concord-macros/tests/fixtures/generated_surface/surface_v3.rs.txt\n# (owner member receiver arity [hidden]; then public re-exports and type\n# aliases). Regenerate with\n# CONCORD_BLESS_SURFACE=1 cargo test -p concord-macros generated_public_members\n{}{}",
         render(&all),
         exports
             .iter()
@@ -292,13 +284,13 @@ fn generated_public_members_match_the_migrator_snapshot() {
     let committed = std::fs::read_to_string(&snapshot).unwrap_or_default();
     assert!(
         committed == rendered,
-        "the generator's public member set changed; regenerate {} with CONCORD_BLESS_SURFACE=1 and then make the migrator's v3-only name table (`tools/xtask/src/migration/callers.rs`, `v3_core_names`/`v3_value_names`) account for every new member (`migration::tests::surface_parity`).\n--- committed\n{committed}\n--- generated\n{rendered}",
+        "the generator's public member set changed; review the API change, then regenerate {} with CONCORD_BLESS_SURFACE=1.\n--- committed\n{committed}\n--- generated\n{rendered}",
         snapshot.display()
     );
 }
 
 /// Every templated `pub fn #name` emission site of `src/emit` as
-/// `(file, template variable)`, and the parity-fixture declaration element
+/// `(file, template variable)`, and the V3 fixture declaration element
 /// that exercises it. A site the fixture does not reach would add members the
 /// snapshot never sees, so a new site fails
 /// [`every_emitted_member_site_is_exercised_by_the_fixture`] until the fixture
@@ -398,7 +390,7 @@ fn every_emitted_member_site_is_exercised_by_the_fixture() {
         .collect::<Vec<_>>();
     assert!(
         missing.is_empty(),
-        "emitted members the parity fixture never produces (extend tools/xtask/fixtures/generated_surface/surface_v2_1.rs.txt): {missing:?}"
+        "emitted members the V3 fixture never produces (extend tests/fixtures/generated_surface/surface_v3.rs.txt): {missing:?}"
     );
     let mut templated = sites
         .iter()

@@ -64,7 +64,7 @@ error: [C3-MIGRATE] typed secrets were removed; write `secret token;` in client 
 97 |             secret token: String;
    |                         ^
 
-error: [C3-MIGRATE] rate key labels are explicit in v3: write `"tenant" = tenant` to preserve the legacy label (the inline rate policy of client `LegacyRateLabelApi`)
+error: [C3-MIGRATE] rate key labels are explicit in v3: write `"tenant" = tenant` to use an explicit label (the inline rate policy of client `LegacyRateLabelApi`)
    --> tests/ui/fail/syntax/retired_v2_forms.rs:108:26
     |
 108 |             key [origin, tenant];

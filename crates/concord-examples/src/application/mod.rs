@@ -25,6 +25,7 @@
 pub mod construction;
 pub mod execute;
 pub mod export;
+pub mod planning;
 pub mod reconciliation;
 pub mod saved_state;
 pub mod search;

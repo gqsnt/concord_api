@@ -4,8 +4,8 @@
 //! ordered `(label, canonical value bytes)` key, and window (RATE-03). Cost is
 //! charged against every window and is not part of bucket identity. Keys are
 //! explicitly labelled; values are canonically encoded through
-//! [`RateKeyPart`] / [`RateKeyEncoder`] with the unchanged Concord 2.1 byte
-//! framing, while each contract's `ENCODING_ID` is carried separately as
+//! [`RateKeyPart`] / [`RateKeyEncoder`] using canonical byte framing, while
+//! each contract's `ENCODING_ID` is carried separately as
 //! value-free schema metadata ([`RatePolicySchema`]).
 //!
 //! Resolved key values may be operationally sensitive: plans, keys and
@@ -57,7 +57,7 @@ pub(crate) use limiter::FallbackRateLimiter;
 pub(crate) use limiter::fallback_limiter;
 pub(crate) use schema::normalized_origin;
 
-// The captured v2.1 key bytes use an `https` logical origin, so these
+// The captured V3 key bytes use an `https` logical origin, so these
 // fixtures need the TLS-capable build.
 #[cfg(all(test, feature = "default-tls"))]
 mod plan_tests;

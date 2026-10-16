@@ -7,9 +7,8 @@
 //! in `concord-downstream-api`. This crate only observes the produced keys
 //! through public surfaces: the value-free plan schema and the protected
 //! canonical key bytes a selected limiter receives. The expected bytes are
-//! the unchanged Concord v2.1 canonical framing, checked three ways: literal
-//! hex computed from the v2.1 rule, the typed public `encode_canonical*`
-//! path, and the framing of a key recorded from the real v2.1 baseline.
+//! the canonical V3 framing, checked three ways: literal hex, the typed
+//! public `encode_canonical*` path, and the captured V3 rate-key oracle.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -94,8 +93,7 @@ impl RateLimiter for CapturingLimiter {
     }
 }
 
-/// The unchanged v2.1 canonical framing (baseline
-/// `CanonicalKeyWriter::write_tagged_bytes`):
+/// The canonical V3 framing:
 /// `u8(tag.len) || tag || u64_be(bytes.len) || bytes`.
 fn framed(tag: &str, payload: &[u8]) -> Vec<u8> {
     let mut encoded = Vec::with_capacity(1 + tag.len() + 8 + payload.len());
@@ -125,8 +123,8 @@ const SHARD: ShardKey = ShardKey(7);
 const ACCOUNT: u64 = 42;
 const DAY: u32 = 20_260_926;
 
-/// Literal v2.1-framed bytes (hex), computed independently of this crate
-/// from the baseline rule.
+/// Literal canonical bytes (hex), computed independently from the V3
+/// framing contract.
 const ORIGIN_HEX: &str = "0475746638000000000000001568747470733a2f2f6c6f63616c686f73743a343433";
 const REGION_HEX: &str = "0475746638000000000000000765752d77657374";
 const SHARD_HEX: &str = "13646f776e73747265616d2e73686172642f763100000000000000020007";
@@ -136,12 +134,10 @@ const ENDPOINT_HEX: &str = "04757466380000000000000014646f776e73747265616d2e7573
 const DAY_HEX: &str = "0375333200000000000000040135283e";
 
 #[test]
-fn the_framing_helper_reproduces_bytes_recorded_from_the_v2_1_baseline() {
-    const BASELINE: &str =
-        include_str!("../../../../fixtures/migration/v2_1_catalog_recording.json");
-    // The first recorded v2.1 admission (tenant-a, eu, item_summaries):
-    // its logical origin and the tenant key part, as captured from the real
-    // v2.1 limiter request.
+fn the_framing_helper_reproduces_bytes_from_the_v3_contract() {
+    const BASELINE: &str = include_str!("../../../../fixtures/contracts/v3_catalog_recording.json");
+    // The first recorded V3 admission (tenant-a, eu, item_summaries)
+    // contains this logical origin and tenant key part.
     let origin = "https://eu.api.catalog.example.test:443";
     let origin_hex = "0475746638000000000000002768747470733a2f2f65752e6170692e636174616c6f672e6578616d706c652e746573743a343433";
     let tenant_hex = "0475746638000000000000000874656e616e742d61";
@@ -156,7 +152,7 @@ fn the_framing_helper_reproduces_bytes_recorded_from_the_v2_1_baseline() {
 fn downstream_key_types_encode_through_the_typed_public_path() {
     // The constant-bearing custom part, the formal adapter, the custom
     // adapter for an opaque type and a primitive: each typed encoding carries
-    // its encoding ID beside (not inside) the unchanged baseline bytes.
+    // its encoding ID beside (not inside) the canonical bytes.
     let shard = encode_canonical(&SHARD, DEFAULT_RATE_LIMIT_KEY_BYTES).expect("shard");
     assert_eq!(shard.encoding_id(), "downstream.shard/1");
     assert_eq!(shard.encoding_id(), <ShardKey as RateKeyPart>::ENCODING_ID);
@@ -192,7 +188,7 @@ fn downstream_key_types_encode_through_the_typed_public_path() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn downstream_generated_keys_preserve_baseline_bytes_and_expose_encoding_ids() {
+async fn downstream_generated_keys_match_canonical_bytes_and_expose_encoding_ids() {
     let server = TlsServer::start().expect("TLS loopback");
     let tunnel = ConnectProxy::start(server.address()).expect("CONNECT tunnel");
     let proxy = SafeProxy::parse(tunnel.url()).expect("safe proxy");

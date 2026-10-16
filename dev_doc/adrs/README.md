@@ -29,6 +29,7 @@ results for the reported environment are recorded in the implementation report
 | [0024](0024-runtime-endpoints-as-owner-projected-symbolic-programs.md) | Runtime endpoints as owner-projected symbolic programs without new private authority | Selected (v3.0.0-beta.1) | new |
 | [0025](0025-primitive-count-runtime-configuration-setters.md) | Primitive-count runtime configuration setters (§20.4) | Selected (v3.0.0-beta.1); implemented | new |
 | [0026](0026-unsealed-request-controls-with-core-owned-authority.md) | Unsealed `RequestControls`; core-owned authority; timeout preference versus caps | Selected (v3.0.0-beta.1) | new |
+| [0027](0027-v3-only-product.md) | V3-only product; remove older-version conversion, aliases and state import | Selected by owner, 2026-10-16 | supersedes original migration and older-binary continuity obligations |
 
 ## v2.1 decisions retained in v3
 

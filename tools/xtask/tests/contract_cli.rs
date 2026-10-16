@@ -161,16 +161,22 @@ fn unknown_targets_and_invalid_snapshots_exit_with_usage_status() {
     assert!(text(&unknown.stderr).contains("fixture-catalog"));
 
     let invalid = scratch("invalid.json");
-    fs::write(&invalid, "{\"format\": \"concord.contract/2\"}").expect("invalid snapshot");
-    let check = xtask(&[
-        "contract",
-        "check",
-        "--target",
-        "fixture-catalog",
-        "--snapshot",
-        invalid.to_str().expect("utf-8 path"),
-    ]);
-    assert_eq!(check.status.code(), Some(2));
+    for retired in [1, 2] {
+        fs::write(
+            &invalid,
+            format!("{{\"format\": \"concord.contract/{retired}\"}}"),
+        )
+        .expect("invalid snapshot");
+        let check = xtask(&[
+            "contract",
+            "check",
+            "--target",
+            "fixture-catalog",
+            "--snapshot",
+            invalid.to_str().expect("utf-8 path"),
+        ]);
+        assert_eq!(check.status.code(), Some(2));
+    }
 
     let list = xtask(&["contract", "list"]);
     assert!(list.status.success());
@@ -188,17 +194,27 @@ fn unknown_targets_and_invalid_snapshots_exit_with_usage_status() {
 fn example_registry_targets_export_and_check_through_the_binary() {
     let list = xtask(&["contract", "list"]);
     assert!(list.status.success());
-    for target in ["catalog", "catalog-v3", "riot", "data-dragon"] {
+    for target in ["catalog", "riot", "data-dragon"] {
         assert!(
             text(&list.stdout).contains(target),
             "{target} is registered"
         );
     }
+    assert!(!text(&list.stdout).contains("catalog-v3"));
+    let alias = xtask(&[
+        "contract",
+        "export",
+        "--target",
+        "catalog-v3",
+        "--output",
+        "unused.json",
+    ]);
+    assert_eq!(alias.status.code(), Some(2));
+    assert!(text(&alias.stderr).contains("unknown contract target"));
 
     // (target, client, endpoint count, one expected endpoint ID)
     let targets = [
-        ("catalog", "CatalogApi", 4, "catalog.items.list"),
-        ("catalog-v3", "CatalogApi", 8, "catalog.item.find"),
+        ("catalog", "CatalogApi", 8, "catalog.item.find"),
         (
             "riot",
             "RiotApi",

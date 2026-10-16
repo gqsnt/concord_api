@@ -34,15 +34,6 @@ pub use spec::{
 };
 pub use stream::RequestStream;
 
-/// Deprecated name for the one core-owned managed body builder.
-///
-/// This alias only preserves source that names the managed body type. It does
-/// not preserve the retired v2.1 obligation to report request metadata
-/// separately from preparation: [`RequestRepresentation`] has a single
-/// `prepare` method whose returned [`PreparedBody`] owns the exact media type.
-#[deprecated(note = "use `PreparedBody`; the v2.1 dual metadata obligation was removed")]
-pub type RequestBody = PreparedBody;
-
 #[doc(hidden)]
 pub use spec::{EmptyBody, OptionalRequestRepresentation, PreparedBodySpec, PreparedRequestBody};
 

@@ -1,21 +1,19 @@
 # Gate 3 unfamiliar-human final-surface comprehension packet
 
-**Status:** v2.1 packet, not run. Its tasks target the v2.1 surface
-(`set_x(Option<T>)` exact setters, `PageLimit::Prefix`/`CompleteWithin`,
-`endpoint.`-qualified references); it must be
-revised to the v3 surface before it can produce v3 comprehension evidence. The
+**Status:** v3 protocol, revised 2026-10-16; no human sessions have run.
+Tasks use payload setters, exact optional-slot replacement, bare local
+references and the three explicit pagination terminals. The
 v3 lifecycle is owned by [`../release_gate_status.md`](../release_gate_status.md).
 
 This packet was written to be ready for a facilitator who is not scoring their own Concord
-implementation work. It does not compare syntax variants: `with_x` is absent
-from v2.1, and reopening it requires a separate paired, counterbalanced study
-with four to six qualifying participants.
+implementation work. It evaluates the selected v3 surface; a syntax-variant
+comparison would require a separate paired, counterbalanced study.
 
 ## Qualifying participants
 
 Recruit at least three consenting humans who can read ordinary Rust and
 generics, have not implemented or deeply reviewed Concord, have not read the
-complete v2.1 design study, and plausibly represent endpoint-author, caller, or
+complete v3 design study, and plausibly represent endpoint-author, caller, or
 reviewer roles. Record only an anonymized ID and a coarse Rust background band.
 The primary implementer, maintainers trained by the design process, AI agents,
 and generated personas do not count.

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use proc_macro2::Span;
 
 use super::head::Potential;
-use super::surface::{canonical_ident, prefixed_ident};
+use super::surface::{canonical_ident, prefixed_ident, private_prefixed_ident};
 use super::{
     AuthChallenge, Child, Credential, CredentialSource, LocalAuth, Placement, PlacementFamily,
     PlacementKind, Resolver, Secret, Site, meta_from,
@@ -25,7 +25,7 @@ pub(crate) fn resolve_credentials(resolver: &mut Resolver) -> syn::Result<()> {
             name: secret.name.clone(),
             logical: canonical_ident(&secret.name),
             meta: meta_from(&secret.attrs),
-            field: prefixed_ident("s", &secret.name),
+            field: private_prefixed_ident("s", &secret.name),
         })
         .collect();
     let secret_index = |name: &syn::Ident| {
@@ -93,7 +93,7 @@ pub(crate) fn resolve_credentials(resolver: &mut Resolver) -> syn::Result<()> {
             logical: canonical_ident(&declaration.name),
             meta: meta_from(&declaration.attrs),
             source,
-            field: prefixed_ident("c", &declaration.name),
+            field: private_prefixed_ident("c", &declaration.name),
             clear: prefixed_ident("clear", &declaration.name),
             replace: prefixed_ident("replace", &declaration.name),
             store_terminal: prefixed_ident("store_as", &declaration.name),

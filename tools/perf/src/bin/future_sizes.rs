@@ -9,12 +9,9 @@
 //! coroutine state of the execution (operation future, buffered
 //! acquisition future) plus fixed-size buffers.
 //!
-//! Like `head_cost`, this file is dialect-neutral: it uses only calls that
-//! exist unchanged in Concord v2.1 and v3 (`builder`, `configure_http`,
-//! direct endpoint methods and `IntoFuture`) and includes the same
-//! `src/head_cost/declaration.rs`, so it can be rerun against v2.1 (with
-//! `declaration_v2_1.rs.txt` copied over the declaration), any v3 commit and
-//! the corrected tree with the same host, toolchain and `--release` profile.
+//! Like `head_cost`, this probe uses the current V3 declarations from
+//! `src/head_cost/declaration.rs`. Compare source commits with the same host,
+//! compiler and release profile, using separate target directories.
 
 #![forbid(unsafe_code)]
 

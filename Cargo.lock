@@ -193,6 +193,8 @@ dependencies = [
  "concord-macros",
  "concord-test-support",
  "futures-core",
+ "h2",
+ "http",
  "serde",
  "serde_json",
  "tokio",
@@ -318,19 +320,14 @@ name = "concord-xtask"
 version = "3.0.0-beta.1"
 dependencies = [
  "cargo_metadata",
- "concord",
  "concord-core",
  "concord-examples",
  "concord-extras",
  "concord-inspect",
  "proc-macro2",
- "quote",
  "regex",
- "serde",
  "serde_json",
  "syn 3.0.3",
- "tokio",
- "toml",
 ]
 
 [[package]]

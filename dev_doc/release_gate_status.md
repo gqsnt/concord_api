@@ -1,44 +1,49 @@
-# Concord v3 release-gate status
+# Concord V3 release-gate status
 
 <!-- concord-release-status-owner -->
 
-- **Canonical lifecycle status:** Concord v3 unpublished beta source branch; current source review complete, technical closure OPEN pending retained corrections and final qualification.
+- **Canonical lifecycle status:** Concord V3 integration candidate / beta; unpublished source branch;
+  corrective source implemented, final integrated qualification in progress.
+- **Publication:** disabled — the source beta is unpublished.
 - **Workspace version:** `3.0.0-beta.1`; every workspace package has `publish = false`.
-- **Publication:** disabled — all workspace packages remain unpublished.
-- **Recorded:** 2026-10-16. Reviewed source `ff1be9cb588bcc664c366a55abe555590e7de01e`; tree `82c12bde32343fba9418beba58dfe7355d1b8e8e`.
-- **Supported platforms:** Windows and Linux are supported and mandatory. macOS is not currently a supported or release-gated platform.
+- **Recorded:** 2026-10-16. Correction baseline
+  `ae6006184f3dc903fdfe66c572098ac810e2c6c5` (owner-pushed documentation update).
+- **Supported platforms:** Windows and Linux are supported and mandatory.
+  macOS is not currently a supported or release-gated platform.
+- **Version scope:** V3 only, selected by the owner;
+  [ADR 0027](adrs/0027-v3-only-product.md) retires conversion and older-binary obligations.
 
-**Beta integration decision:** OPEN — the owner retains merge/integration decisions;
-the present source review does not supply a new integration or publication decision.
+This is the sole authoritative lifecycle record. The
+[correction report](reviews/2026_10_16_corrections.md) records current changes,
+commands and evidence limits. Earlier dated records retain their original
+source scope.
 
-**Stable publication decision:** BLOCKED — owner legal/package authority and
-stable-release decisions remain open.
+## Current correction candidate
 
-This is the sole authoritative lifecycle record. The [16 October review](reviews/2026_10_16_review.md)
-records the current source findings and evidence limits. Earlier R7/R8 records
-retain their original source scope; their success does not qualify later production changes.
+The seven retained code findings have direct corrections. V3R-01 is closed by
+removing the unsupported converter. Provider/body/native length regressions,
+macro collisions and caller-identifier controls have targeted passing evidence.
+The private Edition 1 specification and closure prompt were inspected with the
+owner's authorization; their authority was reconciled with the later V3-only
+instruction. This resolves the former missing-input uncertainty.
 
-## Current reviewed source
+| Gate | Current source-bound state |
+|---|---|
+| Targeted regressions | Passed on the recorded correction inputs; see correction report |
+| Final Linux maintained implementation gate | In progress; no exact-candidate PASS inferred from earlier runs |
+| Final Windows maintained implementation gate | Pending execution of the new complete qualification job |
+| Performance V3-O07 | Measurement and attribution in progress |
+| Source/acceptance receipt V3-O08 | Pending final commit, qualification and export |
+| Human study and independent human Rustdoc review | Unknown; V3 protocols prepared, separate from the machine-beta gate |
+| Main integration / stable publication | Separate owner actions; not performed by this correction |
+| Dependency license policy | Historical POL-01 remains separately reported; license work is outside this correction |
 
-- The architectural direction is retained, but eight code findings (six P2,
-  two P3) and two documentation corrections remain open.
-- Native Linux Rust 1.97.1 all-feature Cargo tests: 1,977 passed, zero failures
-  and ignored tests. Explicit UI targets are separately covered by exact-commit CI.
-- docs-check, repository policy and release-audit pass on the reviewed clean SHA.
-  These structural checks are not evidence that every behavioral contract is closed.
-- Exact-commit CI run 38317897762 has eight successful jobs and one failed job.
-  The failure is POL-01: all-feature BSD-3-Clause dependency license policy.
-- Current Windows CI checks all targets/features, exports source and executes
-  four deterministic smoke tests. A complete current Windows implementation gate
-  was not independently executed or established by this review.
-- Reconcile the final corrected source with external qualification receipts,
-  normative obligations and complete Windows/Linux maintained gates.
-- V3-O07 workload performance acceptance and owner publication decisions remain open.
+The original matrix has 81 IDs. O04 is **retired by owner direction**, leaving
+80 applicable obligations; R01/R02/R06/R13 retain their current V3 identity,
+schema, sharing and admission requirements. A passing converter is not claimed.
 
-The later [global handoff](reviews/final_global_handoff.md) records that Edition 1
-was available and identifies its hash. This review did not independently inspect
-that external specification or the complete external final return. Historical
-missing-document statements below are not assertions of current project-wide absence.
+**Beta integration decision:** ordinary `concord-v3` source update authorized; main integration remains a separate owner action.
+**Stable publication decision:** Blocked pending separate owner release decisions.
 
 ## Historical R8 integration state
 
@@ -77,7 +82,7 @@ separate worktree; primary checkout and foreign/unknown work are preserved.
 The R6 archive's prior no-push restriction describes an earlier commission and
 is superseded only for this authorized ordinary source-branch push.
 
-## Validation environment and limits
+## Historical R7/R8 validation environment and limits
 
 Windows 11 Professional build 26200, native x86_64 MSVC; Linux Ubuntu 26.04 in
 WSL2, kernel 6.18.40.1, x86_64 GNU. Both use pin

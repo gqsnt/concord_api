@@ -2,14 +2,9 @@
 //! operation for request construction, binding and bound-head planning, and
 //! the client-thread allocations of one managed loopback execution.
 //!
-//! The harness in this file is dialect-neutral: it uses only caller calls
-//! that exist unchanged in Concord v2.1 and v3 (`builder`, root value and
-//! secret setters, scope navigation, `unbound`, `request`, `plan`, direct
-//! endpoint methods and `IntoFuture`). The two measured clients are included
-//! from `src/head_cost/declaration.rs` (v3 syntax). The v2.1 baseline run
-//! copies `src/head_cost/declaration_v2_1.rs.txt` over that file inside a
-//! `git archive baseline-v2.1` export and runs this unchanged file there with
-//! the same host, toolchain and `--release` profile.
+//! The harness measures current V3 construction, binding, planning and managed
+//! execution. Declarations live in `src/head_cost/declaration.rs`.
+//! Compare source commits using isolated checkouts and target directories.
 //!
 //! Method: each category first runs `WARMUP` untimed iterations so lazy
 //! contract statics, pools and the keep-alive loopback connection reach a

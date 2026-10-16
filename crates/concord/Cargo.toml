@@ -30,6 +30,8 @@ concord_macros = { package = "concord-macros", version = "=3.0.0-beta.1", path =
 concord_inspect = { package = "concord-inspect", path = "../concord-inspect" }
 concord_test_support = { package = "concord-test-support", path = "../concord-test-support", default-features = false, features = ["loopback"] }
 futures-core.workspace = true
+h2.workspace = true
+http.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 tokio = { workspace = true, features = ["io-util", "macros", "rt-multi-thread", "sync", "test-util", "time"] }

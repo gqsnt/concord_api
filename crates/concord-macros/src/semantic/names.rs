@@ -113,7 +113,7 @@ pub(crate) fn resolve_liveness(resolver: &mut Resolver) -> syn::Result<()> {
                 value.name.span(),
                 Code::Name,
                 format!(
-                    "value `{}` of {label} has no reachable semantic use; use it, remove it, or mark it `#[deprecated]` as an explicit no-op migration bridge",
+                    "value `{}` of {label} has no reachable semantic use; use it, remove it, or mark it `#[deprecated]` as an explicit deprecated no-op value",
                     value.logical
                 ),
             ));
@@ -227,6 +227,7 @@ fn controls_for(value: &Value, root: bool) -> ValueControls {
 struct Names<'a> {
     owner: &'a str,
     seen: HashMap<String, String>,
+    origins: HashMap<String, Span>,
 }
 
 impl<'a> Names<'a> {
@@ -238,22 +239,37 @@ impl<'a> Names<'a> {
                 format!("the generated core method `{name}`"),
             );
         }
-        Self { owner, seen }
+        Self {
+            owner,
+            seen,
+            origins: HashMap::new(),
+        }
     }
 
     fn insert(&mut self, name: &Ident, what: String) -> syn::Result<()> {
         let text = super::surface::canonical_ident(name);
         if let Some(first) = self.seen.get(&text) {
-            return Err(coded(
+            let error = coded(
                 name.span(),
                 Code::Generated,
                 format!(
                     "generated name `{text}` for {what} on {} collides with {first}; rename one declaration (generated names are never suffixed or truncated)",
                     self.owner
                 ),
-            ));
+            );
+            return Err(match self.origins.get(&text) {
+                Some(span) => related(error, *span, format!("{first} is declared here")),
+                None => error,
+            });
         }
         self.seen.insert(text, what);
+        Ok(())
+    }
+
+    fn insert_with_origin(&mut self, name: &Ident, what: String) -> syn::Result<()> {
+        self.insert(name, what)?;
+        self.origins
+            .insert(super::surface::canonical_ident(name), name.span());
         Ok(())
     }
 }
@@ -298,6 +314,7 @@ const REQUEST_METHODS: &[&str] = &[
 ];
 const INTENT_METHODS: &[&str] = &["description", "clone"];
 const MODULE_TYPES: &[&str] = &["Unbound", "__State", "__Local", "Credentials"];
+const SCOPE_MODULE_TYPES: &[&str] = &["Unbound", "__State", "__Local"];
 
 pub(crate) fn resolve_surfaces(resolver: &mut Resolver) -> syn::Result<()> {
     // Value controls.
@@ -368,7 +385,14 @@ pub(crate) fn resolve_surfaces(resolver: &mut Resolver) -> syn::Result<()> {
             }
         }
         let module_owner = format!("module of {}", owner.display);
-        let mut types = Names::new(&module_owner, MODULE_TYPES);
+        let mut types = Names::new(
+            &module_owner,
+            if owner.kind == OwnerKind::Client {
+                MODULE_TYPES
+            } else {
+                SCOPE_MODULE_TYPES
+            },
+        );
         if owner.kind == OwnerKind::Client {
             types.insert(&model.client.builder, "the client builder".to_owned())?;
             // The client module also defines the sealed intent trait; an
@@ -378,6 +402,13 @@ pub(crate) fn resolve_surfaces(resolver: &mut Resolver) -> syn::Result<()> {
                 "GeneratedEndpoint".to_owned(),
                 "the generated intent trait".to_owned(),
             );
+        } else {
+            // The handle is declared inside its own scope module, alongside
+            // that scope's endpoint types. Include it before its children.
+            types.insert_with_origin(
+                &owner.surface.handle,
+                format!("handle of scope `{}`", owner.logical),
+            )?;
         }
         for child in &owner.children {
             match child {

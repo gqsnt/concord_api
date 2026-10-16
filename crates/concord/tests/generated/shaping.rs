@@ -1855,7 +1855,7 @@ fn closed_conversions_accept_borrowed_strings_integers_and_exact_none() {
 
 /// V3-L13 (description part; dead required inputs are compile-fail UI
 /// tests): an explicitly deprecated optional input with no semantic use is a
-/// disclosed no-op migration bridge and never reaches the request (VALUE-06).
+/// disclosed deprecated no-op value and never reaches the request (VALUE-06).
 #[test]
 #[allow(deprecated)]
 fn deprecated_no_op_inputs_are_disclosed_and_never_sent() {

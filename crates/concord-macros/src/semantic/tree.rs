@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use proc_macro2::Span;
 use syn::Ident;
 
-use super::surface::{canonical_ident, pascal_ident, prefixed_ident, snake_ident};
+use super::surface::{canonical_ident, pascal_ident, private_prefixed_ident, snake_ident};
 use super::{
     Body, Child, ClientInfo, DirectPlacement, Endpoint, EndpointSurface, FamilyMode, Initializer,
     LocalProgram, Method, Model, Owner, OwnerKind, OwnerSurface, Positional, RepresentationDefault,
@@ -379,8 +379,8 @@ fn register_values(values: &[ValueDecl], what: &str, owner: &str) -> syn::Result
                 init,
                 placement,
                 position: declaration.position,
-                field: prefixed_ident("v", &declaration.name),
-                initial_field: prefixed_ident("i", &declaration.name),
+                field: private_prefixed_ident("v", &declaration.name),
+                initial_field: private_prefixed_ident("i", &declaration.name),
                 controls: ValueControls::default(),
                 live: false,
                 page_live: false,

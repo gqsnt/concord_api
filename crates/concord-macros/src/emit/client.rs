@@ -33,8 +33,8 @@ pub(crate) fn generate(context: &Context<'_>) -> TokenStream {
 
         #allow_deprecated
         impl ::std::fmt::Debug for #client {
-            fn fmt(&self, formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                formatter
+            fn fmt(&self, __concord_formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                __concord_formatter
                     .debug_struct(#display)
                     .field("base", &#base)
                     .finish_non_exhaustive()
@@ -121,12 +121,12 @@ fn root_items(context: &Context<'_>) -> TokenStream {
             type Request;
 
             #[doc(hidden)]
-            fn __concord_bind(self, client: &super::#client) -> Self::Request;
+            fn __concord_bind(self, __concord_client: &super::#client) -> Self::Request;
 
             #[doc(hidden)]
             fn __concord_plan(
                 &self,
-                client: &super::#client,
+                __concord_client: &super::#client,
             ) -> ::std::result::Result<#f::endpoint::RequestPlan, #f::ApiError>;
         }
 
@@ -166,11 +166,11 @@ fn root_items(context: &Context<'_>) -> TokenStream {
             /// Binds an unbound intent generated for this client. No I/O is
             /// performed; the intent's captured snapshots are kept and retained
             /// defaults are not re-evaluated.
-            pub fn request<E>(&self, endpoint: E) -> E::Request
+            pub fn request<E>(&self, __concord_endpoint: E) -> E::Request
             where
                 E: GeneratedEndpoint,
             {
-                GeneratedEndpoint::__concord_bind(endpoint, self)
+                GeneratedEndpoint::__concord_bind(__concord_endpoint, self)
             }
 
             /// Builds the inert plan of an unbound intent under this client.
@@ -180,12 +180,12 @@ fn root_items(context: &Context<'_>) -> TokenStream {
             /// Public shaping, encoding or structural-limit failures.
             pub fn plan<E>(
                 &self,
-                endpoint: &E,
+                __concord_endpoint: &E,
             ) -> ::std::result::Result<#f::endpoint::RequestPlan, #f::ApiError>
             where
                 E: GeneratedEndpoint,
             {
-                GeneratedEndpoint::__concord_plan(endpoint, self)
+                GeneratedEndpoint::__concord_plan(__concord_endpoint, self)
             }
 
             #binding
@@ -234,9 +234,9 @@ fn credentials_facade(context: &Context<'_>) -> TokenStream {
             /// checked counters are exhausted (fail closed).
             pub fn #replace(
                 &self,
-                material: #material,
+                __concord_material: #material,
             ) -> ::std::result::Result<#f::auth::CredentialVersion, #f::auth::AuthError> {
-                self.__client.__concord.#field.replace(material)
+                self.__client.__concord.#field.replace(__concord_material)
             }
         }
     });
@@ -252,8 +252,8 @@ fn credentials_facade(context: &Context<'_>) -> TokenStream {
         }
 
         impl ::std::fmt::Debug for Credentials<'_> {
-            fn fmt(&self, formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                formatter.debug_struct("Credentials").finish_non_exhaustive()
+            fn fmt(&self, __concord_formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                __concord_formatter.debug_struct("Credentials").finish_non_exhaustive()
             }
         }
     }
@@ -291,7 +291,7 @@ fn builder_items(context: &Context<'_>) -> TokenStream {
             let setter_name = lit(&setter.to_string());
             missing.push(quote! {
                 if self.#field.is_none() {
-                    missing.push((#setter_name, #f::error::ClientInputKind::Value));
+                    __concord_missing.push((#setter_name, #f::error::ClientInputKind::Value));
                 }
             });
             resolve.push(quote! {
@@ -306,17 +306,17 @@ fn builder_items(context: &Context<'_>) -> TokenStream {
                 #[doc = #set_doc]
                 #deprecated
                 #[must_use]
-                pub fn #setter(mut self, value: impl #f::IntoValue<#ty>) -> Self {
-                    self.#field = ::std::option::Option::Some(::std::sync::Arc::new(#f::IntoValue::<#ty>::into_value(value)));
+                pub fn #setter(mut self, __concord_value: impl #f::IntoValue<#ty>) -> Self {
+                    self.#field = ::std::option::Option::Some(::std::sync::Arc::new(#f::IntoValue::<#ty>::into_value(__concord_value)));
                     self
                 }
 
                 #[doc = #if_some_doc]
                 #deprecated
                 #[must_use]
-                pub fn #if_some(mut self, value: ::std::option::Option<#ty>) -> Self {
-                    if let ::std::option::Option::Some(value) = value {
-                        self.#field = ::std::option::Option::Some(::std::sync::Arc::new(value));
+                pub fn #if_some(mut self, __concord_value: ::std::option::Option<#ty>) -> Self {
+                    if let ::std::option::Option::Some(__concord_value) = __concord_value {
+                        self.#field = ::std::option::Option::Some(::std::sync::Arc::new(__concord_value));
                     }
                     self
                 }
@@ -355,14 +355,14 @@ fn builder_items(context: &Context<'_>) -> TokenStream {
         methods.push(quote! {
             #[doc = #doc]
             #[must_use]
-            pub fn #method(mut self, value: #f::SecretString) -> Self {
-                self.#field = ::std::option::Option::Some(value);
+            pub fn #method(mut self, __concord_value: #f::SecretString) -> Self {
+                self.#field = ::std::option::Option::Some(__concord_value);
                 self
             }
         });
         missing.push(quote! {
             if self.#field.is_none() {
-                missing.push((#name, #f::error::ClientInputKind::Secret));
+                __concord_missing.push((#name, #f::error::ClientInputKind::Secret));
             }
         });
         resolve.push(quote! {
@@ -387,8 +387,8 @@ fn builder_items(context: &Context<'_>) -> TokenStream {
                 };
                 credential_statements.push(quote! {
                     let #field = #material::try_from_secret(::std::clone::Clone::clone(&#secret_field))
-                        .map_err(|error| #p::credential_input_error(#secret_name, error))?;
-                    let #field = #p::GeneratedCredential::static_value(&core, #field);
+                        .map_err(|__concord_error| #p::credential_input_error(#secret_name, __concord_error))?;
+                    let #field = #p::GeneratedCredential::static_value(&__concord_core, #field);
                 });
             }
             CredentialSource::Basic { username, password } => {
@@ -403,18 +403,18 @@ fn builder_items(context: &Context<'_>) -> TokenStream {
                         ::std::clone::Clone::clone(&#username_field),
                         ::std::clone::Clone::clone(&#password_field),
                     )
-                    .map_err(|error| #p::basic_credential_input_error(#username_name, #password_name, error))?;
-                    let #field = #p::GeneratedCredential::static_value(&core, #field);
+                    .map_err(|__concord_error| #p::basic_credential_input_error(#username_name, #password_name, __concord_error))?;
+                    let #field = #p::GeneratedCredential::static_value(&__concord_core, #field);
                 });
             }
             CredentialSource::Endpoint { .. } => {
                 credential_statements
-                    .push(quote!(let #field = #p::GeneratedCredential::endpoint(&core);));
+                    .push(quote!(let #field = #p::GeneratedCredential::endpoint(&__concord_core);));
             }
             CredentialSource::Custom { provider } => {
                 let provider = context.rust_type(provider);
                 let provider_field =
-                    syn::Ident::new(&format!("p_{}", credential.logical), credential.name.span());
+                    crate::semantic::surface::private_prefixed_ident("p", &credential.name);
                 let method = &credential.name;
                 let name = lit(&credential.logical);
                 fields.push(quote!(#provider_field: ::std::option::Option<#provider>,));
@@ -426,14 +426,14 @@ fn builder_items(context: &Context<'_>) -> TokenStream {
                 methods.push(quote! {
                     #[doc = #doc]
                     #[must_use]
-                    pub fn #method(mut self, provider: #provider) -> Self {
-                        self.#provider_field = ::std::option::Option::Some(provider);
+                    pub fn #method(mut self, __concord_provider: #provider) -> Self {
+                        self.#provider_field = ::std::option::Option::Some(__concord_provider);
                         self
                     }
                 });
                 missing.push(quote! {
                     if self.#provider_field.is_none() {
-                        missing.push((#name, #f::error::ClientInputKind::CredentialProvider));
+                        __concord_missing.push((#name, #f::error::ClientInputKind::CredentialProvider));
                     }
                 });
                 resolve.push(quote! {
@@ -442,7 +442,7 @@ fn builder_items(context: &Context<'_>) -> TokenStream {
                     };
                 });
                 credential_statements.push(quote! {
-                    let #field = #p::GeneratedCredential::provider(&core, #name, #provider_field)?;
+                    let #field = #p::GeneratedCredential::provider(&__concord_core, #name, #provider_field)?;
                 });
             }
         }
@@ -462,8 +462,8 @@ fn builder_items(context: &Context<'_>) -> TokenStream {
         }
 
         impl #builder {
-            fn __with(mut self, update: impl ::std::ops::FnOnce(&mut Self)) -> Self {
-                update(&mut self);
+            fn __with(mut self, __concord_update: impl ::std::ops::FnOnce(&mut Self)) -> Self {
+                __concord_update(&mut self);
                 self
             }
 
@@ -485,33 +485,33 @@ fn builder_items(context: &Context<'_>) -> TokenStream {
             /// compression, pooling). Redirects, cookies and upgrades stay
             /// disabled.
             #[must_use]
-            pub fn configure_http<C>(mut self, configure: C) -> Self
+            pub fn configure_http<C>(mut self, __concord_configure: C) -> Self
             where
                 C: ::std::ops::FnOnce(#f::http::HttpConfigBuilder) -> #f::http::HttpConfigBuilder,
             {
-                let http = self.__http.take().unwrap_or_else(#p::default_http_config);
-                self.__http = ::std::option::Option::Some(configure(http));
+                let __concord_http = self.__http.take().unwrap_or_else(#p::default_http_config);
+                self.__http = ::std::option::Option::Some(__concord_configure(__concord_http));
                 self
             }
 
             /// Applies a runtime configuration transformation immediately and in
             /// call order (limits, retry policy, limiter, observers).
             #[must_use]
-            pub fn configure_runtime<C>(mut self, configure: C) -> Self
+            pub fn configure_runtime<C>(mut self, __concord_configure: C) -> Self
             where
                 C: ::std::ops::FnOnce(#f::runtime::RuntimeConfigBuilder) -> #f::runtime::RuntimeConfigBuilder,
             {
-                let runtime = self.__runtime.take().unwrap_or_else(#p::default_runtime_config);
-                self.__runtime = ::std::option::Option::Some(configure(runtime));
+                let __concord_runtime = self.__runtime.take().unwrap_or_else(#p::default_runtime_config);
+                self.__runtime = ::std::option::Option::Some(__concord_configure(__concord_runtime));
                 self
             }
 
             /// Installs a Concord-managed retry policy (shorthand for
             /// `configure_runtime(|runtime| runtime.retry_policy(policy))`).
             #[must_use]
-            pub fn retry(mut self, policy: #f::retry::RetryPolicy) -> Self {
-                let runtime = self.__runtime.take().unwrap_or_else(#p::default_runtime_config);
-                self.__runtime = ::std::option::Option::Some(runtime.retry_policy(policy));
+            pub fn retry(mut self, __concord_policy: #f::retry::RetryPolicy) -> Self {
+                let __concord_runtime = self.__runtime.take().unwrap_or_else(#p::default_runtime_config);
+                self.__runtime = ::std::option::Option::Some(__concord_runtime.retry_policy(__concord_policy));
                 self
             }
 
@@ -525,18 +525,18 @@ fn builder_items(context: &Context<'_>) -> TokenStream {
             /// secret and provider (by setter name), or an invalid credential,
             /// limiter or transport configuration.
             pub fn build(self) -> ::std::result::Result<super::#client, #f::ClientBuildError> {
-                let mut missing: ::std::vec::Vec<(&'static str, #f::error::ClientInputKind)> = ::std::vec::Vec::new();
+                let mut __concord_missing: ::std::vec::Vec<(&'static str, #f::error::ClientInputKind)> = ::std::vec::Vec::new();
                 #(#missing)*
-                let http = self.__http.unwrap_or_else(#p::default_http_config);
-                let runtime = self.__runtime.unwrap_or_else(#p::default_runtime_config);
-                #p::preflight_generated_build(#base, &http, &runtime, #requires_limiter, missing)?;
+                let __concord_http = self.__http.unwrap_or_else(#p::default_http_config);
+                let __concord_runtime = self.__runtime.unwrap_or_else(#p::default_runtime_config);
+                #p::preflight_generated_build(#base, &__concord_http, &__concord_runtime, #requires_limiter, __concord_missing)?;
                 #(#resolve)*
-                let core = #p::build_client_core(#base, http, runtime)?;
+                let __concord_core = #p::build_client_core(#base, __concord_http, __concord_runtime)?;
                 #(#credential_statements)*
                 #(#unused_secrets)*
                 ::std::result::Result::Ok(super::#client {
                     __concord: ::std::sync::Arc::new(__State {
-                        __core: core,
+                        __core: __concord_core,
                         #(#credential_fields)*
                         #(#state_values)*
                     }),
@@ -551,8 +551,8 @@ fn builder_items(context: &Context<'_>) -> TokenStream {
         }
 
         impl ::std::fmt::Debug for #builder {
-            fn fmt(&self, formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                formatter.debug_struct(::std::stringify!(#builder)).finish_non_exhaustive()
+            fn fmt(&self, __concord_formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                __concord_formatter.debug_struct(::std::stringify!(#builder)).finish_non_exhaustive()
             }
         }
     }

@@ -1407,8 +1407,8 @@ async fn the_same_prepared_definition_uses_each_selected_client_base_and_core() 
 // Bodies, observers and limits (§9, §16.2 Body row).
 // ---------------------------------------------------------------------------
 
-/// v2 `body(RequestBody::...)`/`body_codec::<C>` become the one typed
-/// `body_repr::<B, T>(input)` selection (§16.2 Body row).
+/// All managed bodies use the typed `body_repr::<B, T>(input)` selection
+/// (§16.2 Body row).
 #[tokio::test]
 async fn all_prepared_body_forms_use_the_existing_lazy_body_architecture() {
     let server = ScriptedServer::start((0..7).map(|_| ResponseScript::ok(Vec::new())))

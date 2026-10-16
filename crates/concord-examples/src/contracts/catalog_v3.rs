@@ -10,9 +10,8 @@
 //! This fixture deliberately demonstrates root defaults, direct placement,
 //! repeated values, an inherited fallback, exact body input, authentication
 //! replacement, explicit rate schemas, head-only absence, byte exposure,
-//! custom envelope traversal and streaming. Its root `Json` defaults and new
-//! routes are design examples, not provenance-preserving edits of the v2.1
-//! Catalog; the migrated baseline lives in [`super::catalog_contract`].
+//! custom envelope traversal and streaming. Root `Json` defaults and the
+//! regional routes form the current Catalog contract.
 //!
 //! Semantics worth reading twice:
 //!

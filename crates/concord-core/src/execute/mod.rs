@@ -1502,6 +1502,7 @@ impl<'a> AttemptEnv<'a> {
     fn provider_http(&self) -> ProviderHttp<'a> {
         self.core
             .provider_http(Some(self.deadline))
+            .controlled(self.controls)
             .scoped(ProviderScope::new(
                 self.operation_id,
                 self.core.operation_observer().as_ref(),
@@ -1521,6 +1522,13 @@ async fn run_auth<T>(
     let head = env.head;
     let result = env.deadline.run(future).await;
     journal.record_provider(env.provider_link.take());
+    // A synchronous provider/material callback may cancel during this poll.
+    // The outer select cannot observe that until polling returns; preserve
+    // cancellation as the operation result after the provider has retired its
+    // flight and linked the truthful provider journal.
+    if env.controls.is_some_and(RequestControlState::is_cancelled) {
+        return Err(cancelled_error(head.endpoint_id(), head.method()));
+    }
     result
         .map_err(|_| timeout_error(head.endpoint_id(), head.method()))?
         .map_err(|error| auth_api_error(head, error))

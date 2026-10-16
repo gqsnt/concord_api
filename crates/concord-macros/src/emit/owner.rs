@@ -173,17 +173,17 @@ pub(crate) fn value_controls(
         if let Some(set) = &controls.set {
             let doc = docs::control(value, "set", owner_display);
             let assign = if value.optional {
-                quote!(local.#field = ::std::option::Option::Some(value);)
+                quote!(__concord_local.#field = ::std::option::Option::Some(__concord_value);)
             } else {
-                quote!(local.#field = value;)
+                quote!(__concord_local.#field = __concord_value;)
             };
             out.push(quote! {
                 #[doc = #doc]
                 #deprecated
                 #[must_use]
-                pub fn #set(self, value: impl #f::IntoValue<#ty>) -> Self {
-                    let value = ::std::sync::Arc::new(#f::IntoValue::<#ty>::into_value(value));
-                    self.__with(move |local| { #assign })
+                pub fn #set(self, __concord_value: impl #f::IntoValue<#ty>) -> Self {
+                    let __concord_value = ::std::sync::Arc::new(#f::IntoValue::<#ty>::into_value(__concord_value));
+                    self.__with(move |__concord_local| { #assign })
                 }
             });
         }
@@ -193,25 +193,25 @@ pub(crate) fn value_controls(
                 #[doc = #doc]
                 #deprecated
                 #[must_use]
-                pub fn #replace(self, value: ::std::option::Option<#ty>) -> Self {
-                    self.__with(move |local| local.#field = value.map(::std::sync::Arc::new))
+                pub fn #replace(self, __concord_value: ::std::option::Option<#ty>) -> Self {
+                    self.__with(move |__concord_local| __concord_local.#field = __concord_value.map(::std::sync::Arc::new))
                 }
             });
         }
         if let Some(set_if_some) = &controls.set_if_some {
             let doc = docs::control(value, "set_if_some", owner_display);
             let assign = if value.optional {
-                quote!(local.#field = ::std::option::Option::Some(::std::sync::Arc::new(value));)
+                quote!(__concord_local.#field = ::std::option::Option::Some(::std::sync::Arc::new(__concord_value));)
             } else {
-                quote!(local.#field = ::std::sync::Arc::new(value);)
+                quote!(__concord_local.#field = ::std::sync::Arc::new(__concord_value);)
             };
             out.push(quote! {
                 #[doc = #doc]
                 #deprecated
                 #[must_use]
-                pub fn #set_if_some(self, value: ::std::option::Option<#ty>) -> Self {
-                    match value {
-                        ::std::option::Option::Some(value) => self.__with(move |local| { #assign }),
+                pub fn #set_if_some(self, __concord_value: ::std::option::Option<#ty>) -> Self {
+                    match __concord_value {
+                        ::std::option::Option::Some(__concord_value) => self.__with(move |__concord_local| { #assign }),
                         ::std::option::Option::None => self,
                     }
                 }
@@ -224,23 +224,23 @@ pub(crate) fn value_controls(
                 #deprecated
                 #[must_use]
                 pub fn #omit(self) -> Self {
-                    self.__with(|local| local.#field = ::std::option::Option::None)
+                    self.__with(|__concord_local| __concord_local.#field = ::std::option::Option::None)
                 }
             });
         }
         if let Some(reset) = &controls.reset {
             let doc = docs::control(value, "reset", owner_display);
             let assign = if value.optional {
-                quote!(local.#field = ::std::option::Option::Some(::std::sync::Arc::clone(&local.#initial));)
+                quote!(__concord_local.#field = ::std::option::Option::Some(::std::sync::Arc::clone(&__concord_local.#initial));)
             } else {
-                quote!(local.#field = ::std::sync::Arc::clone(&local.#initial);)
+                quote!(__concord_local.#field = ::std::sync::Arc::clone(&__concord_local.#initial);)
             };
             out.push(quote! {
                 #[doc = #doc]
                 #deprecated
                 #[must_use]
                 pub fn #reset(self) -> Self {
-                    self.__with(|local| { #assign })
+                    self.__with(|__concord_local| { #assign })
                 }
             });
         }
@@ -320,14 +320,14 @@ fn state(context: &Context<'_>, owner: usize) -> TokenStream {
         }
 
         impl #p::HeadEmissions for __State {
-            fn emission_present(&self, emission: u16) -> bool {
+            fn emission_present(&self, __concord_emission: u16) -> bool {
                 #presence
             }
 
             fn emit(
                 &self,
-                emission: u16,
-                sink: &mut #p::OccurrenceSink<'_>,
+                __concord_emission: u16,
+                __concord_sink: &mut #p::OccurrenceSink<'_>,
             ) -> ::std::result::Result<(), #f::AtomError> {
                 #emit
             }
@@ -352,7 +352,8 @@ fn projection(context: &Context<'_>, owner: usize) -> TokenStream {
     let timeout = option_duration(entry.effective_timeout);
     let inherit = |call: TokenStream| if is_root { TokenStream::new() } else { call };
     let host = {
-        let parent_host = inherit(quote!(#p::OwnerProjection::push_host(#parent, builder)?;));
+        let parent_host =
+            inherit(quote!(#p::OwnerProjection::push_host(#parent, __concord_builder)?;));
         match &entry.host {
             None => parent_host,
             Some(LocalHost::Prepend(labels)) => {
@@ -371,7 +372,8 @@ fn projection(context: &Context<'_>, owner: usize) -> TokenStream {
         }
     };
     let path = {
-        let parent_path = inherit(quote!(#p::OwnerProjection::push_path(#parent, builder)?;));
+        let parent_path =
+            inherit(quote!(#p::OwnerProjection::push_path(#parent, __concord_builder)?;));
         match &entry.path {
             None => parent_path,
             Some(LocalPath::Append(template)) => {
@@ -392,7 +394,8 @@ fn projection(context: &Context<'_>, owner: usize) -> TokenStream {
         }
     };
     let auth = {
-        let parent_auth = inherit(quote!(#p::OwnerProjection::push_auth(#parent, builder)?;));
+        let parent_auth =
+            inherit(quote!(#p::OwnerProjection::push_auth(#parent, __concord_builder)?;));
         match &entry.auth {
             None => parent_auth,
             Some(LocalAuth::Append(placements)) => {
@@ -412,7 +415,7 @@ fn projection(context: &Context<'_>, owner: usize) -> TokenStream {
     };
     let rates = {
         let parent_rates =
-            inherit(quote!(#p::OwnerProjection::push_rate_limits(#parent, builder)?;));
+            inherit(quote!(#p::OwnerProjection::push_rate_limits(#parent, __concord_builder)?;));
         let local = entry
             .rates
             .iter()
@@ -423,15 +426,15 @@ fn projection(context: &Context<'_>, owner: usize) -> TokenStream {
     let has_rates = !entry.effective_rates.is_empty();
     let program = if is_root {
         quote! {
-            visit(&[#p::ProgramSegment { ops: Self::__OPS, emissions: self }])
+            __concord_visit(&[#p::ProgramSegment { ops: Self::__OPS, emissions: self }])
         }
     } else {
         quote! {
-            #p::OwnerProjection::visit_program(#parent, &mut |inherited| {
+            #p::OwnerProjection::visit_program(#parent, &mut |__concord_inherited| {
                 #p::visit_extended_program(
-                    inherited,
+                    __concord_inherited,
                     #p::ProgramSegment { ops: Self::__OPS, emissions: self },
-                    |segments| visit(segments),
+                    |__concord_segments| __concord_visit(__concord_segments),
                 )
             })
         }
@@ -451,22 +454,22 @@ fn projection(context: &Context<'_>, owner: usize) -> TokenStream {
                 #timeout
             }
 
-            fn push_host(&self, builder: &mut #p::HeadBuilder) -> ::std::result::Result<(), #f::ApiError> {
+            fn push_host(&self, __concord_builder: &mut #p::HeadBuilder) -> ::std::result::Result<(), #f::ApiError> {
                 #host
                 ::std::result::Result::Ok(())
             }
 
-            fn push_path(&self, builder: &mut #p::HeadBuilder) -> ::std::result::Result<(), #f::ApiError> {
+            fn push_path(&self, __concord_builder: &mut #p::HeadBuilder) -> ::std::result::Result<(), #f::ApiError> {
                 #path
                 ::std::result::Result::Ok(())
             }
 
-            fn push_auth(&self, builder: &mut #p::HeadBuilder) -> ::std::result::Result<(), #f::ApiError> {
+            fn push_auth(&self, __concord_builder: &mut #p::HeadBuilder) -> ::std::result::Result<(), #f::ApiError> {
                 #auth
                 ::std::result::Result::Ok(())
             }
 
-            fn push_rate_limits(&self, builder: &mut #p::HeadBuilder) -> ::std::result::Result<(), #f::ApiError> {
+            fn push_rate_limits(&self, __concord_builder: &mut #p::HeadBuilder) -> ::std::result::Result<(), #f::ApiError> {
                 #rates
                 ::std::result::Result::Ok(())
             }
@@ -481,7 +484,7 @@ fn projection(context: &Context<'_>, owner: usize) -> TokenStream {
 
             fn visit_program(
                 &self,
-                visit: &mut #p::ProgramVisitor<'_>,
+                __concord_visit: &mut #p::ProgramVisitor<'_>,
             ) -> ::std::result::Result<(), #f::ApiError> {
                 #program
             }
@@ -508,25 +511,25 @@ pub(crate) fn binding_methods(context: &Context<'_>, owner: usize) -> TokenStrea
         #[doc = #bind_doc]
         pub fn bind<R, O>(
             &self,
-            endpoint: #f::endpoint::RuntimeEndpoint<R, O>,
+            __concord_endpoint: #f::endpoint::RuntimeEndpoint<R, O>,
         ) -> ::std::result::Result<#f::endpoint::BoundRuntimeRequest<R, O>, #f::ApiError>
         where
             R: #f::response::ResponseRepresentation<O>,
             O: ::std::marker::Send + 'static,
         {
-            #p::bind_runtime_endpoint(::std::sync::Arc::clone(&self.__concord) as _, endpoint)
+            #p::bind_runtime_endpoint(::std::sync::Arc::clone(&self.__concord) as _, __concord_endpoint)
         }
 
         #[doc = #plan_doc]
         pub fn plan_runtime<R, O>(
             &self,
-            endpoint: &#f::endpoint::RuntimeEndpoint<R, O>,
+            __concord_endpoint: &#f::endpoint::RuntimeEndpoint<R, O>,
         ) -> ::std::result::Result<#f::endpoint::RequestPlan, #f::ApiError>
         where
             R: #f::response::ResponseRepresentation<O>,
             O: ::std::marker::Send + 'static,
         {
-            #p::plan_runtime_endpoint(::std::sync::Arc::clone(&self.__concord) as _, endpoint)
+            #p::plan_runtime_endpoint(::std::sync::Arc::clone(&self.__concord) as _, __concord_endpoint)
         }
     }
 }
@@ -575,13 +578,13 @@ fn scope_handle(context: &Context<'_>, owner: usize) -> TokenStream {
         }
 
         impl #handle {
-            fn __with(self, update: impl ::std::ops::FnOnce(&mut __Local)) -> Self {
-                let mut local = ::std::clone::Clone::clone(&self.__concord.__local);
-                update(&mut local);
+            fn __with(self, __concord_update: impl ::std::ops::FnOnce(&mut __Local)) -> Self {
+                let mut __concord_local = ::std::clone::Clone::clone(&self.__concord.__local);
+                __concord_update(&mut __concord_local);
                 Self {
                     __concord: ::std::sync::Arc::new(__State {
                         __parent: ::std::sync::Arc::clone(&self.__concord.__parent),
-                        __local: local,
+                        __local: __concord_local,
                     }),
                 }
             }
@@ -591,8 +594,8 @@ fn scope_handle(context: &Context<'_>, owner: usize) -> TokenStream {
         }
 
         impl ::std::fmt::Debug for #handle {
-            fn fmt(&self, formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                formatter.debug_struct(#display).finish_non_exhaustive()
+            fn fmt(&self, __concord_formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                __concord_formatter.debug_struct(#display).finish_non_exhaustive()
             }
         }
 
@@ -626,12 +629,12 @@ fn unbound(context: &Context<'_>, owner: usize) -> TokenStream {
             pub struct Unbound;
 
             impl Unbound {
-                fn __bind(&self, client: &#client_path #client) -> ::std::sync::Arc<__State> {
-                    ::std::sync::Arc::clone(&client.__concord)
+                fn __bind(&self, __concord_client: &#client_path #client) -> ::std::sync::Arc<__State> {
+                    ::std::sync::Arc::clone(&__concord_client.__concord)
                 }
 
-                fn __bind_owned(self, client: &#client_path #client) -> ::std::sync::Arc<__State> {
-                    self.__bind(client)
+                fn __bind_owned(self, __concord_client: &#client_path #client) -> ::std::sync::Arc<__State> {
+                    self.__bind(__concord_client)
                 }
             }
         };
@@ -667,29 +670,29 @@ fn unbound(context: &Context<'_>, owner: usize) -> TokenStream {
         }
 
         impl Unbound {
-            fn __with(mut self, update: impl ::std::ops::FnOnce(&mut __Local)) -> Self {
-                update(&mut self.__local);
+            fn __with(mut self, __concord_update: impl ::std::ops::FnOnce(&mut __Local)) -> Self {
+                __concord_update(&mut self.__local);
                 self
             }
 
-            fn __bind(&self, client: &#client_path #client) -> ::std::sync::Arc<__State> {
-                ::std::sync::Arc::new(self.__bind_state(client))
+            fn __bind(&self, __concord_client: &#client_path #client) -> ::std::sync::Arc<__State> {
+                ::std::sync::Arc::new(self.__bind_state(__concord_client))
             }
 
-            fn __bind_state(&self, client: &#client_path #client) -> __State {
+            fn __bind_state(&self, __concord_client: &#client_path #client) -> __State {
                 __State {
-                    __parent: self.__parent.__bind(client),
+                    __parent: self.__parent.__bind(__concord_client),
                     __local: ::std::clone::Clone::clone(&self.__local),
                 }
             }
 
-            fn __bind_owned(self, client: &#client_path #client) -> ::std::sync::Arc<__State> {
-                ::std::sync::Arc::new(self.__bind_owned_state(client))
+            fn __bind_owned(self, __concord_client: &#client_path #client) -> ::std::sync::Arc<__State> {
+                ::std::sync::Arc::new(self.__bind_owned_state(__concord_client))
             }
 
-            fn __bind_owned_state(self, client: &#client_path #client) -> __State {
+            fn __bind_owned_state(self, __concord_client: &#client_path #client) -> __State {
                 __State {
-                    __parent: self.__parent.__bind_owned(client),
+                    __parent: self.__parent.__bind_owned(__concord_client),
                     __local: self.__local,
                 }
             }
@@ -698,8 +701,8 @@ fn unbound(context: &Context<'_>, owner: usize) -> TokenStream {
         }
 
         impl ::std::fmt::Debug for Unbound {
-            fn fmt(&self, formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                formatter.debug_struct(#display).finish_non_exhaustive()
+            fn fmt(&self, __concord_formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                __concord_formatter.debug_struct(#display).finish_non_exhaustive()
             }
         }
 

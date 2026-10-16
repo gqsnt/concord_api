@@ -197,3 +197,33 @@ jobs:
           key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-analyzer
       - run: rust-analyzer analysis-stats . --run-all-ide-things
       - run: rust-analyzer diagnostics .
+
+  windows_qualification:
+    name: Windows implementation qualification
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: ${{ env.RUST_MSRV }}
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+          components: clippy,rustfmt,rust-src,rust-analyzer
+      - uses: taiki-e/install-action@41049aa56687c35e0afa74eed4f09cec4f9afabf # v2
+        with:
+          tool: just@1.46.0
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ env.RUST_MSRV }}-${{ hashFiles('**/Cargo.lock') }}-implementation
+      - name: Fetch locked workspace and standalone fixture dependencies
+        run: |
+          cargo fetch --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo fetch --locked --manifest-path fixtures/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Complete maintained Windows implementation gate
+        run: just verify-implementation
+      - name: Windows analyzer
+        run: just analyzer

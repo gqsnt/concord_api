@@ -221,7 +221,7 @@ Unknown attributes and child-level `cfg`/`cfg_attr` are rejected. Documentation
 is emitted to the actual caller methods, request types, value controls and
 contract descriptions; deprecation is emitted where calling the deprecated
 operation triggers the warning. An obsolete optional input can remain as an
-explicitly deprecated no-op migration bridge; a dead required input cannot.
+explicitly deprecated no-op value; a dead required input cannot.
 
 ## 6. Values
 
@@ -876,16 +876,22 @@ expressions, body defaults, infinite timeouts, a status-callback DSL or implicit
 `Option`/`Vec` wire inference. Applications that need a different fixed prefix
 declare a different client.
 
-## 18. Migration from v2.1 (retired forms)
+## 18. V3-only language boundary
 
-A clean v3 parser accepts only canonical v3. Each recognized v2.1 form produces
-a precise `C3-MIGRATE` (or `C3-OWNER`) diagnostic instead of keeping its old
-meaning: `vars { ... }` (write `values`), `host [...]` (write `subdomain`), path
-atom lists such as `path ["items", id]` (write `path "items/{id}"`),
-`endpoint.x` and other redundant current-owner qualification (write the bare
-name), `using Representation` (write `via`), `= default` (write `#[default]`),
-the `retry` clause (install a `RetryPolicy` at runtime), `fmt[...]` (write
-`concat [...]`), `+=` (write `append`), `#[redact]` (write `#[sensitive]`), typed
-secrets and bare legacy rate labels. The [v2.1 to v3 migration
-guide](migration_v3.md) documents the `migrate-v3` tool that performs the
-meaning-preserving conversion.
+The parser accepts canonical V3 and rejects the following retired forms with
+`C3-MIGRATE` or `C3-OWNER` diagnostics:
+
+- Retired v2 `vars { ... }`: write `values`.
+- Retired v2 `host [...]`: write `subdomain`.
+- Retired v2 `path ["items", id]`: write the relative template `path "items/{id}"`.
+- Retired v2 `endpoint.x` and redundant current-owner qualification: write the bare local name.
+- Retired v2 `using Representation`: write `via`.
+- Retired v2 `= default`: write `#[default]`.
+- Retired v2 `retry` clauses: select a `RetryPolicy` in runtime configuration.
+- Retired v2 `fmt[...]`: write `concat [...]`.
+- Retired v2 `+=`: write `append`.
+- Retired v2 `#[redact]`: write `#[sensitive]`.
+- Retired v2 typed secrets and unlabelled rate dimensions are rejected.
+
+The [version policy](version_policy.md) selects V3 alone. No automatic converter
+or compatibility runtime is provided.

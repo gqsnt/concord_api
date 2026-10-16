@@ -181,11 +181,14 @@ pub(crate) fn build(builder: ContractBuilder) -> Result<ContractDescription, Con
 
     validate_local_structure(&tree, &credential_kinds)?;
     let owner_attachments = resolve_owner_attachments(&tree, &definitions, &window_sets)?;
-    let taints = owner_taints(&tree)?;
+    // Each owner's selected operations and sticky sensitivity are needed by
+    // both local redaction and its effective view. Compose once, then move
+    // the already-redacted operations into the endpoint or owner result.
+    let mut heads = owner_compositions(&tree)?;
 
     let mut endpoints = Vec::new();
     let mut seen_ids = BTreeMap::new();
-    for node in 0..tree.meta.len() {
+    for (node, head) in heads.iter_mut().enumerate() {
         if tree.meta[node].kind != OwnerKind::Endpoint {
             continue;
         }
@@ -195,6 +198,7 @@ pub(crate) fn build(builder: ContractBuilder) -> Result<ContractDescription, Con
             &credentials,
             &credential_kinds,
             &owner_attachments,
+            head,
         )?;
         if seen_ids
             .insert(endpoint.identity.id.as_str().to_owned(), node)
@@ -235,7 +239,7 @@ pub(crate) fn build(builder: ContractBuilder) -> Result<ContractDescription, Con
     // Redact local literals under keys tainted at their owner.
     for (node, local) in tree.locals.iter_mut().enumerate() {
         for family in [HeadFamily::Query, HeadFamily::Header] {
-            let taint = &taints[node][family_index(family)];
+            let taint = &heads[node][family_index(family)].taint;
             for operation in local.operations_mut(family) {
                 if taint.contains(&normalize_key(family, operation.key())) {
                     if let Some(emission) = operation.emission_mut() {
@@ -247,7 +251,7 @@ pub(crate) fn build(builder: ContractBuilder) -> Result<ContractDescription, Con
     }
 
     let mut views = Vec::with_capacity(tree.meta.len());
-    for node in 0..tree.meta.len() {
+    for (node, head) in heads.iter_mut().enumerate() {
         views.push(if tree.meta[node].kind == OwnerKind::Endpoint {
             None
         } else {
@@ -256,6 +260,7 @@ pub(crate) fn build(builder: ContractBuilder) -> Result<ContractDescription, Con
                 node,
                 &credential_kinds,
                 &owner_attachments,
+                head,
             )?)
         });
     }
@@ -1257,15 +1262,15 @@ fn compose_family(
     Ok(Composition { operations, taint })
 }
 
-fn owner_taints(tree: &Tree) -> Result<Vec<[BTreeSet<String>; 2]>, ContractBuildError> {
-    let mut taints = Vec::with_capacity(tree.meta.len());
+fn owner_compositions(tree: &Tree) -> Result<Vec<[Composition; 2]>, ContractBuildError> {
+    let mut heads = Vec::with_capacity(tree.meta.len());
     for node in 0..tree.meta.len() {
         let chain = tree.chain(node);
         let query = compose_family(tree, &chain, HeadFamily::Query)?;
         let headers = compose_family(tree, &chain, HeadFamily::Header)?;
-        taints.push([query.taint, headers.taint]);
+        heads.push([query, headers]);
     }
-    Ok(taints)
+    Ok(heads)
 }
 
 // ---------------------------------------------------------------------------
@@ -1717,6 +1722,7 @@ fn resolve_endpoint(
     credentials: &[CredentialDescription],
     credential_kinds: &HashMap<&'static str, CredentialSourceKind>,
     owner_attachments: &[Vec<EffectivePolicy>],
+    head: &mut [Composition; 2],
 ) -> Result<EndpointContract, ContractBuildError> {
     let meta = &tree.meta[node];
     let path = meta.path;
@@ -1835,8 +1841,8 @@ fn resolve_endpoint(
     };
 
     let route = resolve_route(tree, &chain);
-    let query = compose_family(tree, &chain, HeadFamily::Query)?.operations;
-    let headers = compose_family(tree, &chain, HeadFamily::Header)?.operations;
+    let query = std::mem::take(&mut head[family_index(HeadFamily::Query)].operations);
+    let headers = std::mem::take(&mut head[family_index(HeadFamily::Header)].operations);
     let auth = resolve_auth(tree, &chain, credential_kinds, effect)?;
 
     for placement in auth.placements() {
@@ -2033,6 +2039,7 @@ fn owner_view(
     node: usize,
     credential_kinds: &HashMap<&'static str, CredentialSourceKind>,
     owner_attachments: &[Vec<EffectivePolicy>],
+    head: &mut [Composition; 2],
 ) -> Result<EffectiveOwnerView, ContractBuildError> {
     let chain = tree.chain(node);
     let timeout = chain
@@ -2052,11 +2059,9 @@ fn owner_view(
         });
     Ok(EffectiveOwnerView {
         route: resolve_route(tree, &chain),
-        query: compose_family(tree, &chain, HeadFamily::Query)?
-            .operations
+        query: std::mem::take(&mut head[family_index(HeadFamily::Query)].operations)
             .into_boxed_slice(),
-        headers: compose_family(tree, &chain, HeadFamily::Header)?
-            .operations
+        headers: std::mem::take(&mut head[family_index(HeadFamily::Header)].operations)
             .into_boxed_slice(),
         auth: resolve_auth(tree, &chain, credential_kinds, Effect::Safe)?,
         policies: effective_policies(tree, &chain, owner_attachments)?.into_boxed_slice(),
@@ -2667,7 +2672,7 @@ fn collect_diagnostics(
                     DiagnosticSeverity::Warning,
                     value.owner,
                     value.name(),
-                    "deprecated value is retained as a no-op migration bridge",
+                    "deprecated value is retained as an explicit no-op value",
                 ));
             }
         }

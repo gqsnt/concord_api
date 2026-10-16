@@ -194,7 +194,7 @@ pub enum ValueLiveness {
     /// projection.
     RuntimeProjectionOnly,
     /// An explicitly deprecated optional or initialized input retained as a
-    /// no-op migration bridge. It has no semantic use.
+    /// no-op value. It has no semantic use.
     DeprecatedNoOp,
 }
 
@@ -346,7 +346,7 @@ impl ValueSpec {
         self
     }
 
-    /// Records an explicitly deprecated no-op migration bridge.
+    /// Records an explicitly deprecated no-op value.
     ///
     /// The description build rejects this unless deprecation is also
     /// recorded and the value is not a required constructor input.

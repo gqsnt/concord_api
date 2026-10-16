@@ -94,12 +94,6 @@ fn semantic_domains_are_available_without_implementation_crate_imports() {
 
     assert!(names.iter().all(|name| !name.is_empty()));
 
-    // The deprecated migration alias names the one managed prepared body
-    // (§9.2); it is not a second body state model.
-    #[allow(deprecated)]
-    let alias = public_type::<body::RequestBody>();
-    assert_eq!(alias, public_type::<body::PreparedBody>());
-
     fn supports_accepted_bytes<T: response::AcceptedBytesDriver>() {}
     supports_accepted_bytes::<response::Buffered>();
     supports_accepted_bytes::<response::DiscardDriver>();

@@ -223,7 +223,7 @@ pub enum Effect {
 }
 
 impl Effect {
-    /// Returns the conservative method-derived v2.1 default.
+    /// Returns the conservative method-derived effect.
     #[must_use]
     pub fn for_method(method: &Method) -> Self {
         match method.as_str() {

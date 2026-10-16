@@ -14,9 +14,9 @@ use crate::limits::MAX_RATE_LIMITER_NAMESPACE_BYTES;
 /// Version of Concord's canonical rate-key framing and built-in dimension
 /// normalization carried in every [`RatePolicySchema`].
 ///
-/// Version 1 is byte-identical to Concord 2.1: each value record is
-/// `u8(tag.len) || tag || u64_be(bytes.len) || bytes`; built-in scalar tags
-/// and big-endian payloads are unchanged; the `origin` dimension is the UTF-8
+/// In version 1 each value record is
+/// `u8(tag.len) || tag || u64_be(bytes.len) || bytes`, with built-in scalar
+/// tags and big-endian payloads. The `origin` dimension is the UTF-8
 /// text `scheme://host:effective_port` (ASCII-lowercase domain, canonical IPv4
 /// text, bracketed IPv6, always an explicit port) and the `endpoint`
 /// dimension is the UTF-8 operational endpoint ID, both under the `utf8` tag.

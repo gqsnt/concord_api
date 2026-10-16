@@ -265,11 +265,11 @@ Copy-Item -LiteralPath (Join-Path $root 'tests/downstream/concord-downstream-api
 Copy-Item -LiteralPath (Join-Path $root 'tests/downstream/concord-downstream-app/src') -Destination $appRoot -Recurse
 Copy-Item -LiteralPath (Join-Path $root 'tests/downstream/concord-downstream-app/tests') -Destination $appRoot -Recurse
 # Preserve the original relative include_str paths and exact recording bytes.
-$fixtureRoot = Join-Path $twoRoot 'fixtures/migration'
+$fixtureRoot = Join-Path $twoRoot 'fixtures/contracts'
 [System.IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
-Copy-Item -LiteralPath (Join-Path $root 'fixtures/migration/v2_1_catalog_recording.json') -Destination $fixtureRoot
-if ((Get-FileHash -LiteralPath (Join-Path $fixtureRoot 'v2_1_catalog_recording.json') -Algorithm SHA256).Hash -ne
-    (Get-FileHash -LiteralPath (Join-Path $root 'fixtures/migration/v2_1_catalog_recording.json') -Algorithm SHA256).Hash) {
+Copy-Item -LiteralPath (Join-Path $root 'fixtures/contracts/v3_catalog_recording.json') -Destination $fixtureRoot
+if ((Get-FileHash -LiteralPath (Join-Path $fixtureRoot 'v3_catalog_recording.json') -Algorithm SHA256).Hash -ne
+    (Get-FileHash -LiteralPath (Join-Path $root 'fixtures/contracts/v3_catalog_recording.json') -Algorithm SHA256).Hash) {
     throw 'downstream archive recording bytes changed'
 }
 $twoManifest = @"

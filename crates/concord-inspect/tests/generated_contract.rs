@@ -534,7 +534,7 @@ shop!(
 );
 
 // Liveness (VALUE-06): an optional value that is sent, and the same value as
-// a `#[deprecated]` no-op migration bridge that is no longer sent.
+// a `#[deprecated]` no-op value that is no longer sent.
 shop!(
     legacy_live,
     values = {
@@ -1031,7 +1031,7 @@ fn generated_merge_of_equal_definitions_joins_the_shared_bucket() {
 }
 
 /// VALUE-06 (§4.6): the semantic diff discloses a value that stops being sent
-/// and becomes a `#[deprecated]` no-op migration bridge: the export marks its
+/// and becomes a `#[deprecated]` no-op value: the export marks its
 /// liveness `deprecated_no_op` (and `live` before), and the diff reports the
 /// liveness and deprecation changes on the owner's value next to the wire
 /// removal and the retained-bridge diagnostic.

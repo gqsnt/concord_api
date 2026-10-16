@@ -118,7 +118,7 @@ impl<'a> BoundedAtomWriter<'a> {
     }
 
     /// Writes one value through an explicitly selected [`fmt::Display`]
-    /// compatibility adapter while preserving this writer's byte bound.
+    /// formatting adapter while preserving this writer's byte bound.
     ///
     /// This does not make `Display` a protocol default. It exists so a named
     /// [`AtomEncoder`] can deliberately opt one placement into display

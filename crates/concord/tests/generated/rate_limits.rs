@@ -1,19 +1,14 @@
 //! Generated rate limits (§12) through downstream-generated v3 clients:
 //! the registry, named policies with formals and exact bindings, inline and
 //! window-set attachments, deduplication, explicit key labels and schemas,
-//! typed encoding IDs with the unchanged v2.1 canonical bytes, origin and
+//! typed encoding IDs with the canonical V3 bytes, origin and
 //! endpoint dimensions, endpoint identity, limiter capability, atomic
 //! admission and the built-in local limiter.
 //!
-//! Migration notes (spec §25.2): v2 bare key dimensions (`key [account]`,
-//! `key [client.tenant, regional.region, endpoint.resource]`) became explicit
-//! labels that preserve the legacy label text (`"account" = account`,
-//! `"client.tenant" = client.tenant`, `"endpoint.resource" = resource`);
-//! redundant current-owner qualification (`accounts.account`,
-//! `region.region`) became the bare local name (LANG-03); every inline policy
-//! now starts with its `id`; custom limiters declare their `capability()`;
-//! custom key types declare an `ENCODING_ID`; and scope/endpoint values that
-//! v2 accepted without any use now have a real route use (VALUE-06).
+//! Dimension labels are explicit; bare names refer to their current owner.
+//! Inline policies have stable IDs, custom limiters declare capabilities and
+//! custom key types declare encoding IDs. Every required value has an
+//! explicit semantic role in the current contract.
 
 #![allow(non_snake_case)]
 
@@ -929,7 +924,7 @@ struct CapturedRule {
     windows: Vec<(u32, Duration)>,
 }
 
-/// The unchanged v2.1 canonical framing:
+/// The canonical V3 framing:
 /// `u8(tag.len) || tag || u64_be(bytes.len) || bytes`.
 fn framed(tag: &str, payload: &[u8]) -> Vec<u8> {
     let mut encoded = Vec::with_capacity(1 + tag.len() + 8 + payload.len());
@@ -1105,9 +1100,8 @@ impl RateLimiter for ZeroKeyLimiter {
 /// (the same compare-before-admit rules as the `concord-extras`
 /// conformance fixture): inside `acquire` and before any state use, every
 /// policy schema of the plan is compared with the registry under one
-/// namespace and algorithm version; an incompatible active schema, or state
-/// written by a pre-v3 peer that registered no schema, fails closed without
-/// admission. Registration and admission are one atomic step.
+/// namespace and algorithm version; an incompatible active schema fails
+/// closed without admission. Registration and admission are one atomic step.
 #[derive(Default)]
 struct SharedSchemaStore {
     state: Mutex<SharedSchemaState>,
@@ -1116,26 +1110,10 @@ struct SharedSchemaStore {
 #[derive(Default)]
 struct SharedSchemaState {
     registrations: Vec<(String, LimiterCapability, RatePolicySchema)>,
-    legacy: Vec<String>,
     admissions: u64,
 }
 
 impl SharedSchemaStore {
-    fn mark_legacy_state(&self, id: &str) {
-        self.state
-            .lock()
-            .expect("shared store")
-            .legacy
-            .push(id.to_owned());
-    }
-
-    fn install_schema_lock(&self, schema: RatePolicySchema) {
-        let mut state = self.state.lock().expect("shared store");
-        let id = schema.id().as_str().to_owned();
-        state.legacy.retain(|legacy| *legacy != id);
-        state.registrations.push((id, SHARED_CAPABILITY, schema));
-    }
-
     fn admissions(&self) -> u64 {
         self.state.lock().expect("shared store").admissions
     }
@@ -1170,9 +1148,6 @@ impl RateLimiter for SharedSchemaLimiter {
             let mut new = Vec::new();
             for policy in request.plan.policies() {
                 let id = policy.id().as_str();
-                if state.legacy.iter().any(|legacy| legacy == id) {
-                    return Err(RateLimitError::new(RateLimitErrorKind::SchemaConflict));
-                }
                 match state
                     .registrations
                     .iter()
@@ -2383,7 +2358,7 @@ async fn reused_numeric_windows_under_different_ids_keep_separate_state() {
 }
 
 // ---------------------------------------------------------------------------
-// Labels, identity migration and baseline bytes (V3-R02, V3-R05, V3-R13)
+// Explicit labels, identity stability and canonical bytes (V3-R05, V3-R13)
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "default-tls")]
@@ -2396,9 +2371,8 @@ fn hex_bytes(text: &str) -> Vec<u8> {
 
 #[cfg(feature = "default-tls")]
 #[tokio::test]
-async fn catalog_keys_equal_the_v2_1_baseline_and_labels_are_state_affecting() {
-    const BASELINE: &str =
-        include_str!("../../../../fixtures/migration/v2_1_catalog_recording.json");
+async fn catalog_keys_equal_the_v3_oracle_and_labels_are_state_affecting() {
+    const BASELINE: &str = include_str!("../../../../fixtures/contracts/v3_catalog_recording.json");
     let baseline: serde_json::Value = serde_json::from_str(BASELINE).expect("baseline JSON");
     let entries = baseline.as_array().expect("baseline entries");
     assert_eq!(entries.len(), 12);
@@ -2487,7 +2461,7 @@ async fn catalog_keys_equal_the_v2_1_baseline_and_labels_are_state_affecting() {
             .collect::<Vec<_>>();
         assert_eq!(acquisitions[0], expected, "{label}");
     }
-    // The helper framing is the captured v2.1 framing.
+    // The helper framing matches the captured V3 key bytes.
     assert_eq!(
         canonical_utf8("tenant-a"),
         hex_bytes("0475746638000000000000000874656e616e742d61")
@@ -2594,7 +2568,7 @@ async fn label_change_with_the_same_id_and_value_selects_a_different_local_bucke
 }
 
 #[tokio::test]
-async fn generated_formal_and_bound_keys_use_typed_encoding_ids_and_baseline_bytes() {
+async fn generated_formal_and_bound_keys_use_typed_encoding_ids_and_canonical_bytes() {
     let server = ScriptedServer::start([
         ResponseScript::ok(b"typed".to_vec()),
         ResponseScript::ok(b"inline".to_vec()),
@@ -2699,7 +2673,7 @@ async fn a_value_needs_only_its_rate_key_role_not_display() {
         })
         .build()
         .expect("minimal-bound client");
-    // VALUE-06: v2 accepted a value used nowhere; v3 requires a semantic use.
+    // VALUE-06: a required value needs a semantic use.
     // `NoDisplay` has no `Display`, atom or key-part implementation; its only
     // role is a rate dimension through an explicit `RateKeyEncoder` (§12.3).
     assert_eq!(
@@ -3135,48 +3109,6 @@ async fn shared_adapter_rejects_changed_schemas_before_admission() {
     v1.read().await.expect("compatible schema");
     assert_eq!(store.admissions(), 2);
     assert_eq!(server.request_count(), 2);
-}
-
-#[tokio::test]
-async fn state_from_a_pre_v3_peer_is_not_assumed_handshake_compatible() {
-    let server =
-        ScriptedServer::start([ResponseScript::ok(b"locked".to_vec())]).expect("legacy server");
-    let store = Arc::new(SharedSchemaStore::default());
-    store.mark_legacy_state("schema.tenant");
-    let client = SchemaV1Api::builder()
-        .set_tenant("tenant-a")
-        .configure_http({
-            let proxy = proxy(&server);
-            move |http| http.proxy(proxy)
-        })
-        .configure_runtime({
-            let limiter: Arc<dyn RateLimiter> = Arc::new(SharedSchemaLimiter(Arc::clone(&store)));
-            move |runtime| runtime.rate_limiter(limiter)
-        })
-        .build()
-        .expect("legacy-state client");
-
-    let error = client
-        .read()
-        .await
-        .expect_err("unverified v2 state fails closed");
-    assert_eq!(
-        error.rate_limit_kind(),
-        Some(RateLimitErrorKind::SchemaConflict)
-    );
-    assert_eq!(server.request_count(), 0);
-    assert_eq!(store.admissions(), 0);
-
-    // An operator installs an explicit schema lock taken from the static,
-    // value-free plan summary; only then is the state used.
-    let schema = client.read().plan().expect("plan").rate_limit().policies()[0]
-        .schema()
-        .clone();
-    assert_eq!(schema.framing_version(), 1);
-    store.install_schema_lock(schema);
-    client.read().await.expect("explicitly locked schema");
-    assert_eq!(store.admissions(), 1);
-    assert_eq!(server.request_count(), 1);
 }
 
 // ---------------------------------------------------------------------------

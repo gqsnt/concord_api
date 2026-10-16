@@ -53,8 +53,6 @@ fn imports_and_constructs_every_enabled_canonical_declaration() {
 
     #[cfg(all(feature = "json", feature = "rate-limit", feature = "default-tls"))]
     {
-        concord_examples::contracts::catalog_contract::construct()
-            .expect("migrated baseline catalog construction");
         let _canonical = concord_examples::application::construction::build_catalog(
             "tenant-a".to_owned(),
             SecretString::try_new("construction-bootstrap").expect("bounded bootstrap key"),

@@ -378,7 +378,7 @@ fn parse_bound_key(input: ParseStream<'_>, context: &str) -> syn::Result<Vec<Bou
                 reference.span,
                 Code::Migrate,
                 format!(
-                    "rate key labels are explicit in v3: write `\"{0}\" = {0}` to preserve the legacy label ({context})",
+                    "rate key labels are explicit in v3: write `\"{0}\" = {0}` to use an explicit label ({context})",
                     reference.display()
                 ),
             ));

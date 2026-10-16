@@ -546,6 +546,118 @@ async fn managed_stream_withholds_exact_and_limit_excess_frames() {
 }
 
 #[tokio::test]
+async fn exact_final_chunk_is_withheld_when_later_production_disproves_completion() {
+    for (tail, expected) in [
+        (
+            Ok(Bytes::from_static(b"extra")),
+            BodyErrorKind::InvalidLength,
+        ),
+        (
+            Err(io::Error::other("trailing-producer-secret")),
+            BodyErrorKind::Producer,
+        ),
+    ] {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let (accepted, failure) = consume(
+            stream_bytes(
+                [
+                    Ok(Bytes::from_static(b"ab")),
+                    Ok(Bytes::from_static(b"cd")),
+                    tail,
+                ],
+                &polls,
+            ),
+            Some(4),
+            64,
+        )
+        .await;
+        assert_eq!(accepted, [Bytes::from_static(b"ab")]);
+        assert_eq!(failure, Some(expected));
+        assert_eq!(polls.load(Ordering::SeqCst), 3);
+    }
+}
+
+#[tokio::test]
+async fn exact_final_chunk_keeps_the_total_empty_chunk_limit() {
+    for count in [MAX_EMPTY_REQUEST_CHUNKS, MAX_EMPTY_REQUEST_CHUNKS + 1] {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let mut chunks = vec![Ok(Bytes::from_static(b"data"))];
+        chunks.extend(empty_request_chunks(count));
+        let (accepted, failure) = consume(stream_bytes(chunks, &polls), Some(4), 64).await;
+        if count == MAX_EMPTY_REQUEST_CHUNKS {
+            assert_eq!(accepted, [Bytes::from_static(b"data")]);
+            assert_eq!(failure, None);
+            assert_eq!(polls.load(Ordering::SeqCst), count + 2);
+        } else {
+            assert!(accepted.is_empty());
+            assert_eq!(failure, Some(BodyErrorKind::LimitExceeded));
+            assert_eq!(polls.load(Ordering::SeqCst), count + 1);
+        }
+    }
+}
+
+struct DeferredEofStream {
+    chunk: Option<Bytes>,
+    complete: Arc<AtomicBool>,
+    dropped: Arc<AtomicBool>,
+}
+
+impl Stream for DeferredEofStream {
+    type Item = Result<Bytes, io::Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if let Some(bytes) = self.chunk.take() {
+            Poll::Ready(Some(Ok(bytes)))
+        } else if self.complete.load(Ordering::SeqCst) {
+            Poll::Ready(None)
+        } else {
+            // This unit test controls subsequent polls directly.
+            Poll::Pending
+        }
+    }
+}
+
+impl Drop for DeferredEofStream {
+    fn drop(&mut self) {
+        self.dropped.store(true, Ordering::SeqCst);
+    }
+}
+
+#[test]
+fn exact_final_chunk_waits_for_eof_and_drop_releases_the_source() {
+    for cancel in [false, true] {
+        let complete = Arc::new(AtomicBool::new(false));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let body = RequestStream::from_stream(DeferredEofStream {
+            chunk: Some(Bytes::from_static(b"data")),
+            complete: Arc::clone(&complete),
+            dropped: Arc::clone(&dropped),
+        });
+        let (mut managed, failure) = direct_managed(body, Some(4), 64);
+        let wakes = Arc::new(WakeCounter::default());
+        let waker = Waker::from(wakes);
+        let mut context = Context::from_waker(&waker);
+        assert!(Pin::new(&mut managed).poll_next(&mut context).is_pending());
+        assert!(!dropped.load(Ordering::SeqCst));
+        assert!(!failure.failed());
+        if !cancel {
+            complete.store(true, Ordering::SeqCst);
+            let Poll::Ready(Some(Ok(bytes))) = Pin::new(&mut managed).poll_next(&mut context)
+            else {
+                panic!("source EOF releases the final native chunk");
+            };
+            assert_eq!(bytes, b"data"[..]);
+            assert!(matches!(
+                Pin::new(&mut managed).poll_next(&mut context),
+                Poll::Ready(None)
+            ));
+        }
+        drop(managed);
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+}
+
+#[tokio::test]
 async fn managed_stream_detects_underflow_and_sanitizes_producer_failure() {
     let underflow_polls = Arc::new(AtomicUsize::new(0));
     let (accepted, failure) =

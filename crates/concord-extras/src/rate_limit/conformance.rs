@@ -2,7 +2,7 @@
 //!
 //! [`InMemorySharedStore`] simulates one shared persistent limiter backend
 //! (one storage namespace). Every [`InMemorySharedLimiter`] obtained from it
-//! simulates one process or binary version attached to that backend. The
+//! simulates one V3 process attached to that backend. The
 //! fixture demonstrates the exact [`Enforcement::SharedPersistent`] contract:
 //!
 //! * Inside `acquire`, before any quota state is read or written, every policy
@@ -13,12 +13,7 @@
 //!   encoding ID, label, dimension order, window schema or algorithm version)
 //!   fails closed with [`RateLimitErrorKind::SchemaConflict`]; it is never
 //!   treated as a fresh empty bucket.
-//! * State written by a pre-v3 peer that registered no schema is not assumed
-//!   compatible: it fails closed until an operator installs an explicit
-//!   schema lock ([`InMemorySharedStore::install_schema_lock`]).
-//! * Registration storage is finite (4,096 identities by default), counting
-//!   both registered schemas and legacy continuity markers. Converting a
-//!   legacy marker to its explicit schema lock reuses that identity's slot.
+//! * Registration storage is finite (4,096 identities by default).
 //!   No active contract is evicted; only an explicit operator retirement
 //!   ([`InMemorySharedStore::retire_schema`]) removes one, which is a reviewed
 //!   state reset.
@@ -31,7 +26,7 @@
 //! waiting. It exists to test schema continuity and admission atomicity; it
 //! is not a distributed limiter implementation and performs no I/O.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -71,7 +66,6 @@ struct StoreInner {
 #[derive(Default)]
 struct StoreState {
     registrations: BTreeMap<RateLimitId, Registration>,
-    legacy: BTreeSet<RateLimitId>,
     buckets: BTreeMap<BucketKey, WindowState>,
     admissions: u64,
 }
@@ -201,87 +195,8 @@ impl InMemorySharedStore {
         Ok(self.lock()?.admissions)
     }
 
-    /// Simulates quota state for `id` written by a pre-v3 peer that performed
-    /// no schema registration.
-    ///
-    /// Until an operator installs an explicit schema lock, adapters fail
-    /// closed for this ID instead of assuming a unilateral handshake proves
-    /// compatibility with the old binary.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`RateLimitErrorKind::InvalidConfiguration`] for an invalid ID,
-    /// [`RateLimitErrorKind::SchemaConflict`] when a schema is already
-    /// registered, and [`RateLimitErrorKind::Internal`] after lock poisoning.
-    pub fn mark_legacy_state(&self, id: &str) -> Result<(), RateLimitError> {
-        let id = RateLimitId::new(id)?;
-        let mut state = self.lock()?;
-        if state.registrations.contains_key(&id) {
-            return Err(schema_conflict());
-        }
-        if state.legacy.contains(&id) {
-            return Ok(());
-        }
-        let occupied = state
-            .registrations
-            .len()
-            .checked_add(state.legacy.len())
-            .ok_or_else(internal_error)?;
-        if occupied >= self.inner.registration_capacity {
-            return Err(state_capacity());
-        }
-        state.legacy.insert(id);
-        Ok(())
-    }
-
-    /// Installs an explicit operator schema lock, the coordinated migration
-    /// protocol for legacy state or a planned registration.
-    ///
-    /// An identical existing registration is accepted unchanged.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`RateLimitErrorKind::SchemaConflict`] when a different schema
-    /// or algorithm is already registered under the ID,
-    /// [`RateLimitErrorKind::StateCapacity`] when registration storage is
-    /// full, and [`RateLimitErrorKind::Internal`] after lock poisoning.
-    pub fn install_schema_lock(
-        &self,
-        algorithm_version: u32,
-        schema: RatePolicySchema,
-    ) -> Result<(), RateLimitError> {
-        let mut state = self.lock()?;
-        let id = schema.id().clone();
-        if let Some(existing) = state.registrations.get(&id) {
-            return if existing.algorithm_version == algorithm_version && existing.schema == schema {
-                Ok(())
-            } else {
-                Err(schema_conflict())
-            };
-        }
-        // Converting an already retained legacy identity occupies the same
-        // slot; a new identity must fit beside every active schema and marker.
-        let occupied = state
-            .registrations
-            .len()
-            .checked_add(state.legacy.len())
-            .ok_or_else(internal_error)?;
-        if !state.legacy.contains(&id) && occupied >= self.inner.registration_capacity {
-            return Err(state_capacity());
-        }
-        state.legacy.remove(&id);
-        state.registrations.insert(
-            id,
-            Registration {
-                algorithm_version,
-                schema,
-            },
-        );
-        Ok(())
-    }
-
-    /// Retires one policy ID: removes its registration, any legacy marker and
-    /// all of its quota buckets. This is an explicit, reviewed state reset,
+    /// Retires one policy ID: removes its registration and all of its quota
+    /// buckets. This is an explicit, reviewed state reset,
     /// never performed automatically.
     ///
     /// Returns whether anything was removed.
@@ -296,14 +211,9 @@ impl InMemorySharedStore {
             .keys()
             .find(|key| key.as_str() == id)
             .cloned();
-        let legacy = state.legacy.iter().find(|key| key.as_str() == id).cloned();
         let mut removed = false;
         if let Some(key) = registered {
             state.registrations.remove(&key);
-            removed = true;
-        }
-        if let Some(key) = legacy {
-            state.legacy.remove(&key);
             removed = true;
         }
         let before = state.buckets.len();
@@ -356,8 +266,7 @@ impl InMemorySharedLimiter {
         let registrations = state
             .registrations
             .len()
-            .checked_add(state.legacy.len())
-            .and_then(|occupied| occupied.checked_add(pending.len()))
+            .checked_add(pending.len())
             .ok_or_else(internal_error)?;
         if registrations > self.store.inner.registration_capacity {
             return Err(state_capacity());
@@ -401,9 +310,6 @@ impl InMemorySharedLimiter {
                     }
                 }
                 None => {
-                    if state.legacy.contains(schema.id()) {
-                        return Err(schema_conflict());
-                    }
                     if let Some(earlier) =
                         pending.iter().find(|earlier| earlier.id() == schema.id())
                     {

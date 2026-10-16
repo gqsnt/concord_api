@@ -118,7 +118,7 @@ let _: body_api::ExactDownloadRequest = client.exact_download();
 (`from_stream`), an async reader (`from_reader`) or an explicitly opened file
 (`from_file(path).await`). Opening a file is an explicit application operation,
 never hidden request construction. The stream is not polled until transport
-begins; empty chunks are bounded (at most 1,024 consecutive), reader
+begins; empty chunks are bounded (at most 1,024 in total for one production), reader
 backpressure is respected, and pulling stops after an error. Request debug
 never serializes input.
 

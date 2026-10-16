@@ -115,10 +115,9 @@ fn optional_defaults_pagination_binding_and_explicit_description_are_predictable
         .match_v5()
         .match_ids_by_puuid("public-puuid".to_owned());
     let default_plan = client.plan(&default_endpoint).expect("default query plan");
-    // v2.1 redacted the page-controlled `start`/`count` values in plans. v3
-    // withholds only `#[sensitive]` and name-rule values (PRIVACY-01, §6.4),
-    // so the plan now shows the retained initializers: 0 and
-    // DEFAULT_MATCH_PAGE_SIZE (20). Absent optionals still emit no key.
+    // Public page-controlled values remain visible in plans. The initial
+    // start/count values are 0 and DEFAULT_MATCH_PAGE_SIZE (20), while
+    // absent optionals emit no key (PRIVACY-01).
     let url = default_plan.observed_url();
     assert!(
         url.ends_with("/lol/match/v5/matches/by-puuid/public-puuid/ids?start=0&count=20"),
@@ -164,7 +163,7 @@ fn optional_defaults_pagination_binding_and_explicit_description_are_predictable
     assert_eq!(plan.rate_limit_policy_count(), 2);
     assert!(plan.capabilities().pagination());
 
-    // Exact outer-slot replacement (v2.1 `set_x(Option<T>)`, §25.2).
+    // Exact outer-slot replacement.
     let replaced = endpoint
         .clone()
         .replace_match_type(None)
@@ -187,8 +186,7 @@ fn optional_defaults_pagination_binding_and_explicit_description_are_predictable
             .ends_with("/ids?queue=420&start=0&count=20")
     );
 
-    // Ordinary await returns one page; traversal needs an explicit terminal
-    // (v2.1 `.paginate(PageLimit::Prefix(2))` is `.collect_prefix(2)`).
+    // Ordinary await returns one page; traversal needs an explicit terminal.
     let _prefix: CollectPrefix<String> = client.request(endpoint.clone()).collect_prefix(2);
     let _complete: CollectAll<String> = client
         .request(endpoint.clone())
@@ -236,8 +234,7 @@ fn query_programs_keep_provider_key_spelling_and_order() {
         .set_queue(420)
         .set_match_type(MatchType::Ranked);
     let url = request.plan().expect("plan").observed_url().to_owned();
-    // `startTime`/`endTime` keep the provider's camel case (§24.1); keys
-    // keep the v2.1 order.
+    // Provider camel-case spelling and query occurrence order are exact.
     assert!(
         url.ends_with("/ids?startTime=100&endTime=200&queue=420&type=ranked&start=0&count=20"),
         "{url}"

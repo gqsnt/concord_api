@@ -45,20 +45,37 @@ dependency rather than equality.
 
 ## Bound plans
 
-<!-- concord-source: crates/concord-examples/src/contracts/catalog_contract.rs#catalog_planning -->
+<!-- concord-source: crates/concord-examples/src/application/planning.rs#catalog_planning -->
 ```rust
-let _plan = request.plan()?;
-let _complete: concord::pagination::CollectAll<ItemSummary> =
-    request.collect_all(NonZeroU32::new(20).expect("positive"));
-let _accepted: concord::endpoint::AcceptedBytesRequest =
-    regional.item("item-42").accepted_bytes();
+use std::num::NonZeroU32;
 
-let endpoint = CatalogApi::unbound().regional("eu-west").item("item-42");
-let _description = endpoint.description();
-let _unbound_plan = client.plan(&endpoint)?;
-let request = client.request(endpoint);
-let _response: concord::endpoint::ResponseRequest<Item> = request.response();
-let _metadata_shape: Option<ApiResponse<Bytes>> = None;
+use concord::ApiError;
+
+use crate::contracts::catalog_v3::{CatalogApi, Item, ItemSummary};
+
+/// Inspects public request shapes and selects terminals without executing them.
+///
+/// # Errors
+///
+/// Returns a public head-planning error if a declared value cannot be encoded.
+pub fn inspect_requests(client: &CatalogApi) -> Result<(), ApiError> {
+    let regional = client.regional("eu-west".to_owned());
+    let request = regional.item_summaries(Vec::new());
+    let _plan = request.plan()?;
+    let _complete: concord::pagination::CollectAll<ItemSummary> =
+        request.collect_all(NonZeroU32::new(20).expect("positive"));
+    let _accepted: concord::endpoint::AcceptedBytesRequest =
+        regional.item("item-42".to_owned()).accepted_bytes();
+
+    let endpoint = CatalogApi::unbound()
+        .regional("eu-west".to_owned())
+        .item("item-42".to_owned());
+    let _description = endpoint.description();
+    let _unbound_plan = client.plan(&endpoint)?;
+    let request = client.request(endpoint);
+    let _response: concord::endpoint::ResponseRequest<Item> = request.response();
+    Ok(())
+}
 ```
 
 `request.plan()`, `client.plan(&intent)` and `owner.plan_runtime(&endpoint)`
@@ -120,7 +137,7 @@ cargo run -p concord-xtask -- contract <export --target NAME --output FILE | che
 
 Targets resolve through an explicit, maintained registry: a proc macro cannot
 discover every invocation. `fixture-catalog` is always available; the
-repository examples (`catalog`, `catalog-v3`, `riot`, `data-dragon`) are
+repository examples (`catalog`, `riot`, `data-dragon`) are
 registered with `cargo run -p concord-xtask --features examples -- contract ...`
 and exported and checked by `cargo test -p concord-xtask --features examples`.
 Export runs no application network work. `check` is not a semantic-versioning

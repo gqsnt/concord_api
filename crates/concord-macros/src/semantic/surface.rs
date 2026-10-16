@@ -76,6 +76,17 @@ pub(crate) fn prefixed_ident(prefix: &str, name: &Ident) -> Ident {
     public_ident(&format!("{prefix}_{}", canonical_ident(name)), name.span())
 }
 
+/// Private storage names also used as local bindings. The implementation
+/// namespace avoids ordinary authored constants such as `v_input`: Rust's
+/// mixed-site hygiene alone does not distinguish constants from binding
+/// patterns. Keep the declaration's diagnostic location and local hygiene.
+pub(crate) fn private_prefixed_ident(prefix: &str, name: &Ident) -> Ident {
+    public_ident(
+        &format!("__concord_{prefix}_{}", canonical_ident(name)),
+        Span::mixed_site().located_at(name.span()),
+    )
+}
+
 /// `name_suffix` with the raw marker removed from `name`.
 pub(crate) fn suffixed_ident(name: &Ident, suffix: &str) -> Ident {
     public_ident(&format!("{}_{suffix}", canonical_ident(name)), name.span())

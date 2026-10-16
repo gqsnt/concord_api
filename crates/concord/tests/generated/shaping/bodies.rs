@@ -269,9 +269,13 @@ async fn absent_optional_bodies_invoke_no_representation_at_execution() {
 #[cfg(feature = "multipart")]
 mod multipart {
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
-    use concord::body::{Multipart, MultipartBody, MultipartPart, RequestStream};
+    use concord::body::{
+        BodyError, Multipart, MultipartBody, MultipartFactory, MultipartPart, PreparedBody,
+        RequestStream,
+    };
     use concord::error::ErrorCategory;
     use concord::retry::{RetryBackoff, RetryDecision, RetryPolicy};
     use concord::{Binary, Bytes, api};
@@ -286,6 +290,10 @@ mod multipart {
 
             PUT upload(body form: MultipartBody via Multipart) -> Bytes via Binary {
                 path "upload";
+            }
+
+            PUT prepared(body input: PreparedBody via PreparedBody) -> Bytes via Binary {
+                path "prepared";
             }
         }
     }
@@ -329,6 +337,115 @@ mod multipart {
         content_type
             .strip_prefix("multipart/form-data; boundary=")
             .expect("exact multipart media type")
+    }
+
+    #[tokio::test]
+    async fn native_multipart_names_use_escaped_quoted_utf8_parameters() {
+        let server =
+            ScriptedServer::start([ResponseScript::ok(b"stored".to_vec())]).expect("server");
+        let client = retrying_client(&server);
+        let mut form = MultipartBody::new();
+        for name in [
+            "field one",
+            "semi; name",
+            "slash\\name",
+            "é; x",
+            "quote\"name",
+            "tick' field",
+            "percent%20name",
+            "field one",
+        ] {
+            form = form
+                .part(name, MultipartPart::text("value").expect("text"))
+                .expect("part");
+        }
+        client.upload(form).await.expect("multipart upload");
+        let requests = server.requests();
+        assert_eq!(requests.len(), 1);
+        let request = &requests[0];
+        let marker = boundary(request.header("content-type").expect("media"));
+        let mut expected = String::new();
+        for parameter in [
+            "name=\"field one\"",
+            "name=\"semi; name\"",
+            "name=\"slash\\\\name\"",
+            "name=\"é; x\"",
+            "name=\"quote\\\"name\"",
+            "name=\"tick' field\"",
+            "name=\"percent%20name\"",
+            "name=\"field one\"",
+        ] {
+            expected.push_str(&format!(
+                "--{marker}\r\nContent-Disposition: form-data; {parameter}\r\n\r\nvalue\r\n"
+            ));
+        }
+        expected.push_str(&format!("--{marker}--\r\n"));
+        assert_eq!(request.body(), expected.as_bytes());
+        assert_eq!(
+            request.header("content-length"),
+            Some(expected.len().to_string().as_str())
+        );
+    }
+
+    struct EmptyFactory(Arc<AtomicUsize>);
+
+    impl MultipartFactory for EmptyFactory {
+        fn create(&self) -> Result<MultipartBody, BodyError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(MultipartBody::new())
+        }
+    }
+
+    #[tokio::test]
+    async fn native_empty_multipart_and_factory_replay_keep_the_same_counted_boundary() {
+        for factory in [false, true] {
+            let server = ScriptedServer::start([
+                ResponseScript::status(503, Vec::new()),
+                ResponseScript::ok(b"stored".to_vec()),
+                ResponseScript::ok(b"present empty field".to_vec()),
+            ])
+            .expect("server");
+            let client = retrying_client(&server);
+            let calls = Arc::new(AtomicUsize::new(0));
+            if factory {
+                let body = PreparedBody::multipart_factory(EmptyFactory(Arc::clone(&calls)))
+                    .expect("factory");
+                let request = client.prepared(body);
+                request.plan().expect("inert factory plan");
+                assert_eq!(calls.load(Ordering::SeqCst), 0);
+                request.await.expect("empty factory upload");
+                assert_eq!(calls.load(Ordering::SeqCst), 2);
+            } else {
+                client
+                    .upload(MultipartBody::new())
+                    .await
+                    .expect("empty upload");
+            }
+            client
+                .upload(
+                    MultipartBody::new()
+                        .part("field", MultipartPart::text("").expect("empty text"))
+                        .expect("part"),
+                )
+                .await
+                .expect("present empty field");
+            let requests = server.requests();
+            assert_eq!(requests.len(), 3);
+            let content_type = requests[0].header("content-type").expect("media");
+            let marker = boundary(content_type);
+            let expected = format!("--{marker}--\r\n");
+            assert_eq!(requests[0].body(), expected.as_bytes());
+            assert_eq!(
+                requests[0].header("content-length"),
+                Some(expected.len().to_string().as_str())
+            );
+            assert_eq!(requests[1].header("content-type"), Some(content_type));
+            assert_eq!(requests[1].body(), requests[0].body());
+            assert!(requests[2].body().len() > requests[0].body().len());
+            assert!(
+                String::from_utf8_lossy(requests[2].body()).contains("name=\"field\"\r\n\r\n\r\n")
+            );
+        }
     }
 
     /// V3-E06: the boundary is generated once by preparation (never by the

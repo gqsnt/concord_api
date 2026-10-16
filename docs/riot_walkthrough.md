@@ -8,10 +8,8 @@ policies over reusable window sets, and offset pagination. Quota numbers and
 partitioning are illustrative Concord policy, not claims about Riot's current
 service quotas.
 
-The declaration was converted from the pinned v2.1 source in two separate
-steps (spec §24): first a meaning-preserving conversion, then a showcase
-cleanup that is proven not to change any recorded state. Both are described
-under [Migration evidence](#migration-evidence).
+The maintained contract targets V3 directly. Its full recording and rate-state
+relations are checked against the current [V3 contract evidence](#v3-contract-evidence).
 
 ## Compiled root preamble
 
@@ -28,7 +26,7 @@ declaration; the source continues with its platform and regional scopes.
             credential riot_api_key = api_key(secret.api_key);
         }
 
-        headers { "User-Agent" = "ConcordRiotExample/2.1"; }
+        headers { "User-Agent" = "ConcordRiotExample/3"; }
         auth { header "X-Riot-Token" = riot_api_key; }
         timeout 20s;
         request Json;
@@ -85,7 +83,7 @@ it:
 
 Most plans therefore carry two policies, the application bucket plus a method
 bucket. `league_by_id` and the seven `tournament_v5` endpoints carry only
-their application bucket, as in v2.1. Merging equal numbers into one ID, or hoisting an
+their application bucket. Merging equal numbers into one ID, or hoisting an
 attachment to a wider scope, would be a sharing change and is not a style
 edit; the baseline edit battery demonstrates both.
 
@@ -181,28 +179,25 @@ envelope or cursor Riot endpoint is not part of the compiled example and is
 not claimed as Riot evidence; generic envelope, cursor and link-controller
 coverage lives in the maintained pagination modules and tests.
 
-## Migration evidence
+## V3 contract evidence
 
-`crates/concord-examples/tests/baseline_recording.rs` drives the generated v3
-client through the same recording harness that captured the v2.1 baseline.
+`crates/concord-examples/tests/baseline_recording.rs` drives the generated V3
+client through a recording limiter.
 It compares all 92 recorded contexts (46 endpoints, each under two routing
-values) with `fixtures/migration/v2_1_riot_recording.json` field by field:
+values) with `fixtures/contracts/v3_riot_recording.json` field by field:
 endpoint ID, method, URL scheme, host and route, public query and header
 occurrences in order, timeout selection, auth placement, and for every rate
 policy its ID, cost, windows, key labels, encoding IDs and canonical key bytes.
 It then confirms the sharing relation dynamically with the real
-`LocalRateLimiter` on the generated keys. The only permitted differences are
-named exceptions tied to a spec rule. For Riot these cover how the plan
-observes the two page-controlled values, `start` and `count`: v2.1 redacted
-them, while v3 shows them as ordinary public values (PRIVACY-01, §18.5). Their
-wire values, keys and rate state are unchanged.
+`LocalRateLimiter` on the generated keys. The complete fresh recording must
+equal the committed V3 fixture byte for byte. There are no interversion
+exceptions in this assertion.
 
-The showcase cleanup that followed factored the windows into sets, moved to
-direct query placements and imported domain type names. The harness still
-requires the fresh recording to equal
-`fixtures/migration/v3_riot_recording.json` byte for byte. That file was
-committed before the cleanup, so any cleanup that changed recorded state would
-have failed.
+The edit battery independently checks eight contract changes, including scope
+renaming with pinned IDs, moving an endpoint, shadowing an ancestor value,
+hoisting quotas, merging policy identities, changing cost or key encoding, and
+adding an initialized value. Each edit declares the facts that should change
+and asserts that the remaining facts are preserved.
 
 ## Maintained proof
 

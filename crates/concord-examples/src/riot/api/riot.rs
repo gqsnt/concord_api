@@ -7,15 +7,12 @@
 //! Rate windows and partitioning are illustrative Concord policy, not a
 //! verified statement of Riot's current service quotas.
 //!
-//! The declaration was first converted from the pinned v2.1 source without
-//! any meaning change (spec §24.1) and then given the separate showcase
-//! cleanup of §24.3: numeric windows are factored into reusable window sets,
-//! single-owner query values use direct placement, and domain types use their
-//! imported names. Every endpoint still keeps its method, route, query/header
-//! programs in order, private API-key placement, timeout, representation
-//! defaults and fences, derived endpoint identity, and every rate policy ID,
-//! key, window, cost and original sharing group; `tests/baseline_recording.rs`
-//! proves state-equivalence against the captured v2.1 recording.
+//! Numeric windows use reusable window sets, single-owner query values use
+//! direct placement, and domain types use imported names. The current V3
+//! recording pins all 46 endpoints: methods, routes, ordered query/header
+//! programs, private API-key placement, timeouts, representation defaults and
+//! fences, derived identities, policy IDs, keys, windows, costs and sharing.
+//! `tests/baseline_recording.rs` checks those exact contract facts.
 
 use std::collections::HashMap;
 use std::num::NonZeroU32;
@@ -35,7 +32,7 @@ api! {
             credential riot_api_key = api_key(secret.api_key);
         }
 
-        headers { "User-Agent" = "ConcordRiotExample/2.1"; }
+        headers { "User-Agent" = "ConcordRiotExample/3"; }
         auth { header "X-Riot-Token" = riot_api_key; }
         timeout 20s;
         request Json;

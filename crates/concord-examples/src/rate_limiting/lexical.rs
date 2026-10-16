@@ -4,12 +4,10 @@
 //! execution. Documentation owner: `docs/rate_limits.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 //!
-//! Key labels are explicit. A named policy's dimension keeps its formal name
-//! as label; the inline item key keeps the v2.1 owner-qualified label
-//! `"endpoint.item"` so migrated bucket bytes are unchanged (§25.2). The
-//! tenant is sent as a header: v3 rejects a required input with no semantic
-//! use (VALUE-06), so the v2.1 tenant that was declared but never used now
-//! has an explicit wire use.
+//! Key labels are explicit. The named policy uses its formal name as its
+//! label; the inline item key uses `"endpoint.item"`. The tenant has an
+//! explicit header role because required inputs need a semantic use
+//! (VALUE-06).
 
 use std::sync::Arc;
 

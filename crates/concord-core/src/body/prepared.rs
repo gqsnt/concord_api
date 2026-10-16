@@ -782,6 +782,7 @@ fn managed_request_stream_with_minimum(
         limit: saturating_u64(limit.get()),
         observed: 0,
         empty_chunks_seen: 0,
+        final_chunk: None,
         finished: false,
         failure,
     }
@@ -794,6 +795,11 @@ struct ManagedRequestStream {
     limit: u64,
     observed: u64,
     empty_chunks_seen: usize,
+    // Native Content-Length framing may stop polling after the declared
+    // bytes. Retain at most the chunk reaching that boundary until source EOF
+    // proves the exact length; no extra buffer or eager source polling is
+    // needed. Empty-chunk and operation limits still govern that final read.
+    final_chunk: Option<Bytes>,
     finished: bool,
     failure: BodyFailureState,
 }
@@ -802,6 +808,7 @@ impl ManagedRequestStream {
     fn fail(&mut self, kind: BodyErrorKind) -> Poll<Option<Result<Bytes, BodyError>>> {
         self.finished = true;
         self.source = None;
+        self.final_chunk = None;
         self.failure.record(kind);
         Poll::Ready(Some(Err(BodyError::new(kind))))
     }
@@ -859,6 +866,10 @@ impl Stream for ManagedRequestStream {
                         return this.fail(BodyErrorKind::LimitExceeded);
                     }
                     this.observed = next;
+                    if this.exact_length == Some(next) {
+                        this.final_chunk = Some(bytes);
+                        continue;
+                    }
                     return Poll::Ready(Some(Ok(bytes)));
                 }
                 Poll::Ready(None) => {
@@ -873,7 +884,7 @@ impl Stream for ManagedRequestStream {
                     }
                     this.finished = true;
                     this.source = None;
-                    return Poll::Ready(None);
+                    return Poll::Ready(this.final_chunk.take().map(Ok));
                 }
             }
         }

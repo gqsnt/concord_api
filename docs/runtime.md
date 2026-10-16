@@ -153,7 +153,8 @@ never wraparound, hidden truncation or an unbounded fallback.
 | Auth recovery replays | at most 1 per direct request or page |
 | Transport-private tries | at most 2 per visible attempt |
 | Stream lease / idle / records / frame | 5 min / 30 s / 100,000 / 1 MiB + 2 bytes |
-| Empty chunks | 1,024 consecutive; at most 32 per poll before yielding |
+| Empty chunks during request production or buffered/status/provider response acquisition | 1,024 total per body; at most 32 per poll before yielding |
+| Empty chunks during an acquired response stream's lease | 1,024 consecutive; at most 32 per poll before yielding |
 | Formatted public atom | 65,536 bytes |
 | Logical and sanitized URL | 131,072 bytes each |
 | Public head components | 256 |

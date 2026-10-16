@@ -303,7 +303,7 @@ api! {
 | `item_summaries` | Direct placements, an initialized offset and page size, a required repeated `tag` (`each`, positional, no `set_tags`), offset traversal with a public `init` and a whole-slot cursor |
 | `item` | `when_present "locale" = locale_override`: absent keeps the inherited root `locale` occurrence in place, present replaces it at the end; `accepted_bytes()` bypasses Json decoding |
 | `find_item` | Head-only absence: a 404 resolves to `None` and its body is dropped unread |
-| `update_item` | An exact body, a sensitive idempotency header, an asserted `idempotent` effect, and an inline write policy keeping the legacy label `"client.tenant"`; its `endpoint` dimension consumes the pinned ID `catalog.item.update` |
+| `update_item` | An exact body, a sensitive idempotency header, an asserted `idempotent` effect, and an inline write policy with the explicit label `"client.tenant"`; its `endpoint` dimension consumes the pinned ID `catalog.item.update` |
 | `feed` | A custom envelope controller (§17.2): `Json` decodes the whole `Envelope`, the controller extracts items |
 | `export` | `ByteStream via Binary`: `.await` returns an opened managed stream, not a completed download |
 | `inspect` | One optional used three times: a direct `language` query key, an explicit `languageEcho` key and `replace "Accept-Language"`, so omission clears the scope's inherited header |
@@ -359,6 +359,5 @@ exception.
 ## Scale
 
 The [Riot walkthrough](riot_walkthrough.md) models 46 endpoints across regional
-hosts, preserving every original rate policy and sharing group through the
-meaning-preserving migration. It is a scale and domain example, not a current
-provider quota guarantee.
+hosts. Its V3 recordings check every declared rate policy and sharing group.
+It is a scale and domain example; its quota numbers are illustrative.

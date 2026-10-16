@@ -1,22 +1,22 @@
-error: [C3-MIGRATE] rate key labels are explicit in v3: write `"method" = method` to preserve the legacy label (the inline rate policy of client `MethodApi`)
+error: [C3-MIGRATE] rate key labels are explicit in v3: write `"method" = method` to use an explicit label (the inline rate policy of client `MethodApi`)
   --> tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.rs:11:82
    |
 11 |         rate_limit { id "concord.rate_limit_unsupported_bare_dimensions.1"; key [method]; allow 1 per 1s; }
    |                                                                                  ^^^^^^
 
-error: [C3-MIGRATE] rate key labels are explicit in v3: write `"path" = path` to preserve the legacy label (the inline rate policy of client `PathApi`)
+error: [C3-MIGRATE] rate key labels are explicit in v3: write `"path" = path` to use an explicit label (the inline rate policy of client `PathApi`)
   --> tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.rs:18:82
    |
 18 |         rate_limit { id "concord.rate_limit_unsupported_bare_dimensions.2"; key [path]; allow 1 per 1s; }
    |                                                                                  ^^^^
 
-error: [C3-MIGRATE] rate key labels are explicit in v3: write `"query" = query` to preserve the legacy label (the inline rate policy of client `QueryApi`)
+error: [C3-MIGRATE] rate key labels are explicit in v3: write `"query" = query` to use an explicit label (the inline rate policy of client `QueryApi`)
   --> tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.rs:25:82
    |
 25 |         rate_limit { id "concord.rate_limit_unsupported_bare_dimensions.3"; key [query]; allow 1 per 1s; }
    |                                                                                  ^^^^^
 
-error: [C3-MIGRATE] rate key labels are explicit in v3: write `"observed_url" = observed_url` to preserve the legacy label (the inline rate policy of client `SafeUrlApi`)
+error: [C3-MIGRATE] rate key labels are explicit in v3: write `"observed_url" = observed_url` to use an explicit label (the inline rate policy of client `SafeUrlApi`)
   --> tests/ui/fail/rate_limits/rate_limit_unsupported_bare_dimensions.rs:32:82
    |
 32 |         rate_limit { id "concord.rate_limit_unsupported_bare_dimensions.4"; key [observed_url]; allow 1 per 1s; }

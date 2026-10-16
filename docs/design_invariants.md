@@ -103,7 +103,7 @@ rule it restates.
 
 42. Documentation is a tested product surface: DSL and Rust snippets are
     compiled or anchored to compiled examples, and the grammar, generated
-    names, feature matrix and migration tool agree with the implementation
+    names, feature matrix and contract tools agree with the implementation
     (DOC-01).
 43. Changing any invariant above requires a recorded specification correction
     with the affected tests, not an undocumented compromise (§28.1).

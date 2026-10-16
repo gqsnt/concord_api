@@ -1,76 +1,39 @@
-# Concord v3 owner release decision packet
+# Concord V3 owner decisions
 
-**Status:** REQUIRED OWNER DECISION FOR BETA INTEGRATION AND STABLE PUBLICATION
+**Status:** V3 correction work and ordinary `concord-v3` source-branch updates
+are authorized. Main integration and registry publication are separate actions.
+The implementation remains `3.0.0-beta.1` with `publish = false` in every package.
+[Release-gate status](release_gate_status.md) owns the current qualification.
 
-The 2026-10-12 R7 commission explicitly authorizes the V3 import, corrections
-and ordinary `concord-v3` source-branch push to `gqsnt/concord_api`. It does not
-supply the remaining merge, license, namespace, tags or publication decisions.
-The implementation remains `3.0.0-beta.1` with `publish = false` everywhere.
-Gate 0 cannot
-pass, and stable release or publication is forbidden, until an authorized
-project owner completes this packet. The lifecycle is owned by
-[`release_gate_status.md`](release_gate_status.md).
+## Decisions established for this work
 
-## Required decisions
-
-| Decision | Owner answer |
+| Decision | Recorded answer |
 |---|---|
-| Merge or integrate the qualified beta into main or a release branch | **REQUIRED OWNER DECISION**; R7 does not authorize a merge |
-| Current source branch and preserved main merge base | **Observed**: `concord-v3`, main `3765907`; source push authorized, no main integration |
-| License policy: exact SPDX expression or approved `license-file` policy | **REQUIRED OWNER DECISION** |
-| Approved public package names for façade, core, macros, extras and, if published, `concord-inspect` | **REQUIRED OWNER DECISION** |
-| Is this the first registry publication for the approved namespace? | **REQUIRED OWNER DECISION** |
-| Did Concord v2.x have external Git or path consumers who need the v2.1 → v3 migration guide and tool? | **REQUIRED OWNER DECISION** |
-| Is the intentional v2.1 → v3 source/API break acceptable under the major version `3.0.0`? | **REQUIRED OWNER DECISION** |
-| Official repository URL | **REQUIRED OWNER DECISION** |
-| Official homepage URL, or explicit decision that no separate homepage exists | **REQUIRED OWNER DECISION** |
-| Public package README policy/path | **REQUIRED OWNER DECISION** |
-| Human-comprehension and independent-review evidence required before public compatibility freeze, if any | **REQUIRED OWNER DECISION** |
-| R7 source-branch push | **AUTHORIZED** by the present owner commission; ordinary push only, exact remote verification in delivered receipt |
+| Supported product version | **V3 only**, explicit project-owner instruction, 16 October 2026 |
+| Conversion and older-version consumers | **No V2-to-V3 converter, aliases or old-binary state import**; [ADR 0027](adrs/0027-v3-only-product.md) supersedes those earlier obligations |
+| Public source/API boundary | The owner selects the canonical V3 contract and does not require the former V2 surface |
+| Reading project authority | Private specification and closure prompt may be read; their contents are not vendored into the public source |
+| Corrective implementation | Direct fixes and native verification requested by the owner |
+| Source repository | Owner-provided `https://github.com/gqsnt/concord_api`, branch `concord-v3` |
+| Source-branch update | Ordinary fast-forward source push authorized; preserve other branches and history |
+| Preserved main | `3765907aa2e424997bfd8f2fcdcc95275e6142f5`; no main merge is part of this correction |
+| License work | Outside this correction's scope, per owner instruction; no license choice is inferred |
+| Supported validation | Windows and Linux, pinned Rust 1.97.1 and MSRV 1.86.0 |
+| Runtime defaults | Retain the selected finite V3 defaults until workload evidence justifies a change |
 
-Record the deciding owner/role and date without adding secrets or personal
-contact information. Package names must be rechecked immediately after approval
-and are not secured until registry ownership or the intended publication step
-establishes control.
+## Decisions needed only for a later release action
 
-## Observed facts supplied to the owner
+| Decision | State |
+|---|---|
+| Merge a qualified beta into main or a separate release branch | **REQUIRED OWNER DECISION** at that action |
+| Public registry package names and namespace ownership | **REQUIRED OWNER DECISION** for publication; recheck registry state then |
+| Public licensing policy and publication metadata | **REQUIRED OWNER DECISION** for publication, outside current implementation work |
+| Separate homepage and package README policy | **REQUIRED OWNER DECISION** if different from the repository documentation |
+| Stable version, tag and registry publication | **REQUIRED OWNER DECISION**; the current beta stays unpublished |
+| Human evidence for a public API freeze | Recommended: execute the prepared V3 task study and independent Rustdoc/diff review before freezing the public API |
 
-Observed in this repository on 2026-09-26:
-
-- The workspace version is `3.0.0-beta.1`; all eleven workspace package
-  manifests set `publish = false`.
-- No project license file exists and no manifest declares `license` or
-  `license-file`.
-- No Git remote is configured in this repository. Its local branches are
-  `baseline-v2.1` (the unchanged v2.1 source export, associated with commit
-  `3765907aa2e424997bfd8f2fcdcc95275e6142f5`), `v3-implementation` and
-  per-engineer worktree branches; there is no `main` branch.
-- The v3 line contains deliberate source/API breaks from v2.1 (see
-  [`public_change_matrix.md`](public_change_matrix.md) and the migration guide
-  [`docs/migration_v3.md`](../docs/migration_v3.md)).
-
-Observed during the v2.1 lifecycle on 2026-09-04 (historical, not repeated for
-v3):
-
-- In the v2.1 repository, local `main` at `f7464c5` was Concord v2.0.0 and its
-  configured remote was `https://github.com/gqsnt/concord_api`; a local remote
-  configuration does not establish official public metadata.
-- At 2026-09-04T10:45:42Z, crates.io package `concord` was an unrelated
-  Discord TUI, newest version 2.5.15, owned by `chojs23`.
-- At that same query time, official Cargo and crates.io API lookups found no
-  records for the candidate family `concord-api`, `concord-api-core`,
-  `concord-api-macros` and `concord-api-extras`. This means only "not found at
-  query time", not available, approved, reserved or secured.
-
-## Technical options, not decisions
-
-- A distinct package family can retain the Rust import `concord` by giving the
-  façade package a `[lib] name = "concord"` target and documenting a Cargo
-  dependency alias.
-- The unoccupied-at-query-time `concord-api*` family is one candidate only.
-- Cargo accepts either an SPDX `license` expression or an authorized
-  `license-file` policy. Engineering will implement exactly the owner-selected
-  policy and will not infer one.
-
-Registry query details are retained in
-[`evidence/package_namespace_2026-09-04.md`](evidence/package_namespace_2026-09-04.md).
+The missing human observations do not prevent machine qualification of this
+unpublished beta. Preparing a protocol or performing an implementer review does
+not count as a human participant result. Historical namespace queries and
+release decisions remain in dated evidence and Git; they do not establish
+current registry availability or ownership.

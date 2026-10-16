@@ -128,9 +128,8 @@ change the meaning of an enabled declaration.
 
 Start with the [documentation index](docs/README.md) and the
 [quick start](docs/quick_start.md). The [DSL specification](docs/spec.md) is
-normative. Users of Concord v2.1 read the
-[v2.1 to v3 migration guide](docs/migration_v3.md), which documents the
-`migrate-v3` tool. Maintainers should also read the
+normative. [V3 is the only supported product version](docs/version_policy.md).
+Maintainers should also read the
 [release-gate status](dev_doc/release_gate_status.md) and the
 [claim/evidence ledger](dev_doc/claim_evidence_ledger.md).
 

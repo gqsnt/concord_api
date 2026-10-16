@@ -8,17 +8,16 @@ use crate::limits::{MAX_RATE_KEY_ENCODING_ID_BYTES, MAX_RATE_LIMIT_KEY_BYTES};
 /// Stable encoding contract name of Concord's built-in UTF-8 text encoding.
 ///
 /// `str`, `String`, and the built-in `origin` and `endpoint` dimensions use
-/// this contract. Its value bytes are the baseline `utf8` tagged framing.
+/// this contract. Its value bytes use the canonical `utf8` tagged framing.
 pub const UTF8_ENCODING_ID: &str = "concord.utf8/1";
 
 /// Bounded writer used by [`RateKeyPart`] and [`RateKeyEncoder`] implementations.
 ///
 /// Every write appends exactly
 /// `u8(tag.len) || tag.ascii_bytes || u64_be(bytes.len) || bytes`; several
-/// writes concatenate in call order. This is the unchanged Concord 2.1
-/// canonical framing. The writer checks the complete prospective append
-/// before retaining any byte of it, so an excessive value never leaves a
-/// partial record behind.
+/// writes concatenate in call order. The writer checks the complete
+/// prospective append before retaining any byte of it, so an excessive value
+/// never leaves a partial record behind.
 ///
 /// Ownership and sensitivity: the writer owns the protected bytes it has
 /// accumulated and has no `Debug` or `Display` implementation. Custom
@@ -104,7 +103,7 @@ impl CanonicalKeyWriter {
 /// trait has an associated constant it is not dyn-compatible; Concord encodes
 /// every dimension through the typed [`encode_canonical`] function.
 ///
-/// Built-in contracts, all byte-identical to Concord 2.1:
+/// Built-in V3 contracts:
 ///
 /// | Type | `ENCODING_ID` | Payload |
 /// |---|---|---|
@@ -290,8 +289,7 @@ pub(crate) const fn is_bounded_ascii_graphic(value: &str, limit: usize) -> bool 
 ///
 /// `limit` bounds the canonical bytes and must not exceed
 /// [`MAX_RATE_LIMIT_KEY_BYTES`]. The encoding ID is validated before the
-/// value is written. This is the typed replacement for Concord 2.1's
-/// `&dyn RateKeyPart` arrays; it performs no allocation beyond the retained
+/// value is written. Encoding performs no allocation beyond the retained
 /// bounded bytes and no I/O.
 ///
 /// # Errors

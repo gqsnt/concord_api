@@ -16,7 +16,7 @@
 //!   `cargo clean -p` of the fixture package with every dependency still
 //!   built (cold), then an immediate no-op rebuild (warm);
 //! * the size of the static structural description (`concord.contract/3`
-//!   export for v3; the v2.1 tool snapshot for the baseline).
+//!   export for V3).
 //!
 //! Each measured rebuild follows a one-declaration source change from the
 //! previous step: base -> local edit (endpoint 0's route) -> parent edit
@@ -27,10 +27,8 @@
 //! `incremental-fixture` target directory so the two modes never
 //! invalidate each other's dependency artifacts.
 //!
-//! `--baseline-v2-1 DIR` runs the same scale points against a Concord v2.1
-//! checkout at `DIR` with the equivalent v2.1 fixture, so both are measured
-//! on the same host and toolchain. Dependencies are built by an unreported
-//! warm-up run first, so the reported times cover only the fixture crate.
+//! This tool generates and measures the current V3 declaration language only.
+//! Compare V3 commits with separate checkouts and target directories.
 //!
 //! Expansion uses `cargo expand` when available (a `target/tools` install or
 //! one on `PATH`), otherwise the identical rustc pretty-printer that
@@ -64,20 +62,8 @@ fn main() -> ExitCode {
     }
 }
 
-/// Which declaration dialect the fixture is written in.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Dialect {
-    /// The current v3 grammar, measured against this workspace.
-    V3,
-    /// The v2.1 grammar, measured against a v2.1 checkout.
-    V2_1,
-}
-
 #[derive(Debug, Eq, PartialEq)]
 struct Options {
-    dialect: Dialect,
-    /// Root of the Concord checkout whose `crates/concord` is measured.
-    concord_root: Option<PathBuf>,
     counts: Vec<usize>,
     /// Build the fixture with `CARGO_INCREMENTAL=1` in its own target dir.
     incremental: bool,
@@ -113,7 +99,7 @@ impl ExpandMethod {
 fn run() -> Result<(), String> {
     let root = workspace_root()?;
     let options = parse_options(&env::args().skip(1).collect::<Vec<_>>())?;
-    let concord_root = options.concord_root.clone().unwrap_or_else(|| root.clone());
+    let concord_root = &root;
     if !concord_root.join("crates/concord/Cargo.toml").is_file() {
         return Err(format!(
             "{} is not a Concord checkout (no crates/concord/Cargo.toml)",
@@ -121,10 +107,7 @@ fn run() -> Result<(), String> {
         ));
     }
     let scratch = root.join("target/perf/expansion-scale");
-    let fixture = scratch.join(match options.dialect {
-        Dialect::V3 => "fixture-v3",
-        Dialect::V2_1 => "fixture-v2_1",
-    });
+    let fixture = scratch.join("fixture-v3");
     let target =
         env::var_os("CARGO_TARGET_DIR").map_or_else(|| scratch.join("build"), PathBuf::from);
     let target = if options.incremental {
@@ -134,11 +117,8 @@ fn run() -> Result<(), String> {
     };
     let incremental = options.incremental.then_some("1");
     fs::create_dir_all(fixture.join("src")).map_err(|error| error.to_string())?;
-    fs::write(
-        fixture.join("Cargo.toml"),
-        fixture_manifest(options.dialect, &concord_root),
-    )
-    .map_err(|error| error.to_string())?;
+    fs::write(fixture.join("Cargo.toml"), fixture_manifest(concord_root))
+        .map_err(|error| error.to_string())?;
     // Pin the fixture to the measured checkout's resolved dependency versions.
     let lock = concord_root.join("Cargo.lock");
     if lock.is_file() {
@@ -148,17 +128,13 @@ fn run() -> Result<(), String> {
     let manifest = fixture.join("Cargo.toml");
 
     // Unreported warm-up: build dependencies in both profiles.
-    fs::write(
-        fixture.join("src/main.rs"),
-        fixture_source(options.dialect, 1, Edit::None),
-    )
-    .map_err(|error| error.to_string())?;
+    fs::write(fixture.join("src/main.rs"), fixture_source(1, Edit::None))
+        .map_err(|error| error.to_string())?;
     expand(method, &root, &manifest, &target, incremental)?;
     build(method, &manifest, &target, incremental)?;
 
     println!(
-        "dialect: {:?}; concord: {}; expansion: {}; builds: debug{}; fixture CARGO_INCREMENTAL={}",
-        options.dialect,
+        "dialect: V3; concord: {}; expansion: {}; builds: debug{}; fixture CARGO_INCREMENTAL={}",
         concord_root.display(),
         method.label(),
         if method == ExpandMethod::RustcUnpretty {
@@ -184,7 +160,7 @@ fn run() -> Result<(), String> {
     for count in options.counts {
         fs::write(
             fixture.join("src/main.rs"),
-            fixture_source(options.dialect, count, Edit::None),
+            fixture_source(count, Edit::None),
         )
         .map_err(|error| error.to_string())?;
         let started = Instant::now();
@@ -207,7 +183,7 @@ fn run() -> Result<(), String> {
         // is rebuilt from the edited declaration.
         fs::write(
             fixture.join("src/main.rs"),
-            fixture_source(options.dialect, count, Edit::Local),
+            fixture_source(count, Edit::Local),
         )
         .map_err(|error| error.to_string())?;
         let started = Instant::now();
@@ -218,7 +194,7 @@ fn run() -> Result<(), String> {
         // inherits changes (one more declaration on top of the local edit).
         fs::write(
             fixture.join("src/main.rs"),
-            fixture_source(options.dialect, count, Edit::LocalAndParent),
+            fixture_source(count, Edit::LocalAndParent),
         )
         .map_err(|error| error.to_string())?;
         let started = Instant::now();
@@ -254,27 +230,14 @@ fn run() -> Result<(), String> {
 }
 
 fn parse_options(arguments: &[String]) -> Result<Options, String> {
-    let mut dialect = Dialect::V3;
-    let mut concord_root = None;
     let mut counts = Vec::new();
     let mut incremental = false;
-    let mut iterator = arguments.iter();
-    while let Some(argument) = iterator.next() {
+    for argument in arguments {
         if argument == "--incremental" {
             if incremental {
                 return Err("--incremental was given more than once".into());
             }
             incremental = true;
-            continue;
-        }
-        if argument == "--baseline-v2-1" {
-            let path = iterator
-                .next()
-                .ok_or("--baseline-v2-1 requires the path of a Concord v2.1 checkout")?;
-            if concord_root.replace(PathBuf::from(path)).is_some() {
-                return Err("--baseline-v2-1 was given more than once".into());
-            }
-            dialect = Dialect::V2_1;
             continue;
         }
         let count = argument
@@ -291,8 +254,6 @@ fn parse_options(arguments: &[String]) -> Result<Options, String> {
         counts = DEFAULT_COUNTS.to_vec();
     }
     Ok(Options {
-        dialect,
-        concord_root,
         counts,
         incremental,
     })
@@ -473,7 +434,7 @@ fn workspace_root() -> Result<PathBuf, String> {
     }
 }
 
-fn fixture_manifest(dialect: Dialect, concord_root: &Path) -> String {
+fn fixture_manifest(concord_root: &Path) -> String {
     let crate_path = |name: &str| {
         concord_root
             .join("crates")
@@ -482,13 +443,10 @@ fn fixture_manifest(dialect: Dialect, concord_root: &Path) -> String {
             .replace('\\', "/")
     };
     let concord = crate_path("concord");
-    let inspect = match dialect {
-        Dialect::V3 => format!(
-            "concord-inspect = {{ path = \"{}\" }}\n",
-            crate_path("concord-inspect")
-        ),
-        Dialect::V2_1 => String::new(),
-    };
+    let inspect = format!(
+        "concord-inspect = {{ path = \"{}\" }}\n",
+        crate_path("concord-inspect")
+    );
     format!(
         r#"[package]
 name = "{FIXTURE_PACKAGE}"
@@ -508,11 +466,8 @@ concord = {{ path = "{concord}", default-features = false }}
 /// endpoint 0's route (the representative one-endpoint edit);
 /// [`Edit::LocalAndParent`] additionally changes the root `timeout` every
 /// endpoint inherits (the representative parent edit).
-fn fixture_source(dialect: Dialect, count: usize, edit: Edit) -> String {
-    let source = match dialect {
-        Dialect::V3 => fixture_source_v3(count, edit != Edit::None),
-        Dialect::V2_1 => fixture_source_v2_1(count, edit != Edit::None),
-    };
+fn fixture_source(count: usize, edit: Edit) -> String {
+    let source = fixture_source_v3(count, edit != Edit::None);
     if edit == Edit::LocalAndParent {
         source.replacen(ROOT_TIMEOUT, EDITED_ROOT_TIMEOUT, 1)
     } else {
@@ -520,7 +475,7 @@ fn fixture_source(dialect: Dialect, count: usize, edit: Edit) -> String {
     }
 }
 
-/// The root timeout declaration of both dialects' fixtures, inherited by
+/// The root timeout declaration of the V3 fixture, inherited by
 /// every endpoint, and its parent-edited form.
 const ROOT_TIMEOUT: &str = "        timeout 30s;\n";
 const EDITED_ROOT_TIMEOUT: &str = "        timeout 31s;\n";
@@ -564,43 +519,6 @@ api! {
     source
 }
 
-/// The v2.1 baseline fixture: the same client in v2.1 syntax, sized by the
-/// v2.1 tool snapshot.
-fn fixture_source_v2_1(count: usize, edited: bool) -> String {
-    let mut source = String::from(
-        r#"#![recursion_limit = "4096"]
-
-use concord::{Bytes, api, endpoint::contract_tool_snapshot};
-
-api! {
-    client ScaleApi {
-        base "https://scale.example.test";
-        timeout 30s;
-        rate_limits {
-            policy shared_reads() { id "concord.expansion_scale.1"; cost 1;
-                key [origin, endpoint];
-                allow 1_000_000 per 1s;
-            }
-        }
-
-"#,
-    );
-    for index in 0..count {
-        let route = if edited && index == 0 {
-            "\"edited\", endpoint.value"
-        } else {
-            "endpoint.value"
-        };
-        source.push_str(&format!(
-            "        GET endpoint_{index:04}(value: u64) -> Bytes via Binary {{\n            path [{route}];\n            rate_limit shared_reads();\n        }}\n"
-        ));
-    }
-    source.push_str(
-        "    }\n}\n\nfn main() {\n    println!(\"{}\", contract_tool_snapshot(ScaleApi::contract()).len());\n}\n",
-    );
-    source
-}
-
 /// Characters of the expansion excluding each line's leading indentation.
 fn code_characters(expansion: &str) -> usize {
     expansion
@@ -635,7 +553,7 @@ mod tests {
 
     #[test]
     fn scale_fixture_attaches_one_named_definition_to_every_endpoint() {
-        let source = fixture_source(Dialect::V3, 3, Edit::None);
+        let source = fixture_source(3, Edit::None);
         assert_eq!(source.matches("shared_reads()").count(), 4);
         assert_eq!(source.matches("rate_limit shared_reads();").count(), 3);
         assert_eq!(source.matches("GET endpoint_").count(), 3);
@@ -660,40 +578,30 @@ mod tests {
 
     #[test]
     fn representative_edit_changes_exactly_one_route() {
-        for dialect in [Dialect::V3, Dialect::V2_1] {
-            let base = fixture_source(dialect, 10, Edit::None);
-            let edited = fixture_source(dialect, 10, Edit::Local);
-            let changed = changed_lines(&base, &edited);
-            assert_eq!(changed.len(), 1, "{dialect:?}");
-            assert!(changed[0].1.contains("edited"), "{dialect:?}: {changed:?}");
-        }
+        let base = fixture_source(10, Edit::None);
+        let edited = fixture_source(10, Edit::Local);
+        let changed = changed_lines(&base, &edited);
+        assert_eq!(changed.len(), 1);
+        assert!(changed[0].1.contains("edited"), "{changed:?}");
     }
 
     #[test]
     fn parent_edit_changes_only_the_inherited_root_timeout() {
-        for dialect in [Dialect::V3, Dialect::V2_1] {
-            let local = fixture_source(dialect, 10, Edit::Local);
-            let parent = fixture_source(dialect, 10, Edit::LocalAndParent);
-            assert_eq!(
-                changed_lines(&local, &parent),
-                [("timeout 30s;".to_owned(), "timeout 31s;".to_owned())],
-                "{dialect:?}"
-            );
-            // The root timeout is the only timeout: every endpoint inherits it.
-            assert_eq!(parent.matches("timeout ").count(), 1, "{dialect:?}");
-            assert_eq!(local.matches(ROOT_TIMEOUT).count(), 1, "{dialect:?}");
-        }
+        let local = fixture_source(10, Edit::Local);
+        let parent = fixture_source(10, Edit::LocalAndParent);
+        assert_eq!(
+            changed_lines(&local, &parent),
+            [("timeout 30s;".to_owned(), "timeout 31s;".to_owned())],
+        );
+        assert_eq!(parent.matches("timeout ").count(), 1);
+        assert_eq!(local.matches(ROOT_TIMEOUT).count(), 1);
     }
 
     #[test]
-    fn baseline_fixture_keeps_the_v2_1_declaration() {
-        let source = fixture_source(Dialect::V2_1, 2, Edit::None);
-        assert_eq!(source.matches("path [endpoint.value];").count(), 2);
-        assert!(source.contains("contract_tool_snapshot(ScaleApi::contract())"));
-        let manifest = fixture_manifest(Dialect::V2_1, Path::new("/v21"));
-        assert!(manifest.contains("path = \"/v21/crates/concord\""));
-        assert!(!manifest.contains("concord-inspect"));
-        let manifest = fixture_manifest(Dialect::V3, Path::new("/v3"));
+    fn fixture_uses_current_contract_inspection() {
+        let source = fixture_source(2, Edit::None);
+        assert!(source.contains("concord_inspect::export_string(ScaleApi::contract())"));
+        let manifest = fixture_manifest(Path::new("/v3"));
         assert!(manifest.contains("concord-inspect = { path = \"/v3/crates/concord-inspect\" }"));
     }
 
@@ -707,16 +615,13 @@ mod tests {
         assert_eq!(DEFAULT_COUNTS, [1, 10, 100, 500, 1_000]);
         let options = parse_options(&[]).expect("defaults");
         assert_eq!(options.counts, DEFAULT_COUNTS);
-        assert_eq!(options.dialect, Dialect::V3);
         assert!(!options.incremental);
     }
 
     #[test]
-    fn options_select_the_baseline_and_validate_counts() {
-        let arguments = ["--baseline-v2-1", "/v21", "1", "10"].map(str::to_owned);
+    fn options_validate_current_scale_counts() {
+        let arguments = ["1", "10"].map(str::to_owned);
         let options = parse_options(&arguments).expect("options");
-        assert_eq!(options.dialect, Dialect::V2_1);
-        assert_eq!(options.concord_root, Some(PathBuf::from("/v21")));
         assert_eq!(options.counts, [1, 10]);
         assert!(parse_options(&["0".to_owned()]).is_err());
         assert!(parse_options(&["1001".to_owned()]).is_err());

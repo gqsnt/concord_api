@@ -4,7 +4,7 @@ use std::fmt;
 
 use concord_core::contracts::{AtomEncoder, AtomError, BoundedAtomWriter};
 
-/// Explicit compatibility adapter from [`fmt::Display`] to one request atom.
+/// Explicit adapter from [`fmt::Display`] to one request atom.
 ///
 /// Select this adapter with authored `via DisplayAtom` syntax. Concord never
 /// treats `Display` as an implicit wire contract.

@@ -88,8 +88,6 @@ pub mod auth {
 /// streaming primitives.
 pub mod body {
     pub use concord_core::body::BodyDescription;
-    #[allow(deprecated)]
-    pub use concord_core::contracts::RequestBody;
     pub use concord_core::contracts::{
         BodyError, BodyErrorKind, BodyFactory, BodyKind, LengthHint, MAX_BODY_MEDIA_HINT_BYTES,
         MAX_EMPTY_REQUEST_CHUNKS, MAX_REQUEST_CONTENT_TYPE_BYTES, PageRequestRepresentation,

@@ -392,6 +392,23 @@ fn generated_name_collisions_are_rejected() {
         quote! {
             client A {
                 base "https://a.test/";
+                scope item_request() {
+                    GET item() -> () via Empty;
+                }
+            }
+        },
+        &[
+            "[C3-GENERATED]",
+            "ItemRequest",
+            "request type of endpoint `item`",
+            "handle of scope `item_request`",
+            "is declared here",
+        ],
+    );
+    assert_err(
+        quote! {
+            client A {
+                base "https://a.test/";
                 response Json;
                 GET e(query timeout: u32 = 5) -> T;
             }

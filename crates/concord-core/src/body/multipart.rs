@@ -83,6 +83,9 @@ pub struct MultipartBody {
 
 impl MultipartBody {
     /// Creates an empty multipart recipe.
+    ///
+    /// A recipe with no parts still serializes the closing boundary. Its
+    /// complete framed length counts against the request-body limit.
     #[must_use]
     pub const fn new() -> Self {
         Self {
@@ -175,17 +178,15 @@ impl MultipartBody {
                 _ => None,
             };
         }
-        if !self.parts.is_empty() {
-            // "--" boundary "--" CRLF
-            let closing = 2_u64
-                .checked_add(boundary_len)
-                .and_then(|length| length.checked_add(4))
-                .ok_or_else(limit_exceeded)?;
-            minimum = minimum.checked_add(closing).ok_or_else(limit_exceeded)?;
-            exact = exact
-                .map(|total| total.checked_add(closing).ok_or_else(limit_exceeded))
-                .transpose()?;
-        }
+        // "--" boundary "--" CRLF, including a recipe with no parts.
+        let closing = 2_u64
+            .checked_add(boundary_len)
+            .and_then(|length| length.checked_add(4))
+            .ok_or_else(limit_exceeded)?;
+        minimum = minimum.checked_add(closing).ok_or_else(limit_exceeded)?;
+        exact = exact
+            .map(|total| total.checked_add(closing).ok_or_else(limit_exceeded))
+            .transpose()?;
         Ok(MultipartFraming {
             exact,
             minimum,
@@ -224,7 +225,6 @@ impl MultipartBody {
     pub(crate) fn into_stream(self, boundary: &MultipartBoundary) -> Result<BodyStream, BodyError> {
         self.validate_structure()?;
         let mut segments = VecDeque::with_capacity(self.parts.len().saturating_mul(3) + 1);
-        let has_parts = !self.parts.is_empty();
         for (name, part) in self.parts {
             let header = part_header(&name, &part);
             let mut prefix = Vec::with_capacity(boundary.as_str().len() + header.len() + 8);
@@ -253,13 +253,11 @@ impl MultipartBody {
             }
             segments.push_back(Segment::Static(Bytes::from_static(b"\r\n")));
         }
-        if has_parts {
-            let mut closing = Vec::with_capacity(boundary.as_str().len() + 6);
-            closing.extend_from_slice(b"--");
-            closing.extend_from_slice(boundary.as_str().as_bytes());
-            closing.extend_from_slice(b"--\r\n");
-            segments.push_back(Segment::Static(Bytes::from(closing)));
-        }
+        let mut closing = Vec::with_capacity(boundary.as_str().len() + 6);
+        closing.extend_from_slice(b"--");
+        closing.extend_from_slice(boundary.as_str().as_bytes());
+        closing.extend_from_slice(b"--\r\n");
+        segments.push_back(Segment::Static(Bytes::from(closing)));
         Ok(Box::pin(MultipartStream {
             segments,
             finished: false,
@@ -555,34 +553,18 @@ impl fmt::Debug for MultipartPart {
 
 /// Encodes one part's header lines (without the terminating blank line).
 ///
-/// The field name uses the retained baseline path-segment percent-encoding:
-/// an unencoded name is written as `name="..."`, otherwise as the RFC 8187
-/// `name*=utf-8''...` form. Filenames escape backslash and quote characters.
+/// Field names and filenames use quoted parameters with escaped backslash
+/// and quote characters. Non-ASCII text is UTF-8, as allowed for form-data by
+/// RFC 7578 section 5.1. RFC 8187's extended parameter encoding does not apply
+/// to multipart/form-data and path-segment escaping cannot preserve names.
 /// Metadata was validated to exclude CR, LF, NUL and other controls.
 fn part_header(name: &str, part: &MultipartPart) -> Vec<u8> {
     let mut header = Vec::with_capacity(64 + name.len());
-    header.extend_from_slice(b"Content-Disposition: form-data; ");
-    let encoded = percent_encode_path_segment(name);
-    match encoded {
-        None => {
-            header.extend_from_slice(b"name=\"");
-            header.extend_from_slice(name.as_bytes());
-            header.extend_from_slice(b"\"");
-        }
-        Some(encoded) => {
-            header.extend_from_slice(b"name*=utf-8''");
-            header.extend_from_slice(encoded.as_bytes());
-        }
-    }
+    header.extend_from_slice(b"Content-Disposition: form-data; name=");
+    quoted_parameter(&mut header, name);
     if let Some(filename) = &part.filename {
-        header.extend_from_slice(b"; filename=\"");
-        for byte in filename.bytes() {
-            if matches!(byte, b'\\' | b'"') {
-                header.push(b'\\');
-            }
-            header.push(byte);
-        }
-        header.extend_from_slice(b"\"");
+        header.extend_from_slice(b"; filename=");
+        quoted_parameter(&mut header, filename);
     }
     if let Some(content_type) = &part.content_type {
         header.extend_from_slice(b"\r\nContent-Type: ");
@@ -591,30 +573,15 @@ fn part_header(name: &str, part: &MultipartPart) -> Vec<u8> {
     header
 }
 
-fn percent_encode_path_segment(value: &str) -> Option<String> {
-    const fn encoded(byte: u8) -> bool {
-        byte < 0x20
-            || byte >= 0x7f
-            || matches!(
-                byte,
-                b' ' | b'"' | b'<' | b'>' | b'`' | b'#' | b'?' | b'{' | b'}' | b'/' | b'%'
-            )
-    }
-    if !value.bytes().any(encoded) {
-        return None;
-    }
-    const HEX: &[u8; 16] = b"0123456789ABCDEF";
-    let mut output = String::with_capacity(value.len().saturating_mul(3));
+fn quoted_parameter(output: &mut Vec<u8>, value: &str) {
+    output.push(b'"');
     for byte in value.bytes() {
-        if encoded(byte) {
-            output.push('%');
-            output.push(char::from(HEX[usize::from(byte >> 4)]));
-            output.push(char::from(HEX[usize::from(byte & 0x0f)]));
-        } else {
-            output.push(char::from(byte));
+        if matches!(byte, b'\\' | b'"') {
+            output.push(b'\\');
         }
+        output.push(byte);
     }
-    Some(output)
+    output.push(b'"');
 }
 
 enum Segment {

@@ -1,9 +1,9 @@
 # Gate 10 independent Rustdoc and semantic-diff review packet
 
-**Status:** v2.1 packet, not run. It refers to the v2.1 `semantic-diff`
-command, which v3 replaced with `concord-xtask contract diff` over
-`concord.contract/3` snapshots; it must be revised before it can produce v3
-review evidence. The v3 lifecycle is owned by
+**Status:** v3 protocol, revised 2026-10-16. Human review has not run.
+The structured implementer review is recorded separately and cannot fill
+human result rows. This packet uses `concord-xtask contract diff` over
+`concord.contract/3` snapshots. The v3 lifecycle is owned by
 [`../release_gate_status.md`](../release_gate_status.md).
 
 This packet addresses only the human documentation portion of Gate 10 for
@@ -19,10 +19,15 @@ implementer review does not count.
    `results.md`, and build warning-denied public documentation.
 2. Generate the maintained example Rustdoc with
    `cargo doc -p concord-examples --all-features --no-deps --locked`.
-3. Generate the maintained before/after parent-representation snapshots and
-   run `cargo run --locked -p concord-xtask -- semantic-diff BEFORE AFTER`.
+3. Export a compiled maintained client with
+   `cargo run --locked -p concord-xtask --features examples -- contract export --target catalog --output BEFORE.json`.
+   Apply one parent representation change in an isolated review checkout,
+   export `AFTER.json` with the same command and run
+   `cargo run --locked -p concord-xtask -- contract diff BEFORE.json AFTER.json`.
+   Record the exact change and native exit status. A nonzero comparison result
+   is expected only when the documented command reports a real difference.
 4. Give the reviewer only public/generated documentation, normal entry points,
-   semantic-diff output, and `tasks.md`. Do not provide a macro-source tour or
+   contract-diff output, and `tasks.md`. Do not provide a macro-source tour or
    this review rubric.
 5. Record time and navigation path to every answer, public pages/types opened,
    searches, incorrect interpretations, confidence, corrections, and whether

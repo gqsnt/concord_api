@@ -75,10 +75,6 @@ pub(crate) fn preflight_discard(input: &ResponseInput) -> Result<(), ApiError> {
         .map_err(|_| timeout(&input.endpoint, &input.method))
 }
 
-pub(crate) async fn acquire_buffered(input: ResponseInput) -> Result<Bytes, ApiError> {
-    collect_bounded(input).await
-}
-
 pub(crate) async fn acquire_streaming(input: ResponseInput) -> Result<ByteStream, ApiError> {
     input
         .deadline
@@ -163,7 +159,7 @@ fn preflight_length(input: &ResponseInput, limit: NonZeroUsize) -> Result<(), Ap
     Ok(())
 }
 
-async fn collect_bounded(input: ResponseInput) -> Result<Bytes, ApiError> {
+pub(crate) async fn acquire_buffered(input: ResponseInput) -> Result<Bytes, ApiError> {
     let endpoint = input.endpoint;
     let timeout_endpoint = endpoint.clone();
     let method = input.method;

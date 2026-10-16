@@ -56,7 +56,7 @@ clause: retry is runtime policy, not contract meaning.
 
 A classifier receives a sanitized `RetryAttempt`: the endpoint ID, method, host
 only when public, page index, `attempt()` facts, `retries_performed()`, the
-aggregate `dispatch_knowledge()` and a semantic `failure()`:
+last attempt's `dispatch_knowledge()` and a semantic `failure()`:
 
 - `RetryFailure::Connect`
 - `RetryFailure::Transport`
@@ -64,7 +64,10 @@ aggregate `dispatch_knowledge()` and a semantic `failure()`:
 
 It returns `RetryDecision::Retry` or `RetryDecision::Stop`. It never sees raw
 headers, bodies or credentials and cannot declare dispatch certainty or bypass
-any gate.
+any gate. The executor separately retains aggregate dispatch knowledge across
+attempts and uses it when deciding whether replay is safe. A later attempt
+that conclusively did not send does not erase an earlier observed or ambiguous
+attempt.
 
 ## When a policy replay happens
 
