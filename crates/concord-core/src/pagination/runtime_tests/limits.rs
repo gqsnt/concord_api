@@ -345,7 +345,7 @@ async fn controller_start_failure_is_side_effect_free_and_redacted() {
         Some(PaginationErrorKind::Controller)
     );
     assert_eq!(
-        error.stage(),
+        error.failure_stage(),
         crate::error::FailureStage::PaginationDecision
     );
     let rendered = format!("{error}\n{error:?}");

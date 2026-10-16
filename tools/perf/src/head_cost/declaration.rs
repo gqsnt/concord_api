@@ -1,11 +1,10 @@
 // The v3 declaration measured by `src/bin/head_cost.rs` (V3-O07).
 //
-// `declaration_v2_1.rs.txt` beside this file is the same two clients in v2.1
-// syntax; the baseline run copies it over this file in a v2.1 export. Keep the
-// two declarations semantically equivalent: the same base URLs, owners,
-// routes, query/header program, credential placement and rate policy, and the
-// same caller-visible construction calls (required inputs positional, the
-// optional `page` left absent, `count` initialized to 25).
+// Keep the workload stable across measured V3 candidates: the same base
+// URLs, owners, routes, query/header program, credential placement, rate
+// policy and caller-visible construction calls. Required inputs remain
+// positional, the optional `page` stays absent, and `count` is initialized
+// to 25.
 
 use concord::{Binary, Bytes, api};
 

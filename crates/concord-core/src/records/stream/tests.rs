@@ -500,7 +500,7 @@ async fn v3_p11_record_limit_withholds_the_excess_record() {
     assert_eq!(records.next().await.unwrap().unwrap(), b"b");
     let error = records.next().await.unwrap().expect_err("record limit");
     assert_eq!(kind(&error), Some(StreamErrorKind::RecordLimit));
-    assert_eq!(error.stage(), FailureStage::StreamConsumption);
+    assert_eq!(error.failure_stage(), FailureStage::StreamConsumption);
     assert!(!format!("{error} {error:?}").contains("secret-third"));
     assert!(records.next().await.is_none());
     let summary = records.summary();
@@ -700,7 +700,7 @@ fn assert_overdue_record_timeout(
 ) {
     assert_eq!(kind(error), Some(StreamErrorKind::IdleTimeout));
     assert_eq!(error.category(), ErrorCategory::Timeout);
-    assert_eq!(error.stage(), FailureStage::StreamConsumption);
+    assert_eq!(error.failure_stage(), FailureStage::StreamConsumption);
     assert_eq!(
         error.dispatch_knowledge(),
         DispatchKnowledge::ResponseObserved
@@ -1014,7 +1014,7 @@ async fn v3_p10_postfix_f02_a_read_completing_after_the_lease_end_cannot_complet
         };
         assert_eq!(kind(&error), Some(StreamErrorKind::LeaseExpired), "{case}");
         assert_eq!(error.category(), ErrorCategory::Timeout);
-        assert_eq!(error.stage(), FailureStage::StreamConsumption);
+        assert_eq!(error.failure_stage(), FailureStage::StreamConsumption);
         let summary = records.summary();
         assert_eq!(summary.state(), StreamState::Failed);
         assert_eq!(summary.error_kind(), Some(StreamErrorKind::LeaseExpired));

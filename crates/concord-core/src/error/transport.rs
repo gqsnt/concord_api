@@ -329,12 +329,6 @@ impl ApiError {
         }
     }
 
-    /// Alias of [`Self::failure_stage`].
-    #[must_use]
-    pub fn stage(&self) -> FailureStage {
-        self.failure_stage()
-    }
-
     /// Returns the operation's aggregate dispatch knowledge: the monotone
     /// join `NotDispatched < PossiblyDispatched < ResponseObserved` over every
     /// attempt (and, for a traversal error, every page).

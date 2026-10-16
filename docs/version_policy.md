@@ -16,6 +16,10 @@ does not execute an older language or silently translate its meaning. There
 are no V2 compatibility aliases, older-runtime selection switches, automatic
 V2-to-V3 converter, or legacy-state import protocol.
 
+Use `PreparedBody` for request bodies and `ApiError::failure_stage()` for the
+failure stage. The former `RequestBody` and `ApiError::stage()` aliases are
+absent; compile-fail fixtures enforce those public boundaries.
+
 Applications declare their clients against V3 and use V3 services and state
 schemas. Shared limiter state must have the current explicit schema; Concord
 does not certify state produced by older Concord binaries.

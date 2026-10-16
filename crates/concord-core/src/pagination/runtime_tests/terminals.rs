@@ -192,7 +192,7 @@ async fn complete_prefix_and_lazy_terminals_report_distinct_truths() {
         Some(PaginationErrorKind::CompletionLimitExceeded)
     );
     assert_eq!(
-        error.stage(),
+        error.failure_stage(),
         crate::error::FailureStage::PaginationDecision
     );
     let summary = summary_of(&error);

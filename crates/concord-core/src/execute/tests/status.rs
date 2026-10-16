@@ -674,7 +674,8 @@ async fn real_reqwest_stream_upload_transmits_exact_bytes_and_owned_media_type()
         body_request(core, body).await.expect("stream upload"),
         b"upload-ok"[..]
     );
-    assert_eq!(polls.load(Ordering::SeqCst), 3);
+    // Three data chunks plus EOF, required before releasing the final exact-length chunk.
+    assert_eq!(polls.load(Ordering::SeqCst), 4);
     server
         .wait_for_requests(1, Duration::from_secs(2))
         .expect("recorded stream request");

@@ -1454,7 +1454,7 @@ async fn stable_body_does_not_hide_repeated_public_page_identity() {
         error.pagination_kind(),
         Some(PaginationErrorKind::RepeatedRequest)
     );
-    assert_eq!(error.stage(), FailureStage::PaginationDecision);
+    assert_eq!(error.failure_stage(), FailureStage::PaginationDecision);
     assert_eq!(server.request_count(), 1);
     let summary = error.traversal_summary().expect("traversal summary");
     // The page was received, but its batch is withheld because the proposed

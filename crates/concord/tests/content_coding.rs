@@ -149,7 +149,7 @@ fn runtime(classifications: &Arc<AtomicUsize>) -> RuntimeConfigBuilder {
 }
 fn check(error: &ApiError, kind: StreamErrorKind, category: ErrorCategory) {
     assert_eq!(error.category(), category);
-    assert_eq!(error.stage(), FailureStage::StreamConsumption);
+    assert_eq!(error.failure_stage(), FailureStage::StreamConsumption);
     assert_eq!(
         error.dispatch_knowledge(),
         DispatchKnowledge::ResponseObserved
@@ -297,7 +297,7 @@ async fn content_coding_buffered_decoded_limit_and_disablement() {
                     }
                 );
                 assert_eq!(
-                    error.stage(),
+                    error.failure_stage(),
                     if mode == 1 {
                         FailureStage::ResponseAcquisition
                     } else {
@@ -359,7 +359,7 @@ async fn content_coding_traversal_charges_decoded_aggregate_bytes() {
                     error.pagination_kind(),
                     Some(PaginationErrorKind::CollectedResponseByteCeilingExceeded)
                 );
-                assert_eq!(error.stage(), FailureStage::PaginationDecision);
+                assert_eq!(error.failure_stage(), FailureStage::PaginationDecision);
                 assert_eq!(
                     error.dispatch_knowledge(),
                     DispatchKnowledge::ResponseObserved
@@ -408,7 +408,7 @@ async fn content_coding_case_variants_preserve_supported_decoding() {
             Ok(response) => assert_eq!(response.value(), positive.value()),
             Err(error) => {
                 assert_eq!(error.category(), ErrorCategory::ResponseDecoding);
-                assert_eq!(error.stage(), FailureStage::ResponseConversion);
+                assert_eq!(error.failure_stage(), FailureStage::ResponseConversion);
                 assert_eq!(
                     error.dispatch_knowledge(),
                     DispatchKnowledge::ResponseObserved
@@ -420,7 +420,7 @@ async fn content_coding_case_variants_preserve_supported_decoding() {
                 println!(
                     "CONTENT_CODING lower={lower} positive=2_records mixed={mixed} actual={:?}/{:?} status=200 dispatch={:?} sends=1 classifier_calls=0",
                     error.category(),
-                    error.stage(),
+                    error.failure_stage(),
                     error.dispatch_knowledge()
                 );
                 failures.push(mixed);

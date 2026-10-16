@@ -55,7 +55,7 @@ async fn v3_p09_stream_opened_is_not_eof_and_a_later_body_error_keeps_the_origin
         .expect("terminal item")
         .expect_err("the body fails after acquisition");
     assert_eq!(error.category(), ErrorCategory::ResponseBody);
-    assert_eq!(error.stage(), FailureStage::StreamConsumption);
+    assert_eq!(error.failure_stage(), FailureStage::StreamConsumption);
     assert_eq!(
         error.dispatch_knowledge(),
         DispatchKnowledge::ResponseObserved
@@ -159,7 +159,7 @@ async fn v3_p10_whole_operation_cap_starts_at_the_original_request_and_bounds_th
         stream_error_kind(&error),
         Some(StreamErrorKind::LeaseExpired)
     );
-    assert_eq!(error.stage(), FailureStage::StreamConsumption);
+    assert_eq!(error.failure_stage(), FailureStage::StreamConsumption);
     assert!(stream.next().await.is_none());
 }
 
@@ -266,7 +266,7 @@ async fn stalled_read(
         .expect("terminal item")
         .expect_err("the stalled read ends the stream");
     let waited = waiting.elapsed();
-    assert_eq!(error.stage(), FailureStage::StreamConsumption);
+    assert_eq!(error.failure_stage(), FailureStage::StreamConsumption);
     assert!(stream.next().await.is_none());
     assert_eq!(stream.summary().state(), StreamState::Failed);
     assert_eq!(stream.summary().acquired_bytes(), 0);
@@ -355,7 +355,7 @@ async fn request_cancellation_signal_cancels_the_opened_stream() {
         .expect_err("the signal cancels the whole stream");
     assert_eq!(error.category(), ErrorCategory::Cancelled);
     assert_eq!(stream_error_kind(&error), Some(StreamErrorKind::Cancelled));
-    assert_eq!(error.stage(), FailureStage::StreamConsumption);
+    assert_eq!(error.failure_stage(), FailureStage::StreamConsumption);
     let summary = stream.summary();
     assert_eq!(summary.state(), StreamState::Cancelled);
     assert_eq!(summary.body_disposition(), BodyDisposition::DiscardedUnread);
@@ -401,7 +401,7 @@ async fn v3_p11_no_policy_retry_or_replay_after_stream_handoff() {
         .await
         .expect("terminal item")
         .expect_err("mid-stream failure");
-    assert_eq!(error.stage(), FailureStage::StreamConsumption);
+    assert_eq!(error.failure_stage(), FailureStage::StreamConsumption);
     assert!(stream.next().await.is_none());
     assert!(stream.next().await.is_none());
     assert_eq!(

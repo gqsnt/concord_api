@@ -9,7 +9,7 @@
 
 Ship one canonical V3 grammar, one managed runtime and V3-native public
 interfaces. Remove the `migrate-v3` implementation and its V2 parser/resolver,
-exclusive migration fixtures, the deprecated `RequestBody` alias, and the
+exclusive migration fixtures, the `RequestBody` and `ApiError::stage()` aliases, and the
 conformance store's older-binary markers and schema-import path. Current
 performance tooling generates only V3 declarations.
 
@@ -35,5 +35,6 @@ through V3R-08 retain their code-correction obligations.
 Build and test the current feature matrix, compile the public API and UI
 boundaries, execute the V3 tools, verify the generated documentation and run
 the current recording/schema fixtures. Check that the removed migration
-command fails as unsupported and the old body alias cannot be imported.
+command fails as unsupported, the old body alias cannot be imported, and the
+error accessor uses the canonical `failure_stage()` name.
 The source-bound correction report records actual results and their limits.

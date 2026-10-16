@@ -115,7 +115,7 @@ plan/send agreement, and typed rate-key encoding.
 `V3-O01`-`V3-O08`). Controllers, initial-cursor and cycle checks, zero-page
 and bound semantics, aggregate deadlines and budgets, cancellation, stream
 leases and cancel-safe reads; generated docs, snapshot and diff tooling,
-migration fixtures, docs/feature/anchor alignment, the platform matrix,
+V3 contract fixtures, docs/feature/anchor alignment, the platform matrix,
 measurements and a delivery audit.
 
 **Gate 6: unfamiliar-human comprehension.** Unknown/Blocked for public freeze;

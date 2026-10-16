@@ -101,8 +101,7 @@ pub(crate) fn run_all(root: &Path) -> Result<(), String> {
         (
             "rate_limit_absent",
             "fixture-absence",
-            // v3 gates only `LocalRateLimiter` behind `rate-limit`; the v2.1
-            // `RetryAfterObserver` no longer exists in any configuration.
+            // `LocalRateLimiter` is available only with `rate-limit`.
             &["could not find `LocalRateLimiter` in `rate_limit`"][..],
         ),
         (

@@ -63,11 +63,14 @@ exclusive fixtures/tests, two obsolete guides, the former Catalog conversion
 example and the old performance declaration. The original removal accounts
 for 42,569 lines before V3 fixture relocation and other edits.
 
-The deprecated public `RequestBody` alias and the shared-store old-binary
-markers/import protocol are removed. Native V3 extension roles such as
+The public `RequestBody` and `ApiError::stage()` compatibility aliases and the
+shared-store old-binary markers/import protocol are removed. The canonical
+error accessor is `failure_stage()`; the distinct `RetryFailure::stage()`
+calculation remains a native V3 operation. Native V3 extension roles such as
 `PreparedBody`, `EncodeBody`, `DecodeBody`, `DisplayAtom` and API-author
-`#[deprecated]` remain part of the selected V3 contract. A native compile-fail
-fixture explicitly rejects `concord::body::RequestBody`.
+`#[deprecated]` remain part of the selected V3 contract. Native compile-fail
+fixtures explicitly reject `concord::body::RequestBody` and the retired
+`ApiError::stage()` accessor.
 
 The positive V3 member snapshot moves into the macro crate. The contract CLI
 uses one `catalog` target for the canonical V3 Catalog. Current performance
@@ -132,13 +135,43 @@ final integrated gate.
 | Removed public alias | Native E0432 captured for `concord::body::RequestBody`; final UI matrix verifies the pinned snapshot |
 | First integrated Clippy attempt | Detected one obsolete import and two needless test borrows; corrected, final matrix pending |
 
+## Discoveries during integrated qualification
+
+The first complete launch exposed a pre-existing invalid `justfile` setting:
+`[windows]` cannot qualify a global `set shell` in the pinned just 1.46.0.
+The file now uses `set windows-shell` with PowerShell `-NoProfile`. Native
+controls verify parsing, shell selection and propagation of a failed command.
+
+The first GitHub default test pass on `6085722` ran 1,624 tests, with 1,623
+successes and one stale exact-length poll assertion. The local aggregate
+reproduced that same failure. Three data chunks now require a fourth producer
+poll to establish EOF before releasing the final exact-length chunk. The test
+expects exactly four polls and retains its assertions for captured bytes,
+Content-Type, Content-Length and completion. This updates the test to the
+deliberately corrected body contract; it does not relax a failure into a range.
+
+Fresh CI also found four RustSec advisories issued on 14 October 2026:
+[RUSTSEC-2026-0346](https://rustsec.org/advisories/RUSTSEC-2026-0346.html),
+[0347](https://rustsec.org/advisories/RUSTSEC-2026-0347.html),
+[0348](https://rustsec.org/advisories/RUSTSEC-2026-0348.html) and
+[0349](https://rustsec.org/advisories/RUSTSEC-2026-0349.html).
+All identify Rustls 0.23.46 as patched. Both tracked lockfiles now select that
+version, and the workspace dependency minimum is 0.23.46 so downstream
+consumers also receive the corrected floor. No other locked version changes
+in this update. The selected Rustls features remain ring/std/tls12; exposure
+conditions vary between the advisories, so a dependency finding is not evidence
+that every described exploit is reachable through Concord's managed API.
+The advisories check and the separately failing license check must not be
+conflated. Final native/CI requalification follows these corrections.
+
 ## Qualification and limits
 
 The current [gate record](../release_gate_status.md) owns final qualification.
 A complete Windows job now runs `just verify-implementation` and the analyzer;
 its existence is not a passing Windows receipt. Linux uses the same maintained
-aggregate. Dependency versions remain locked; only already-locked `h2`/`http`
-dev-dependency entries and retired xtask dependency entries changed.
+aggregate. Dependencies remain locked, including the Rustls security update
+above; already-locked `h2`/`http` dev-dependency entries and retired xtask
+dependency entries also changed in the initial correction.
 
 Synchronous user callbacks cannot be forcibly preempted. Deadline/cancellation
 checks prevent subsequent unauthorized work once those callbacks return.

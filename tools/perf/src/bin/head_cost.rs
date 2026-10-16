@@ -183,8 +183,8 @@ fn tags() -> Vec<String> {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let head = head_client()?;
 
-    // The four planned heads, printed once so the baseline and v3 runs can be
-    // checked to prepare the same public request.
+    // Print the four planned heads once so measured V3 candidates can be
+    // checked to prepare the same public requests.
     let show = HeadApi::unbound()
         .records("archive".to_owned())
         .show("item-1".to_owned());

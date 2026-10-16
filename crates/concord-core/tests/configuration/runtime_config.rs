@@ -2,9 +2,8 @@ use std::time::Duration;
 
 use concord_core::contracts::{RetryDecision, RetryPolicy, RuntimeConfigBuilder};
 
-// §20.4: the ordinary count/size setters take primitive values (an explicit
-// v3 change from the v2.1 NonZero arguments; §25.2 migrates them with
-// `.get()`). Zero is recorded as invalid configuration and reported by the
+// §20.4: the ordinary count/size setters take primitive values. Zero is
+// recorded as invalid configuration and reported by the
 // root build rather than being unrepresentable in the signature; the core
 // unit test `limit_setters_take_primitives_and_report_invalid_latest_selection`
 // proves that latch.

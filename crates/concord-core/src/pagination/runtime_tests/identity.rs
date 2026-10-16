@@ -65,7 +65,7 @@ async fn continuations_cannot_change_origin_or_rate_dimensions() {
         let error = pages.next_page().await.expect_err("forbidden continuation");
         assert_eq!(error.pagination_kind(), Some(expected));
         assert_eq!(
-            error.stage(),
+            error.failure_stage(),
             crate::error::FailureStage::PaginationDecision
         );
         assert!(pages.next_page().await.expect("terminal").is_none());

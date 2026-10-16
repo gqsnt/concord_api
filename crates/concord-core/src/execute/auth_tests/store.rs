@@ -462,7 +462,7 @@ async fn failed_local_install_after_success_retains_contact_status_and_endpoint(
     selector.poison_for_test();
     gate.open();
     let error = api_error(pending.await.expect("storage task"));
-    assert_eq!(error.stage(), FailureStage::CredentialInstall);
+    assert_eq!(error.failure_stage(), FailureStage::CredentialInstall);
     assert_eq!(
         error.dispatch_knowledge(),
         DispatchKnowledge::ResponseObserved
@@ -492,7 +492,7 @@ async fn exhausted_version_counter_fails_install_with_correlated_error() {
     let hooks = Arc::new(AuthHooks::default());
     let (core, _) = core(&executor, Arc::clone(&hooks));
     let error = api_error(store_as(&core, &selector).await);
-    assert_eq!(error.stage(), FailureStage::CredentialInstall);
+    assert_eq!(error.failure_stage(), FailureStage::CredentialInstall);
     assert_eq!(
         error.dispatch_knowledge(),
         DispatchKnowledge::ResponseObserved
@@ -729,7 +729,7 @@ async fn deadline_applies_through_local_installation() {
     let error = api_error(store_probe(&core, &selector).await);
     assert_eq!(expiry_reads.load(Ordering::SeqCst), reads_before + 1);
     assert_eq!(error.category(), ErrorCategory::Timeout);
-    assert_eq!(error.stage(), FailureStage::CredentialInstall);
+    assert_eq!(error.failure_stage(), FailureStage::CredentialInstall);
     assert_eq!(
         error.dispatch_knowledge(),
         DispatchKnowledge::ResponseObserved
@@ -919,7 +919,7 @@ async fn slow_final_observer_cannot_change_a_fixed_install_error() {
     let error = api_error(store_as(&core, &selector).await);
     assert_eq!(error.category(), ErrorCategory::AuthenticationProvider);
     assert_eq!(error.auth_kind(), Some(AuthErrorKind::Internal));
-    assert_eq!(error.stage(), FailureStage::CredentialInstall);
+    assert_eq!(error.failure_stage(), FailureStage::CredentialInstall);
     assert_eq!(
         error.dispatch_knowledge(),
         DispatchKnowledge::ResponseObserved
@@ -948,7 +948,7 @@ async fn slow_final_observer_cannot_change_a_fixed_exchange_error() {
     let core = probed_core(&executor, probe.clone());
     let error = api_error(store_as(&core, &selector).await);
     assert_eq!(error.category(), ErrorCategory::HttpStatus);
-    assert_eq!(error.stage(), FailureStage::RejectedResponse);
+    assert_eq!(error.failure_stage(), FailureStage::RejectedResponse);
     assert_eq!(error.http_status(), Some(StatusCode::INTERNAL_SERVER_ERROR));
     let observed = probe.only();
     assert_eq!(error.operation_id(), Some(observed.operation_id));
@@ -980,7 +980,7 @@ async fn cancellation_before_installation_prevents_it() {
     );
     assert!(token.is_cancelled());
     assert_eq!(error.category(), ErrorCategory::Cancelled);
-    assert_eq!(error.stage(), FailureStage::CredentialInstall);
+    assert_eq!(error.failure_stage(), FailureStage::CredentialInstall);
     assert_eq!(
         error.dispatch_knowledge(),
         DispatchKnowledge::ResponseObserved
@@ -1018,7 +1018,7 @@ async fn cancellation_during_the_exchange_prevents_installation() {
             .await,
     );
     assert_eq!(error.category(), ErrorCategory::Cancelled);
-    assert_eq!(error.stage(), FailureStage::CredentialInstall);
+    assert_eq!(error.failure_stage(), FailureStage::CredentialInstall);
     assert_eq!(
         error.dispatch_knowledge(),
         DispatchKnowledge::ResponseObserved
@@ -1246,7 +1246,7 @@ async fn review_f01_failed_install_is_not_observed_as_final_success() {
     let hooks = Arc::new(AuthHooks::default());
     let (core, _) = core(&executor, Arc::clone(&hooks));
     let error = api_error(store_as(&core, &selector).await);
-    assert_eq!(error.stage(), FailureStage::CredentialInstall);
+    assert_eq!(error.failure_stage(), FailureStage::CredentialInstall);
     let completed = hooks.completion.lock().expect("completion records");
     assert_eq!(
         completed.len(),
@@ -1576,7 +1576,7 @@ async fn deadline_before_installation_is_reported_over_a_superseded_intent() {
     gate.open();
     let error = api_error(pending.await.expect("storage task"));
     assert_eq!(error.category(), ErrorCategory::Timeout);
-    assert_eq!(error.stage(), FailureStage::CredentialInstall);
+    assert_eq!(error.failure_stage(), FailureStage::CredentialInstall);
     assert_eq!(
         error.dispatch_knowledge(),
         DispatchKnowledge::ResponseObserved

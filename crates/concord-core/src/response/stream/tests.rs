@@ -355,7 +355,7 @@ async fn v3_p09_terminal_failure_yields_one_correlated_error_then_none() {
         .await
         .unwrap()
         .expect_err("one terminal error");
-    assert_eq!(error.stage(), FailureStage::StreamConsumption);
+    assert_eq!(error.failure_stage(), FailureStage::StreamConsumption);
     assert_eq!(
         error.dispatch_knowledge(),
         DispatchKnowledge::ResponseObserved
@@ -810,7 +810,7 @@ async fn abandon_one_pending_next(stream: &mut ByteStream) {
 fn assert_one_idle_timeout(error: &ApiError) {
     assert_eq!(kind(error), Some(StreamErrorKind::IdleTimeout));
     assert_eq!(error.category(), ErrorCategory::Timeout);
-    assert_eq!(error.stage(), FailureStage::StreamConsumption);
+    assert_eq!(error.failure_stage(), FailureStage::StreamConsumption);
     assert_eq!(
         error.dispatch_knowledge(),
         DispatchKnowledge::ResponseObserved
@@ -1144,7 +1144,7 @@ mod executor_handoff {
             .expect_err("the overdue read is an idle timeout, not data");
         assert_eq!(kind(&error), Some(StreamErrorKind::IdleTimeout));
         assert_eq!(error.category(), ErrorCategory::Timeout);
-        assert_eq!(error.stage(), FailureStage::StreamConsumption);
+        assert_eq!(error.failure_stage(), FailureStage::StreamConsumption);
         assert_eq!(error.operation_id(), Some(operation_id));
         assert_eq!(error.endpoint(), GATED_ENDPOINT);
         assert!(stream.next().await.is_none());
@@ -1311,7 +1311,7 @@ fn timed_stream(
 fn assert_one_lease_expiry(stream: &ByteStream, error: &ApiError, acquired: u64) {
     assert_eq!(kind(error), Some(StreamErrorKind::LeaseExpired));
     assert_eq!(error.category(), ErrorCategory::Timeout);
-    assert_eq!(error.stage(), FailureStage::StreamConsumption);
+    assert_eq!(error.failure_stage(), FailureStage::StreamConsumption);
     assert_eq!(
         error.dispatch_knowledge(),
         DispatchKnowledge::ResponseObserved

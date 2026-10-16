@@ -152,7 +152,7 @@ async fn assert_overdue_idle_timeout(
 fn assert_stream_error(error: &ApiError, expected: StreamErrorKind, category: ErrorCategory) {
     assert_eq!(kind(error), Some(expected));
     assert_eq!(error.category(), category);
-    assert_eq!(error.stage(), FailureStage::StreamConsumption);
+    assert_eq!(error.failure_stage(), FailureStage::StreamConsumption);
     assert_eq!(
         error.dispatch_knowledge(),
         DispatchKnowledge::ResponseObserved

@@ -1,0 +1,5 @@
+error[E0599]: no method named `stage` found for reference `&ApiError` in the current scope
+ --> tests/ui/fail/names/retired_api_error_stage_alias.rs:4:19
+  |
+4 |     let _ = error.stage();
+  |                   ^^^^^ method not found in `&ApiError`

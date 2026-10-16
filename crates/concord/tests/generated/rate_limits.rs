@@ -3083,7 +3083,7 @@ async fn shared_adapter_rejects_changed_schemas_before_admission() {
             Some(RateLimitErrorKind::SchemaConflict),
             "{name}"
         );
-        assert_eq!(error.stage(), FailureStage::RateAdmission, "{name}");
+        assert_eq!(error.failure_stage(), FailureStage::RateAdmission, "{name}");
         assert_eq!(
             error.dispatch_knowledge(),
             DispatchKnowledge::NotDispatched,
@@ -3210,7 +3210,7 @@ async fn state_capacity_failure_debits_and_inserts_nothing_and_never_evicts_debt
         error.rate_limit_kind(),
         Some(RateLimitErrorKind::StateCapacity)
     );
-    assert_eq!(error.stage(), FailureStage::RateAdmission);
+    assert_eq!(error.failure_stage(), FailureStage::RateAdmission);
     assert_eq!(error.dispatch_knowledge(), DispatchKnowledge::NotDispatched);
     assert_eq!(server.request_count(), 1);
     // Had the failed plan inserted one of its entries, this would not fit.
