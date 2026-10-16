@@ -1,8 +1,5 @@
-
-
-[windows]
-set shell := ["pwsh", "-NoLogo", "-NoProfileLoadTime", "-Command"]
-
+# Windows-specific shell selection supported by the pinned just 1.46.0.
+set windows-shell := ["pwsh", "-NoLogo", "-NoProfile", "-Command"]
 
 default:
     @just --list
