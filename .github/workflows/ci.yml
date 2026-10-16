@@ -127,17 +127,19 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
           toolchain: ${{ env.RUST_MSRV }}
+      - name: Record the selected MSRV compiler
+        run: rustc +${{ env.RUST_MSRV }} --version --verbose
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           key: ${{ runner.os }}-${{ env.RUST_MSRV }}-${{ hashFiles('**/Cargo.lock') }}-msrv
-      - run: cargo check -p concord-core --lib --all-features --locked
-      - run: cargo check -p concord-macros --lib --locked
-      - run: cargo check -p concord-extras --lib --all-features --locked
-      - run: cargo check -p concord --lib --all-features --locked
-      - run: cargo check -p concord-core -p concord-macros -p concord-extras -p concord --lib --no-default-features --locked
+      - run: cargo +${{ env.RUST_MSRV }} check -p concord-core --lib --all-features --locked
+      - run: cargo +${{ env.RUST_MSRV }} check -p concord-macros --lib --locked
+      - run: cargo +${{ env.RUST_MSRV }} check -p concord-extras --lib --all-features --locked
+      - run: cargo +${{ env.RUST_MSRV }} check -p concord --lib --all-features --locked
+      - run: cargo +${{ env.RUST_MSRV }} check -p concord-core -p concord-macros -p concord-extras -p concord --lib --no-default-features --locked
       - name: Fetch the standalone fixture lock before offline MSRV checks
-        run: cargo fetch --locked --manifest-path fixtures/Cargo.toml
-      - run: cargo run --locked -p concord-xtask -- msrv-ui --locked
+        run: cargo +${{ env.RUST_MSRV }} fetch --locked --manifest-path fixtures/Cargo.toml
+      - run: cargo +${{ env.RUST_MSRV }} run --locked -p concord-xtask -- msrv-ui --locked
 
   fixtures_policy:
     name: Fixtures and dependency policy

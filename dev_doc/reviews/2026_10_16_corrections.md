@@ -164,6 +164,22 @@ that every described exploit is reachable through Concord's managed API.
 The advisories check and the separately failing license check must not be
 conflated. Final native/CI requalification follows these corrections.
 
+The completed Linux attempt on `91c6cb9` passed all three workspace test
+configurations and their doctests, then exposed a test-fixture assumption in
+the isolated `concord --no-default-features` run. Uncredentialed identifier
+and pagination fixtures now use HTTP. The credential-placement fixture keeps
+HTTPS and executes only with `default-tls`, as required by Concord's existing
+authentication policy; its generated declarations still compile without TLS.
+No authentication transport rule was relaxed. Native isolated checks pass
+without default features and with all features after this fixture correction.
+
+Inspection of the CI MSRV log also established that the repository's pinned
+1.97.1 toolchain overrode the job's installed default 1.86.0. The seven Cargo
+commands in that job now explicitly select `+${{ env.RUST_MSRV }}` and record
+the selected compiler. Earlier green jobs with the MSRV label are not counted
+as genuine 1.86 evidence. The maintained `just msrv` recipe already selected
+1.86.0 explicitly and remains part of both complete platform gates.
+
 ## Qualification and limits
 
 The current [gate record](../release_gate_status.md) owns final qualification.

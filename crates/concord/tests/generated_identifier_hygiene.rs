@@ -1,4 +1,5 @@
 //! Authored constants keep their lexical meaning beside private bindings.
+//! Uncredentialed HTTP fixtures keep their checks active without a TLS feature.
 
 #[allow(non_upper_case_globals, dead_code)]
 mod declarations {
@@ -63,7 +64,7 @@ mod declarations {
 
     api! {
         client IdentifierHygieneApi {
-            base "https://hygiene.example.test/";
+            base "http://hygiene.example.test/";
             values { query root: Input = value; }
 
             GET item(query input: Input, query retained: Input = i_retained) -> () via Empty;
@@ -121,7 +122,7 @@ mod declarations {
     #[cfg(feature = "json")]
     api! {
         client PaginationHygieneApi {
-            base "https://hygiene.example.test/";
+            base "http://hygiene.example.test/";
             GET list(query offset: u64 = 0, query count: std::num::NonZeroU32 = PAGE_SIZE) -> Vec<u32> via concord::Json {
                 paginate via concord::pagination::OffsetPagination {
                     init concord::pagination::OffsetInit { offset: offset, page_size: count };
@@ -132,7 +133,9 @@ mod declarations {
     }
 }
 
-use declarations::{CredentialBodyHygieneApi, IdentifierHygieneApi, Provider};
+use declarations::IdentifierHygieneApi;
+#[cfg(feature = "default-tls")]
+use declarations::{CredentialBodyHygieneApi, Provider};
 
 #[test]
 fn generated_private_bindings_preserve_authored_constants_and_input_values() {
@@ -140,7 +143,7 @@ fn generated_private_bindings_preserve_authored_constants_and_input_values() {
     let direct = client.item(3).plan().expect("direct plan");
     assert_eq!(
         direct.observed_url(),
-        "https://hygiene.example.test/?root=17&input=3&retained=11"
+        "http://hygiene.example.test/?root=17&input=3&retained=11"
     );
 
     let direct = client.nested(5).item(9).plan().expect("nested plan");
@@ -148,7 +151,7 @@ fn generated_private_bindings_preserve_authored_constants_and_input_values() {
     let bound = client.request(unbound).plan().expect("bound plan");
     assert_eq!(
         direct.observed_url(),
-        "https://hygiene.example.test/?root=17&scopeInput=5&scopeRetained=11&input=9&retained=7"
+        "http://hygiene.example.test/?root=17&scopeInput=5&scopeRetained=11&input=9&retained=7"
     );
     assert_eq!(direct.observed_url(), bound.observed_url());
 
@@ -170,10 +173,12 @@ fn generated_private_bindings_preserve_authored_constants_and_input_values() {
             .plan()
             .unwrap()
             .observed_url(),
-        "https://hygiene.example.test/?root=17&scopeInput=5&scopeRetained=11"
+        "http://hygiene.example.test/?root=17&scopeInput=5&scopeRetained=11"
     );
 }
 
+// Credential placements require HTTPS even for a safe plan.
+#[cfg(feature = "default-tls")]
 #[test]
 fn credential_and_body_storage_use_private_bindings() {
     let client = CredentialBodyHygieneApi::builder()
@@ -211,7 +216,7 @@ fn pagination_bindings_preserve_controller_types_and_defaults() {
     let client = declarations::PaginationHygieneApi::new().unwrap();
     assert_eq!(
         client.list().plan().unwrap().observed_url(),
-        "https://hygiene.example.test/?offset=0&count=10"
+        "http://hygiene.example.test/?offset=0&count=10"
     );
     let _traversal = client.list().pages(1);
 }
