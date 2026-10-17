@@ -4,7 +4,7 @@ Review date: 2026-10-17 UTC. This is an AI technical reading of fourteen actual 
 
 ## Result and source identity
 
-The selected public contracts are readable and consistent on the subjects described below. One minor wording error was found in the `IntoValue` cancellation paragraph. The accompanying source change corrects that sentence; its new rendered output still requires a fresh receipt. No other Critical or Major content finding was identified within this selection. The wider navigation, representation-fence and semantic-diff tasks are limited as stated below.
+The selected public contracts are readable and consistent on the subjects described below. One minor wording error was found in the `IntoValue` cancellation paragraph. The accompanying source change corrects that sentence. A later native check on 57c9ec2 regenerated it successfully, as recorded separately below. No other Critical or Major content finding was identified within this selection. The wider navigation, representation-fence and semantic-diff tasks are limited as stated below.
 
 | Evidence | Identity |
 |---|---|
@@ -54,25 +54,63 @@ The receipts record `RUSTUP_TOOLCHAIN=1.97.1`, two Cargo build jobs, disabled in
 - Replacement Git blob: `a0ccefb77d25ccf26c9210c2152abe1a72c35f52`.
 - Exact old line:
 
-```rust
+```text
 ///   setter or constructor call, before any request exists.
 ```
 
 - Exact replacement line:
 
-```rust
+```text
 ///   setter or constructor call, before request execution.
 ```
 
 The substitution occurs exactly once. It changes only a documentation comment; signatures, implementations, tests and runtime behavior are unchanged. The rendered `IntoValue` SHA-256 in the index below intentionally identifies the pre-correction output where the issue was found.
 
-Before claiming the corrected sentence is rendered, the final integrated candidate must produce a successful native Rustdoc receipt and preserve the newly generated `IntoValue` HTML/text with its new SHA-256. That check must find `before request execution` and reject `before any request exists`. No such post-correction rendering is claimed here.
+The original fourteen-page review predates the correction. The later native check below finds `before request execution` and rejects `before any request exists` in newly generated HTML. The final integrated return repeats that command on its own source identity.
+
+## Subsequent native correction and Catalog cross-check
+
+[Final-return attempt 1](https://github.com/gqsnt/concord_api/actions/runs/38987720123/job/117262964823)
+ran on `57c9ec273464dfddee1d91052e86f37b939e4c0f`. Its native
+`env RUSTDOCFLAGS=-D warnings cargo doc --locked -p concord-core --all-features --no-deps`
+command exited 0. The command log SHA-256 is
+`37980a7419acea12613004f1b95b9ade0bc7f8f00319368e6423f720e9112127`.
+The generated IntoValue HTML SHA-256 is
+`545fac65362cc4138d76757db1160b678fb46bc91f968a5bb56d87084a0a239e`;
+its extracted text SHA-256 is
+`aa140caae35fb1ed5602ca14ad9afd74871d9254170e1923dc61e837027aa613`.
+The native receipt records the new sentence present and the old sentence
+absent. This is a regenerated-output check and receipt reading, not a new
+visual or browser-navigation review.
+
+All 24 native CLI controls in that attempt matched their expected results.
+The actual Catalog export (`concord.contract/3`, SHA-256
+`6565846a07e8490e44ca2989f4b54ffaf5db3e98dbdc76563e137ceb43e00b33`)
+was cross-read against its unchanged declaration, generated callers and the
+retained endpoint cards for `catalog.item.find` and `catalog.items.list`.
+The selected records agree on safe GET, explicit endpoint identities,
+20-second inherited client timeout, buffered Json, `Option<Item>` plus
+404 absence for find, and `Vec<ItemSummary>` plus OffsetPagination for list.
+They also agree on the bearer session replacing the bootstrap header,
+absence of automatic recovery for that source, tenant sensitivity and
+cost-one tenant quotas of 120/minute and 5,000/hour. The find export's
+`{endpoint.id}` and card's `{id}` refer to the same endpoint-owned route hole.
+The reduced JSON sample does not contain every owner value; the initial
+0/25 slots and complete setter matrix are corroborated by their declaration,
+HTML and maintained assertions, not by fields absent from that sample.
+
+That return still failed overall: 31 of 33 command expectations passed,
+with the envelope-test helper import and two review-report Rust fences failing.
+Its positive Rustdoc/CLI receipts do not imply a successful final assembly.
+Both delivery defects are corrected without changing the library or those
+CLI/UI blobs. The original failed artifact and its source-bound native logs
+are retained by the next final return.
 
 ## Coverage limits
 
 - The reader used text extracted from actual HTML with scripts and styles omitted. Links, anchors, search, keyboard navigation, visual layout, accessibility and browser rendering were not exercised. The inherited-trait boilerplate was not treated as the product contract.
-- Detailed request/response representation provenance, independence of the two inheritance directions, every explicit fence, and the complete affected-descendant set are not all spelled out in these fourteen pages. The public `contract()`/`description()` paths are visible, but this pass did not traverse every linked description type or read a newly exported contract to complete those tasks.
-- This pass executed no Catalog `export`, `check` or `diff` command. Current native CLI qualification belongs to its separate receipts; prior local command results are not promoted to the reviewed source.
+- Detailed request/response representation provenance, independence of the two inheritance directions, every explicit fence, and the complete affected-descendant set are not all spelled out in these fourteen pages. The public `contract()`/`description()` paths are visible, but the initial fourteen-page pass did not traverse every linked description type. The subsequent two-endpoint export cross-check above is deliberately bounded and does not claim every representation fence or affected-descendant case.
+- The initial fourteen-page pass executed no Catalog `export`, `check` or `diff` command. The subsequent real CLI checks have separate 57c9ec2 receipts; no prior local command result is promoted to that source.
 - The review checks explanatory content, not runtime security by reading documentation alone. Source-based and native behavioral qualifications remain separate evidence.
 - The reviewer is an AI agent familiar with the implementation. No human reviewer, timing, confidence questionnaire, independent first-contact session, or public-freeze usability result is invented. The optional human review remains unexecuted.
 - The three native receipts establish their exact commands and source. They do not by themselves establish a complete final package, every later source change, or a universal absence of defects.

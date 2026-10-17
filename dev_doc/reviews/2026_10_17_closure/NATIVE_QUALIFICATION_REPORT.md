@@ -65,6 +65,34 @@ or supplied twice. A second run without overwrite passed both negatives and
 the real current-language positive fixture with stable inputs. The final
 maintained harness contains those two entries; final CI must pass it normally.
 
+## Intermediate final-source results and corrected delivery tooling
+
+[CI #32](https://github.com/gqsnt/concord_api/actions/runs/38987720005)
+on 57c9ec273464dfddee1d91052e86f37b939e4c0f passed 1,625 default and
+1,704 all-feature tests with zero skipped. Its quality, stable UI and genuine
+MSRV jobs passed. Its documentation failure is preserved below; the overall
+run is not described as successful.
+
+[The first final-return attempt](https://github.com/gqsnt/concord_api/actions/runs/38987720123)
+on that same source completed 33 native commands: 31 matched their recorded
+expectations and two failed. All 24 actual CLI controls passed, including
+expected nonzero exits and unchanged sentinel outputs. Native Rustdoc also
+passed and rendered the corrected IntoValue sentence. The real Catalog export
+was cross-checked for catalog.item.find and catalog.items.list against their
+declarations, generated caller surface and endpoint cards. The reduced review
+sample does not include every owners[].values field; initial slot values and
+all setter behavior are supported separately by source, generated HTML and
+maintained assertions. These positive results do not change the aggregate
+failed conclusion, and that attempt emitted no FINAL_RETURN_COMPLETE.
+
+The delivery correction changes two report fences to text and imports the
+same directory-creating JSON writer used by the production envelope into its
+six existing tests. It adds no weaker assertion and changes no library,
+macro, example, CLI or UI-oracle input. The next return preserves CI #32 and
+the complete first failed-return artifact, verifies the latter's source and
+SHA-256, and exposes its actual Python stderr. Final receipt-bound checks run
+again on the corrected source; no successful rerun is anticipated here.
+
 ## Toolchain and environment
 
 The maintained stable pin is Rust 1.97.1; the minimum supported Rust is 1.86.0.
@@ -99,6 +127,8 @@ Actions runners provided the separately identified replacement evidence.
 | CI #27 / 4265c06 | Facade fixture corrected; isolated core expiry fixture still assumed a TLS provider, so the full gate failed |
 | CI #28 / 5b37722 | Both isolated fixture corrections present; native Windows full gate and analyzer pass |
 | Disconnected local 5b run | Unknown native exit, preserved as a separate incomplete attempt |
+| CI #32 / 57c9ec2 documentation | Two review-report quotations were fenced as normative Rust. docs-check rejected their missing compiled-source anchors. Only those fences change to text. |
+| First final return / 57c9ec2 | 31 of 33 native command expectations passed; Python envelope tests and release-audit failed. The latter reports the same two documentation fences. The tests imported a write_json helper that does not create parent directories instead of the production helper. All six test oracles are retained. The original failed artifact and its native stderr are preserved in the next return. |
 
 No assertion was widened to accept the old incorrect behavior. The EOF test
 requires exactly four polls and retains byte/media/length/completion assertions.

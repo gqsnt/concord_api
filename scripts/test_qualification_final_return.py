@@ -5,9 +5,9 @@ import unittest
 import zipfile
 
 from qualification_final_return import (
-    command_passes, package_manifest, product_path, safe_relative, verify_package, zip_package,
+    command_passes, package_manifest, product_path, safe_relative, verify_package, write_json,
+    zip_package,
 )
-from qualification_ci_logs import write_json
 
 
 class FinalReturnTests(unittest.TestCase):

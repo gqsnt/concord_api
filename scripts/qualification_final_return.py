@@ -28,6 +28,7 @@ QUALIFICATION_RUN = 38981477842
 ATTRIBUTION_RUN = 38983860434
 CAPTURE_RUN = 38985826352
 CAPTURE_SOURCE = "2bba4e3797ece2f8254efd84ef31640605b65ff8"
+PREVIOUS_RETURN_SOURCE = "57c9ec273464dfddee1d91052e86f37b939e4c0f"
 REPORTS = "dev_doc/reviews/2026_10_17_closure"
 HISTORY = [
     "dev_doc/history/CONCORD_V2_1_RELEASE_READINESS_REMEDIATION_PLAN.md",
@@ -205,6 +206,7 @@ def collect_recent_ci(args):
     for number, run_id, sha in [
         (30, 38983860517, TESTED),
         (31, 38985826266, CAPTURE_SOURCE),
+        (32, 38987720005, PREVIOUS_RETURN_SOURCE),
     ]:
         result = collect_run("CI", number, run_id, sha, destination, time.monotonic() + 120)
         records.append(result)
@@ -244,6 +246,42 @@ def bounded_member(archive, name, limit=64 * 1024 * 1024):
     if info.file_size > limit:
         raise RuntimeError("oversized selected artifact member")
     return archive.read(info)
+
+
+def collect_previous_return(args):
+    destination = args.package / "evidence/previous-return"
+    result = collect_run(
+        "V3 final source and evidence return", 1, 38987720123,
+        PREVIOUS_RETURN_SOURCE, destination, time.monotonic() + 120,
+    )
+    if (result["collection"] != "complete" or result["attempt"] != 1
+            or result["conclusion"] != "failure"):
+        raise RuntimeError("the previous final-return attempt changed")
+    artifacts = result["native_artifacts"]
+    if (len(artifacts) != 1 or artifacts[0]["id"] != 12083827906
+            or artifacts[0]["name"] != "v3-incomplete-return-evidence-38987720123-1"
+            or artifacts[0]["sha256"] != "7865ec172972a302b333e2c3e8b9b5a7dbb9f66ebce73620f05f48ddb5966ef0"):
+        raise RuntimeError("the preserved failed-return artifact changed")
+    archive_path = destination / safe_relative(artifacts[0]["file"])
+    member = "return/evidence/final/native/python-return-tests.log"
+    with zipfile.ZipFile(archive_path) as archive:
+        native_log = bounded_member(archive, member)
+    log_sha256 = hashlib.sha256(native_log).hexdigest()
+    if log_sha256 != "cdc1210a8eede76fcf79b1f199a9a2262678040e3f1a99992dec9c3e9472d0cc":
+        raise RuntimeError("the previous failed Python test log changed")
+    result["failed_python_log"] = {
+        "artifact_id": artifacts[0]["id"], "member": member,
+        "sha256": log_sha256, "bytes": len(native_log),
+        "native_text": native_log.decode("utf-8"),
+    }
+    result["retention"] = (
+        "The original failed return artifact is retained in full, including its "
+        "native failed command receipts. Duplicated upstream evidence is intentional. "
+        "This failed attempt is not relabeled as a successful return."
+    )
+    write_json(destination / "index.json", result)
+    print("PREVIOUS_RETURN_PYTHON_TEST_LOG " + json.dumps(result["failed_python_log"], sort_keys=True), flush=True)
+    return result
 
 
 def collect_artifacts(args):
@@ -489,6 +527,7 @@ def main():
     if git(args.source, "rev-parse", "main").strip() != MAIN:
         raise RuntimeError("local main differs from the preserved main")
     write_json(args.package / "evidence/final/environment.json", environment(args.source))
+    previous_return = collect_previous_return(args)
     artifacts = collect_artifacts(args)
     equivalence = [
         input_equivalence(args.source, MEASURED, head, lambda p: product_path(p) and p != DOC_ONLY_PATH),
@@ -562,7 +601,8 @@ def main():
         "remote_branch_observed": current_branch, "remote_main_observed": current_main,
         "runtime_measurement_source": MEASURED, "strengthened_oracle_source": TESTED,
         "product_equivalence": equivalence, "reviewed_edits": reviewed_edits,
-        "history": history, "ci": ci, "recent_ci": recent_ci, "corrected_rustdoc": rustdoc,
+        "history": history, "ci": ci, "recent_ci": recent_ci, "previous_return": previous_return,
+        "corrected_rustdoc": rustdoc,
         "artifacts": [{"id": item["artifact"]["id"], "name": item["artifact"]["name"],
                        "sha256": item["download"]["sha256"], "path": item["path"]} for item in artifacts],
         "product_scope": "V3 only; no migration, older contract format or shared-state import compatibility",
