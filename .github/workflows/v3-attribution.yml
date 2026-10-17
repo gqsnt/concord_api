@@ -1,13 +1,6 @@
 name: V3 performance attribution and CI archive
 
 on:
-  push:
-    branches: [concord-v3]
-    paths:
-      - .github/workflows/v3-attribution.yml
-      - scripts/qualification_attribution.py
-      - scripts/qualification_ci_logs.py
-      - scripts/test_qualification_attribution.py
   workflow_dispatch:
 
 permissions:

@@ -34,6 +34,14 @@ class AttributionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_passes("time: 0.500; rss: 120MB; total")
 
+    def test_native_rustc_tab_separates_rss_from_phase(self):
+        line = "time:   5.727; rss:  750MB ->  987MB ( +237MB)\ttype_check_crate"
+        total = "time:  15.367; rss:   71MB ->  155MB (  +84MB)\ttotal"
+        value = parse_passes(line + "\n" + total)
+        self.assertEqual([row["phase"] for row in value], ["type_check_crate", "total"])
+        self.assertEqual([row["seconds"] for row in value], [5.727, 15.367])
+        self.assertEqual(value[0]["native_line"], line)
+
     def test_patch_requires_exactly_one_source_anchor(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "input.rs"

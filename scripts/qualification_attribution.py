@@ -208,9 +208,12 @@ def parse_layouts(output):
 def parse_passes(output):
     values = []
     for line in output.splitlines():
-        match = re.match(r"time:\s*([0-9.]+);", line)
+        match = re.fullmatch(
+            r"time:\s*([0-9]+(?:\.[0-9]+)?);\s*(?:rss:.*?(?:;|\t)\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*",
+            line,
+        )
         if match:
-            values.append({"phase": line.rsplit(";", 1)[-1].strip(),
+            values.append({"phase": match[2],
                            "seconds": float(match[1]), "native_line": line})
     if not values or not any("type" in row["phase"] or "borrow" in row["phase"] for row in values):
         raise ValueError("rustc did not emit recognizable front-end timing evidence")
