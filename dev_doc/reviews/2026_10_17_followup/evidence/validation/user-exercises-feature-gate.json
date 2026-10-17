@@ -1,0 +1,36 @@
+{
+  "label": "user-exercises-feature-gate",
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "concord",
+    "--test",
+    "v3_user_exercises",
+    "--no-default-features",
+    "--features",
+    "json,ndjson",
+    "--locked",
+    "--offline"
+  ],
+  "cwd": "/workspace/scratch/69ac10347cac/concord-v3-review",
+  "started_at": "2026-10-17T12:09:14.707771+00:00",
+  "finished_at": "2026-10-17T12:09:17.124421+00:00",
+  "elapsed_seconds": 2.399,
+  "exit_code": 0,
+  "source_before": {
+    "head": "ed5ac62d344ffbf68cd71447f1d86e68e5704b1e",
+    "status": " M .github/workflows/ci.yml\n M crates/concord/tests/v3_user_exercises.rs\n",
+    "tracked_diff_sha256": "6a6dab54099cf69129cbb61c53e62fe7f4ac56533f843d1835161574c0a8bc39",
+    "untracked_files_sha256": {}
+  },
+  "source_after": {
+    "head": "ed5ac62d344ffbf68cd71447f1d86e68e5704b1e",
+    "status": " M .github/workflows/ci.yml\n M crates/concord/tests/v3_user_exercises.rs\n",
+    "tracked_diff_sha256": "6a6dab54099cf69129cbb61c53e62fe7f4ac56533f843d1835161574c0a8bc39",
+    "untracked_files_sha256": {}
+  },
+  "log": "/workspace/scratch/69ac10347cac/v3-followup/native/user-exercises-feature-gate.log",
+  "log_bytes": 1324,
+  "log_sha256": "9b89e0a9c2f6fea3da40b56261e51a9e2ed0b76f3f56acc9062361570203fee8"
+}

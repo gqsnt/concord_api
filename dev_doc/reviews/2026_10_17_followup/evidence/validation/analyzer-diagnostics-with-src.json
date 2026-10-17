@@ -1,0 +1,31 @@
+{
+  "label": "analyzer-diagnostics-with-src",
+  "command": [
+    "env",
+    "CARGO_TARGET_DIR=/workspace/scratch/69ac10347cac/v3-followup/target-analyzer",
+    "CARGO_NET_OFFLINE=true",
+    "rust-analyzer",
+    "diagnostics",
+    "."
+  ],
+  "cwd": "/workspace/scratch/69ac10347cac/concord-v3-review",
+  "started_at": "2026-10-17T12:07:29.870116+00:00",
+  "finished_at": "2026-10-17T12:08:26.688374+00:00",
+  "elapsed_seconds": 56.803,
+  "exit_code": 1,
+  "source_before": {
+    "head": "ed5ac62d344ffbf68cd71447f1d86e68e5704b1e",
+    "status": "",
+    "tracked_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked_files_sha256": {}
+  },
+  "source_after": {
+    "head": "ed5ac62d344ffbf68cd71447f1d86e68e5704b1e",
+    "status": "",
+    "tracked_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked_files_sha256": {}
+  },
+  "log": "/workspace/scratch/69ac10347cac/v3-followup/native/analyzer-diagnostics-with-src.log",
+  "log_bytes": 554873,
+  "log_sha256": "4b4b69bfed670a847cc3720f999614f02b6c98f3a7b50ea1fb19e03e6e399e46"
+}

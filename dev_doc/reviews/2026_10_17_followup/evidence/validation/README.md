@@ -36,3 +36,12 @@ CSV and inspector old-code failure controls and corrected native runs are
 retained in the [runtime evidence](../runtime/README.md). The separate
 [Rustdoc evidence](../rustdoc/index.json) retains the original and corrected
 semantic diff and the independent reread of generated public pages.
+
+The subsequent [analyzer integration record](analyzer_feature_gate.json)
+retains the actual complete-toolchain reproduction of the new test target's
+unavailable `NdJson` import, a successful full diagnostic scan after matching
+its source gate to Cargo's required features, and a second successful
+eight-test run. A preliminary local run without `rust-src` is explicitly
+excluded from product evidence. The raw analyzer logs contain terminal
+progress output; their hashes and exact hard diagnostics are recorded, while
+the original receipts and the eight-test log are retained beside this index.

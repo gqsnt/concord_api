@@ -1,0 +1,47 @@
+{
+  "format": "concord.analyzer-feature-gate-evidence/1",
+  "initial_source": "ed5ac62d344ffbf68cd71447f1d86e68e5704b1e",
+  "scope": "Actual local reproduction with rust-src installed, then source-level feature-gate correction. Full analyzer logs stay in the native workspace; original raw receipts and exact hard-diagnostic text are retained here.",
+  "excluded_setup_attempt": {
+    "label": "analyzer-diagnostics",
+    "reason": "rust-src missing; cascading missing-standard-library errors are not product evidence."
+  },
+  "runs": [
+    {
+      "label": "analyzer-diagnostics-with-src",
+      "receipt": "analyzer-diagnostics-with-src.json",
+      "receipt_sha256": "ddc7e1c5781c1cdb2133becdaf0f771f51768affb33a691bfca3f0819647707f",
+      "exit_code": 1,
+      "log_bytes": 554873,
+      "log_sha256": "4b4b69bfed670a847cc3720f999614f02b6c98f3a7b50ea1fb19e03e6e399e46",
+      "elapsed_seconds": 56.803,
+      "diagnostic_scan_complete": true,
+      "hard_diagnostics": [
+        "at crate v3_user_exercises, file /workspace/scratch/69ac10347cac/concord-v3-review/crates/concord/tests/v3_user_exercises.rs: Error RustcHardError(\"E0432\") from LineCol { line: 16, col: 4 } to LineCol { line: 16, col: 28 }: unresolved import"
+      ]
+    },
+    {
+      "label": "analyzer-diagnostics-fixed",
+      "receipt": "analyzer-diagnostics-fixed.json",
+      "receipt_sha256": "0f7a0f098f01530d7e573da82cbc9d26f9e49250933d5134663fabcb28a3db6f",
+      "exit_code": 0,
+      "log_bytes": 551934,
+      "log_sha256": "35cab92e0e0d055acc77f7dd109d9b88ea63e2580855ed9efd7f417297a8c10a",
+      "elapsed_seconds": 52.916,
+      "diagnostic_scan_complete": true,
+      "hard_diagnostics": []
+    },
+    {
+      "label": "user-exercises-feature-gate",
+      "receipt": "user-exercises-feature-gate.json",
+      "receipt_sha256": "c1ee7f773a61f753d12840b8158848638db1bbecb9e638e54cabd61592fd79cb",
+      "exit_code": 0,
+      "log_bytes": 1324,
+      "log_sha256": "9b89e0a9c2f6fea3da40b56261e51a9e2ed0b76f3f56acc9062361570203fee8",
+      "elapsed_seconds": 2.399,
+      "diagnostic_scan_complete": false,
+      "hard_diagnostics": [],
+      "log": "user-exercises-feature-gate.log"
+    }
+  ]
+}

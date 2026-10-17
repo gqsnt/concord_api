@@ -202,7 +202,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
           toolchain: ${{ env.RUST_STABLE }}
-          components: rust-analyzer
+          components: rust-src,rust-analyzer
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           key: ${{ runner.os }}-${{ env.RUST_STABLE }}-${{ hashFiles('**/Cargo.lock') }}-analyzer

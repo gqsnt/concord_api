@@ -17,6 +17,7 @@ V3 remains the only supported product version.
 | Generated Rustdoc | Endpoint method and request cards expose the request-body representation and its origin independently of the response representation and its origin. They identify inherited client/scope choices and endpoint-local `via` selections directly. |
 | Observation documentation | Automatic events carry value-free structural target counts and typed response facts, not header maps. The event list includes `ProviderAcquisitionFinished`. `SanitizedHeaderMap` no longer promises that every unmarked public value is safe to log. |
 | Exercise reproducibility | Concrete maintained declarations, diagnostics and isolated source edits accompany the task sheets. The results retain initial wrong predictions, corrections and actual native checks. |
+| Analyzer integration | The new exercise target now declares its `json,ndjson` condition in source as well as its Cargo target. Rust Analyzer's default-feature scan no longer tries to import an unavailable `NdJson`; all eight exercises still execute with their required features. The Linux analyzer job explicitly installs `rust-src`, consistent with the toolchain file and Windows setup. |
 
 ## Requested exercises
 
@@ -63,6 +64,18 @@ Observed focused results before the final integration check:
 | Generated documentation | Warning-denied workspace Rustdoc generates successfully; endpoint-card audits pass. The changed core and facade pages were separately refreshed; all five targeted independent documentation reread checks pass. |
 | Endpoint effect exercise | A compiled Catalog edit changes `catalog.item.update` from idempotent to non-idempotent. The native diff identifies exactly that endpoint, `effect.value` and `RuntimePolicy`, with no unresolved change. |
 | Integrated local quality | All-target, all-feature workspace Clippy with warnings denied, repository policy, formatting and the compiled-documentation check pass. |
+
+The first pushed follow-up, `ed5ac62`, passed native CI suites of 1,629 default
+and 1,721 all-feature tests, the explicit Rust 1.86 checks, documentation,
+packaged downstream consumers, and all four cargo-deny categories. Its Linux
+Rust Analyzer diagnostics job failed in [CI #35](https://github.com/gqsnt/concord_api/actions/runs/39030889270).
+Local reproduction with the complete toolchain isolated one unresolved
+`NdJson` import in the new feature-dependent exercise target. Mirroring the
+target's required features in its source removes that diagnostic; the full
+native analyzer scan then succeeds and all eight exercises execute again.
+The [before/after record](evidence/validation/analyzer_feature_gate.json)
+retains original receipts, log hashes and the exact diagnostic. CI #35 is not
+relabeled as a fully successful run; the corrected commit has its own CI.
 
 This review does not rerun or transfer the earlier performance campaign to
 modified code. The older measurement reports keep their original source scope;

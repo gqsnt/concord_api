@@ -5,6 +5,8 @@
 //! complete traversal/consumption. They use only public facade contracts and
 //! the ordinary loopback server; no generated/private executor hooks are used.
 
+#![cfg(all(feature = "json", feature = "ndjson"))]
+
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
