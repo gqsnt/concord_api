@@ -51,7 +51,7 @@ mod conversion_seal {
 /// * **Concurrency.** The conversion is a pure function of its argument with
 ///   no shared state.
 /// * **Cancellation.** The conversion is synchronous and runs inside the
-///   setter or constructor call, before any request exists.
+///   setter or constructor call, before request execution.
 /// * **Input sensitivity.** Values may be sensitive; the conversion neither
 ///   formats nor retains them.
 /// * **Errors.** The conversion cannot fail; rejected conversions are compile

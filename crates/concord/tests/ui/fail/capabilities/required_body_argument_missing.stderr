@@ -1,0 +1,15 @@
+error[E0061]: this method takes 1 argument but 0 arguments were supplied
+  --> tests/ui/fail/capabilities/required_body_argument_missing.rs:13:20
+   |
+13 |     let _ = client.upload();
+   |                    ^^^^^^-- argument #1 of type `std::string::String` is missing
+   |
+note: method defined here
+  --> tests/ui/fail/capabilities/required_body_argument_missing.rs:7:14
+   |
+ 7 |         POST upload(body payload: String via Text) -> String via Text;
+   |              ^^^^^^      ---------------
+help: provide the argument
+   |
+13 |     let _ = client.upload(/* std::string::String */);
+   |                           +++++++++++++++++++++++++

@@ -1,0 +1,16 @@
+error[E0061]: this method takes 1 argument but 2 arguments were supplied
+  --> tests/ui/fail/capabilities/required_body_argument_extra.rs:13:20
+   |
+13 |     let _ = client.upload(String::from("payload"), String::from("extra"));
+   |                    ^^^^^^                          --------------------- unexpected argument #2 of type `std::string::String`
+   |
+note: method defined here
+  --> tests/ui/fail/capabilities/required_body_argument_extra.rs:7:14
+   |
+ 7 |         POST upload(body payload: String via Text) -> String via Text;
+   |              ^^^^^^
+help: remove the extra argument
+   |
+13 -     let _ = client.upload(String::from("payload"), String::from("extra"));
+13 +     let _ = client.upload(String::from("payload"));
+   |

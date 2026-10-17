@@ -1,6 +1,6 @@
 # V3 finalization decisions
 
-These decisions resolve the current implementation choices. The
+**Updated:** 17 October 2026. These decisions resolve the current implementation choices. The
 [release-gate status](release_gate_status.md) records actual qualification;
 [owner decisions](owner_release_decisions.md) delimit later release actions.
 
@@ -18,9 +18,22 @@ These decisions resolve the current implementation choices. The
 | Rate state | Explicit ID, ordered labels and encoding schema; atomic all-or-none admission | Current V3 oracles and fail-closed schema registration |
 | Runtime limits | Preserve selected finite defaults; no workload-independent retuning | [Runtime documentation](../docs/runtime.md) and limit/config tests |
 | Empty chunks | 1,024 total for request/buffered/status/provider acquisition; 1,024 consecutive for acquired streams; 32 per poll | The distinct lifecycle bounds are intentional; the general defaults table must not erase that distinction |
-| Performance | Measure the corrected V3 against the previous V3 source on the same host/toolchain | Structural savings alone do not imply latency or workload acceptance |
+| Performance | Retain the corrected V3 implementation with measured costs and bounded attribution recorded | Paired runtime/scale and runtime/compiler attribution completed on the recorded inputs; the [performance report](reviews/2026_10_17_closure/PERFORMANCE_REPORT.md) preserves remaining historical costs and avoids per-feature timing claims |
+| Generated implementation cost | Reuse each owner's resolved inspection program, omit private helpers when there are no value/body controls, and remove the redundant response future layer | The public V3 surface and provenance/sensitivity semantics remain covered by their maintained tests; structural and measured effects are reported separately |
+| Machine qualification | Accept completed gates only for their exact source inputs | Linux and Windows complete implementation/analyzer gates passed on `579e8ea`; the final delivery's CLI/UI/docs and source-export receipt remain separate checks |
+| Evidence delivery | Preserve original native failures, successful runs and source identities | The final-return artifact owns `FINAL_RETURN_RECEIPT.json`; private authority material is kept outside the public archive |
 | Human review | V3 task packets ready; no invented participants or independent-human result | Unknown for public freeze; not a machine-beta blocker |
 | Version | `3.0.0-beta.1`, unpublished | Later merge/tag/publication decisions remain separate |
 
 The former V2 worksheet is retained in Git history. It does not add an active
 alias, converter, deferred V2 feature or separate execution path to V3.
+
+## Completion and release boundary
+
+Engineering qualification of an unpublished beta is a machine-evidence decision.
+It does not choose a public license, secure registry names, merge into main,
+perform a human study, freeze the public API or authorize stable publication.
+C63/C64 in the [claim ledger](claim_evidence_ledger.md) remain **Unknown**.
+The current license-policy failure is preserved and is outside this correction's
+scope. The final source update is authorized; later release actions remain with
+the owner as recorded in [the release packet](owner_release_decisions.md).

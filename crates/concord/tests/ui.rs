@@ -37,6 +37,8 @@ fn current_language_surface_and_diagnostics() {
     cases.compile_fail("tests/ui/fail/privacy/*.rs");
     for path in [
         "tests/ui/fail/capabilities/absent_value_controls.rs",
+        "tests/ui/fail/capabilities/required_body_argument_missing.rs",
+        "tests/ui/fail/capabilities/required_body_argument_extra.rs",
         "tests/ui/fail/capabilities/accepted_bytes_requires_expose.rs",
         "tests/ui/fail/capabilities/value_conversions_closed.rs",
         // VALUE-04: the conversion set is sealed against user registration.

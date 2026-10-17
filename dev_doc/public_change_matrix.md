@@ -1,6 +1,6 @@
 # V3 public contract inventory
 
-**Status:** current `3.0.0-beta.1` surface, updated 16 October 2026.
+**Status:** current `3.0.0-beta.1` surface, updated 17 October 2026.
 The workspace supports V3 only. [Version policy](../docs/version_policy.md)
 and [ADR 0027](adrs/0027-v3-only-product.md) define that boundary.
 The facade source and maintained public-API/generated-surface tests are the
@@ -28,13 +28,13 @@ executable inventory; this page summarizes the entry points and caller laws.
 
 | Surface | Contract |
 |---|---|
-| Required constructor inputs | Exact authored payload type in declaration order; no synthesized setter |
+| Required constructor inputs | Exact authored payload type in declaration order, including required bodies; no synthesized setter |
 | `set_x` | Select a payload through `IntoValue<T>` |
 | `replace_x(Option<T>)` | Replace the complete optional slot; `None` means absence |
 | `set_x_if_some(Option<T>)` | `None` keeps the existing selection |
 | `omit_x` / `reset_x` | Explicit omission / restoration of the retained initialized value, where the value shape supports it |
 | `IntoValue<T>` | Closed conversions: identity, `&str` to `String`, and `&String` to `String` |
-| Clone | Body-free requests and intents are cloneable; body-bearing ones require a fresh request/factory |
+| Clone | Body-free requests and intents are cloneable without requiring a cloneable response; body-bearing ones require a fresh request/factory |
 | `RequestControls` | Common call options, cancellation and control summaries on named requests and terminal wrappers |
 | Timeout controls | Caller selection remains under the operation's existing finite caps |
 | `.await` | One complete declared response/page or an acquired managed stream, according to the representation |
@@ -44,6 +44,8 @@ executable inventory; this page summarizes the entry points and caller laws.
 | `.response()` / `.accepted_bytes()` | Response metadata / explicit byte acquisition where the endpoint grants that capability |
 | `.store_as_x()` | Explicit installation request returning `Installed` or `Superseded` under the latest-started intent protocol |
 | `Client::contract()` / `.description()` | Static symbolic facts without executing payload defaults, body code, providers or transport |
+| Generated names | Deterministic canonical conversion; collisions include a scope's own handle type and report both origins through `C3-GENERATED` |
+| Generator bindings | Private generated bindings use the reserved `__concord` namespace; ordinary authored identifiers and constants keep their Rust meaning |
 
 ## Runtime endpoints
 
@@ -71,6 +73,17 @@ executable inventory; this page summarizes the entry points and caller laws.
 | `CredentialProvider` | Exact declared HTTP origins; acquisition deadline and cancellation cover callbacks and local installation |
 | `OperationObserver` | Bounded, borrowed, sanitized facts; no operation mutation or veto |
 
+## Contract tooling
+
+The canonical example target `catalog` uses the maintained
+`catalog_v3::CatalogApi` declaration. The complete registry contains
+`fixture-catalog` and, with the `examples` feature, `catalog`, `riot` and
+`data-dragon`. `contract list`, `export`, `check` and `diff` operate on the
+current `concord.contract/3` schema. The former
+`catalog-v3` CLI alias, older contract schemas and V2 conversion command are
+outside the supported surface. The source module name `catalog_v3` is the
+canonical V3 example name.
+
 ## Maintained inventory
 
 - `crates/concord/tests/public_api/` checks facade namespaces and public imports.
@@ -79,9 +92,21 @@ executable inventory; this page summarizes the entry points and caller laws.
 - `crates/concord-macros/src/generated_surface.rs` checks the pure V3 generated
   member snapshot in `crates/concord-macros/tests/fixtures/generated_surface/`.
 - `tests/downstream/` checks authored API and consumer code in separate crates.
-- Facade/core UI suites verify language boundaries and public trait obligations.
+- Facade/core UI suites verify language boundaries and public trait obligations,
+  including required body argument arity, request clone restrictions and foreign
+  `RequestControls` implementations.
+- `crates/concord-inspect/tests/generated_contract.rs` checks semantic contract
+  edits, including affected endpoint sets, inherited provenance and sensitivity.
+- `tools/xtask/tests/contract_cli.rs` checks the registered targets, contract
+  round trips and command-specific option validation.
 - [Generated-client documentation](../docs/generated_client.md) and
   [request/value controls](../docs/requests_and_values.md) explain ordinary use.
+
+The closure changes preserve this V3 caller surface. Removing unused private
+`__with` helpers, reusing one resolved inspection program per owner and removing
+a redundant response future layer are internal changes; their measured scope
+belongs to the [performance report](reviews/2026_10_17_closure/PERFORMANCE_REPORT.md). [Release-gate status](release_gate_status.md)
+binds qualification to its exact source receipts.
 
 Earlier transition inventories remain available in Git history. They do not
 add a supported version or a conversion path to the current product.

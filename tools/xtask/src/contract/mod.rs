@@ -79,6 +79,12 @@ fn parse(arguments: &[String]) -> Result<Command, String> {
             path => positional.push(path.to_owned()),
         }
     }
+    if matches!(subcommand.as_str(), "export" | "check") && format.is_some() {
+        return Err(usage());
+    }
+    if subcommand == "diff" && (output.is_some() || snapshot.is_some()) {
+        return Err(usage());
+    }
     let format = match format.as_deref() {
         None | Some("text") => Format::Text,
         Some("json") => Format::Json,
@@ -243,6 +249,19 @@ mod tests {
                 format: Format::Json,
             })
         );
+        for input in [
+            &["diff", "a.json", "b.json"][..],
+            &["diff", "a.json", "b.json", "--format", "text"],
+        ] {
+            assert_eq!(
+                parse(&arguments(input)),
+                Ok(Command::Diff {
+                    before: PathBuf::from("a.json"),
+                    after: PathBuf::from("b.json"),
+                    format: Format::Text,
+                })
+            );
+        }
         assert_eq!(parse(&arguments(&["list"])), Ok(Command::List));
         for invalid in [
             &["export", "--target", "t"][..],

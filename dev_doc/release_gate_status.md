@@ -2,48 +2,71 @@
 
 <!-- concord-release-status-owner -->
 
-- **Canonical lifecycle status:** Concord V3 integration candidate / beta; unpublished source branch;
-  corrective source implemented, final integrated qualification in progress.
+- **Canonical lifecycle status:** Concord V3 integration candidate / beta; unpublished source branch.
+  The corrected implementation has completed the source-bound Linux and Windows
+  machine gates below. Final delivery qualification remains tied to its own receipt.
 - **Publication:** disabled — the source beta is unpublished.
 - **Workspace version:** `3.0.0-beta.1`; every workspace package has `publish = false`.
-- **Recorded:** 2026-10-16. Correction baseline
-  `ae6006184f3dc903fdfe66c572098ac810e2c6c5` (owner-pushed documentation update).
+- **Recorded:** 2026-10-17, using public source
+  `2bba4e3797ece2f8254efd84ef31640605b65ff8` and the exact earlier qualification inputs below.
+  A later delivery commit must be identified by its generated final receipt.
 - **Supported platforms:** Windows and Linux are supported and mandatory.
   macOS is not currently a supported or release-gated platform.
 - **Version scope:** V3 only, selected by the owner;
   [ADR 0027](adrs/0027-v3-only-product.md) retires conversion and older-binary obligations.
 
 This is the sole authoritative lifecycle record. The
-[correction report](reviews/2026_10_16_corrections.md) records current changes,
-commands and evidence limits. Earlier dated records retain their original
-source scope.
+[final report](reviews/2026_10_17_closure/CONCORD_V3_FINAL_REPORT.md),
+[native qualification report](reviews/2026_10_17_closure/NATIVE_QUALIFICATION_REPORT.md) and
+[performance report](reviews/2026_10_17_closure/PERFORMANCE_REPORT.md) explain the completed
+work and its evidence boundaries. The [16 October correction report](reviews/2026_10_16_corrections.md)
+and earlier dated records retain their original source scope.
 
 ## Current correction candidate
 
-The seven retained code findings have direct corrections. V3R-01 is closed by
-removing the unsupported converter. Provider/body/native length regressions,
-macro collisions and caller-identifier controls have targeted passing evidence.
-The private Edition 1 specification and closure prompt were inspected with the
-owner's authorization; their authority was reconciled with the later V3-only
-instruction. This resolves the former missing-input uncertainty.
+The seven retained code findings have direct corrections and discriminating
+native regression evidence. V3R-01 is closed by retiring the unsupported
+converter, not by certifying a conversion algorithm. The current product has
+one V3 grammar, runtime and state schema; its former transition tests and
+compatibility paths are not part of the supported surface. See the
+[V3-only report](reviews/2026_10_17_closure/V3_ONLY_REPORT.md).
 
 | Gate | Current source-bound state |
 |---|---|
-| Targeted regressions | Passed on the recorded correction inputs; see correction report |
-| Final Linux maintained implementation gate | In progress; no exact-candidate PASS inferred from earlier runs |
-| Final Windows maintained implementation gate | Pending execution of the new complete qualification job |
-| Performance V3-O07 | Measurement and attribution in progress |
-| Source/acceptance receipt V3-O08 | Pending final commit, qualification and export |
-| Human study and independent human Rustdoc review | Unknown; V3 protocols prepared, separate from the machine-beta gate |
+| Targeted corrections and integrated runtime tests | Passed on the recorded correction inputs; historical failed attempts and their repairs remain in the native report |
+| Linux maintained implementation gate and analyzer | **Pass** on `579e8eac9a436a57ebc5ea3fcc2e7da3cf330c31`, [qualification run 38981477842](https://github.com/gqsnt/concord_api/actions/runs/38981477842/job/117243098047); full gate finished 16 October at 23:48:11 UTC, analyzer at 23:49:52 UTC, followed by source/lifecycle audit and artifact upload |
+| Windows maintained implementation gate and analyzer | **Pass** on the same `579e8ea` source, [CI #29 job](https://github.com/gqsnt/concord_api/actions/runs/38981477798/job/117243098210); full gate finished 17 October at 00:23:52 UTC, analyzer at 00:27:33 UTC, job at 00:29:48 UTC |
+| Earlier complete Windows control | **Pass** on `5b3772236d7c1b71f86ebeba35f7d33a30cf3b64`, [CI #28 job](https://github.com/gqsnt/concord_api/actions/runs/38978327078/job/117233004279); a separate source-bound result |
+| Performance V3-O07 | Paired runtime/scale campaign and bounded runtime/compiler attribution completed; retained costs and interpretation are in the [performance report](reviews/2026_10_17_closure/PERFORMANCE_REPORT.md) |
+| Source/evidence return | Native qualification and historical CI archives are retained; the final public source export, integrated checks and archive integrity require the delivery commit's receipt. The private acceptance annex is delivered separately; completion of one combined archive containing it is not claimed. |
+| Human study and independent human Rustdoc review | **Unknown**; V3 protocols and implementer review are separate from participant or independent-human results |
 | Main integration / stable publication | Separate owner actions; not performed by this correction |
-| Dependency license policy | Historical POL-01 remains separately reported; license work is outside this correction |
+| Dependency license policy | POL-01 remains separately reported; license work is outside this correction |
 
-The original matrix has 81 IDs. O04 is **retired by owner direction**, leaving
-80 applicable obligations; R01/R02/R06/R13 retain their current V3 identity,
-schema, sharing and admission requirements. A passing converter is not claimed.
+The complete `579e8ea` qualification includes the maintained feature, isolated
+package, compiler, fixture, documentation, downstream/package and source-export
+checks. Its ordinary [CI #29](https://github.com/gqsnt/concord_api/actions/runs/38981477798)
+is nevertheless **failure**: nine jobs succeeded and the all-features dependency
+license-policy job failed. A green implementation gate does not turn that
+workflow into a green CI result.
+
+Later changes strengthen the inspection mutation assertions, capture two required
+body-arity diagnostics, reject ignored contract-CLI options and complete public
+documentation. Their final integration must be checked on its own source. The
+[final-return workflow](../.github/workflows/v3-final-return.yml) generates
+`FINAL_RETURN_RECEIPT.json` in its artifact; this document does not assert that a
+future run has passed. The receipt, source archive and final run identify the
+delivered commit and its exact checks.
+
+The earlier R7 statement that Edition 1 was not supplied describes that
+commission. Later authorized authority review resolved the missing-input
+uncertainty for this correction; it does not erase the earlier limit or imply
+that private source material belongs in a public archive. The public package
+contains repository evidence; the separate private authority annex is not
+published here.
 
 **Beta integration decision:** ordinary `concord-v3` source update authorized; main integration remains a separate owner action.
-**Stable publication decision:** Blocked pending separate owner release decisions.
+**Stable publication decision:** **Blocked — owner authority required** for the separate release decisions below.
 
 ## Historical R8 integration state
 
@@ -117,8 +140,9 @@ completion boundary to the shared stream precheck contract.
 `just release-audit` runs docs checks, requires the preserved local main merge
 base, a clean worktree, placeholder/clock/authority scans and the exact unpublished
 beta lifecycle. `just source-export` archives and audits an exact clean commit.
-Final documentation and exact-commit closure results are in the delivered terminal
-receipt; full implementation qualification belongs to the candidate above.
+Final documentation and exact-commit closure results must be read from the generated
+final-return receipt for that delivery; full implementation qualification belongs
+to the source-bound candidate above.
 
 ## Stable-publication gates
 

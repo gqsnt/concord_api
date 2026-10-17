@@ -148,6 +148,86 @@ fn export_check_and_diff_round_trip_through_the_binary() {
 }
 
 #[test]
+fn unused_subcommand_options_are_rejected_before_execution() {
+    let snapshot = scratch("unused-options.contract.json");
+    let path = snapshot.to_str().expect("utf-8 path");
+    let export = xtask(&[
+        "contract",
+        "export",
+        "--target",
+        "fixture-catalog",
+        "--output",
+        path,
+    ]);
+    assert!(export.status.success(), "{}", text(&export.stderr));
+    let original = fs::read(&snapshot).expect("snapshot");
+
+    let output = scratch("unused-options-output.txt");
+    let output_path = output.to_str().expect("utf-8 path");
+    let sentinel = b"an invalid command must not replace this file";
+    fs::write(&output, sentinel).expect("sentinel output");
+
+    for format in ["text", "json"] {
+        for command in [
+            vec![
+                "contract",
+                "export",
+                "--target",
+                "fixture-catalog",
+                "--output",
+                output_path,
+                "--format",
+                format,
+            ],
+            vec![
+                "contract",
+                "check",
+                "--target",
+                "fixture-catalog",
+                "--snapshot",
+                path,
+                "--format",
+                format,
+            ],
+        ] {
+            let result = xtask(&command);
+            assert_eq!(
+                result.status.code(),
+                Some(2),
+                "{command:?}: {}",
+                text(&result.stderr)
+            );
+            assert!(text(&result.stderr).contains("usage:"), "{command:?}");
+            assert_eq!(
+                fs::read(&output).expect("sentinel output").as_slice(),
+                sentinel
+            );
+            assert_eq!(fs::read(&snapshot).expect("snapshot"), original);
+        }
+    }
+
+    for option in ["--output", "--snapshot"] {
+        let result = xtask(&["contract", "diff", path, path, option, output_path]);
+        assert_eq!(
+            result.status.code(),
+            Some(2),
+            "{option}: {}",
+            text(&result.stderr)
+        );
+        assert!(text(&result.stderr).contains("usage:"), "{option}");
+        assert_eq!(
+            fs::read(&output).expect("sentinel output").as_slice(),
+            sentinel
+        );
+        assert_eq!(fs::read(&snapshot).expect("snapshot"), original);
+    }
+
+    let plain = xtask(&["contract", "diff", path, path]);
+    assert!(plain.status.success(), "{}", text(&plain.stderr));
+    assert!(text(&plain.stdout).contains("verdict structurally-equal"));
+}
+
+#[test]
 fn unknown_targets_and_invalid_snapshots_exit_with_usage_status() {
     let unknown = xtask(&[
         "contract",

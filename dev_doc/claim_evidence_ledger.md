@@ -130,7 +130,7 @@ historical source meaning.
 |---|---|---|---|---|---|
 | C76 | The reviewed source passes native Linux all-feature Cargo tests and structural docs/policy/release checks | Observed | External review packet: 1,977 passes; exact-source logs and clean source receipt | A maintained failure on those exact inputs | Source-specific machine evidence |
 | C77 | Exact-source CI retains the all-feature dependency-license rejection | Observed | Run 38317897762: eight jobs successful, one failed; POL-01 for three Brotli-related BSD-3-Clause dependencies | A later approved policy/result on a qualified candidate | Owner policy decision |
-| C78 | V3 technical closure and stable publication are accepted | Unknown | Eight open code findings, two documentation corrections, current evidence reconciliation, V3-O07 and owner decisions in the 16 October review | Completed corrections, candidate qualification and explicit remaining decisions | Technical closure / stable publication |
+| C78 | Technical correction closure was accepted at the ff1 source-review point | Unknown | Historical 16 October review: eight code findings, documentation corrections, source/evidence reconciliation and performance work remained open; later engineering results are recorded separately below | Completed corrections and exact-source qualification after that review | Historical engineering acceptance only; stable/human decisions are C87 and C63/C64 |
 
 ## 16 October 2026 direct correction candidate
 
@@ -139,11 +139,44 @@ historical source meaning.
 | C79 | V3 is the sole supported version; conversion, the old body alias and old-binary import are retired | Selected | Explicit owner instruction; ADR 0027; physical removal manifest and native CLI/UI boundary tests | A supported old grammar/runtime/import/alias remains | Current product scope |
 | C80 | The seven retained code findings have direct corrections and targeted native evidence | Observed | [Correction report](reviews/2026_10_16_corrections.md), agent cross-reviews and raw command receipts | A discriminating regression still escapes its corrected boundary | Final integrated gate |
 | C81 | Current V3 oracles preserve keys, schema, auth, identity and sharing | Observed | 92 Riot contexts, Catalog key oracle and 70 targeted schema/example/downstream tests; only the declared Riot User-Agent version changes | Unintended recording or key/state change | R01/R02/R06/R13 under V3-only scope |
-| C82 | Private Edition 1 and closure authority were independently inspected | Observed | Authorized reads and verified specification/prompt SHA-256 in the correction report | Hash or scope mismatch | Latest owner instruction supersedes older conversion obligations |
-| C83 | The corrected source completes all final machine/performance obligations | Candidate | Final maintained gate and source-bound performance campaign in progress; current status owns results | Any remaining required gate or unexplained material regression | O06/O07/O08 |
+| C82 | The correction's separate authority inputs were inspected with owner authorization | Observed | [Owner decisions](owner_release_decisions.md) and the correction record; private source content and the separate authority annex are not included in the public evidence archive | A source-scope or authorization mismatch | Latest V3-only owner instruction and ADR 0027 govern current product scope |
+| C83 | The final delivered source passes its integrated checks and matches its export and return receipt | Candidate | Completed earlier machine qualification is C84; final CLI/UI/documentation integration, source audit/export and `FINAL_RETURN_RECEIPT.json` must identify the delivery commit in the [final-return workflow](../.github/workflows/v3-final-return.yml) artifact | A failed required final check, changed qualified inputs or a source/receipt mismatch | Current delivery closure; no future PASS inferred |
 
 C60's missing-main explanation was an earlier environment fact. The 16 October
 review observed a successful exact-source release audit and the preserved main
 `3765907aa2e424997bfd8f2fcdcc95275e6142f5`. This does not pre-qualify a later
 candidate. C63/C64 remain human Unknowns; preparing V3 protocols or performing
 an implementer review is a separate observation, not a participant result.
+
+## 17 October 2026 source-bound qualification
+
+Engineering machine qualification and stable/public acceptance are separate
+claims. C78 retains the review-time engineering state; C83 owns the final
+delivery receipt. The observations below do not change C63/C64 or supply any
+owner release decision. Full native detail is in the
+[native qualification report](reviews/2026_10_17_closure/NATIVE_QUALIFICATION_REPORT.md);
+measurement interpretation is in the
+[performance report](reviews/2026_10_17_closure/PERFORMANCE_REPORT.md).
+
+| ID | Claim | State | Evidence/gate | Falsifier | Decision dependency |
+|---|---|---|---|---|---|
+| C84 | The corrected `579e8eac9a436a57ebc5ea3fcc2e7da3cf330c31` source completes the maintained Linux and Windows implementation gates and analyzers | Supported | [Linux run 38981477842](https://github.com/gqsnt/concord_api/actions/runs/38981477842/job/117243098047) completed successfully on 16 October; [Windows CI #29](https://github.com/gqsnt/concord_api/actions/runs/38981477798/job/117243098210) completed successfully on 17 October at 00:29:48 UTC, including analyzer; native receipts and original logs preserve source identity | A required constituent did not run, failed, or used a different source/toolchain than its receipt | Machine qualification of those exact inputs; final delivery remains C83 |
+| C85 | The corrected V3's runtime and scale costs have measured and bounded attribution | Observed | [Paired campaign](https://github.com/gqsnt/concord_api/actions/runs/38981477842) and [attribution run](https://github.com/gqsnt/concord_api/actions/runs/38983860434) completed; the performance report retains raw measurements, allocation/layout attribution and compiler attribution | A raw measurement or source identity contradicts the report, or a reported mechanism is not supported by the recorded layout/compiler evidence | V3-O07 on the recorded host/workloads; no universal latency or per-feature timing claim |
+| C86 | CI #29 has nine successful jobs and one dependency-license-policy failure | Observed | [CI run 38981477798](https://github.com/gqsnt/concord_api/actions/runs/38981477798), exact `579e8ea`; native policy summary is `advisories ok, bans ok, licenses FAILED, sources ok`; POL-01 concerns the three recorded Brotli-related dependencies | Different terminal jobs or native policy results for that run | Preserve the real CI conclusion; license changes remain outside this correction |
+| C87 | Stable publication and a public API freeze have been accepted | Unknown | [Owner decisions](owner_release_decisions.md) retain legal/namespace/version/publication decisions; C63/C64 have no qualifying human observations; machine gates and implementer Rustdoc review do not provide those decisions or observations | Explicit applicable owner decisions and qualifying human evidence | Stable publication/public freeze, separate from unpublished-beta machine qualification |
+
+The CI history retains the earlier failures: #25's stale EOF-poll assertion and
+then-current Rustls advisories, #26's TLS-dependent facade fixtures in an isolated
+no-default run, and #27's corresponding core fixture. They are not relabeled as
+passes after later corrections. CI #25/#26's nominal MSRV jobs also used the
+repository toolchain through bare Cargo commands; explicit `+1.86.0` selection
+was corrected for #27 and the later native qualification. CI #28 provides a
+separate complete Windows success on `5b37722`.
+
+Later checks on `2f64782` and `2bba4e3` passed the ordinary default/all-feature
+test suites, including the strengthened inspection corpus by unconditional
+inclusion. The quiet nextest profile does not print an individual PASS line for
+every test. These successful suites are not a substitute for their complete
+Windows job or the final delivered source receipt. The public final-return
+archive must preserve the terminal statuses actually observed; private
+authority material remains separately held and is not published.
