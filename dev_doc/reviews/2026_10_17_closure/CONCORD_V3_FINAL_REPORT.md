@@ -20,7 +20,7 @@ source-manifest digest, ZIP digest and final native CI result.** A source file
 describing a workflow is not evidence that the workflow ran. A complete receipt
 is written only after all required engineering outcomes, source checks,
 frozen-manifest checks and archive verification succeed. Expected CLI nonzero
-statuses and the separately scoped license-policy failure retain their actual
+statuses and historical license-policy failures retain their actual
 native outcomes.
 
 This is engineering qualification of the selected beta product. Registry
@@ -136,12 +136,20 @@ labelled MSRV jobs are not relabelled as passing attempts. The disconnected
 local Linux process has an UNKNOWN native exit. Separate GitHub Actions
 results provide the replacement qualification.
 
-The native CI dependency-policy command still reports three BSD-3-Clause
-license rejections. Its advisories, bans and sources checks pass. License work
-was excluded by the owner; no ignore or allowlist change was introduced to
-alter that outcome. The combined CI can therefore remain red while its nine
-engineering jobs succeed. The final collector verifies that this is the exact
-remaining policy failure rather than accepting any arbitrary failed CI.
+CI #25 through #33 retain their three BSD-3-Clause license-policy rejections.
+After the Rustls correction, advisories, bans and sources passed while licenses
+failed. License work was outside that earlier correction scope, and those native
+outcomes remain preserved.
+
+On 17 October 2026 the owner requested the license-policy correction too.
+Explicit exceptions in [deny.toml](../../../deny.toml) permit BSD-3-Clause for
+`alloc-no-stdlib`, `alloc-stdlib` and `brotli`; the `brotli` exception also lists
+MIT for its conjunctive license. The global allowlist and the project's own
+license remain unchanged, and all packages retain `publish = false`.
+The updated candidate must have a successful CI run with all ten jobs successful,
+including the dependency-policy step and all four native policy checks. Its new
+source-bound receipt must record that result; the former allowance for the
+historical license-policy failure does not apply to the updated candidate.
 
 ## Performance findings
 

@@ -29,6 +29,7 @@ ATTRIBUTION_RUN = 38983860434
 CAPTURE_RUN = 38985826352
 CAPTURE_SOURCE = "2bba4e3797ece2f8254efd84ef31640605b65ff8"
 PREVIOUS_RETURN_SOURCE = "57c9ec273464dfddee1d91052e86f37b939e4c0f"
+LICENSE_CHECKPOINT_SOURCE = "7f2b93f34ad119ca120853e314c2501f7e9aacef"
 REPORTS = "dev_doc/reviews/2026_10_17_closure"
 HISTORY = [
     "dev_doc/history/CONCORD_V2_1_RELEASE_READINESS_REMEDIATION_PLAN.md",
@@ -207,6 +208,7 @@ def collect_recent_ci(args):
         (30, 38983860517, TESTED),
         (31, 38985826266, CAPTURE_SOURCE),
         (32, 38987720005, PREVIOUS_RETURN_SOURCE),
+        (33, 38988767565, LICENSE_CHECKPOINT_SOURCE),
     ]:
         result = collect_run("CI", number, run_id, sha, destination, time.monotonic() + 120)
         records.append(result)
@@ -351,26 +353,25 @@ def wait_for_ci(args, head):
     run_id, attempt = selected["id"], selected["run_attempt"]
     run = github_json(f"actions/runs/{run_id}", destination / "run-native.json")
     validate_run(run, "CI", selected["run_number"], run_id, head)
+    if run["status"] != "completed" or run["conclusion"] != "success":
+        raise RuntimeError("the final CI run did not pass")
     jobs = github_json(f"actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100",
                        destination / "jobs-native.json")["jobs"]
     if {job["name"] for job in jobs} != CI_JOBS or len(jobs) != len(CI_JOBS):
         raise RuntimeError("final CI job set differs from the maintained contract")
     policy = next(job for job in jobs if job["name"] == "Fixtures and dependency policy")
-    if any(job["status"] != "completed" or
-           (job["name"] != policy["name"] and job["conclusion"] != "success") for job in jobs):
-        raise RuntimeError("a required engineering CI job did not pass")
+    if any(job["status"] != "completed" or job["conclusion"] != "success" for job in jobs):
+        raise RuntimeError("a required CI job did not pass")
+    policy_steps = [step for step in policy["steps"]
+                    if step["name"] == "Dependency and license policy"]
+    if (len(policy_steps) != 1 or policy_steps[0]["status"] != "completed"
+            or policy_steps[0]["conclusion"] != "success"):
+        raise RuntimeError("the required dependency and license policy step did not pass")
     github_bytes(f"actions/jobs/{policy['id']}/logs", destination / "dependency-policy-native.log")
     policy_text = (destination / "dependency-policy-native.log").read_text(errors="replace")
     clean = re.sub(r"\x1b\[[0-9;]*m", "", policy_text)
-    failed_steps = [step["name"] for step in policy["steps"] if step["conclusion"] == "failure"]
-    if policy["conclusion"] == "failure":
-        if (failed_steps != ["Dependency and license policy"]
-                or "advisories ok, bans ok, licenses FAILED, sources ok" not in clean
-                or clean.count("error[rejected]") != 3
-                or any(name not in clean for name in ["alloc-no-stdlib", "alloc-stdlib", "brotli", "BSD-3-Clause"])):
-            raise RuntimeError("dependency failure is not the separately scoped historical license policy")
-    elif policy["conclusion"] != "success":
-        raise RuntimeError("unexpected dependency policy conclusion")
+    if "advisories ok, bans ok, licenses ok, sources ok" not in clean:
+        raise RuntimeError("the native dependency policy log does not confirm all four checks passed")
     archive = destination / "logs-native.zip"
     downloaded = github_bytes(f"actions/runs/{run_id}/attempts/{attempt}/logs", archive)
     write_json(destination / "archive-inspection.json", inspect_native_zip(archive))
@@ -382,8 +383,9 @@ def wait_for_ci(args, head):
         raise RuntimeError("CI attempt changed during collection")
     result = {"run_id": run_id, "run_attempt": attempt, "head_sha": head,
               "native_conclusion": run["conclusion"], "engineering_jobs_passed": True,
+              "all_ci_jobs_passed": True, "dependency_policy_passed": True,
               "dependency_policy_conclusion": policy["conclusion"],
-              "license_policy_exception": "Owner excluded license work; the original failure remains a failure.",
+              "license_policy": "The owner authorized crate-scoped BSD-3-Clause exceptions for alloc-no-stdlib, alloc-stdlib and brotli. The final run, all ten jobs and the dependency policy step must succeed; earlier CI failures retain their native conclusions.",
               "native_archive": downloaded, "jobs": jobs}
     write_json(destination / "adjudication.json", result)
     print("FINAL_RETURN_CI " + json.dumps(result, sort_keys=True), flush=True)
@@ -622,7 +624,7 @@ def main():
         output.write("\n\n## Generated final envelope receipt\n\n")
         output.write(f"Verified commit: {head}\n\nTree: {initial['tree']}\n\nParent: {provenance['parent']}\n\n")
         output.write(f"Main preserved: {MAIN}\n\nFinal CI: https://github.com/gqsnt/concord_api/actions/runs/{ci['run_id']}\n\n")
-        output.write("All final native command and semantic controls passed their explicitly recorded expected outcomes. Expected CLI exits 1 and 2 remain recorded as nonzero. The final CI license-policy failure is preserved separately. Source, history and clean-state checks passed before assembly. The public source/evidence package becomes verified only when the external FINAL_RETURN_RECEIPT.json records complete=true after the frozen-manifest and ZIP checks. The private acceptance annex is delivered separately and is not part of this GitHub artifact. See manifests/provenance.json and evidence/final/.\n")
+        output.write("All final native command and semantic controls passed their explicitly recorded expected outcomes. Expected CLI exits 1 and 2 remain recorded as nonzero. The final CI run, all ten required jobs and the dependency and license policy step passed. Native cargo-deny output confirms advisories, bans, licenses and sources passed. Earlier license-policy failures retain their original conclusions in the historical evidence. Source, history and clean-state checks passed before assembly. The public source/evidence package becomes verified only when the external FINAL_RETURN_RECEIPT.json records complete=true after the frozen-manifest and ZIP checks. The private acceptance annex is delivered separately and is not part of this GitHub artifact. See manifests/provenance.json and evidence/final/.\n")
     manifest = package_manifest(args.package)
     write_json(args.package / "manifests/package_sha256.json", manifest)
     verify_package(args.package, manifest)

@@ -41,7 +41,7 @@ compatibility paths are not part of the supported surface. See the
 | Source/evidence return | Native qualification and historical CI archives are retained; the final public source export, integrated checks and archive integrity require the delivery commit's receipt. The private acceptance annex is delivered separately; completion of one combined archive containing it is not claimed. |
 | Human study and independent human Rustdoc review | **Unknown**; V3 protocols and implementer review are separate from participant or independent-human results |
 | Main integration / stable publication | Separate owner actions; not performed by this correction |
-| Dependency license policy | POL-01 remains separately reported; license work is outside this correction |
+| Dependency license policy | Three package-specific BSD-3-Clause exceptions authorized on 17 October 2026; the updated candidate must pass all ten CI jobs, including dependency policy, with results bound to its own receipt |
 
 The complete `579e8ea` qualification includes the maintained feature, isolated
 package, compiler, fixture, documentation, downstream/package and source-export
@@ -155,11 +155,18 @@ to the source-bound candidate above.
 
 Default-feature dependency license-policy success ignores private unpublished
 workspace packages as configured; it does not supply the project's license or
-registry authority. CI's all-features audit rejects BSD-3-Clause in
-`alloc-no-stdlib`, `alloc-stdlib` and `brotli` (reproduced natively, exit 4).
-That dependency-policy decision remains **Blocked — owner authority required**;
-no allowlist change or advisory ignore was made. Locked fixture fetching and
-explicit pinned Rust sources correct the earlier CI setup failures.
+registry authority. CI #25 through #33 retain their recorded BSD-3-Clause
+rejections for `alloc-no-stdlib`, `alloc-stdlib` and `brotli`.
+
+On 17 October 2026 the owner authorized correcting that dependency policy.
+[deny.toml](../deny.toml) records explicit exceptions for those three packages;
+the `brotli` exception also permits MIT to cover its `BSD-3-Clause AND MIT`
+expression. BSD-3-Clause is not added to the global allowlist. The updated
+candidate requires a successful CI run with all ten jobs successful and a native
+dependency-policy summary with all four checks successful. Its result belongs
+to the new source-bound receipt; no future PASS is asserted here. The project's
+own license and `publish = false` remain unchanged. Locked fixture fetching and
+explicit pinned Rust sources corrected the earlier CI setup failures.
 
 ## History
 

@@ -17,7 +17,7 @@ The implementation remains `3.0.0-beta.1` with `publish = false` in every packag
 | Source repository | Owner-provided `https://github.com/gqsnt/concord_api`, branch `concord-v3` |
 | Source-branch update | Ordinary fast-forward source push authorized; preserve other branches and history |
 | Preserved main | `3765907aa2e424997bfd8f2fcdcc95275e6142f5`; no main merge is part of this correction |
-| License work | Outside this correction's scope, per owner instruction; no license choice is inferred |
+| Dependency license policy | Owner instruction on 17 October 2026 authorizes explicit BSD-3-Clause exceptions for `alloc-no-stdlib`, `alloc-stdlib` and `brotli`; `brotli` also lists MIT for its conjunctive license. The project's own license and `publish = false` remain unchanged. |
 | Supported validation | Windows and Linux, pinned Rust 1.97.1 and MSRV 1.86.0 |
 | Runtime defaults | Retain the selected finite V3 defaults until workload evidence justifies a change |
 
@@ -27,7 +27,7 @@ The implementation remains `3.0.0-beta.1` with `publish = false` in every packag
 |---|---|
 | Merge a qualified beta into main or a separate release branch | **REQUIRED OWNER DECISION** at that action |
 | Public registry package names and namespace ownership | **REQUIRED OWNER DECISION** for publication; recheck registry state then |
-| Public licensing policy and publication metadata | **REQUIRED OWNER DECISION** for publication, outside current implementation work |
+| The project's own public license and publication metadata | **REQUIRED OWNER DECISION** for publication; the dependency exceptions do not select a project license |
 | Separate homepage and package README policy | **REQUIRED OWNER DECISION** if different from the repository documentation |
 | Stable version, tag and registry publication | **REQUIRED OWNER DECISION**; the current beta stays unpublished |
 | Human evidence for a public API freeze | Recommended: execute the prepared V3 task study and independent Rustdoc/diff review before freezing the public API |

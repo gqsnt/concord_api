@@ -12,6 +12,10 @@ allow = [
 ]
 confidence-threshold = 0.8
 exceptions = [
+    # BSD-licensed Brotli dependencies; keep each exception scoped to its crate.
+    { allow = ["BSD-3-Clause"], crate = "alloc-no-stdlib" },
+    { allow = ["BSD-3-Clause"], crate = "alloc-stdlib" },
+    { allow = ["BSD-3-Clause", "MIT"], crate = "brotli" },
     { allow = ["Apache-2.0", "ISC"], crate = "ring" },
     { allow = ["ISC"], crate = "rustls-webpki" },
     { allow = ["BSD-3-Clause"], crate = "subtle" },

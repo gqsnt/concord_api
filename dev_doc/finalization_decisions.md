@@ -22,6 +22,7 @@
 | Generated implementation cost | Reuse each owner's resolved inspection program, omit private helpers when there are no value/body controls, and remove the redundant response future layer | The public V3 surface and provenance/sensitivity semantics remain covered by their maintained tests; structural and measured effects are reported separately |
 | Machine qualification | Accept completed gates only for their exact source inputs | Linux and Windows complete implementation/analyzer gates passed on `579e8ea`; the final delivery's CLI/UI/docs and source-export receipt remain separate checks |
 | Evidence delivery | Preserve original native failures, successful runs and source identities | The final-return artifact owns `FINAL_RETURN_RECEIPT.json`; private authority material is kept outside the public archive |
+| Dependency license policy | Explicit BSD-3-Clause exceptions for `alloc-no-stdlib`, `alloc-stdlib` and `brotli`; the `brotli` exception also lists MIT | Owner authorization on 17 October 2026; [deny.toml](../deny.toml) retains the global allowlist and the updated candidate must pass all ten CI jobs |
 | Human review | V3 task packets ready; no invented participants or independent-human result | Unknown for public freeze; not a machine-beta blocker |
 | Version | `3.0.0-beta.1`, unpublished | Later merge/tag/publication decisions remain separate |
 
@@ -34,6 +35,9 @@ Engineering qualification of an unpublished beta is a machine-evidence decision.
 It does not choose a public license, secure registry names, merge into main,
 perform a human study, freeze the public API or authorize stable publication.
 C63/C64 in the [claim ledger](claim_evidence_ledger.md) remain **Unknown**.
-The current license-policy failure is preserved and is outside this correction's
-scope. The final source update is authorized; later release actions remain with
-the owner as recorded in [the release packet](owner_release_decisions.md).
+Historical license-policy failures remain preserved. The owner's 17 October
+instruction brings the three dependency exceptions into this correction's scope;
+their validation is bound to the updated candidate's receipt. The project's own
+license and unpublished status remain unchanged. The final source update is
+authorized; later release actions remain with the owner as recorded in
+[the release packet](owner_release_decisions.md).

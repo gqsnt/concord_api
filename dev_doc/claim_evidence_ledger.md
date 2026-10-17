@@ -162,7 +162,7 @@ measurement interpretation is in the
 |---|---|---|---|---|---|
 | C84 | The corrected `579e8eac9a436a57ebc5ea3fcc2e7da3cf330c31` source completes the maintained Linux and Windows implementation gates and analyzers | Supported | [Linux run 38981477842](https://github.com/gqsnt/concord_api/actions/runs/38981477842/job/117243098047) completed successfully on 16 October; [Windows CI #29](https://github.com/gqsnt/concord_api/actions/runs/38981477798/job/117243098210) completed successfully on 17 October at 00:29:48 UTC, including analyzer; native receipts and original logs preserve source identity | A required constituent did not run, failed, or used a different source/toolchain than its receipt | Machine qualification of those exact inputs; final delivery remains C83 |
 | C85 | The corrected V3's runtime and scale costs have measured and bounded attribution | Observed | [Paired campaign](https://github.com/gqsnt/concord_api/actions/runs/38981477842) and [attribution run](https://github.com/gqsnt/concord_api/actions/runs/38983860434) completed; the performance report retains raw measurements, allocation/layout attribution and compiler attribution | A raw measurement or source identity contradicts the report, or a reported mechanism is not supported by the recorded layout/compiler evidence | V3-O07 on the recorded host/workloads; no universal latency or per-feature timing claim |
-| C86 | CI #29 has nine successful jobs and one dependency-license-policy failure | Observed | [CI run 38981477798](https://github.com/gqsnt/concord_api/actions/runs/38981477798), exact `579e8ea`; native policy summary is `advisories ok, bans ok, licenses FAILED, sources ok`; POL-01 concerns the three recorded Brotli-related dependencies | Different terminal jobs or native policy results for that run | Preserve the real CI conclusion; license changes remain outside this correction |
+| C86 | CI #29 has nine successful jobs and one dependency-license-policy failure | Observed | [CI run 38981477798](https://github.com/gqsnt/concord_api/actions/runs/38981477798), exact `579e8ea`; native policy summary is `advisories ok, bans ok, licenses FAILED, sources ok`; POL-01 concerns the three recorded Brotli-related dependencies | Different terminal jobs or native policy results for that run | Preserve the historical CI conclusion; the later dependency-policy decision is C88 |
 | C87 | Stable publication and a public API freeze have been accepted | Unknown | [Owner decisions](owner_release_decisions.md) retain legal/namespace/version/publication decisions; C63/C64 have no qualifying human observations; machine gates and implementer Rustdoc review do not provide those decisions or observations | Explicit applicable owner decisions and qualifying human evidence | Stable publication/public freeze, separate from unpublished-beta machine qualification |
 
 The CI history retains the earlier failures: #25's stale EOF-poll assertion and
@@ -180,3 +180,14 @@ every test. These successful suites are not a substitute for their complete
 Windows job or the final delivered source receipt. The public final-return
 archive must preserve the terminal statuses actually observed; private
 authority material remains separately held and is not published.
+
+## 17 October 2026 dependency-policy decision
+
+| ID | Claim | State | Evidence/gate | Falsifier | Decision dependency |
+|---|---|---|---|---|---|
+| C88 | BSD-3-Clause is permitted through explicit exceptions for `alloc-no-stdlib`, `alloc-stdlib` and `brotli` | Selected | New owner instruction and [deny.toml](../deny.toml); `brotli` also permits MIT for its conjunctive license; the global allowlist is unchanged | An exception covers another package or one of these declared licenses remains rejected | The updated source requires a successful CI run, all ten jobs successful and a native summary with all four policy checks successful; its receipt owns the result |
+
+CI #25 through #33 and their native license-policy failures remain historical
+observations. This dependency decision does not select the project's own
+license, change `publish = false`, or replace a required current-source result
+with a future PASS. C65 and the separate publication decisions remain unchanged.

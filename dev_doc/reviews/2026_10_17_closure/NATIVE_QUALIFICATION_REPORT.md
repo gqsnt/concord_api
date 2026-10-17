@@ -140,22 +140,30 @@ is initialized where required by test dependency unification.
 
 Rustls is selected at 0.23.46 in both affected lockfiles and in the workspace
 minimum. The four newly found advisories name that release as patched.
-The later native deny summary reports advisories ok, bans ok, sources ok,
-and licenses FAILED. The remaining three BSD-3-Clause policy rejections concern
-alloc-no-stdlib, alloc-stdlib and brotli.
+The native deny summaries after that correction, through CI #33, report
+advisories ok, bans ok, sources ok, and licenses FAILED. Those three historical
+BSD-3-Clause policy rejections concern alloc-no-stdlib, alloc-stdlib and brotli.
 
-The owner's exclusion of license work does not convert that command to
-success. Its real failure remains in the final archive and CI conclusion.
-No advisory ignore, license exception or allowlist change was introduced.
+License work was outside the earlier correction scope; no advisory ignore,
+license exception or allowlist change was introduced for those source inputs.
+Their real failures remain in the archive and their CI conclusions.
 No reachability claim is inferred for every advisory solely from dependency
 presence.
+
+The owner's 17 October 2026 instruction authorizes explicit BSD-3-Clause
+exceptions in [deny.toml](../../../deny.toml) for those three packages. The
+`brotli` exception also permits MIT for its conjunctive license. The global
+allowlist, the project's own license and `publish = false` remain unchanged.
+Validation of this policy change belongs to the updated source's new receipt;
+the earlier failed commands are not relabeled as successful.
 
 ## Final exact-source checks
 
 The final-return workflow reruns the affected tests and tools, then waits for
-the exact final source CI. It requires every engineering job to succeed and
-checks that any remaining dependency failure is precisely the separately
-reported license-policy case. The original workflow ZIP, Windows native log,
+the exact final source CI. For the updated dependency policy, it requires the
+run and all ten jobs to succeed, one successful dependency-policy step, and a
+native summary with advisories, bans, licenses and sources all successful.
+No future result is asserted before that receipt. The original workflow ZIP, Windows native log,
 API states before/after collection and source identities are preserved.
 
 The final native commands include evidence/parser/envelope integrity tests,
