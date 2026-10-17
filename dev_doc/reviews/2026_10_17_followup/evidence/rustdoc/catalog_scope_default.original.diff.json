@@ -1,0 +1,311 @@
+{
+  "axes": [
+    "Provenance"
+  ],
+  "changed_endpoints": [
+    {
+      "id": "catalog.auth.login",
+      "path": "CatalogApi::authenticate"
+    },
+    {
+      "id": "catalog.item.export",
+      "path": "CatalogApi::regional::export"
+    },
+    {
+      "id": "catalog.item.feed",
+      "path": "CatalogApi::regional::feed"
+    },
+    {
+      "id": "catalog.item.find",
+      "path": "CatalogApi::regional::find_item"
+    },
+    {
+      "id": "catalog.item.get",
+      "path": "CatalogApi::regional::item"
+    },
+    {
+      "id": "catalog.item.inspect",
+      "path": "CatalogApi::regional::inspect"
+    },
+    {
+      "id": "catalog.item.update",
+      "path": "CatalogApi::regional::update_item"
+    },
+    {
+      "id": "catalog.items.list",
+      "path": "CatalogApi::regional::item_summaries"
+    }
+  ],
+  "changes": [
+    {
+      "after": "CatalogApi::regional",
+      "after_origin": "CatalogApi::regional",
+      "axes": [
+        "Provenance"
+      ],
+      "before": "CatalogApi",
+      "before_origin": "CatalogApi",
+      "collection": "owners",
+      "endpoints": [
+        {
+          "id": "catalog.item.export",
+          "path": "CatalogApi::regional::export"
+        },
+        {
+          "id": "catalog.item.feed",
+          "path": "CatalogApi::regional::feed"
+        },
+        {
+          "id": "catalog.item.find",
+          "path": "CatalogApi::regional::find_item"
+        },
+        {
+          "id": "catalog.item.inspect",
+          "path": "CatalogApi::regional::inspect"
+        },
+        {
+          "id": "catalog.item.get",
+          "path": "CatalogApi::regional::item"
+        },
+        {
+          "id": "catalog.items.list",
+          "path": "CatalogApi::regional::item_summaries"
+        },
+        {
+          "id": "catalog.item.update",
+          "path": "CatalogApi::regional::update_item"
+        }
+      ],
+      "field": "effective.response_default.owner",
+      "record": "CatalogApi::regional"
+    },
+    {
+      "after": {
+        "kind": "type",
+        "type": "Json"
+      },
+      "after_origin": "CatalogApi::regional",
+      "axes": [
+        "Provenance"
+      ],
+      "before": null,
+      "before_origin": "CatalogApi::regional",
+      "collection": "owners",
+      "endpoints": [
+        {
+          "id": "catalog.item.export",
+          "path": "CatalogApi::regional::export"
+        },
+        {
+          "id": "catalog.item.feed",
+          "path": "CatalogApi::regional::feed"
+        },
+        {
+          "id": "catalog.item.find",
+          "path": "CatalogApi::regional::find_item"
+        },
+        {
+          "id": "catalog.item.inspect",
+          "path": "CatalogApi::regional::inspect"
+        },
+        {
+          "id": "catalog.item.get",
+          "path": "CatalogApi::regional::item"
+        },
+        {
+          "id": "catalog.items.list",
+          "path": "CatalogApi::regional::item_summaries"
+        },
+        {
+          "id": "catalog.item.update",
+          "path": "CatalogApi::regional::update_item"
+        }
+      ],
+      "field": "local.response_default",
+      "record": "CatalogApi::regional"
+    },
+    {
+      "after": "CatalogApi::regional",
+      "after_origin": "CatalogApi::regional",
+      "axes": [
+        "Provenance"
+      ],
+      "before": "CatalogApi",
+      "before_origin": "CatalogApi",
+      "collection": "endpoints",
+      "endpoints": [
+        {
+          "id": "catalog.item.export",
+          "path": "CatalogApi::regional::export"
+        }
+      ],
+      "field": "result.representation.shadowed_default.owner",
+      "record": "CatalogApi::regional::export"
+    },
+    {
+      "after": "CatalogApi::regional",
+      "after_origin": "CatalogApi::regional",
+      "axes": [
+        "Provenance"
+      ],
+      "before": "CatalogApi",
+      "before_origin": "CatalogApi",
+      "collection": "endpoints",
+      "endpoints": [
+        {
+          "id": "catalog.item.feed",
+          "path": "CatalogApi::regional::feed"
+        }
+      ],
+      "field": "result.representation.source.owner",
+      "record": "CatalogApi::regional::feed"
+    },
+    {
+      "after": "CatalogApi::regional",
+      "after_origin": "CatalogApi::regional",
+      "axes": [
+        "Provenance"
+      ],
+      "before": "CatalogApi",
+      "before_origin": "CatalogApi",
+      "collection": "endpoints",
+      "endpoints": [
+        {
+          "id": "catalog.item.find",
+          "path": "CatalogApi::regional::find_item"
+        }
+      ],
+      "field": "result.representation.source.owner",
+      "record": "CatalogApi::regional::find_item"
+    },
+    {
+      "after": "CatalogApi::regional",
+      "after_origin": "CatalogApi::regional",
+      "axes": [
+        "Provenance"
+      ],
+      "before": "CatalogApi",
+      "before_origin": "CatalogApi",
+      "collection": "endpoints",
+      "endpoints": [
+        {
+          "id": "catalog.item.inspect",
+          "path": "CatalogApi::regional::inspect"
+        }
+      ],
+      "field": "result.representation.source.owner",
+      "record": "CatalogApi::regional::inspect"
+    },
+    {
+      "after": "CatalogApi::regional",
+      "after_origin": "CatalogApi::regional",
+      "axes": [
+        "Provenance"
+      ],
+      "before": "CatalogApi",
+      "before_origin": "CatalogApi",
+      "collection": "endpoints",
+      "endpoints": [
+        {
+          "id": "catalog.item.get",
+          "path": "CatalogApi::regional::item"
+        }
+      ],
+      "field": "result.representation.source.owner",
+      "record": "CatalogApi::regional::item"
+    },
+    {
+      "after": "CatalogApi::regional",
+      "after_origin": "CatalogApi::regional",
+      "axes": [
+        "Provenance"
+      ],
+      "before": "CatalogApi",
+      "before_origin": "CatalogApi",
+      "collection": "endpoints",
+      "endpoints": [
+        {
+          "id": "catalog.items.list",
+          "path": "CatalogApi::regional::item_summaries"
+        }
+      ],
+      "field": "result.representation.source.owner",
+      "record": "CatalogApi::regional::item_summaries"
+    },
+    {
+      "after": "CatalogApi::regional",
+      "after_origin": "CatalogApi::regional",
+      "axes": [
+        "Provenance"
+      ],
+      "before": "CatalogApi",
+      "before_origin": "CatalogApi",
+      "collection": "endpoints",
+      "endpoints": [
+        {
+          "id": "catalog.item.update",
+          "path": "CatalogApi::regional::update_item"
+        }
+      ],
+      "field": "result.representation.source.owner",
+      "record": "CatalogApi::regional::update_item"
+    },
+    {
+      "after": [
+        "CatalogApi#request_default",
+        "CatalogApi#response_default",
+        "CatalogApi::regional#response_default"
+      ],
+      "after_origin": null,
+      "axes": [
+        "Provenance"
+      ],
+      "before": [
+        "CatalogApi#request_default",
+        "CatalogApi#response_default"
+      ],
+      "before_origin": null,
+      "collection": "dependencies",
+      "endpoints": [
+        {
+          "id": "catalog.auth.login",
+          "path": "CatalogApi::authenticate"
+        },
+        {
+          "id": "catalog.item.export",
+          "path": "CatalogApi::regional::export"
+        },
+        {
+          "id": "catalog.item.feed",
+          "path": "CatalogApi::regional::feed"
+        },
+        {
+          "id": "catalog.item.find",
+          "path": "CatalogApi::regional::find_item"
+        },
+        {
+          "id": "catalog.item.inspect",
+          "path": "CatalogApi::regional::inspect"
+        },
+        {
+          "id": "catalog.item.get",
+          "path": "CatalogApi::regional::item"
+        },
+        {
+          "id": "catalog.items.list",
+          "path": "CatalogApi::regional::item_summaries"
+        },
+        {
+          "id": "catalog.item.update",
+          "path": "CatalogApi::regional::update_item"
+        }
+      ],
+      "field": "sites",
+      "record": "[\n  \"representation\",\n  \"Json\"\n]\n"
+    }
+  ],
+  "contract_format": "concord.contract/3",
+  "format": "concord.contract-diff/3",
+  "unresolved": [],
+  "verdict": "different"
+}

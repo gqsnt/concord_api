@@ -17,7 +17,8 @@ This is an exact, deliberately partial excerpt from the compiled `RiotApi`
 declaration; the source continues with its platform and regional scopes.
 
 <!-- concord-source: crates/concord-examples/src/riot/api/riot.rs#riot_client -->
-```concord-pseudocode
+<!-- concord-pseudocode -->
+```rust
     client RiotApi {
         base "https://riotgames.com/";
 
@@ -62,7 +63,8 @@ The `rate_limits` registry holds only numbers. A window set grants no identity
 and shares no state (§12.1). State is selected by a policy ID together with
 its ordered key, so every attachment names its own ID:
 
-```concord-pseudocode
+<!-- concord-pseudocode -->
+```rust
 rate_limit "concord.riot.21" key [origin] using accounts;
 rate_limit "concord.riot.22" key [origin] using accounts;
 ```
@@ -102,7 +104,8 @@ value owns the complete generated prefix for its branch.
 The pagination proof is the following complete endpoint declaration:
 
 <!-- concord-source: crates/concord-examples/src/riot/api/riot.rs#riot_match_ids_endpoint -->
-```concord
+<!-- concord-dsl -->
+```rust
             GET match_ids_by_puuid(
                 puuid: String,
                 query("startTime") start_time?: i64,

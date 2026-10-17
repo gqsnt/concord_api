@@ -343,9 +343,35 @@ fn endpoint_card(model: &Model, index: usize) -> String {
     let result = type_text(&entry.output);
     let _ = writeln!(
         out,
-        "- Result: `{result}` via `{}`",
-        type_text(&entry.response)
+        "- Result: `{result}` via `{}`; response representation {}",
+        type_text(&entry.response),
+        representation_origin(
+            &entry.response_origin,
+            entry.output_via.is_some(),
+            &entry.display
+        )
     );
+    if let Some(body) = &entry.body {
+        let _ = writeln!(
+            out,
+            "- Request body: `{}: {}` via `{}` ({}); request representation {}",
+            body.logical,
+            type_text(&body.ty),
+            type_text(&body.representation),
+            if body.optional {
+                "optional"
+            } else {
+                "required"
+            },
+            representation_origin(
+                &body.representation_origin,
+                body.via.is_some(),
+                &entry.display
+            )
+        );
+    } else {
+        let _ = writeln!(out, "- Request body: none");
+    }
     let _ = writeln!(out, "- Accepted statuses: {}", status_text(&entry.status));
     if let Some(absence) = &entry.absence {
         let codes = absence
@@ -427,6 +453,14 @@ fn endpoint_card(model: &Model, index: usize) -> String {
         "\nThe complete effective contract is available from [`{client}::contract()`]({path}{client}::contract)."
     );
     out
+}
+
+fn representation_origin(origin: &str, inline: bool, endpoint: &str) -> String {
+    if inline {
+        format!("selected by `via` on endpoint `{endpoint}`")
+    } else {
+        format!("inherited from `{origin}`")
+    }
 }
 
 pub(crate) fn request(model: &Model, index: usize) -> String {
@@ -717,6 +751,55 @@ mod tests {
     }
 
     #[test]
+    fn request_and_response_provenance_are_independent_in_generated_cards() {
+        let file = expand(quote! {
+            client DirectionalApi {
+                base "https://example.test/";
+                request Json;
+                response Json;
+
+                scope scoped() {
+                    response Text;
+
+                    POST inherited(body input: Input) -> String;
+                    POST local(body input?: Bytes via Binary) -> Bytes via Binary;
+
+                    scope fenced() {
+                        request explicit;
+                        response explicit;
+                        POST selected(body input: Input via Json) -> String via Text;
+                    }
+                }
+            }
+        });
+        let (inherited, _) = constructor_docs(&file, "inherited");
+        assert_contains(
+            &inherited,
+            &[
+                "Result: `String` via `Text`; response representation inherited from `DirectionalApi::scoped`",
+                "Request body: `input: Input` via `Json` (required); request representation inherited from `DirectionalApi`",
+            ],
+        );
+        let (local, _) = constructor_docs(&file, "local");
+        assert_contains(
+            &local,
+            &[
+                "Result: `Bytes` via `Binary`; response representation selected by `via` on endpoint `DirectionalApi::scoped::local`",
+                "Request body: `input: Bytes` via `Binary` (optional); request representation selected by `via` on endpoint `DirectionalApi::scoped::local`",
+            ],
+        );
+        let (selected, _) = constructor_docs(&file, "selected");
+        assert_contains(
+            &selected,
+            &[
+                "response representation selected by `via` on endpoint `DirectionalApi::scoped::fenced::selected`",
+                "request representation selected by `via` on endpoint `DirectionalApi::scoped::fenced::selected`",
+            ],
+        );
+        assert!(!selected.contains("representation inherited from"));
+    }
+
+    #[test]
     fn catalog_method_docs_show_the_caller_contract() {
         let file = expand(catalog());
         let (constructor, _) = constructor_docs(&file, "find_item");
@@ -735,7 +818,8 @@ mod tests {
                     "`GET https://{regional.region}.api.catalog.example.test/root/{client.api_version}/regions/{regional.region}/items/{id}`",
                     "endpoint ID `catalog.item.find`, explicit",
                     // Result and its effective representation.
-                    "Result: `Option<Item>` via `Json`",
+                    "Result: `Option<Item>` via `Json`; response representation inherited from `CatalogApi`",
+                    "Request body: none",
                     // Expected-absence status, head-only.
                     "Expected absence: `None` on 404 (head-only; that response body is dropped unread)",
                     // Effect and its source, effective timeout.
@@ -789,6 +873,7 @@ mod tests {
             &[
                 "Explicit login. Use store_as_session to request local installation.",
                 "from its required inputs body `input`",
+                "Request body: `input: LoginInput` via `Json` (required); request representation inherited from `CatalogApi`",
                 "Effect: non-idempotent (declared)",
                 "`store_as_session()` requests local installation into credential `session`",
                 "Authentication: header \"X-Bootstrap-Key\" = `application_key`",

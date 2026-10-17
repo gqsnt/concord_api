@@ -1,0 +1,12 @@
+diff --git a/crates/concord-examples/src/contracts/catalog_v3.rs b/crates/concord-examples/src/contracts/catalog_v3.rs
+index 0b0f26a..fa03bd4 100644
+--- a/crates/concord-examples/src/contracts/catalog_v3.rs
++++ b/crates/concord-examples/src/contracts/catalog_v3.rs
+@@ -193,6 +193,7 @@ api! {
+             region: Region,
+             header("Accept-Language") language?: Language,
+         ) {
++            response Json;
+             subdomain [region];
+             path "regions/{region}";
+             auth replace { bearer session challenge unauthorized; }

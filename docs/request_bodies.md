@@ -11,7 +11,8 @@ A body is an endpoint parameter with the `body` role and an optional
 representation:
 
 <!-- concord-source: crates/concord-examples/src/request_response/bodies.rs#buffered_endpoints -->
-```concord
+<!-- concord-dsl -->
+```rust
 POST json_round_trip(body body: Vec<u32> via Json) -> Vec<u32> via Json;
 POST text_round_trip(body body: String via Text) -> String via Text;
 POST custom_round_trip(body body: String via ExampleCodec) -> String via ExampleCodec;
@@ -95,7 +96,8 @@ response representation. Record responses are covered in [Streams](streams.md).
 ## Streaming bodies
 
 <!-- concord-source: crates/concord-examples/src/request_response/bodies.rs#streaming_endpoints -->
-```concord
+<!-- concord-dsl -->
+```rust
 POST upload(body body: RequestStream via Binary) -> Bytes via Binary;
 GET download() -> ByteStream via Binary;
 POST exact_upload(body body: RequestStream via Binary) -> Bytes via Binary;
@@ -125,7 +127,8 @@ never serializes input.
 ## Multipart
 
 <!-- concord-source: crates/concord-examples/src/request_response/bodies.rs#multipart_endpoint -->
-```concord
+<!-- concord-dsl -->
+```rust
 POST multipart_upload(body body: MultipartBody via Multipart) -> () via Empty;
 ```
 

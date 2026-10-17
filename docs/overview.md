@@ -50,7 +50,8 @@ root is an owner, not a special empty prefix. See the
 This contract is maintained and compiled with the quick-start program:
 
 <!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_contract -->
-```concord
+<!-- concord-dsl -->
+```rust
 api! {
     client CatalogApi {
         base "http://catalog.example.test/";

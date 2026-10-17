@@ -7,8 +7,7 @@ use std::path::{Component, Path, PathBuf};
 use regex::Regex;
 
 const RELEASE_STATUS_OWNER: &str = "<!-- concord-release-status-owner -->";
-const DSL_LANGUAGE: &str = "concord";
-const DSL_PSEUDOCODE_LANGUAGE: &str = "concord-pseudocode";
+const RUST_LANGUAGE: &str = "rust";
 const DOMAIN_TREE_SOURCE: &str = "crates/concord-examples/src/getting_started/domain_tree.rs";
 const MINIMAL_SOURCE: &str = "crates/concord-examples/src/getting_started/minimal.rs";
 const CATALOG_V3_SOURCE: &str = "crates/concord-examples/src/contracts/catalog_v3.rs";
@@ -17,7 +16,7 @@ const CANONICAL_SOURCES: &[(&str, &str, &str, &str)] = &[
         "README.md",
         DOMAIN_TREE_SOURCE,
         "domain_tree_contract",
-        DSL_LANGUAGE,
+        RUST_LANGUAGE,
     ),
     (
         "README.md",
@@ -36,7 +35,7 @@ const CANONICAL_SOURCES: &[(&str, &str, &str, &str)] = &[
         "docs/quick_start.md",
         DOMAIN_TREE_SOURCE,
         "domain_tree_contract",
-        DSL_LANGUAGE,
+        RUST_LANGUAGE,
     ),
     (
         "docs/quick_start.md",
@@ -48,7 +47,7 @@ const CANONICAL_SOURCES: &[(&str, &str, &str, &str)] = &[
         "docs/overview.md",
         DOMAIN_TREE_SOURCE,
         "domain_tree_contract",
-        DSL_LANGUAGE,
+        RUST_LANGUAGE,
     ),
     // §22: the canonical extended Catalog is the coverage reference, not the
     // first-contact advertisement, so it lives in the modeling guide.
@@ -56,19 +55,19 @@ const CANONICAL_SOURCES: &[(&str, &str, &str, &str)] = &[
         "docs/modeling_apis.md",
         CATALOG_V3_SOURCE,
         "catalog_v3_declaration",
-        DSL_LANGUAGE,
+        RUST_LANGUAGE,
     ),
     (
         "docs/riot_walkthrough.md",
         "crates/concord-examples/src/riot/api/riot.rs",
         "riot_client",
-        DSL_PSEUDOCODE_LANGUAGE,
+        RUST_LANGUAGE,
     ),
     (
         "docs/riot_walkthrough.md",
         "crates/concord-examples/src/riot/api/riot.rs",
         "riot_match_ids_endpoint",
-        DSL_LANGUAGE,
+        RUST_LANGUAGE,
     ),
     (
         "docs/riot_walkthrough.md",
@@ -397,9 +396,20 @@ struct SourceReference {
 
 struct Fence {
     language: String,
+    class: FenceClass,
     start: usize,
     body: String,
     source: Option<SourceReference>,
+}
+
+/// Rendering language and verification scope are independent: GitHub renders
+/// every Rust/DSL example as Rust, while comments retain its evidence class.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum FenceClass {
+    #[default]
+    Code,
+    CompiledDsl,
+    Pseudocode,
 }
 
 struct HeadingIndex {
@@ -513,10 +523,18 @@ fn check_markdown(
         }
         if looks_like_dsl(first_code_line)
             && fence.source.is_none()
-            && matches!(fence.language.as_str(), "" | "rust")
+            && fence.class == FenceClass::Code
+            && matches!(fence.language.as_str(), "" | RUST_LANGUAGE)
         {
             errors.push(format!(
-                "{location}: DSL fence must use `{DSL_LANGUAGE}` or `{DSL_PSEUDOCODE_LANGUAGE}`"
+                "{location}: an unanchored DSL excerpt needs a concord-dsl or concord-pseudocode comment before its Rust fence"
+            ));
+        }
+        if matches!(fence.language.as_str(), "concord" | "concord-pseudocode")
+            || (fence.class != FenceClass::Code && fence.language != RUST_LANGUAGE)
+        {
+            errors.push(format!(
+                "{location}: Rust and DSL examples must use the `rust` highlighting language"
             ));
         }
 
@@ -534,11 +552,7 @@ fn check_markdown(
                     relative_path, source.line
                 )),
             }
-        } else if fence.language == "rust" {
-            errors.push(format!(
-                "{location}: normative Rust fence must be source-anchored to compiled code"
-            ));
-        } else if fence.language == DSL_LANGUAGE {
+        } else if fence.class == FenceClass::CompiledDsl {
             counts.dsl += 1;
             if fence.body.trim().is_empty() {
                 errors.push(format!("{location}: empty DSL fence"));
@@ -547,23 +561,22 @@ fn check_markdown(
                     "{location}: normalized DSL block is absent from crates/concord-examples/src/docs_spec.rs"
                 ));
             }
-        } else if fence.language == DSL_PSEUDOCODE_LANGUAGE {
+        } else if fence.class == FenceClass::Pseudocode {
             counts.pseudocode += 1;
             if fence.body.trim().is_empty() {
                 errors.push(format!("{location}: empty DSL pseudocode fence"));
             }
+        } else if fence.language == RUST_LANGUAGE {
+            errors.push(format!(
+                "{location}: normative Rust fence must be source-anchored to compiled code"
+            ));
         }
 
         if !is_retired_allowlisted(&relative_path) {
             for finding in retired_fence_findings(fence) {
                 errors.push(format!("{location}: {finding}"));
             }
-            if is_user_documentation(&relative_path)
-                && matches!(
-                    fence.language.as_str(),
-                    DSL_LANGUAGE | DSL_PSEUDOCODE_LANGUAGE
-                )
-            {
+            if is_user_documentation(&relative_path) && fence.class != FenceClass::Code {
                 for finding in retired_v3_dsl_findings(&fence.body) {
                     errors.push(format!("{location}: {finding}"));
                 }
@@ -649,10 +662,24 @@ fn parse_fences(relative_path: &str, content: &str, errors: &mut Vec<String>) ->
     let mut start = 0;
     let mut body = Vec::new();
     let mut pending_source: Option<SourceReference> = None;
+    let mut pending_class: Option<(FenceClass, usize)> = None;
 
     for (index, line) in content.lines().enumerate() {
         let line_number = index + 1;
         if language.is_none() {
+            let class = match line.trim() {
+                "<!-- concord-dsl -->" => Some(FenceClass::CompiledDsl),
+                "<!-- concord-pseudocode -->" => Some(FenceClass::Pseudocode),
+                _ => None,
+            };
+            if let Some(class) = class {
+                if pending_class.replace((class, line_number)).is_some() {
+                    errors.push(format!(
+                        "{relative_path}:{line_number}: duplicate DSL classification marker"
+                    ));
+                }
+                continue;
+            }
             if let Some(source) = parse_source_reference(line, line_number) {
                 pending_source = Some(source);
                 continue;
@@ -672,12 +699,23 @@ fn parse_fences(relative_path: &str, content: &str, errors: &mut Vec<String>) ->
                     pending_source = None;
                 }
             }
+            if let Some((_, marker_line)) = pending_class {
+                if !line.trim().is_empty() {
+                    errors.push(format!(
+                        "{relative_path}:{marker_line}: DSL classification marker must immediately precede a fence"
+                    ));
+                    pending_class = None;
+                }
+            }
             continue;
         }
 
         if is_fence_closing(line) {
             fences.push(Fence {
                 language: language.take().expect("open fence language"),
+                class: pending_class
+                    .take()
+                    .map_or(FenceClass::Code, |value| value.0),
                 start,
                 body: body.join("\n"),
                 source: pending_source.take(),
@@ -697,6 +735,11 @@ fn parse_fences(relative_path: &str, content: &str, errors: &mut Vec<String>) ->
         errors.push(format!(
             "{relative_path}:{}: concord-source marker has no fence",
             source.line
+        ));
+    }
+    if let Some((_, marker_line)) = pending_class {
+        errors.push(format!(
+            "{relative_path}:{marker_line}: DSL classification marker has no fence"
         ));
     }
     fences
@@ -1175,7 +1218,7 @@ fn is_migration_heading(title: &str) -> bool {
     title.starts_with("migrating from v2") || title.starts_with("migration from v2")
 }
 
-/// Retired v3 DSL forms inside a `concord`/`concord-pseudocode` fence. String
+/// Retired v3 DSL forms inside an explicitly classified Rust fence. String
 /// literal contents are ignored, so a legacy rate label such as
 /// `"endpoint.item_id"` is data, not a reference.
 fn retired_v3_dsl_findings(body: &str) -> Vec<String> {
@@ -1279,10 +1322,7 @@ fn heading(trimmed: &str) -> Option<(usize, &str)> {
 
 fn retired_fence_findings(fence: &Fence) -> Vec<String> {
     let mut findings = retired_surface_findings(&fence.body);
-    if matches!(
-        fence.language.as_str(),
-        DSL_LANGUAGE | DSL_PSEUDOCODE_LANGUAGE
-    ) {
+    if fence.class != FenceClass::Code {
         let patterns = [
             (r"(?m)^\s*vars\s*\{", "retired `vars` declaration"),
             (r"\bscope\s*\.", "retired generic `scope.*` owner lookup"),
@@ -2533,7 +2573,14 @@ mod tests {
 
     fn fence(language: &str, body: &str) -> Fence {
         Fence {
-            language: language.to_owned(),
+            language: "rust".to_owned(),
+            class: if language == "concord-pseudocode" {
+                FenceClass::Pseudocode
+            } else if language == "concord" {
+                FenceClass::CompiledDsl
+            } else {
+                FenceClass::Code
+            },
             start: 1,
             body: body.to_owned(),
             source: None,
@@ -2657,9 +2704,92 @@ mod tests {
         assert_eq!(markdown_links(source), ["docs/spec.md"]);
     }
 
+    #[test]
+    fn rust_highlighting_keeps_dsl_classification_and_source_evidence() {
+        let root = std::env::temp_dir().join(format!(
+            "concord-rust-fence-evidence-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).expect("fixture directory");
+        let path = root.join("sample.md");
+        let compiled = normalize_source("query { \"q\" = term; }");
+        for (markdown, expected_error) in [
+            (
+                "<!-- concord-dsl -->\n```rust\nquery { \"q\" = term; }\n```\n",
+                None,
+            ),
+            (
+                "<!-- concord-dsl -->\n```rust\nquery { \"q\" = wrong; }\n```\n",
+                Some("normalized DSL block is absent"),
+            ),
+            (
+                "<!-- concord-pseudocode -->\n```rust\nGET illustrative() -> T;\n```\n",
+                None,
+            ),
+            (
+                "```rust\nquery { \"q\" = term; }\n```\n",
+                Some("needs a concord-dsl or concord-pseudocode comment"),
+            ),
+            (
+                "```rust\nlet value = 7;\n```\n",
+                Some("normative Rust fence must be source-anchored"),
+            ),
+            (
+                "<!-- concord-dsl -->\n```concord\nquery { \"q\" = term; }\n```\n",
+                Some("must use the `rust` highlighting language"),
+            ),
+            (
+                "<!-- concord-dsl -->\n```text\nquery { \"q\" = term; }\n```\n",
+                Some("must use the `rust` highlighting language"),
+            ),
+        ] {
+            fs::write(&path, markdown).expect("fixture Markdown");
+            let mut errors = Vec::new();
+            check_markdown(
+                &root,
+                &path,
+                &compiled,
+                &mut HashMap::new(),
+                &mut Counts::default(),
+                &mut errors,
+            )
+            .expect("Markdown check");
+            match expected_error {
+                None => assert!(errors.is_empty(), "{errors:?}"),
+                Some(expected) => assert!(
+                    errors.iter().any(|error| error.contains(expected)),
+                    "missing {expected:?}: {errors:?}"
+                ),
+            }
+        }
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn dsl_classification_markers_are_scoped_to_one_fence() {
+        let markdown = "<!-- concord-source: crates/concord-examples/src/docs_spec.rs#query -->\n<!-- concord-dsl -->\n```rust\nquery {}\n```\n```rust\nordinary();\n```\n";
+        let mut errors = Vec::new();
+        let fences = parse_fences("sample.md", markdown, &mut errors);
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(fences[0].class == FenceClass::CompiledDsl);
+        assert!(fences[0].source.is_some());
+        assert!(fences[1].class == FenceClass::Code);
+        assert!(fences[1].source.is_none());
+        for malformed in [
+            "<!-- concord-dsl -->\nprose before the fence\n```rust\nquery {}\n```\n",
+            "<!-- concord-pseudocode -->\n",
+            "<!-- concord-dsl -->\n<!-- concord-pseudocode -->\n```rust\nquery {}\n```\n",
+        ] {
+            let mut errors = Vec::new();
+            parse_fences("sample.md", malformed, &mut errors);
+            assert!(!errors.is_empty(), "accepted malformed marker: {malformed}");
+        }
+    }
+
     fn anchored(anchor: &str, start: usize) -> Fence {
         Fence {
             language: "rust".to_owned(),
+            class: FenceClass::Code,
             start,
             body: String::new(),
             source: Some(SourceReference {

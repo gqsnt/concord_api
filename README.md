@@ -19,7 +19,8 @@ The declaration below is compiled in the maintained examples crate. Its host is
 a fixture, not a live service.
 
 <!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_contract -->
-```concord
+<!-- concord-dsl -->
+```rust
 api! {
     client CatalogApi {
         base "http://catalog.example.test/";
@@ -148,7 +149,12 @@ cargo run -p concord-xtask -- docs-check
 ```
 
 The workspace targets Rust 1.86 (edition 2024). All intended public package
-manifests retain `publish = false`. Historical packaging rehearsals do not
-establish a final package name, registry ownership, or a license grant; those
-decisions and the remaining external evidence are named in the canonical
+manifests retain `publish = false`. The source license is selected below. Final registry names, ownership and
+publication remain separate release actions recorded in the canonical
 release-gate status.
+
+## License
+
+Concord is available under either the [MIT license](LICENSE-MIT) or the
+[Apache License, Version 2.0](LICENSE-APACHE), at your option
+(`MIT OR Apache-2.0`). Third-party dependencies retain their own licenses.

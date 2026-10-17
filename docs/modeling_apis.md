@@ -40,7 +40,8 @@ local auth/rate/timeout changes, pagination and capability terminals.
 
 Use the Rust type for domain meaning and the DSL markers for Concord semantics:
 
-```concord-pseudocode
+<!-- concord-pseudocode -->
+```rust
 mode: Option<Mode>          // required domain decision; None is a payload
 mode?: Mode                 // optional slot; absent omits its emissions
 mode?: Option<Mode>         // optional slot around an optional payload
@@ -61,7 +62,8 @@ A domain type used in a path, host, query or header either implements
 `RequestAtom` (its one canonical protocol spelling) or is adapted explicitly
 with `via`:
 
-```concord-pseudocode
+<!-- concord-pseudocode -->
+```rust
 path "items/{id via Base32Id}";
 query { "at" = time via Rfc3339; }
 query { "fields" = fields via CommaSeparated; }
@@ -136,7 +138,8 @@ and behavior over TLS loopback. Support types (aliases such as
 controller) are ordinary Rust in the same module.
 
 <!-- concord-source: crates/concord-examples/src/contracts/catalog_v3.rs#catalog_v3_declaration -->
-```concord
+<!-- concord-dsl -->
+```rust
 api! {
     /// Typed, tenant-scoped Catalog provider client.
     client CatalogApi {

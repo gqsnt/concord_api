@@ -406,7 +406,8 @@ After the decision:
 
 Active documents declare:
 
-```concord
+<!-- concord-dsl -->
+```rust
 credentials {
     secret optional_api_key?;
     credential optional_key = api_key(secret.optional_api_key);
@@ -472,7 +473,8 @@ for optional values.
 
 This means a valid-looking domain child such as:
 
-```concord
+<!-- concord-dsl -->
+```rust
 GET with_locale(...) -> ...
 ```
 

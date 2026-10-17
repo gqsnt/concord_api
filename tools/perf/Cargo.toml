@@ -4,6 +4,8 @@ description = "Internal operation-exact performance probes for Concord"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 publish = false
 autobenches = false
 

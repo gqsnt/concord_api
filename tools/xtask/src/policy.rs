@@ -23,6 +23,7 @@ pub(crate) fn run(root: &Path) -> Result<(), String> {
     let metadata = metadata(root.join("Cargo.toml"))?;
     check_dependency_direction(&metadata)?;
     check_versions(&metadata)?;
+    check_licenses(root, &metadata)?;
     check_release_stage(metadata.packages.iter().map(|package| {
         ReleaseFacts {
             name: package.name.as_str(),
@@ -43,6 +44,39 @@ pub(crate) fn run(root: &Path) -> Result<(), String> {
     println!(
         "repository policy checks passed ({limit_copies} macro limit copies match concord-core; verify-implementation cargo commands are --locked)"
     );
+    Ok(())
+}
+
+/// Keep the owner-selected SPDX grant and the texts shipped by public crates
+/// aligned with the repository. Third-party dependency grants remain separate.
+fn check_licenses(root: &Path, metadata: &Metadata) -> Result<(), String> {
+    for package in &metadata.packages {
+        if package.license.as_deref() != Some("MIT OR Apache-2.0") {
+            return Err(format!(
+                "{} must declare the workspace license `MIT OR Apache-2.0`",
+                package.name
+            ));
+        }
+    }
+    for filename in ["LICENSE-MIT", "LICENSE-APACHE"] {
+        let canonical = fs::read(root.join(filename))
+            .map_err(|error| format!("could not read {filename}: {error}"))?;
+        if canonical.is_empty() {
+            return Err(format!("{filename} is empty"));
+        }
+        for name in PRODUCT_PACKAGES {
+            let manifest = &package(metadata, name)?.manifest_path;
+            let directory = manifest
+                .parent()
+                .ok_or_else(|| format!("{name} has no package directory"))?;
+            let path = directory.join(filename);
+            let text =
+                fs::read(&path).map_err(|error| format!("could not read {path}: {error}"))?;
+            if text != canonical {
+                return Err(format!("{path} differs from the root {filename}"));
+            }
+        }
+    }
     Ok(())
 }
 

@@ -4,6 +4,8 @@ description = "Portable repository validation tasks for Concord contributors"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 publish = false
 
 [features]

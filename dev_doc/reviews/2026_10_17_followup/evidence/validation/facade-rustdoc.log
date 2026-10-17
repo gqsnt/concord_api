@@ -1,0 +1,7 @@
+   Compiling serde v1.0.228
+    Checking concord-core v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord-core)
+    Checking serde_json v1.0.150
+    Checking concord-extras v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord-extras)
+ Documenting concord v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord)
+    Finished `dev` profile [unoptimized] target(s) in 4.83s
+   Generated /workspace/scratch/69ac10347cac/v3-followup/target/doc/concord/index.html

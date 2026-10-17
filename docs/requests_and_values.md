@@ -69,7 +69,8 @@ impl RequestAtom for ApiVersion {
 An explicit `AtomEncoder<T>` adapter chooses another spelling for one use, with
 `via`:
 
-```concord
+<!-- concord-dsl -->
+```rust
 header("X-Label") label: Option<&'static str> via LabelOrNone = crate::DEFAULT_LABEL;
 ```
 
@@ -84,7 +85,8 @@ from total components; `each` repeats; neither can appear inside the other, and
 The base fixes the scheme, host suffix, effective port and base path. DNS labels
 and path segments are generated relative to it:
 
-```concord
+<!-- concord-dsl -->
+```rust
 client RouteApi {
     base "https://route.example.test/root";
     values {
@@ -153,7 +155,8 @@ owner, Concord starts from the inherited program (or clears it for
 applies block statements in source order. Nothing is encoded until the complete
 program has decided which occurrences survive.
 
-```concord
+<!-- concord-dsl -->
+```rust
 client PatchApi {
     base "https://patch.example.test/";
     values {

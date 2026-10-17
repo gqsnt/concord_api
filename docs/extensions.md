@@ -346,7 +346,8 @@ current batch if the continuation is invalid. `PaginationDescription` declares
 any header interests (at most 16, 64 KiB of evidence). The private field
 `after` can be renamed without touching the declaration:
 
-```concord-pseudocode
+<!-- concord-pseudocode -->
+```rust
 GET feed(query after?: String, query count: NonZeroU32 = DEFAULT_PAGE_SIZE)
     -> Envelope<ItemSummary>
 {

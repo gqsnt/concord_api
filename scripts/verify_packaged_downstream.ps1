@@ -29,6 +29,9 @@ $publicPackages = @($corePackage, $macrosPackage, $extrasPackage, $facadePackage
 if ($publicPackages.Where({ $_.version -ne $version }).Count -ne 0) {
     throw 'public package versions are not exact and uniform'
 }
+if ($publicPackages.Where({ $_.license -ne 'MIT OR Apache-2.0' }).Count -ne 0) {
+    throw 'public packages must declare the owner-selected MIT OR Apache-2.0 license'
+}
 $facadeLibraries = @($facadePackage.targets | Where-Object { $_.kind -contains 'lib' })
 if ($facadeLibraries.Count -ne 1 -or $facadeLibraries[0].name -ne 'concord') {
     throw 'the public facade must retain the Rust library target name concord'
@@ -61,6 +64,11 @@ foreach ($packageName in $packages) {
     }
     if ($packageList -notcontains 'Cargo.toml' -or $packageList -notcontains 'src/lib.rs') {
         throw "package $packageName is missing its manifest or library root"
+    }
+    foreach ($licenseFile in @('LICENSE-MIT', 'LICENSE-APACHE')) {
+        if ($packageList -notcontains $licenseFile) {
+            throw "package $packageName is missing $licenseFile"
+        }
     }
     $forbiddenEntries = @($packageList | Where-Object {
         $_ -match '(^|/)(dev_doc|concord_v2_1|raw_benchmarks)(/|$)' -or
@@ -130,6 +138,16 @@ foreach ($packageName in $packages) {
         throw "extracted cargo metadata failed for $packageName"
     }
     $ownPackage = $packageMetadata.packages | Where-Object { $_.name -eq $packageName }
+    if ($ownPackage.license -ne 'MIT OR Apache-2.0') {
+        throw "normalized archive for $packageName lost its license expression"
+    }
+    foreach ($licenseFile in @('LICENSE-MIT', 'LICENSE-APACHE')) {
+        $packagedLicense = Join-Path $packagePath $licenseFile
+        if ((Get-FileHash -LiteralPath $packagedLicense -Algorithm SHA256).Hash -ne
+            (Get-FileHash -LiteralPath (Join-Path $root $licenseFile) -Algorithm SHA256).Hash) {
+            throw "normalized archive for $packageName changed $licenseFile"
+        }
+    }
     $workspacePathDependencies = @($ownPackage.dependencies | Where-Object {
         $null -ne $_.path
     })

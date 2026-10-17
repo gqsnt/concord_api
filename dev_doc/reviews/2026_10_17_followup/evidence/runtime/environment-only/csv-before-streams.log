@@ -1,0 +1,65 @@
+    Blocking waiting for file lock on build directory
+    Finished `test` profile [unoptimized] target(s) in 7.87s
+     Running tests/contracts.rs (/workspace/scratch/69ac10347cac/v3-followup/target/debug/deps/contracts-36ede3cd9b6fa02a)
+
+running 8 tests
+test contracts::record_streams::csv::v3_p11_csv_final_record_without_newline_is_decoded ... FAILED
+test contracts::record_streams::csv::csv_split_document_bom_precedes_a_quoted_header_in_a_managed_stream ... FAILED
+test contracts::record_streams::csv::v3_p11_invalid_csv_quoting_fails_the_stream ... FAILED
+test contracts::record_streams::csv::v3_p10_overdue_csv_record_data_is_one_idle_timeout_without_resend ... FAILED
+test contracts::records::csv_policy_markers_and_configured_aliases_satisfy_the_public_bounds ... ok
+test contracts::record_streams::csv::v3_p11_unterminated_csv_quote_at_end_of_body_is_incomplete ... FAILED
+test contracts::record_streams::csv::csv_later_bom_cannot_be_removed_to_turn_an_invalid_integer_into_valid_data ... FAILED
+test contracts::record_streams::csv::v3_p10_overdue_eof_cannot_finalize_an_unterminated_csv_record ... FAILED
+
+failures:
+
+---- contracts::record_streams::csv::v3_p11_csv_final_record_without_newline_is_decoded stdout ----
+
+thread 'contracts::record_streams::csv::v3_p11_csv_final_record_without_newline_is_decoded' (29) panicked at crates/concord-extras/tests/contracts/record_streams.rs:392:14:
+loopback server: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- contracts::record_streams::csv::csv_split_document_bom_precedes_a_quoted_header_in_a_managed_stream stdout ----
+
+thread 'contracts::record_streams::csv::csv_split_document_bom_precedes_a_quoted_header_in_a_managed_stream' (26) panicked at crates/concord-extras/tests/contracts/record_streams.rs:356:10:
+loopback server: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- contracts::record_streams::csv::v3_p11_invalid_csv_quoting_fails_the_stream stdout ----
+
+thread 'contracts::record_streams::csv::v3_p11_invalid_csv_quoting_fails_the_stream' (30) panicked at crates/concord-extras/tests/contracts/record_streams.rs:407:18:
+loopback server: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- contracts::record_streams::csv::v3_p10_overdue_csv_record_data_is_one_idle_timeout_without_resend stdout ----
+
+thread 'contracts::record_streams::csv::v3_p10_overdue_csv_record_data_is_one_idle_timeout_without_resend' (27) panicked at crates/concord-extras/tests/contracts/record_streams.rs:466:14:
+loopback server: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- contracts::record_streams::csv::v3_p11_unterminated_csv_quote_at_end_of_body_is_incomplete stdout ----
+
+thread 'contracts::record_streams::csv::v3_p11_unterminated_csv_quote_at_end_of_body_is_incomplete' (31) panicked at crates/concord-extras/tests/contracts/record_streams.rs:424:14:
+loopback server: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- contracts::record_streams::csv::csv_later_bom_cannot_be_removed_to_turn_an_invalid_integer_into_valid_data stdout ----
+
+thread 'contracts::record_streams::csv::csv_later_bom_cannot_be_removed_to_turn_an_invalid_integer_into_valid_data' (25) panicked at crates/concord-extras/tests/contracts/record_streams.rs:373:10:
+loopback server: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- contracts::record_streams::csv::v3_p10_overdue_eof_cannot_finalize_an_unterminated_csv_record stdout ----
+
+thread 'contracts::record_streams::csv::v3_p10_overdue_eof_cannot_finalize_an_unterminated_csv_record' (28) panicked at crates/concord-extras/tests/contracts/record_streams.rs:484:14:
+loopback server: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+
+failures:
+    contracts::record_streams::csv::csv_later_bom_cannot_be_removed_to_turn_an_invalid_integer_into_valid_data
+    contracts::record_streams::csv::csv_split_document_bom_precedes_a_quoted_header_in_a_managed_stream
+    contracts::record_streams::csv::v3_p10_overdue_csv_record_data_is_one_idle_timeout_without_resend
+    contracts::record_streams::csv::v3_p10_overdue_eof_cannot_finalize_an_unterminated_csv_record
+    contracts::record_streams::csv::v3_p11_csv_final_record_without_newline_is_decoded
+    contracts::record_streams::csv::v3_p11_invalid_csv_quoting_fails_the_stream
+    contracts::record_streams::csv::v3_p11_unterminated_csv_quote_at_end_of_body_is_incomplete
+
+test result: FAILED. 1 passed; 7 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p concord-extras --test contracts`

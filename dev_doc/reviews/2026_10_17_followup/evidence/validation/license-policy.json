@@ -1,0 +1,60 @@
+{
+  "label": "license-policy",
+  "command": [
+    "/workspace/scratch/69ac10347cac/v3-followup/target/debug/concord-xtask",
+    "policy",
+    "--locked"
+  ],
+  "cwd": "/workspace/scratch/69ac10347cac/concord-v3-review",
+  "started_at": "2026-10-17T11:44:06.624894+00:00",
+  "finished_at": "2026-10-17T11:44:07.803446+00:00",
+  "elapsed_seconds": 1.15,
+  "exit_code": 0,
+  "source_before": {
+    "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+    "status": " M .gitattributes\n M .github/workflows/ci.yml\n M Cargo.toml\n M README.md\n M crates/concord-core/Cargo.toml\n M crates/concord-core/src/redaction/headers.rs\n M crates/concord-examples/Cargo.toml\n M crates/concord-extras/Cargo.toml\n M crates/concord-extras/src/records/csv.rs\n M crates/concord-extras/tests/contracts/record_streams.rs\n M crates/concord-inspect/Cargo.toml\n M crates/concord-macros/Cargo.toml\n M crates/concord-macros/src/emit/docs.rs\n M crates/concord-test-support/Cargo.toml\n M crates/concord/Cargo.toml\n M dev_doc/adrs/0023-rate-window-sets-policy-identity-and-atomic-admission.md\n M dev_doc/claim_evidence_ledger.md\n M dev_doc/dx_study/README.md\n M dev_doc/dx_study/results.md\n M dev_doc/dx_study/tasks.md\n M dev_doc/finalization_decisions.md\n M dev_doc/history/concord_v2_1_second_release_readiness_audit.md\n M dev_doc/owner_release_decisions.md\n M dev_doc/release_gate_status.md\n M dev_doc/rustdoc_review/README.md\n M dev_doc/rustdoc_review/results.md\n M dev_doc/rustdoc_review/tasks.md\n M docs/auth.md\n M docs/evidence_and_release_gates.md\n M docs/extensions.md\n M docs/mental_model.md\n M docs/modeling_apis.md\n M docs/overview.md\n M docs/pagination.md\n M docs/planning_and_observation.md\n M docs/quick_start.md\n M docs/rate_limits.md\n M docs/request_bodies.md\n M docs/requests_and_values.md\n M docs/responses.md\n M docs/riot_walkthrough.md\n M docs/spec.md\n M docs/streams.md\n M fixtures/dependency/contract_mismatch/Cargo.toml\n M fixtures/dependency/contract_mismatch/incompatible_facade/Cargo.toml\n M fixtures/dependency/renamed_facade/Cargo.toml\n M fixtures/features/Cargo.toml\n M fixtures/msrv/core/Cargo.toml\n M fixtures/msrv/facade/Cargo.toml\n M scripts/verify_packaged_downstream.ps1\n M tests/downstream/concord-downstream-api/Cargo.toml\n M tests/downstream/concord-downstream-app/Cargo.toml\n M tools/perf/Cargo.toml\n M tools/xtask/Cargo.toml\n M tools/xtask/src/doc_audit.rs\n M tools/xtask/src/docs_check.rs\n M tools/xtask/src/policy.rs\n?? LICENSE-APACHE\n?? LICENSE-MIT\n?? crates/concord-core/LICENSE-APACHE\n?? crates/concord-core/LICENSE-MIT\n?? crates/concord-extras/LICENSE-APACHE\n?? crates/concord-extras/LICENSE-MIT\n?? crates/concord-macros/LICENSE-APACHE\n?? crates/concord-macros/LICENSE-MIT\n?? crates/concord/LICENSE-APACHE\n?? crates/concord/LICENSE-MIT\n?? crates/concord/tests/v3_user_exercises.rs\n?? dev_doc/dx_study/fixtures.md\n?? dev_doc/reviews/2026_10_17_followup/\n?? dev_doc/rustdoc_review/fixtures.md\n",
+    "tracked_diff_sha256": "77618b57887a78d4a209f32b219a85acdb006f920ed0fced0a44db60fe5d2ad3",
+    "untracked_files_sha256": {
+      "LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+      "crates/concord-core/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "crates/concord-core/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+      "crates/concord-extras/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "crates/concord-extras/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+      "crates/concord-macros/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "crates/concord-macros/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+      "crates/concord/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "crates/concord/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+      "crates/concord/tests/v3_user_exercises.rs": "c6667a770a7ce2f8feaf9ba1db6ba1f7127ef772321c4e85c70515f3ab5cd61f",
+      "dev_doc/dx_study/fixtures.md": "7623d5151ab75dca20b7d18742ed3ed3aaddd39797ba92edc85425c1f9edd897",
+      "dev_doc/reviews/2026_10_17_followup/README.md": "cc26e06328e7fe231074d57652e37ec0b4b53ff172e391e0369b677e65a72098",
+      "dev_doc/reviews/2026_10_17_followup/runtime_review.md": "a60df97181c5ea465bb5eea75702669819e56ef2c47ed357caabf93e576bbe68",
+      "dev_doc/rustdoc_review/fixtures.md": "66b49f661c0705279edb9d854c0a4dc750a334332932267a8749a019f5b12dd5"
+    }
+  },
+  "source_after": {
+    "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+    "status": " M .gitattributes\n M .github/workflows/ci.yml\n M Cargo.toml\n M README.md\n M crates/concord-core/Cargo.toml\n M crates/concord-core/src/redaction/headers.rs\n M crates/concord-examples/Cargo.toml\n M crates/concord-extras/Cargo.toml\n M crates/concord-extras/src/records/csv.rs\n M crates/concord-extras/tests/contracts/record_streams.rs\n M crates/concord-inspect/Cargo.toml\n M crates/concord-macros/Cargo.toml\n M crates/concord-macros/src/emit/docs.rs\n M crates/concord-test-support/Cargo.toml\n M crates/concord/Cargo.toml\n M dev_doc/adrs/0023-rate-window-sets-policy-identity-and-atomic-admission.md\n M dev_doc/claim_evidence_ledger.md\n M dev_doc/dx_study/README.md\n M dev_doc/dx_study/results.md\n M dev_doc/dx_study/tasks.md\n M dev_doc/finalization_decisions.md\n M dev_doc/history/concord_v2_1_second_release_readiness_audit.md\n M dev_doc/owner_release_decisions.md\n M dev_doc/release_gate_status.md\n M dev_doc/rustdoc_review/README.md\n M dev_doc/rustdoc_review/results.md\n M dev_doc/rustdoc_review/tasks.md\n M docs/auth.md\n M docs/evidence_and_release_gates.md\n M docs/extensions.md\n M docs/mental_model.md\n M docs/modeling_apis.md\n M docs/overview.md\n M docs/pagination.md\n M docs/planning_and_observation.md\n M docs/quick_start.md\n M docs/rate_limits.md\n M docs/request_bodies.md\n M docs/requests_and_values.md\n M docs/responses.md\n M docs/riot_walkthrough.md\n M docs/spec.md\n M docs/streams.md\n M fixtures/dependency/contract_mismatch/Cargo.toml\n M fixtures/dependency/contract_mismatch/incompatible_facade/Cargo.toml\n M fixtures/dependency/renamed_facade/Cargo.toml\n M fixtures/features/Cargo.toml\n M fixtures/msrv/core/Cargo.toml\n M fixtures/msrv/facade/Cargo.toml\n M scripts/verify_packaged_downstream.ps1\n M tests/downstream/concord-downstream-api/Cargo.toml\n M tests/downstream/concord-downstream-app/Cargo.toml\n M tools/perf/Cargo.toml\n M tools/xtask/Cargo.toml\n M tools/xtask/src/doc_audit.rs\n M tools/xtask/src/docs_check.rs\n M tools/xtask/src/policy.rs\n?? LICENSE-APACHE\n?? LICENSE-MIT\n?? crates/concord-core/LICENSE-APACHE\n?? crates/concord-core/LICENSE-MIT\n?? crates/concord-extras/LICENSE-APACHE\n?? crates/concord-extras/LICENSE-MIT\n?? crates/concord-macros/LICENSE-APACHE\n?? crates/concord-macros/LICENSE-MIT\n?? crates/concord/LICENSE-APACHE\n?? crates/concord/LICENSE-MIT\n?? crates/concord/tests/v3_user_exercises.rs\n?? dev_doc/dx_study/fixtures.md\n?? dev_doc/reviews/2026_10_17_followup/\n?? dev_doc/rustdoc_review/fixtures.md\n",
+    "tracked_diff_sha256": "77618b57887a78d4a209f32b219a85acdb006f920ed0fced0a44db60fe5d2ad3",
+    "untracked_files_sha256": {
+      "LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+      "crates/concord-core/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "crates/concord-core/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+      "crates/concord-extras/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "crates/concord-extras/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+      "crates/concord-macros/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "crates/concord-macros/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+      "crates/concord/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "crates/concord/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+      "crates/concord/tests/v3_user_exercises.rs": "c6667a770a7ce2f8feaf9ba1db6ba1f7127ef772321c4e85c70515f3ab5cd61f",
+      "dev_doc/dx_study/fixtures.md": "7623d5151ab75dca20b7d18742ed3ed3aaddd39797ba92edc85425c1f9edd897",
+      "dev_doc/reviews/2026_10_17_followup/README.md": "cc26e06328e7fe231074d57652e37ec0b4b53ff172e391e0369b677e65a72098",
+      "dev_doc/reviews/2026_10_17_followup/runtime_review.md": "a60df97181c5ea465bb5eea75702669819e56ef2c47ed357caabf93e576bbe68",
+      "dev_doc/rustdoc_review/fixtures.md": "66b49f661c0705279edb9d854c0a4dc750a334332932267a8749a019f5b12dd5"
+    }
+  },
+  "log": "/workspace/scratch/69ac10347cac/v3-followup/native/license-policy.log",
+  "log_bytes": 126,
+  "log_sha256": "b3997f8243265f9c3329399038ca8a2963e96f5900e037027c96f226906f00a2"
+}

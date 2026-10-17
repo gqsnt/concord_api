@@ -1,0 +1,194 @@
+{
+  "format": "concord.followup-native-validation/1",
+  "scope": "Actual local development checks; recorded dirty source states are preserved. The pushed commit requires its own complete CI result.",
+  "toolchain": "1.97.1",
+  "checks": [
+    {
+      "label": "xtask-followup-tests",
+      "exit_code": 0,
+      "elapsed_seconds": 4.063,
+      "files": [
+        {
+          "path": "xtask-followup-tests.json",
+          "bytes": 6764,
+          "sha256": "5c695cbd1690f5fee9a436700171301f36542859974f15fc201f65437b991235"
+        },
+        {
+          "path": "xtask-followup-tests.log",
+          "bytes": 6451,
+          "sha256": "48ace5eb2f012b105ebc4e7ac178ba8c5bae909c2632e4bb9d50f25d7bea99e9"
+        }
+      ]
+    },
+    {
+      "label": "macro-docs-tests",
+      "exit_code": 0,
+      "elapsed_seconds": 7.362,
+      "files": [
+        {
+          "path": "macro-docs-tests.json",
+          "bytes": 7318,
+          "sha256": "515bd867c558dd77f97cdb586524b65502633c99bcd3aa0e54005828f08c8001"
+        },
+        {
+          "path": "macro-docs-tests.log",
+          "bytes": 5104,
+          "sha256": "7d71e4ea879ed4bb8159570a030dd3bb0b6fe562ea2e053ea9732bf0d844f6fe"
+        }
+      ]
+    },
+    {
+      "label": "user-exercises",
+      "exit_code": 0,
+      "elapsed_seconds": 7.363,
+      "files": [
+        {
+          "path": "user-exercises.json",
+          "bytes": 7827,
+          "sha256": "96127c645d118fe66b895708c8acc5b241c1eb12976c349f76490c1d45a33951"
+        },
+        {
+          "path": "user-exercises.log",
+          "bytes": 2197,
+          "sha256": "2baf90972bc173fb17fb221c7fed9f5d3880ef2919b4024086330a62937f546b"
+        }
+      ]
+    },
+    {
+      "label": "license-policy",
+      "exit_code": 0,
+      "elapsed_seconds": 1.15,
+      "files": [
+        {
+          "path": "license-policy.json",
+          "bytes": 9352,
+          "sha256": "22cbfaad422f628341495dd1c9abf17dcd0c76447b539e252e03d586af0ccf48"
+        },
+        {
+          "path": "license-policy.log",
+          "bytes": 126,
+          "sha256": "b3997f8243265f9c3329399038ca8a2963e96f5900e037027c96f226906f00a2"
+        }
+      ]
+    },
+    {
+      "label": "fresh-rustdoc",
+      "exit_code": 0,
+      "elapsed_seconds": 18.666,
+      "files": [
+        {
+          "path": "fresh-rustdoc.json",
+          "bytes": 6797,
+          "sha256": "494cdba22a1e6e4e900e2cddaf3236978492630c44ccea4d086e51a3195a5b10"
+        },
+        {
+          "path": "fresh-rustdoc.log",
+          "bytes": 6055,
+          "sha256": "a29def5140fcada6907a712f09bb915782504a559374c6629379d4b5d8f89c5c"
+        }
+      ]
+    },
+    {
+      "label": "doc-audit-followup",
+      "exit_code": 0,
+      "elapsed_seconds": 92.282,
+      "files": [
+        {
+          "path": "doc-audit-followup.json",
+          "bytes": 9138,
+          "sha256": "a891083e176ceed63424b84c16d36810c42bf55688d00a0c3025b392dd06532a"
+        },
+        {
+          "path": "doc-audit-followup.log",
+          "bytes": 1802,
+          "sha256": "55c2d1f9485de380e71540b5b014f63db5ba0975b1c9aa54052679573ca8716d"
+        }
+      ]
+    },
+    {
+      "label": "redaction-rustdoc",
+      "exit_code": 0,
+      "elapsed_seconds": 8.492,
+      "files": [
+        {
+          "path": "redaction-rustdoc.json",
+          "bytes": 14282,
+          "sha256": "d1305d87223956aabf00d023aa8ff51f995e2071da24c543e5357aabfc442a48"
+        },
+        {
+          "path": "redaction-rustdoc.log",
+          "bytes": 738,
+          "sha256": "c1ea05ab193000df6eef39064d12acac7adf42da0239fe7b0119c68316ef9c4c"
+        }
+      ]
+    },
+    {
+      "label": "facade-rustdoc",
+      "exit_code": 0,
+      "elapsed_seconds": 4.871,
+      "files": [
+        {
+          "path": "facade-rustdoc.json",
+          "bytes": 14960,
+          "sha256": "18b498466fbded6430268560914d3a68dda3a51675fe58b574594729f3314c28"
+        },
+        {
+          "path": "facade-rustdoc.log",
+          "bytes": 538,
+          "sha256": "358c6e8a130409135dbff72d72a4a77a6cd10cefbc5545acbb6ca98ef83ad54e"
+        }
+      ]
+    },
+    {
+      "label": "followup-clippy",
+      "exit_code": 0,
+      "elapsed_seconds": 37.948,
+      "files": [
+        {
+          "path": "followup-clippy.json",
+          "bytes": 15372,
+          "sha256": "55bedac6402ac81433d20d828c2f18f7a2fcbbaab4c27c267bd73d0f4dd1d3a9"
+        },
+        {
+          "path": "followup-clippy.log",
+          "bytes": 5356,
+          "sha256": "3547a4b13faf092d72b5943563da749223af53937d426a1b532f10a6e654f97f"
+        }
+      ]
+    },
+    {
+      "label": "followup-docs-check-final",
+      "exit_code": 0,
+      "elapsed_seconds": 13.177,
+      "files": [
+        {
+          "path": "followup-docs-check-final.json",
+          "bytes": 15260,
+          "sha256": "5219770a1b3a6a7593edda0f0dc4b44ba45f15429de96fd581157b974b45c023"
+        },
+        {
+          "path": "followup-docs-check-final.log",
+          "bytes": 849,
+          "sha256": "9c422fee3c8005816b308b45d2a4a9ea346ab3249b0cb383d32898b8eecf89f3"
+        }
+      ]
+    },
+    {
+      "label": "followup-format-final",
+      "exit_code": 0,
+      "elapsed_seconds": 1.479,
+      "files": [
+        {
+          "path": "followup-format-final.json",
+          "bytes": 15185,
+          "sha256": "250dd37b98a8c688d8903c8678d7b3bec81d740b7e610de4e20a86f13c0f5878"
+        },
+        {
+          "path": "followup-format-final.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
+  ]
+}

@@ -93,6 +93,15 @@ jobs:
       - run: cargo rustdoc -p concord --all-features --locked -- -D warnings
       - run: cargo rustdoc -p concord-core --all-features --locked -- -D warnings
       - run: cargo rustdoc -p concord-extras --all-features --locked -- -D warnings
+      - name: Render and audit generated endpoint documentation
+        run: cargo run --locked -p concord-xtask --all-features -- doc-audit --locked
+      - name: Preserve the generated public documentation for independent review
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: concord-v3-rustdoc-${{ github.sha }}
+          path: target/doc
+          if-no-files-found: error
+          retention-days: 30
       - name: Package archives, extracted Rustdoc, and downstream use
         shell: pwsh
         run: ./scripts/verify_packaged_downstream.ps1

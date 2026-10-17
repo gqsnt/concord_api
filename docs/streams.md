@@ -7,7 +7,8 @@ its completion or failure is reported by the stream itself.
 
 ## Declaring streams
 
-```concord-pseudocode
+<!-- concord-pseudocode -->
+```rust
 GET download() -> ByteStream via Binary;          // managed bytes
 GET watch() -> ItemStream<Event> via NdJson;      // managed records
 GET rows() -> ItemStream<(String, u32)> via Csv;  // managed CSV records
@@ -19,7 +20,8 @@ bounded collections (`-> Vec<T> via Csv`), acquired and decoded before
 `.await` returns:
 
 <!-- concord-source: crates/concord-examples/src/request_response/records.rs#records_contract -->
-```concord
+<!-- concord-dsl -->
+```rust
 api! {
     client RecordsApi {
         base "http://records.example.test/";

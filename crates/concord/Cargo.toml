@@ -4,6 +4,8 @@ description = "Contract compiler and bounded managed HTTP runtime for typed Rust
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 publish = false
 
 [features]
@@ -68,6 +70,11 @@ required-features = ["json", "rate-limit", "default-tls"]
 name = "current_language"
 path = "tests/current_language.rs"
 required-features = ["json", "rate-limit"]
+
+[[test]]
+name = "v3_user_exercises"
+path = "tests/v3_user_exercises.rs"
+required-features = ["json", "ndjson"]
 
 [lints]
 workspace = true

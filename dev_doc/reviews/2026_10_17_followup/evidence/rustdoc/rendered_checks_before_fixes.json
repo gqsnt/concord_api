@@ -1,0 +1,178 @@
+{
+  "reviewed_at": "2026-10-17T11:39:27Z",
+  "platform": "Linux-6.18.55-x86_64-with-glibc2.39",
+  "root": "fresh candidate target/doc (see native receipt fresh-rustdoc)",
+  "scope": "Current working candidate fresh Rustdoc from native/fresh-rustdoc.json, before requested provenance emitter correction re-render. Public visible documentation only.",
+  "tasks": {
+    "1": [
+      {
+        "path": "concord_examples/contracts/catalog_v3/catalog_api/struct.CatalogApiBuilder.html",
+        "sha256": "1e0f0ce3171dafb87f915d06e2671cffbe53fa9e0c6ec71726d3ed1f2ca4373c",
+        "type_documentation": "Expand description Builder for CatalogApi . Declaration defaults were evaluated once when this builder was created; build does not evaluate them again. Missing required values, secrets and providers are reported together in one ClientBuildError naming the setters, never the values. Build performs no network access. Required inputs: set_tenant , bootstrap_key (secret).",
+        "methods": {
+          "method.build": "Source pub fn build (self) -> Result < CatalogApi , ClientBuildError > Builds the immutable client snapshot. Defaults are not evaluated again. No network access, provider acquisition or remote schema registration happens. \u00a7 Errors One ClientBuildError accumulating every missing required value, secret and provider (by setter name), or an invalid credential, limiter or transport configuration.",
+          "method.configure_runtime": "Source pub fn configure_runtime <C>(self, __concord_configure: C) -> Self where C: FnOnce ( RuntimeConfigBuilder ) -> RuntimeConfigBuilder , Applies a runtime configuration transformation immediately and in call order (limits, retry policy, limiter, observers).",
+          "method.set_tenant": "Source pub fn set_tenant (self, __concord_value: impl IntoValue < TenantId >) -> Self The tenant is sent, but excluded from automatic observation. Selects a present tenant payload ( impl IntoValue<TenantId> : identity; borrowed strings only when the target is String ). Owner: CatalogApi . The value is sensitive: it is sent, but withheld from automatic plans, errors and observers.",
+          "method.bootstrap_key": "Source pub fn bootstrap_key (self, __concord_value: SecretString ) -> Self Supplies required protected secret bootstrap_key ; a later call replaces it. The value is never formatted or exposed in errors."
+        }
+      }
+    ],
+    "2": [
+      {
+        "path": "concord_examples/getting_started/domain_tree/catalog_api/regional/struct.ItemSummariesRequest.html",
+        "sha256": "ee5b907f86eb497c0ba48609c3089d98cedd740cc81a9073ddf92e349420c196",
+        "type_documentation": "Expand description Named request for CatalogApi::regional::item_summaries . Holding it does not contact the server; .await executes one managed operation. Cloning creates an independent operation and grants no retry authority. \u00a7 Contract Operation: GET http://{regional.region}.api.catalog.example.test/api/v1/catalog/items (endpoint ID catalog_api.regional.item_summaries , navigation-derived) Result: Vec<ItemSummary> via Json Accepted statuses: 200..=299 Effect: safe (method default) Timeout: 30 s Authentication: none Pagination: pages , collect_prefix and collect_all are available; ordinary .await returns one page The complete effective contract is available from CatalogApi::contract() . \u00a7 Endpoint values category : String (optional) offset : u64 (initialized) count : NonZeroU32 (initialized)",
+        "methods": {
+          "method.set_category": "Source pub fn set_category (self, __concord_value: impl IntoValue < String >) -> Self Selects a present category payload ( impl IntoValue<String> : identity; borrowed strings only when the target is String ). Owner: CatalogApi::regional::item_summaries .",
+          "method.replace_category": "Source pub fn replace_category (self, __concord_value: Option < String >) -> Self Replaces the outer slot of category exactly: Some(v) is present, None is absent. For a nested Option payload, Some(None) is a present inner None . Owner: CatalogApi::regional::item_summaries .",
+          "method.set_category_if_some": "Source pub fn set_category_if_some (self, __concord_value: Option < String >) -> Self Selects category when Some ; None means no new opinion and leaves the current selection unchanged. Owner: CatalogApi::regional::item_summaries .",
+          "method.omit_category": "Source pub fn omit_category (self) -> Self Selects an absent category : its keyed emissions are omitted. Owner: CatalogApi::regional::item_summaries .",
+          "method.set_offset": "Source pub fn set_offset (self, __concord_value: impl IntoValue < u64 >) -> Self Selects a present offset payload ( impl IntoValue<u64> : identity; borrowed strings only when the target is String ). Owner: CatalogApi::regional::item_summaries .",
+          "method.set_offset_if_some": "Source pub fn set_offset_if_some (self, __concord_value: Option < u64 >) -> Self Selects offset when Some ; None means no new opinion and leaves the current selection unchanged. Owner: CatalogApi::regional::item_summaries .",
+          "method.reset_offset": "Source pub fn reset_offset (self) -> Self Restores the retained initial selection of offset (the initializer is not re-evaluated). Owner: CatalogApi::regional::item_summaries ."
+        }
+      }
+    ],
+    "3": [
+      {
+        "path": "concord_examples/contracts/catalog_v3/catalog_api/regional/struct.FindItemRequest.html",
+        "sha256": "aa02bac4061c6776a2ef3be181c69328965656891384929e6a9ac0c077d11786",
+        "type_documentation": "Expand description A head-only 404 is None; the body of that response is not polled. Named request for CatalogApi::regional::find_item . Holding it does not contact the server; .await executes one managed operation. Cloning creates an independent operation and grants no retry authority. \u00a7 Contract Operation: GET https://{regional.region}.api.catalog.example.test/root/{client.api_version}/regions/{regional.region}/items/{id} (endpoint ID catalog.item.find , explicit) Result: Option<Item> via Json Accepted statuses: 200..=299 Expected absence: None on 404 (head-only; that response body is dropped unread) Effect: safe (method default) Timeout: 20 s Authentication: bearer session (challenge on 401), from CatalogApi::regional Rate policy catalog.tenant.read : key [origin, \u201ctenant\u201d], cost 1, from CatalogApi::regional The complete effective contract is available from CatalogApi::contract() . \u00a7 Endpoint values id : ItemId (required)",
+        "methods": {
+          "method.description": "Source pub fn description (&self) -> &'static EndpointDescription Returns this endpoint\u2019s value-free effective description."
+        }
+      },
+      {
+        "path": "concord/inspection/struct.EndpointContract.html",
+        "sha256": "ef0fd735934a3328678cf458d11c8604a2617da3bb96e4937d4afa08369ff255",
+        "type_documentation": "Expand description The complete resolved contract record of one generated endpoint.",
+        "methods": {
+          "method.result": "Source pub const fn result (&self) -> & ResultContract Returns the effective result."
+        }
+      },
+      {
+        "path": "concord/inspection/struct.ResultContract.html",
+        "sha256": "fbebcc4bbf686739bf387146fc65eac54e4d7b065158fe22ae1f44d3cd623fab",
+        "type_documentation": "Expand description The effective result of one endpoint.",
+        "methods": {
+          "method.representation": "Source pub const fn representation (&self) -> & EffectiveRepresentation Returns the effective response representation."
+        }
+      },
+      {
+        "path": "concord/inspection/struct.EffectiveRepresentation.html",
+        "sha256": "7ae16eb88fc448d77c9614f19c419c96ff68d56a45db130ffe2bcdf94eb91e27",
+        "type_documentation": "Expand description The effective representation of one direction and its provenance.",
+        "methods": {
+          "method.source": "Source pub const fn source (&self) -> RepresentationSource Returns where the selection came from."
+        }
+      }
+    ],
+    "5": [
+      {
+        "path": "concord/inspection/struct.EffectiveRepresentation.html",
+        "sha256": "7ae16eb88fc448d77c9614f19c419c96ff68d56a45db130ffe2bcdf94eb91e27",
+        "type_documentation": "Expand description The effective representation of one direction and its provenance.",
+        "methods": {
+          "method.blocking_fence": "Source pub const fn blocking_fence (&self) -> Option <&'static str > Returns the nearest ancestor explicit fence that blocks inheritance for this endpoint, when one exists.",
+          "method.shadowed_default": "Source pub const fn shadowed_default (&self) -> Option <(&'static str , &'static str )> Returns the inherited default (owner path, type) that an inline selection overrides, when one would otherwise apply."
+        }
+      }
+    ],
+    "8": [
+      {
+        "path": "concord/pagination/struct.CollectAll.html",
+        "sha256": "3b63d72d632307e2f23808795ffd8a7d0149bd14d18af253a916efc4f55c37e5",
+        "type_documentation": "Expand description An inert request to collect a complete traversal, returned by request.collect_all(maximum_pages) . Awaiting it yields every item only after the controller proved exhaustion ( PageStep::Done ) within the effective bound. Reaching the bound while a valid continuation exists returns a Pagination / CompletionLimitExceeded error carrying the summary ( PageBound / NextRequestKnown ); a success never contains an undisclosed prefix. Any other failure fails the whole collection. Controls (timeout, caps, cancellation) may be applied before awaiting. Dropping the started future cancels the traversal through its drop guard.",
+        "methods": {},
+        "public_fields_and_variants": "concord :: pagination Struct Collect All Copy item path Source pub struct CollectAll<Item> { /* private fields */ } Expand description An inert request to collect a complete traversal, returned by request.collect_all(maximum_pages) . Awaiting it yields every item only after the controller proved exhaustion ( PageStep::Done ) within the effective bound. Reaching the bound while a valid continuation exists returns a Pagination / CompletionLimitExceeded error carrying the summary ( PageBound / NextRequestKnown ); a success never contains an undisclosed prefix. Any other failure fails the whole collection. Controls (timeout, caps, cancellation) may be applied before awaiting. Dropping the started future cancels the traversal through its drop guard. Implementations \u00a7 Source \u00a7 impl<Item> CollectAll <Item> Source pub fn timeout ( self, duration: Duration , ) -> Result < CollectAll <Item>, ControlError > Replaces the selected finite timeout for the whole traversal. Caps are retained. Source pub fn reset_timeout (self) -> CollectAll <Item> Restores the declared timeout. Caps are retained. Source pub fn cancel_with ( self, token: CancellationToken , ) -> Result < CollectAll <Item>, ControlError > Attaches one more cancellation signal (at most eight distinct signals). Source pub fn with_options (self, options: & CallOptions ) -> CollectAll <Item> Intersects additional caps; caps only narrow execution. Source pub fn control_summary (&self) -> ControlSummary Returns the value-free effective control summary. "
+      },
+      {
+        "path": "concord/pagination/struct.Pages.html",
+        "sha256": "68e1d2caaba21ea63fb4402b65b2ff749046cab2cdd54212d494e5063a8e6f13",
+        "type_documentation": "Expand description A caller-driven lazy traversal returned by request.pages(maximum_pages) . Construction is inert. The first polled next_page future of a nonzero traversal allocates the aggregate operation identity and starts one absolute deadline covering controller start, every page and attempt, and all time the application spends between polls; it is never reset per page. There is no background prefetch and at most one page fetch is active. Pages does not implement RequestControls and has no timeout or cancellation setters: apply controls to the originating request before calling .pages() . The captured cancellation tokens can still be cancelled externally after the traversal started. \u00a7 Cancellation Dropping a next_page future that was never polled changes nothing. Dropping a next_page future after it was polled cancels the whole traversal through a synchronous drop guard: its in-flight work is dropped and the summary records StopReason::Cancelled . Later next_page calls return Ok(None) ; budgets are never replenished. An attached cancellation signal observed before or during a fetch returns one Pagination / Cancelled error, then Ok(None) . A fetch error is returned exactly once; later calls return Ok(None) and the summary retains StopReason::Failed . Dropping a started traversal records cancellation, never EOF or rollback. This strict rule is deliberate: a resumable cancellation mode would need durable pending-page accounting and is not provided.",
+        "methods": {
+          "method.next_page": "Source pub fn next_page ( &mut self, ) -> impl Future <Output = Result < Option < Page <Item>>, ApiError >> Fetches, validates and delivers the next page, or returns Ok(None) once the traversal is exhausted, bounded, finished, failed or cancelled. See the type-level documentation for cancellation rules.",
+          "method.finish": "Source pub fn finish (self) -> TraversalSummary Ends the traversal and returns its final summary. An already terminal Exhausted , PageBound , Failed or Cancelled state is preserved; otherwise the traversal records StopReason::Application . An unstarted traversal keeps no operation identity and emits no observation."
+        }
+      },
+      {
+        "path": "concord/pagination/struct.TraversalSummary.html",
+        "sha256": "756e104b3698810739b81de981eca2d96b541f47b6394d2c7e218da475ca8edd",
+        "type_documentation": "Expand description Owned, cloneable facts about one traversal. Every counter is checked and bounded by the traversal\u2019s finite ceilings. No field claims how many delivered items the application actually processed. The summary contains no cursor, request value, header, body or credential and is safe to log.",
+        "methods": {
+          "method.pages_received": "Source pub const fn pages_received (&self) -> u32 Returns the number of pages completely acquired and decoded, including a page whose items were withheld by a controller or continuation error.",
+          "method.pages_delivered": "Source pub const fn pages_delivered (&self) -> u32 Returns the number of pages whose items were delivered to the caller.",
+          "method.effective_page_bound": "Source pub const fn effective_page_bound (&self) -> u32 Returns the enforced bound: the requested bound intersected with the client\u2019s configured page ceiling."
+        }
+      }
+    ],
+    "9": [
+      {
+        "path": "concord/response/struct.ByteStream.html",
+        "sha256": "a3d92e4b7ceb411faa97c0e77638fa1aaac8420de64bc9620876fb6115377eae",
+        "type_documentation": "Expand description A managed, owned, bounded accepted response body consumed lazily. \u00a7 Acquisition is not end of body An endpoint await that returns a ByteStream has only validated the accepted head and opened the stream: the operation\u2019s completion reports StreamOpened and ApiResponse::body_disposition reports BodyDisposition::StreamOpened , never a completed download. Later failures belong to the stream, not to the already fixed operation result, so an operation is never reported as fully successful and then failed for the same body. \u00a7 Ownership and lifecycle The handle exclusively owns the native body; it is not Clone . Consume it with next (or the [ Stream ] implementation), inspect it with summary and stop early with finish , which never drains the body. The terminal StreamState is Eof only after the caller observed the actual end of the body. A terminal failure yields exactly one error, then None ; the failure is retained in the summary. Dropping the handle before a terminal result records cancellation and synchronously drops the native body. \u00a7 Cancellation of next Dropping an individual pending next future does not terminate the stream. Poll state, acquired-byte accounting and the idle baseline live in the handle; a later next resumes the same acquisition and never resends the request. This deliberately differs from pagination, where dropping a started page fetch terminates the traversal. External cancellation signals attached to the originating request ( cancel_with ) cancel the entire stream: the next poll yields one Cancelled error and releases the body. \u00a7 Finite lease After acquisition the stream holds a finite lease (5 minutes total and 30 seconds cumulative idle by default, configurable through RuntimeConfigBuilder::stream_lifetime / stream_idle_timeout and narrowed by CallOptions::cap_stream_lifetime / cap_stream_idle ). The total lease includes consumer pauses between polls; idle counts only time while an underlying read is pending, nonempty data resets it and empty chunks do not. A pending read keeps its idle baseline when its next future is dropped, and once its idle budget is spent that read can no longer complete: data or an end of body that becomes available only afterwards yields one IdleTimeout error, not the data and not a clean end. Likewise a read observed to complete only at or after the end of the total lease yields one LeaseExpired error instead of its data or a clean end; when both limits have run out, LeaseExpired takes precedence. Empty chunks acquire no data, so the acquisition stays pending across the cooperative yield described below: the time until the next poll counts as idle, also when next is dropped at that yield. A whole-operation timeout cap ( CallOptions::cap_timeout ) started at the first request poll also bounds the lease; without it, the request timeout ends at acquisition. Expiry is observed on the next poll (or while a read is pending, through one handle-owned timer); a stream that is never polled again releases its native body on drop. No detached task is started and there is no implicit forever mode or reconnection. \u00a7 Limits and framing Every yielded chunk is nonempty and passed the cumulative decoded (post-decompression) byte limit; the first excess chunk is withheld. Empty transport chunks are suppressed, at most MAX_EMPTY_RESPONSE_CHUNKS consecutive empties are accepted, and at most 32 are handled per poll before yielding to the scheduler. No policy retry, authentication recovery or native replay happens after handoff: a reconnecting application must start a new operation. \u00a7 Errors and sensitivity Every stream error carries FailureStage::StreamConsumption , DispatchKnowledge::ResponseObserved , the original endpoint, operation, attempt and status, and a StreamSummary . Errors, Debug and the summary never contain body bytes, headers or URLs. \u00a7 Runtime The stream must be polled inside a Tokio runtime with time enabled, as is every Concord operation.",
+        "methods": {
+          "method.next": "Source pub fn next (&mut self) -> impl Future <Output = Option < Result < Bytes , ApiError >>> Returns the next nonempty chunk, None after the end of the body or after the one terminal error. The returned future is cancel-safe: dropping it leaves all acquisition state, counters and the idle baseline in this handle, and a later call resumes the same acquisition.",
+          "method.finish": "Source pub fn finish (self) -> StreamSummary Stops consumption without draining and returns the final summary. After the actual end of the body the Eof state is preserved, as is an earlier Failed or Cancelled state; otherwise the stream records Application and drops the native body unread."
+        }
+      },
+      {
+        "path": "concord/struct.ItemStream.html",
+        "sha256": "84e17177dfd92d8940427f3b0379fa5d96584f384835fd16baae9637af30daa3",
+        "type_documentation": "Expand description A managed, owned lazy stream of semantic records decoded incrementally. ItemStream<T> owns a managed ByteStream and one request-local record decoder whose framing strategy is hidden. It shares every byte-level contract of ByteStream : acquisition is not end of body, the finite total lease and pending-read idle limit, consecutive empty-chunk guardrails, the decoded byte limit, external cancellation, and no retry or replay after handoff. It is not Clone . \u00a7 Records and framing Each record\u2019s staged bytes are bounded by the smaller of the decoder\u2019s max_buffered_bytes and the runtime frame limit (1 MiB + 2 bytes by default, RuntimeConfigBuilder::stream_frame_limit ); the first excess byte is rejected before it is retained and the oversized record is never yielded. At most the runtime record limit (100,000 by default, stream_max_records ) is yielded; the next record is withheld with a correlated error. Transport chunks are never record boundaries. The decoder owns final-record policy at end of body (for example NDJSON parses a final nonempty line without a newline exactly once; CSV rejects an unterminated quote), and an incomplete tail is an error, never a silently dropped record. A partial stream never becomes a complete success. \u00a7 Lifecycle and cancellation next is cancel-safe exactly like ByteStream::next : the decoder buffer, poll state, counters and idle baseline live in this handle, so dropping a pending next future does not terminate the stream and a later call resumes it, unless the idle budget of that pending read ran out in the meantime: record data or an end of body (which could otherwise complete a staged final record) that becomes available only after the idle limit yields one IdleTimeout error. Record data or an end of body observed only at or after the end of the total lease likewise yields one LeaseExpired error and never completes a staged record. A body read failure, framing or decoding failure, record/frame/byte limit, lease or idle expiry, or external cancellation yields exactly one correlated ApiError , then None . The summary counts full yielded records; finish never drains and preserves Eof after the final record. Dropping the stream before a terminal result records cancellation and synchronously drops the decoder, staged bytes and native body. \u00a7 Sensitivity Records are application data owned by the caller. Errors, Debug and the summary never contain records, staged bytes, decoder state or parser text.",
+        "methods": {
+          "method.next": "Source pub fn next (&mut self) -> impl Future <Output = Option < Result <T, ApiError >>> Returns the next complete record, None after the final record or after the one terminal error. The returned future is cancel-safe: dropping it keeps the decoder buffer, counters and idle baseline in this handle.",
+          "method.finish": "Source pub fn finish (self) -> StreamSummary Stops consumption without draining and returns the final summary. After the final record was observed the Eof state is preserved, as is an earlier Failed or Cancelled state; otherwise the stream records Application ."
+        }
+      }
+    ],
+    "10": [
+      {
+        "path": "concord/endpoint/struct.RequestPlan.html",
+        "sha256": "da22219dd45493ac504bfa297d67d87eb283e6be139ad0c724758628f958e23f",
+        "type_documentation": "Expand description A credential-sanitized, owned projection of real public-head preparation. Planning never contains native requests, authentication material, protected rate-limit keys, encoded body bytes, or response values. Public URL values may still contain operational identifiers or personally identifiable information.",
+        "methods": {
+          "method.observed_url": "Source pub fn observed_url (&self) -> & str Returns the redaction-aware, credential-free logical URL produced by real public-head shaping. Visible public values can still contain operational identifiers or personally identifiable information.",
+          "method.public_headers": "Source pub const fn public_headers (&self) -> & SanitizedHeaderMap Returns owned sanitized public headers as explicit caller authority. Non-credential public values can still contain personally or operationally sensitive application data. They are omitted from this plan\u2019s Debug implementation and automatic observation."
+        }
+      },
+      {
+        "path": "concord/struct.ApiResponse.html",
+        "sha256": "db67d162eed1d417689d30f0de5fde083029a29bb79f9f312e112e67ffdcc8ee",
+        "type_documentation": "Expand description A successful semantic value together with its logical response metadata. This is the single metadata wrapper for buffered values, bytes, no-content, byte streams, record streams, and application-defined outputs. Its Debug implementation is structural: it never formats T , the logical URL, or any response header value. Accessors intentionally expose the actual accepted headers and credential-sanitized logical URL to application code, which owns later logging and storage. Public URL values may still contain operational identifiers or personally identifiable information.",
+        "methods": {
+          "method.url": "Source pub const fn url (&self) -> & Url Returns the credential-sanitized logical URL. Public values may still contain operational identifiers or personally identifiable information.",
+          "method.headers": "Source pub const fn headers (&self) -> & HeaderMap Returns the actual accepted response headers as explicit caller authority. Header names and values can contain credentials, personal information, or operationally sensitive application data. They are omitted from Debug and automatic observation; callers own any later logging and storage."
+        }
+      },
+      {
+        "path": "concord/observation/struct.RequestTarget.html",
+        "sha256": "a6f1cffdf22f613548797f196525580da209d4d0ed8904d48d8ee570dc08c60a",
+        "type_documentation": "Expand description Bounded value-free structure of one logical request target. Exact path segments, query names and values, header names and values, and the complete URL are deliberately absent. Callers that explicitly need credential-free public metadata can use RequestPlan or ApiResponse accessors instead and must protect application-sensitive public values.",
+        "methods": {},
+        "public_fields_and_variants": "concord :: observation Struct Request Target Copy item path Source pub struct RequestTarget { /* private fields */ } Expand description Bounded value-free structure of one logical request target. Exact path segments, query names and values, header names and values, and the complete URL are deliberately absent. Callers that explicitly need credential-free public metadata can use RequestPlan or ApiResponse accessors instead and must protect application-sensitive public values. Implementations \u00a7 Source \u00a7 impl RequestTarget Source pub const fn path_segment_count (self) -> usize Returns the number of nonempty encoded path-segment occurrences. Source pub const fn query_occurrence_count (self) -> usize Returns the number of encoded query occurrences. Source pub const fn public_header_occurrence_count (self) -> usize Returns the number of public request-header occurrences. "
+      },
+      {
+        "path": "concord/observation/struct.ResponseHeadObserved.html",
+        "sha256": "1092c3efb8b7d9785dabc4dd7e0c9c83b3d7ded5c64e777695823e0baf2f985a",
+        "type_documentation": "Expand description Sanitized metadata supplied for every received final response head.",
+        "methods": {},
+        "public_fields_and_variants": "concord :: observation Struct Response Head Observed Copy item path Source pub struct ResponseHeadObserved<'a> { pub operation_id: OperationId , pub parent_operation_id: Option < OperationId >, pub endpoint: &'a str , pub method: &'a Method , pub target: RequestTarget , pub page_index: u32 , pub attempt: AttemptInfo , pub status: StatusCode , pub content_length: Option < u64 >, pub server_delay: Option < Duration >, } Expand description Sanitized metadata supplied for every received final response head. Fields \u00a7 \u00a7 operation_id: OperationId Identity of this request or page operation. \u00a7 parent_operation_id: Option < OperationId > Aggregate pagination identity for a page operation. \u00a7 endpoint: &'a str Operational endpoint ID: an explicit id pin or a navigation-derived ID for a generated endpoint, the validated ID of a runtime endpoint. \u00a7 method: &'a Method Application HTTP method. \u00a7 target: RequestTarget Value-free bounded request-target structure. \u00a7 page_index: u32 Zero-based page index; direct requests use zero. \u00a7 attempt: AttemptInfo Structural identity of the attempt that produced this head. \u00a7 status: StatusCode Final status for this Concord attempt. \u00a7 content_length: Option < u64 > Valid bounded content length parsed by core, when present. \u00a7 server_delay: Option < Duration > Standard server delay parsed once by core, when valid. "
+      },
+      {
+        "path": "concord/observation/enum.OperationEvent.html",
+        "sha256": "00ab80a03ecebd4795680179722055ff678a1f521d9f80d29f1e73be36dfdf65",
+        "type_documentation": "Expand description One bounded, sanitized lifecycle event emitted by the managed runtime. The event contains no request or response body, credential material, private authentication placement, raw rate key, or native HTTP object.",
+        "methods": {},
+        "public_fields_and_variants": "concord :: observation Enum Operation Event Copy item path Source #[non_exhaustive] pub enum OperationEvent<'a> { AttemptStarted( AttemptStarted <'a>), ResponseHeadObserved( ResponseHeadObserved <'a>), OperationFinished( OperationFinished <'a>), PaginationFinished( PaginationFinished <'a>), StreamFinished( StreamFinished <'a>), ProviderAcquisitionFinished( ProviderAcquisitionFinished ), } Expand description One bounded, sanitized lifecycle event emitted by the managed runtime. The event contains no request or response body, credential material, private authentication placement, raw rate key, or native HTTP object. Variants (Non-exhaustive) \u00a7 This enum is marked as non-exhaustive Non-exhaustive enums could have additional variants added in future. Therefore, when matching against variants of non-exhaustive enums, an extra wildcard arm must be added to account for any future variants. \u00a7 AttemptStarted( AttemptStarted <'a>) A visible managed attempt is about to begin protected work. \u00a7 ResponseHeadObserved( ResponseHeadObserved <'a>) A final response head has been received for a visible attempt. \u00a7 OperationFinished( OperationFinished <'a>) One direct request or pagination page reached its fixed result. \u00a7 PaginationFinished( PaginationFinished <'a>) One aggregate pagination operation reached its fixed result. \u00a7 StreamFinished( StreamFinished <'a>) One caller-driven lazy response lifecycle terminated. \u00a7 ProviderAcquisitionFinished( ProviderAcquisitionFinished ) One credential-provider acquisition or refresh settled. "
+      },
+      {
+        "path": "concord/rate_limit/struct.RateLimitRequest.html",
+        "sha256": "bd4bb0baae065f14d96b8de74ccdc2d92a774fd7c6d3dc01d6ad57a80dad6196",
+        "type_documentation": "Expand description Safe request metadata supplied to a selected rate limiter. The request carries the complete effective conjunctive plan with protected canonical keys, the value-free schema of every policy ( crate::rate_limit::RateLimitPolicy::schema ), and the limiter capability that core snapshotted at client build. Together, each policy schema and Self::capability form the complete schema descriptor of RATE-05: policy ID, ordered labels and encoding IDs, framing version, canonical window schema, and limiter namespace/algorithm identity. It never carries request bodies, credentials or raw headers.",
+        "methods": {},
+        "public_fields_and_variants": "concord :: rate_limit Struct Rate Limit Request Copy item path Source pub struct RateLimitRequest<'a> { pub cooldown_origin: Option <&'a CooldownOrigin >, pub endpoint: &'a str , pub method: &'a Method , pub logical_origin: Option <&'a str >, pub page_index: u32 , pub attempt: AttemptInfo , pub plan: &'a RateLimitPlan , pub capability: LimiterCapability , } Expand description Safe request metadata supplied to a selected rate limiter. The request carries the complete effective conjunctive plan with protected canonical keys, the value-free schema of every policy ( crate::rate_limit::RateLimitPolicy::schema ), and the limiter capability that core snapshotted at client build. Together, each policy schema and Self::capability form the complete schema descriptor of RATE-05: policy ID, ordered labels and encoding IDs, framing version, canonical window schema, and limiter namespace/algorithm identity. It never carries request bodies, credentials or raw headers. Fields \u00a7 \u00a7 cooldown_origin: Option <&'a CooldownOrigin > Opaque logical-origin identity for future cooldown admission, including empty plans. This grants no quota dimension or access to host text. \u00a7 endpoint: &'a str Operational endpoint ID (an explicit id pin or navigation-derived). \u00a7 method: &'a Method Application HTTP method. \u00a7 logical_origin: Option <&'a str > Normalized logical origin only when the effective plan explicitly uses the built-in origin dimension. The value can contain operational identifiers and must be protected in custom limiter storage and logs. It is absent for every other plan. \u00a7 page_index: u32 Zero-based page index; direct endpoint execution uses zero. \u00a7 attempt: AttemptInfo Structural identity of this visible managed attempt. \u00a7 plan: &'a RateLimitPlan Canonical immutable effective plan. \u00a7 capability: LimiterCapability The selected limiter\u2019s capability as snapshotted by core at client build: enforcement kind, adapter namespace and algorithm version. Auto "
+      }
+    ]
+  }
+}

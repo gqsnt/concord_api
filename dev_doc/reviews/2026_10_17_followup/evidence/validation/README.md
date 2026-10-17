@@ -1,0 +1,38 @@
+# Local follow-up validation
+
+The [index](index.json) pins eleven native check receipts and logs, copied
+without altering their bytes. Each receipt records its actual command,
+working checkout, source state, start/end time, process duration, exit code,
+and raw-log digest. Absolute paths identify the original local execution;
+they are not portable prerequisites.
+
+These checks used Rust 1.97.1 and locked dependencies. The receipts retain
+dirty development states; they do not identify those states as a clean
+committed release. Native durations include compilation and Cargo lock
+waiting. The complete pushed-source platform result belongs to that commit's
+CI run.
+
+| Check | Result |
+|---|---|
+| `xtask-followup-tests` | 63 unit tests and 6 CLI tests passed |
+| `macro-docs-tests` | 45 macro unit tests passed |
+| `user-exercises` | 8 new public-path tests passed with only `json,ndjson` enabled |
+| `license-policy` | Repository policy, including project license metadata and packaged-text source copies, passed |
+| `fresh-rustdoc` | Warning-denied workspace Rustdoc generated before the targeted documentation corrections |
+| `doc-audit-followup` | Current endpoint documentation generated and its provenance assertions passed |
+| `redaction-rustdoc` | Current core documentation generated with warnings denied |
+| `facade-rustdoc` | Current facade re-export documentation regenerated with warnings denied |
+| `followup-clippy` | Full workspace, all targets, all features passed with warnings denied |
+| `followup-docs-check-final` | Compiled excerpts, classification, anchors, links and current-language checks passed |
+| `followup-format-final` | Workspace formatting passed |
+
+The first integrated docs check found two unanchored illustrative fragments
+inside the raw checked-answer record. That record was retained byte-for-byte
+as [plain text](../dx/checked-answers.txt), with its artifact name corrected in
+the evidence index. The documentation checker remained enforced and the
+subsequent check passed.
+
+CSV and inspector old-code failure controls and corrected native runs are
+retained in the [runtime evidence](../runtime/README.md). The separate
+[Rustdoc evidence](../rustdoc/index.json) retains the original and corrected
+semantic diff and the independent reread of generated public pages.

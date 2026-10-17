@@ -124,7 +124,8 @@ declassify it. Credential material never enters public shaping.
 Request and response representations describe wire/media conversion. The exact
 endpoint output type describes what the caller receives and when:
 
-```concord-pseudocode
+<!-- concord-pseudocode -->
+```rust
 GET item() -> Item via Json;                    // one decoded value
 GET rows() -> Vec<Row> via Csv;                 // complete bounded collection
 GET watch() -> ItemStream<Event> via NdJson;    // lazy record stream

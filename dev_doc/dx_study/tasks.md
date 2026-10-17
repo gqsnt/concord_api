@@ -7,6 +7,11 @@ feedback, and ordinary editor/repository search. Do not inspect macro or core
 implementation source. Record an answer and confidence from 1 (guessing) to 5
 (certain) before checking or compiling it.
 
+Use the concrete declarations, error fixture and edit scenario in
+[the exercise fixtures](fixtures.md). Record the selected candidate's revision
+before starting. The fixture sheet supplies inputs, not a scoring answer key;
+open compiler-output fixtures only after the relevant prediction is recorded.
+
 1. For declarations `x?: T` and `x?: Option<T>`, predict the generated stored
    type and the argument types accepted by `set_x`, `replace_x` and
    `set_x_if_some`.

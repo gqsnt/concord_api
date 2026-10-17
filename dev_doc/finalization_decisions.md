@@ -23,7 +23,8 @@
 | Machine qualification | Accept completed gates only for their exact source inputs | Linux and Windows complete implementation/analyzer gates passed on `579e8ea`; the final delivery's CLI/UI/docs and source-export receipt remain separate checks |
 | Evidence delivery | Preserve original native failures, successful runs and source identities | The final-return artifact owns `FINAL_RETURN_RECEIPT.json`; private authority material is kept outside the public archive |
 | Dependency license policy | Explicit BSD-3-Clause exceptions for `alloc-no-stdlib`, `alloc-stdlib` and `brotli`; the `brotli` exception also lists MIT | Owner authorization on 17 October 2026; [deny.toml](../deny.toml) retains the global allowlist and the updated candidate must pass all ten CI jobs |
-| Human review | V3 task packets ready; no invented participants or independent-human result | Unknown for public freeze; not a machine-beta blocker |
+| Source license | MIT OR Apache-2.0, at the recipient's option | Root license texts, inherited SPDX metadata and byte-identical copies in the four public archives |
+| Requested user/Rustdoc exercises | Executed by agents under the owner's 17 October instruction | [Follow-up results](reviews/2026_10_17_followup/README.md); human-study claims C63/C64 remain unmeasured |
 | Version | `3.0.0-beta.1`, unpublished | Later merge/tag/publication decisions remain separate |
 
 The former V2 worksheet is retained in Git history. It does not add an active
@@ -32,12 +33,13 @@ alias, converter, deferred V2 feature or separate execution path to V3.
 ## Completion and release boundary
 
 Engineering qualification of an unpublished beta is a machine-evidence decision.
-It does not choose a public license, secure registry names, merge into main,
-perform a human study, freeze the public API or authorize stable publication.
+The owner has separately authorized an open-source license, implemented as
+`MIT OR Apache-2.0`, and agent execution of the prepared exercises. Registry
+ownership, a main merge, API freeze and stable publication remain separate actions.
 C63/C64 in the [claim ledger](claim_evidence_ledger.md) remain **Unknown**.
 Historical license-policy failures remain preserved. The owner's 17 October
 instruction brings the three dependency exceptions into this correction's scope;
-their validation is bound to the updated candidate's receipt. The project's own
-license and unpublished status remain unchanged. The final source update is
+their validation is bound to the updated candidate's receipt. The project license is selected separately as MIT OR Apache-2.0, and the
+unpublished status remains in force. The final source update is
 authorized; later release actions remain with the owner as recorded in
 [the release packet](owner_release_decisions.md).

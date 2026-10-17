@@ -107,7 +107,11 @@ impl OwnedSanitizedHeaderValue {
     }
 }
 
-/// An owned header map that contains only safe text and structural markers.
+/// An owned, credential-redacted view of public headers and structural markers.
+///
+/// Unmarked public names and values can still contain application-sensitive
+/// data. These explicit caller-selected accessors are not automatic logging
+/// authority: protect their contents before storing or displaying them.
 pub struct SanitizedHeaderMap {
     entries: Vec<(HeaderName, OwnedSanitizedHeaderValue)>,
 }

@@ -190,4 +190,29 @@ authority material remains separately held and is not published.
 CI #25 through #33 and their native license-policy failures remain historical
 observations. This dependency decision does not select the project's own
 license, change `publish = false`, or replace a required current-source result
-with a future PASS. C65 and the separate publication decisions remain unchanged.
+with a future PASS. The later project-license decision below resolves C65;
+publication remains a separate action.
+
+## 17 October 2026 follow-up: source license and agent exercises
+
+The owner subsequently authorized selecting an open-source license and asked
+agents to perform the prepared exercises and independent Rustdoc review. The
+[follow-up record](reviews/2026_10_17_followup/README.md) owns the new findings and
+local native evidence. The predecessor `570eec4` completed all ten jobs in
+[CI #34](https://github.com/gqsnt/concord_api/actions/runs/39022636141), including
+the native dependency-policy success; the follow-up still requires its own
+source-bound CI result.
+
+| ID | Claim | State | Evidence/gate | Falsifier | Decision dependency |
+|---|---|---|---|---|---|
+| C89 | Concord grants `MIT OR Apache-2.0` at the recipient's option | Observed | Owner-directed license selection; root license texts, all 17 package manifests and matching texts in the four public crates; repository and extracted-archive checks enforce the grant | A missing or altered text or different package license expression | Resolves the former C65 missing-license observation; publication remains separate |
+| C90 | The requested public user and independent Rustdoc exercises were executed by agents | Observed | Twelve user tasks, ten documentation/diff tasks, actual isolated source edits and eight new public-path integration tests; initial mistakes and rereview remain in the follow-up | A task reported completed without its answer or native check | Completes the requested technical evaluation; does not claim human comprehension in C63/C64 |
+| C91 | CSV preserves U+FEFF outside a single optional document-start BOM | Supported | Three old-code unit failures and two old-code HTTP failures; corrected run passes six unit and eight integration tests | A later character is stripped, malformed numeric data is accepted or a chunk-split initial BOM breaks quoted CSV | Follow-up correctness fix |
+| C92 | Rust highlighting retains compiled-documentation checks | Supported | Forty-nine converted Markdown fences; native classifier tests reject changed compiled excerpts, lost anchors, unsupported highlighting and dangling/duplicate markers | Highlighting change bypasses source or classification validation | Owner-requested Markdown rendering |
+| C93 | Generated endpoint cards identify request and response representation provenance independently | Supported | Native macro test covers root, scope, endpoint-local and explicit-fence cases; rendered documentation checks and independent rereview | A displayed origin differs from the effective contract or is absent from normal endpoint docs | Follow-up documentation correction |
+| C94 | Dependency-site changes identify only consumers of added or removed uses | Supported | Two generated-contract old-code failures; all 37 corrected inspector tests pass; two actual CLI replays preserve the original Catalog facts while excluding the unchanged root endpoint | An unchanged dependency use broadens a sites-only change, or another dependency change loses its full consumer coverage | Follow-up inspector correctness fix |
+
+No agent record is inserted into a human-result row. C63/C64 remain empirical
+human unknowns; the owner-directed technical exercise does not require those
+measurements to be invented or obtained. Historical performance and platform
+measurements retain their original source scopes.

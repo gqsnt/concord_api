@@ -1,0 +1,5016 @@
+{
+  "client": {
+    "base": {
+      "host": "catalog.example.test",
+      "ip_literal": false,
+      "literal": "https://catalog.example.test/root/",
+      "path_prefix": "/root/",
+      "port": 443,
+      "scheme": "https"
+    },
+    "credentials": [
+      {
+        "challenge_recovery": "final_rejects_applied_material",
+        "docs": [],
+        "kind": "api_key",
+        "name": "application_key",
+        "provider_type": null,
+        "resolved_source_endpoint": null,
+        "secrets": [
+          "bootstrap_key"
+        ],
+        "source_endpoint": null
+      },
+      {
+        "challenge_recovery": "final_rejects_installed_version",
+        "docs": [],
+        "kind": "endpoint",
+        "name": "session",
+        "provider_type": null,
+        "resolved_source_endpoint": "CatalogApi::authenticate",
+        "secrets": [],
+        "source_endpoint": "authenticate"
+      }
+    ],
+    "name": "CatalogApi",
+    "path": "CatalogApi",
+    "secrets": [
+      {
+        "docs": [],
+        "name": "bootstrap_key"
+      }
+    ],
+    "timeout": {
+      "duration": {
+        "nanos": 0,
+        "secs": 20
+      },
+      "source": {
+        "kind": "declared",
+        "owner": "CatalogApi"
+      }
+    }
+  },
+  "dependencies": [
+    {
+      "kind": "payload_type",
+      "reference": "ApiVersion",
+      "sites": [
+        "CatalogApi#values.api_version"
+      ]
+    },
+    {
+      "kind": "payload_type",
+      "reference": "Category",
+      "sites": [
+        "CatalogApi::regional::item_summaries#values.category"
+      ]
+    },
+    {
+      "kind": "payload_type",
+      "reference": "CommandId",
+      "sites": [
+        "CatalogApi::regional::update_item#values.command_id"
+      ]
+    },
+    {
+      "kind": "payload_type",
+      "reference": "ItemId",
+      "sites": [
+        "CatalogApi::regional::find_item#values.id",
+        "CatalogApi::regional::item#values.id",
+        "CatalogApi::regional::update_item#values.id"
+      ]
+    },
+    {
+      "kind": "payload_type",
+      "reference": "Language",
+      "sites": [
+        "CatalogApi::regional#values.language",
+        "CatalogApi::regional::inspect#values.language"
+      ]
+    },
+    {
+      "kind": "payload_type",
+      "reference": "Locale",
+      "sites": [
+        "CatalogApi#values.locale",
+        "CatalogApi::regional::item#values.locale_override"
+      ]
+    },
+    {
+      "kind": "payload_type",
+      "reference": "NonZeroU32",
+      "sites": [
+        "CatalogApi::regional::feed#values.count",
+        "CatalogApi::regional::item_summaries#values.count"
+      ]
+    },
+    {
+      "kind": "payload_type",
+      "reference": "Region",
+      "sites": [
+        "CatalogApi::regional#values.region"
+      ]
+    },
+    {
+      "kind": "payload_type",
+      "reference": "String",
+      "sites": [
+        "CatalogApi::regional::feed#values.after"
+      ]
+    },
+    {
+      "kind": "payload_type",
+      "reference": "TenantId",
+      "sites": [
+        "CatalogApi#values.tenant"
+      ]
+    },
+    {
+      "kind": "payload_type",
+      "reference": "Vec<Tag>",
+      "sites": [
+        "CatalogApi::regional::item_summaries#values.tags"
+      ]
+    },
+    {
+      "kind": "payload_type",
+      "reference": "u64",
+      "sites": [
+        "CatalogApi::regional::item_summaries#values.offset"
+      ]
+    },
+    {
+      "kind": "output_type",
+      "reference": "ByteStream",
+      "sites": [
+        "CatalogApi::regional::export#result"
+      ]
+    },
+    {
+      "kind": "output_type",
+      "reference": "Envelope<ItemSummary>",
+      "sites": [
+        "CatalogApi::regional::feed#result"
+      ]
+    },
+    {
+      "kind": "output_type",
+      "reference": "Item",
+      "sites": [
+        "CatalogApi::regional::inspect#result",
+        "CatalogApi::regional::item#result",
+        "CatalogApi::regional::update_item#result"
+      ]
+    },
+    {
+      "kind": "output_type",
+      "reference": "Option<Item>",
+      "sites": [
+        "CatalogApi::regional::find_item#result"
+      ]
+    },
+    {
+      "kind": "output_type",
+      "reference": "SessionToken",
+      "sites": [
+        "CatalogApi::authenticate#result"
+      ]
+    },
+    {
+      "kind": "output_type",
+      "reference": "Vec<ItemSummary>",
+      "sites": [
+        "CatalogApi::regional::item_summaries#result"
+      ]
+    },
+    {
+      "kind": "body_input_type",
+      "reference": "LoginInput",
+      "sites": [
+        "CatalogApi::authenticate#body.input"
+      ]
+    },
+    {
+      "kind": "body_input_type",
+      "reference": "UpdateInput",
+      "sites": [
+        "CatalogApi::regional::update_item#body.input"
+      ]
+    },
+    {
+      "kind": "representation",
+      "reference": "Binary",
+      "sites": [
+        "CatalogApi::regional::export#result.via"
+      ]
+    },
+    {
+      "kind": "representation",
+      "reference": "Json",
+      "sites": [
+        "CatalogApi#request_default",
+        "CatalogApi#response_default"
+      ]
+    },
+    {
+      "kind": "pagination_controller",
+      "reference": "EnvelopePages",
+      "sites": [
+        "CatalogApi::regional::feed#pagination"
+      ]
+    },
+    {
+      "kind": "pagination_controller",
+      "reference": "OffsetPagination",
+      "sites": [
+        "CatalogApi::regional::item_summaries#pagination"
+      ]
+    },
+    {
+      "kind": "pagination_init",
+      "reference": "CursorStart",
+      "sites": [
+        "CatalogApi::regional::feed#pagination"
+      ]
+    },
+    {
+      "kind": "pagination_init",
+      "reference": "OffsetInit",
+      "sites": [
+        "CatalogApi::regional::item_summaries#pagination"
+      ]
+    },
+    {
+      "kind": "constant",
+      "reference": "DEFAULT_PAGE_SIZE",
+      "sites": [
+        "CatalogApi::regional::feed#values.count.initializer",
+        "CatalogApi::regional::item_summaries#values.count.initializer"
+      ]
+    }
+  ],
+  "diagnostics": [],
+  "endpoints": [
+    {
+      "auth": {
+        "automatic_recovery_available": false,
+        "displaced": [],
+        "placements": [
+          {
+            "automatic_recovery": false,
+            "challenge": "never",
+            "credential": "application_key",
+            "origin": "CatalogApi",
+            "recovery": "final_rejects_applied_material",
+            "source_kind": "api_key",
+            "target": {
+              "kind": "header",
+              "name": "X-Bootstrap-Key",
+              "scheme": null
+            }
+          }
+        ]
+      },
+      "body": {
+        "constructor_position": 0,
+        "declaration_index": 0,
+        "description": {
+          "family": "buffered",
+          "media_hint": "application/json"
+        },
+        "docs": [],
+        "input_type": "LoginInput",
+        "name": "input",
+        "page_capable": false,
+        "presence": "required",
+        "representation": {
+          "blocking_fence": null,
+          "shadowed_default": null,
+          "source": {
+            "kind": "inherited",
+            "owner": "CatalogApi"
+          },
+          "type": "Json"
+        }
+      },
+      "effect": {
+        "source": "explicit",
+        "value": "non_idempotent"
+      },
+      "headers": [
+        {
+          "conditional_on": null,
+          "emission": {
+            "atom": {
+              "kind": "literal",
+              "literal_kind": "string",
+              "text": "3"
+            },
+            "kind": "scalar"
+          },
+          "key": "X-Client-Version",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": false,
+          "site": "block",
+          "superseded_when_present": []
+        }
+      ],
+      "id": {
+        "derivation_inputs": [],
+        "source": "explicit",
+        "value": "catalog.auth.login"
+      },
+      "method": "POST",
+      "name": "authenticate",
+      "owner": "CatalogApi",
+      "pagination": null,
+      "path": "CatalogApi::authenticate",
+      "query": [
+        {
+          "conditional_on": null,
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "tenant",
+                "owner": "CatalogApi"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "tenant",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": true,
+          "site": "direct",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": {
+            "name": "locale",
+            "owner": "CatalogApi"
+          },
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "locale",
+                "owner": "CatalogApi"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "locale",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": false,
+          "site": "direct",
+          "superseded_when_present": []
+        }
+      ],
+      "rate": [],
+      "result": {
+        "accept": "application/json",
+        "driver": "buffered",
+        "output_type": "SessionToken",
+        "representation": {
+          "blocking_fence": null,
+          "shadowed_default": null,
+          "source": {
+            "kind": "inherited",
+            "owner": "CatalogApi"
+          },
+          "type": "Json"
+        }
+      },
+      "route": {
+        "labels": [
+          {
+            "atom": {
+              "kind": "literal",
+              "literal_kind": "string",
+              "text": "api"
+            },
+            "origin": "CatalogApi"
+          }
+        ],
+        "path_reset": null,
+        "segments": [
+          {
+            "origin": "CatalogApi",
+            "parts": [
+              {
+                "adapter": null,
+                "kind": "hole",
+                "value": {
+                  "name": "api_version",
+                  "owner": "CatalogApi"
+                }
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::authenticate",
+            "parts": [
+              {
+                "kind": "literal",
+                "text": "auth"
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::authenticate",
+            "parts": [
+              {
+                "kind": "literal",
+                "text": "session"
+              }
+            ]
+          }
+        ],
+        "subdomain_reset": null,
+        "url_template": "https://api.catalog.example.test/root/{client.api_version}/auth/session"
+      },
+      "status": {
+        "absent_on": null,
+        "accepted": {
+          "kind": "success"
+        },
+        "source": "default_success"
+      },
+      "terminals": {
+        "accepted_bytes": false,
+        "pagination": false,
+        "response": true,
+        "store_as": [
+          "session"
+        ]
+      },
+      "timeout": {
+        "duration": {
+          "nanos": 0,
+          "secs": 20
+        },
+        "source": {
+          "kind": "declared",
+          "owner": "CatalogApi"
+        }
+      }
+    },
+    {
+      "auth": {
+        "automatic_recovery_available": false,
+        "displaced": [
+          {
+            "challenge": "never",
+            "credential": "application_key",
+            "displaced_by": "CatalogApi::regional",
+            "mode": "replace",
+            "origin": "CatalogApi",
+            "target": {
+              "kind": "header",
+              "name": "X-Bootstrap-Key",
+              "scheme": null
+            }
+          }
+        ],
+        "placements": [
+          {
+            "automatic_recovery": false,
+            "challenge": "unauthorized",
+            "credential": "session",
+            "origin": "CatalogApi::regional",
+            "recovery": "final_rejects_installed_version",
+            "source_kind": "endpoint",
+            "target": {
+              "kind": "bearer",
+              "name": null,
+              "scheme": null
+            }
+          }
+        ]
+      },
+      "body": null,
+      "effect": {
+        "source": "method_default",
+        "value": "safe"
+      },
+      "headers": [
+        {
+          "conditional_on": null,
+          "emission": {
+            "atom": {
+              "kind": "literal",
+              "literal_kind": "string",
+              "text": "3"
+            },
+            "kind": "scalar"
+          },
+          "key": "X-Client-Version",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": false,
+          "site": "block",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": {
+            "name": "language",
+            "owner": "CatalogApi::regional"
+          },
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "language",
+                "owner": "CatalogApi::regional"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "Accept-Language",
+          "kind": "introduce",
+          "origin": "CatalogApi::regional",
+          "sensitive": false,
+          "site": "direct",
+          "superseded_when_present": []
+        }
+      ],
+      "id": {
+        "derivation_inputs": [],
+        "source": "explicit",
+        "value": "catalog.items.list"
+      },
+      "method": "GET",
+      "name": "item_summaries",
+      "owner": "CatalogApi::regional",
+      "pagination": {
+        "controller": "OffsetPagination",
+        "cursor": [
+          {
+            "name": "offset",
+            "owner": "CatalogApi::regional::item_summaries"
+          }
+        ],
+        "init": [
+          {
+            "field": "offset",
+            "value": {
+              "kind": "value",
+              "value": {
+                "name": "offset",
+                "owner": "CatalogApi::regional::item_summaries"
+              }
+            }
+          },
+          {
+            "field": "page_size",
+            "value": {
+              "kind": "value",
+              "value": {
+                "name": "count",
+                "owner": "CatalogApi::regional::item_summaries"
+              }
+            }
+          }
+        ],
+        "init_type": "OffsetInit"
+      },
+      "path": "CatalogApi::regional::item_summaries",
+      "query": [
+        {
+          "conditional_on": null,
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "tenant",
+                "owner": "CatalogApi"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "tenant",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": true,
+          "site": "direct",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": {
+            "name": "locale",
+            "owner": "CatalogApi"
+          },
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "locale",
+                "owner": "CatalogApi"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "locale",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": false,
+          "site": "direct",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": {
+            "name": "category",
+            "owner": "CatalogApi::regional::item_summaries"
+          },
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "category",
+                "owner": "CatalogApi::regional::item_summaries"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "category",
+          "kind": "introduce",
+          "origin": "CatalogApi::regional::item_summaries",
+          "sensitive": false,
+          "site": "direct",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": null,
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "offset",
+                "owner": "CatalogApi::regional::item_summaries"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "offset",
+          "kind": "introduce",
+          "origin": "CatalogApi::regional::item_summaries",
+          "sensitive": false,
+          "site": "direct",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": null,
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "count",
+                "owner": "CatalogApi::regional::item_summaries"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "count",
+          "kind": "introduce",
+          "origin": "CatalogApi::regional::item_summaries",
+          "sensitive": false,
+          "site": "direct",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": null,
+          "emission": {
+            "adapter": null,
+            "kind": "each",
+            "value": {
+              "name": "tags",
+              "owner": "CatalogApi::regional::item_summaries"
+            }
+          },
+          "key": "tag",
+          "kind": "introduce",
+          "origin": "CatalogApi::regional::item_summaries",
+          "sensitive": false,
+          "site": "direct",
+          "superseded_when_present": []
+        }
+      ],
+      "rate": [
+        {
+          "cost": 1,
+          "cost_source": "default",
+          "definition": {
+            "kind": "named",
+            "name": "tenant_reads"
+          },
+          "dimensions": [
+            {
+              "binding": null,
+              "encoder_role": "builtin_utf8",
+              "encoder_type": null,
+              "encoding_id": "concord.utf8/1",
+              "kind": "origin",
+              "label": "origin"
+            },
+            {
+              "binding": {
+                "name": "tenant",
+                "owner": "CatalogApi"
+              },
+              "encoder_role": "value_type",
+              "encoder_type": "TenantId",
+              "encoding_id": "concord.utf8/1",
+              "kind": "custom",
+              "label": "tenant"
+            }
+          ],
+          "id": "catalog.tenant.read",
+          "origin": "CatalogApi::regional",
+          "window_set": null,
+          "windows_canonical": [
+            {
+              "capacity": 120,
+              "duration": {
+                "nanos": 0,
+                "secs": 60
+              }
+            },
+            {
+              "capacity": 5000,
+              "duration": {
+                "nanos": 0,
+                "secs": 3600
+              }
+            }
+          ],
+          "windows_source_order": [
+            {
+              "capacity": 120,
+              "duration": {
+                "nanos": 0,
+                "secs": 60
+              }
+            },
+            {
+              "capacity": 5000,
+              "duration": {
+                "nanos": 0,
+                "secs": 3600
+              }
+            }
+          ]
+        }
+      ],
+      "result": {
+        "accept": "application/json",
+        "driver": "buffered",
+        "output_type": "Vec<ItemSummary>",
+        "representation": {
+          "blocking_fence": null,
+          "shadowed_default": null,
+          "source": {
+            "kind": "inherited",
+            "owner": "CatalogApi"
+          },
+          "type": "Json"
+        }
+      },
+      "route": {
+        "labels": [
+          {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "region",
+                "owner": "CatalogApi::regional"
+              }
+            },
+            "origin": "CatalogApi::regional"
+          },
+          {
+            "atom": {
+              "kind": "literal",
+              "literal_kind": "string",
+              "text": "api"
+            },
+            "origin": "CatalogApi"
+          }
+        ],
+        "path_reset": null,
+        "segments": [
+          {
+            "origin": "CatalogApi",
+            "parts": [
+              {
+                "adapter": null,
+                "kind": "hole",
+                "value": {
+                  "name": "api_version",
+                  "owner": "CatalogApi"
+                }
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional",
+            "parts": [
+              {
+                "kind": "literal",
+                "text": "regions"
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional",
+            "parts": [
+              {
+                "adapter": null,
+                "kind": "hole",
+                "value": {
+                  "name": "region",
+                  "owner": "CatalogApi::regional"
+                }
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional::item_summaries",
+            "parts": [
+              {
+                "kind": "literal",
+                "text": "items"
+              }
+            ]
+          }
+        ],
+        "subdomain_reset": null,
+        "url_template": "https://{regional.region}.api.catalog.example.test/root/{client.api_version}/regions/{regional.region}/items"
+      },
+      "status": {
+        "absent_on": null,
+        "accepted": {
+          "kind": "success"
+        },
+        "source": "default_success"
+      },
+      "terminals": {
+        "accepted_bytes": false,
+        "pagination": true,
+        "response": true,
+        "store_as": []
+      },
+      "timeout": {
+        "duration": {
+          "nanos": 0,
+          "secs": 20
+        },
+        "source": {
+          "kind": "declared",
+          "owner": "CatalogApi"
+        }
+      }
+    },
+    {
+      "auth": {
+        "automatic_recovery_available": false,
+        "displaced": [
+          {
+            "challenge": "never",
+            "credential": "application_key",
+            "displaced_by": "CatalogApi::regional",
+            "mode": "replace",
+            "origin": "CatalogApi",
+            "target": {
+              "kind": "header",
+              "name": "X-Bootstrap-Key",
+              "scheme": null
+            }
+          }
+        ],
+        "placements": [
+          {
+            "automatic_recovery": false,
+            "challenge": "unauthorized",
+            "credential": "session",
+            "origin": "CatalogApi::regional",
+            "recovery": "final_rejects_installed_version",
+            "source_kind": "endpoint",
+            "target": {
+              "kind": "bearer",
+              "name": null,
+              "scheme": null
+            }
+          }
+        ]
+      },
+      "body": null,
+      "effect": {
+        "source": "method_default",
+        "value": "safe"
+      },
+      "headers": [
+        {
+          "conditional_on": null,
+          "emission": {
+            "atom": {
+              "kind": "literal",
+              "literal_kind": "string",
+              "text": "3"
+            },
+            "kind": "scalar"
+          },
+          "key": "X-Client-Version",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": false,
+          "site": "block",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": {
+            "name": "language",
+            "owner": "CatalogApi::regional"
+          },
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "language",
+                "owner": "CatalogApi::regional"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "Accept-Language",
+          "kind": "introduce",
+          "origin": "CatalogApi::regional",
+          "sensitive": false,
+          "site": "direct",
+          "superseded_when_present": []
+        }
+      ],
+      "id": {
+        "derivation_inputs": [],
+        "source": "explicit",
+        "value": "catalog.item.get"
+      },
+      "method": "GET",
+      "name": "item",
+      "owner": "CatalogApi::regional",
+      "pagination": null,
+      "path": "CatalogApi::regional::item",
+      "query": [
+        {
+          "conditional_on": null,
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "tenant",
+                "owner": "CatalogApi"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "tenant",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": true,
+          "site": "direct",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": {
+            "name": "locale",
+            "owner": "CatalogApi"
+          },
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "locale",
+                "owner": "CatalogApi"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "locale",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": false,
+          "site": "direct",
+          "superseded_when_present": [
+            {
+              "name": "locale_override",
+              "owner": "CatalogApi::regional::item"
+            }
+          ]
+        },
+        {
+          "conditional_on": {
+            "name": "locale_override",
+            "owner": "CatalogApi::regional::item"
+          },
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "locale_override",
+                "owner": "CatalogApi::regional::item"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "locale",
+          "kind": "when_present",
+          "origin": "CatalogApi::regional::item",
+          "sensitive": false,
+          "site": "block",
+          "superseded_when_present": []
+        }
+      ],
+      "rate": [
+        {
+          "cost": 1,
+          "cost_source": "default",
+          "definition": {
+            "kind": "named",
+            "name": "tenant_reads"
+          },
+          "dimensions": [
+            {
+              "binding": null,
+              "encoder_role": "builtin_utf8",
+              "encoder_type": null,
+              "encoding_id": "concord.utf8/1",
+              "kind": "origin",
+              "label": "origin"
+            },
+            {
+              "binding": {
+                "name": "tenant",
+                "owner": "CatalogApi"
+              },
+              "encoder_role": "value_type",
+              "encoder_type": "TenantId",
+              "encoding_id": "concord.utf8/1",
+              "kind": "custom",
+              "label": "tenant"
+            }
+          ],
+          "id": "catalog.tenant.read",
+          "origin": "CatalogApi::regional",
+          "window_set": null,
+          "windows_canonical": [
+            {
+              "capacity": 120,
+              "duration": {
+                "nanos": 0,
+                "secs": 60
+              }
+            },
+            {
+              "capacity": 5000,
+              "duration": {
+                "nanos": 0,
+                "secs": 3600
+              }
+            }
+          ],
+          "windows_source_order": [
+            {
+              "capacity": 120,
+              "duration": {
+                "nanos": 0,
+                "secs": 60
+              }
+            },
+            {
+              "capacity": 5000,
+              "duration": {
+                "nanos": 0,
+                "secs": 3600
+              }
+            }
+          ]
+        }
+      ],
+      "result": {
+        "accept": "application/json",
+        "driver": "buffered",
+        "output_type": "Item",
+        "representation": {
+          "blocking_fence": null,
+          "shadowed_default": null,
+          "source": {
+            "kind": "inherited",
+            "owner": "CatalogApi"
+          },
+          "type": "Json"
+        }
+      },
+      "route": {
+        "labels": [
+          {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "region",
+                "owner": "CatalogApi::regional"
+              }
+            },
+            "origin": "CatalogApi::regional"
+          },
+          {
+            "atom": {
+              "kind": "literal",
+              "literal_kind": "string",
+              "text": "api"
+            },
+            "origin": "CatalogApi"
+          }
+        ],
+        "path_reset": null,
+        "segments": [
+          {
+            "origin": "CatalogApi",
+            "parts": [
+              {
+                "adapter": null,
+                "kind": "hole",
+                "value": {
+                  "name": "api_version",
+                  "owner": "CatalogApi"
+                }
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional",
+            "parts": [
+              {
+                "kind": "literal",
+                "text": "regions"
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional",
+            "parts": [
+              {
+                "adapter": null,
+                "kind": "hole",
+                "value": {
+                  "name": "region",
+                  "owner": "CatalogApi::regional"
+                }
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional::item",
+            "parts": [
+              {
+                "kind": "literal",
+                "text": "items"
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional::item",
+            "parts": [
+              {
+                "adapter": null,
+                "kind": "hole",
+                "value": {
+                  "name": "id",
+                  "owner": "CatalogApi::regional::item"
+                }
+              }
+            ]
+          }
+        ],
+        "subdomain_reset": null,
+        "url_template": "https://{regional.region}.api.catalog.example.test/root/{client.api_version}/regions/{regional.region}/items/{endpoint.id}"
+      },
+      "status": {
+        "absent_on": null,
+        "accepted": {
+          "kind": "success"
+        },
+        "source": "default_success"
+      },
+      "terminals": {
+        "accepted_bytes": true,
+        "pagination": false,
+        "response": true,
+        "store_as": []
+      },
+      "timeout": {
+        "duration": {
+          "nanos": 0,
+          "secs": 20
+        },
+        "source": {
+          "kind": "declared",
+          "owner": "CatalogApi"
+        }
+      }
+    },
+    {
+      "auth": {
+        "automatic_recovery_available": false,
+        "displaced": [
+          {
+            "challenge": "never",
+            "credential": "application_key",
+            "displaced_by": "CatalogApi::regional",
+            "mode": "replace",
+            "origin": "CatalogApi",
+            "target": {
+              "kind": "header",
+              "name": "X-Bootstrap-Key",
+              "scheme": null
+            }
+          }
+        ],
+        "placements": [
+          {
+            "automatic_recovery": false,
+            "challenge": "unauthorized",
+            "credential": "session",
+            "origin": "CatalogApi::regional",
+            "recovery": "final_rejects_installed_version",
+            "source_kind": "endpoint",
+            "target": {
+              "kind": "bearer",
+              "name": null,
+              "scheme": null
+            }
+          }
+        ]
+      },
+      "body": null,
+      "effect": {
+        "source": "method_default",
+        "value": "safe"
+      },
+      "headers": [
+        {
+          "conditional_on": null,
+          "emission": {
+            "atom": {
+              "kind": "literal",
+              "literal_kind": "string",
+              "text": "3"
+            },
+            "kind": "scalar"
+          },
+          "key": "X-Client-Version",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": false,
+          "site": "block",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": {
+            "name": "language",
+            "owner": "CatalogApi::regional"
+          },
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "language",
+                "owner": "CatalogApi::regional"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "Accept-Language",
+          "kind": "introduce",
+          "origin": "CatalogApi::regional",
+          "sensitive": false,
+          "site": "direct",
+          "superseded_when_present": []
+        }
+      ],
+      "id": {
+        "derivation_inputs": [],
+        "source": "explicit",
+        "value": "catalog.item.find"
+      },
+      "method": "GET",
+      "name": "find_item",
+      "owner": "CatalogApi::regional",
+      "pagination": null,
+      "path": "CatalogApi::regional::find_item",
+      "query": [
+        {
+          "conditional_on": null,
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "tenant",
+                "owner": "CatalogApi"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "tenant",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": true,
+          "site": "direct",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": {
+            "name": "locale",
+            "owner": "CatalogApi"
+          },
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "locale",
+                "owner": "CatalogApi"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "locale",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": false,
+          "site": "direct",
+          "superseded_when_present": []
+        }
+      ],
+      "rate": [
+        {
+          "cost": 1,
+          "cost_source": "default",
+          "definition": {
+            "kind": "named",
+            "name": "tenant_reads"
+          },
+          "dimensions": [
+            {
+              "binding": null,
+              "encoder_role": "builtin_utf8",
+              "encoder_type": null,
+              "encoding_id": "concord.utf8/1",
+              "kind": "origin",
+              "label": "origin"
+            },
+            {
+              "binding": {
+                "name": "tenant",
+                "owner": "CatalogApi"
+              },
+              "encoder_role": "value_type",
+              "encoder_type": "TenantId",
+              "encoding_id": "concord.utf8/1",
+              "kind": "custom",
+              "label": "tenant"
+            }
+          ],
+          "id": "catalog.tenant.read",
+          "origin": "CatalogApi::regional",
+          "window_set": null,
+          "windows_canonical": [
+            {
+              "capacity": 120,
+              "duration": {
+                "nanos": 0,
+                "secs": 60
+              }
+            },
+            {
+              "capacity": 5000,
+              "duration": {
+                "nanos": 0,
+                "secs": 3600
+              }
+            }
+          ],
+          "windows_source_order": [
+            {
+              "capacity": 120,
+              "duration": {
+                "nanos": 0,
+                "secs": 60
+              }
+            },
+            {
+              "capacity": 5000,
+              "duration": {
+                "nanos": 0,
+                "secs": 3600
+              }
+            }
+          ]
+        }
+      ],
+      "result": {
+        "accept": "application/json",
+        "driver": "buffered",
+        "output_type": "Option<Item>",
+        "representation": {
+          "blocking_fence": null,
+          "shadowed_default": null,
+          "source": {
+            "kind": "inherited",
+            "owner": "CatalogApi"
+          },
+          "type": "Json"
+        }
+      },
+      "route": {
+        "labels": [
+          {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "region",
+                "owner": "CatalogApi::regional"
+              }
+            },
+            "origin": "CatalogApi::regional"
+          },
+          {
+            "atom": {
+              "kind": "literal",
+              "literal_kind": "string",
+              "text": "api"
+            },
+            "origin": "CatalogApi"
+          }
+        ],
+        "path_reset": null,
+        "segments": [
+          {
+            "origin": "CatalogApi",
+            "parts": [
+              {
+                "adapter": null,
+                "kind": "hole",
+                "value": {
+                  "name": "api_version",
+                  "owner": "CatalogApi"
+                }
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional",
+            "parts": [
+              {
+                "kind": "literal",
+                "text": "regions"
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional",
+            "parts": [
+              {
+                "adapter": null,
+                "kind": "hole",
+                "value": {
+                  "name": "region",
+                  "owner": "CatalogApi::regional"
+                }
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional::find_item",
+            "parts": [
+              {
+                "kind": "literal",
+                "text": "items"
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional::find_item",
+            "parts": [
+              {
+                "adapter": null,
+                "kind": "hole",
+                "value": {
+                  "name": "id",
+                  "owner": "CatalogApi::regional::find_item"
+                }
+              }
+            ]
+          }
+        ],
+        "subdomain_reset": null,
+        "url_template": "https://{regional.region}.api.catalog.example.test/root/{client.api_version}/regions/{regional.region}/items/{endpoint.id}"
+      },
+      "status": {
+        "absent_on": [
+          404
+        ],
+        "accepted": {
+          "kind": "success"
+        },
+        "source": "default_success"
+      },
+      "terminals": {
+        "accepted_bytes": false,
+        "pagination": false,
+        "response": true,
+        "store_as": []
+      },
+      "timeout": {
+        "duration": {
+          "nanos": 0,
+          "secs": 20
+        },
+        "source": {
+          "kind": "declared",
+          "owner": "CatalogApi"
+        }
+      }
+    },
+    {
+      "auth": {
+        "automatic_recovery_available": false,
+        "displaced": [
+          {
+            "challenge": "never",
+            "credential": "application_key",
+            "displaced_by": "CatalogApi::regional",
+            "mode": "replace",
+            "origin": "CatalogApi",
+            "target": {
+              "kind": "header",
+              "name": "X-Bootstrap-Key",
+              "scheme": null
+            }
+          }
+        ],
+        "placements": [
+          {
+            "automatic_recovery": false,
+            "challenge": "unauthorized",
+            "credential": "session",
+            "origin": "CatalogApi::regional",
+            "recovery": "final_rejects_installed_version",
+            "source_kind": "endpoint",
+            "target": {
+              "kind": "bearer",
+              "name": null,
+              "scheme": null
+            }
+          }
+        ]
+      },
+      "body": {
+        "constructor_position": 2,
+        "declaration_index": 2,
+        "description": {
+          "family": "buffered",
+          "media_hint": "application/json"
+        },
+        "docs": [],
+        "input_type": "UpdateInput",
+        "name": "input",
+        "page_capable": false,
+        "presence": "required",
+        "representation": {
+          "blocking_fence": null,
+          "shadowed_default": null,
+          "source": {
+            "kind": "inherited",
+            "owner": "CatalogApi"
+          },
+          "type": "Json"
+        }
+      },
+      "effect": {
+        "source": "explicit",
+        "value": "idempotent"
+      },
+      "headers": [
+        {
+          "conditional_on": null,
+          "emission": {
+            "atom": {
+              "kind": "literal",
+              "literal_kind": "string",
+              "text": "3"
+            },
+            "kind": "scalar"
+          },
+          "key": "X-Client-Version",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": false,
+          "site": "block",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": {
+            "name": "language",
+            "owner": "CatalogApi::regional"
+          },
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "language",
+                "owner": "CatalogApi::regional"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "Accept-Language",
+          "kind": "introduce",
+          "origin": "CatalogApi::regional",
+          "sensitive": false,
+          "site": "direct",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": null,
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "command_id",
+                "owner": "CatalogApi::regional::update_item"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "Idempotency-Key",
+          "kind": "introduce",
+          "origin": "CatalogApi::regional::update_item",
+          "sensitive": true,
+          "site": "direct",
+          "superseded_when_present": []
+        }
+      ],
+      "id": {
+        "derivation_inputs": [],
+        "source": "explicit",
+        "value": "catalog.item.update"
+      },
+      "method": "PUT",
+      "name": "update_item",
+      "owner": "CatalogApi::regional",
+      "pagination": null,
+      "path": "CatalogApi::regional::update_item",
+      "query": [
+        {
+          "conditional_on": null,
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "tenant",
+                "owner": "CatalogApi"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "tenant",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": true,
+          "site": "direct",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": {
+            "name": "locale",
+            "owner": "CatalogApi"
+          },
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "locale",
+                "owner": "CatalogApi"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "locale",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": false,
+          "site": "direct",
+          "superseded_when_present": []
+        }
+      ],
+      "rate": [
+        {
+          "cost": 1,
+          "cost_source": "default",
+          "definition": {
+            "kind": "named",
+            "name": "tenant_reads"
+          },
+          "dimensions": [
+            {
+              "binding": null,
+              "encoder_role": "builtin_utf8",
+              "encoder_type": null,
+              "encoding_id": "concord.utf8/1",
+              "kind": "origin",
+              "label": "origin"
+            },
+            {
+              "binding": {
+                "name": "tenant",
+                "owner": "CatalogApi"
+              },
+              "encoder_role": "value_type",
+              "encoder_type": "TenantId",
+              "encoding_id": "concord.utf8/1",
+              "kind": "custom",
+              "label": "tenant"
+            }
+          ],
+          "id": "catalog.tenant.read",
+          "origin": "CatalogApi::regional",
+          "window_set": null,
+          "windows_canonical": [
+            {
+              "capacity": 120,
+              "duration": {
+                "nanos": 0,
+                "secs": 60
+              }
+            },
+            {
+              "capacity": 5000,
+              "duration": {
+                "nanos": 0,
+                "secs": 3600
+              }
+            }
+          ],
+          "windows_source_order": [
+            {
+              "capacity": 120,
+              "duration": {
+                "nanos": 0,
+                "secs": 60
+              }
+            },
+            {
+              "capacity": 5000,
+              "duration": {
+                "nanos": 0,
+                "secs": 3600
+              }
+            }
+          ]
+        },
+        {
+          "cost": 5,
+          "cost_source": "attachment",
+          "definition": {
+            "kind": "inline"
+          },
+          "dimensions": [
+            {
+              "binding": null,
+              "encoder_role": "builtin_utf8",
+              "encoder_type": null,
+              "encoding_id": "concord.utf8/1",
+              "kind": "origin",
+              "label": "origin"
+            },
+            {
+              "binding": null,
+              "encoder_role": "builtin_utf8",
+              "encoder_type": null,
+              "encoding_id": "concord.utf8/1",
+              "kind": "endpoint",
+              "label": "endpoint"
+            },
+            {
+              "binding": {
+                "name": "tenant",
+                "owner": "CatalogApi"
+              },
+              "encoder_role": "value_type",
+              "encoder_type": "TenantId",
+              "encoding_id": "concord.utf8/1",
+              "kind": "custom",
+              "label": "client.tenant"
+            }
+          ],
+          "id": "catalog.item.write",
+          "origin": "CatalogApi::regional::update_item",
+          "window_set": null,
+          "windows_canonical": [
+            {
+              "capacity": 30,
+              "duration": {
+                "nanos": 0,
+                "secs": 60
+              }
+            }
+          ],
+          "windows_source_order": [
+            {
+              "capacity": 30,
+              "duration": {
+                "nanos": 0,
+                "secs": 60
+              }
+            }
+          ]
+        }
+      ],
+      "result": {
+        "accept": "application/json",
+        "driver": "buffered",
+        "output_type": "Item",
+        "representation": {
+          "blocking_fence": null,
+          "shadowed_default": null,
+          "source": {
+            "kind": "inherited",
+            "owner": "CatalogApi"
+          },
+          "type": "Json"
+        }
+      },
+      "route": {
+        "labels": [
+          {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "region",
+                "owner": "CatalogApi::regional"
+              }
+            },
+            "origin": "CatalogApi::regional"
+          },
+          {
+            "atom": {
+              "kind": "literal",
+              "literal_kind": "string",
+              "text": "api"
+            },
+            "origin": "CatalogApi"
+          }
+        ],
+        "path_reset": null,
+        "segments": [
+          {
+            "origin": "CatalogApi",
+            "parts": [
+              {
+                "adapter": null,
+                "kind": "hole",
+                "value": {
+                  "name": "api_version",
+                  "owner": "CatalogApi"
+                }
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional",
+            "parts": [
+              {
+                "kind": "literal",
+                "text": "regions"
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional",
+            "parts": [
+              {
+                "adapter": null,
+                "kind": "hole",
+                "value": {
+                  "name": "region",
+                  "owner": "CatalogApi::regional"
+                }
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional::update_item",
+            "parts": [
+              {
+                "kind": "literal",
+                "text": "items"
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional::update_item",
+            "parts": [
+              {
+                "adapter": null,
+                "kind": "hole",
+                "value": {
+                  "name": "id",
+                  "owner": "CatalogApi::regional::update_item"
+                }
+              }
+            ]
+          }
+        ],
+        "subdomain_reset": null,
+        "url_template": "https://{regional.region}.api.catalog.example.test/root/{client.api_version}/regions/{regional.region}/items/{endpoint.id}"
+      },
+      "status": {
+        "absent_on": null,
+        "accepted": {
+          "kind": "success"
+        },
+        "source": "default_success"
+      },
+      "terminals": {
+        "accepted_bytes": false,
+        "pagination": false,
+        "response": true,
+        "store_as": []
+      },
+      "timeout": {
+        "duration": {
+          "nanos": 0,
+          "secs": 20
+        },
+        "source": {
+          "kind": "declared",
+          "owner": "CatalogApi"
+        }
+      }
+    },
+    {
+      "auth": {
+        "automatic_recovery_available": false,
+        "displaced": [
+          {
+            "challenge": "never",
+            "credential": "application_key",
+            "displaced_by": "CatalogApi::regional",
+            "mode": "replace",
+            "origin": "CatalogApi",
+            "target": {
+              "kind": "header",
+              "name": "X-Bootstrap-Key",
+              "scheme": null
+            }
+          }
+        ],
+        "placements": [
+          {
+            "automatic_recovery": false,
+            "challenge": "unauthorized",
+            "credential": "session",
+            "origin": "CatalogApi::regional",
+            "recovery": "final_rejects_installed_version",
+            "source_kind": "endpoint",
+            "target": {
+              "kind": "bearer",
+              "name": null,
+              "scheme": null
+            }
+          }
+        ]
+      },
+      "body": null,
+      "effect": {
+        "source": "method_default",
+        "value": "safe"
+      },
+      "headers": [
+        {
+          "conditional_on": null,
+          "emission": {
+            "atom": {
+              "kind": "literal",
+              "literal_kind": "string",
+              "text": "3"
+            },
+            "kind": "scalar"
+          },
+          "key": "X-Client-Version",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": false,
+          "site": "block",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": {
+            "name": "language",
+            "owner": "CatalogApi::regional"
+          },
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "language",
+                "owner": "CatalogApi::regional"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "Accept-Language",
+          "kind": "introduce",
+          "origin": "CatalogApi::regional",
+          "sensitive": false,
+          "site": "direct",
+          "superseded_when_present": []
+        }
+      ],
+      "id": {
+        "derivation_inputs": [],
+        "source": "explicit",
+        "value": "catalog.item.feed"
+      },
+      "method": "GET",
+      "name": "feed",
+      "owner": "CatalogApi::regional",
+      "pagination": {
+        "controller": "EnvelopePages",
+        "cursor": [
+          {
+            "name": "after",
+            "owner": "CatalogApi::regional::feed"
+          }
+        ],
+        "init": [
+          {
+            "field": "after",
+            "value": {
+              "kind": "value",
+              "value": {
+                "name": "after",
+                "owner": "CatalogApi::regional::feed"
+              }
+            }
+          }
+        ],
+        "init_type": "CursorStart"
+      },
+      "path": "CatalogApi::regional::feed",
+      "query": [
+        {
+          "conditional_on": null,
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "tenant",
+                "owner": "CatalogApi"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "tenant",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": true,
+          "site": "direct",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": {
+            "name": "locale",
+            "owner": "CatalogApi"
+          },
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "locale",
+                "owner": "CatalogApi"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "locale",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": false,
+          "site": "direct",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": {
+            "name": "after",
+            "owner": "CatalogApi::regional::feed"
+          },
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "after",
+                "owner": "CatalogApi::regional::feed"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "after",
+          "kind": "introduce",
+          "origin": "CatalogApi::regional::feed",
+          "sensitive": false,
+          "site": "direct",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": null,
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "count",
+                "owner": "CatalogApi::regional::feed"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "count",
+          "kind": "introduce",
+          "origin": "CatalogApi::regional::feed",
+          "sensitive": false,
+          "site": "direct",
+          "superseded_when_present": []
+        }
+      ],
+      "rate": [
+        {
+          "cost": 1,
+          "cost_source": "default",
+          "definition": {
+            "kind": "named",
+            "name": "tenant_reads"
+          },
+          "dimensions": [
+            {
+              "binding": null,
+              "encoder_role": "builtin_utf8",
+              "encoder_type": null,
+              "encoding_id": "concord.utf8/1",
+              "kind": "origin",
+              "label": "origin"
+            },
+            {
+              "binding": {
+                "name": "tenant",
+                "owner": "CatalogApi"
+              },
+              "encoder_role": "value_type",
+              "encoder_type": "TenantId",
+              "encoding_id": "concord.utf8/1",
+              "kind": "custom",
+              "label": "tenant"
+            }
+          ],
+          "id": "catalog.tenant.read",
+          "origin": "CatalogApi::regional",
+          "window_set": null,
+          "windows_canonical": [
+            {
+              "capacity": 120,
+              "duration": {
+                "nanos": 0,
+                "secs": 60
+              }
+            },
+            {
+              "capacity": 5000,
+              "duration": {
+                "nanos": 0,
+                "secs": 3600
+              }
+            }
+          ],
+          "windows_source_order": [
+            {
+              "capacity": 120,
+              "duration": {
+                "nanos": 0,
+                "secs": 60
+              }
+            },
+            {
+              "capacity": 5000,
+              "duration": {
+                "nanos": 0,
+                "secs": 3600
+              }
+            }
+          ]
+        }
+      ],
+      "result": {
+        "accept": "application/json",
+        "driver": "buffered",
+        "output_type": "Envelope<ItemSummary>",
+        "representation": {
+          "blocking_fence": null,
+          "shadowed_default": null,
+          "source": {
+            "kind": "inherited",
+            "owner": "CatalogApi"
+          },
+          "type": "Json"
+        }
+      },
+      "route": {
+        "labels": [
+          {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "region",
+                "owner": "CatalogApi::regional"
+              }
+            },
+            "origin": "CatalogApi::regional"
+          },
+          {
+            "atom": {
+              "kind": "literal",
+              "literal_kind": "string",
+              "text": "api"
+            },
+            "origin": "CatalogApi"
+          }
+        ],
+        "path_reset": null,
+        "segments": [
+          {
+            "origin": "CatalogApi",
+            "parts": [
+              {
+                "adapter": null,
+                "kind": "hole",
+                "value": {
+                  "name": "api_version",
+                  "owner": "CatalogApi"
+                }
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional",
+            "parts": [
+              {
+                "kind": "literal",
+                "text": "regions"
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional",
+            "parts": [
+              {
+                "adapter": null,
+                "kind": "hole",
+                "value": {
+                  "name": "region",
+                  "owner": "CatalogApi::regional"
+                }
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional::feed",
+            "parts": [
+              {
+                "kind": "literal",
+                "text": "feed"
+              }
+            ]
+          }
+        ],
+        "subdomain_reset": null,
+        "url_template": "https://{regional.region}.api.catalog.example.test/root/{client.api_version}/regions/{regional.region}/feed"
+      },
+      "status": {
+        "absent_on": null,
+        "accepted": {
+          "kind": "success"
+        },
+        "source": "default_success"
+      },
+      "terminals": {
+        "accepted_bytes": false,
+        "pagination": true,
+        "response": true,
+        "store_as": []
+      },
+      "timeout": {
+        "duration": {
+          "nanos": 0,
+          "secs": 20
+        },
+        "source": {
+          "kind": "declared",
+          "owner": "CatalogApi"
+        }
+      }
+    },
+    {
+      "auth": {
+        "automatic_recovery_available": false,
+        "displaced": [
+          {
+            "challenge": "never",
+            "credential": "application_key",
+            "displaced_by": "CatalogApi::regional",
+            "mode": "replace",
+            "origin": "CatalogApi",
+            "target": {
+              "kind": "header",
+              "name": "X-Bootstrap-Key",
+              "scheme": null
+            }
+          }
+        ],
+        "placements": [
+          {
+            "automatic_recovery": false,
+            "challenge": "unauthorized",
+            "credential": "session",
+            "origin": "CatalogApi::regional",
+            "recovery": "final_rejects_installed_version",
+            "source_kind": "endpoint",
+            "target": {
+              "kind": "bearer",
+              "name": null,
+              "scheme": null
+            }
+          }
+        ]
+      },
+      "body": null,
+      "effect": {
+        "source": "method_default",
+        "value": "safe"
+      },
+      "headers": [
+        {
+          "conditional_on": null,
+          "emission": {
+            "atom": {
+              "kind": "literal",
+              "literal_kind": "string",
+              "text": "3"
+            },
+            "kind": "scalar"
+          },
+          "key": "X-Client-Version",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": false,
+          "site": "block",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": {
+            "name": "language",
+            "owner": "CatalogApi::regional"
+          },
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "language",
+                "owner": "CatalogApi::regional"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "Accept-Language",
+          "kind": "introduce",
+          "origin": "CatalogApi::regional",
+          "sensitive": false,
+          "site": "direct",
+          "superseded_when_present": []
+        }
+      ],
+      "id": {
+        "derivation_inputs": [],
+        "source": "explicit",
+        "value": "catalog.item.export"
+      },
+      "method": "GET",
+      "name": "export",
+      "owner": "CatalogApi::regional",
+      "pagination": null,
+      "path": "CatalogApi::regional::export",
+      "query": [
+        {
+          "conditional_on": null,
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "tenant",
+                "owner": "CatalogApi"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "tenant",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": true,
+          "site": "direct",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": {
+            "name": "locale",
+            "owner": "CatalogApi"
+          },
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "locale",
+                "owner": "CatalogApi"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "locale",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": false,
+          "site": "direct",
+          "superseded_when_present": []
+        }
+      ],
+      "rate": [
+        {
+          "cost": 1,
+          "cost_source": "default",
+          "definition": {
+            "kind": "named",
+            "name": "tenant_reads"
+          },
+          "dimensions": [
+            {
+              "binding": null,
+              "encoder_role": "builtin_utf8",
+              "encoder_type": null,
+              "encoding_id": "concord.utf8/1",
+              "kind": "origin",
+              "label": "origin"
+            },
+            {
+              "binding": {
+                "name": "tenant",
+                "owner": "CatalogApi"
+              },
+              "encoder_role": "value_type",
+              "encoder_type": "TenantId",
+              "encoding_id": "concord.utf8/1",
+              "kind": "custom",
+              "label": "tenant"
+            }
+          ],
+          "id": "catalog.tenant.read",
+          "origin": "CatalogApi::regional",
+          "window_set": null,
+          "windows_canonical": [
+            {
+              "capacity": 120,
+              "duration": {
+                "nanos": 0,
+                "secs": 60
+              }
+            },
+            {
+              "capacity": 5000,
+              "duration": {
+                "nanos": 0,
+                "secs": 3600
+              }
+            }
+          ],
+          "windows_source_order": [
+            {
+              "capacity": 120,
+              "duration": {
+                "nanos": 0,
+                "secs": 60
+              }
+            },
+            {
+              "capacity": 5000,
+              "duration": {
+                "nanos": 0,
+                "secs": 3600
+              }
+            }
+          ]
+        }
+      ],
+      "result": {
+        "accept": "application/octet-stream",
+        "driver": "streaming",
+        "output_type": "ByteStream",
+        "representation": {
+          "blocking_fence": null,
+          "shadowed_default": {
+            "owner": "CatalogApi",
+            "type": "Json"
+          },
+          "source": {
+            "kind": "inline"
+          },
+          "type": "Binary"
+        }
+      },
+      "route": {
+        "labels": [
+          {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "region",
+                "owner": "CatalogApi::regional"
+              }
+            },
+            "origin": "CatalogApi::regional"
+          },
+          {
+            "atom": {
+              "kind": "literal",
+              "literal_kind": "string",
+              "text": "api"
+            },
+            "origin": "CatalogApi"
+          }
+        ],
+        "path_reset": null,
+        "segments": [
+          {
+            "origin": "CatalogApi",
+            "parts": [
+              {
+                "adapter": null,
+                "kind": "hole",
+                "value": {
+                  "name": "api_version",
+                  "owner": "CatalogApi"
+                }
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional",
+            "parts": [
+              {
+                "kind": "literal",
+                "text": "regions"
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional",
+            "parts": [
+              {
+                "adapter": null,
+                "kind": "hole",
+                "value": {
+                  "name": "region",
+                  "owner": "CatalogApi::regional"
+                }
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional::export",
+            "parts": [
+              {
+                "kind": "literal",
+                "text": "export"
+              }
+            ]
+          }
+        ],
+        "subdomain_reset": null,
+        "url_template": "https://{regional.region}.api.catalog.example.test/root/{client.api_version}/regions/{regional.region}/export"
+      },
+      "status": {
+        "absent_on": null,
+        "accepted": {
+          "kind": "success"
+        },
+        "source": "default_success"
+      },
+      "terminals": {
+        "accepted_bytes": false,
+        "pagination": false,
+        "response": true,
+        "store_as": []
+      },
+      "timeout": {
+        "duration": {
+          "nanos": 0,
+          "secs": 20
+        },
+        "source": {
+          "kind": "declared",
+          "owner": "CatalogApi"
+        }
+      }
+    },
+    {
+      "auth": {
+        "automatic_recovery_available": false,
+        "displaced": [
+          {
+            "challenge": "never",
+            "credential": "application_key",
+            "displaced_by": "CatalogApi::regional",
+            "mode": "replace",
+            "origin": "CatalogApi",
+            "target": {
+              "kind": "header",
+              "name": "X-Bootstrap-Key",
+              "scheme": null
+            }
+          }
+        ],
+        "placements": [
+          {
+            "automatic_recovery": false,
+            "challenge": "unauthorized",
+            "credential": "session",
+            "origin": "CatalogApi::regional",
+            "recovery": "final_rejects_installed_version",
+            "source_kind": "endpoint",
+            "target": {
+              "kind": "bearer",
+              "name": null,
+              "scheme": null
+            }
+          }
+        ]
+      },
+      "body": null,
+      "effect": {
+        "source": "method_default",
+        "value": "safe"
+      },
+      "headers": [
+        {
+          "conditional_on": null,
+          "emission": {
+            "atom": {
+              "kind": "literal",
+              "literal_kind": "string",
+              "text": "3"
+            },
+            "kind": "scalar"
+          },
+          "key": "X-Client-Version",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": false,
+          "site": "block",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": {
+            "name": "language",
+            "owner": "CatalogApi::regional::inspect"
+          },
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "language",
+                "owner": "CatalogApi::regional::inspect"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "Accept-Language",
+          "kind": "replace",
+          "origin": "CatalogApi::regional::inspect",
+          "sensitive": false,
+          "site": "block",
+          "superseded_when_present": []
+        }
+      ],
+      "id": {
+        "derivation_inputs": [],
+        "source": "explicit",
+        "value": "catalog.item.inspect"
+      },
+      "method": "GET",
+      "name": "inspect",
+      "owner": "CatalogApi::regional",
+      "pagination": null,
+      "path": "CatalogApi::regional::inspect",
+      "query": [
+        {
+          "conditional_on": null,
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "tenant",
+                "owner": "CatalogApi"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "tenant",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": true,
+          "site": "direct",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": {
+            "name": "locale",
+            "owner": "CatalogApi"
+          },
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "locale",
+                "owner": "CatalogApi"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "locale",
+          "kind": "introduce",
+          "origin": "CatalogApi",
+          "sensitive": false,
+          "site": "direct",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": {
+            "name": "language",
+            "owner": "CatalogApi::regional::inspect"
+          },
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "language",
+                "owner": "CatalogApi::regional::inspect"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "language",
+          "kind": "introduce",
+          "origin": "CatalogApi::regional::inspect",
+          "sensitive": false,
+          "site": "direct",
+          "superseded_when_present": []
+        },
+        {
+          "conditional_on": {
+            "name": "language",
+            "owner": "CatalogApi::regional::inspect"
+          },
+          "emission": {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "language",
+                "owner": "CatalogApi::regional::inspect"
+              }
+            },
+            "kind": "scalar"
+          },
+          "key": "languageEcho",
+          "kind": "introduce",
+          "origin": "CatalogApi::regional::inspect",
+          "sensitive": false,
+          "site": "block",
+          "superseded_when_present": []
+        }
+      ],
+      "rate": [
+        {
+          "cost": 1,
+          "cost_source": "default",
+          "definition": {
+            "kind": "named",
+            "name": "tenant_reads"
+          },
+          "dimensions": [
+            {
+              "binding": null,
+              "encoder_role": "builtin_utf8",
+              "encoder_type": null,
+              "encoding_id": "concord.utf8/1",
+              "kind": "origin",
+              "label": "origin"
+            },
+            {
+              "binding": {
+                "name": "tenant",
+                "owner": "CatalogApi"
+              },
+              "encoder_role": "value_type",
+              "encoder_type": "TenantId",
+              "encoding_id": "concord.utf8/1",
+              "kind": "custom",
+              "label": "tenant"
+            }
+          ],
+          "id": "catalog.tenant.read",
+          "origin": "CatalogApi::regional",
+          "window_set": null,
+          "windows_canonical": [
+            {
+              "capacity": 120,
+              "duration": {
+                "nanos": 0,
+                "secs": 60
+              }
+            },
+            {
+              "capacity": 5000,
+              "duration": {
+                "nanos": 0,
+                "secs": 3600
+              }
+            }
+          ],
+          "windows_source_order": [
+            {
+              "capacity": 120,
+              "duration": {
+                "nanos": 0,
+                "secs": 60
+              }
+            },
+            {
+              "capacity": 5000,
+              "duration": {
+                "nanos": 0,
+                "secs": 3600
+              }
+            }
+          ]
+        }
+      ],
+      "result": {
+        "accept": "application/json",
+        "driver": "buffered",
+        "output_type": "Item",
+        "representation": {
+          "blocking_fence": null,
+          "shadowed_default": null,
+          "source": {
+            "kind": "inherited",
+            "owner": "CatalogApi"
+          },
+          "type": "Json"
+        }
+      },
+      "route": {
+        "labels": [
+          {
+            "atom": {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "region",
+                "owner": "CatalogApi::regional"
+              }
+            },
+            "origin": "CatalogApi::regional"
+          },
+          {
+            "atom": {
+              "kind": "literal",
+              "literal_kind": "string",
+              "text": "api"
+            },
+            "origin": "CatalogApi"
+          }
+        ],
+        "path_reset": null,
+        "segments": [
+          {
+            "origin": "CatalogApi",
+            "parts": [
+              {
+                "adapter": null,
+                "kind": "hole",
+                "value": {
+                  "name": "api_version",
+                  "owner": "CatalogApi"
+                }
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional",
+            "parts": [
+              {
+                "kind": "literal",
+                "text": "regions"
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional",
+            "parts": [
+              {
+                "adapter": null,
+                "kind": "hole",
+                "value": {
+                  "name": "region",
+                  "owner": "CatalogApi::regional"
+                }
+              }
+            ]
+          },
+          {
+            "origin": "CatalogApi::regional::inspect",
+            "parts": [
+              {
+                "kind": "literal",
+                "text": "inspect"
+              }
+            ]
+          }
+        ],
+        "subdomain_reset": null,
+        "url_template": "https://{regional.region}.api.catalog.example.test/root/{client.api_version}/regions/{regional.region}/inspect"
+      },
+      "status": {
+        "absent_on": null,
+        "accepted": {
+          "kind": "success"
+        },
+        "source": "default_success"
+      },
+      "terminals": {
+        "accepted_bytes": false,
+        "pagination": false,
+        "response": true,
+        "store_as": []
+      },
+      "timeout": {
+        "duration": {
+          "nanos": 0,
+          "secs": 20
+        },
+        "source": {
+          "kind": "declared",
+          "owner": "CatalogApi"
+        }
+      }
+    }
+  ],
+  "format": "concord.contract/3",
+  "owners": [
+    {
+      "children": [
+        "CatalogApi::regional",
+        "CatalogApi::authenticate"
+      ],
+      "deprecation": null,
+      "docs": [
+        "Typed, tenant-scoped Catalog provider client."
+      ],
+      "effective": {
+        "auth": {
+          "automatic_recovery_available": false,
+          "displaced": [],
+          "placements": [
+            {
+              "automatic_recovery": false,
+              "challenge": "never",
+              "credential": "application_key",
+              "origin": "CatalogApi",
+              "recovery": "final_rejects_applied_material",
+              "source_kind": "api_key",
+              "target": {
+                "kind": "header",
+                "name": "X-Bootstrap-Key",
+                "scheme": null
+              }
+            }
+          ]
+        },
+        "headers": [
+          {
+            "conditional_on": null,
+            "emission": {
+              "atom": {
+                "kind": "literal",
+                "literal_kind": "string",
+                "text": "3"
+              },
+              "kind": "scalar"
+            },
+            "key": "X-Client-Version",
+            "kind": "introduce",
+            "origin": "CatalogApi",
+            "sensitive": false,
+            "site": "block",
+            "superseded_when_present": []
+          }
+        ],
+        "query": [
+          {
+            "conditional_on": null,
+            "emission": {
+              "atom": {
+                "adapter": null,
+                "kind": "value",
+                "value": {
+                  "name": "tenant",
+                  "owner": "CatalogApi"
+                }
+              },
+              "kind": "scalar"
+            },
+            "key": "tenant",
+            "kind": "introduce",
+            "origin": "CatalogApi",
+            "sensitive": true,
+            "site": "direct",
+            "superseded_when_present": []
+          },
+          {
+            "conditional_on": {
+              "name": "locale",
+              "owner": "CatalogApi"
+            },
+            "emission": {
+              "atom": {
+                "adapter": null,
+                "kind": "value",
+                "value": {
+                  "name": "locale",
+                  "owner": "CatalogApi"
+                }
+              },
+              "kind": "scalar"
+            },
+            "key": "locale",
+            "kind": "introduce",
+            "origin": "CatalogApi",
+            "sensitive": false,
+            "site": "direct",
+            "superseded_when_present": []
+          }
+        ],
+        "rate": [],
+        "request_default": {
+          "fenced": false,
+          "owner": "CatalogApi",
+          "type": "Json"
+        },
+        "response_default": {
+          "fenced": false,
+          "owner": "CatalogApi",
+          "type": "Json"
+        },
+        "route": {
+          "labels": [
+            {
+              "atom": {
+                "kind": "literal",
+                "literal_kind": "string",
+                "text": "api"
+              },
+              "origin": "CatalogApi"
+            }
+          ],
+          "path_reset": null,
+          "segments": [
+            {
+              "origin": "CatalogApi",
+              "parts": [
+                {
+                  "adapter": null,
+                  "kind": "hole",
+                  "value": {
+                    "name": "api_version",
+                    "owner": "CatalogApi"
+                  }
+                }
+              ]
+            }
+          ],
+          "subdomain_reset": null,
+          "url_template": "https://api.catalog.example.test/root/{client.api_version}"
+        },
+        "timeout": {
+          "duration": {
+            "nanos": 0,
+            "secs": 20
+          },
+          "source": {
+            "kind": "declared",
+            "owner": "CatalogApi"
+          }
+        }
+      },
+      "kind": "client",
+      "local": {
+        "auth": {
+          "mode": "append",
+          "placements": [
+            {
+              "challenge": "never",
+              "credential": "application_key",
+              "target": {
+                "kind": "header",
+                "name": "X-Bootstrap-Key",
+                "scheme": null
+              }
+            }
+          ]
+        },
+        "headers": {
+          "mode": "inherit",
+          "operations": [
+            {
+              "emission": {
+                "atom": {
+                  "kind": "literal",
+                  "literal_kind": "string",
+                  "text": "3"
+                },
+                "kind": "scalar"
+              },
+              "key": "X-Client-Version",
+              "kind": "introduce",
+              "site": "block"
+            }
+          ]
+        },
+        "path": {
+          "mode": "append",
+          "template": {
+            "segments": [
+              [
+                {
+                  "adapter": null,
+                  "kind": "hole",
+                  "value": {
+                    "name": "api_version",
+                    "owner": "CatalogApi"
+                  }
+                }
+              ]
+            ],
+            "text": "{api_version}"
+          }
+        },
+        "query": {
+          "mode": "inherit",
+          "operations": [
+            {
+              "emission": {
+                "atom": {
+                  "adapter": null,
+                  "kind": "value",
+                  "value": {
+                    "name": "tenant",
+                    "owner": "CatalogApi"
+                  }
+                },
+                "kind": "scalar"
+              },
+              "key": "tenant",
+              "kind": "introduce",
+              "site": "direct"
+            },
+            {
+              "emission": {
+                "atom": {
+                  "adapter": null,
+                  "kind": "value",
+                  "value": {
+                    "name": "locale",
+                    "owner": "CatalogApi"
+                  }
+                },
+                "kind": "scalar"
+              },
+              "key": "locale",
+              "kind": "introduce",
+              "site": "direct"
+            }
+          ]
+        },
+        "rate_limits": [],
+        "request_default": {
+          "kind": "type",
+          "type": "Json"
+        },
+        "response_default": {
+          "kind": "type",
+          "type": "Json"
+        },
+        "subdomain": {
+          "labels": [
+            {
+              "kind": "literal",
+              "literal_kind": "string",
+              "text": "api"
+            }
+          ],
+          "mode": "prepend"
+        },
+        "timeout": {
+          "nanos": 0,
+          "secs": 20
+        }
+      },
+      "name": "CatalogApi",
+      "parent": null,
+      "path": "CatalogApi",
+      "values": [
+        {
+          "constructor_position": null,
+          "controls": [
+            "set",
+            "set_if_some"
+          ],
+          "declaration_index": 0,
+          "deprecation": null,
+          "docs": [
+            "The tenant is sent, but excluded from automatic observation."
+          ],
+          "initializer": {
+            "kind": "none"
+          },
+          "liveness": "live",
+          "name": "tenant",
+          "payload_type": "TenantId",
+          "presence": "required",
+          "role": "builder_required",
+          "sensitivity": "sensitive"
+        },
+        {
+          "constructor_position": null,
+          "controls": [
+            "set",
+            "replace",
+            "set_if_some",
+            "omit"
+          ],
+          "declaration_index": 1,
+          "deprecation": null,
+          "docs": [],
+          "initializer": {
+            "kind": "none"
+          },
+          "liveness": "live",
+          "name": "locale",
+          "payload_type": "Locale",
+          "presence": "optional",
+          "role": "configurable",
+          "sensitivity": "ordinary"
+        },
+        {
+          "constructor_position": null,
+          "controls": [
+            "set",
+            "set_if_some",
+            "reset"
+          ],
+          "declaration_index": 2,
+          "deprecation": null,
+          "docs": [],
+          "initializer": {
+            "kind": "trait_default"
+          },
+          "liveness": "live",
+          "name": "api_version",
+          "payload_type": "ApiVersion",
+          "presence": "required",
+          "role": "configurable",
+          "sensitivity": "ordinary"
+        }
+      ]
+    },
+    {
+      "children": [
+        "CatalogApi::regional::item_summaries",
+        "CatalogApi::regional::item",
+        "CatalogApi::regional::find_item",
+        "CatalogApi::regional::update_item",
+        "CatalogApi::regional::feed",
+        "CatalogApi::regional::export",
+        "CatalogApi::regional::inspect"
+      ],
+      "deprecation": null,
+      "docs": [],
+      "effective": {
+        "auth": {
+          "automatic_recovery_available": false,
+          "displaced": [
+            {
+              "challenge": "never",
+              "credential": "application_key",
+              "displaced_by": "CatalogApi::regional",
+              "mode": "replace",
+              "origin": "CatalogApi",
+              "target": {
+                "kind": "header",
+                "name": "X-Bootstrap-Key",
+                "scheme": null
+              }
+            }
+          ],
+          "placements": [
+            {
+              "automatic_recovery": false,
+              "challenge": "unauthorized",
+              "credential": "session",
+              "origin": "CatalogApi::regional",
+              "recovery": "final_rejects_installed_version",
+              "source_kind": "endpoint",
+              "target": {
+                "kind": "bearer",
+                "name": null,
+                "scheme": null
+              }
+            }
+          ]
+        },
+        "headers": [
+          {
+            "conditional_on": null,
+            "emission": {
+              "atom": {
+                "kind": "literal",
+                "literal_kind": "string",
+                "text": "3"
+              },
+              "kind": "scalar"
+            },
+            "key": "X-Client-Version",
+            "kind": "introduce",
+            "origin": "CatalogApi",
+            "sensitive": false,
+            "site": "block",
+            "superseded_when_present": []
+          },
+          {
+            "conditional_on": {
+              "name": "language",
+              "owner": "CatalogApi::regional"
+            },
+            "emission": {
+              "atom": {
+                "adapter": null,
+                "kind": "value",
+                "value": {
+                  "name": "language",
+                  "owner": "CatalogApi::regional"
+                }
+              },
+              "kind": "scalar"
+            },
+            "key": "Accept-Language",
+            "kind": "introduce",
+            "origin": "CatalogApi::regional",
+            "sensitive": false,
+            "site": "direct",
+            "superseded_when_present": []
+          }
+        ],
+        "query": [
+          {
+            "conditional_on": null,
+            "emission": {
+              "atom": {
+                "adapter": null,
+                "kind": "value",
+                "value": {
+                  "name": "tenant",
+                  "owner": "CatalogApi"
+                }
+              },
+              "kind": "scalar"
+            },
+            "key": "tenant",
+            "kind": "introduce",
+            "origin": "CatalogApi",
+            "sensitive": true,
+            "site": "direct",
+            "superseded_when_present": []
+          },
+          {
+            "conditional_on": {
+              "name": "locale",
+              "owner": "CatalogApi"
+            },
+            "emission": {
+              "atom": {
+                "adapter": null,
+                "kind": "value",
+                "value": {
+                  "name": "locale",
+                  "owner": "CatalogApi"
+                }
+              },
+              "kind": "scalar"
+            },
+            "key": "locale",
+            "kind": "introduce",
+            "origin": "CatalogApi",
+            "sensitive": false,
+            "site": "direct",
+            "superseded_when_present": []
+          }
+        ],
+        "rate": [
+          {
+            "cost": 1,
+            "cost_source": "default",
+            "definition": {
+              "kind": "named",
+              "name": "tenant_reads"
+            },
+            "dimensions": [
+              {
+                "binding": null,
+                "encoder_role": "builtin_utf8",
+                "encoder_type": null,
+                "encoding_id": "concord.utf8/1",
+                "kind": "origin",
+                "label": "origin"
+              },
+              {
+                "binding": {
+                  "name": "tenant",
+                  "owner": "CatalogApi"
+                },
+                "encoder_role": "value_type",
+                "encoder_type": "TenantId",
+                "encoding_id": "concord.utf8/1",
+                "kind": "custom",
+                "label": "tenant"
+              }
+            ],
+            "id": "catalog.tenant.read",
+            "origin": "CatalogApi::regional",
+            "window_set": null,
+            "windows_canonical": [
+              {
+                "capacity": 120,
+                "duration": {
+                  "nanos": 0,
+                  "secs": 60
+                }
+              },
+              {
+                "capacity": 5000,
+                "duration": {
+                  "nanos": 0,
+                  "secs": 3600
+                }
+              }
+            ],
+            "windows_source_order": [
+              {
+                "capacity": 120,
+                "duration": {
+                  "nanos": 0,
+                  "secs": 60
+                }
+              },
+              {
+                "capacity": 5000,
+                "duration": {
+                  "nanos": 0,
+                  "secs": 3600
+                }
+              }
+            ]
+          }
+        ],
+        "request_default": {
+          "fenced": false,
+          "owner": "CatalogApi",
+          "type": "Json"
+        },
+        "response_default": {
+          "fenced": false,
+          "owner": "CatalogApi",
+          "type": "Json"
+        },
+        "route": {
+          "labels": [
+            {
+              "atom": {
+                "adapter": null,
+                "kind": "value",
+                "value": {
+                  "name": "region",
+                  "owner": "CatalogApi::regional"
+                }
+              },
+              "origin": "CatalogApi::regional"
+            },
+            {
+              "atom": {
+                "kind": "literal",
+                "literal_kind": "string",
+                "text": "api"
+              },
+              "origin": "CatalogApi"
+            }
+          ],
+          "path_reset": null,
+          "segments": [
+            {
+              "origin": "CatalogApi",
+              "parts": [
+                {
+                  "adapter": null,
+                  "kind": "hole",
+                  "value": {
+                    "name": "api_version",
+                    "owner": "CatalogApi"
+                  }
+                }
+              ]
+            },
+            {
+              "origin": "CatalogApi::regional",
+              "parts": [
+                {
+                  "kind": "literal",
+                  "text": "regions"
+                }
+              ]
+            },
+            {
+              "origin": "CatalogApi::regional",
+              "parts": [
+                {
+                  "adapter": null,
+                  "kind": "hole",
+                  "value": {
+                    "name": "region",
+                    "owner": "CatalogApi::regional"
+                  }
+                }
+              ]
+            }
+          ],
+          "subdomain_reset": null,
+          "url_template": "https://{regional.region}.api.catalog.example.test/root/{client.api_version}/regions/{regional.region}"
+        },
+        "timeout": {
+          "duration": {
+            "nanos": 0,
+            "secs": 20
+          },
+          "source": {
+            "kind": "declared",
+            "owner": "CatalogApi"
+          }
+        }
+      },
+      "kind": "scope",
+      "local": {
+        "auth": {
+          "mode": "replace",
+          "placements": [
+            {
+              "challenge": "unauthorized",
+              "credential": "session",
+              "target": {
+                "kind": "bearer",
+                "name": null,
+                "scheme": null
+              }
+            }
+          ]
+        },
+        "headers": {
+          "mode": "inherit",
+          "operations": [
+            {
+              "emission": {
+                "atom": {
+                  "adapter": null,
+                  "kind": "value",
+                  "value": {
+                    "name": "language",
+                    "owner": "CatalogApi::regional"
+                  }
+                },
+                "kind": "scalar"
+              },
+              "key": "Accept-Language",
+              "kind": "introduce",
+              "site": "direct"
+            }
+          ]
+        },
+        "path": {
+          "mode": "append",
+          "template": {
+            "segments": [
+              [
+                {
+                  "kind": "literal",
+                  "text": "regions"
+                }
+              ],
+              [
+                {
+                  "adapter": null,
+                  "kind": "hole",
+                  "value": {
+                    "name": "region",
+                    "owner": "CatalogApi::regional"
+                  }
+                }
+              ]
+            ],
+            "text": "regions/{region}"
+          }
+        },
+        "query": {
+          "mode": "inherit",
+          "operations": []
+        },
+        "rate_limits": [
+          {
+            "bindings": [
+              {
+                "encoding_id": "concord.utf8/1",
+                "formal": "tenant",
+                "value": {
+                  "name": "tenant",
+                  "owner": "CatalogApi"
+                }
+              }
+            ],
+            "cost": null,
+            "kind": "named",
+            "policy": "tenant_reads"
+          }
+        ],
+        "request_default": null,
+        "response_default": null,
+        "subdomain": {
+          "labels": [
+            {
+              "adapter": null,
+              "kind": "value",
+              "value": {
+                "name": "region",
+                "owner": "CatalogApi::regional"
+              }
+            }
+          ],
+          "mode": "prepend"
+        },
+        "timeout": null
+      },
+      "name": "regional",
+      "parent": "CatalogApi",
+      "path": "CatalogApi::regional",
+      "values": [
+        {
+          "constructor_position": 0,
+          "controls": [],
+          "declaration_index": 0,
+          "deprecation": null,
+          "docs": [],
+          "initializer": {
+            "kind": "none"
+          },
+          "liveness": "live",
+          "name": "region",
+          "payload_type": "Region",
+          "presence": "required",
+          "role": "constructor",
+          "sensitivity": "ordinary"
+        },
+        {
+          "constructor_position": null,
+          "controls": [
+            "set",
+            "replace",
+            "set_if_some",
+            "omit"
+          ],
+          "declaration_index": 1,
+          "deprecation": null,
+          "docs": [],
+          "initializer": {
+            "kind": "none"
+          },
+          "liveness": "live",
+          "name": "language",
+          "payload_type": "Language",
+          "presence": "optional",
+          "role": "configurable",
+          "sensitivity": "ordinary"
+        }
+      ]
+    },
+    {
+      "children": [],
+      "deprecation": null,
+      "docs": [
+        "Explicit login. Use store_as_session to request local installation."
+      ],
+      "effective": null,
+      "kind": "endpoint",
+      "local": {
+        "auth": null,
+        "headers": {
+          "mode": "inherit",
+          "operations": []
+        },
+        "path": {
+          "mode": "append",
+          "template": {
+            "segments": [
+              [
+                {
+                  "kind": "literal",
+                  "text": "auth"
+                }
+              ],
+              [
+                {
+                  "kind": "literal",
+                  "text": "session"
+                }
+              ]
+            ],
+            "text": "auth/session"
+          }
+        },
+        "query": {
+          "mode": "inherit",
+          "operations": []
+        },
+        "rate_limits": [],
+        "request_default": null,
+        "response_default": null,
+        "subdomain": null,
+        "timeout": null
+      },
+      "name": "authenticate",
+      "parent": "CatalogApi",
+      "path": "CatalogApi::authenticate",
+      "values": []
+    },
+    {
+      "children": [],
+      "deprecation": null,
+      "docs": [
+        "One decoded page; select an explicit traversal terminal for more."
+      ],
+      "effective": null,
+      "kind": "endpoint",
+      "local": {
+        "auth": null,
+        "headers": {
+          "mode": "inherit",
+          "operations": []
+        },
+        "path": {
+          "mode": "append",
+          "template": {
+            "segments": [
+              [
+                {
+                  "kind": "literal",
+                  "text": "items"
+                }
+              ]
+            ],
+            "text": "items"
+          }
+        },
+        "query": {
+          "mode": "inherit",
+          "operations": [
+            {
+              "emission": {
+                "atom": {
+                  "adapter": null,
+                  "kind": "value",
+                  "value": {
+                    "name": "category",
+                    "owner": "CatalogApi::regional::item_summaries"
+                  }
+                },
+                "kind": "scalar"
+              },
+              "key": "category",
+              "kind": "introduce",
+              "site": "direct"
+            },
+            {
+              "emission": {
+                "atom": {
+                  "adapter": null,
+                  "kind": "value",
+                  "value": {
+                    "name": "offset",
+                    "owner": "CatalogApi::regional::item_summaries"
+                  }
+                },
+                "kind": "scalar"
+              },
+              "key": "offset",
+              "kind": "introduce",
+              "site": "direct"
+            },
+            {
+              "emission": {
+                "atom": {
+                  "adapter": null,
+                  "kind": "value",
+                  "value": {
+                    "name": "count",
+                    "owner": "CatalogApi::regional::item_summaries"
+                  }
+                },
+                "kind": "scalar"
+              },
+              "key": "count",
+              "kind": "introduce",
+              "site": "direct"
+            },
+            {
+              "emission": {
+                "adapter": null,
+                "kind": "each",
+                "value": {
+                  "name": "tags",
+                  "owner": "CatalogApi::regional::item_summaries"
+                }
+              },
+              "key": "tag",
+              "kind": "introduce",
+              "site": "direct"
+            }
+          ]
+        },
+        "rate_limits": [],
+        "request_default": null,
+        "response_default": null,
+        "subdomain": null,
+        "timeout": null
+      },
+      "name": "item_summaries",
+      "parent": "CatalogApi::regional",
+      "path": "CatalogApi::regional::item_summaries",
+      "values": [
+        {
+          "constructor_position": null,
+          "controls": [
+            "set",
+            "replace",
+            "set_if_some",
+            "omit"
+          ],
+          "declaration_index": 0,
+          "deprecation": null,
+          "docs": [],
+          "initializer": {
+            "kind": "none"
+          },
+          "liveness": "live",
+          "name": "category",
+          "payload_type": "Category",
+          "presence": "optional",
+          "role": "configurable",
+          "sensitivity": "ordinary"
+        },
+        {
+          "constructor_position": null,
+          "controls": [
+            "set",
+            "set_if_some",
+            "reset"
+          ],
+          "declaration_index": 1,
+          "deprecation": null,
+          "docs": [],
+          "initializer": {
+            "expression": {
+              "kind": "literal",
+              "text": "0"
+            },
+            "kind": "stable"
+          },
+          "liveness": "live",
+          "name": "offset",
+          "payload_type": "u64",
+          "presence": "required",
+          "role": "configurable",
+          "sensitivity": "ordinary"
+        },
+        {
+          "constructor_position": null,
+          "controls": [
+            "set",
+            "set_if_some",
+            "reset"
+          ],
+          "declaration_index": 2,
+          "deprecation": null,
+          "docs": [],
+          "initializer": {
+            "expression": {
+              "kind": "constant",
+              "path": "DEFAULT_PAGE_SIZE"
+            },
+            "kind": "stable"
+          },
+          "liveness": "live",
+          "name": "count",
+          "payload_type": "NonZeroU32",
+          "presence": "required",
+          "role": "configurable",
+          "sensitivity": "ordinary"
+        },
+        {
+          "constructor_position": 0,
+          "controls": [],
+          "declaration_index": 3,
+          "deprecation": null,
+          "docs": [],
+          "initializer": {
+            "kind": "none"
+          },
+          "liveness": "live",
+          "name": "tags",
+          "payload_type": "Vec<Tag>",
+          "presence": "required",
+          "role": "constructor",
+          "sensitivity": "ordinary"
+        }
+      ]
+    },
+    {
+      "children": [],
+      "deprecation": null,
+      "docs": [
+        "A strict lookup. Its explicit byte terminal does not decode Json."
+      ],
+      "effective": null,
+      "kind": "endpoint",
+      "local": {
+        "auth": null,
+        "headers": {
+          "mode": "inherit",
+          "operations": []
+        },
+        "path": {
+          "mode": "append",
+          "template": {
+            "segments": [
+              [
+                {
+                  "kind": "literal",
+                  "text": "items"
+                }
+              ],
+              [
+                {
+                  "adapter": null,
+                  "kind": "hole",
+                  "value": {
+                    "name": "id",
+                    "owner": "CatalogApi::regional::item"
+                  }
+                }
+              ]
+            ],
+            "text": "items/{id}"
+          }
+        },
+        "query": {
+          "mode": "inherit",
+          "operations": [
+            {
+              "emission": {
+                "atom": {
+                  "adapter": null,
+                  "kind": "value",
+                  "value": {
+                    "name": "locale_override",
+                    "owner": "CatalogApi::regional::item"
+                  }
+                },
+                "kind": "scalar"
+              },
+              "key": "locale",
+              "kind": "when_present",
+              "site": "block"
+            }
+          ]
+        },
+        "rate_limits": [],
+        "request_default": null,
+        "response_default": null,
+        "subdomain": null,
+        "timeout": null
+      },
+      "name": "item",
+      "parent": "CatalogApi::regional",
+      "path": "CatalogApi::regional::item",
+      "values": [
+        {
+          "constructor_position": 0,
+          "controls": [],
+          "declaration_index": 0,
+          "deprecation": null,
+          "docs": [],
+          "initializer": {
+            "kind": "none"
+          },
+          "liveness": "live",
+          "name": "id",
+          "payload_type": "ItemId",
+          "presence": "required",
+          "role": "constructor",
+          "sensitivity": "ordinary"
+        },
+        {
+          "constructor_position": null,
+          "controls": [
+            "set",
+            "replace",
+            "set_if_some",
+            "omit"
+          ],
+          "declaration_index": 1,
+          "deprecation": null,
+          "docs": [],
+          "initializer": {
+            "kind": "none"
+          },
+          "liveness": "live",
+          "name": "locale_override",
+          "payload_type": "Locale",
+          "presence": "optional",
+          "role": "configurable",
+          "sensitivity": "ordinary"
+        }
+      ]
+    },
+    {
+      "children": [],
+      "deprecation": null,
+      "docs": [
+        "A head-only 404 is None; the body of that response is not polled."
+      ],
+      "effective": null,
+      "kind": "endpoint",
+      "local": {
+        "auth": null,
+        "headers": {
+          "mode": "inherit",
+          "operations": []
+        },
+        "path": {
+          "mode": "append",
+          "template": {
+            "segments": [
+              [
+                {
+                  "kind": "literal",
+                  "text": "items"
+                }
+              ],
+              [
+                {
+                  "adapter": null,
+                  "kind": "hole",
+                  "value": {
+                    "name": "id",
+                    "owner": "CatalogApi::regional::find_item"
+                  }
+                }
+              ]
+            ],
+            "text": "items/{id}"
+          }
+        },
+        "query": {
+          "mode": "inherit",
+          "operations": []
+        },
+        "rate_limits": [],
+        "request_default": null,
+        "response_default": null,
+        "subdomain": null,
+        "timeout": null
+      },
+      "name": "find_item",
+      "parent": "CatalogApi::regional",
+      "path": "CatalogApi::regional::find_item",
+      "values": [
+        {
+          "constructor_position": 0,
+          "controls": [],
+          "declaration_index": 0,
+          "deprecation": null,
+          "docs": [],
+          "initializer": {
+            "kind": "none"
+          },
+          "liveness": "live",
+          "name": "id",
+          "payload_type": "ItemId",
+          "presence": "required",
+          "role": "constructor",
+          "sensitivity": "ordinary"
+        }
+      ]
+    },
+    {
+      "children": [],
+      "deprecation": null,
+      "docs": [
+        "The provider asserts idempotence for this command-bearing update."
+      ],
+      "effective": null,
+      "kind": "endpoint",
+      "local": {
+        "auth": null,
+        "headers": {
+          "mode": "inherit",
+          "operations": [
+            {
+              "emission": {
+                "atom": {
+                  "adapter": null,
+                  "kind": "value",
+                  "value": {
+                    "name": "command_id",
+                    "owner": "CatalogApi::regional::update_item"
+                  }
+                },
+                "kind": "scalar"
+              },
+              "key": "Idempotency-Key",
+              "kind": "introduce",
+              "site": "direct"
+            }
+          ]
+        },
+        "path": {
+          "mode": "append",
+          "template": {
+            "segments": [
+              [
+                {
+                  "kind": "literal",
+                  "text": "items"
+                }
+              ],
+              [
+                {
+                  "adapter": null,
+                  "kind": "hole",
+                  "value": {
+                    "name": "id",
+                    "owner": "CatalogApi::regional::update_item"
+                  }
+                }
+              ]
+            ],
+            "text": "items/{id}"
+          }
+        },
+        "query": {
+          "mode": "inherit",
+          "operations": []
+        },
+        "rate_limits": [
+          {
+            "cost": 5,
+            "dimensions": [
+              {
+                "kind": "origin"
+              },
+              {
+                "kind": "endpoint"
+              },
+              {
+                "encoder": null,
+                "encoding_id": "concord.utf8/1",
+                "kind": "custom",
+                "label": "client.tenant",
+                "value": {
+                  "name": "tenant",
+                  "owner": "CatalogApi"
+                }
+              }
+            ],
+            "id": "catalog.item.write",
+            "kind": "inline",
+            "window_set": null,
+            "windows_source_order": [
+              {
+                "capacity": 30,
+                "duration": {
+                  "nanos": 0,
+                  "secs": 60
+                }
+              }
+            ]
+          }
+        ],
+        "request_default": null,
+        "response_default": null,
+        "subdomain": null,
+        "timeout": null
+      },
+      "name": "update_item",
+      "parent": "CatalogApi::regional",
+      "path": "CatalogApi::regional::update_item",
+      "values": [
+        {
+          "constructor_position": 0,
+          "controls": [],
+          "declaration_index": 0,
+          "deprecation": null,
+          "docs": [],
+          "initializer": {
+            "kind": "none"
+          },
+          "liveness": "live",
+          "name": "id",
+          "payload_type": "ItemId",
+          "presence": "required",
+          "role": "constructor",
+          "sensitivity": "ordinary"
+        },
+        {
+          "constructor_position": 1,
+          "controls": [],
+          "declaration_index": 1,
+          "deprecation": null,
+          "docs": [],
+          "initializer": {
+            "kind": "none"
+          },
+          "liveness": "live",
+          "name": "command_id",
+          "payload_type": "CommandId",
+          "presence": "required",
+          "role": "constructor",
+          "sensitivity": "sensitive"
+        }
+      ]
+    },
+    {
+      "children": [],
+      "deprecation": null,
+      "docs": [
+        "Cursor-envelope page; the controller owns extraction, not Json."
+      ],
+      "effective": null,
+      "kind": "endpoint",
+      "local": {
+        "auth": null,
+        "headers": {
+          "mode": "inherit",
+          "operations": []
+        },
+        "path": {
+          "mode": "append",
+          "template": {
+            "segments": [
+              [
+                {
+                  "kind": "literal",
+                  "text": "feed"
+                }
+              ]
+            ],
+            "text": "feed"
+          }
+        },
+        "query": {
+          "mode": "inherit",
+          "operations": [
+            {
+              "emission": {
+                "atom": {
+                  "adapter": null,
+                  "kind": "value",
+                  "value": {
+                    "name": "after",
+                    "owner": "CatalogApi::regional::feed"
+                  }
+                },
+                "kind": "scalar"
+              },
+              "key": "after",
+              "kind": "introduce",
+              "site": "direct"
+            },
+            {
+              "emission": {
+                "atom": {
+                  "adapter": null,
+                  "kind": "value",
+                  "value": {
+                    "name": "count",
+                    "owner": "CatalogApi::regional::feed"
+                  }
+                },
+                "kind": "scalar"
+              },
+              "key": "count",
+              "kind": "introduce",
+              "site": "direct"
+            }
+          ]
+        },
+        "rate_limits": [],
+        "request_default": null,
+        "response_default": null,
+        "subdomain": null,
+        "timeout": null
+      },
+      "name": "feed",
+      "parent": "CatalogApi::regional",
+      "path": "CatalogApi::regional::feed",
+      "values": [
+        {
+          "constructor_position": null,
+          "controls": [
+            "set",
+            "replace",
+            "set_if_some",
+            "omit"
+          ],
+          "declaration_index": 0,
+          "deprecation": null,
+          "docs": [],
+          "initializer": {
+            "kind": "none"
+          },
+          "liveness": "live",
+          "name": "after",
+          "payload_type": "String",
+          "presence": "optional",
+          "role": "configurable",
+          "sensitivity": "ordinary"
+        },
+        {
+          "constructor_position": null,
+          "controls": [
+            "set",
+            "set_if_some",
+            "reset"
+          ],
+          "declaration_index": 1,
+          "deprecation": null,
+          "docs": [],
+          "initializer": {
+            "expression": {
+              "kind": "constant",
+              "path": "DEFAULT_PAGE_SIZE"
+            },
+            "kind": "stable"
+          },
+          "liveness": "live",
+          "name": "count",
+          "payload_type": "NonZeroU32",
+          "presence": "required",
+          "role": "configurable",
+          "sensitivity": "ordinary"
+        }
+      ]
+    },
+    {
+      "children": [],
+      "deprecation": null,
+      "docs": [
+        "Returns a managed byte stream, not a completed export."
+      ],
+      "effective": null,
+      "kind": "endpoint",
+      "local": {
+        "auth": null,
+        "headers": {
+          "mode": "inherit",
+          "operations": []
+        },
+        "path": {
+          "mode": "append",
+          "template": {
+            "segments": [
+              [
+                {
+                  "kind": "literal",
+                  "text": "export"
+                }
+              ]
+            ],
+            "text": "export"
+          }
+        },
+        "query": {
+          "mode": "inherit",
+          "operations": []
+        },
+        "rate_limits": [],
+        "request_default": null,
+        "response_default": null,
+        "subdomain": null,
+        "timeout": null
+      },
+      "name": "export",
+      "parent": "CatalogApi::regional",
+      "path": "CatalogApi::regional::export",
+      "values": []
+    },
+    {
+      "children": [],
+      "deprecation": null,
+      "docs": [
+        "One caller-controlled optional is deliberately used three times."
+      ],
+      "effective": null,
+      "kind": "endpoint",
+      "local": {
+        "auth": null,
+        "headers": {
+          "mode": "inherit",
+          "operations": [
+            {
+              "emission": {
+                "atom": {
+                  "adapter": null,
+                  "kind": "value",
+                  "value": {
+                    "name": "language",
+                    "owner": "CatalogApi::regional::inspect"
+                  }
+                },
+                "kind": "scalar"
+              },
+              "key": "Accept-Language",
+              "kind": "replace",
+              "site": "block"
+            }
+          ]
+        },
+        "path": {
+          "mode": "append",
+          "template": {
+            "segments": [
+              [
+                {
+                  "kind": "literal",
+                  "text": "inspect"
+                }
+              ]
+            ],
+            "text": "inspect"
+          }
+        },
+        "query": {
+          "mode": "inherit",
+          "operations": [
+            {
+              "emission": {
+                "atom": {
+                  "adapter": null,
+                  "kind": "value",
+                  "value": {
+                    "name": "language",
+                    "owner": "CatalogApi::regional::inspect"
+                  }
+                },
+                "kind": "scalar"
+              },
+              "key": "language",
+              "kind": "introduce",
+              "site": "direct"
+            },
+            {
+              "emission": {
+                "atom": {
+                  "adapter": null,
+                  "kind": "value",
+                  "value": {
+                    "name": "language",
+                    "owner": "CatalogApi::regional::inspect"
+                  }
+                },
+                "kind": "scalar"
+              },
+              "key": "languageEcho",
+              "kind": "introduce",
+              "site": "block"
+            }
+          ]
+        },
+        "rate_limits": [],
+        "request_default": null,
+        "response_default": null,
+        "subdomain": null,
+        "timeout": null
+      },
+      "name": "inspect",
+      "parent": "CatalogApi::regional",
+      "path": "CatalogApi::regional::inspect",
+      "values": [
+        {
+          "constructor_position": null,
+          "controls": [
+            "set",
+            "replace",
+            "set_if_some",
+            "omit"
+          ],
+          "declaration_index": 0,
+          "deprecation": null,
+          "docs": [],
+          "initializer": {
+            "kind": "none"
+          },
+          "liveness": "live",
+          "name": "language",
+          "payload_type": "Language",
+          "presence": "optional",
+          "role": "configurable",
+          "sensitivity": "ordinary"
+        }
+      ]
+    }
+  ],
+  "policies": [
+    {
+      "attachments": [
+        {
+          "attachment": {
+            "cost": 5,
+            "dimensions": [
+              {
+                "kind": "origin"
+              },
+              {
+                "kind": "endpoint"
+              },
+              {
+                "encoder": null,
+                "encoding_id": "concord.utf8/1",
+                "kind": "custom",
+                "label": "client.tenant",
+                "value": {
+                  "name": "tenant",
+                  "owner": "CatalogApi"
+                }
+              }
+            ],
+            "id": "catalog.item.write",
+            "kind": "inline",
+            "window_set": null,
+            "windows_source_order": [
+              {
+                "capacity": 30,
+                "duration": {
+                  "nanos": 0,
+                  "secs": 60
+                }
+              }
+            ]
+          },
+          "owner": "CatalogApi::regional::update_item"
+        }
+      ],
+      "coverage": [
+        {
+          "attached_at": "CatalogApi::regional::update_item",
+          "cost": 5,
+          "id": "catalog.item.update",
+          "path": "CatalogApi::regional::update_item"
+        }
+      ],
+      "definition": {
+        "kind": "inline"
+      },
+      "id": "catalog.item.write",
+      "schema": {
+        "dimensions": [
+          {
+            "binding": null,
+            "encoder_role": "builtin_utf8",
+            "encoder_type": null,
+            "encoding_id": "concord.utf8/1",
+            "kind": "origin",
+            "label": "origin"
+          },
+          {
+            "binding": null,
+            "encoder_role": "builtin_utf8",
+            "encoder_type": null,
+            "encoding_id": "concord.utf8/1",
+            "kind": "endpoint",
+            "label": "endpoint"
+          },
+          {
+            "binding": null,
+            "encoder_role": "value_type",
+            "encoder_type": "TenantId",
+            "encoding_id": "concord.utf8/1",
+            "kind": "custom",
+            "label": "client.tenant"
+          }
+        ],
+        "window_set": null,
+        "windows_canonical": [
+          {
+            "capacity": 30,
+            "duration": {
+              "nanos": 0,
+              "secs": 60
+            }
+          }
+        ],
+        "windows_source_order": [
+          {
+            "capacity": 30,
+            "duration": {
+              "nanos": 0,
+              "secs": 60
+            }
+          }
+        ]
+      },
+      "sharing": [
+        {
+          "condition": {
+            "labels": [
+              {
+                "bindings": [
+                  {
+                    "endpoint": "CatalogApi::regional::update_item",
+                    "endpoint_id": "catalog.item.update",
+                    "value": {
+                      "name": "tenant",
+                      "owner": "CatalogApi"
+                    }
+                  }
+                ],
+                "label": "client.tenant"
+              }
+            ],
+            "same_endpoint": true,
+            "same_limiter": true,
+            "same_origin": true,
+            "same_policy_id": true
+          },
+          "endpoints": [
+            {
+              "id": "catalog.item.update",
+              "path": "CatalogApi::regional::update_item"
+            }
+          ]
+        }
+      ],
+      "unused": false
+    },
+    {
+      "attachments": [
+        {
+          "attachment": {
+            "bindings": [
+              {
+                "encoding_id": "concord.utf8/1",
+                "formal": "tenant",
+                "value": {
+                  "name": "tenant",
+                  "owner": "CatalogApi"
+                }
+              }
+            ],
+            "cost": null,
+            "kind": "named",
+            "policy": "tenant_reads"
+          },
+          "owner": "CatalogApi::regional"
+        }
+      ],
+      "coverage": [
+        {
+          "attached_at": "CatalogApi::regional",
+          "cost": 1,
+          "id": "catalog.items.list",
+          "path": "CatalogApi::regional::item_summaries"
+        },
+        {
+          "attached_at": "CatalogApi::regional",
+          "cost": 1,
+          "id": "catalog.item.get",
+          "path": "CatalogApi::regional::item"
+        },
+        {
+          "attached_at": "CatalogApi::regional",
+          "cost": 1,
+          "id": "catalog.item.find",
+          "path": "CatalogApi::regional::find_item"
+        },
+        {
+          "attached_at": "CatalogApi::regional",
+          "cost": 1,
+          "id": "catalog.item.update",
+          "path": "CatalogApi::regional::update_item"
+        },
+        {
+          "attached_at": "CatalogApi::regional",
+          "cost": 1,
+          "id": "catalog.item.feed",
+          "path": "CatalogApi::regional::feed"
+        },
+        {
+          "attached_at": "CatalogApi::regional",
+          "cost": 1,
+          "id": "catalog.item.export",
+          "path": "CatalogApi::regional::export"
+        },
+        {
+          "attached_at": "CatalogApi::regional",
+          "cost": 1,
+          "id": "catalog.item.inspect",
+          "path": "CatalogApi::regional::inspect"
+        }
+      ],
+      "definition": {
+        "declared_cost": null,
+        "dimensions": [
+          {
+            "kind": "origin"
+          },
+          {
+            "encoder": null,
+            "formal": "tenant",
+            "kind": "custom",
+            "label": "tenant"
+          }
+        ],
+        "docs": [],
+        "formals": [
+          "tenant"
+        ],
+        "inline_windows": [
+          {
+            "capacity": 120,
+            "duration": {
+              "nanos": 0,
+              "secs": 60
+            }
+          },
+          {
+            "capacity": 5000,
+            "duration": {
+              "nanos": 0,
+              "secs": 3600
+            }
+          }
+        ],
+        "kind": "named",
+        "name": "tenant_reads",
+        "window_set": null
+      },
+      "id": "catalog.tenant.read",
+      "schema": {
+        "dimensions": [
+          {
+            "binding": null,
+            "encoder_role": "builtin_utf8",
+            "encoder_type": null,
+            "encoding_id": "concord.utf8/1",
+            "kind": "origin",
+            "label": "origin"
+          },
+          {
+            "binding": null,
+            "encoder_role": "value_type",
+            "encoder_type": "TenantId",
+            "encoding_id": "concord.utf8/1",
+            "kind": "custom",
+            "label": "tenant"
+          }
+        ],
+        "window_set": null,
+        "windows_canonical": [
+          {
+            "capacity": 120,
+            "duration": {
+              "nanos": 0,
+              "secs": 60
+            }
+          },
+          {
+            "capacity": 5000,
+            "duration": {
+              "nanos": 0,
+              "secs": 3600
+            }
+          }
+        ],
+        "windows_source_order": [
+          {
+            "capacity": 120,
+            "duration": {
+              "nanos": 0,
+              "secs": 60
+            }
+          },
+          {
+            "capacity": 5000,
+            "duration": {
+              "nanos": 0,
+              "secs": 3600
+            }
+          }
+        ]
+      },
+      "sharing": [
+        {
+          "condition": {
+            "labels": [
+              {
+                "bindings": [
+                  {
+                    "endpoint": "CatalogApi::regional::item_summaries",
+                    "endpoint_id": "catalog.items.list",
+                    "value": {
+                      "name": "tenant",
+                      "owner": "CatalogApi"
+                    }
+                  },
+                  {
+                    "endpoint": "CatalogApi::regional::item",
+                    "endpoint_id": "catalog.item.get",
+                    "value": {
+                      "name": "tenant",
+                      "owner": "CatalogApi"
+                    }
+                  },
+                  {
+                    "endpoint": "CatalogApi::regional::find_item",
+                    "endpoint_id": "catalog.item.find",
+                    "value": {
+                      "name": "tenant",
+                      "owner": "CatalogApi"
+                    }
+                  },
+                  {
+                    "endpoint": "CatalogApi::regional::update_item",
+                    "endpoint_id": "catalog.item.update",
+                    "value": {
+                      "name": "tenant",
+                      "owner": "CatalogApi"
+                    }
+                  },
+                  {
+                    "endpoint": "CatalogApi::regional::feed",
+                    "endpoint_id": "catalog.item.feed",
+                    "value": {
+                      "name": "tenant",
+                      "owner": "CatalogApi"
+                    }
+                  },
+                  {
+                    "endpoint": "CatalogApi::regional::export",
+                    "endpoint_id": "catalog.item.export",
+                    "value": {
+                      "name": "tenant",
+                      "owner": "CatalogApi"
+                    }
+                  },
+                  {
+                    "endpoint": "CatalogApi::regional::inspect",
+                    "endpoint_id": "catalog.item.inspect",
+                    "value": {
+                      "name": "tenant",
+                      "owner": "CatalogApi"
+                    }
+                  }
+                ],
+                "label": "tenant"
+              }
+            ],
+            "same_endpoint": false,
+            "same_limiter": true,
+            "same_origin": true,
+            "same_policy_id": true
+          },
+          "endpoints": [
+            {
+              "id": "catalog.items.list",
+              "path": "CatalogApi::regional::item_summaries"
+            },
+            {
+              "id": "catalog.item.get",
+              "path": "CatalogApi::regional::item"
+            },
+            {
+              "id": "catalog.item.find",
+              "path": "CatalogApi::regional::find_item"
+            },
+            {
+              "id": "catalog.item.update",
+              "path": "CatalogApi::regional::update_item"
+            },
+            {
+              "id": "catalog.item.feed",
+              "path": "CatalogApi::regional::feed"
+            },
+            {
+              "id": "catalog.item.export",
+              "path": "CatalogApi::regional::export"
+            },
+            {
+              "id": "catalog.item.inspect",
+              "path": "CatalogApi::regional::inspect"
+            }
+          ]
+        }
+      ],
+      "unused": false
+    }
+  ],
+  "window_sets": []
+}

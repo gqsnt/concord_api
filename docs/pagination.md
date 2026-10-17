@@ -7,7 +7,8 @@ deadline, and the result never pretends a page bound is exhaustion (§14).
 ## Declaring a traversal
 
 <!-- concord-source: crates/concord-examples/src/pagination/mod.rs#offset_endpoint -->
-```concord
+<!-- concord-dsl -->
+```rust
 GET offset(query offset: u64, query limit: NonZeroU32) -> Vec<u32> via Json {
     paginate via OffsetPagination {
         init OffsetInit { offset: offset, page_size: limit };
@@ -37,7 +38,8 @@ so each page can prepare the same captured body. A `POST` search can qualify by
 asserting `effect safe`:
 
 <!-- concord-source: crates/concord-examples/src/pagination/mod.rs#post_search_endpoint -->
-```concord
+<!-- concord-dsl -->
+```rust
 POST search(
     query offset: u64,
     query limit: NonZeroU32,
@@ -265,7 +267,8 @@ cancellation, never EOF or rollback. (Stream reads differ: see
 ## Built-in controllers
 
 <!-- concord-source: crates/concord-examples/src/pagination/mod.rs#page_endpoint -->
-```concord
+<!-- concord-dsl -->
+```rust
 GET page(query page: NonZeroU64, query per_page: NonZeroU32) -> Vec<u32> via Json {
     paginate via PagePagination {
         init PageInit { page: page, page_size: per_page };
@@ -275,7 +278,8 @@ GET page(query page: NonZeroU64, query per_page: NonZeroU32) -> Vec<u32> via Jso
 ```
 
 <!-- concord-source: crates/concord-examples/src/pagination/mod.rs#cursor_endpoints -->
-```concord
+<!-- concord-dsl -->
+```rust
 GET cursor(query cursor?: String) -> ExamplePage via ExamplePageCodec {
     paginate via CursorPagination<String> {
         init CursorInit { cursor: cursor };

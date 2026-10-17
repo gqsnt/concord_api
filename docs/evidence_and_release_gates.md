@@ -54,7 +54,8 @@ build). Evidence follows these rules (TEST-01):
 
 `docs-check` (§19.2, DOC-01, V3-O05) fails when:
 
-- a `concord` DSL block is not a normalized excerpt of the compiled
+- a Rust-highlighted DSL block (marked `concord-dsl` in its Markdown source)
+  is not a normalized excerpt of the compiled
   `crates/concord-examples/src/docs_spec.rs`, or an anchored excerpt of a
   compiled example;
 - a Rust block is not an anchored excerpt of compiled code, or an anchored
@@ -118,10 +119,12 @@ leases and cancel-safe reads; generated docs, snapshot and diff tooling,
 V3 contract fixtures, docs/feature/anchor alignment, the platform matrix,
 measurements and a delivery audit.
 
-**Gate 6: unfamiliar-human comprehension.** Unknown/Blocked for public freeze;
-not a local beta integration gate. The maintained protocol lives under
-`dev_doc/dx_study/`. Lacking a human study does not authorize leaving the
-implementation incomplete.
+**Gate 6: user exercises and documentation review.** The owner requested agent
+execution on 17 October 2026; the [follow-up](../dev_doc/reviews/2026_10_17_followup/README.md)
+records the actual exercise answers, native checks and independent agent
+Rustdoc/diff review. This completes the requested technical evaluation. The
+retained human-study protocol under `dev_doc/dx_study/` is a separate possible
+empirical study; its participant metrics are unmeasured.
 
 ## Repository verification
 
@@ -154,9 +157,9 @@ explicitly named UI suites, MSRV, fixtures, docs and `doc-audit`, the two-crate
 downstream workspace, extracted public archives and their two-crate consumer
 proof, xtask tools, benchmark compilation and the source export).
 The `package` gate checks local archives, normalized manifests, Rustdoc and
-downstream behavior; it does not publish them. External license, registry, tag
-and human release gates (`deny`, `workflow`, `release-audit`) stay in the
-separate release report.
+downstream behavior; it does not publish them. Dependency, registry, tag and publication decisions stay in the separate
+release report; the selected project license is checked in repository policy
+and in the extracted archives.
 
 Individual gates can be run directly, for example
 `cargo test --workspace --all-features`, `cargo test --workspace --doc --all-features`

@@ -222,9 +222,13 @@ pub fn construct() -> Result<ObservedApi, concord::ClientBuildError> {
 ```
 
 `OperationEvent` is `AttemptStarted`, `ResponseHeadObserved`,
-`OperationFinished`, `PaginationFinished` or `StreamFinished`. Events carry
-operation and attempt identities, sanitized targets and headers and outcomes;
-never bodies, credential material, raw rate keys or sensitive values. Final
+`OperationFinished`, `ProviderAcquisitionFinished`, `PaginationFinished` or
+`StreamFinished`. Events carry
+operation and attempt identities, value-free target occurrence counts, typed
+response facts and outcomes. They expose no exact URL, path or query values,
+header names or values, bodies, credential material or raw rate keys. Explicit
+`RequestPlan` and `ApiResponse` accessors provide the separate caller-selected
+public URL/header view described above. Final
 events run after the result is fixed and cannot change it; a slow final
 callback can delay delivery. Observer panics are contained where Rust unwinds
 and counted only in bounded private diagnostics; no detached observer thread or

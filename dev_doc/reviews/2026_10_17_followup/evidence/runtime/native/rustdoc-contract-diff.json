@@ -1,0 +1,39 @@
+{
+  "label": "rustdoc-contract-diff",
+  "command": [
+    "cargo",
+    "run",
+    "--locked",
+    "-p",
+    "concord-xtask",
+    "--features",
+    "examples",
+    "--",
+    "contract",
+    "diff",
+    "/workspace/scratch/69ac10347cac/v3-followup/rustdoc-review/catalog_before.contract.json",
+    "/workspace/scratch/69ac10347cac/v3-followup/rustdoc-review/catalog_after.contract.json",
+    "--format",
+    "json"
+  ],
+  "cwd": "/workspace/scratch/69ac10347cac/v3-followup/rustdoc-review/candidate",
+  "started_at": "2026-10-17T11:40:30.915326+00:00",
+  "finished_at": "2026-10-17T11:40:31.033874+00:00",
+  "elapsed_seconds": 0.105,
+  "exit_code": 0,
+  "source_before": {
+    "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+    "status": " M crates/concord-examples/src/contracts/catalog_v3.rs\n",
+    "tracked_diff_sha256": "d13d75cd434d3e4406db0f8c4ce0801d93e113ae4b0f44e10bee84bb01ec697b",
+    "untracked_files_sha256": {}
+  },
+  "source_after": {
+    "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+    "status": " M crates/concord-examples/src/contracts/catalog_v3.rs\n",
+    "tracked_diff_sha256": "d13d75cd434d3e4406db0f8c4ce0801d93e113ae4b0f44e10bee84bb01ec697b",
+    "untracked_files_sha256": {}
+  },
+  "log": "/workspace/scratch/69ac10347cac/v3-followup/native/rustdoc-contract-diff.log",
+  "log_bytes": 8386,
+  "log_sha256": "7631dda48734b86d826e07a5f9ec58419b3adcfbb586229051bb5acd6139bcf9"
+}

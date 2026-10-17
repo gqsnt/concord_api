@@ -1,0 +1,56 @@
+{
+  "label": "csv-before-streams-native",
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "concord-extras",
+    "--all-features",
+    "--locked",
+    "--test",
+    "contracts",
+    "contracts::record_streams::csv::csv_"
+  ],
+  "cwd": "/workspace/scratch/69ac10347cac/concord-v3-review",
+  "started_at": "2026-10-17T11:34:48.188512+00:00",
+  "finished_at": "2026-10-17T11:34:48.343822+00:00",
+  "elapsed_seconds": 0.14,
+  "exit_code": 101,
+  "source_before": {
+    "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+    "status": " M .gitattributes\n M Cargo.toml\n M README.md\n M crates/concord-core/Cargo.toml\n M crates/concord-examples/Cargo.toml\n M crates/concord-extras/Cargo.toml\n M crates/concord-extras/src/records/csv.rs\n M crates/concord-extras/tests/contracts/record_streams.rs\n M crates/concord-inspect/Cargo.toml\n M crates/concord-macros/Cargo.toml\n M crates/concord-test-support/Cargo.toml\n M crates/concord/Cargo.toml\n M fixtures/dependency/contract_mismatch/Cargo.toml\n M fixtures/dependency/contract_mismatch/incompatible_facade/Cargo.toml\n M fixtures/dependency/renamed_facade/Cargo.toml\n M fixtures/features/Cargo.toml\n M fixtures/msrv/core/Cargo.toml\n M fixtures/msrv/facade/Cargo.toml\n M scripts/verify_packaged_downstream.ps1\n M tests/downstream/concord-downstream-api/Cargo.toml\n M tests/downstream/concord-downstream-app/Cargo.toml\n M tools/perf/Cargo.toml\n M tools/xtask/Cargo.toml\n M tools/xtask/src/policy.rs\n?? LICENSE-APACHE\n?? LICENSE-MIT\n?? crates/concord-core/LICENSE-APACHE\n?? crates/concord-core/LICENSE-MIT\n?? crates/concord-extras/LICENSE-APACHE\n?? crates/concord-extras/LICENSE-MIT\n?? crates/concord-macros/LICENSE-APACHE\n?? crates/concord-macros/LICENSE-MIT\n?? crates/concord/LICENSE-APACHE\n?? crates/concord/LICENSE-MIT\n",
+    "tracked_diff_sha256": "86d3fef99b7ade3b6246e7c210ded25b9fb37940b69badaa8f89c7dd7bd856bb",
+    "untracked_files_sha256": {
+      "LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+      "crates/concord-core/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "crates/concord-core/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+      "crates/concord-extras/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "crates/concord-extras/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+      "crates/concord-macros/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "crates/concord-macros/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+      "crates/concord/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "crates/concord/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8"
+    }
+  },
+  "source_after": {
+    "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+    "status": " M .gitattributes\n M Cargo.toml\n M README.md\n M crates/concord-core/Cargo.toml\n M crates/concord-examples/Cargo.toml\n M crates/concord-extras/Cargo.toml\n M crates/concord-extras/src/records/csv.rs\n M crates/concord-extras/tests/contracts/record_streams.rs\n M crates/concord-inspect/Cargo.toml\n M crates/concord-macros/Cargo.toml\n M crates/concord-test-support/Cargo.toml\n M crates/concord/Cargo.toml\n M fixtures/dependency/contract_mismatch/Cargo.toml\n M fixtures/dependency/contract_mismatch/incompatible_facade/Cargo.toml\n M fixtures/dependency/renamed_facade/Cargo.toml\n M fixtures/features/Cargo.toml\n M fixtures/msrv/core/Cargo.toml\n M fixtures/msrv/facade/Cargo.toml\n M scripts/verify_packaged_downstream.ps1\n M tests/downstream/concord-downstream-api/Cargo.toml\n M tests/downstream/concord-downstream-app/Cargo.toml\n M tools/perf/Cargo.toml\n M tools/xtask/Cargo.toml\n M tools/xtask/src/policy.rs\n?? LICENSE-APACHE\n?? LICENSE-MIT\n?? crates/concord-core/LICENSE-APACHE\n?? crates/concord-core/LICENSE-MIT\n?? crates/concord-extras/LICENSE-APACHE\n?? crates/concord-extras/LICENSE-MIT\n?? crates/concord-macros/LICENSE-APACHE\n?? crates/concord-macros/LICENSE-MIT\n?? crates/concord/LICENSE-APACHE\n?? crates/concord/LICENSE-MIT\n",
+    "tracked_diff_sha256": "86d3fef99b7ade3b6246e7c210ded25b9fb37940b69badaa8f89c7dd7bd856bb",
+    "untracked_files_sha256": {
+      "LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+      "crates/concord-core/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "crates/concord-core/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+      "crates/concord-extras/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "crates/concord-extras/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+      "crates/concord-macros/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "crates/concord-macros/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+      "crates/concord/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "crates/concord/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8"
+    }
+  },
+  "log": "/workspace/scratch/69ac10347cac/v3-followup/native/csv-before-streams-native.log",
+  "log_bytes": 2729,
+  "log_sha256": "6477eb2c9202ef5eb3294e284eb89fe2680b5db1f43c40a69223e70f245e35e6"
+}

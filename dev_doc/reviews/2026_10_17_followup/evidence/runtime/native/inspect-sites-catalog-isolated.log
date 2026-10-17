@@ -1,0 +1,424 @@
+   Compiling unicode-ident v1.0.24
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling stable_deref_trait v1.2.1
+   Compiling libc v0.2.186
+   Compiling litemap v0.8.2
+   Compiling writeable v0.6.3
+   Compiling bytes v1.12.1
+   Compiling icu_normalizer_data v2.1.1
+   Compiling pin-project-lite v0.2.17
+   Compiling icu_properties_data v2.1.2
+   Compiling itoa v1.0.18
+   Compiling syn v2.0.119
+   Compiling futures-core v0.3.33
+   Compiling find-msvc-tools v0.1.9
+   Compiling shlex v2.0.1
+   Compiling socket2 v0.6.5
+   Compiling cc v1.2.67
+   Compiling mio v1.2.2
+   Compiling once_cell v1.21.4
+   Compiling http v1.4.0
+   Compiling smallvec v1.15.2
+   Compiling zeroize v1.9.0
+   Compiling cfg-if v1.0.4
+   Compiling slab v0.4.12
+   Compiling getrandom v0.2.17
+   Compiling rustls-pki-types v1.15.0
+   Compiling ring v0.17.14
+   Compiling untrusted v0.9.0
+   Compiling utf8_iter v1.0.4
+   Compiling serde_core v1.0.228
+   Compiling http-body v1.1.0
+   Compiling tracing-core v0.1.36
+   Compiling futures-sink v0.3.32
+   Compiling percent-encoding v2.3.2
+   Compiling equivalent v1.0.2
+   Compiling futures-task v0.3.32
+   Compiling httparse v1.10.1
+   Compiling hashbrown v0.17.1
+   Compiling rustls v0.23.46
+   Compiling tracing v0.1.44
+   Compiling futures-util v0.3.32
+   Compiling indexmap v2.14.0
+   Compiling synstructure v0.13.2
+   Compiling subtle v2.6.1
+   Compiling tower-service v0.3.3
+   Compiling atomic-waker v1.1.2
+   Compiling fnv v1.0.7
+   Compiling try-lock v0.2.5
+   Compiling want v0.3.1
+   Compiling futures-channel v0.3.32
+   Compiling unicase v2.9.0
+   Compiling zerofrom-derive v0.1.7
+   Compiling yoke-derive v0.8.2
+   Compiling zerovec-derive v0.11.3
+   Compiling zerofrom v0.1.8
+   Compiling displaydoc v0.2.6
+   Compiling tokio-macros v2.7.0
+   Compiling yoke v0.8.3
+   Compiling rustls-webpki v0.103.15
+   Compiling zerotrie v0.2.4
+   Compiling tokio v1.53.1
+   Compiling zerovec v0.11.6
+   Compiling memchr v2.8.3
+   Compiling tinystr v0.8.3
+   Compiling potential_utf v0.1.5
+   Compiling icu_collections v2.1.1
+   Compiling icu_locale_core v2.1.1
+   Compiling mime_guess v2.0.5
+   Compiling form_urlencoded v1.2.2
+   Compiling sync_wrapper v1.0.2
+   Compiling ipnet v2.12.0
+   Compiling icu_provider v2.1.1
+   Compiling base64 v0.22.1
+   Compiling icu_properties v2.1.2
+   Compiling icu_normalizer v2.1.1
+   Compiling tower-layer v0.3.3
+   Compiling openssl-probe v0.2.1
+   Compiling zmij v1.0.23
+   Compiling rustls-native-certs v0.8.4
+   Compiling idna_adapter v1.2.1
+   Compiling idna v1.1.0
+   Compiling mime v0.3.17
+   Compiling url v2.5.8
+   Compiling bitflags v2.13.1
+   Compiling log v0.4.33
+   Compiling serde_json v1.0.150
+   Compiling serde v1.0.228
+   Compiling tokio-util v0.7.18
+   Compiling tokio-rustls v0.26.4
+   Compiling h2 v0.4.16
+   Compiling tower v0.5.3
+   Compiling tower-http v0.6.11
+   Compiling rustls-platform-verifier v0.7.0
+   Compiling serde_derive v1.0.228
+   Compiling http-body-util v0.1.4
+   Compiling httpdate v1.0.3
+   Compiling syn v3.0.3
+   Compiling hyper v1.10.1
+   Compiling camino v1.2.4
+   Compiling thiserror v2.0.18
+   Compiling hyper-util v0.1.20
+   Compiling aho-corasick v1.1.5
+   Compiling thiserror-impl v2.0.18
+   Compiling hyper-rustls v0.27.9
+   Compiling regex-syntax v0.8.11
+   Compiling reqwest v0.13.4
+   Compiling concord-macros v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord-macros)
+   Compiling cargo-platform v0.3.0
+   Compiling semver v1.0.28
+   Compiling cargo_metadata v0.23.1
+   Compiling concord-core v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord-core)
+   Compiling regex-automata v0.4.18
+   Compiling regex v1.13.1
+   Compiling concord-extras v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord-extras)
+   Compiling concord-inspect v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord-inspect)
+   Compiling concord v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord)
+   Compiling concord-examples v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord-examples)
+   Compiling concord-xtask v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/tools/xtask)
+    Finished `dev` profile [unoptimized] target(s) in 34.74s
+     Running `/workspace/scratch/69ac10347cac/v3-followup/target-inspect-sites/debug/concord-xtask contract diff /workspace/scratch/69ac10347cac/v3-followup/rustdoc-review/catalog_before.contract.json /workspace/scratch/69ac10347cac/v3-followup/rustdoc-review/catalog_after.contract.json --format json`
+{
+  "axes": [
+    "Provenance"
+  ],
+  "changed_endpoints": [
+    {
+      "id": "catalog.item.export",
+      "path": "CatalogApi::regional::export"
+    },
+    {
+      "id": "catalog.item.feed",
+      "path": "CatalogApi::regional::feed"
+    },
+    {
+      "id": "catalog.item.find",
+      "path": "CatalogApi::regional::find_item"
+    },
+    {
+      "id": "catalog.item.get",
+      "path": "CatalogApi::regional::item"
+    },
+    {
+      "id": "catalog.item.inspect",
+      "path": "CatalogApi::regional::inspect"
+    },
+    {
+      "id": "catalog.item.update",
+      "path": "CatalogApi::regional::update_item"
+    },
+    {
+      "id": "catalog.items.list",
+      "path": "CatalogApi::regional::item_summaries"
+    }
+  ],
+  "changes": [
+    {
+      "after": "CatalogApi::regional",
+      "after_origin": "CatalogApi::regional",
+      "axes": [
+        "Provenance"
+      ],
+      "before": "CatalogApi",
+      "before_origin": "CatalogApi",
+      "collection": "owners",
+      "endpoints": [
+        {
+          "id": "catalog.item.export",
+          "path": "CatalogApi::regional::export"
+        },
+        {
+          "id": "catalog.item.feed",
+          "path": "CatalogApi::regional::feed"
+        },
+        {
+          "id": "catalog.item.find",
+          "path": "CatalogApi::regional::find_item"
+        },
+        {
+          "id": "catalog.item.inspect",
+          "path": "CatalogApi::regional::inspect"
+        },
+        {
+          "id": "catalog.item.get",
+          "path": "CatalogApi::regional::item"
+        },
+        {
+          "id": "catalog.items.list",
+          "path": "CatalogApi::regional::item_summaries"
+        },
+        {
+          "id": "catalog.item.update",
+          "path": "CatalogApi::regional::update_item"
+        }
+      ],
+      "field": "effective.response_default.owner",
+      "record": "CatalogApi::regional"
+    },
+    {
+      "after": {
+        "kind": "type",
+        "type": "Json"
+      },
+      "after_origin": "CatalogApi::regional",
+      "axes": [
+        "Provenance"
+      ],
+      "before": null,
+      "before_origin": "CatalogApi::regional",
+      "collection": "owners",
+      "endpoints": [
+        {
+          "id": "catalog.item.export",
+          "path": "CatalogApi::regional::export"
+        },
+        {
+          "id": "catalog.item.feed",
+          "path": "CatalogApi::regional::feed"
+        },
+        {
+          "id": "catalog.item.find",
+          "path": "CatalogApi::regional::find_item"
+        },
+        {
+          "id": "catalog.item.inspect",
+          "path": "CatalogApi::regional::inspect"
+        },
+        {
+          "id": "catalog.item.get",
+          "path": "CatalogApi::regional::item"
+        },
+        {
+          "id": "catalog.items.list",
+          "path": "CatalogApi::regional::item_summaries"
+        },
+        {
+          "id": "catalog.item.update",
+          "path": "CatalogApi::regional::update_item"
+        }
+      ],
+      "field": "local.response_default",
+      "record": "CatalogApi::regional"
+    },
+    {
+      "after": "CatalogApi::regional",
+      "after_origin": "CatalogApi::regional",
+      "axes": [
+        "Provenance"
+      ],
+      "before": "CatalogApi",
+      "before_origin": "CatalogApi",
+      "collection": "endpoints",
+      "endpoints": [
+        {
+          "id": "catalog.item.export",
+          "path": "CatalogApi::regional::export"
+        }
+      ],
+      "field": "result.representation.shadowed_default.owner",
+      "record": "CatalogApi::regional::export"
+    },
+    {
+      "after": "CatalogApi::regional",
+      "after_origin": "CatalogApi::regional",
+      "axes": [
+        "Provenance"
+      ],
+      "before": "CatalogApi",
+      "before_origin": "CatalogApi",
+      "collection": "endpoints",
+      "endpoints": [
+        {
+          "id": "catalog.item.feed",
+          "path": "CatalogApi::regional::feed"
+        }
+      ],
+      "field": "result.representation.source.owner",
+      "record": "CatalogApi::regional::feed"
+    },
+    {
+      "after": "CatalogApi::regional",
+      "after_origin": "CatalogApi::regional",
+      "axes": [
+        "Provenance"
+      ],
+      "before": "CatalogApi",
+      "before_origin": "CatalogApi",
+      "collection": "endpoints",
+      "endpoints": [
+        {
+          "id": "catalog.item.find",
+          "path": "CatalogApi::regional::find_item"
+        }
+      ],
+      "field": "result.representation.source.owner",
+      "record": "CatalogApi::regional::find_item"
+    },
+    {
+      "after": "CatalogApi::regional",
+      "after_origin": "CatalogApi::regional",
+      "axes": [
+        "Provenance"
+      ],
+      "before": "CatalogApi",
+      "before_origin": "CatalogApi",
+      "collection": "endpoints",
+      "endpoints": [
+        {
+          "id": "catalog.item.inspect",
+          "path": "CatalogApi::regional::inspect"
+        }
+      ],
+      "field": "result.representation.source.owner",
+      "record": "CatalogApi::regional::inspect"
+    },
+    {
+      "after": "CatalogApi::regional",
+      "after_origin": "CatalogApi::regional",
+      "axes": [
+        "Provenance"
+      ],
+      "before": "CatalogApi",
+      "before_origin": "CatalogApi",
+      "collection": "endpoints",
+      "endpoints": [
+        {
+          "id": "catalog.item.get",
+          "path": "CatalogApi::regional::item"
+        }
+      ],
+      "field": "result.representation.source.owner",
+      "record": "CatalogApi::regional::item"
+    },
+    {
+      "after": "CatalogApi::regional",
+      "after_origin": "CatalogApi::regional",
+      "axes": [
+        "Provenance"
+      ],
+      "before": "CatalogApi",
+      "before_origin": "CatalogApi",
+      "collection": "endpoints",
+      "endpoints": [
+        {
+          "id": "catalog.items.list",
+          "path": "CatalogApi::regional::item_summaries"
+        }
+      ],
+      "field": "result.representation.source.owner",
+      "record": "CatalogApi::regional::item_summaries"
+    },
+    {
+      "after": "CatalogApi::regional",
+      "after_origin": "CatalogApi::regional",
+      "axes": [
+        "Provenance"
+      ],
+      "before": "CatalogApi",
+      "before_origin": "CatalogApi",
+      "collection": "endpoints",
+      "endpoints": [
+        {
+          "id": "catalog.item.update",
+          "path": "CatalogApi::regional::update_item"
+        }
+      ],
+      "field": "result.representation.source.owner",
+      "record": "CatalogApi::regional::update_item"
+    },
+    {
+      "after": [
+        "CatalogApi#request_default",
+        "CatalogApi#response_default",
+        "CatalogApi::regional#response_default"
+      ],
+      "after_origin": null,
+      "axes": [
+        "Provenance"
+      ],
+      "before": [
+        "CatalogApi#request_default",
+        "CatalogApi#response_default"
+      ],
+      "before_origin": null,
+      "collection": "dependencies",
+      "endpoints": [
+        {
+          "id": "catalog.item.export",
+          "path": "CatalogApi::regional::export"
+        },
+        {
+          "id": "catalog.item.feed",
+          "path": "CatalogApi::regional::feed"
+        },
+        {
+          "id": "catalog.item.find",
+          "path": "CatalogApi::regional::find_item"
+        },
+        {
+          "id": "catalog.item.inspect",
+          "path": "CatalogApi::regional::inspect"
+        },
+        {
+          "id": "catalog.item.get",
+          "path": "CatalogApi::regional::item"
+        },
+        {
+          "id": "catalog.items.list",
+          "path": "CatalogApi::regional::item_summaries"
+        },
+        {
+          "id": "catalog.item.update",
+          "path": "CatalogApi::regional::update_item"
+        }
+      ],
+      "field": "sites",
+      "record": "[\n  \"representation\",\n  \"Json\"\n]\n"
+    }
+  ],
+  "contract_format": "concord.contract/3",
+  "format": "concord.contract-diff/3",
+  "unresolved": [],
+  "verdict": "different"
+}

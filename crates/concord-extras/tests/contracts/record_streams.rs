@@ -348,6 +348,49 @@ mod csv {
     use super::*;
 
     #[tokio::test]
+    async fn csv_split_document_bom_precedes_a_quoted_header_in_a_managed_stream() {
+        let server = ScriptedServer::start([chunked(
+            "text/csv",
+            &[b"\xef", b"\xbb", b"\xbf", b"\"id\"\r\n", b"1\n2"],
+        )])
+        .expect("loopback server");
+        let core = core(&server, default_runtime_config());
+        let mut stream = open::<Csv>(&core).await;
+        assert_eq!(stream.next().await.unwrap().unwrap(), Row { id: 1 });
+        assert_eq!(stream.next().await.unwrap().unwrap(), Row { id: 2 });
+        assert!(stream.next().await.is_none());
+        assert_eq!(stream.summary().state(), StreamState::Eof);
+        assert_eq!(stream.summary().delivered_records(), 2);
+        assert_eq!(server.request_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn csv_later_bom_cannot_be_removed_to_turn_an_invalid_integer_into_valid_data() {
+        let server = ScriptedServer::start([chunked(
+            "text/csv",
+            &[b"id\n1\n", b"\xef", b"\xbb\xbf2\n3\n"],
+        )])
+        .expect("loopback server");
+        let core = core(&server, default_runtime_config());
+        let mut stream = open::<Csv>(&core).await;
+        assert_eq!(stream.next().await.unwrap().unwrap(), Row { id: 1 });
+        let error = stream
+            .next()
+            .await
+            .unwrap()
+            .expect_err("U+FEFF is data, so this field is not a u32");
+        assert_stream_error(
+            &error,
+            StreamErrorKind::Decode,
+            ErrorCategory::ResponseDecoding,
+        );
+        assert!(stream.next().await.is_none());
+        assert_eq!(stream.summary().state(), StreamState::Failed);
+        assert_eq!(stream.summary().delivered_records(), 1);
+        assert_eq!(server.request_count(), 1);
+    }
+
+    #[tokio::test]
     async fn v3_p11_csv_final_record_without_newline_is_decoded() {
         let server = ScriptedServer::start([chunked("text/csv", &[b"id\r\n1\r\n", b"\r\n2\n3"])])
             .expect("loopback server");

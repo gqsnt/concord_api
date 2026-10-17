@@ -28,6 +28,8 @@ resolver = "3"
 version = "3.0.0-beta.1"
 edition = "2024"
 rust-version = "1.86"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/gqsnt/concord_api"
 
 [workspace.dependencies]
 base64 = "0.23.0"

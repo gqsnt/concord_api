@@ -144,7 +144,8 @@ pub struct ItemSummary {
 The declaration is the caller tree:
 
 <!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_contract -->
-```concord
+<!-- concord-dsl -->
+```rust
 api! {
     client CatalogApi {
         base "http://catalog.example.test/";
@@ -291,7 +292,8 @@ controls; it never prepares a body, acquires credentials or reserves quota. See
 
 A root value can be a typed DNS label:
 
-```concord
+<!-- concord-dsl -->
+```rust
 client RegionalApi {
     base "https://example.test/";
     values {
@@ -309,7 +311,8 @@ Credentials are declared once as sources and placed by `auth` blocks. The
 builder then requires the secret (`.token(SecretString)`), and an `https` base
 needs the default `default-tls` feature:
 
-```concord
+<!-- concord-dsl -->
+```rust
 client PrivateApi {
     base "https://private.example.test/";
     credentials {

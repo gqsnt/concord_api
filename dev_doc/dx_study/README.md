@@ -1,5 +1,11 @@
 # Gate 3 unfamiliar-human final-surface comprehension packet
 
+**17 October follow-up:** the owner asked agents to perform the twelve user exercises.
+The [agent execution record](../reviews/2026_10_17_followup/dx_exercises.md) documents
+actual answers and checks. The human-only protocol below is retained as an
+optional empirical study; it is not a requirement to complete the requested
+agent evaluation, and no human participants are inferred.
+
 **Status:** v3 protocol, revised 2026-10-16; no human sessions have run.
 Tasks use payload setters, exact optional-slot replacement, bare local
 references and the three explicit pagination terminals. The

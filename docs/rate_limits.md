@@ -8,7 +8,8 @@ and an ordered key schema that together determine which requests share state
 
 ## Declaring policies
 
-```concord
+<!-- concord-dsl -->
+```rust
 client WindowSetApi {
     base "https://window-set.example.test/";
     values {
@@ -58,7 +59,8 @@ client WindowSetApi {
 ## Coverage is lexical and additive
 
 <!-- concord-source: crates/concord-examples/src/rate_limiting/lexical.rs#rate_limit_contract -->
-```concord
+<!-- concord-dsl -->
+```rust
 api! {
     client RateLimitApi {
         base "http://rate-limit.example.test/";

@@ -8,7 +8,8 @@ explicit rules (§9.4-§9.6, §10).
 ## Terminals
 
 <!-- concord-source: crates/concord-examples/src/request_response/acquisition.rs#response_acquisition_contract -->
-```concord
+<!-- concord-dsl -->
+```rust
 api! {
     client ResponseApi {
         base "http://responses.example.test/";

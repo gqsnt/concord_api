@@ -1,0 +1,9 @@
+   Compiling concord-xtask v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/tools/xtask)
+error[E0463]: can't find crate for `concord_inspect`
+  --> tools/xtask/src/contract/mod.rs:12:5
+   |
+12 | use concord_inspect::{DiffReport, check, diff_documents, export_string, parse_document};
+   |     ^^^^^^^^^^^^^^^ can't find crate
+
+For more information about this error, try `rustc --explain E0463`.
+error: could not compile `concord-xtask` (bin "concord-xtask") due to 1 previous error

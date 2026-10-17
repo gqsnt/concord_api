@@ -1,5 +1,11 @@
 # Gate 10 independent Rustdoc and semantic-diff review packet
 
+**17 October follow-up:** the owner asked agents to perform the ten Rustdoc/diff exercises.
+The [agent execution record](../reviews/2026_10_17_followup/rustdoc_review.md) documents
+actual answers and checks. The human-only protocol below is retained as an
+optional empirical study; it is not a requirement to complete the requested
+agent evaluation, and no human participants are inferred.
+
 **Status:** v3 protocol, revised 2026-10-16. Human review has not run.
 The structured implementer review is recorded separately and cannot fill
 human result rows. This packet uses `concord-xtask contract diff` over

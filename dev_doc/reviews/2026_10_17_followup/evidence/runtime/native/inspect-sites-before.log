@@ -1,0 +1,124 @@
+   Compiling ring v0.17.14
+   Compiling serde_core v1.0.228
+   Compiling rustls v0.23.46
+   Compiling serde_json v1.0.150
+   Compiling serde v1.0.228
+   Compiling rustls-webpki v0.103.15
+   Compiling tokio-rustls v0.26.4
+   Compiling rustls-platform-verifier v0.7.0
+   Compiling hyper-rustls v0.27.9
+   Compiling reqwest v0.13.4
+   Compiling concord-core v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord-core)
+   Compiling concord-extras v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord-extras)
+   Compiling concord-inspect v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord-inspect)
+   Compiling concord v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord)
+    Finished `test` profile [unoptimized] target(s) in 13.33s
+     Running tests/generated_contract.rs (/workspace/scratch/69ac10347cac/v3-followup/target/debug/deps/generated_contract-e6d6d679f6afec76)
+
+running 2 tests
+test generated_dependency_sites_replace_names_only_changed_consumers ... FAILED
+test generated_dependency_sites_add_remove_names_only_scope_endpoints ... FAILED
+
+failures:
+
+---- generated_dependency_sites_replace_names_only_changed_consumers stdout ----
+
+thread 'generated_dependency_sites_replace_names_only_changed_consumers' (394) panicked at crates/concord-inspect/tests/generated_contract.rs:651:9:
+assertion `left == right` failed: concord contract diff (concord.contract/3): 8 structural change(s), 0 unresolved; verdict different
+axes: Provenance
+changed endpoints:
+  shop.admin.audit (Shop::admin::audit)
+  shop.admin.stats (Shop::admin::stats)
+  shop.item (Shop::item)
+  shop.ping (Shop::ping)
+  shop.update (Shop::update)
+changes:
+  [Provenance] owners `Shop::admin` effective.response_default.owner
+    before: "Shop::admin"  [origin Shop::admin]
+    after:  "Shop"  [origin Shop]
+    endpoints: shop.admin.audit, shop.admin.stats
+  [Provenance] owners `Shop::admin` local.response_default
+    before: {"kind":"type","type":"Json"}  [origin Shop::admin]
+    after:  null  [origin Shop::admin]
+    endpoints: shop.admin.audit, shop.admin.stats
+  [Provenance] endpoints `Shop::admin::audit` result.representation.source.owner
+    before: "Shop::admin"  [origin Shop::admin]
+    after:  "Shop"  [origin Shop]
+    endpoints: shop.admin.audit
+  [Provenance] endpoints `Shop::admin::stats` result.representation.source.owner
+    before: "Shop::admin"  [origin Shop::admin]
+    after:  "Shop"  [origin Shop]
+    endpoints: shop.admin.stats
+  [Provenance] endpoints `Shop::ping` result.representation.shadowed_default
+    before: null  [origin Shop]
+    after:  {"owner":"Shop","type":"Json"}  [origin Shop]
+    endpoints: shop.ping
+  [Provenance] endpoints `Shop::ping` result.representation.source.kind
+    before: "inherited"  [origin Shop]
+    after:  "inline"  [origin Shop::ping]
+    endpoints: shop.ping
+  [Provenance] endpoints `Shop::ping` result.representation.source.owner
+    before: "Shop"  [origin Shop]
+    after:  <absent>  [origin Shop::ping]
+    endpoints: shop.ping
+  [Provenance] dependencies `[
+  "representation",
+  "Json"
+]
+` sites[2]
+    before: "Shop::admin#response_default"
+    after:  "Shop::ping#result.via"
+    endpoints: shop.admin.audit, shop.admin.stats, shop.item, shop.ping, shop.update
+
+  left: {"shop.admin.audit", "shop.admin.stats", "shop.item", "shop.ping", "shop.update"}
+ right: {"shop.admin.audit", "shop.admin.stats", "shop.ping"}
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- generated_dependency_sites_add_remove_names_only_scope_endpoints stdout ----
+
+thread 'generated_dependency_sites_add_remove_names_only_scope_endpoints' (393) panicked at crates/concord-inspect/tests/generated_contract.rs:651:9:
+assertion `left == right` failed: concord contract diff (concord.contract/3): 5 structural change(s), 0 unresolved; verdict different
+axes: Provenance
+changed endpoints:
+  shop.admin.audit (Shop::admin::audit)
+  shop.admin.stats (Shop::admin::stats)
+  shop.item (Shop::item)
+  shop.ping (Shop::ping)
+  shop.update (Shop::update)
+changes:
+  [Provenance] owners `Shop::admin` effective.response_default.owner
+    before: "Shop"  [origin Shop]
+    after:  "Shop::admin"  [origin Shop::admin]
+    endpoints: shop.admin.audit, shop.admin.stats
+  [Provenance] owners `Shop::admin` local.response_default
+    before: null  [origin Shop::admin]
+    after:  {"kind":"type","type":"Json"}  [origin Shop::admin]
+    endpoints: shop.admin.audit, shop.admin.stats
+  [Provenance] endpoints `Shop::admin::audit` result.representation.source.owner
+    before: "Shop"  [origin Shop]
+    after:  "Shop::admin"  [origin Shop::admin]
+    endpoints: shop.admin.audit
+  [Provenance] endpoints `Shop::admin::stats` result.representation.source.owner
+    before: "Shop"  [origin Shop]
+    after:  "Shop::admin"  [origin Shop::admin]
+    endpoints: shop.admin.stats
+  [Provenance] dependencies `[
+  "representation",
+  "Json"
+]
+` sites
+    before: ["Shop#request_default","Shop#response_default","Shop::update#result.via"]
+    after:  ["Shop#request_default","Shop#response_default","Shop::admin#response_default","Shop::update#result.via"]
+    endpoints: shop.admin.audit, shop.admin.stats, shop.item, shop.ping, shop.update
+
+  left: {"shop.admin.audit", "shop.admin.stats", "shop.item", "shop.ping", "shop.update"}
+ right: {"shop.admin.audit", "shop.admin.stats"}
+
+
+failures:
+    generated_dependency_sites_add_remove_names_only_scope_endpoints
+    generated_dependency_sites_replace_names_only_changed_consumers
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `-p concord-inspect --test generated_contract`

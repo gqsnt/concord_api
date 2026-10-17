@@ -1193,12 +1193,27 @@ fn affected_endpoints(
             }
         }
         "dependencies" => {
-            let owners = records
+            let [before_sites, after_sites] = records.map(|record| {
+                record
+                    .and_then(|value| value.get("sites").and_then(Value::as_array))
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .collect::<BTreeSet<_>>()
+            });
+            // A sites-only change moves structural uses, not the dependency
+            // itself. Unchanged uses must not broaden it to the whole client.
+            // Compare membership so sorted insertions do not blame shifted sites.
+            let sites = if normalize_field(field) == "sites" {
+                before_sites
+                    .symmetric_difference(&after_sites)
+                    .copied()
+                    .collect::<BTreeSet<_>>()
+            } else {
+                before_sites.union(&after_sites).copied().collect()
+            };
+            let owners = sites
                 .into_iter()
-                .flatten()
-                .filter_map(|value| value.get("sites").and_then(Value::as_array))
-                .flatten()
-                .filter_map(Value::as_str)
                 .map(|site| site.split('#').next().unwrap_or(site).to_owned())
                 .collect::<BTreeSet<_>>();
             for owner in owners {

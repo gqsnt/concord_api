@@ -203,7 +203,8 @@ declared scope remains a visible navigation owner.
 - Raw identifiers are supported: `r#type` has logical name `type`. No case
   conversion is performed for an omitted direct query key.
 
-```concord
+<!-- concord-dsl -->
+```rust
 scope regions(region: String) {
     GET item(id: String) -> () via Empty {
         path "item-{id}-{regions.region}";
@@ -236,7 +237,8 @@ explicitly deprecated no-op value; a dead required input cannot.
 | `#[default] x: T` | `T` | Retained `T::default()` | Configurable |
 | `#[default] x?: T` | `Option<T>` | Present retained `T::default()` | Configurable |
 
-```concord
+<!-- concord-dsl -->
+```rust
 client ValueStatesApi {
     base "https://value-states.example.test/";
     values {
@@ -256,7 +258,8 @@ client ValueStatesApi {
 an atom or representation responsibility. An inner `None` rendered by an
 explicit adapter is domain data, not omission:
 
-```concord
+<!-- concord-dsl -->
+```rust
 header("X-Label") label: Option<&'static str> via LabelOrNone = crate::DEFAULT_LABEL;
 ```
 
@@ -360,7 +363,8 @@ disabled; a proxy changes connection routing only.
 
 ### 7.3 Relative path templates
 
-```concord
+<!-- concord-dsl -->
+```rust
 client RouteApi {
     base "https://route.example.test/root";
     values {
@@ -481,7 +485,8 @@ append locale := Some(de)         => a=1, locale=fr, z=9, locale=de
 A replacement is placed at the replacing operation, not at the old position.
 The compiled program behind this table:
 
-```concord
+<!-- concord-dsl -->
+```rust
 client PatchApi {
     base "https://patch.example.test/";
     values {
@@ -520,7 +525,8 @@ Direct placement is a shorthand for a normal introduction, not a prohibition on
 explicit mappings (LANG-01). Setting `locale` sets all three emissions; omitting
 it omits all three:
 
-```concord
+<!-- concord-dsl -->
+```rust
 GET inspect(query locale?: String) -> Item {
     path "inspect";
     headers {
@@ -534,7 +540,8 @@ GET inspect(query locale?: String) -> Item {
 
 Explicit blocks reference local and ancestor values alike:
 
-```concord
+<!-- concord-dsl -->
+```rust
 scope regions(region: String) {
     subdomain replace [region, "api"];
 
@@ -589,7 +596,8 @@ effective response representation. Selection is by Rust trait obligations, not
 result-type spelling (REP-01).
 
 <!-- concord-source: crates/concord/tests/generated/representation_inheritance.rs#representation_inheritance_contract -->
-```concord
+<!-- concord-dsl -->
+```rust
 api! {
     client RepresentationInheritanceApi {
         base "https://inheritance.example.test/";
@@ -622,7 +630,8 @@ when today's bytes are equal. See [Request bodies](request_bodies.md) and
 
 ## 10. Methods, status, effect and absence
 
-```concord
+<!-- concord-dsl -->
+```rust
 client OutcomeApi {
     base "https://outcome.example.test/";
     response Json;
@@ -679,7 +688,8 @@ client OutcomeApi {
 Sources are not placements. `credentials` names where material comes from;
 `auth` blocks place it (§11.1):
 
-```concord
+<!-- concord-dsl -->
+```rust
 client AuthenticationApi {
     base "https://authentication.example.test/";
     credentials {
@@ -729,7 +739,8 @@ client AuthenticationApi {
 The nearest finite `timeout` wins; an omitted root timeout selects 30 seconds.
 There is no infinite timeout.
 
-```concord
+<!-- concord-dsl -->
+```rust
 client TimeoutApi {
     base "https://timeout.example.test/";
     timeout 30s;
@@ -748,7 +759,8 @@ Numbers and state use different declarations (§12.1). A window set holds only
 positive capacities and durations; it grants no identity and shares no state. A
 policy has an explicit ID and an ordered key schema.
 
-```concord
+<!-- concord-dsl -->
+```rust
 rate_limits {
     windows standard { allow 20000 per 10s; allow 1200000 per 10m; }
     policy tenant_reads(tenant) {
@@ -768,7 +780,8 @@ rate_limit "concord.riot.21" key [origin] using standard;
 
 Named and inline attachments bind values explicitly:
 
-```concord
+<!-- concord-dsl -->
+```rust
 scope accounts(account: String, region: String) {
     rate_limit account_reads(account = account) { cost 2; }
 
@@ -815,7 +828,8 @@ across refactors. IDs are ASCII, 1-128 bytes, dot-separated segments of at most
 collisions are rejected, and an invalid derivation requires an explicit ID
 (never truncated or hashed).
 
-```concord
+<!-- concord-dsl -->
+```rust
 GET by_id(id: String) -> Item via Json {
     id "catalog.item.by-id";
     path "items/{id}";
@@ -832,7 +846,8 @@ slots, never bodies, ancestor values, credentials, `each` sources or values in
 an effective rate key. Pagination requires `effect safe`, a buffered response
 driver and, when a body is declared, a `PageRequestRepresentation`.
 
-```concord
+<!-- concord-dsl -->
+```rust
 GET page(
     query offset: u64,
     query page_size: std::num::NonZeroU32,

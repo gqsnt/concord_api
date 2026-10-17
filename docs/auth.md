@@ -17,7 +17,8 @@ It does not trigger a new acquisition merely because its valid lifetime is
 shorter than the skew.
 
 <!-- concord-source: crates/concord-examples/src/authentication/api.rs#credential_declarations -->
-```concord
+<!-- concord-dsl -->
+```rust
 credentials {
     secret api_key;
     secret bearer_token;
@@ -55,7 +56,8 @@ credentials {
 ## Placements
 
 <!-- concord-source: crates/concord-examples/src/authentication/api.rs#static_authentication_endpoints -->
-```concord
+<!-- concord-dsl -->
+```rust
 GET login() -> ExampleToken via ExampleTokenCodec;
 GET api_key() -> () via Empty { auth { header "X-Api-Key" = application_key; } }
 GET token_authorization() -> () via Empty {
@@ -66,7 +68,8 @@ GET basic() -> () via Empty { auth { basic login; } }
 ```
 
 <!-- concord-source: crates/concord-examples/src/authentication/api.rs#provider_authentication_endpoints -->
-```concord
+<!-- concord-dsl -->
+```rust
 GET o_auth() -> () via Empty { auth { bearer oauth challenge unauthorized; } }
 GET endpoint_backed() -> () via Empty { auth { query "session" = acquired; } }
 GET provider_backed() -> () via Empty { auth { bearer custom; } }

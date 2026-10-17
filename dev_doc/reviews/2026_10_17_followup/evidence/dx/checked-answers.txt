@@ -1,0 +1,294 @@
+Portable copy of the AI-agent working record. Only local path prefixes
+and an accidental prose separator were normalized; initial predictions,
+mistakes, confidence and later corrections remain visible.
+
+# Checked V3 exercise answers — before rubric
+
+This is the AI agent's answer record, written before opening the rubric or
+macro/core implementation. Public Markdown and maintained declarations/error
+fixtures were used. Native execution is pending the toolchain installation by
+the root agent; a checked-in `.stderr` is not a new compiler run.
+
+## 1. Stored type and accepted inputs
+
+| Declaration | Slot | `set_x` payload | `replace_x` | `set_x_if_some` |
+|---|---|---|---|---|
+| `x?: T` | `Option<T>` | `impl IntoValue<T>` | exact `Option<T>` | exact `Option<T>` |
+| `x?: Option<T>` | `Option<Option<T>>` | `impl IntoValue<Option<T>>` | exact `Option<Option<T>>` | exact `Option<Option<T>>` |
+
+`IntoValue` offers identity plus `&str -> String` and `&String -> String`;
+there is no recursive container conversion. The initial prediction was right
+about layers but omitted the precise closed conversion trait.
+
+Source: `docs/generated_client.md#value-controls`, `docs/spec.md` §6.1–6.3.
+
+## 2. Nested optional state
+
+Use `T = i32` and an initialized comparison `x?: Option<i32> = Some(3)`.
+
+| Call | Uninitialized declaration valid? | Initialized declaration valid? | Result |
+|---|---|---|---|
+| `set_x(None)` | yes | yes | `Some(None)`: present Rust `None` payload |
+| `set_x(Some(7))` | yes | yes | `Some(Some(7))` |
+| `replace_x(None)` | yes | yes | outer absence, `None` |
+| `replace_x(Some(None))` | yes | yes | `Some(None)` |
+| `set_x_if_some(None)` | yes | yes | preserve the selected slot exactly |
+| `omit_x()` | yes | yes | outer absence, `None` |
+| `reset_x()` | **no generated method** | yes | restore retained `Some(Some(3))` without reevaluation |
+
+An initializer of inner `None` would reset to `Some(None)`. An explicit atom
+adapter/representation decides the wire encoding of inner `None`; the outer
+absence alone selects omission. My initial `reset_x` prediction for an
+uninitialized slot was wrong.
+
+Source: the same value-control matrix and §6.2 initialization boundary.
+
+## 3. Explicit repetition
+
+Keep `tags: Vec<String>` and write `query { append "tag" = each tags; }`.
+An empty vector contributes no occurrence, one element contributes one, and
+two elements contribute two in order. Existing inherited `tag` occurrences
+survive because this is append. The statement does not change the Rust type.
+
+Source: `docs/requests_and_values.md#query-and-header-programs`, §6.1 and §8.
+
+## 4. Inheritance and optional patches
+
+Assume an inherited `k=parent` and an optional local source `x`.
+
+| Operation | Present local `x` | Absent local `x` |
+|---|---|---|
+| plain `"k" = x` over inherited writer | compile error | same compile error; static writers are checked before presence |
+| plain `"new" = x` with no earlier writer | introduces local occurrence | emits no occurrence |
+| `replace "k" = x` | replaces every old `k` occurrence, at the local position | removes old `k`, emits nothing |
+| `when_present "k" = x` | replaces every old `k` occurrence | keeps inherited `k` |
+| `append "k" = x` | appends local occurrence(s) | keeps inherited `k` |
+| `remove "k"` | removes the named key | same; no value input |
+| `query replace { ... }` / header equivalent | clears all inherited family occurrences, then applies local direct placements and block | same family reset; each local optional still controls its own emissions |
+| `query off;` / header equivalent | clears inherited family and emits no local family entries at that owner | same; descendants may introduce new entries |
+
+A present empty `each` sequence under `when_present` suppresses the inherited
+key and emits zero values; absence preserves it. Query keys are case-sensitive;
+header names are case-insensitive. Suppressed writers are not encoded. The
+initial answer incorrectly gave plain assignment replacement authority.
+
+Source: `docs/requests_and_values.md#query-and-header-programs` and §8.
+
+## 5. Independent representation owners
+
+Selected fixture: `representation_inheritance_contract` in the public §9
+example, authored at `crates/concord/tests/generated/representation_inheritance.rs`.
+
+| Endpoint | Request representation and owner | Response representation and owner |
+|---|---|---|
+| `RepresentationInheritanceApi::inherited` | `Text`, client | `ParentBuffered`, client |
+| `RepresentationInheritanceApi::overrides::local` | `Text`, named scope `overrides` | `Text`, named scope `overrides` |
+| `RepresentationInheritanceApi::fenced::explicit` | `Text`, endpoint body inline `via` | `Text`, endpoint result inline `via` |
+
+Request and response lookup are independent. Every result requires a response
+representation; a bodyless endpoint needs no request representation. The
+general initial prediction was correct; exact fixture answers followed fixture
+selection because the original packet omitted it.
+
+## 6. Local overrides and fences
+
+An endpoint selects one body/result representation with inline `via`; it does
+not replace a sibling or the other direction. A scope's request/response
+default affects descendants in that direction until replaced or fenced.
+`explicit` removes inherited defaults; a deeper scope default or endpoint
+inline choice supplies a new selection.
+
+In the selected `overrides` scope add:
+
+```rust
+POST added(body input: String) -> String;
+```
+
+In the selected `fenced` scope add:
+
+```rust
+POST added(body input: String via Text) -> String via Text;
+```
+
+Removing the body `via Text` below the request fence produces `[C3-REP]`
+naming body `input`, the authored endpoint, and `request explicit` at the
+scope, with `request R;` or `body input: T via R` as recovery. Removing the
+result choice produces `[C3-REP]` naming the endpoint and response fence with
+`response R;` or `-> T via R` as recovery. These exact diagnostics were read
+from the maintained request/response fence `.stderr` fixtures, not run locally.
+
+Source: §9, the selected declaration, and
+`crates/concord/tests/ui/fail/syntax/{request,response}_fence_requires_inline_representation.{rs,stderr}`.
+
+## 7. Endpoint effect and replay
+
+Selected maintained fixture: `docs_spec::outcomes::OutcomeApi`.
+
+| Endpoint | Accepted statuses | Effect source | Body replay | Policy retry after response/ambiguous dispatch |
+|---|---|---|---|---|
+| `properties` | default 200–299 | explicit `safe` on `METHOD("PROPFIND")` | no body, replayable empty | eligible if every other retry gate passes |
+| `upsert` | 200, 201, 204 | explicit `idempotent` | buffered Json, mechanically replayable | eligible if every other retry gate passes |
+| `create` | 201 | POST default `non_idempotent` | buffered Json, mechanically replayable | prohibited |
+
+For `create`, settled no-dispatch permits a policy retry if the body replays
+and all other gates pass. Eligible connect/transport/rejected-status failure, classifier appetite, installed policy, attempt/send/replay/load budgets,
+deadline/backoff/server minimum, and fresh rate admission all remain required.
+Accepted-head validation and accepted-body conversion failures are terminal.
+A one-shot request body would prevent replay even on a safe endpoint. My
+initial answer wrongly excluded the settled-no-dispatch non-idempotent case.
+
+Source: `docs/retry.md`, `docs/responses.md#accepted-statuses`,
+`docs/request_bodies.md#preparedbody`, and the maintained outcome declarations.
+
+## 8. Bounded traversal
+
+All three arguments count **pages**, not items.
+
+| Terminal | Before natural completion at bound | Zero |
+|---|---|---|
+| `collect_prefix(u32)` | successful `Prefix<T>` with bounded items and `PageBound`/`NextRequestKnown` summary | empty prefix; `PageBound`/`Unknown`; no operation ID or work |
+| `collect_all(NonZeroU32)` | completion-limit pagination error; never an undisclosed partial-success `Vec` | cannot construct the required `NonZeroU32` from zero |
+| `pages(u32)` | last permitted page is delivered; future `next_page()` gives `Ok(None)` and summary distinguishes `PageBound` from exhaustion | `Ok(None)`, `PageBound`/`Unknown`; no operation ID or work |
+
+`Done` on the final permitted page reports `Exhausted` without an extra fetch.
+`finish()` before natural/other terminal completion records `Application`.
+Zero paths perform no shaping, controller start, body preparation, credentials,
+quota or transport. The initial answer was incomplete about the page unit and
+the explicit summary facts.
+
+Source: `docs/pagination.md#terminals` and `#summary-facts`.
+
+## 9. Byte and item streams
+
+Both handles are acquired only after accepted-head validation and opening;
+successful `.await` is acquisition, not body completion. `ByteStream::next()`
+yields `Option<Result<Bytes, ApiError>>`, while `ItemStream<T>::next()` yields
+`Option<Result<T, ApiError>>`. The item stream frames/decodes complete records;
+the byte stream does not infer records and reports zero delivered records.
+
+Transport failure applies to both; framing/decode failure additionally applies
+to record streams. A terminal failure yields one error and then `None`, retains
+`Failed` in the summary, preserves `ResponseObserved` and original correlation,
+and never reconnects/retries after handoff. External cancellation terminates
+with `Cancelled`; early handle drop is cancellation, never EOF. `finish()`
+records `Application` without draining unless an existing terminal state must
+be preserved. Dropping only a pending `next()` future is cancel-safe and later
+reads resume bounded state; dropping a started page fetch instead cancels the
+traversal. My initial answer did not distinguish dropped read futures from
+dropped handles.
+
+Source: `docs/streams.md`, particularly `#summaries-and-terminal-states` and
+`#cancel-safe-reads`.
+
+## 10. Recovering from a generated error
+
+Selected fixture: `clear_optional_control_absent.stderr` plus its authored
+`.rs`. The actual diagnostic names `ClearControlApiBuilder::clear_locale`,
+and the authored root declaration is `values { locale?: String; }`. The first
+journal batch used `category` as an imagined field name before its tool output
+was visible; this was a transcription mistake, not an observed declaration.
+After reading the error, the concrete prediction was `omit_locale()` and the
+authored fixture confirmed it. `replace_locale(None)` is also valid.
+
+The wrong model is a generic clear operation for optional state; Concord gives
+exact replacement, conditional update, omission and retained reset different
+names and capabilities. Fix the authored call, not generated output. The
+compiler's generic "similar name" suggestion is `set_locale`, whose required
+payload does not express omission; the public control matrix supplies the
+right semantic repair. No compiler cycle was performed yet.
+
+## 11. Observation and explicit data access
+
+Expected boundary from task wording and public privacy invariants: observers
+receive read-only, bounded facts and cannot mutate/veto/retry; built-in debug
+has no header names or values. Request plans explicitly expose sanitized URLs
+and ordered public headers; sensitive values are redacted but ordinary public
+data may still be present. `ApiResponse::url()` is credential-sanitized and
+`headers()` returns actual headers; callers must handle these as application
+data, not safe automatic telemetry.
+
+`RateLimitRequest` has admission authority over the complete declared plan:
+effective policies, protected canonical keys, schema descriptors and
+endpoint/method/page/attempt facts. Logical origin is supplied only when an
+`origin` key dimension requests it; the separate cooldown identity is opaque
+and equality-only, even for empty plans. The limiter has no body, credentials,
+arbitrary URL/header or executor mutation authority; response feedback is only
+status and parsed server delay for future admission. It is a trusted key
+consumer, not a generic logging event.
+
+Unresolved documentation discrepancy before rustdoc inspection:
+`docs/planning_and_observation.md#observing-operations` says observer events
+carry "sanitized targets and headers", which could suggest they expose public
+header values. Exact event types must be checked in generated public rustdoc;
+no implementation is being read to bypass this navigation problem.
+
+Sources: `docs/planning_and_observation.md`, `docs/responses.md`,
+`docs/extensions.md#rate-limiters`, `docs/rate_limits.md#admission`.
+
+## 12. Local semantic diff
+
+Planned source edit: only `CatalogApi::regional::update_item` changes from
+`effect idempotent;` to `effect non_idempotent;`.
+
+Prediction before export: only `catalog.item.update` changes, with
+`RuntimePolicy` and possibly `Provenance`; no `CallerApi`, `Wire` or
+`AuthAuthority` change. The actual retry/recovery eligibility after an observed
+or ambiguous dispatch is narrowed. Endpoint input/output types, HTTP method,
+path, body representation, statuses and auth placement stay equal.
+
+Actual native result: both compiled exports and the semantic CLI diff completed
+with exit 0 in an isolated worktree of the initial candidate. There is exactly
+one changed endpoint, `catalog.item.update` / `CatalogApi::regional::update_item`,
+one changed field, `effect.value`, and one classification, `RuntimePolicy`.
+There is no `CallerApi`, `Wire`, `AuthAuthority` or `Provenance` entry and no
+unresolved dependency. The optional provenance prediction was unnecessary:
+the effect's owner remained the same.
+
+Native receipts: `dx-contract-before` (29.285 seconds), `dx-contract-after`
+(33.038 seconds), and `dx-contract-diff` (19.599 seconds), each under
+`<native receipts>`. These are measured command
+durations including compile/lock waiting, not participant elapsed times.
+
+## Task 11 generated-rustdoc verification
+
+Fresh generated public rustdoc resolved the remaining ambiguity without reading
+core implementation. `OperationObserver` explicitly excludes exact URLs,
+header names/values and bodies; `RequestTarget` exposes only path-segment,
+query-occurrence and public-header-occurrence counts. `AttemptStarted` adds
+operation/attempt/endpoint/method/page identities and body kind/known length.
+`ResponseHeadObserved` adds status, content length and parsed server delay.
+`OperationEvent` additionally contains `ProviderAcquisitionFinished`, which the
+public task page's event list had omitted. Both documentation defects were
+reported to the root agent, who owns that page.
+
+`RateLimitRequest` publicly exposes `cooldown_origin`, `endpoint`, `method`,
+`logical_origin`, `page_index`, `attempt`, `plan`, and `capability`. The origin
+is only present when its dimension is declared; its public docs explicitly
+require protecting those operational identifiers in custom storage/logs.
+The read-only observer and trusted limiter therefore have different narrow
+authorities; calling every limiter input value-free would be incorrect.
+
+Read public pages: generated `concord_core/contracts/{trait.OperationObserver,
+enum.OperationEvent,struct.AttemptStarted,struct.ResponseHeadObserved,
+struct.RequestTarget,struct.StreamFinished}.html` and
+`concord_core/rate_limit/struct.RateLimitRequest.html`. The hooks-path pages
+redirected to contracts-path pages. An attempted BeautifulSoup reader found
+that package absent; Python's standard HTMLParser completed the read instead.
+
+The rubric was first opened after this file's initial answers and task-12
+prediction were written; its human thresholds do not apply to this self-review.
+
+## Final syntax clarification
+
+The `= Some(3)` notation in the task-2 working answer describes the retained
+payload, not valid inline DSL initializer syntax. The public stable-value
+grammar requires a literal or Rust path, so the reproducible declaration is
+`x?: Option<i32> = INITIAL_X`, with ordinary Rust
+`const INITIAL_X: Option<i32> = Some(3);`. The compiled exercise and final fixture
+sheet use that constant form. This clarification does not change the predicted
+stored state or transition.
+
+Specification §8.1 also makes the same-owner restriction explicit: `query off`
+cannot coexist with a direct query placement at that owner (and likewise for
+headers); use a replacement block. A deeper owner may still introduce entries,
+as the new behavioral exercise demonstrates.

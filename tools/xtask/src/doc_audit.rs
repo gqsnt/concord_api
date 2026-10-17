@@ -399,7 +399,8 @@ const FIND_ITEM_CARD: &[&str] = &[
     // Effective route and explicit operational ID.
     "Operation: GET https://{regional.region}.api.catalog.example.test/root/{client.api_version}/regions/{regional.region}/items/{id} (endpoint ID catalog.item.find, explicit)",
     // Result type and its representation.
-    "Result: Option<Item> via Json",
+    "Result: Option<Item> via Json; response representation inherited from CatalogApi",
+    "Request body: none",
     "Accepted statuses: 200..=299",
     // Expected-absence status.
     "Expected absence: None on 404 (head-only; that response body is dropped unread)",
@@ -460,6 +461,7 @@ fn catalog_checks() -> Vec<ItemCheck> {
                 "pub fn authenticate(&self, input: LoginInput) -> AuthenticateRequest",
                 "Explicit login. Use store_as_session to request local installation.",
                 "from its required inputs body input.",
+                "Request body: input: LoginInput via Json (required); request representation inherited from CatalogApi",
                 "Effect: non-idempotent (declared)",
                 "Authentication: header \"X-Bootstrap-Key\" = application_key, from CatalogApi",
                 "store_as_session() requests local installation into credential session",
@@ -490,7 +492,8 @@ fn catalog_checks() -> Vec<ItemCheck> {
             required: vec![
                 "pub fn export(&self) -> ExportRequest",
                 "Returns a managed byte stream, not a completed export.",
-                "Result: ByteStream via Binary",
+                "Result: ByteStream via Binary; response representation selected by via on endpoint CatalogApi::regional::export",
+                "Request body: none",
             ],
             links: &[CATALOG_CONTRACT],
             forbidden: &[],

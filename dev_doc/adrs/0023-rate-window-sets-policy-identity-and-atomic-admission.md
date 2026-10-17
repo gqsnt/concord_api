@@ -25,7 +25,8 @@ one policy ID as the same bucket.
   no state. A `policy` (or inline attachment) has an explicit ID, an ordered
   `key [...]`, an optional `cost` and either inline windows or `using NAME`.
 
-```concord-pseudocode
+<!-- concord-pseudocode -->
+```rust
 rate_limits {
     windows standard { allow 20000 per 10s; allow 1200000 per 10m; }
     policy tenant_reads(tenant) {

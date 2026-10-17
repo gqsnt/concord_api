@@ -1,5 +1,10 @@
 # Gate 3 anonymized results
 
+**Agent evaluation:** see the [17 October execution record](../reviews/2026_10_17_followup/dx_exercises.md).
+This file records only human-study measurements and intentionally keeps the
+human participant count at zero. It does not mark the requested agent work
+unexecuted or blocked.
+
 **Status:** v3 human-results form, revised 2026-10-16. Still unexecuted.
 
 - Exact candidate full SHA: record the actual reviewed v3 commit when the human session starts.
@@ -7,7 +12,7 @@
 - Human participants completed: **0**
 - Qualifying minimum: **3 unfamiliar Rust-reading humans**
 - Overall scored correctness: **not measured**
-- Status: **Unknown/Blocked for public freeze — no human study has been run**
+- Status: **Unmeasured human-study metrics — agent technical review is recorded separately**
 
 | Participant | Background band / plausible role | Task | Score /2 | Seconds | Confidence /5 | Public pages/types opened | Search/compiler cycles | Wrong model / recovery | Severity |
 |---|---|---:|---:|---:|---:|---|---|---|---|

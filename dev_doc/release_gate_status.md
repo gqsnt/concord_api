@@ -8,8 +8,10 @@
 - **Publication:** disabled — the source beta is unpublished.
 - **Workspace version:** `3.0.0-beta.1`; every workspace package has `publish = false`.
 - **Recorded:** 2026-10-17, using public source
-  `2bba4e3797ece2f8254efd84ef31640605b65ff8` and the exact earlier qualification inputs below.
-  A later delivery commit must be identified by its generated final receipt.
+  `570eec460dee1d83828ae48e35396ae07652aabc` as the fully qualified predecessor.
+  The subsequent [follow-up](reviews/2026_10_17_followup/README.md) adds the source
+  license, agent exercises, Rust highlighting, CSV correction and documentation fixes.
+  Its final source and supported-platform results belong to its own CI/evidence receipt.
 - **Supported platforms:** Windows and Linux are supported and mandatory.
   macOS is not currently a supported or release-gated platform.
 - **Version scope:** V3 only, selected by the owner;
@@ -23,6 +25,12 @@ work and its evidence boundaries. The [16 October correction report](reviews/202
 and earlier dated records retain their original source scope.
 
 ## Current correction candidate
+
+The last completed integrated run is [CI #34](https://github.com/gqsnt/concord_api/actions/runs/39022636141)
+on `570eec460dee1d83828ae48e35396ae07652aabc`: all ten jobs passed, including
+dependency policy. [Final return #3](https://github.com/gqsnt/concord_api/actions/runs/39022636212)
+passed all 33 expected native outcomes. Those results qualify that predecessor;
+the follow-up is checked on its own source and does not inherit a PASS from it.
 
 The seven retained code findings have direct corrections and discriminating
 native regression evidence. V3R-01 is closed by retiring the unsupported
@@ -39,7 +47,8 @@ compatibility paths are not part of the supported surface. See the
 | Earlier complete Windows control | **Pass** on `5b3772236d7c1b71f86ebeba35f7d33a30cf3b64`, [CI #28 job](https://github.com/gqsnt/concord_api/actions/runs/38978327078/job/117233004279); a separate source-bound result |
 | Performance V3-O07 | Paired runtime/scale campaign and bounded runtime/compiler attribution completed; retained costs and interpretation are in the [performance report](reviews/2026_10_17_closure/PERFORMANCE_REPORT.md) |
 | Source/evidence return | Native qualification and historical CI archives are retained; the final public source export, integrated checks and archive integrity require the delivery commit's receipt. The private acceptance annex is delivered separately; completion of one combined archive containing it is not claimed. |
-| Human study and independent human Rustdoc review | **Unknown**; V3 protocols and implementer review are separate from participant or independent-human results |
+| Owner-requested exercise and Rustdoc review | Executed by agents; task answers, real contract diffs, compiler/runtime checks and independent rereview are recorded in the follow-up. Human metrics C63/C64 remain unmeasured. |
+| Project source license | **MIT OR Apache-2.0**; 17 October owner-directed selection is implemented in texts, package metadata and archive checks |
 | Main integration / stable publication | Separate owner actions; not performed by this correction |
 | Dependency license policy | Three package-specific BSD-3-Clause exceptions authorized on 17 October 2026; the updated candidate must pass all ten CI jobs, including dependency policy, with results bound to its own receipt |
 
@@ -148,24 +157,23 @@ to the source-bound candidate above.
 
 | Gate | State |
 |---|---|
-| Gate 0 — legal authority, package namespace and official publication metadata | **Blocked — owner authority required** |
+| Source license | **Implemented** — MIT OR Apache-2.0, selected under the 17 October owner instruction; source and archive checks enforce the choice. |
+| Registry namespace and publication metadata | **Blocked — owner authority required** for the separate registry publication action. |
 | Supported-platform machine qualification | See source-bound matrix above; machine success alone does not authorize integration or publication. |
-| Unfamiliar-human comprehension and independent human review | **Unknown** — no qualifying participant/reviewer evidence supplied. |
-| Stable compatibility freeze, version, tags and registry publication | **Blocked** — reserved owner decisions in [the release packet](owner_release_decisions.md). |
+| Requested user and independent Rustdoc exercises | Agent execution is recorded in the follow-up; optional empirical human metrics remain unmeasured. |
+| Stable V3 API freeze, version, tags and registry publication | **Blocked** — reserved owner decisions in [the release packet](owner_release_decisions.md). |
 
-Default-feature dependency license-policy success ignores private unpublished
-workspace packages as configured; it does not supply the project's license or
-registry authority. CI #25 through #33 retain their recorded BSD-3-Clause
+Dependency license-policy success is separate from the project's implemented
+MIT OR Apache-2.0 grant and from registry authority. CI #25 through #33 retain their recorded BSD-3-Clause
 rejections for `alloc-no-stdlib`, `alloc-stdlib` and `brotli`.
 
 On 17 October 2026 the owner authorized correcting that dependency policy.
 [deny.toml](../deny.toml) records explicit exceptions for those three packages;
 the `brotli` exception also permits MIT to cover its `BSD-3-Clause AND MIT`
-expression. BSD-3-Clause is not added to the global allowlist. The updated
-candidate requires a successful CI run with all ten jobs successful and a native
-dependency-policy summary with all four checks successful. Its result belongs
-to the new source-bound receipt; no future PASS is asserted here. The project's
-own license and `publish = false` remain unchanged. Locked fixture fetching and
+expression. BSD-3-Clause is not added to the global allowlist. The resulting
+`570eec4` candidate passed all ten CI #34 jobs and all four dependency-policy
+checks. The follow-up implements the separate project license and requires its
+own current-source result; `publish = false` remains in force. Locked fixture fetching and
 explicit pinned Rust sources corrected the earlier CI setup failures.
 
 ## History
