@@ -18,6 +18,7 @@ V3 remains the only supported product version.
 | Observation documentation | Automatic events carry value-free structural target counts and typed response facts, not header maps. The event list includes `ProviderAcquisitionFinished`. `SanitizedHeaderMap` no longer promises that every unmarked public value is safe to log. |
 | Exercise reproducibility | Concrete maintained declarations, diagnostics and isolated source edits accompany the task sheets. The results retain initial wrong predictions, corrections and actual native checks. |
 | Analyzer integration | The new exercise target now declares its `json,ndjson` condition in source as well as its Cargo target. Rust Analyzer's default-feature scan no longer tries to import an unavailable `NdJson`; all eight exercises still execute with their required features. The Linux analyzer job explicitly installs `rust-src`, consistent with the toolchain file and Windows setup. |
+| Raw evidence format | Captured logs and patches retain their original bytes across platform checkouts. Six exact log paths permit the test runner's final blank line; four exact patch paths permit the required space on empty unified-diff context lines. Source and documentation whitespace checks remain enforced. |
 
 ## Requested exercises
 
@@ -76,6 +77,14 @@ native analyzer scan then succeeds and all eight exercises execute again.
 The [before/after record](evidence/validation/analyzer_feature_gate.json)
 retains original receipts, log hashes and the exact diagnostic. CI #35 is not
 relabeled as a fully successful run; the corrected commit has its own CI.
+
+The subsequent clean-tree `release-audit` on `6221478` found six raw log EOF
+blank lines and thirteen required empty-context prefixes across four raw
+patches. Their bytes and recorded hashes are preserved. Narrow path-specific
+Git attributes now describe those artifact formats and disable line-ending
+conversion for captured logs and patches in this follow-up evidence packet.
+No production-code check or global whitespace rule is disabled. The delivered
+commit requires its own clean-tree audit and CI result.
 
 This review does not rerun or transfer the earlier performance campaign to
 modified code. The older measurement reports keep their original source scope;

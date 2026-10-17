@@ -45,3 +45,20 @@ eight-test run. A preliminary local run without `rust-src` is explicitly
 excluded from product evidence. The raw analyzer logs contain terminal
 progress output; their hashes and exact hard diagnostics are recorded, while
 the original receipts and the eight-test log are retained beside this index.
+
+## Raw evidence and Git whitespace checks
+
+The clean-tree `release-audit` on `622147814c71d9f7107596d58b5325757c3aff22`
+reached `git diff --check main HEAD` and reported six captured logs with a final
+blank line and thirteen single-space empty-context lines in four unified
+patches. Those are original process output and patch syntax. The first local
+attempt could not resolve `main`; it was an environment setup result. The real
+unchanged remote main was fetched and its local reference established before
+the whitespace finding was reproduced.
+
+The root `.gitattributes` preserves captured `.log` and `.patch` bytes in this
+evidence subtree with `-text`. Exactly six log paths use
+`whitespace=-blank-at-eof`; exactly four patch paths use
+`whitespace=-blank-at-eol`. Other whitespace checks remain active. No captured
+file or recorded digest was rewritten to make the audit pass. Final audit and
+CI conclusions belong to the delivered commit's verification record.
