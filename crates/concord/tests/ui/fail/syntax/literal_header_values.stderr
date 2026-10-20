@@ -1,0 +1,53 @@
+error: [C3-ATOM] header literal in client `ClientHeaderLiteral` cannot form an HTTP header value; remove control characters other than horizontal tab
+ --> tests/ui/fail/syntax/literal_header_values.rs:9:31
+  |
+9 |         headers { "x-value" = "line\nbreak"; }
+  |                               ^^^^^^^^^^^^^
+
+error: [C3-ATOM] header literal in scope `ScopeHeaderLiteral::nested` cannot form an HTTP header value; remove control characters other than horizontal tab
+  --> tests/ui/fail/syntax/literal_header_values.rs:19:43
+   |
+19 |             headers { replace "x-value" = '\r'; }
+   |                                           ^^^^
+
+error: [C3-ATOM] header literal in endpoint `EndpointHeaderLiteral::read` cannot form an HTTP header value; remove control characters other than horizontal tab
+  --> tests/ui/fail/syntax/literal_header_values.rs:30:42
+   |
+30 |             headers { append "x-value" = "nul\0byte"; }
+   |                                          ^^^^^^^^^^^
+
+error: [C3-ATOM] header literal in client `ClientAppendHeaderLiteral` cannot form an HTTP header value; remove control characters other than horizontal tab
+  --> tests/ui/fail/syntax/literal_header_values.rs:38:38
+   |
+38 |         headers { append "x-value" = '\u{7f}'; }
+   |                                      ^^^^^^^^
+
+error: [C3-ATOM] header literal in scope `ScopeIntroduceHeaderLiteral::nested` cannot form an HTTP header value; remove control characters other than horizontal tab
+  --> tests/ui/fail/syntax/literal_header_values.rs:47:35
+   |
+47 |             headers { "x-value" = '\u{1f}'; }
+   |                                   ^^^^^^^^
+
+error: [C3-ATOM] header literal in endpoint `EndpointConcatHeaderLiteral::read` cannot form an HTTP header value; remove control characters other than horizontal tab
+  --> tests/ui/fail/syntax/literal_header_values.rs:59:70
+   |
+59 |                 replace "x-value" = concat ["prefix", value, concat ['\n', "suffix"]];
+   |                                                                      ^^^^
+
+error: [C3-ATOM] header literal in scope `ScopeReplaceBlockHeaderLiteral::nested` cannot form an HTTP header value; remove control characters other than horizontal tab
+  --> tests/ui/fail/syntax/literal_header_values.rs:70:41
+   |
+70 |             headers replace { "x-new" = "bad\u{b}value"; }
+   |                                         ^^^^^^^^^^^^^^^
+
+error: [C3-ATOM] header literal in endpoint `EndpointReplaceBlockHeaderLiteral::read` cannot form an HTTP header value; remove control characters other than horizontal tab
+  --> tests/ui/fail/syntax/literal_header_values.rs:81:43
+   |
+81 |                 "x-new" = concat [concat ["bad\rvalue", value], '-'];
+   |                                           ^^^^^^^^^^^^
+
+error: [C3-ATOM] header literal in endpoint `ConditionalHeaderLiteral::read` cannot form an HTTP header value; remove control characters other than horizontal tab
+  --> tests/ui/fail/syntax/literal_header_values.rs:92:48
+   |
+92 |             headers { when_present "x-value" = "bad\nvalue"; }
+   |                                                ^^^^^^^^^^^^

@@ -1,0 +1,5 @@
+error: [C3-ATOM] query literal output in scope `OversizedConcatLiteral::nested` exceeds the 65536-byte formatted public-value limit; shorten the literal components
+  --> tests/ui/fail/syntax/literal_concat_value_limit.rs:10:27
+   |
+10 |                 "value" = concat [
+   |                           ^^^^^^

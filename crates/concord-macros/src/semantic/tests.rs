@@ -44,6 +44,69 @@ fn endpoint<'a>(model: &'a Model, name: &str) -> &'a Endpoint {
 }
 
 #[test]
+fn head_literal_controls_follow_http_and_query_rules() {
+    for byte in 0_u8..=127 {
+        let text = char::from(byte).to_string();
+        let header = resolve_tokens(quote! {
+            client A {
+                base "http://a.test/";
+                GET e() -> () via Binary { headers { "x-test" = #text; } }
+            }
+        });
+        assert_eq!(
+            header.is_ok(),
+            byte == b'\t' || (32..127).contains(&byte),
+            "byte {byte}"
+        );
+        ok(quote! {
+            client A {
+                base "http://a.test/";
+                GET e() -> () via Binary { query { "test" = #text; } }
+            }
+        });
+    }
+}
+
+#[test]
+fn head_literal_size_counts_formatted_utf8_and_concat_lower_bound() {
+    let exact = "é".repeat(32_768);
+    ok(quote! {
+        client A {
+            base "http://a.test/";
+            GET e() -> () via Binary { query { "test" = #exact; } }
+        }
+    });
+    assert_err(
+        quote! {
+            client A {
+                base "http://a.test/";
+                GET e(value: String) -> () via Binary {
+                    query { "test" = concat [#exact, value, concat ['x']]; }
+                }
+            }
+        },
+        &["[C3-ATOM]", "endpoint `A::e`", "65536-byte", "shorten"],
+    );
+    // Initializers and adapters remain runtime sources, not literal atoms.
+    ok(quote! {
+        client A {
+            base "http://a.test/";
+            GET e(value: String = "\r\n") -> () via Binary {
+                headers { "x-test" = value; }
+            }
+        }
+    });
+    // Integer separators do not contribute to emitted output size.
+    let digits: TokenStream = format!("1{}", "_".repeat(65_536)).parse().unwrap();
+    ok(quote! {
+        client A {
+            base "http://a.test/";
+            GET e() -> () via Binary { headers { "x-test" = #digits; } }
+        }
+    });
+}
+
+#[test]
 fn bare_names_bind_only_the_current_owner() {
     assert_err(
         quote! {

@@ -21,6 +21,9 @@ use super::keyword;
 
 const MAX_CONCAT_DEPTH: usize = 64;
 
+// Core owns this limit; xtask's LIMIT-01 policy checks the copy.
+const MAX_FORMATTED_PUBLIC_VALUE_BYTES: usize = 65_536;
+
 pub(crate) fn parse_subdomain(
     input: ParseStream<'_>,
     owner: &str,
@@ -455,7 +458,11 @@ fn parse_key_statement(
             ));
         }
         input.parse::<Token![=]>()?;
-        Some(parse_emission(input, owner)?)
+        let emission = parse_emission(input, owner)?;
+        if let Emission::Atom(atom) = &emission {
+            validate_head_literals(atom, family, owner)?;
+        }
+        Some(emission)
     };
     input.parse::<Token![;]>()?;
     Ok(KeyStatement {
@@ -464,6 +471,60 @@ fn parse_key_statement(
         emission,
         span,
     })
+}
+
+/// Check only literal output: references (including initialized values) can
+/// change at run time. Literal bytes in a concatenation cannot be removed by
+/// another component, so their sum is a lower bound on the formatted size.
+fn validate_head_literals(atom: &Atom, family: PlacementFamily, owner: &str) -> syn::Result<usize> {
+    let bytes = match atom {
+        Atom::Reference { .. } => 0,
+        Atom::Concat { parts, .. } => {
+            let mut bytes = 0_usize;
+            for part in parts {
+                bytes = bytes.saturating_add(validate_head_literals(part, family, owner)?);
+            }
+            bytes
+        }
+        _ => {
+            // Match the literal spelling emitted by semantic::head::resolve_atom.
+            let text = match atom {
+                Atom::Str(literal) => literal.value(),
+                Atom::Char(literal) => literal.value().to_string(),
+                Atom::Bool(literal) => literal.value.to_string(),
+                Atom::Int { negative, literal } => format!(
+                    "{}{}",
+                    if *negative { "-" } else { "" },
+                    literal.base10_digits()
+                ),
+                Atom::Reference { .. } | Atom::Concat { .. } => unreachable!(),
+            };
+            if family == PlacementFamily::Header && http::HeaderValue::from_str(&text).is_err() {
+                return Err(coded(
+                    atom.span(),
+                    Code::Atom,
+                    format!(
+                        "header literal in {owner} cannot form an HTTP header value; remove control characters other than horizontal tab"
+                    ),
+                ));
+            }
+            text.len()
+        }
+    };
+    if bytes > MAX_FORMATTED_PUBLIC_VALUE_BYTES {
+        let family = match family {
+            PlacementFamily::Query => "query",
+            PlacementFamily::Header => "header",
+        };
+        return Err(coded(
+            atom.span(),
+            Code::Atom,
+            format!(
+                "{family} literal output in {owner} exceeds the {MAX_FORMATTED_PUBLIC_VALUE_BYTES}-byte formatted public-value limit; shorten the literal components"
+            ),
+        ));
+    }
+    Ok(bytes)
 }
 
 fn parse_emission(input: ParseStream<'_>, owner: &str) -> syn::Result<Emission> {

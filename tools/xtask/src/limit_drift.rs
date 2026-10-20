@@ -35,6 +35,7 @@ const NAMED_COPIES: &[&str] = &[
     "MAX_RATE_LIMIT_POLICIES_PER_PLAN",
     "MAX_REQUEST_HEAD_COMPONENTS",
     "MAX_REQUEST_HEADER_COUNT",
+    "MAX_FORMATTED_PUBLIC_VALUE_BYTES",
 ];
 
 /// One macro function that repeats core limits inline.
@@ -157,6 +158,10 @@ fn compiled_core() -> BTreeMap<&'static str, u64> {
             value(core::MAX_REQUEST_HEADER_COUNT),
         ),
         ("MAX_ENDPOINT_ID_BYTES", value(core::MAX_ENDPOINT_ID_BYTES)),
+        (
+            "MAX_FORMATTED_PUBLIC_VALUE_BYTES",
+            value(core::MAX_FORMATTED_PUBLIC_VALUE_BYTES),
+        ),
         (
             "MAX_RUNTIME_ENDPOINT_METHOD_BYTES",
             value(core::MAX_RUNTIME_ENDPOINT_METHOD_BYTES),
