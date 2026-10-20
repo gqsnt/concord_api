@@ -22,7 +22,11 @@ check:
     cargo run --locked -p concord-xtask -- policy --locked
 
 lint:
-    cargo clippy --workspace --all-targets --all-features  -- -D warnings
+    cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+# Each product is checked separately with no defaults, then each Cargo feature.
+lint-features:
+    cargo run --locked -p concord-xtask -- feature-isolation --locked
 
 test:
     cargo nextest --version
@@ -90,19 +94,20 @@ analyzer:
 bench:
     cargo bench -p concord-perf --bench concord_overhead --no-run --locked
 
-verify: fmt check lint test ui msrv fixtures docs package deny workflow analyzer bench source-export release-audit
+verify: fmt check lint lint-features test ui msrv fixtures docs package deny workflow analyzer bench source-export release-audit
 
 # Complete machine validation owned by the unpublished 3.0.0-beta.1
 # implementation (spec §28.2): format, check/clippy/test across default,
-# no-default and all features, facade/core UI suites (named explicitly: their
-# targets set `test = false`), MSRV library checks, feature fixtures, docs, the
+# no-default and all features, isolated product feature clippy, facade/core UI
+# suites (named explicitly: their targets set `test = false`), MSRV library
+# checks, feature fixtures, docs, the
 # two-crate downstream workspace and extracted archive consumers, xtask tools
 # (V3 contract inspection), benchmark
 # compilation and the clean source export. It uses plain `cargo test` (the
 # documented nextest equivalent). External license/registry/tag/human-release
 # gates (`deny`, `workflow`, `release-audit`) stay in the separate
 # release report and are deliberately not part of this recipe.
-verify-implementation: fmt check lint-matrix test-matrix ui-matrix msrv fixtures docs downstream package tools bench source-export
+verify-implementation: fmt check lint-matrix lint-features test-matrix ui-matrix msrv fixtures docs downstream package tools bench source-export
 
 lint-matrix:
     cargo clippy --workspace --all-targets --locked -- -D warnings

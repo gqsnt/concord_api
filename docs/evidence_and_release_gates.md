@@ -134,6 +134,7 @@ Run where available and record every exit status:
 just fmt
 just check
 just lint
+just lint-features
 just test
 just ui
 just msrv
@@ -156,6 +157,16 @@ unpublished beta implementation (format, the check/clippy/test matrix, the
 explicitly named UI suites, MSRV, fixtures, docs and `doc-audit`, the two-crate
 downstream workspace, extracted public archives and their two-crate consumer
 proof, xtask tools, benchmark compilation and the source export).
+Both `just verify` and `just verify-implementation` include `just lint-features`.
+This gate runs Clippy for `concord-core`, `concord-extras` and `concord` in
+separate Cargo invocations with `--all-targets --no-default-features --locked`
+and `-D warnings`: first with no features, then once for every feature except
+the `default` aggregate. Cargo metadata supplies the feature names, including
+implicit optional-dependency features and features enabled by the default
+aggregate. This preserves coverage as manifests change and prevents other
+workspace packages from enabling features that mask missing guards.
+Run it directly with
+`cargo run --locked -p concord-xtask -- feature-isolation --locked`.
 The `package` gate checks local archives, normalized manifests, Rustdoc and
 downstream behavior; it does not publish them. Dependency, registry, tag and publication decisions stay in the separate
 release report; the selected project license is checked in repository policy

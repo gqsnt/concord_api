@@ -822,7 +822,7 @@ impl ProviderHttpInner {
         })
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "default-tls"))]
     fn validate_response(
         &self,
         response: reqwest::Response,
@@ -836,7 +836,7 @@ impl ProviderHttpInner {
         Ok(response)
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "default-tls"))]
     pub(super) async fn execute_at_boundary(
         &self,
         request: reqwest::RequestBuilder,

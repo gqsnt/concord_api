@@ -390,6 +390,28 @@ mod tests {
         check_locked_recipes(&justfile).expect("repository justfile");
     }
 
+    #[test]
+    fn feature_isolation_is_in_both_verification_gates_and_respects_feature_01() {
+        let justfile = include_str!("../../../justfile");
+        let recipes = justfile_recipes(justfile);
+        for gate in ["verify", "verify-implementation"] {
+            assert!(
+                recipes[gate].0.iter().any(|name| name == "lint-features"),
+                "{gate} must include isolated product feature coverage"
+            );
+        }
+        assert_eq!(
+            recipes["lint-features"].1,
+            ["cargo run --locked -p concord-xtask -- feature-isolation --locked"]
+        );
+        let unlocked = justfile.replace(
+            "cargo run --locked -p concord-xtask -- feature-isolation --locked",
+            "cargo run -p concord-xtask -- feature-isolation --locked",
+        );
+        let error = check_locked_recipes(&unlocked).expect_err("unlocked gate launcher");
+        assert!(error.contains("lint-features:"), "{error}");
+    }
+
     fn facts<'a>(name: &'a str, version: &'a Version, publishable: bool) -> ReleaseFacts<'a> {
         ReleaseFacts {
             name,

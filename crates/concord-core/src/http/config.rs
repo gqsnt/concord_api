@@ -361,7 +361,7 @@ impl HttpConfigBuilder {
     }
 
     /// Pure validation for callers that do not interleave transport restrictions.
-    #[cfg(test)]
+    #[cfg(all(test, feature = "default-tls"))]
     pub(crate) fn validate_configuration(&self) -> Result<(), ClientBuildError> {
         match ClientBuildError::collect(
             [

@@ -5,6 +5,7 @@ mod contract;
 mod doc_audit;
 mod doc_rules;
 mod docs_check;
+mod feature_isolation;
 mod fixtures;
 mod limit_drift;
 mod msrv;
@@ -46,6 +47,10 @@ fn run() -> Result<(), String> {
         Some("policy") => {
             parse_options(&arguments[1..])?;
             policy::run(&root)
+        }
+        Some("feature-isolation") => {
+            parse_options(&arguments[1..])?;
+            feature_isolation::run(&root)
         }
         Some("docs-check") => {
             parse_options(&arguments[1..])?;
@@ -89,7 +94,7 @@ fn workspace_root() -> Result<PathBuf, String> {
 
 fn usage() -> String {
     format!(
-        "usage: cargo run -p concord-xtask -- <docs-check [--locked] | {} | fixtures [--locked] | release-audit [--locked] | source-export [--locked] | {} | msrv-ui [--locked] | policy [--locked]>",
+        "usage: cargo run -p concord-xtask -- <docs-check [--locked] | {} | feature-isolation [--locked] | fixtures [--locked] | release-audit [--locked] | source-export [--locked] | {} | msrv-ui [--locked] | policy [--locked]>",
         doc_audit::USAGE,
         contract::USAGE
     )
@@ -108,5 +113,14 @@ mod tests {
     #[test]
     fn usage_lists_the_rendered_documentation_audit() {
         assert!(usage().contains("| doc-audit [--locked] |"), "{}", usage());
+    }
+
+    #[test]
+    fn usage_lists_the_isolated_product_feature_gate() {
+        assert!(
+            usage().contains("| feature-isolation [--locked] |"),
+            "{}",
+            usage()
+        );
     }
 }
