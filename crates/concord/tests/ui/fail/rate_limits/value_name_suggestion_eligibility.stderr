@@ -1,0 +1,41 @@
+error: [C3-NAME] `acount` is not a value of client `OptionalInlineApi`; declare `acount` as a value of this owner, or qualify an ancestor value as `client.acount` or `<scope>.acount`
+  --> tests/ui/fail/rate_limits/value_name_suggestion_eligibility.rs:12:30
+   |
+12 |             key ["account" = acount];
+   |                              ^^^^^^
+
+error: [C3-NAME] `acount` is not a value of client `OptionalBindingApi`; declare `acount` as a value of this owner, or qualify an ancestor value as `client.acount` or `<scope>.acount`
+  --> tests/ui/fail/rate_limits/value_name_suggestion_eligibility.rs:30:36
+   |
+30 |         rate_limit reads(account = acount);
+   |                                    ^^^^^^
+
+error: [C3-NAME] `acount` is not a value of client `SensitiveOptionalInlineApi`; declare `acount` as a value of this owner, or qualify an ancestor value as `client.acount` or `<scope>.acount`
+  --> tests/ui/fail/rate_limits/value_name_suggestion_eligibility.rs:41:30
+   |
+41 |             key ["account" = acount];
+   |                              ^^^^^^
+
+error: [C3-NAME] `acount` is not a value of client `SensitiveOptionalBindingApi`; declare `acount` as a value of this owner, or qualify an ancestor value as `client.acount` or `<scope>.acount`
+  --> tests/ui/fail/rate_limits/value_name_suggestion_eligibility.rs:59:36
+   |
+59 |         rate_limit reads(account = acount);
+   |                                    ^^^^^^
+
+error: [C3-NAME] `acount` is not a value of client `OptionalQualifiedInlineApi` (referenced from endpoint `OptionalQualifiedInlineApi::read`); declare it there or qualify the owner that declares it
+  --> tests/ui/fail/rate_limits/value_name_suggestion_eligibility.rs:71:41
+   |
+71 |                 key ["account" = client.acount];
+   |                                         ^^^^^^
+
+error: [C3-NAME] `acount` is not a value of endpoint `OptionalAncestorBindingApi::read`; declare `acount` as a value of this owner, or qualify an ancestor value as `client.acount` or `<scope>.acount`
+  --> tests/ui/fail/rate_limits/value_name_suggestion_eligibility.rs:90:40
+   |
+90 |             rate_limit reads(account = acount);
+   |                                        ^^^^^^
+
+error: [C3-NAME] `acount` is not a value of client `SensitiveRequiredInlineApi`; declare `acount` as a value of this owner, or qualify an ancestor value as `client.acount` or `<scope>.acount`; did you mean `account`?
+   --> tests/ui/fail/rate_limits/value_name_suggestion_eligibility.rs:101:30
+    |
+101 |             key ["account" = acount];
+    |                              ^^^^^^

@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use quote::ToTokens;
 
-use super::surface::canonical_ident;
+use super::surface::{canonical_ident, public_ident};
 use super::{
     BoundDim, FormalDim, Policy, RateSource, RateUse, Resolver, Site, Window, WindowSet, Windows,
     meta_from,
@@ -12,7 +12,7 @@ use super::{
 use crate::syntax::ast::{
     BoundDimension, FormalDimension, RateAttachment, WindowLiteral, WindowSource,
 };
-use crate::syntax::diagnostics::{Code, coded, related};
+use crate::syntax::diagnostics::{Code, coded, related, suggestion};
 
 fn windows_from(literals: &[WindowLiteral]) -> Vec<Window> {
     literals
@@ -75,10 +75,8 @@ fn validate_windows(
 
 fn window_set_index(resolver: &Resolver, name: &syn::Ident) -> syn::Result<usize> {
     let logical = canonical_ident(name);
-    resolver
-        .model
-        .client
-        .window_sets
+    let window_sets = &resolver.model.client.window_sets;
+    window_sets
         .iter()
         .position(|set| set.logical == logical)
         .ok_or_else(|| {
@@ -86,8 +84,12 @@ fn window_set_index(resolver: &Resolver, name: &syn::Ident) -> syn::Result<usize
                 name.span(),
                 Code::Rate,
                 format!(
-                    "unknown window set `{logical}`; declare `windows {logical} {{ allow N per DURATION; }}` in the `rate_limits` registry of {}",
-                    resolver.model.owner_label(0)
+                    "unknown window set `{logical}`; declare `windows {logical} {{ allow N per DURATION; }}` in the `rate_limits` registry of {}{}",
+                    resolver.model.owner_label(0),
+                    suggestion(
+                        &logical,
+                        window_sets.iter().map(|set| public_ident(&set.logical, name.span()).to_string())
+                    )
                 ),
             )
         })
@@ -174,7 +176,11 @@ pub(crate) fn resolve_registry(resolver: &mut Resolver) -> syn::Result<()> {
                             formal.span(),
                             Code::Rate,
                             format!(
-                                "`{name}` is not a formal of policy `{logical}` of {client}; bare names in a policy refer to its formals, so declare `policy {logical}(..., {name})` or correct the name"
+                                "`{name}` is not a formal of policy `{logical}` of {client}; bare names in a policy refer to its formals, so declare `policy {logical}(..., {name})` or correct the name{}",
+                                suggestion(
+                                    &name,
+                                    declaration.formals.iter().map(ToString::to_string)
+                                )
                             ),
                         ));
                     };
@@ -309,7 +315,18 @@ fn resolve_attachment(
                     name.span(),
                     Code::Rate,
                     format!(
-                        "unknown rate policy `{logical}` attached by {label}; declare `policy {logical}(...) {{ ... }}` in the client `rate_limits` registry"
+                        "unknown rate policy `{logical}` attached by {label}; declare `policy {logical}(...) {{ ... }}` in the client `rate_limits` registry{}",
+                        suggestion(
+                            &logical,
+                            resolver
+                                .model
+                                .client
+                                .policies
+                                .iter()
+                                .map(
+                                    |policy| public_ident(&policy.logical, name.span()).to_string()
+                                )
+                        )
                     ),
                 ));
             };
@@ -322,15 +339,23 @@ fn resolve_attachment(
                     .iter()
                     .position(|candidate| canonical_ident(candidate) == formal_name)
                 else {
+                    let candidates = policy.formals.iter().filter(|candidate| {
+                        !bindings
+                            .iter()
+                            .any(|(bound, _)| canonical_ident(bound) == canonical_ident(candidate))
+                    });
                     return Err(coded(
                         formal.span(),
                         Code::Rate,
                         format!(
-                            "policy `{logical}` has no formal `{formal_name}`; bindings are exact (attachment in {label}), so bind only the policy's declared formals"
+                            "policy `{logical}` has no formal `{formal_name}`; bindings are exact (attachment in {label}), so bind only the policy's declared formals{}",
+                            suggestion(&formal_name, candidates.map(ToString::to_string))
                         ),
                     ));
                 };
-                let value = resolver.resolve_ref(site, reference)?;
+                let value = resolver.resolve_ref_with(site, reference, |candidate| {
+                    check_dimension_value(resolver, site, candidate, reference.span).is_ok()
+                })?;
                 check_dimension_value(resolver, site, value, reference.span)?;
                 bound[index] = Some((value, reference.span));
             }
@@ -403,7 +428,9 @@ fn resolve_attachment(
                         reference,
                         via,
                     } => {
-                        let value = resolver.resolve_ref(site, reference)?;
+                        let value = resolver.resolve_ref_with(site, reference, |candidate| {
+                            check_dimension_value(resolver, site, candidate, reference.span).is_ok()
+                        })?;
                         check_dimension_value(resolver, site, value, reference.span)?;
                         (
                             label.value(),

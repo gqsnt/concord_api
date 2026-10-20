@@ -234,7 +234,9 @@ pub(crate) fn resolve_atom(
             None,
         )),
         Atom::Reference { reference, via } => {
-            let key = resolver.resolve_ref(site, reference)?;
+            let key = resolver.resolve_ref_with(site, reference, |key| {
+                keyed || !resolver.model.value(key).optional
+            })?;
             let value = resolver.model.value(key);
             let presence = if value.optional {
                 if !keyed {
@@ -390,20 +392,24 @@ fn resolve_template(
                     via,
                     range,
                 } => {
-                    let key = resolver.resolve_ref(site, reference).map_err(|error| {
-                        let mut error = error;
-                        error.combine(coded(
-                            template.literal.span(),
-                            Code::Path,
-                            format!(
-                                "in path template hole at bytes {}..{} of {}",
-                                range.0,
-                                range.1,
-                                resolver.site_label(site)
-                            ),
-                        ));
-                        error
-                    })?;
+                    let key = resolver
+                        .resolve_ref_with(site, reference, |key| {
+                            !resolver.model.value(key).optional
+                        })
+                        .map_err(|error| {
+                            let mut error = error;
+                            error.combine(coded(
+                                template.literal.span(),
+                                Code::Path,
+                                format!(
+                                    "in path template hole at bytes {}..{} of {}",
+                                    range.0,
+                                    range.1,
+                                    resolver.site_label(site)
+                                ),
+                            ));
+                            error
+                        })?;
                     let value = resolver.model.value(key);
                     if value.optional {
                         let error = coded(

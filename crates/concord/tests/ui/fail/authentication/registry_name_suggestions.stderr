@@ -1,0 +1,77 @@
+error: [C3-AUTH] unknown credential `sesison` in the auth placement of endpoint `CredentialTypoApi::read`; declare `credential sesison = source;` in the client `credentials { ... }` block; did you mean `session`?
+  --> tests/ui/fail/authentication/registry_name_suggestions.rs:14:27
+   |
+14 |             auth { bearer sesison; }
+   |                           ^^^^^^^
+
+error: [C3-AUTH] unknown credential `logni` in the auth placement of endpoint `BasicCredentialTypoApi::read`; declare `credential logni = source;` in the client `credentials { ... }` block; did you mean `login`?
+  --> tests/ui/fail/authentication/registry_name_suggestions.rs:28:26
+   |
+28 |             auth { basic logni; }
+   |                          ^^^^^
+
+error: [C3-AUTH] unknown credential `unrelated` in the auth placement of endpoint `CredentialUnrelatedApi::read`; declare `credential unrelated = source;` in the client `credentials { ... }` block
+  --> tests/ui/fail/authentication/registry_name_suggestions.rs:41:27
+   |
+41 |             auth { bearer unrelated; }
+   |                           ^^^^^^^^^
+
+error: [C3-AUTH] unknown or not-yet-declared secret `toekn` in the source of credential `key` of client `ApiKeySecretTypoApi`; declare `secret toekn;` earlier in the credentials block; did you mean `secret.token`?
+  --> tests/ui/fail/authentication/registry_name_suggestions.rs:51:45
+   |
+51 |             credential key = api_key(secret.toekn);
+   |                                             ^^^^^
+
+error: [C3-AUTH] unknown or not-yet-declared secret `tken` in the source of credential `session` of client `BearerSecretTypoApi`; declare `secret tken;` earlier in the credentials block; did you mean `secret.token`?
+  --> tests/ui/fail/authentication/registry_name_suggestions.rs:61:48
+   |
+61 |             credential session = bearer(secret.tken);
+   |                                                ^^^^
+
+error: [C3-AUTH] unknown or not-yet-declared secret `passwrod` in the source of credential `login` of client `BasicSecretTypoApi`; declare `secret passwrod;` earlier in the credentials block; did you mean `secret.password`?
+  --> tests/ui/fail/authentication/registry_name_suggestions.rs:72:62
+   |
+72 |             credential login = basic(secret.username, secret.passwrod);
+   |                                                              ^^^^^^^^
+
+error: [C3-AUTH] unknown or not-yet-declared secret `sesion` in the source of credential `key` of client `SecretRoleApi`; declare `secret sesion;` earlier in the credentials block
+  --> tests/ui/fail/authentication/registry_name_suggestions.rs:83:45
+   |
+83 |             credential key = api_key(secret.sesion);
+   |                                             ^^^^^^
+
+error: [C3-AUTH] unknown or not-yet-declared secret `unrelated` in the source of credential `session` of client `SecretUnrelatedApi`; declare `secret unrelated;` earlier in the credentials block
+  --> tests/ui/fail/authentication/registry_name_suggestions.rs:93:48
+   |
+93 |             credential session = bearer(secret.unrelated);
+   |                                                ^^^^^^^^^
+
+error: [C3-AUTH] unknown credential `sesison` in the auth placement of endpoint `CredentialRoleApi::read`; declare `credential sesison = source;` in the client `credentials { ... }` block
+   --> tests/ui/fail/authentication/registry_name_suggestions.rs:106:27
+    |
+106 |             auth { bearer sesison; }
+    |                           ^^^^^^^
+
+error: [C3-AUTH] unknown credential `logni` in the auth placement of endpoint `BasicCredentialRoleApi::read`; declare `credential logni = source;` in the client `credentials { ... }` block
+   --> tests/ui/fail/authentication/registry_name_suggestions.rs:120:27
+    |
+120 |             auth { bearer logni; }
+    |                           ^^^^^
+
+error: [C3-AUTH] unknown credential `sesison` in the auth placement of endpoint `BearerCredentialRoleApi::read`; declare `credential sesison = source;` in the client `credentials { ... }` block
+   --> tests/ui/fail/authentication/registry_name_suggestions.rs:133:26
+    |
+133 |             auth { basic sesison; }
+    |                          ^^^^^^^
+
+error: [C3-AUTH] unknown credential `tpye` in the auth placement of endpoint `RawCredentialTypoApi::read`; declare `credential tpye = source;` in the client `credentials { ... }` block; did you mean `r#type`?
+   --> tests/ui/fail/authentication/registry_name_suggestions.rs:146:27
+    |
+146 |             auth { bearer tpye; }
+    |                           ^^^^
+
+error: [C3-AUTH] unknown or not-yet-declared secret `tpye` in the source of credential `session` of client `RawSecretTypoApi`; declare `secret tpye;` earlier in the credentials block; did you mean `secret.r#type`?
+   --> tests/ui/fail/authentication/registry_name_suggestions.rs:156:48
+    |
+156 |             credential session = bearer(secret.tpye);
+    |                                                ^^^^

@@ -1,0 +1,95 @@
+error: [C3-RATE] unknown rate policy `reasd` attached by client `PolicyTypoApi`; declare `policy reasd(...) { ... }` in the client `rate_limits` registry; did you mean `reads`?
+  --> tests/ui/fail/rate_limits/registry_name_suggestions.rs:12:20
+   |
+12 |         rate_limit reasd();
+   |                    ^^^^^
+
+error: [C3-RATE] unknown window set `standrad`; declare `windows standrad { allow N per DURATION; }` in the `rate_limits` registry of client `PolicyWindowsTypoApi`; did you mean `standard`?
+  --> tests/ui/fail/rate_limits/registry_name_suggestions.rs:22:76
+   |
+22 |             policy reads() { id "windows.policy.typo"; key [origin]; using standrad; }
+   |                                                                            ^^^^^^^^
+
+error: [C3-RATE] unknown window set `standrad`; declare `windows standrad { allow N per DURATION; }` in the `rate_limits` registry of client `InlineWindowsTypoApi`; did you mean `standard`?
+  --> tests/ui/fail/rate_limits/registry_name_suggestions.rs:32:61
+   |
+32 |         rate_limit "windows.inline.typo" key [origin] using standrad;
+   |                                                             ^^^^^^^^
+
+error: [C3-RATE] policy `reads` has no formal `accoutn`; bindings are exact (attachment in client `BindingTypoApi`), so bind only the policy's declared formals; did you mean `account`?
+  --> tests/ui/fail/rate_limits/registry_name_suggestions.rs:48:26
+   |
+48 |         rate_limit reads(accoutn = tenant);
+   |                          ^^^^^^^
+
+error: [C3-RATE] `accoutn` is not a formal of policy `reads` of client `KeyFormalTypoApi`; bare names in a policy refer to its formals, so declare `policy reads(..., accoutn)` or correct the name; did you mean `account`?
+  --> tests/ui/fail/rate_limits/registry_name_suggestions.rs:59:34
+   |
+59 |                 key ["account" = accoutn];
+   |                                  ^^^^^^^
+
+error: [C3-RATE] unknown rate policy `unrelated` attached by client `PolicyUnrelatedApi`; declare `policy unrelated(...) { ... }` in the client `rate_limits` registry
+  --> tests/ui/fail/rate_limits/registry_name_suggestions.rs:73:20
+   |
+73 |         rate_limit unrelated();
+   |                    ^^^^^^^^^
+
+error: [C3-RATE] unknown window set `reasd`; declare `windows reasd { allow N per DURATION; }` in the `rate_limits` registry of client `WindowsRoleApi`
+  --> tests/ui/fail/rate_limits/registry_name_suggestions.rs:85:61
+   |
+85 |         rate_limit "windows.role.inline" key [origin] using reasd;
+   |                                                             ^^^^^
+
+error: [C3-RATE] unknown rate policy `reasd` attached by client `PolicyRoleApi`; declare `policy reasd(...) { ... }` in the client `rate_limits` registry
+  --> tests/ui/fail/rate_limits/registry_name_suggestions.rs:94:20
+   |
+94 |         rate_limit reasd();
+   |                    ^^^^^
+
+error: [C3-RATE] policy `reads` has no formal `tenatn`; bindings are exact (attachment in client `BindingRoleApi`), so bind only the policy's declared formals
+   --> tests/ui/fail/rate_limits/registry_name_suggestions.rs:110:26
+    |
+110 |         rate_limit reads(tenatn = tenant);
+    |                          ^^^^^^
+
+error: [C3-RATE] `tenatn` is not a formal of policy `reads` of client `KeyFormalRoleApi`; bare names in a policy refer to its formals, so declare `policy reads(..., tenatn)` or correct the name
+   --> tests/ui/fail/rate_limits/registry_name_suggestions.rs:126:33
+    |
+126 |                 key ["tenant" = tenatn];
+    |                                 ^^^^^^
+
+error: [C3-RATE] unknown window set `unrelated`; declare `windows unrelated { allow N per DURATION; }` in the `rate_limits` registry of client `WindowsUnrelatedApi`
+   --> tests/ui/fail/rate_limits/registry_name_suggestions.rs:138:59
+    |
+138 |         rate_limit "windows.unrelated" key [origin] using unrelated;
+    |                                                           ^^^^^^^^^
+
+error: [C3-RATE] unknown rate policy `tpye` attached by client `RawPolicyTypoApi`; declare `policy tpye(...) { ... }` in the client `rate_limits` registry; did you mean `r#type`?
+   --> tests/ui/fail/rate_limits/registry_name_suggestions.rs:149:20
+    |
+149 |         rate_limit tpye();
+    |                    ^^^^
+
+error: [C3-RATE] unknown window set `tpye`; declare `windows tpye { allow N per DURATION; }` in the `rate_limits` registry of client `RawWindowsTypoApi`; did you mean `r#type`?
+   --> tests/ui/fail/rate_limits/registry_name_suggestions.rs:158:53
+    |
+158 |         rate_limit "windows.raw" key [origin] using tpye;
+    |                                                     ^^^^
+
+error: [C3-RATE] policy `reads` has no formal `tpye`; bindings are exact (attachment in client `RawBindingTypoApi`), so bind only the policy's declared formals; did you mean `r#type`?
+   --> tests/ui/fail/rate_limits/registry_name_suggestions.rs:174:26
+    |
+174 |         rate_limit reads(tpye = tenant);
+    |                          ^^^^
+
+error: [C3-RATE] `tpye` is not a formal of policy `reads` of client `RawKeyFormalTypoApi`; bare names in a policy refer to its formals, so declare `policy reads(..., tpye)` or correct the name; did you mean `r#type`?
+   --> tests/ui/fail/rate_limits/registry_name_suggestions.rs:185:31
+    |
+185 |                 key ["type" = tpye];
+    |                               ^^^^
+
+error: [C3-RATE] policy `reads` has no formal `acount`; bindings are exact (attachment in client `BoundFormalRoleApi`), so bind only the policy's declared formals
+   --> tests/ui/fail/rate_limits/registry_name_suggestions.rs:204:26
+    |
+204 |         rate_limit reads(acount = tenant, account = tenant);
+    |                          ^^^^^^

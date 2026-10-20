@@ -1,0 +1,71 @@
+error: [C3-AUTH] credential source endpoint `accounts::logni` does not name an endpoint (paths are root-relative: `scope::endpoint`); credential `session` of client `SourceEndpointTypoApi` must name a declared endpoint such as `endpoint auth::login`; did you mean `accounts::login`?
+ --> tests/ui/fail/authentication/source_path_name_suggestions.rs:9:53
+  |
+9 |         credentials { credential session = endpoint accounts::logni; }
+  |                                                     ^^^^^^^^
+
+error: [C3-AUTH] credential source path segment `acounts` does not name a scope (credential `session` of client `SourceScopeTypoApi`); write the root-relative path `scope::endpoint` of a declared endpoint; did you mean `accounts::login`?
+  --> tests/ui/fail/authentication/source_path_name_suggestions.rs:19:53
+   |
+19 |         credentials { credential session = endpoint acounts::login; }
+   |                                                     ^^^^^^^
+
+error: [C3-AUTH] credential source endpoint `logni` does not name an endpoint (paths are root-relative: `scope::endpoint`); credential `session` of client `SourceEndpointRoleApi` must name a declared endpoint such as `endpoint auth::login`
+  --> tests/ui/fail/authentication/source_path_name_suggestions.rs:29:53
+   |
+29 |         credentials { credential session = endpoint logni; }
+   |                                                     ^^^^^
+
+error: [C3-AUTH] credential source path segment `logni` does not name a scope (credential `session` of client `SourceScopeRoleApi`); write the root-relative path `scope::endpoint` of a declared endpoint
+  --> tests/ui/fail/authentication/source_path_name_suggestions.rs:39:53
+   |
+39 |         credentials { credential session = endpoint logni::exchange; }
+   |                                                     ^^^^^
+
+error: [C3-AUTH] credential source endpoint `unrelated` does not name an endpoint (paths are root-relative: `scope::endpoint`); credential `session` of client `SourceEndpointUnrelatedApi` must name a declared endpoint such as `endpoint auth::login`
+  --> tests/ui/fail/authentication/source_path_name_suggestions.rs:47:53
+   |
+47 |         credentials { credential session = endpoint unrelated; }
+   |                                                     ^^^^^^^^^
+
+error: [C3-AUTH] credential source endpoint `logni` does not name an endpoint (paths are root-relative: `scope::endpoint`); credential `session` of client `SourceEndpointIncompleteApi` must name a declared endpoint such as `endpoint auth::login`
+  --> tests/ui/fail/authentication/source_path_name_suggestions.rs:55:53
+   |
+55 |         credentials { credential session = endpoint logni; }
+   |                                                     ^^^^^
+
+error: [C3-AUTH] credential source endpoint `tpye` does not name an endpoint (paths are root-relative: `scope::endpoint`); credential `session` of client `RawSourceEndpointTypoApi` must name a declared endpoint such as `endpoint auth::login`; did you mean `r#type`?
+  --> tests/ui/fail/authentication/source_path_name_suggestions.rs:63:53
+   |
+63 |         credentials { credential session = endpoint tpye; }
+   |                                                     ^^^^
+
+error: [C3-AUTH] credential source path segment `tpye` does not name a scope (credential `session` of client `RawSourceScopeTypoApi`); write the root-relative path `scope::endpoint` of a declared endpoint; did you mean `r#type::login`?
+  --> tests/ui/fail/authentication/source_path_name_suggestions.rs:71:53
+   |
+71 |         credentials { credential session = endpoint tpye::login; }
+   |                                                     ^^^^
+
+error: [C3-AUTH] credential source path segment `acounts` does not name a scope (credential `session` of client `SourceRemainingPathInvalidApi`); write the root-relative path `scope::endpoint` of a declared endpoint
+  --> tests/ui/fail/authentication/source_path_name_suggestions.rs:81:53
+   |
+81 |         credentials { credential session = endpoint acounts::missing; }
+   |                                                     ^^^^^^^
+
+error: [C3-AUTH] credential source path segment `acounts` does not name a scope (credential `session` of client `SourceTwoTyposApi`); write the root-relative path `scope::endpoint` of a declared endpoint
+  --> tests/ui/fail/authentication/source_path_name_suggestions.rs:91:53
+   |
+91 |         credentials { credential session = endpoint acounts::logni; }
+   |                                                     ^^^^^^^
+
+error: [C3-AUTH] credential source endpoint `accounts::tpye` does not name an endpoint (paths are root-relative: `scope::endpoint`); credential `session` of client `RawNestedEndpointTypoApi` must name a declared endpoint such as `endpoint auth::login`; did you mean `accounts::r#type`?
+   --> tests/ui/fail/authentication/source_path_name_suggestions.rs:101:53
+    |
+101 |         credentials { credential session = endpoint accounts::tpye; }
+    |                                                     ^^^^^^^^
+
+error: [C3-AUTH] credential source path segment `tpye` does not name a scope (credential `session` of client `RawNestedScopeTypoApi`); write the root-relative path `scope::endpoint` of a declared endpoint; did you mean `accounts::r#type::login`?
+   --> tests/ui/fail/authentication/source_path_name_suggestions.rs:111:53
+    |
+111 |         credentials { credential session = endpoint accounts::tpye::login; }
+    |                                                     ^^^^^^^^

@@ -31,7 +31,7 @@ mod tree;
 mod tests;
 
 use crate::syntax::ast::{Attrs, Reference, SourceApi};
-use crate::syntax::diagnostics::{Code, coded};
+use crate::syntax::diagnostics::{Code, coded, edit_distance};
 pub(crate) use model::*;
 use surface::canonical_ident;
 
@@ -113,8 +113,101 @@ impl Resolver {
         }
     }
 
+    /// Only references that obey the current-owner/ancestor visibility rule.
+    fn reference_candidates(&self, site: Site) -> Vec<(String, String, VRef)> {
+        let mut candidates = self
+            .site_values(site)
+            .iter()
+            .enumerate()
+            .map(|(index, value)| {
+                (
+                    value.logical.clone(),
+                    value.name.to_string(),
+                    VRef { site, index },
+                )
+            })
+            .collect::<Vec<_>>();
+        for ancestor in self.owner_chain(site) {
+            if Site::Owner(ancestor) == site {
+                continue;
+            }
+            let qualifier = if ancestor == 0 {
+                "client".to_owned()
+            } else {
+                surface::public_ident(
+                    &self.model.owners[ancestor].logical,
+                    proc_macro2::Span::call_site(),
+                )
+                .to_string()
+            };
+            for (index, value) in self.site_values(Site::Owner(ancestor)).iter().enumerate() {
+                candidates.push((
+                    value.logical.clone(),
+                    format!("{qualifier}.{}", value.name),
+                    VRef {
+                        site: Site::Owner(ancestor),
+                        index,
+                    },
+                ));
+            }
+        }
+        candidates
+    }
+
+    fn reference_suggestion(
+        &self,
+        site: Site,
+        reference: &Reference,
+        eligible: &impl Fn(VRef) -> bool,
+    ) -> String {
+        let qualified = reference.owner.is_some();
+        let spelling = reference.display();
+        let mut best = None;
+        let mut matches = Vec::new();
+        for (name, replacement, key) in self.reference_candidates(site) {
+            if !eligible(key) {
+                continue;
+            }
+            // A bare misspelling is compared with leaf names, but an ancestor
+            // replacement must include its qualifier to be usable as written.
+            let candidate = if qualified {
+                replacement.replace("r#", "")
+            } else {
+                name
+            };
+            let Some(distance) = edit_distance(&spelling, &candidate) else {
+                continue;
+            };
+            if best.is_none_or(|best| distance < best) {
+                matches.clear();
+                best = Some(distance);
+            }
+            if best == Some(distance) {
+                matches.push(replacement);
+            }
+        }
+        matches.sort();
+        matches.dedup();
+        if matches.is_empty() {
+            String::new()
+        } else {
+            format!("; did you mean `{}`?", matches.join("` or `"))
+        }
+    }
+
     /// Resolves one reference in the context of `site` (LANG-03).
     pub(crate) fn resolve_ref(&self, site: Site, reference: &Reference) -> syn::Result<VRef> {
+        self.resolve_ref_with(site, reference, |_| true)
+    }
+
+    /// Filters spelling candidates by the semantic requirements of a use site.
+    /// Exact references keep their existing validation and diagnostics.
+    pub(crate) fn resolve_ref_with(
+        &self,
+        site: Site,
+        reference: &Reference,
+        eligible: impl Fn(VRef) -> bool,
+    ) -> syn::Result<VRef> {
         let name = canonical_ident(&reference.name);
         let find = |site: Site| {
             self.site_values(site)
@@ -141,7 +234,8 @@ impl Resolver {
             }
             let hint = if suggestions.is_empty() {
                 format!(
-                    "; declare `{name}` as a value of this owner, or qualify an ancestor value as `client.{name}` or `<scope>.{name}`"
+                    "; declare `{name}` as a value of this owner, or qualify an ancestor value as `client.{name}` or `<scope>.{name}`{}",
+                    self.reference_suggestion(site, reference, &eligible)
                 )
             } else {
                 format!(
@@ -177,8 +271,9 @@ impl Resolver {
                     owner.span(),
                     Code::Name,
                     format!(
-                        "`{qualifier}` is not the client or a visible ancestor scope of {}; qualify with `client.` or the name of an enclosing scope",
-                        self.site_label(site)
+                        "`{qualifier}` is not the client or a visible ancestor scope of {}; qualify with `client.` or the name of an enclosing scope{}",
+                        self.site_label(site),
+                        self.reference_suggestion(site, reference, &eligible)
                     ),
                 ));
             };
@@ -199,9 +294,10 @@ impl Resolver {
                 reference.name.span(),
                 Code::Name,
                 format!(
-                    "`{name}` is not a value of {} (referenced from {}); declare it there or qualify the owner that declares it",
+                    "`{name}` is not a value of {} (referenced from {}); declare it there or qualify the owner that declares it{}",
                     self.model.owner_label(target),
-                    self.site_label(site)
+                    self.site_label(site),
+                    self.reference_suggestion(site, reference, &eligible)
                 ),
             )
         })

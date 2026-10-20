@@ -7,6 +7,7 @@
 
 use http::HeaderName;
 use proc_macro2::Span;
+use syn::ext::IdentExt;
 use syn::{Ident, LitInt, LitStr};
 use url::Url;
 
@@ -67,6 +68,77 @@ pub(crate) fn endpoint_label(path: &str) -> String {
 /// Builds a coded diagnostic at `span`.
 pub(crate) fn coded(span: Span, code: Code, message: impl std::fmt::Display) -> syn::Error {
     syn::Error::new(span, format!("[{}] {message}", code.as_str()))
+}
+
+/// Returns the distance when two spellings differ by at most one insertion,
+/// deletion, substitution or adjacent transposition of Unicode characters.
+pub(crate) fn edit_distance(left: &str, right: &str) -> Option<usize> {
+    let left: Vec<_> = left.chars().collect();
+    let right: Vec<_> = right.chars().collect();
+    if left.len().abs_diff(right.len()) > 1 {
+        return None;
+    }
+    let first = left
+        .iter()
+        .zip(&right)
+        .position(|(left, right)| left != right)
+        .unwrap_or(left.len().min(right.len()));
+    if first == left.len() && first == right.len() {
+        return Some(0);
+    }
+    let one_edit = match left.len().cmp(&right.len()) {
+        std::cmp::Ordering::Less => left[first..] == right[first + 1..],
+        std::cmp::Ordering::Greater => left[first + 1..] == right[first..],
+        std::cmp::Ordering::Equal => {
+            left[first + 1..] == right[first + 1..]
+                || (first + 1 < left.len()
+                    && left[first] == right[first + 1]
+                    && left[first + 1] == right[first]
+                    && left[first + 2..] == right[first + 2..])
+        }
+    };
+    one_edit.then_some(1)
+}
+
+/// A deterministic spelling hint containing only supplied candidate names.
+pub(crate) fn suggestion(
+    name: &str,
+    candidates: impl IntoIterator<Item = impl AsRef<str>>,
+) -> String {
+    let name = name.replace("r#", "");
+    let mut matches = std::collections::BTreeSet::new();
+    for candidate in candidates {
+        let candidate = candidate.as_ref();
+        let spelling = candidate.replace("r#", "");
+        match edit_distance(&name, &spelling) {
+            Some(0) => return String::new(),
+            Some(1) => {
+                matches.insert(candidate.to_owned());
+            }
+            _ => {}
+        }
+    }
+    if matches.is_empty() {
+        return String::new();
+    }
+    let choices = matches
+        .into_iter()
+        .map(|candidate| format!("`{candidate}`"))
+        .collect::<Vec<_>>()
+        .join(" or ");
+    format!("; did you mean {choices}?")
+}
+
+/// Looks only at an identifier, never a literal or initializer value.
+pub(crate) fn keyword_suggestion(
+    input: syn::parse::ParseStream<'_>,
+    candidates: impl IntoIterator<Item = impl AsRef<str>>,
+) -> String {
+    input
+        .fork()
+        .call(Ident::parse_any)
+        .map(|name| suggestion(&canonical_ident(&name), candidates))
+        .unwrap_or_default()
 }
 
 /// Adds a secondary (related) span to an existing diagnostic.
@@ -400,4 +472,55 @@ fn validate_auth_placement_name_bytes(name: &LitStr, kind: &str, owner: &str) ->
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{edit_distance, suggestion};
+
+    #[test]
+    fn one_character_edits_include_unicode_and_adjacent_transpositions() {
+        for (left, right) in [
+            ("timeout", "timeout"),
+            ("", ""),
+            ("", "a"),
+            ("a", ""),
+            ("timout", "timeout"),
+            ("timeouut", "timeout"),
+            ("timeaut", "timeout"),
+            ("tiemout", "timeout"),
+            ("clé", "clés"),
+            ("clé", "cél"),
+            ("clé", "clè"),
+            ("東京", "東亰"),
+        ] {
+            let expected = usize::from(left != right);
+            assert_eq!(edit_distance(left, right), Some(expected), "{left}/{right}");
+            assert_eq!(edit_distance(right, left), Some(expected), "{right}/{left}");
+        }
+        for (left, right) in [("timeout", "unrelated"), ("abcd", "badc"), ("", "ab")] {
+            assert_eq!(edit_distance(left, right), None, "{left}/{right}");
+        }
+    }
+
+    #[test]
+    fn hints_sort_and_deduplicate_ties_and_preserve_raw_spelling() {
+        assert_eq!(
+            suggestion("cot", ["cut", "cat", "cut", "unrelated"]),
+            "; did you mean `cat` or `cut`?"
+        );
+        assert_eq!(suggestion("typo", ["r#type"]), "; did you mean `r#type`?");
+        assert_eq!(suggestion("r#typo", ["r#type"]), "; did you mean `r#type`?");
+        assert_eq!(
+            suggestion("secret.typo", ["secret.r#type"]),
+            "; did you mean `secret.r#type`?"
+        );
+        assert_eq!(
+            suggestion("r#owner.r#typo", ["r#owner.r#type"]),
+            "; did you mean `r#owner.r#type`?"
+        );
+        assert_eq!(suggestion("cat", ["cut", "cat"]), "");
+        assert_eq!(suggestion("unrelated", ["cat", "cut"]), "");
+        assert_eq!(suggestion("name", std::iter::empty::<&str>()), "");
+    }
 }

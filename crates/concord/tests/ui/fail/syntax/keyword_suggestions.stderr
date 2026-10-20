@@ -1,0 +1,119 @@
+error: [C3-OWNER] an `api!` invocation begins with exactly one `client Name { ... }` declaration; did you mean `client`?
+ --> tests/ui/fail/syntax/keyword_suggestions.rs:7:5
+  |
+7 |     cleint RootKeywordApi { base "https://example.test/"; }
+  |     ^^^^^^
+
+error: [C3-OWNER] unsupported client entry in client `ClientKeywordApi`; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause; did you mean `base`?
+  --> tests/ui/fail/syntax/keyword_suggestions.rs:12:9
+   |
+12 |         bas "https://example.test/";
+   |         ^^^
+
+error: [C3-OWNER] unsupported scope entry in scope `ScopeKeywordApi::nested`; expected a child scope or endpoint, or a `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause; did you mean `response`?
+  --> tests/ui/fail/syntax/keyword_suggestions.rs:20:13
+   |
+20 |             respnose Empty;
+   |             ^^^^^^^^
+
+error: [C3-OWNER] unsupported endpoint clause in endpoint `EndpointKeywordApi::read`; expected `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `id`, `status`, `effect`, `absent on`, `paginate` or `expose accepted_bytes`; did you mean `headers`?
+  --> tests/ui/fail/syntax/keyword_suggestions.rs:29:13
+   |
+29 |             headars { "X-Tag" = "tag"; }
+   |             ^^^^^^^
+
+error: [C3-OWNER] unsupported client entry in client `MethodKeywordApi`; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause; did you mean `GET`?
+  --> tests/ui/fail/syntax/keyword_suggestions.rs:37:9
+   |
+37 |         GTE read() -> () via Empty;
+   |         ^^^
+
+error: [C3-PLACE] a key statement in client `ReplaceKeywordApi` starts with a static string key; keys are not interpolated (write `"key" = value;`); did you mean `replace`?
+  --> tests/ui/fail/syntax/keyword_suggestions.rs:44:17
+   |
+44 |         query { replaec "key" = "value"; }
+   |                 ^^^^^^^
+
+error: [C3-PLACE] a key statement in client `WhenPresentKeywordApi` starts with a static string key; keys are not interpolated (write `"key" = value;`); did you mean `when_present`?
+  --> tests/ui/fail/syntax/keyword_suggestions.rs:51:17
+   |
+51 |         query { when_presnt "key" = "value"; }
+   |                 ^^^^^^^^^^^
+
+error: [C3-PLACE] a key statement in client `AppendKeywordApi` starts with a static string key; keys are not interpolated (write `"key" = value;`); did you mean `append`?
+  --> tests/ui/fail/syntax/keyword_suggestions.rs:58:17
+   |
+58 |         query { appand "key" = "value"; }
+   |                 ^^^^^^
+
+error: [C3-PLACE] a key statement in client `RemoveKeywordApi` starts with a static string key; keys are not interpolated (write `"key" = value;`); did you mean `remove`?
+  --> tests/ui/fail/syntax/keyword_suggestions.rs:65:19
+   |
+65 |         headers { removee "X-Tag"; }
+   |                   ^^^^^^^
+
+error: [C3-OWNER] `effect` in endpoint `EffectKeywordApi::write` requires `safe`, `idempotent`, or `non_idempotent`; write `effect idempotent;`; did you mean `idempotent`?
+  --> tests/ui/fail/syntax/keyword_suggestions.rs:72:47
+   |
+72 |         POST write() -> () via Empty { effect idempotnet; }
+   |                                               ^^^^^^^^^^
+
+error: [C3-OWNER] `effect` in endpoint `SafeEffectKeywordApi::read` requires `safe`, `idempotent`, or `non_idempotent`; write `effect idempotent;`; did you mean `safe`?
+  --> tests/ui/fail/syntax/keyword_suggestions.rs:79:45
+   |
+79 |         GET read() -> () via Empty { effect sfe; }
+   |                                             ^^^
+
+error: [C3-OWNER] `effect` in endpoint `NonIdempotentEffectKeywordApi::write` requires `safe`, `idempotent`, or `non_idempotent`; write `effect idempotent;`; did you mean `non_idempotent`?
+  --> tests/ui/fail/syntax/keyword_suggestions.rs:86:47
+   |
+86 |         POST write() -> () via Empty { effect non_idempotnet; }
+   |                                               ^^^^^^^^^^^^^^
+
+error: [C3-AUTH] the source of credential `key` of client `ApiKeySourceKeywordApi` must be `api_key(..)`, `bearer(..)`, `basic(..)`, `endpoint PATH` or `custom Type`; did you mean `api_key`?
+  --> tests/ui/fail/syntax/keyword_suggestions.rs:95:30
+   |
+95 |             credential key = api_kye(secret.token);
+   |                              ^^^^^^^
+
+error: [C3-AUTH] the source of credential `key` of client `BearerSourceKeywordApi` must be `api_key(..)`, `bearer(..)`, `basic(..)`, `endpoint PATH` or `custom Type`; did you mean `bearer`?
+   --> tests/ui/fail/syntax/keyword_suggestions.rs:105:30
+    |
+105 |             credential key = beare(secret.token);
+    |                              ^^^^^
+
+error: [C3-AUTH] the source of credential `key` of client `BasicSourceKeywordApi` must be `api_key(..)`, `bearer(..)`, `basic(..)`, `endpoint PATH` or `custom Type`; did you mean `basic`?
+   --> tests/ui/fail/syntax/keyword_suggestions.rs:115:30
+    |
+115 |             credential key = bsaic(secret.token, secret.token);
+    |                              ^^^^^
+
+error: [C3-AUTH] the source of credential `key` of client `EndpointSourceKeywordApi` must be `api_key(..)`, `bearer(..)`, `basic(..)`, `endpoint PATH` or `custom Type`; did you mean `endpoint`?
+   --> tests/ui/fail/syntax/keyword_suggestions.rs:123:40
+    |
+123 |         credentials { credential key = endpoin fetch; }
+    |                                        ^^^^^^^
+
+error: [C3-AUTH] the source of credential `key` of client `CustomSourceKeywordApi` must be `api_key(..)`, `bearer(..)`, `basic(..)`, `endpoint PATH` or `custom Type`; did you mean `custom`?
+   --> tests/ui/fail/syntax/keyword_suggestions.rs:130:40
+    |
+130 |         credentials { credential key = custmo Provider; }
+    |                                        ^^^^^^
+
+error: [C3-AUTH] `challenge` in client `ChallengeKeywordApi` requires `never`, `unauthorized` or `unauthorized_or_forbidden`; did you mean `unauthorized`?
+   --> tests/ui/fail/syntax/keyword_suggestions.rs:141:37
+    |
+141 |         auth { bearer key challenge unauthroized; }
+    |                                     ^^^^^^^^^^^^
+
+error: [C3-AUTH] `challenge` in client `NeverChallengeKeywordApi` requires `never`, `unauthorized` or `unauthorized_or_forbidden`; did you mean `never`?
+   --> tests/ui/fail/syntax/keyword_suggestions.rs:152:37
+    |
+152 |         auth { bearer key challenge nevre; }
+    |                                     ^^^^^
+
+error: [C3-AUTH] `challenge` in client `ForbiddenChallengeKeywordApi` requires `never`, `unauthorized` or `unauthorized_or_forbidden`; did you mean `unauthorized_or_forbidden`?
+   --> tests/ui/fail/syntax/keyword_suggestions.rs:163:37
+    |
+163 |         auth { bearer key challenge unauthorized_or_forbidde; }
+    |                                     ^^^^^^^^^^^^^^^^^^^^^^^^

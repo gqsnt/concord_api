@@ -1,0 +1,221 @@
+error: [C3-NAME] `tennat` is not a value of endpoint `PathHoleSuggestion::read`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`; did you mean `tenant`?
+  --> tests/ui/fail/names/suggestion_values.rs:13:18
+   |
+13 |             path "{tennat}";
+   |                  ^^^^^^^^^^
+
+error: [C3-PATH] in path template hole at bytes 0..8 of endpoint `PathHoleSuggestion::read`
+  --> tests/ui/fail/names/suggestion_values.rs:13:18
+   |
+13 |             path "{tennat}";
+   |                  ^^^^^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of endpoint `PathComponentSuggestion::read`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`; did you mean `tenant`?
+  --> tests/ui/fail/names/suggestion_values.rs:22:18
+   |
+22 |             path "tenant-{tennat}";
+   |                  ^^^^^^^^^^^^^^^^^
+
+error: [C3-PATH] in path template hole at bytes 7..15 of endpoint `PathComponentSuggestion::read`
+  --> tests/ui/fail/names/suggestion_values.rs:22:18
+   |
+22 |             path "tenant-{tennat}";
+   |                  ^^^^^^^^^^^^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of scope `SubdomainSuggestion::regional`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`; did you mean `tenant`?
+  --> tests/ui/fail/names/suggestion_values.rs:32:32
+   |
+32 |             subdomain replace [tennat, "api"];
+   |                                ^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of client `SubdomainAncestorSuggestion` (referenced from scope `SubdomainAncestorSuggestion::regional`); declare it there or qualify the owner that declares it; did you mean `client.tenant`?
+  --> tests/ui/fail/names/suggestion_values.rs:43:39
+   |
+43 |             subdomain replace [client.tennat, "api"];
+   |                                       ^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of endpoint `QuerySuggestion::read`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`; did you mean `tenant`?
+  --> tests/ui/fail/names/suggestion_values.rs:53:32
+   |
+53 |             query { "tenant" = tennat; }
+   |                                ^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of endpoint `HeaderSuggestion::read`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`; did you mean `tenant`?
+  --> tests/ui/fail/names/suggestion_values.rs:62:36
+   |
+62 |             headers { "X-Tenant" = tennat; }
+   |                                    ^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of endpoint `QueryConcatSuggestion::read`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`; did you mean `tenant`?
+  --> tests/ui/fail/names/suggestion_values.rs:71:51
+   |
+71 |             query { "tenant" = concat ["prefix-", tennat]; }
+   |                                                   ^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of endpoint `HeaderConcatSuggestion::read`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`; did you mean `tenant`?
+  --> tests/ui/fail/names/suggestion_values.rs:80:55
+   |
+80 |             headers { "X-Tenant" = concat ["prefix-", tennat]; }
+   |                                                       ^^^^^^
+
+error: [C3-NAME] `regonal` is not the client or a visible ancestor scope of endpoint `QualifiedOwnerSuggestion::regional::read`; qualify with `client.` or the name of an enclosing scope; did you mean `regional.tenant`?
+  --> tests/ui/fail/names/suggestion_values.rs:91:35
+   |
+91 |                 query { "owner" = regonal.tenant; }
+   |                                   ^^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of scope `QualifiedLeafSuggestion::regional` (referenced from endpoint `QualifiedLeafSuggestion::regional::read`); declare it there or qualify the owner that declares it; did you mean `regional.tenant`?
+   --> tests/ui/fail/names/suggestion_values.rs:102:49
+    |
+102 |                 headers { "X-Tenant" = regional.tennat; }
+    |                                                 ^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of endpoint `BareAncestorSuggestion::read`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`; did you mean `client.tenant`?
+   --> tests/ui/fail/names/suggestion_values.rs:114:18
+    |
+114 |             path "{tennat}";
+    |                  ^^^^^^^^^^
+
+error: [C3-PATH] in path template hole at bytes 0..8 of endpoint `BareAncestorSuggestion::read`
+   --> tests/ui/fail/names/suggestion_values.rs:114:18
+    |
+114 |             path "{tennat}";
+    |                  ^^^^^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of endpoint `ClosestAncestorSuggestion::regional::read`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`; did you mean `client.tenant`?
+   --> tests/ui/fail/names/suggestion_values.rs:126:40
+    |
+126 |                 headers { "X-Tenant" = tennat; }
+    |                                        ^^^^^^
+
+error: [C3-NAME] `tenant` is not a value of endpoint `ExactAncestorSuggestion::read`; a bare name binds only the current owner's values — did you mean `client.tenant`?
+   --> tests/ui/fail/names/suggestion_values.rs:138:18
+    |
+138 |             path "{tenant}";
+    |                  ^^^^^^^^^^
+
+error: [C3-PATH] in path template hole at bytes 0..8 of endpoint `ExactAncestorSuggestion::read`
+   --> tests/ui/fail/names/suggestion_values.rs:138:18
+    |
+138 |             path "{tenant}";
+    |                  ^^^^^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of endpoint `SiblingExcludedSuggestion::read`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`
+   --> tests/ui/fail/names/suggestion_values.rs:151:36
+    |
+151 |             headers { "X-Tenant" = tennat; }
+    |                                    ^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of client `DescendantExcludedSuggestion`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`
+   --> tests/ui/fail/names/suggestion_values.rs:159:32
+    |
+159 |         headers { "X-Tenant" = tennat; }
+    |                                ^^^^^^
+
+error: [C3-NAME] `ultraviolet` is not a value of endpoint `UnrelatedValueSuggestion::read`; declare `ultraviolet` as a value of this owner, or qualify an ancestor value as `client.ultraviolet` or `<scope>.ultraviolet`
+   --> tests/ui/fail/names/suggestion_values.rs:171:35
+    |
+171 |             headers { "X-Trace" = ultraviolet; }
+    |                                   ^^^^^^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of endpoint `RateValueSuggestion::read`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`; did you mean `tenant`?
+   --> tests/ui/fail/names/suggestion_values.rs:188:44
+    |
+188 |             rate_limit per_tenant(tenant = tennat);
+    |                                            ^^^^^^
+
+error: [C3-NAME] `offest` is not a value of endpoint `PaginationInitSuggestion::read`; declare `offest` as a value of this owner, or qualify an ancestor value as `client.offest` or `<scope>.offest`; did you mean `offset`?
+   --> tests/ui/fail/names/suggestion_values.rs:199:43
+    |
+199 |                 init OffsetInit { offset: offest, page_size: 1 };
+    |                                           ^^^^^^
+
+error: [C3-NAME] `intial_offset` is not a value of client `PaginationAncestorInitSuggestion` (referenced from endpoint `PaginationAncestorInitSuggestion::read`); declare it there or qualify the owner that declares it; did you mean `client.initial_offset`?
+   --> tests/ui/fail/names/suggestion_values.rs:212:50
+    |
+212 |                 init OffsetInit { offset: client.intial_offset, page_size: 1 };
+    |                                                  ^^^^^^^^^^^^^
+
+error: [C3-PAGE] cursor destination `offest` is not an endpoint-owned value of endpoint `PaginationCursorSuggestion::read`; destinations are bare endpoint slots, never client or scope values, so declare `offest` as a parameter of the endpoint; did you mean `offset`?
+   --> tests/ui/fail/names/suggestion_values.rs:225:27
+    |
+225 |                 cursor -> offest;
+    |                           ^^^^^^
+
+error: [C3-NAME] `cut` is not a value of endpoint `TiedValueSuggestion::read`; declare `cut` as a value of this owner, or qualify an ancestor value as `client.cut` or `<scope>.cut`; did you mean `cat` or `cot`?
+   --> tests/ui/fail/names/suggestion_values.rs:236:33
+    |
+236 |             headers { "X-Pet" = cut; }
+    |                                 ^^^
+
+error: [C3-NAME] `tyep` is not a value of endpoint `RawValueSuggestion::read`; declare `tyep` as a value of this owner, or qualify an ancestor value as `client.tyep` or `<scope>.tyep`; did you mean `r#type`?
+   --> tests/ui/fail/names/suggestion_values.rs:246:34
+    |
+246 |             headers { "X-Type" = tyep; }
+    |                                  ^^^^
+
+error: [C3-NAME] `clinet` is not the client or a visible ancestor scope of endpoint `ClientQualifierSuggestion::read`; qualify with `client.` or the name of an enclosing scope; did you mean `client.tenant`?
+   --> tests/ui/fail/names/suggestion_values.rs:256:36
+    |
+256 |             headers { "X-Tenant" = clinet.tenant; }
+    |                                    ^^^^^^
+
+error: [C3-PAGE] cursor destination `offest` is not an endpoint-owned value of endpoint `PaginationEachExcluded::read`; destinations are bare endpoint slots, never client or scope values, so declare `offest` as a parameter of the endpoint
+   --> tests/ui/fail/names/suggestion_values.rs:269:27
+    |
+269 |                 cursor -> offest;
+    |                           ^^^^^^
+
+error: [C3-PAGE] cursor destination `offest` is not an endpoint-owned value of endpoint `PaginationRateExcluded::read`; destinations are bare endpoint slots, never client or scope values, so declare `offest` as a parameter of the endpoint
+   --> tests/ui/fail/names/suggestion_values.rs:289:27
+    |
+289 |                 cursor -> offest;
+    |                           ^^^^^^
+
+error: [C3-PAGE] cursor destination `offest` is not an endpoint-owned value of endpoint `PaginationPreviousDestinationExcluded::read`; destinations are bare endpoint slots, never client or scope values, so declare `offest` as a parameter of the endpoint
+   --> tests/ui/fail/names/suggestion_values.rs:301:36
+    |
+301 |                 cursor -> (offset, offest);
+    |                                    ^^^^^^
+
+error: [C3-PAGE] cursor destination `offest` is not an endpoint-owned value of endpoint `PaginationAncestorExcluded::read`; destinations are bare endpoint slots, never client or scope values, so declare `offest` as a parameter of the endpoint
+   --> tests/ui/fail/names/suggestion_values.rs:314:27
+    |
+314 |                 cursor -> offest;
+    |                           ^^^^^^
+
+error: [C3-PAGE] cursor destination `offest` is not an endpoint-owned value of endpoint `PaginationLaterDestinationExcluded::read`; destinations are bare endpoint slots, never client or scope values, so declare `offest` as a parameter of the endpoint
+   --> tests/ui/fail/names/suggestion_values.rs:328:28
+    |
+328 |                 cursor -> (offest, offset);
+    |                            ^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of endpoint `OptionalPathCandidateExcluded::read`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`
+   --> tests/ui/fail/names/suggestion_values.rs:340:18
+    |
+340 |             path "{tennat}";
+    |                  ^^^^^^^^^^
+
+error: [C3-PATH] in path template hole at bytes 0..8 of endpoint `OptionalPathCandidateExcluded::read`
+   --> tests/ui/fail/names/suggestion_values.rs:340:18
+    |
+340 |             path "{tennat}";
+    |                  ^^^^^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of scope `OptionalSubdomainCandidateExcluded::regional`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`
+   --> tests/ui/fail/names/suggestion_values.rs:349:32
+    |
+349 |             subdomain replace [tennat, "api"];
+    |                                ^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of endpoint `OptionalConcatCandidateExcluded::read`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`
+   --> tests/ui/fail/names/suggestion_values.rs:359:55
+    |
+359 |             headers { "X-Tenant" = concat ["prefix-", tennat]; }
+    |                                                       ^^^^^^
+
+error: [C3-NAME] `tyep` is not a value of client `QualifiedRawValueSuggestion` (referenced from endpoint `QualifiedRawValueSuggestion::read`); declare it there or qualify the owner that declares it; did you mean `client.r#type`?
+   --> tests/ui/fail/names/suggestion_values.rs:369:41
+    |
+369 |             headers { "X-Type" = client.tyep; }
+    |                                         ^^^^

@@ -18,8 +18,8 @@ use super::ast::{
 };
 use super::credentials::{parse_auth, parse_credentials};
 use super::diagnostics::{
-    Code, client_label, coded, endpoint_label, insert_clause, related, scope_label, validate_base,
-    validate_endpoint_id, validate_snake_source_identifier,
+    Code, client_label, coded, endpoint_label, insert_clause, keyword_suggestion, related,
+    scope_label, suggestion, validate_base, validate_endpoint_id, validate_snake_source_identifier,
 };
 use super::keyword;
 use super::pagination::parse_pagination;
@@ -57,7 +57,10 @@ impl Parse for SourceApi {
             return Err(coded(
                 input.span(),
                 Code::Owner,
-                "an `api!` invocation begins with exactly one `client Name { ... }` declaration",
+                format!(
+                    "an `api!` invocation begins with exactly one `client Name {{ ... }}` declaration{}",
+                    keyword_suggestion(&fork, ["client"])
+                ),
             ));
         }
         let client: SourceClient = input.parse()?;
@@ -242,12 +245,73 @@ fn unsupported(input: ParseStream<'_>, kind: OwnerKind, owner: &str) -> syn::Err
             format!("`host [...]` was removed; use `subdomain [...]` in {owner}"),
         );
     }
+    let candidates: &[&str] = match kind {
+        OwnerKind::Client => &[
+            "base",
+            "values",
+            "credentials",
+            "rate_limits",
+            "request",
+            "response",
+            "subdomain",
+            "path",
+            "query",
+            "headers",
+            "auth",
+            "timeout",
+            "rate_limit",
+            "scope",
+            "GET",
+            "HEAD",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE",
+            "OPTIONS",
+            "METHOD",
+        ],
+        OwnerKind::Scope => &[
+            "request",
+            "response",
+            "subdomain",
+            "path",
+            "query",
+            "headers",
+            "auth",
+            "timeout",
+            "rate_limit",
+            "scope",
+            "GET",
+            "HEAD",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE",
+            "OPTIONS",
+            "METHOD",
+        ],
+        OwnerKind::Endpoint => &[
+            "path",
+            "query",
+            "headers",
+            "auth",
+            "timeout",
+            "rate_limit",
+            "id",
+            "status",
+            "effect",
+            "absent",
+            "paginate",
+            "expose",
+        ],
+    };
+    let hint = keyword_suggestion(input, candidates);
     match kind {
         OwnerKind::Client => coded(
             input.span(),
             Code::Owner,
             format!(
-                "unsupported client entry in {owner}; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause"
+                "unsupported client entry in {owner}; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause{hint}"
             ),
         ),
         OwnerKind::Scope => {
@@ -283,7 +347,7 @@ fn unsupported(input: ParseStream<'_>, kind: OwnerKind, owner: &str) -> syn::Err
                 input.span(),
                 Code::Owner,
                 format!(
-                    "unsupported scope entry in {owner}; expected a child scope or endpoint, or a `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause"
+                    "unsupported scope entry in {owner}; expected a child scope or endpoint, or a `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause{hint}"
                 ),
             )
         }
@@ -332,7 +396,7 @@ fn unsupported(input: ParseStream<'_>, kind: OwnerKind, owner: &str) -> syn::Err
                 input.span(),
                 Code::Owner,
                 format!(
-                    "unsupported endpoint clause in {owner}; expected `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `id`, `status`, `effect`, `absent on`, `paginate` or `expose accepted_bytes`"
+                    "unsupported endpoint clause in {owner}; expected `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `id`, `status`, `effect`, `absent on`, `paginate` or `expose accepted_bytes`{hint}"
                 ),
             )
         }
@@ -563,7 +627,8 @@ fn parse_endpoint(input: ParseStream<'_>, parent: Parent<'_>) -> syn::Result<Sou
                     clauses.span(),
                     Code::Owner,
                     format!(
-                        "`effect` in {owner} requires `safe`, `idempotent`, or `non_idempotent`; write `effect idempotent;`"
+                        "`effect` in {owner} requires `safe`, `idempotent`, or `non_idempotent`; write `effect idempotent;`{}",
+                        keyword_suggestion(&clauses, ["safe", "idempotent", "non_idempotent"])
                     ),
                 ));
             };
@@ -588,7 +653,8 @@ fn parse_endpoint(input: ParseStream<'_>, parent: Parent<'_>) -> syn::Result<Sou
             clauses.parse::<keyword::absent>()?;
             clauses.parse::<keyword::on>().map_err(|_| {
                 clauses.error(format!(
-                    "[C3-REP] expected `absent on STATUS (, STATUS)*;` in {owner}; write `absent on 404;`"
+                    "[C3-REP] expected `absent on STATUS (, STATUS)*;` in {owner}; write `absent on 404;`{}",
+                    keyword_suggestion(&clauses, ["on"])
                 ))
             })?;
             let mut codes = BTreeSet::new();
@@ -635,7 +701,10 @@ fn parse_endpoint(input: ParseStream<'_>, parent: Parent<'_>) -> syn::Result<Sou
                 return Err(coded(
                     clauses.span(),
                     Code::Owner,
-                    format!("the only supported exposure of {owner} is `expose accepted_bytes;`"),
+                    format!(
+                        "the only supported exposure of {owner} is `expose accepted_bytes;`{}",
+                        keyword_suggestion(&clauses, ["accepted_bytes"])
+                    ),
                 ));
             }
             clauses.parse::<keyword::accepted_bytes>()?;
@@ -941,7 +1010,13 @@ fn parse_method(input: ParseStream<'_>, parent: &str) -> syn::Result<MethodKind>
             method.span(),
             Code::Owner,
             format!(
-                "CONNECT and TRACE are unsupported; Concord does not expose tunnel, trace or upgrade semantics (endpoint in {parent}); declare GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS or `METHOD(\"...\")`"
+                "CONNECT and TRACE are unsupported; Concord does not expose tunnel, trace or upgrade semantics (endpoint in {parent}); declare GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS or `METHOD(\"...\")`{}",
+                suggestion(
+                    &canonical_ident(&method),
+                    [
+                        "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "METHOD"
+                    ]
+                )
             ),
         )),
     }

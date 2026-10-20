@@ -1,0 +1,65 @@
+error: [C3-OWNER] unsupported client entry in client `UnrelatedKeywordApi`; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause
+ --> tests/ui/fail/syntax/keyword_suggestions_no_match.rs:9:9
+  |
+9 |         unrelated;
+  |         ^^^^^^^^^
+
+error: [C3-OWNER] unsupported endpoint clause in endpoint `ClientOnlyKeywordApi::read`; expected `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `id`, `status`, `effect`, `absent on`, `paginate` or `expose accepted_bytes`
+  --> tests/ui/fail/syntax/keyword_suggestions_no_match.rs:16:38
+   |
+16 |         GET read() -> () via Empty { bsae "https://example.test/"; }
+   |                                      ^^^^
+
+error: [C3-OWNER] unsupported scope entry in scope `EndpointOnlyKeywordApi::nested`; expected a child scope or endpoint, or a `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause
+  --> tests/ui/fail/syntax/keyword_suggestions_no_match.rs:23:26
+   |
+23 |         scope nested() { effcet safe; }
+   |                          ^^^^^^
+
+error: [C3-OWNER] `effect` in endpoint `UnrelatedEffectApi::write` requires `safe`, `idempotent`, or `non_idempotent`; write `effect idempotent;`
+  --> tests/ui/fail/syntax/keyword_suggestions_no_match.rs:30:47
+   |
+30 |         POST write() -> () via Empty { effect unrelated; }
+   |                                               ^^^^^^^^^
+
+error: [C3-AUTH] the source of credential `key` of client `UnrelatedSourceApi` must be `api_key(..)`, `bearer(..)`, `basic(..)`, `endpoint PATH` or `custom Type`
+  --> tests/ui/fail/syntax/keyword_suggestions_no_match.rs:37:40
+   |
+37 |         credentials { credential key = unrelated; }
+   |                                        ^^^^^^^^^
+
+error: [C3-PLACE] a key statement in client `UnrelatedKeyStatementApi` starts with a static string key; keys are not interpolated (write `"key" = value;`)
+  --> tests/ui/fail/syntax/keyword_suggestions_no_match.rs:44:17
+   |
+44 |         query { unrelated "key" = "value"; }
+   |                 ^^^^^^^^^
+
+error: [C3-AUTH] `challenge` in client `UnrelatedChallengeApi` requires `never`, `unauthorized` or `unauthorized_or_forbidden`
+  --> tests/ui/fail/syntax/keyword_suggestions_no_match.rs:55:37
+   |
+55 |         auth { bearer key challenge unrelated; }
+   |                                     ^^^^^^^^^
+
+error: [C3-PLACE] a key statement in client `ConsumedStatementModifierApi` starts with a static string key; keys are not interpolated (write `"key" = value;`)
+  --> tests/ui/fail/syntax/keyword_suggestions_no_match.rs:63:27
+   |
+63 |         headers { replace appen "X-Tag" = "value"; }
+   |                           ^^^^^
+
+error: [C3-PLACE] `query` in client `ConsumedQueryModifierApi` requires `{ ... }`, `query replace { ... }` or `query off;`
+  --> tests/ui/fail/syntax/keyword_suggestions_no_match.rs:70:23
+   |
+70 |         query replace of;
+   |                       ^^
+
+error: [C3-PLACE] `headers` in client `ConsumedHeaderModifierApi` requires `{ ... }`, `headers replace { ... }` or `headers off;`
+  --> tests/ui/fail/syntax/keyword_suggestions_no_match.rs:77:25
+   |
+77 |         headers replace replac { "X-Tag" = "value"; }
+   |                         ^^^^^^
+
+error: [C3-AUTH] group the auth placements of client `ConsumedAuthModifierApi` in `auth { ... }` or `auth replace { ... }`, or write `auth off;`
+  --> tests/ui/fail/syntax/keyword_suggestions_no_match.rs:84:22
+   |
+84 |         auth replace of;
+   |                      ^^

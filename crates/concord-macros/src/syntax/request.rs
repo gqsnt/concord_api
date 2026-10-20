@@ -14,8 +14,8 @@ use super::ast::{
     Reference, StatementKind, SubdomainOperation, Template, TemplatePart, TemplateSegment,
 };
 use super::diagnostics::{
-    Code, coded, validate_integer, validate_public_header_name, validate_query_key,
-    validate_static_host_label,
+    Code, coded, keyword_suggestion, validate_integer, validate_public_header_name,
+    validate_query_key, validate_static_host_label,
 };
 use super::keyword;
 
@@ -395,7 +395,12 @@ pub(crate) fn parse_key_block(
             input.span(),
             Code::Place,
             format!(
-                "`{family_name}` in {owner} requires `{{ ... }}`, `{family_name} replace {{ ... }}` or `{family_name} off;`"
+                "`{family_name}` in {owner} requires `{{ ... }}`, `{family_name} replace {{ ... }}` or `{family_name} off;`{}",
+                if replace {
+                    String::new()
+                } else {
+                    keyword_suggestion(input, ["replace", "off"])
+                }
             ),
         ));
     }
@@ -433,9 +438,14 @@ fn parse_key_statement(
     } else {
         StatementKind::Introduce
     };
+    let hint = if kind == StatementKind::Introduce {
+        keyword_suggestion(input, ["replace", "when_present", "append", "remove"])
+    } else {
+        String::new()
+    };
     let key: LitStr = input.parse().map_err(|_| {
         input.error(format!(
-            "[C3-PLACE] a key statement in {owner} starts with a static string key; keys are not interpolated (write `\"key\" = value;`)"
+            "[C3-PLACE] a key statement in {owner} starts with a static string key; keys are not interpolated (write `\"key\" = value;`){hint}"
         ))
     })?;
     match family {

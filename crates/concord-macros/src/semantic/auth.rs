@@ -1,17 +1,17 @@
 //! Credential sources and effective authentication placements (§11).
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use proc_macro2::Span;
 
 use super::head::Potential;
-use super::surface::{canonical_ident, prefixed_ident, private_prefixed_ident};
+use super::surface::{canonical_ident, prefixed_ident, private_prefixed_ident, public_ident};
 use super::{
     AuthChallenge, Child, Credential, CredentialSource, LocalAuth, Placement, PlacementFamily,
     PlacementKind, Resolver, Secret, Site, meta_from,
 };
 use crate::syntax::ast::{AuthOperation, AuthPlacementKind, CredentialSource as SourceKind};
-use crate::syntax::diagnostics::{Code, coded, related};
+use crate::syntax::diagnostics::{Code, coded, edit_distance, related, suggestion};
 
 pub(crate) fn resolve_credentials(resolver: &mut Resolver) -> syn::Result<()> {
     let Some(block) = resolver.credentials_source.take() else {
@@ -38,7 +38,11 @@ pub(crate) fn resolve_credentials(resolver: &mut Resolver) -> syn::Result<()> {
                     name.span(),
                     Code::Auth,
                     format!(
-                        "unknown secret `{logical}` in the credentials of {client}; declare `secret {logical};` first"
+                        "unknown secret `{logical}` in the credentials of {client}; declare `secret {logical};` first{}",
+                        suggestion(
+                            &format!("secret.{logical}"),
+                            secrets.iter().map(|secret| format!("secret.{}", secret.name)),
+                        )
                     ),
                 )
             })
@@ -134,6 +138,40 @@ pub(crate) fn resolve_credentials(resolver: &mut Resolver) -> syn::Result<()> {
     Ok(())
 }
 
+/// Compares complete canonical paths while retaining raw identifier spelling
+/// in the complete root-relative replacement.
+fn endpoint_path_suggestion(resolver: &Resolver, spelling: &str) -> String {
+    let mut matches = BTreeSet::new();
+    for (index, endpoint) in resolver.model.endpoints.iter().enumerate() {
+        let source = &resolver.endpoint_sources[index];
+        if source.absence.is_some() || source.pagination.is_some() {
+            continue;
+        }
+        let replacement = resolver
+            .model
+            .chain(endpoint.owner)
+            .into_iter()
+            .skip(1)
+            .map(|owner| {
+                public_ident(&resolver.model.owners[owner].logical, source.name.span()).to_string()
+            })
+            .chain(std::iter::once(source.name.to_string()))
+            .collect::<Vec<_>>()
+            .join("::");
+        if edit_distance(spelling, &replacement.replace("r#", "")) == Some(1) {
+            matches.insert(replacement);
+        }
+    }
+    if matches.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "; did you mean `{}`?",
+            matches.into_iter().collect::<Vec<_>>().join("` or `")
+        )
+    }
+}
+
 /// Resolves a root-relative `scope::scope::endpoint` path (forward references
 /// are allowed because the whole tree is known).
 ///
@@ -161,7 +199,11 @@ fn find_endpoint(resolver: &Resolver, path: &syn::Path, context: &str) -> syn::R
                 coded(
                     syn::spanned::Spanned::span(path),
                     Code::Auth,
-                    format!("credential source endpoint `{}` does not name an endpoint (paths are root-relative: `scope::endpoint`); {context} must name a declared endpoint such as `endpoint auth::login`", segments.join("::")),
+                    format!(
+                        "credential source endpoint `{}` does not name an endpoint (paths are root-relative: `scope::endpoint`); {context} must name a declared endpoint such as `endpoint auth::login`{}",
+                        segments.join("::"),
+                        endpoint_path_suggestion(resolver, &segments.join("::"))
+                    ),
                 )
             });
         }
@@ -176,7 +218,8 @@ fn find_endpoint(resolver: &Resolver, path: &syn::Path, context: &str) -> syn::R
                 syn::spanned::Spanned::span(path),
                 Code::Auth,
                 format!(
-                    "credential source path segment `{segment}` does not name a scope ({context}); write the root-relative path `scope::endpoint` of a declared endpoint"
+                    "credential source path segment `{segment}` does not name a scope ({context}); write the root-relative path `scope::endpoint` of a declared endpoint{}",
+                    endpoint_path_suggestion(resolver, &segments.join("::"))
                 ),
             )
         })?;
@@ -206,10 +249,26 @@ fn resolve_local(
                     .iter()
                     .position(|credential| credential.logical == logical)
                     .ok_or_else(|| {
+                        let candidates = credentials.iter().filter(|credential| {
+                            match (&placement.kind, &credential.source) {
+                                (
+                                    AuthPlacementKind::Basic,
+                                    CredentialSource::ApiKey { .. }
+                                    | CredentialSource::Bearer { .. },
+                                ) => false,
+                                (_, CredentialSource::Basic { .. }) => {
+                                    matches!(&placement.kind, AuthPlacementKind::Basic)
+                                }
+                                _ => true,
+                            }
+                        });
                         coded(
                             placement.credential.span(),
                             Code::Auth,
-                            format!("unknown credential `{logical}` in the auth placement of {label}; declare `credential {logical} = source;` in the client `credentials {{ ... }}` block"),
+                            format!(
+                                "unknown credential `{logical}` in the auth placement of {label}; declare `credential {logical} = source;` in the client `credentials {{ ... }}` block{}",
+                                suggestion(&logical, candidates.map(|credential| credential.name.to_string()))
+                            ),
                         )
                     })?;
                 let kind = match &placement.kind {
