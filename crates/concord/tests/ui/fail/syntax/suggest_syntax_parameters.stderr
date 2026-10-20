@@ -1,0 +1,47 @@
+error: [C3-OWNER] a value declaration in client `QueryPlacement` is `name: Type` or `name?: Type`; did you mean `query`?
+ --> tests/ui/fail/syntax/suggest_syntax_parameters.rs:3:77
+  |
+3 | api! { client QueryPlacement { base "https://example.test/"; values { QUERY page: u32; } } }
+  |                                                                             ^^^^
+
+error: [C3-OWNER] a value declaration in client `HeaderPlacement` is `name: Type` or `name?: Type`; did you mean `header`?
+ --> tests/ui/fail/syntax/suggest_syntax_parameters.rs:4:78
+  |
+4 | api! { client HeaderPlacement { base "https://example.test/"; values { haeder("X-Trace") trace: String; } } }
+  |                                                                              ^
+
+error: [C3-OWNER] a value declaration in endpoint `BodyPlacement::send` is `name: Type` or `name?: Type`; did you mean `body`?
+ --> tests/ui/fail/syntax/suggest_syntax_parameters.rs:5:76
+  |
+5 | api! { client BodyPlacement { base "https://example.test/"; POST send(bodi input: String) -> (); } }
+  |                                                                            ^^^^^
+
+error: [C3-OWNER] a value declaration in endpoint `EachPlacement::read` is `name: Type` or `name?: Type`; did you mean `each`?
+ --> tests/ui/fail/syntax/suggest_syntax_parameters.rs:6:80
+  |
+6 | api! { client EachPlacement { base "https://example.test/"; GET read(query eac names: Vec<String>) -> (); } }
+  |                                                                                ^^^^^
+
+error: [C3-OWNER] each root value declaration of client `ValueVia` ends with `;`; write `name: Type;`; did you mean `via`?
+ --> tests/ui/fail/syntax/suggest_syntax_parameters.rs:7:81
+  |
+7 | api! { client ValueVia { base "https://example.test/"; values { query page: u32 vai Encoder; } } }
+  |                                                                                 ^^^
+
+error: expected `,`; did you mean `via`?
+ --> tests/ui/fail/syntax/suggest_syntax_parameters.rs:8:85
+  |
+8 | api! { client ParameterVia { base "https://example.test/"; GET read(query page: u32 vai Encoder) -> (); } }
+  |                                                                                     ^^^
+
+error: expected `,`; did you mean `via`?
+ --> tests/ui/fail/syntax/suggest_syntax_parameters.rs:9:84
+  |
+9 | api! { client BodyVia { base "https://example.test/"; POST send(body input: String vai Representation) -> (); } }
+  |                                                                                    ^^^
+
+error: expected curly braces; did you mean `via`?
+  --> tests/ui/fail/syntax/suggest_syntax_parameters.rs:10:78
+   |
+10 | api! { client OutputVia { base "https://example.test/"; GET read() -> String vai Representation; } }
+   |                                                                              ^^^

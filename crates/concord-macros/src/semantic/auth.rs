@@ -10,6 +10,7 @@ use super::{
     AuthChallenge, Child, Credential, CredentialSource, LocalAuth, Placement, PlacementFamily,
     PlacementKind, Resolver, Secret, Site, meta_from,
 };
+use crate::suggestions::name_suggestion as suggestion;
 use crate::syntax::ast::{AuthOperation, AuthPlacementKind, CredentialSource as SourceKind};
 use crate::syntax::diagnostics::{Code, coded, related};
 
@@ -38,7 +39,8 @@ pub(crate) fn resolve_credentials(resolver: &mut Resolver) -> syn::Result<()> {
                     name.span(),
                     Code::Auth,
                     format!(
-                        "unknown secret `{logical}` in the credentials of {client}; declare `secret {logical};` first"
+                        "unknown secret `{logical}` in the credentials of {client}; declare `secret {logical};` first{}",
+                        crate::suggestions::qualified_name_suggestion(&logical, secrets.iter().map(|secret| secret.logical.as_str()), "secret.")
                     ),
                 )
             })
@@ -161,7 +163,7 @@ fn find_endpoint(resolver: &Resolver, path: &syn::Path, context: &str) -> syn::R
                 coded(
                     syn::spanned::Spanned::span(path),
                     Code::Auth,
-                    format!("credential source endpoint `{}` does not name an endpoint (paths are root-relative: `scope::endpoint`); {context} must name a declared endpoint such as `endpoint auth::login`", segments.join("::")),
+                    format!("credential source endpoint `{}` does not name an endpoint (paths are root-relative: `scope::endpoint`); {context} must name a declared endpoint such as `endpoint auth::login`{}", segments.join("::"), endpoint_path_suggestion(resolver, &segments)),
                 )
             });
         }
@@ -176,7 +178,8 @@ fn find_endpoint(resolver: &Resolver, path: &syn::Path, context: &str) -> syn::R
                 syn::spanned::Spanned::span(path),
                 Code::Auth,
                 format!(
-                    "credential source path segment `{segment}` does not name a scope ({context}); write the root-relative path `scope::endpoint` of a declared endpoint"
+                    "credential source path segment `{segment}` does not name a scope ({context}); write the root-relative path `scope::endpoint` of a declared endpoint{}",
+                    endpoint_path_suggestion(resolver, &segments)
                 ),
             )
         })?;
@@ -186,6 +189,30 @@ fn find_endpoint(resolver: &Resolver, path: &syn::Path, context: &str) -> syn::R
         Code::Auth,
         format!("empty credential source path ({context}); write `endpoint scope::endpoint`"),
     ))
+}
+
+fn endpoint_path_suggestion(resolver: &Resolver, segments: &[String]) -> String {
+    let paths = resolver
+        .model
+        .endpoints
+        .iter()
+        .enumerate()
+        .filter_map(|(index, endpoint)| {
+            let source = &resolver.endpoint_sources[index];
+            if source.absence.is_some() || source.pagination.is_some() {
+                return None;
+            }
+            let mut path: Vec<_> = resolver
+                .model
+                .chain(endpoint.owner)
+                .into_iter()
+                .skip(1)
+                .map(|owner| resolver.model.owners[owner].logical.as_str())
+                .collect();
+            path.push(endpoint.logical.as_str());
+            Some(path.join("::"))
+        });
+    suggestion(&segments.join("::"), paths)
 }
 
 fn resolve_local(
@@ -209,7 +236,11 @@ fn resolve_local(
                         coded(
                             placement.credential.span(),
                             Code::Auth,
-                            format!("unknown credential `{logical}` in the auth placement of {label}; declare `credential {logical} = source;` in the client `credentials {{ ... }}` block"),
+                            format!("unknown credential `{logical}` in the auth placement of {label}; declare `credential {logical} = source;` in the client `credentials {{ ... }}` block{}", suggestion(&logical, credentials.iter().filter(|credential| match credential.source {
+                                CredentialSource::Basic { .. } => matches!(&placement.kind, AuthPlacementKind::Basic),
+                                CredentialSource::ApiKey { .. } | CredentialSource::Bearer { .. } => !matches!(&placement.kind, AuthPlacementKind::Basic),
+                                CredentialSource::Endpoint { .. } | CredentialSource::Custom { .. } => true,
+                            }).map(|credential| credential.logical.as_str()))),
                         )
                     })?;
                 let kind = match &placement.kind {

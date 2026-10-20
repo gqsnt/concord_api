@@ -1,0 +1,65 @@
+error: [C3-NAME] `TENANT_ID` is not a value of endpoint `SuggestCaseApi::read`; declare `TENANT_ID` as a value of this owner, or qualify an ancestor value as `client.TENANT_ID` or `<scope>.TENANT_ID`; did you mean `tenant_id`?
+  --> tests/ui/fail/names/suggest_values_ranking.rs:11:36
+   |
+11 |             headers { "X-Tenant" = TENANT_ID; }
+   |                                    ^^^^^^^^^
+
+error: [C3-NAME] `tenantid` is not a value of endpoint `SuggestUnderscoreApi::read`; declare `tenantid` as a value of this owner, or qualify an ancestor value as `client.tenantid` or `<scope>.tenantid`; did you mean `tenant_id`?
+  --> tests/ui/fail/names/suggest_values_ranking.rs:20:36
+   |
+20 |             headers { "X-Tenant" = tenantid; }
+   |                                    ^^^^^^^^
+
+error: [C3-NAME] `tenantId` is not a value of endpoint `SuggestNormalizedPrecedenceApi::read`; declare `tenantId` as a value of this owner, or qualify an ancestor value as `client.tenantId` or `<scope>.tenantId`; did you mean `client.tenant_id`?
+  --> tests/ui/fail/names/suggest_values_ranking.rs:31:36
+   |
+31 |             headers { "X-Tenant" = tenantId; }
+   |                                    ^^^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of endpoint `SuggestTranspositionApi::read`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`; did you mean `tenant`?
+  --> tests/ui/fail/names/suggest_values_ranking.rs:40:36
+   |
+40 |             headers { "X-Tenant" = tennat; }
+   |                                    ^^^^^^
+
+error: [C3-NAME] `abcxxxxxx` is not a value of endpoint `SuggestLongThresholdApi::read`; declare `abcxxxxxx` as a value of this owner, or qualify an ancestor value as `client.abcxxxxxx` or `<scope>.abcxxxxxx`; did you mean `abcyyyxxx`?
+  --> tests/ui/fail/names/suggest_values_ranking.rs:50:35
+   |
+50 |             headers { "X-Token" = abcxxxxxx; }
+   |                                   ^^^^^^^^^
+
+error: [C3-NAME] `abcxxxxx` is not a value of endpoint `SuggestShortThresholdApi::read`; declare `abcxxxxx` as a value of this owner, or qualify an ancestor value as `client.abcxxxxx` or `<scope>.abcxxxxx`
+  --> tests/ui/fail/names/suggest_values_ranking.rs:60:35
+   |
+60 |             headers { "X-Token" = abcxxxxx; }
+   |                                   ^^^^^^^^
+
+error: [C3-NAME] `cot` is not a value of endpoint `SuggestNearestTiesApi::read`; declare `cot` as a value of this owner, or qualify an ancestor value as `client.cot` or `<scope>.cot`; did you mean `cat` or `cut`?
+  --> tests/ui/fail/names/suggest_values_ranking.rs:70:35
+   |
+70 |             headers { "X-Token" = cot; }
+   |                                   ^^^
+
+error: [C3-NAME] `tenent` is not a value of endpoint `SuggestAncestorTiesApi::regional::read`; declare `tenent` as a value of this owner, or qualify an ancestor value as `client.tenent` or `<scope>.tenent`; did you mean `client.tenant` or `regional.tenant` or `tenet`?
+  --> tests/ui/fail/names/suggest_values_ranking.rs:82:40
+   |
+82 |                 headers { "X-Tenant" = tenent; }
+   |                                        ^^^^^^
+
+error: [C3-NAME] `astronaut` is not a value of endpoint `SuggestUnrelatedApi::read`; declare `astronaut` as a value of this owner, or qualify an ancestor value as `client.astronaut` or `<scope>.astronaut`
+  --> tests/ui/fail/names/suggest_values_ranking.rs:92:35
+   |
+92 |             headers { "X-Token" = astronaut; }
+   |                                   ^^^^^^^^^
+
+error: [C3-NAME] `tenant` is not a value of endpoint `SuggestExactAncestorApi::regional::read`; a bare name binds only the current owner's values — did you mean `regional.tenant` or `client.tenant`?
+   --> tests/ui/fail/names/suggest_values_ranking.rs:104:40
+    |
+104 |                 headers { "X-Tenant" = tenant; }
+    |                                        ^^^^^^
+
+error: [C3-NAME] `cafè` is not a value of endpoint `SuggestUnicodeApi::read`; declare `cafè` as a value of this owner, or qualify an ancestor value as `client.cafè` or `<scope>.cafè`; did you mean `café`?
+   --> tests/ui/fail/names/suggest_values_ranking.rs:115:35
+    |
+115 |             headers { "X-Token" = cafè; }
+    |                                   ^^^^

@@ -1,0 +1,101 @@
+error: [C3-OWNER] an `api!` invocation begins with exactly one `client Name { ... }` declaration; did you mean `client`?
+ --> tests/ui/fail/syntax/suggest_syntax_owners.rs:3:8
+  |
+3 | api! { cliet Root {} }
+  |        ^^^^^
+
+error: [C3-OWNER] unsupported client entry in client `Base`; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause; did you mean `base`?
+ --> tests/ui/fail/syntax/suggest_syntax_owners.rs:4:22
+  |
+4 | api! { client Base { bsae "https://example.test/"; } }
+  |                      ^^^^
+
+error: [C3-OWNER] unsupported client entry in client `Scope`; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause; did you mean `scope`?
+ --> tests/ui/fail/syntax/suggest_syntax_owners.rs:5:53
+  |
+5 | api! { client Scope { base "https://example.test/"; scpoe region() {} } }
+  |                                                     ^^^^^
+
+error: [C3-OWNER] unsupported client entry in client `Method`; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause; did you mean `GET`?
+ --> tests/ui/fail/syntax/suggest_syntax_owners.rs:6:54
+  |
+6 | api! { client Method { base "https://example.test/"; get read() -> (); } }
+  |                                                      ^^^
+
+error: [C3-OWNER] unsupported client entry in client `MethodTranspose`; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause; did you mean `DELETE`?
+ --> tests/ui/fail/syntax/suggest_syntax_owners.rs:7:63
+  |
+7 | api! { client MethodTranspose { base "https://example.test/"; DELEET remove() -> (); } }
+  |                                                               ^^^^^^
+
+error: [C3-OWNER] unsupported client entry in client `CustomMethod`; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause; did you mean `METHOD`?
+ --> tests/ui/fail/syntax/suggest_syntax_owners.rs:8:60
+  |
+8 | api! { client CustomMethod { base "https://example.test/"; METHDO("PURGE") purge() -> (); } }
+  |                                                            ^^^^^^
+
+error: [C3-OWNER] unsupported scope entry in scope `ScopeClause::region`; expected a child scope or endpoint, or a `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause; did you mean `response`?
+ --> tests/ui/fail/syntax/suggest_syntax_owners.rs:9:76
+  |
+9 | api! { client ScopeClause { base "https://example.test/"; scope region() { respnose Bytes; } } }
+  |                                                                            ^^^^^^^^
+
+error: [C3-OWNER] unsupported endpoint clause in endpoint `EndpointClause::read`; expected `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `id`, `status`, `effect`, `absent on`, `paginate` or `expose accepted_bytes`; did you mean `status`?
+  --> tests/ui/fail/syntax/suggest_syntax_owners.rs:10:81
+   |
+10 | api! { client EndpointClause { base "https://example.test/"; GET read() -> () { statuz success; } } }
+   |                                                                                 ^^^^^^
+
+error: [C3-OWNER] `effect` in endpoint `EndpointEffect::read` requires `safe`, `idempotent`, or `non_idempotent`; write `effect idempotent;`; did you mean `non_idempotent`?
+  --> tests/ui/fail/syntax/suggest_syntax_owners.rs:11:88
+   |
+11 | api! { client EndpointEffect { base "https://example.test/"; GET read() -> () { effect nonIdempotent; } } }
+   |                                                                                        ^^^^^^^^^^^^^
+
+error: [C3-OWNER] the only supported exposure of endpoint `EndpointExpose::read` is `expose accepted_bytes;`; did you mean `accepted_bytes`?
+  --> tests/ui/fail/syntax/suggest_syntax_owners.rs:12:88
+   |
+12 | api! { client EndpointExpose { base "https://example.test/"; GET read() -> () { expose acceptedBytes; } } }
+   |                                                                                        ^^^^^^^^^^^^^
+
+error: [C3-REP] a status item of endpoint `EndpointStatus::read` requires a three-digit HTTP status; write `200` or `200..=204`; did you mean `success`?
+  --> tests/ui/fail/syntax/suggest_syntax_owners.rs:13:88
+   |
+13 | api! { client EndpointStatus { base "https://example.test/"; GET read() -> () { status sucess; } } }
+   |                                                                                        ^^^^^^
+
+error: [C3-REP] expected `absent on STATUS (, STATUS)*;` in endpoint `EndpointAbsence::read`; write `absent on 404;`; did you mean `on`?
+  --> tests/ui/fail/syntax/suggest_syntax_owners.rs:14:89
+   |
+14 | api! { client EndpointAbsence { base "https://example.test/"; GET read() -> () { absent no 404; } } }
+   |                                                                                         ^^
+
+error: [C3-OWNER] unsupported endpoint clause in endpoint `Unrelated::read`; expected `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `id`, `status`, `effect`, `absent on`, `paginate` or `expose accepted_bytes`
+  --> tests/ui/fail/syntax/suggest_syntax_owners.rs:15:76
+   |
+15 | api! { client Unrelated { base "https://example.test/"; GET read() -> () { zzyzx; } } }
+   |                                                                            ^^^^^
+
+error: [C3-OWNER] unsupported endpoint clause in endpoint `InvalidCandidate::read`; expected `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `id`, `status`, `effect`, `absent on`, `paginate` or `expose accepted_bytes`
+  --> tests/ui/fail/syntax/suggest_syntax_owners.rs:17:83
+   |
+17 | api! { client InvalidCandidate { base "https://example.test/"; GET read() -> () { bsae "https://elsewhere.test/"; } } }
+   |                                                                                   ^^^^
+
+error: [C3-OWNER] unsupported client entry in client `ClientHeaders`; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause; did you mean `headers`?
+  --> tests/ui/fail/syntax/suggest_syntax_owners.rs:19:61
+   |
+19 | api! { client ClientHeaders { base "https://example.test/"; heders {} } }
+   |                                                             ^^^^^^
+
+error: [C3-OWNER] unsupported scope entry in scope `ScopeHeaders::region`; expected a child scope or endpoint, or a `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause; did you mean `headers`?
+  --> tests/ui/fail/syntax/suggest_syntax_owners.rs:20:77
+   |
+20 | api! { client ScopeHeaders { base "https://example.test/"; scope region() { heders {} } } }
+   |                                                                             ^^^^^^
+
+error: [C3-OWNER] unsupported endpoint clause in endpoint `EndpointHeaders::read`; expected `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `id`, `status`, `effect`, `absent on`, `paginate` or `expose accepted_bytes`; did you mean `headers`?
+  --> tests/ui/fail/syntax/suggest_syntax_owners.rs:21:82
+   |
+21 | api! { client EndpointHeaders { base "https://example.test/"; GET read() -> () { heders {} } } }
+   |                                                                                  ^^^^^^

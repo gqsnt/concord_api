@@ -1,4 +1,4 @@
-error: [C3-NAME] `account` is not a value of scope `Api::regional`; declare `account` as a value of this owner, or qualify an ancestor value as `client.account` or `<scope>.account`
+error: [C3-NAME] `account` is not a value of scope `Api::regional`; declare `account` as a value of this owner, or qualify an ancestor value as `client.account` or `<scope>.account`; `account` is declared by endpoint `Api::regional::read`, which is not visible here
   --> tests/ui/fail/rate_limits/rate_limit_scope_endpoint_dimension.rs:14:34
    |
 14 |                 key ["account" = account];

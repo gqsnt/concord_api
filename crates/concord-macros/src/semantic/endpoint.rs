@@ -2,6 +2,7 @@
 //! accepted-bytes exposure, identity and pagination (§9, §10, §12.4, §14).
 
 use super::{BoundDim, EffectDecl, Emission, InitValue, Pagination, Resolver, Site, Status, VRef};
+use crate::suggestions::name_suggestion as suggestion;
 use crate::syntax::ast::{InitValue as SourceInit, StatusDecl};
 use crate::syntax::diagnostics::{Code, coded, related};
 
@@ -232,7 +233,14 @@ pub(crate) fn resolve_pagination(resolver: &mut Resolver, endpoint: usize) -> sy
                 destination.span(),
                 Code::Page,
                 format!(
-                    "cursor destination `{name}` is not an endpoint-owned value of {label}; destinations are bare endpoint slots, never client or scope values, so declare `{name}` as a parameter of the endpoint"
+                    "cursor destination `{name}` is not an endpoint-owned value of {label}; destinations are bare endpoint slots, never client or scope values, so declare `{name}` as a parameter of the endpoint{}",
+                    suggestion(&name, entry.values.iter().enumerate().filter(|(index, value)| {
+                        let key = VRef { site, index: *index };
+                        !declaration.cursor.iter().any(|destination| super::surface::canonical_ident(destination) == value.logical)
+                            && !value.placement.as_ref().is_some_and(|placement| placement.each)
+                            && !entry.program.ops.iter().any(|op| matches!(&op.emission, Some(Emission::Each { value, .. }) if *value == key))
+                            && !entry.effective_rates.iter().any(|rate| rate.dims.iter().any(|dim| matches!(dim, BoundDim::Custom { value, .. } if *value == key)))
+                    }).map(|(_, value)| value.logical.as_str()))
                 ),
             ));
         };

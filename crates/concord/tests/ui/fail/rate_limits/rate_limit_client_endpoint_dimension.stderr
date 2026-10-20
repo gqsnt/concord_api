@@ -1,4 +1,4 @@
-error: [C3-NAME] `account` is not a value of client `Api`; declare `account` as a value of this owner, or qualify an ancestor value as `client.account` or `<scope>.account`
+error: [C3-NAME] `account` is not a value of client `Api`; declare `account` as a value of this owner, or qualify an ancestor value as `client.account` or `<scope>.account`; `account` is declared by endpoint `Api::read`, which is not visible here
   --> tests/ui/fail/rate_limits/rate_limit_client_endpoint_dimension.rs:12:30
    |
 12 |             key ["account" = account];

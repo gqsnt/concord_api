@@ -1,10 +1,10 @@
-error: [C3-OWNER] `secret` and `credential` declarations in client `FlatSecretApi` belong inside the client `credentials { ... }` block
+error: [C3-OWNER] `secret` and `credential` declarations in client `FlatSecretApi` belong inside the client `credentials { ... }` block; `secret` belongs in a client `credentials` block
   --> tests/ui/fail/syntax/ghost_syntax.rs:11:9
    |
 11 |         secret token;
    |         ^^^^^^
 
-error: [C3-OWNER] `secret` and `credential` declarations in client `FlatCredentialApi` belong inside the client `credentials { ... }` block
+error: [C3-OWNER] `secret` and `credential` declarations in client `FlatCredentialApi` belong inside the client `credentials { ... }` block; `credential` belongs in a client `credentials` block
   --> tests/ui/fail/syntax/ghost_syntax.rs:18:9
    |
 18 |         credential token = bearer(secret.token);

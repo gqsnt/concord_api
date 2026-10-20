@@ -1,0 +1,71 @@
+error: [C3-NAME] `clinet` is not the client or a visible ancestor scope of endpoint `SuggestClientQualifierApi::read`; qualify with `client.` or the name of an enclosing scope; did you mean `client.tenant`?
+  --> tests/ui/fail/names/suggest_values_qualifiers.rs:11:36
+   |
+11 |             headers { "X-Tenant" = clinet.tenant; }
+   |                                    ^^^^^^
+
+error: [C3-NAME] `regons` is not the client or a visible ancestor scope of endpoint `SuggestScopeQualifierApi::regions::read`; qualify with `client.` or the name of an enclosing scope; did you mean `regions.region`?
+  --> tests/ui/fail/names/suggest_values_qualifiers.rs:21:40
+   |
+21 |                 headers { "X-Region" = regons.region; }
+   |                                        ^^^^^^
+
+error: [C3-NAME] `RegionalZone` is not the client or a visible ancestor scope of endpoint `SuggestNormalizedQualifierApi::regional_zone::read`; qualify with `client.` or the name of an enclosing scope; did you mean `regional_zone.region`?
+  --> tests/ui/fail/names/suggest_values_qualifiers.rs:32:40
+   |
+32 |                 headers { "X-Region" = RegionalZone.region; }
+   |                                        ^^^^^^^^^^^^
+
+error: [C3-NAME] `regons` is not the client or a visible ancestor scope of endpoint `SuggestBothPartsApi::regions::read`; qualify with `client.` or the name of an enclosing scope; did you mean `regions.region`?
+  --> tests/ui/fail/names/suggest_values_qualifiers.rs:43:40
+   |
+43 |                 headers { "X-Region" = regons.regoin; }
+   |                                        ^^^^^^
+
+error: [C3-NAME] `account_ke` is not a value of client `SuggestQualifiedNamespaceApi` (referenced from endpoint `SuggestQualifiedNamespaceApi::read`); declare it there or qualify the owner that declares it; did you mean `client.account_id`?
+  --> tests/ui/fail/names/suggest_values_qualifiers.rs:55:44
+   |
+55 |             headers { "X-Account" = client.account_ke; }
+   |                                            ^^^^^^^^^^
+
+error: [C3-NAME] `moon` is not the client or a visible ancestor scope of endpoint `SuggestUnrelatedQualifierApi::read`; qualify with `client.` or the name of an enclosing scope
+  --> tests/ui/fail/names/suggest_values_qualifiers.rs:66:36
+   |
+66 |             headers { "X-Tenant" = moon.tenant; }
+   |                                    ^^^^
+
+error: [C3-MIGRATE] `regional.regoin` redundantly qualifies the current owner (scope `SuggestCurrentOwnerApi::regional`); write the bare name `regoin`; did you mean `region`?
+  --> tests/ui/fail/names/suggest_values_qualifiers.rs:77:36
+   |
+77 |             headers { "X-Region" = regional.regoin; }
+   |                                    ^^^^^^^^
+
+error: [C3-MIGRATE] `endpoint.tennat` is redundant qualification of the current endpoint (endpoint `SuggestEndpointQualifierApi::read`); write the bare name `tennat`; did you mean `tenant`?
+  --> tests/ui/fail/names/suggest_values_qualifiers.rs:87:36
+   |
+87 |             headers { "X-Tenant" = endpoint.tennat; }
+   |                                    ^^^^^^^^
+
+error: [C3-NAME] `typ` is not a value of client `SuggestRawValueApi` (referenced from endpoint `SuggestRawValueApi::read`); declare it there or qualify the owner that declares it; did you mean `client.r#type`?
+  --> tests/ui/fail/names/suggest_values_qualifiers.rs:98:41
+   |
+98 |             headers { "X-Type" = client.typ; }
+   |                                         ^^^
+
+error: [C3-NAME] `tyep` is not the client or a visible ancestor scope of endpoint `SuggestRawScopeApi::type::read`; qualify with `client.` or the name of an enclosing scope; did you mean `r#type.region`?
+   --> tests/ui/fail/names/suggest_values_qualifiers.rs:109:40
+    |
+109 |                 headers { "X-Region" = tyep.region; }
+    |                                        ^^^^
+
+error: [C3-NAME] `secrte` is not the client or a visible ancestor scope of endpoint `SuggestDslQualifierApi::secret::read`; qualify with `client.` or the name of an enclosing scope; did you mean `r#secret.tenant`?
+   --> tests/ui/fail/names/suggest_values_qualifiers.rs:121:40
+    |
+121 |                 headers { "X-Tenant" = secrte.tennat; }
+    |                                        ^^^^^^
+
+error: [C3-NAME] `conat` is not a value of endpoint `SuggestDslValueApi::read`; declare `conat` as a value of this owner, or qualify an ancestor value as `client.conat` or `<scope>.conat`; did you mean `r#concat`?
+   --> tests/ui/fail/names/suggest_values_qualifiers.rs:131:36
+    |
+131 |             headers { "X-Tenant" = conat; }
+    |                                    ^^^^^

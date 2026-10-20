@@ -1,0 +1,35 @@
+error: [C3-OWNER] unsupported attribute on client value of client `DefaultAttr`; supported attributes are docs, `#[deprecated]`, and (ordinary values only) `#[sensitive]` and `#[default]`; did you mean `default`?
+ --> tests/ui/fail/syntax/suggest_syntax_attributes.rs:3:68
+  |
+3 | api! { client DefaultAttr { base "https://example.test/"; values { #[defualt] page: u32; } } }
+  |                                                                    ^
+
+error: [C3-OWNER] unsupported attribute on client value of client `SensitiveAttr`; supported attributes are docs, `#[deprecated]`, and (ordinary values only) `#[sensitive]` and `#[default]`; did you mean `sensitive`?
+ --> tests/ui/fail/syntax/suggest_syntax_attributes.rs:4:70
+  |
+4 | api! { client SensitiveAttr { base "https://example.test/"; values { #[Sensitive] token: String; } } }
+  |                                                                      ^
+
+error: [C3-OWNER] unsupported attribute on client `DeprecatedAttr`; supported attributes are docs, `#[deprecated]`, and (ordinary values only) `#[sensitive]` and `#[default]`; did you mean `deprecated`?
+ --> tests/ui/fail/syntax/suggest_syntax_attributes.rs:5:8
+  |
+5 | api! { #[deprectaed] client DeprecatedAttr { base "https://example.test/"; } }
+  |        ^
+
+error: [C3-OWNER] unsupported attribute on client `DocAttr`; supported attributes are docs, `#[deprecated]`, and (ordinary values only) `#[sensitive]` and `#[default]`; did you mean `doc`?
+ --> tests/ui/fail/syntax/suggest_syntax_attributes.rs:6:8
+  |
+6 | api! { #[dco = "example"] client DocAttr { base "https://example.test/"; } }
+  |        ^
+
+error: [C3-OWNER] `#[deprecated]` on client `DeprecatedField` accepts only `note = "..."` and `since = "..."`; did you mean `since`?
+ --> tests/ui/fail/syntax/suggest_syntax_attributes.rs:7:21
+  |
+7 | api! { #[deprecated(snice = "1.0")] client DeprecatedField { base "https://example.test/"; } }
+  |                     ^^^^^
+
+error: [C3-OWNER] unsupported attribute on client `InvalidAttrCandidate`; supported attributes are docs, `#[deprecated]`, and (ordinary values only) `#[sensitive]` and `#[default]`
+ --> tests/ui/fail/syntax/suggest_syntax_attributes.rs:9:8
+  |
+9 | api! { #[sensitve] client InvalidAttrCandidate { base "https://example.test/"; } }
+  |        ^

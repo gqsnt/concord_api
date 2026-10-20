@@ -1,4 +1,4 @@
-error: [C3-MIGRATE] `endpoint.id` is redundant qualification of the current endpoint (endpoint `EndpointQualifiedApi::item`); write the bare name `id`
+error: [C3-MIGRATE] `endpoint.id` is redundant qualification of the current endpoint (endpoint `EndpointQualifiedApi::item`); write the bare name `id`; did you mean `id`?
   --> tests/ui/fail/names/redundant_current_owner_qualification.rs:11:18
    |
 11 |             path "items/{endpoint.id}";
@@ -10,7 +10,7 @@ error: [C3-PATH] in path template hole at bytes 6..19 of endpoint `EndpointQuali
 11 |             path "items/{endpoint.id}";
    |                  ^^^^^^^^^^^^^^^^^^^^^
 
-error: [C3-MIGRATE] `regional.region` redundantly qualifies the current owner (scope `ScopeQualifiedApi::regional`); write the bare name `region`
+error: [C3-MIGRATE] `regional.region` redundantly qualifies the current owner (scope `ScopeQualifiedApi::regional`); write the bare name `region`; did you mean `region`?
   --> tests/ui/fail/names/redundant_current_owner_qualification.rs:21:18
    |
 21 |             path "regions/{regional.region}";
@@ -22,13 +22,13 @@ error: [C3-PATH] in path template hole at bytes 8..25 of scope `ScopeQualifiedAp
 21 |             path "regions/{regional.region}";
    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: [C3-MIGRATE] `client.tenant` redundantly qualifies the current owner (client `ClientQualifiedApi`); write the bare name `tenant`
+error: [C3-MIGRATE] `client.tenant` redundantly qualifies the current owner (client `ClientQualifiedApi`); write the bare name `tenant`; did you mean `tenant`?
   --> tests/ui/fail/names/redundant_current_owner_qualification.rs:31:32
    |
 31 |         headers { "X-Tenant" = client.tenant; }
    |                                ^^^^^^
 
-error: [C3-MIGRATE] `endpoint.trace` is redundant qualification of the current endpoint (endpoint `EndpointQualifiedHeaderApi::item`); write the bare name `trace`
+error: [C3-MIGRATE] `endpoint.trace` is redundant qualification of the current endpoint (endpoint `EndpointQualifiedHeaderApi::item`); write the bare name `trace`; did you mean `trace`?
   --> tests/ui/fail/names/redundant_current_owner_qualification.rs:42:35
    |
 42 |             headers { "X-Trace" = endpoint.trace; }

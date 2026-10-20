@@ -113,6 +113,113 @@ impl Resolver {
         }
     }
 
+    fn correction_ref(&self, key: VRef, from: Site) -> String {
+        let value = self.model.value(key);
+        let name = crate::suggestions::identifier_spelling(&value.logical);
+        if key.site == from {
+            return name;
+        }
+        match key.site {
+            Site::Owner(0) => format!("client.{name}"),
+            Site::Owner(owner) => format!(
+                "{}.{name}",
+                crate::suggestions::identifier_spelling(&self.model.owners[owner].logical)
+            ),
+            Site::Endpoint(_) => name,
+        }
+    }
+
+    /// Valid value references paired with the name used for spelling distance.
+    fn visible_values(&self, site: Site) -> Vec<(String, String)> {
+        let mut sites = vec![site];
+        sites.extend(
+            self.owner_chain(site)
+                .into_iter()
+                .rev()
+                .map(Site::Owner)
+                .filter(|ancestor| *ancestor != site)
+                .filter(|ancestor| match ancestor {
+                    Site::Owner(0) => true,
+                    Site::Owner(owner) => !matches!(
+                        self.model.owners[*owner].logical.as_str(),
+                        "client" | "endpoint"
+                    ),
+                    Site::Endpoint(_) => false,
+                }),
+        );
+        sites
+            .into_iter()
+            .flat_map(|owner| {
+                self.site_values(owner)
+                    .iter()
+                    .enumerate()
+                    .map(move |(index, value)| {
+                        (
+                            value.logical.clone(),
+                            self.correction_ref(VRef { site: owner, index }, site),
+                        )
+                    })
+            })
+            .collect()
+    }
+
+    fn value_hint(&self, site: Site, name: &str, candidates: &[(String, String)]) -> String {
+        let names = crate::suggestions::best_matches(name, candidates.iter().map(|(name, _)| name));
+        let mut corrections: Vec<_> = candidates
+            .iter()
+            .filter(|(name, _)| names.contains(name))
+            .map(|(_, correction)| correction.clone())
+            .collect();
+        corrections.sort();
+        corrections.dedup();
+        if !corrections.is_empty() {
+            return crate::suggestions::format_matches(&corrections);
+        }
+        self.invisible_hint(site, name)
+    }
+
+    fn invisible_hint(&self, site: Site, name: &str) -> String {
+        if !crate::suggestions::best_matches(
+            name,
+            self.visible_values(site).iter().map(|(name, _)| name),
+        )
+        .is_empty()
+        {
+            return String::new();
+        }
+        let chain = self.owner_chain(site);
+        let invisible: Vec<_> = (0..self.model.owners.len())
+            .map(Site::Owner)
+            .chain((0..self.model.endpoints.len()).map(Site::Endpoint))
+            .filter(|candidate| {
+                *candidate != site
+                    && match candidate {
+                        Site::Owner(owner) => !chain.contains(owner),
+                        Site::Endpoint(_) => true,
+                    }
+            })
+            .collect();
+        let names = crate::suggestions::best_matches(
+            name,
+            invisible
+                .iter()
+                .flat_map(|owner| self.site_values(*owner).iter().map(|value| &value.logical)),
+        );
+        let mut hint = String::new();
+        for owner in invisible {
+            for value in self.site_values(owner) {
+                if names.contains(&value.logical) {
+                    hint.push_str(&format!(
+                        "; `{}` is declared by {}, which is not visible here",
+                        value.logical,
+                        self.site_label(owner)
+                    ));
+                }
+            }
+        }
+        hint
+    }
+
     /// Resolves one reference in the context of `site` (LANG-03).
     pub(crate) fn resolve_ref(&self, site: Site, reference: &Reference) -> syn::Result<VRef> {
         let name = canonical_ident(&reference.name);
@@ -128,20 +235,23 @@ impl Resolver {
             }
             let mut suggestions = Vec::new();
             for ancestor in self.owner_chain(site).into_iter().rev() {
-                if Site::Owner(ancestor) == site {
+                if Site::Owner(ancestor) == site
+                    || (ancestor != 0
+                        && matches!(
+                            self.model.owners[ancestor].logical.as_str(),
+                            "client" | "endpoint"
+                        ))
+                {
                     continue;
                 }
-                if find(Site::Owner(ancestor)).is_some() {
-                    suggestions.push(if ancestor == 0 {
-                        format!("client.{name}")
-                    } else {
-                        format!("{}.{name}", self.model.owners[ancestor].logical)
-                    });
+                if let Some(found) = find(Site::Owner(ancestor)) {
+                    suggestions.push(self.correction_ref(found, site));
                 }
             }
             let hint = if suggestions.is_empty() {
+                let spelling = self.value_hint(site, &name, &self.visible_values(site));
                 format!(
-                    "; declare `{name}` as a value of this owner, or qualify an ancestor value as `client.{name}` or `<scope>.{name}`"
+                    "; declare `{name}` as a value of this owner, or qualify an ancestor value as `client.{name}` or `<scope>.{name}`{spelling}"
                 )
             } else {
                 format!(
@@ -157,11 +267,15 @@ impl Resolver {
         };
         let qualifier = canonical_ident(owner);
         if qualifier == "endpoint" {
+            let hint = crate::suggestions::name_suggestion(
+                &name,
+                self.site_values(site).iter().map(|value| &value.logical),
+            );
             return Err(coded(
                 reference.span,
                 Code::Migrate,
                 format!(
-                    "`endpoint.{name}` is redundant qualification of the current endpoint ({}); write the bare name `{name}`",
+                    "`endpoint.{name}` is redundant qualification of the current endpoint ({}); write the bare name `{name}`{hint}",
                     self.site_label(site)
                 ),
             ));
@@ -173,11 +287,81 @@ impl Resolver {
             let Some(target) = chain.iter().copied().find(|ancestor| {
                 *ancestor != 0 && self.model.owners[*ancestor].logical == qualifier
             }) else {
+                let eligible: Vec<_> = chain
+                    .iter()
+                    .copied()
+                    .filter(|ancestor| Site::Owner(*ancestor) != site)
+                    .filter(|ancestor| {
+                        *ancestor == 0
+                            || !matches!(
+                                self.model.owners[*ancestor].logical.as_str(),
+                                "client" | "endpoint"
+                            )
+                    })
+                    .filter(|ancestor| {
+                        !crate::suggestions::best_matches(
+                            &name,
+                            self.model.owners[*ancestor]
+                                .values
+                                .iter()
+                                .map(|value| &value.logical),
+                        )
+                        .is_empty()
+                    })
+                    .map(|ancestor| {
+                        (
+                            if ancestor == 0 {
+                                "client".to_owned()
+                            } else {
+                                self.model.owners[ancestor].logical.clone()
+                            },
+                            ancestor,
+                        )
+                    })
+                    .collect();
+                let qualifiers = crate::suggestions::best_matches(
+                    &qualifier,
+                    eligible.iter().map(|(qualifier, _)| qualifier),
+                );
+                let eligible: Vec<_> = eligible
+                    .into_iter()
+                    .filter(|(qualifier, _)| qualifiers.contains(qualifier))
+                    .collect();
+                let names = crate::suggestions::best_matches(
+                    &name,
+                    eligible.iter().flat_map(|(_, ancestor)| {
+                        self.model.owners[*ancestor]
+                            .values
+                            .iter()
+                            .map(|value| &value.logical)
+                    }),
+                );
+                let mut corrections = Vec::new();
+                for (_, ancestor) in eligible {
+                    for (index, value) in self.model.owners[ancestor].values.iter().enumerate() {
+                        if names.contains(&value.logical) {
+                            corrections.push(self.correction_ref(
+                                VRef {
+                                    site: Site::Owner(ancestor),
+                                    index,
+                                },
+                                site,
+                            ));
+                        }
+                    }
+                }
+                corrections.sort();
+                corrections.dedup();
+                let hint = if corrections.is_empty() {
+                    self.invisible_hint(site, &name)
+                } else {
+                    crate::suggestions::format_matches(&corrections)
+                };
                 return Err(coded(
                     owner.span(),
                     Code::Name,
                     format!(
-                        "`{qualifier}` is not the client or a visible ancestor scope of {}; qualify with `client.` or the name of an enclosing scope",
+                        "`{qualifier}` is not the client or a visible ancestor scope of {}; qualify with `client.` or the name of an enclosing scope{hint}",
                         self.site_label(site)
                     ),
                 ));
@@ -185,21 +369,29 @@ impl Resolver {
             target
         };
         if Site::Owner(target) == site {
+            let hint = crate::suggestions::name_suggestion(
+                &name,
+                self.site_values(site).iter().map(|value| &value.logical),
+            );
             return Err(coded(
                 reference.span,
                 Code::Migrate,
                 format!(
-                    "`{qualifier}.{name}` redundantly qualifies the current owner ({}); write the bare name `{name}`",
+                    "`{qualifier}.{name}` redundantly qualifies the current owner ({}); write the bare name `{name}`{hint}",
                     self.site_label(site)
                 ),
             ));
         }
         find(Site::Owner(target)).ok_or_else(|| {
+            let candidates: Vec<_> = self.model.owners[target].values.iter().enumerate().map(|(index, value)| {
+                (value.logical.clone(), self.correction_ref(VRef { site: Site::Owner(target), index }, site))
+            }).collect();
+            let hint = self.value_hint(site, &name, &candidates);
             coded(
                 reference.name.span(),
                 Code::Name,
                 format!(
-                    "`{name}` is not a value of {} (referenced from {}); declare it there or qualify the owner that declares it",
+                    "`{name}` is not a value of {} (referenced from {}); declare it there or qualify the owner that declares it{hint}",
                     self.model.owner_label(target),
                     self.site_label(site)
                 ),

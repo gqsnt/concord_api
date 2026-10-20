@@ -9,6 +9,7 @@ use super::{
     BoundDim, FormalDim, Policy, RateSource, RateUse, Resolver, Site, Window, WindowSet, Windows,
     meta_from,
 };
+use crate::suggestions::name_suggestion as suggestion;
 use crate::syntax::ast::{
     BoundDimension, FormalDimension, RateAttachment, WindowLiteral, WindowSource,
 };
@@ -86,8 +87,9 @@ fn window_set_index(resolver: &Resolver, name: &syn::Ident) -> syn::Result<usize
                 name.span(),
                 Code::Rate,
                 format!(
-                    "unknown window set `{logical}`; declare `windows {logical} {{ allow N per DURATION; }}` in the `rate_limits` registry of {}",
-                    resolver.model.owner_label(0)
+                    "unknown window set `{logical}`; declare `windows {logical} {{ allow N per DURATION; }}` in the `rate_limits` registry of {}{}",
+                    resolver.model.owner_label(0),
+                    suggestion(&logical, resolver.model.client.window_sets.iter().map(|set| set.logical.as_str()))
                 ),
             )
         })
@@ -174,7 +176,8 @@ pub(crate) fn resolve_registry(resolver: &mut Resolver) -> syn::Result<()> {
                             formal.span(),
                             Code::Rate,
                             format!(
-                                "`{name}` is not a formal of policy `{logical}` of {client}; bare names in a policy refer to its formals, so declare `policy {logical}(..., {name})` or correct the name"
+                                "`{name}` is not a formal of policy `{logical}` of {client}; bare names in a policy refer to its formals, so declare `policy {logical}(..., {name})` or correct the name{}",
+                                suggestion(&name, &formal_names)
                             ),
                         ));
                     };
@@ -309,7 +312,16 @@ fn resolve_attachment(
                     name.span(),
                     Code::Rate,
                     format!(
-                        "unknown rate policy `{logical}` attached by {label}; declare `policy {logical}(...) {{ ... }}` in the client `rate_limits` registry"
+                        "unknown rate policy `{logical}` attached by {label}; declare `policy {logical}(...) {{ ... }}` in the client `rate_limits` registry{}",
+                        suggestion(
+                            &logical,
+                            resolver
+                                .model
+                                .client
+                                .policies
+                                .iter()
+                                .map(|policy| policy.logical.as_str())
+                        )
                     ),
                 ));
             };
@@ -326,7 +338,20 @@ fn resolve_attachment(
                         formal.span(),
                         Code::Rate,
                         format!(
-                            "policy `{logical}` has no formal `{formal_name}`; bindings are exact (attachment in {label}), so bind only the policy's declared formals"
+                            "policy `{logical}` has no formal `{formal_name}`; bindings are exact (attachment in {label}), so bind only the policy's declared formals{}",
+                            suggestion(
+                                &formal_name,
+                                policy
+                                    .formals
+                                    .iter()
+                                    .filter(|candidate| {
+                                        let name = canonical_ident(candidate);
+                                        !bindings
+                                            .iter()
+                                            .any(|(bound, _)| canonical_ident(bound) == name)
+                                    })
+                                    .map(canonical_ident)
+                            )
                         ),
                     ));
                 };

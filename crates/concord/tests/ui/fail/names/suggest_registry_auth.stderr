@@ -1,0 +1,47 @@
+error: [C3-AUTH] unknown credential `SessionToken` in the auth placement of endpoint `CredentialSpelling::read`; declare `credential SessionToken = source;` in the client `credentials { ... }` block; did you mean `session_token`?
+  --> tests/ui/fail/names/suggest_registry_auth.rs:15:27
+   |
+15 |             auth { bearer SessionToken; }
+   |                           ^^^^^^^^^^^^
+
+error: [C3-AUTH] unknown credential `tiken` in the auth placement of endpoint `AmbiguousCredential::read`; declare `credential tiken = source;` in the client `credentials { ... }` block; did you mean `taken` or `token`?
+  --> tests/ui/fail/names/suggest_registry_auth.rs:30:27
+   |
+30 |             auth { bearer tiken; }
+   |                           ^^^^^
+
+error: [C3-AUTH] unknown credential `logn` in the auth placement of endpoint `BasicCandidates::read`; declare `credential logn = source;` in the client `credentials { ... }` block; did you mean `login`?
+  --> tests/ui/fail/names/suggest_registry_auth.rs:46:26
+   |
+46 |             auth { basic logn; }
+   |                          ^^^^
+
+error: [C3-AUTH] unknown credential `logn` in the auth placement of endpoint `BearerCandidates::read`; declare `credential logn = source;` in the client `credentials { ... }` block; did you mean `logon`?
+  --> tests/ui/fail/names/suggest_registry_auth.rs:62:27
+   |
+62 |             auth { bearer logn; }
+   |                           ^^^^
+
+error: [C3-AUTH] unknown credential `unrelated` in the auth placement of endpoint `DistantCredential::read`; declare `credential unrelated = source;` in the client `credentials { ... }` block
+  --> tests/ui/fail/names/suggest_registry_auth.rs:75:27
+   |
+75 |             auth { bearer unrelated; }
+   |                           ^^^^^^^^^
+
+error: [C3-AUTH] credential source path segment `accuonts` does not name a scope (credential `session` of client `CredentialSourcePath`); write the root-relative path `scope::endpoint` of a declared endpoint; did you mean `accounts::login`?
+  --> tests/ui/fail/names/suggest_registry_auth.rs:84:43
+   |
+84 |             credential session = endpoint accuonts::logni;
+   |                                           ^^^^^^^^
+
+error: [C3-AUTH] credential source endpoint `accounts::logn` does not name an endpoint (paths are root-relative: `scope::endpoint`); credential `session` of client `CredentialSourceEndpoint` must name a declared endpoint such as `endpoint auth::login`; did you mean `accounts::login`?
+  --> tests/ui/fail/names/suggest_registry_auth.rs:96:43
+   |
+96 |             credential session = endpoint accounts::logn;
+   |                                           ^^^^^^^^
+
+error: [C3-AUTH] credential source endpoint `auth::logn` does not name an endpoint (paths are root-relative: `scope::endpoint`); credential `session` of client `IncompatibleCredentialSource` must name a declared endpoint such as `endpoint auth::login`
+   --> tests/ui/fail/names/suggest_registry_auth.rs:109:43
+    |
+109 |             credential session = endpoint auth::logn;
+    |                                           ^^^^

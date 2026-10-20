@@ -1,0 +1,89 @@
+error: [C3-NAME] `tenant` is not a value of endpoint `SuggestSiblingExactApi::public::read`; declare `tenant` as a value of this owner, or qualify an ancestor value as `client.tenant` or `<scope>.tenant`; `tenant` is declared by scope `SuggestSiblingExactApi::hidden`, which is not visible here
+  --> tests/ui/fail/names/suggest_values_visibility.rs:16:40
+   |
+16 |                 headers { "X-Tenant" = tenant; }
+   |                                        ^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of endpoint `SuggestSiblingTypoApi::public::read`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`; `tenant` is declared by scope `SuggestSiblingTypoApi::hidden`, which is not visible here
+  --> tests/ui/fail/names/suggest_values_visibility.rs:30:40
+   |
+30 |                 headers { "X-Tenant" = tennat; }
+   |                                        ^^^^^^
+
+error: [C3-NAME] `tenant` is not a value of scope `SuggestDescendantExactApi::outer`; declare `tenant` as a value of this owner, or qualify an ancestor value as `client.tenant` or `<scope>.tenant`; `tenant` is declared by scope `SuggestDescendantExactApi::outer::inner`, which is not visible here
+  --> tests/ui/fail/names/suggest_values_visibility.rs:40:36
+   |
+40 |             headers { "X-Tenant" = tenant; }
+   |                                    ^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of scope `SuggestDescendantTypoApi::outer`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`; `tenant` is declared by scope `SuggestDescendantTypoApi::outer::inner`, which is not visible here
+  --> tests/ui/fail/names/suggest_values_visibility.rs:52:36
+   |
+52 |             headers { "X-Tenant" = tennat; }
+   |                                    ^^^^^^
+
+error: [C3-NAME] `tenant` is not a value of endpoint `SuggestOtherEndpointExactApi::read`; declare `tenant` as a value of this owner, or qualify an ancestor value as `client.tenant` or `<scope>.tenant`; `tenant` is declared by endpoint `SuggestOtherEndpointExactApi::first`, which is not visible here
+  --> tests/ui/fail/names/suggest_values_visibility.rs:65:36
+   |
+65 |             headers { "X-Tenant" = tenant; }
+   |                                    ^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of endpoint `SuggestOtherEndpointTypoApi::read`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`; `tenant` is declared by endpoint `SuggestOtherEndpointTypoApi::first`, which is not visible here
+  --> tests/ui/fail/names/suggest_values_visibility.rs:75:36
+   |
+75 |             headers { "X-Tenant" = tennat; }
+   |                                    ^^^^^^
+
+error: [C3-NAME] `hidden` is not the client or a visible ancestor scope of endpoint `SuggestSiblingQualifiedExactApi::read`; qualify with `client.` or the name of an enclosing scope; `tenant` is declared by scope `SuggestSiblingQualifiedExactApi::hidden`, which is not visible here
+  --> tests/ui/fail/names/suggest_values_visibility.rs:88:36
+   |
+88 |             headers { "X-Tenant" = hidden.tenant; }
+   |                                    ^^^^^^
+
+error: [C3-NAME] `hiden` is not the client or a visible ancestor scope of endpoint `SuggestSiblingQualifiedTypoApi::read`; qualify with `client.` or the name of an enclosing scope; `tenant` is declared by scope `SuggestSiblingQualifiedTypoApi::hidden`, which is not visible here
+   --> tests/ui/fail/names/suggest_values_visibility.rs:100:36
+    |
+100 |             headers { "X-Tenant" = hiden.tennat; }
+    |                                    ^^^^^
+
+error: [C3-NAME] `tennat` is not a value of client `SuggestQualifiedInvisibleValueApi` (referenced from endpoint `SuggestQualifiedInvisibleValueApi::read`); declare it there or qualify the owner that declares it; `tenant` is declared by scope `SuggestQualifiedInvisibleValueApi::hidden`, which is not visible here
+   --> tests/ui/fail/names/suggest_values_visibility.rs:113:43
+    |
+113 |             headers { "X-Tenant" = client.tennat; }
+    |                                           ^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of endpoint `SuggestVisibleBeforeInvisibleExactApi::read`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`; did you mean `tenant`?
+   --> tests/ui/fail/names/suggest_values_visibility.rs:126:36
+    |
+126 |             headers { "X-Tenant" = tennat; }
+    |                                    ^^^^^^
+
+error: [C3-NAME] `tenantid` is not a value of endpoint `SuggestVisibleNormalizedApi::read`; declare `tenantid` as a value of this owner, or qualify an ancestor value as `client.tenantid` or `<scope>.tenantid`; did you mean `tenant_id`?
+   --> tests/ui/fail/names/suggest_values_visibility.rs:139:36
+    |
+139 |             headers { "X-Tenant" = tenantid; }
+    |                                    ^^^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of endpoint `SuggestVisibleAncestorApi::read`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`; did you mean `client.tenant`?
+   --> tests/ui/fail/names/suggest_values_visibility.rs:153:36
+    |
+153 |             headers { "X-Tenant" = tennat; }
+    |                                    ^^^^^^
+
+error: [C3-NAME] `astronaut` is not a value of endpoint `SuggestUnrelatedInvisibleApi::read`; declare `astronaut` as a value of this owner, or qualify an ancestor value as `client.astronaut` or `<scope>.astronaut`
+   --> tests/ui/fail/names/suggest_values_visibility.rs:165:35
+    |
+165 |             headers { "X-Token" = astronaut; }
+    |                                   ^^^^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of client `SuggestQualifiedVisibleSuppressesInvisibleApi` (referenced from endpoint `SuggestQualifiedVisibleSuppressesInvisibleApi::read`); declare it there or qualify the owner that declares it
+   --> tests/ui/fail/names/suggest_values_visibility.rs:179:43
+    |
+179 |             headers { "X-Tenant" = client.tennat; }
+    |                                           ^^^^^^
+
+error: [C3-NAME] `moon` is not the client or a visible ancestor scope of endpoint `SuggestUnknownQualifierVisibleSuppressesInvisibleApi::read`; qualify with `client.` or the name of an enclosing scope
+   --> tests/ui/fail/names/suggest_values_visibility.rs:191:36
+    |
+191 |             headers { "X-Tenant" = moon.tennat; }
+    |                                    ^^^^

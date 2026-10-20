@@ -19,7 +19,8 @@ use super::ast::{
     Attrs, BodyDecl, Deprecation, Placement, PlacementFamily, StableValue, ValueDecl,
 };
 use super::diagnostics::{
-    Code, coded, related, validate_integer, validate_public_header_name, validate_query_key,
+    Code, coded, keyword_suggestion, parse_with_keywords, related, validate_integer,
+    validate_public_header_name, validate_query_key,
 };
 use super::keyword;
 use crate::semantic::surface::canonical_ident;
@@ -140,11 +141,27 @@ pub(crate) fn attrs_from(
                 ),
             ));
         }
+        let mut candidates = vec!["doc"];
+        if site != AttrSite::Body && result.deprecated.is_none() {
+            candidates.push("deprecated");
+        }
+        if site == AttrSite::Value {
+            if result.sensitive.is_none() {
+                candidates.push("sensitive");
+            }
+            if result.default.is_none() {
+                candidates.push("default");
+            }
+        }
+        let hint = path
+            .get_ident()
+            .map(|written| crate::suggestions::suggestion(&canonical_ident(written), candidates))
+            .unwrap_or_default();
         return Err(coded(
             attribute.span(),
             Code::Owner,
             format!(
-                "unsupported attribute on {subject}; supported attributes are docs, `#[deprecated]`, and (ordinary values only) `#[sensitive]` and `#[default]`"
+                "unsupported attribute on {subject}; supported attributes are docs, `#[deprecated]`, and (ordinary values only) `#[sensitive]` and `#[default]`{hint}"
             ),
         ));
     }
@@ -189,8 +206,12 @@ fn parse_deprecation(attribute: &Attribute, subject: &str) -> syn::Result<Deprec
                 } else if meta.path.is_ident("since") {
                     &mut since
                 } else {
+                    let candidates = [("note", note.is_none()), ("since", since.is_none())];
+                    let hint = meta.path.get_ident().map(|written| {
+                        crate::suggestions::suggestion(&canonical_ident(written), candidates.into_iter().filter_map(|(name, available)| available.then_some(name)))
+                    }).unwrap_or_default();
                     return Err(meta.error(format!(
-                        "[C3-OWNER] `#[deprecated]` on {subject} accepts only `note = \"...\"` and `since = \"...\"`"
+                        "[C3-OWNER] `#[deprecated]` on {subject} accepts only `note = \"...\"` and `since = \"...\"`{hint}"
                     )));
                 };
                 if slot.is_some() {
@@ -246,7 +267,8 @@ pub(crate) fn parse_values(input: ParseStream<'_>, owner: &str) -> syn::Result<V
         let value = parse_ordinary_value(&body, attributes, values.len(), "client value", owner)?;
         body.parse::<Token![;]>().map_err(|_| {
             body.error(format!(
-                "[C3-OWNER] each root value declaration of {owner} ends with `;`; write `name: Type;`"
+                "[C3-OWNER] each root value declaration of {owner} ends with `;`; write `name: Type;`{}",
+                keyword_suggestion(&body, if value.placement.is_some() && value.via.is_none() && value.initializer.is_none() { &["via"] } else { &[] })
             ))
         })?;
         insert_name(&mut names, &value.name, "client value", owner)?;
@@ -327,7 +349,17 @@ pub(crate) fn parse_parameters(
         if input.is_empty() {
             break;
         }
-        input.parse::<Token![,]>()?;
+        let via_allowed = if let Some(body) = &body {
+            body.position == position - 1 && body.via.is_none()
+        } else {
+            false
+        } || parameters.last().is_some_and(|value| {
+            value.position == position - 1
+                && value.placement.is_some()
+                && value.via.is_none()
+                && value.initializer.is_none()
+        });
+        parse_with_keywords::<Token![,]>(input, if via_allowed { &["via"] } else { &[] })?;
     }
     Ok((parameters, body))
 }
@@ -457,6 +489,7 @@ pub(crate) fn parse_ordinary_value(
     owner: &str,
 ) -> syn::Result<ValueDecl> {
     let attrs = attrs_from(attributes, AttrSite::Value, what, owner)?;
+    let placement_marker = input.fork();
     let placement = parse_placement(input, owner)?;
     let name: Ident = input.parse()?;
     if name == "endpoint" || name == "client" || canonical_ident(&name).starts_with("__concord") {
@@ -471,8 +504,20 @@ pub(crate) fn parse_ordinary_value(
     }
     let optional = parse_optional_marker(input);
     input.parse::<Token![:]>().map_err(|_| {
+        let candidates: &[&str] = if placement.is_none() && placement_follows(&placement_marker) {
+            if what == "endpoint parameter" {
+                &["query", "header", "body"]
+            } else {
+                &["query", "header"]
+            }
+        } else if placement.as_ref().is_some_and(|placement| !placement.each) && input.peek(Ident) {
+            &["each"]
+        } else {
+            &[]
+        };
         input.error(format!(
-            "[C3-OWNER] a value declaration in {owner} is `name: Type` or `name?: Type`"
+            "[C3-OWNER] a value declaration in {owner} is `name: Type` or `name?: Type`{}",
+            crate::suggestions::suggestion(&canonical_ident(&name), candidates)
         ))
     })?;
     let ty: Type = input.parse()?;

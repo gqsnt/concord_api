@@ -7,7 +7,7 @@ use syn::{
 };
 
 use super::ast::{InitValue, PaginationDecl};
-use super::diagnostics::{Code, coded, related};
+use super::diagnostics::{Code, coded, keyword_suggestion, related};
 use super::keyword;
 use super::request::parse_reference;
 use super::values::parse_stable_value;
@@ -17,7 +17,8 @@ pub(crate) fn parse_pagination(input: ParseStream<'_>, owner: &str) -> syn::Resu
     input.parse::<keyword::paginate>()?;
     input.parse::<keyword::via>().map_err(|_| {
         input.error(format!(
-            "[C3-PAGE] pagination of {owner} is `paginate via Controller {{ init Init {{ ... }}; cursor -> slot; }}`"
+            "[C3-PAGE] pagination of {owner} is `paginate via Controller {{ init Init {{ ... }}; cursor -> slot; }}`{}",
+            keyword_suggestion(input, &["via"])
         ))
     })?;
     let controller: Type = input.parse()?;
@@ -38,7 +39,8 @@ pub(crate) fn parse_pagination(input: ParseStream<'_>, owner: &str) -> syn::Resu
             body.span(),
             Code::Page,
             format!(
-                "the pagination block of {owner} begins with `init InitType {{ field: value, ... }};`"
+                "the pagination block of {owner} begins with `init InitType {{ field: value, ... }};`{}",
+                keyword_suggestion(&body, &["init"])
             ),
         ));
     }
@@ -97,7 +99,8 @@ pub(crate) fn parse_pagination(input: ParseStream<'_>, owner: &str) -> syn::Resu
             body.span(),
             Code::Page,
             format!(
-                "the pagination block of {owner} ends with `cursor -> slot;` or `cursor -> (a, b);`"
+                "the pagination block of {owner} ends with `cursor -> slot;` or `cursor -> (a, b);`{}",
+                keyword_suggestion(&body, &["cursor"])
             ),
         ));
     }

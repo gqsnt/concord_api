@@ -1,0 +1,41 @@
+error: [C3-PAGE] cursor destination `PageOffset` is not an endpoint-owned value of endpoint `CursorSpelling::read`; destinations are bare endpoint slots, never client or scope values, so declare `PageOffset` as a parameter of the endpoint; did you mean `page_offset`?
+  --> tests/ui/fail/names/suggest_registry_pagination.rs:14:27
+   |
+14 |                 cursor -> PageOffset;
+   |                           ^^^^^^^^^^
+
+error: [C3-PAGE] cursor destination `offest` is not an endpoint-owned value of endpoint `CursorNamespace::read`; destinations are bare endpoint slots, never client or scope values, so declare `offest` as a parameter of the endpoint
+  --> tests/ui/fail/names/suggest_registry_pagination.rs:27:27
+   |
+27 |                 cursor -> offest;
+   |                           ^^^^^^
+
+error: [C3-PAGE] cursor destination `offest` is not an endpoint-owned value of endpoint `CursorScalarCandidates::read`; destinations are bare endpoint slots, never client or scope values, so declare `offest` as a parameter of the endpoint; did you mean `offsets`?
+  --> tests/ui/fail/names/suggest_registry_pagination.rs:39:27
+   |
+39 |                 cursor -> offest;
+   |                           ^^^^^^
+
+error: [C3-PAGE] cursor destination `offest` is not an endpoint-owned value of endpoint `CursorEachEmissionCandidates::read`; destinations are bare endpoint slots, never client or scope values, so declare `offest` as a parameter of the endpoint; did you mean `offsets`?
+  --> tests/ui/fail/names/suggest_registry_pagination.rs:52:27
+   |
+52 |                 cursor -> offest;
+   |                           ^^^^^^
+
+error: [C3-PAGE] cursor destination `offest` is not an endpoint-owned value of endpoint `CursorRateCandidates::read`; destinations are bare endpoint slots, never client or scope values, so declare `offest` as a parameter of the endpoint; did you mean `offsets`?
+  --> tests/ui/fail/names/suggest_registry_pagination.rs:69:27
+   |
+69 |                 cursor -> offest;
+   |                           ^^^^^^
+
+error: [C3-PAGE] cursor destination `offest` is not an endpoint-owned value of endpoint `CursorAlreadyMapped::read`; destinations are bare endpoint slots, never client or scope values, so declare `offest` as a parameter of the endpoint; did you mean `offsets`?
+  --> tests/ui/fail/names/suggest_registry_pagination.rs:81:28
+   |
+81 |                 cursor -> (offest, offset);
+   |                            ^^^^^^
+
+error: [C3-PAGE] cursor destination `offest` is not an endpoint-owned value of endpoint `CursorBodyCandidates::read`; destinations are bare endpoint slots, never client or scope values, so declare `offest` as a parameter of the endpoint; did you mean `offsets`?
+  --> tests/ui/fail/names/suggest_registry_pagination.rs:94:27
+   |
+94 |                 cursor -> offest;
+   |                           ^^^^^^

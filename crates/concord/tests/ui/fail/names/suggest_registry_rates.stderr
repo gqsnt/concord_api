@@ -1,0 +1,53 @@
+error: [C3-RATE] unknown rate policy `AccountReads` attached by client `PolicySpelling`; declare `policy AccountReads(...) { ... }` in the client `rate_limits` registry; did you mean `account_reads`?
+  --> tests/ui/fail/names/suggest_registry_rates.rs:17:20
+   |
+17 |         rate_limit AccountReads();
+   |                    ^^^^^^^^^^^^
+
+error: [C3-RATE] unknown window set `StandardWindow`; declare `windows StandardWindow { allow N per DURATION; }` in the `rate_limits` registry of client `WindowSpelling`; did you mean `standard_window`?
+  --> tests/ui/fail/names/suggest_registry_rates.rs:29:23
+   |
+29 |                 using StandardWindow;
+   |                       ^^^^^^^^^^^^^^
+
+error: [C3-RATE] unknown window set `standrad`; declare `windows standrad { allow N per DURATION; }` in the `rate_limits` registry of client `AttachedWindowSpelling`; did you mean `standard`?
+  --> tests/ui/fail/names/suggest_registry_rates.rs:41:63
+   |
+41 |         rate_limit "suggest.window.inline" key [origin] using standrad;
+   |                                                               ^^^^^^^^
+
+error: [C3-RATE] unknown window set `readz`; declare `windows readz { allow N per DURATION; }` in the `rate_limits` registry of client `WindowNamespace`
+  --> tests/ui/fail/names/suggest_registry_rates.rs:56:66
+   |
+56 |         rate_limit "suggest.window.wrongkind" key [origin] using readz;
+   |                                                                  ^^^^^
+
+error: [C3-RATE] policy `reads` has no formal `AccountId`; bindings are exact (attachment in client `FormalBindingSpelling`), so bind only the policy's declared formals; did you mean `account_id`?
+  --> tests/ui/fail/names/suggest_registry_rates.rs:71:26
+   |
+71 |         rate_limit reads(AccountId = account);
+   |                          ^^^^^^^^^
+
+error: [C3-RATE] policy `reads` has no formal `account_i`; bindings are exact (attachment in client `BoundFormalCandidates`), so bind only the policy's declared formals; did you mean `account_ix`?
+  --> tests/ui/fail/names/suggest_registry_rates.rs:86:26
+   |
+86 |         rate_limit reads(account_i = account, account_id = account);
+   |                          ^^^^^^^^^
+
+error: [C3-RATE] `account_di` is not a formal of policy `reads` of client `PolicyKeyFormalSpelling`; bare names in a policy refer to its formals, so declare `policy reads(..., account_di)` or correct the name; did you mean `account_id`?
+  --> tests/ui/fail/names/suggest_registry_rates.rs:96:34
+   |
+96 |                 key ["account" = account_di];
+   |                                  ^^^^^^^^^^
+
+error: [C3-RATE] `account_id` is not a formal of policy `reads` of client `PolicyFormalNamespace`; bare names in a policy refer to its formals, so declare `policy reads(..., account_id)` or correct the name
+   --> tests/ui/fail/names/suggest_registry_rates.rs:110:34
+    |
+110 |                 key ["account" = account_id];
+    |                                  ^^^^^^^^^^
+
+error: [C3-RATE] unknown rate policy `of` attached by client `ReservedPolicySpelling`; declare `policy of(...) { ... }` in the client `rate_limits` registry; did you mean `r#off`?
+   --> tests/ui/fail/names/suggest_registry_rates.rs:128:20
+    |
+128 |         rate_limit of();
+    |                    ^^

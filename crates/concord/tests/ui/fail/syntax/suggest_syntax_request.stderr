@@ -1,0 +1,83 @@
+error: [C3-PATH] `path` in client `PathOff` requires one relative template string such as `path "items/{id}";`, `path replace "...";` or `path off;`; did you mean `off`?
+ --> tests/ui/fail/syntax/suggest_syntax_request.rs:3:60
+  |
+3 | api! { client PathOff { base "https://example.test/"; path of; } }
+  |                                                            ^^
+
+error: [C3-PATH] `path` in client `PathReplace` requires one relative template string such as `path "items/{id}";`, `path replace "...";` or `path off;`; did you mean `replace`?
+ --> tests/ui/fail/syntax/suggest_syntax_request.rs:4:64
+  |
+4 | api! { client PathReplace { base "https://example.test/"; path replcae "items"; } }
+  |                                                                ^^^^^^^
+
+error: expected square brackets; did you mean `off`?
+ --> tests/ui/fail/syntax/suggest_syntax_request.rs:5:64
+  |
+5 | api! { client DnsOff { base "https://example.test/"; subdomain OFF; } }
+  |                                                                ^^^
+
+error: [C3-PLACE] `query` in client `QueryReplace` requires `{ ... }`, `query replace { ... }` or `query off;`; did you mean `replace`?
+ --> tests/ui/fail/syntax/suggest_syntax_request.rs:6:66
+  |
+6 | api! { client QueryReplace { base "https://example.test/"; query replcae {} } }
+  |                                                                  ^^^^^^^
+
+error: [C3-PLACE] a key statement in client `KeyStatement` starts with a static string key; keys are not interpolated (write `"key" = value;`); did you mean `when_present`?
+ --> tests/ui/fail/syntax/suggest_syntax_request.rs:7:68
+  |
+7 | api! { client KeyStatement { base "https://example.test/"; query { whenPresent "x" = value; } } }
+  |                                                                    ^^^^^^^^^^^
+
+error: [C3-PLACE] a key statement in client `Append` starts with a static string key; keys are not interpolated (write `"key" = value;`); did you mean `append`?
+ --> tests/ui/fail/syntax/suggest_syntax_request.rs:8:64
+  |
+8 | api! { client Append { base "https://example.test/"; headers { apepnd "X-Trace" = value; } } }
+  |                                                                ^^^^^^
+
+error: expected `;`; did you mean `each`?
+ --> tests/ui/fail/syntax/suggest_syntax_request.rs:9:70
+  |
+9 | api! { client Each { base "https://example.test/"; query { "x" = eac values; } } }
+  |                                                                      ^^^^^^
+
+error: [C3-ATOM] arbitrary Rust expressions are not supported in client `Concat`; reference a declared value and adapt it with `via Encoder`; did you mean `concat`?
+  --> tests/ui/fail/syntax/suggest_syntax_request.rs:10:68
+   |
+10 | api! { client Concat { base "https://example.test/"; query { "x" = conact [value]; } } }
+   |                                                                    ^^^^^^
+
+error: expected `;`; did you mean `via`?
+  --> tests/ui/fail/syntax/suggest_syntax_request.rs:11:79
+   |
+11 | api! { client EmissionVia { base "https://example.test/"; query { "x" = value vai Encoder; } } }
+   |                                                                               ^^^
+
+error: expected `,`; did you mean `via`?
+  --> tests/ui/fail/syntax/suggest_syntax_request.rs:12:85
+   |
+12 | api! { client NestedVia { base "https://example.test/"; query { "x" = concat [value vai Encoder]; } } }
+   |                                                                                     ^^^
+
+error: [C3-PATH] a hole names one declared total value: `{name}`, `{owner.name}` or `{name via Adapter}`; it cannot evaluate expressions or select optional structure; did you mean `via`? (path template of client `HoleVia`, template bytes 6..22)
+  --> tests/ui/fail/syntax/suggest_syntax_request.rs:13:60
+   |
+13 | api! { client HoleVia { base "https://example.test/"; path "items/{id vai Encoder}"; } }
+   |                                                            ^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: [C3-OWNER] duration unit must be one of `ms`, `s`, `m`, or `h` (in client `Duration`); write e.g. `250ms` or `5s`; did you mean `ms`?
+  --> tests/ui/fail/syntax/suggest_syntax_request.rs:14:64
+   |
+14 | api! { client Duration { base "https://example.test/"; timeout 1MS; } }
+   |                                                                ^^^
+
+error: [C3-PLACE] a key statement in client `ReplaceStatement` starts with a static string key; keys are not interpolated (write `"key" = value;`); did you mean `replace`?
+  --> tests/ui/fail/syntax/suggest_syntax_request.rs:16:72
+   |
+16 | api! { client ReplaceStatement { base "https://example.test/"; query { replcae "x" = value; } } }
+   |                                                                        ^^^^^^^
+
+error: [C3-PLACE] a key statement in client `RemoveStatement` starts with a static string key; keys are not interpolated (write `"key" = value;`); did you mean `remove`?
+  --> tests/ui/fail/syntax/suggest_syntax_request.rs:17:73
+   |
+17 | api! { client RemoveStatement { base "https://example.test/"; headers { remvoe "X-Trace"; } } }
+   |                                                                         ^^^^^^

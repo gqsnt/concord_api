@@ -1,0 +1,47 @@
+error: [C3-OWNER] unsupported client entry in client `ClientEndpointClause`; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause; `paginate` belongs in an endpoint
+ --> tests/ui/fail/syntax/suggest_syntax_misplaced.rs:3:68
+  |
+3 | api! { client ClientEndpointClause { base "https://example.test/"; paginate via Controller {} } }
+  |                                                                    ^^^^^^^^
+
+error: [C3-OWNER] this declaration is client-only and cannot appear in scope `ScopeClientClause::region`; move it to the client preamble (scope inputs are scope parameters); `values` belongs in a client
+ --> tests/ui/fail/syntax/suggest_syntax_misplaced.rs:4:82
+  |
+4 | api! { client ScopeClientClause { base "https://example.test/"; scope region() { values {} } } }
+  |                                                                                  ^^^^^^
+
+error: [C3-OWNER] `id`, `status`, `effect`, `absent on`, `paginate` and `expose` are endpoint-only clauses and cannot appear in scope `ScopeEndpointClause::region`; move the clause into each endpoint that needs it; `effect` belongs in an endpoint
+ --> tests/ui/fail/syntax/suggest_syntax_misplaced.rs:5:84
+  |
+5 | api! { client ScopeEndpointClause { base "https://example.test/"; scope region() { effect safe; } } }
+  |                                                                                    ^^^^^^
+
+error: [C3-OWNER] this declaration is client-only and cannot appear on endpoint `EndpointClientClause::read`; move it to the client preamble (endpoint inputs are endpoint parameters); `credentials` belongs in a client
+ --> tests/ui/fail/syntax/suggest_syntax_misplaced.rs:6:87
+  |
+6 | api! { client EndpointClientClause { base "https://example.test/"; GET read() -> () { credentials {} } } }
+  |                                                                                       ^^^^^^^^^^^
+
+error: [C3-OWNER] endpoint `EndpointSubdomain::read` cannot own a subdomain clause; select DNS labels on a client or scope; `subdomain` belongs in a client or a scope
+ --> tests/ui/fail/syntax/suggest_syntax_misplaced.rs:7:84
+  |
+7 | api! { client EndpointSubdomain { base "https://example.test/"; GET read() -> () { subdomain ["api"]; } } }
+  |                                                                                    ^^^^^^^^^
+
+error: [C3-REP] representation exceptions of endpoint `EndpointRepresentation::read` are inline: write `body name: Input via RequestRepresentation` or `-> Output via ResponseRepresentation`; `response` belongs in a client or a scope
+ --> tests/ui/fail/syntax/suggest_syntax_misplaced.rs:8:89
+  |
+8 | api! { client EndpointRepresentation { base "https://example.test/"; GET read() -> () { response Bytes; } } }
+  |                                                                                         ^^^^^^^^
+
+error: [C3-OWNER] unsupported endpoint clause in endpoint `EndpointScope::read`; expected `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `id`, `status`, `effect`, `absent on`, `paginate` or `expose accepted_bytes`; `scope` belongs in a client or a scope
+ --> tests/ui/fail/syntax/suggest_syntax_misplaced.rs:9:80
+  |
+9 | api! { client EndpointScope { base "https://example.test/"; GET read() -> () { scope nested() {} } } }
+  |                                                                                ^^^^^
+
+error: [C3-OWNER] `secret` and `credential` declarations in client `SecretPlacement` belong inside the client `credentials { ... }` block; `secret` belongs in a client `credentials` block
+  --> tests/ui/fail/syntax/suggest_syntax_misplaced.rs:10:63
+   |
+10 | api! { client SecretPlacement { base "https://example.test/"; secret token; } }
+   |                                                               ^^^^^^

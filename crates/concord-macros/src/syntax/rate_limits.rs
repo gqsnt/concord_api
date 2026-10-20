@@ -12,7 +12,7 @@ use super::ast::{
     BoundDimension, FormalDimension, PolicyDecl, RateAttachment, RateRegistry, WindowLiteral,
     WindowSetDecl, WindowSource,
 };
-use super::diagnostics::{Code, coded, related};
+use super::diagnostics::{Code, coded, keyword_suggestion, parse_with_keywords, related};
 use super::keyword;
 use super::request::{parse_duration, parse_reference};
 use super::values::{AttrSite, parse_attrs};
@@ -34,7 +34,7 @@ pub(crate) fn parse_rate_registry(
             let context = format!("window set `{}` of {owner}", canonical_ident(&name));
             let content;
             braced!(content in body);
-            let windows = parse_windows(&content, &context)?;
+            let windows = parse_windows(&content, &context, &["allow"])?;
             if windows.is_empty() {
                 return Err(coded(
                     name.span(),
@@ -66,21 +66,36 @@ pub(crate) fn parse_rate_registry(
             body.span(),
             Code::Rate,
             format!(
-                "the `rate_limits` registry of {owner} accepts `windows NAME {{ ... }}` and `policy NAME(formals) {{ ... }}`"
+                "the `rate_limits` registry of {owner} accepts `windows NAME {{ ... }}` and `policy NAME(formals) {{ ... }}`{}",
+                keyword_suggestion(&body, &["windows", "policy"])
             ),
         ));
     }
     Ok(registry)
 }
 
-fn parse_windows(input: ParseStream<'_>, context: &str) -> syn::Result<Vec<WindowLiteral>> {
+fn parse_windows(
+    input: ParseStream<'_>,
+    context: &str,
+    initial_candidates: &[&str],
+) -> syn::Result<Vec<WindowLiteral>> {
     let mut windows = Vec::new();
     while !input.is_empty() {
         if !input.peek(keyword::allow) {
             return Err(coded(
                 input.span(),
                 Code::Rate,
-                format!("expected `allow N per DURATION;` in {context}"),
+                format!(
+                    "expected `allow N per DURATION;` in {context}{}",
+                    keyword_suggestion(
+                        input,
+                        if windows.is_empty() {
+                            initial_candidates
+                        } else {
+                            &["allow"]
+                        }
+                    )
+                ),
             ));
         }
         windows.push(parse_window(input, context)?);
@@ -92,7 +107,7 @@ fn parse_window(input: ParseStream<'_>, context: &str) -> syn::Result<WindowLite
     input.parse::<keyword::allow>()?;
     let capacity_literal: LitInt = input.parse()?;
     let capacity = positive_u32(&capacity_literal, "window capacity", context)?;
-    input.parse::<keyword::per>()?;
+    parse_with_keywords::<keyword::per>(input, &["per"])?;
     let duration_literal: LitInt = input.parse()?;
     let duration = parse_duration(&duration_literal, context)?;
     input.parse::<Token![;]>()?;
@@ -132,12 +147,16 @@ fn positive_u32(literal: &LitInt, what: &str, context: &str) -> syn::Result<u32>
 }
 
 fn parse_cost(input: ParseStream<'_>, context: &str) -> syn::Result<(u32, proc_macro2::Span)> {
-    input.parse::<keyword::cost>()?;
+    parse_with_keywords::<keyword::cost>(input, &["cost"])?;
     let literal: LitInt = input.parse()?;
     Ok((positive_u32(&literal, "cost", context)?, literal.span()))
 }
 
-fn parse_window_source(input: ParseStream<'_>, context: &str) -> syn::Result<WindowSource> {
+fn parse_window_source(
+    input: ParseStream<'_>,
+    context: &str,
+    allow_cost: bool,
+) -> syn::Result<WindowSource> {
     if input.peek(keyword::using) {
         input.parse::<keyword::using>()?;
         let name: Ident = input.parse()?;
@@ -153,7 +172,12 @@ fn parse_window_source(input: ParseStream<'_>, context: &str) -> syn::Result<Win
         }
         return Ok(WindowSource::Using(name));
     }
-    let windows = parse_windows(input, context)?;
+    let candidates: &[&str] = if allow_cost {
+        &["cost", "using", "allow"]
+    } else {
+        &["using", "allow"]
+    };
+    let windows = parse_windows(input, context, candidates)?;
     if windows.is_empty() {
         return Err(coded(
             input.span(),
@@ -171,7 +195,10 @@ fn parse_id(input: ParseStream<'_>, context: &str) -> syn::Result<LitStr> {
         return Err(coded(
             input.span(),
             Code::Rate,
-            format!("every rate policy begins with an explicit `id \"...\";` ({context})"),
+            format!(
+                "every rate policy begins with an explicit `id \"...\";` ({context}){}",
+                keyword_suggestion(input, &["id"])
+            ),
         ));
     }
     input.parse::<keyword::id>()?;
@@ -241,7 +268,7 @@ fn parse_policy(
     } else {
         None
     };
-    let windows = parse_window_source(&body, &context)?;
+    let windows = parse_window_source(&body, &context, cost.is_none())?;
     if !body.is_empty() {
         return Err(coded(
             body.span(),
@@ -268,7 +295,10 @@ fn parse_formal_key(input: ParseStream<'_>, context: &str) -> syn::Result<Vec<Fo
         return Err(coded(
             input.span(),
             Code::Rate,
-            format!("{context} requires `key [origin, \"label\" = formal, ...];` after its `id`"),
+            format!(
+                "{context} requires `key [origin, \"label\" = formal, ...];` after its `id`{}",
+                keyword_suggestion(input, &["key"])
+            ),
         ));
     }
     input.parse::<keyword::key>()?;
@@ -294,8 +324,9 @@ fn parse_formal_key(input: ParseStream<'_>, context: &str) -> syn::Result<Vec<Fo
                 bare.span(),
                 Code::Migrate,
                 format!(
-                    "rate key labels are explicit in v3: write `\"{0}\" = {0}` (the label is state-affecting and independent of the Rust name; {context})",
-                    canonical_ident(&bare)
+                    "rate key labels are explicit in v3: write `\"{0}\" = {0}` (the label is state-affecting and independent of the Rust name; {context}){1}",
+                    canonical_ident(&bare),
+                    keyword_suggestion(&content, &["origin", "endpoint"])
                 ),
             ));
         } else {
@@ -310,7 +341,17 @@ fn parse_formal_key(input: ParseStream<'_>, context: &str) -> syn::Result<Vec<Fo
         if content.is_empty() {
             break;
         }
-        content.parse::<Token![,]>()?;
+        parse_with_keywords::<Token![,]>(
+            &content,
+            if matches!(
+                dimensions.last(),
+                Some(FormalDimension::Custom { via: None, .. })
+            ) {
+                &["via"]
+            } else {
+                &[]
+            },
+        )?;
     }
     input.parse::<Token![;]>()?;
     Ok(dimensions)
@@ -349,7 +390,11 @@ fn validate_label(label: &LitStr, context: &str) -> syn::Result<()> {
     Ok(())
 }
 
-fn parse_bound_key(input: ParseStream<'_>, context: &str) -> syn::Result<Vec<BoundDimension>> {
+fn parse_bound_key(
+    input: ParseStream<'_>,
+    context: &str,
+    endpoint_allowed: bool,
+) -> syn::Result<Vec<BoundDimension>> {
     input.parse::<keyword::key>()?;
     let content;
     bracketed!(content in input);
@@ -373,12 +418,16 @@ fn parse_bound_key(input: ParseStream<'_>, context: &str) -> syn::Result<Vec<Bou
                 via,
             }
         } else if content.fork().parse::<Ident>().is_ok() {
+            let hint = keyword_suggestion(
+                &content,
+                if endpoint_allowed { &["origin", "endpoint"] } else { &["origin"] },
+            );
             let reference = parse_reference(&content, context)?;
             return Err(coded(
                 reference.span,
                 Code::Migrate,
                 format!(
-                    "rate key labels are explicit in v3: write `\"{0}\" = {0}` to use an explicit label ({context})",
+                    "rate key labels are explicit in v3: write `\"{0}\" = {0}` to use an explicit label ({context}){hint}",
                     reference.display()
                 ),
             ));
@@ -394,7 +443,17 @@ fn parse_bound_key(input: ParseStream<'_>, context: &str) -> syn::Result<Vec<Bou
         if content.is_empty() {
             break;
         }
-        content.parse::<Token![,]>()?;
+        parse_with_keywords::<Token![,]>(
+            &content,
+            if matches!(
+                dimensions.last(),
+                Some(BoundDimension::Custom { via: None, .. })
+            ) {
+                &["via"]
+            } else {
+                &[]
+            },
+        )?;
     }
     Ok(dimensions)
 }
@@ -415,10 +474,13 @@ pub(crate) fn parse_rate_attachment(
             return Err(coded(
                 body.span(),
                 Code::Rate,
-                format!("{context} requires `key [...];` after its `id`"),
+                format!(
+                    "{context} requires `key [...];` after its `id`{}",
+                    keyword_suggestion(&body, &["key"])
+                ),
             ));
         }
-        let key = parse_bound_key(&body, &context)?;
+        let key = parse_bound_key(&body, &context, owner.starts_with("endpoint `"))?;
         body.parse::<Token![;]>()?;
         let cost = if body.peek(keyword::cost) {
             let cost = parse_cost(&body, &context)?;
@@ -427,7 +489,7 @@ pub(crate) fn parse_rate_attachment(
         } else {
             None
         };
-        let windows = parse_window_source(&body, &context)?;
+        let windows = parse_window_source(&body, &context, cost.is_none())?;
         if !body.is_empty() {
             return Err(coded(
                 body.span(),
@@ -453,11 +515,12 @@ pub(crate) fn parse_rate_attachment(
                 input.span(),
                 Code::Rate,
                 format!(
-                    "the short attachment form of {owner} is `rate_limit \"id\" key [...] (cost N)? using SET;`"
+                    "the short attachment form of {owner} is `rate_limit \"id\" key [...] (cost N)? using SET;`{}",
+                    keyword_suggestion(input, &["key"])
                 ),
             ));
         }
-        let key = parse_bound_key(input, &context)?;
+        let key = parse_bound_key(input, &context, owner.starts_with("endpoint `"))?;
         let cost = if input.peek(keyword::cost) {
             Some(parse_cost(input, &context)?)
         } else {
@@ -467,7 +530,17 @@ pub(crate) fn parse_rate_attachment(
             return Err(coded(
                 input.span(),
                 Code::Rate,
-                format!("the short attachment form of {owner} ends with `using WINDOW_SET;`"),
+                format!(
+                    "the short attachment form of {owner} ends with `using WINDOW_SET;`{}",
+                    keyword_suggestion(
+                        input,
+                        if cost.is_none() {
+                            &["cost", "using"]
+                        } else {
+                            &["using"]
+                        }
+                    )
+                ),
             ));
         }
         input.parse::<keyword::using>()?;

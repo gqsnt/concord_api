@@ -10,7 +10,7 @@ error: [C3-PATH] in path template hole at bytes 0..9 of endpoint `ReferenceApi::
 9 |             path "{missing}";
   |                  ^^^^^^^^^^^
 
-error: [C3-NAME] `regional` is not the client or a visible ancestor scope of endpoint `UnknownOwnerApi::item`; qualify with `client.` or the name of an enclosing scope
+error: [C3-NAME] `regional` is not the client or a visible ancestor scope of endpoint `UnknownOwnerApi::item`; qualify with `client.` or the name of an enclosing scope; `region` is declared by scope `UnknownOwnerApi::regional`, which is not visible here
   --> tests/ui/fail/names/unknown_public_reference.rs:24:36
    |
 24 |             headers { "X-Region" = regional.region; }

@@ -1,0 +1,17 @@
+error: [C3-PAGE] pagination of endpoint `Via::read` is `paginate via Controller { init Init { ... }; cursor -> slot; }`; did you mean `via`?
+ --> tests/ui/fail/syntax/suggest_syntax_pagination.rs:3:90
+  |
+3 | api! { client Via { base "https://example.test/"; GET read(cursor: u32) -> () { paginate vai Controller {} } } }
+  |                                                                                          ^^^
+
+error: [C3-PAGE] the pagination block of endpoint `Init::read` begins with `init InitType { field: value, ... };`; did you mean `init`?
+ --> tests/ui/fail/syntax/suggest_syntax_pagination.rs:4:108
+  |
+4 | api! { client Init { base "https://example.test/"; GET read(cursor: u32) -> () { paginate via Controller { inti Init {}; cursor -> cu...
+  |                                                                                                            ^^^^
+
+error: [C3-PAGE] the pagination block of endpoint `Cursor::read` ends with `cursor -> slot;` or `cursor -> (a, b);`; did you mean `cursor`?
+ --> tests/ui/fail/syntax/suggest_syntax_pagination.rs:5:124
+  |
+5 | api! { client Cursor { base "https://example.test/"; GET read(cursor: u32) -> () { paginate via Controller { init Init {}; crusor -> ...
+  |                                                                                                                            ^^^^^^

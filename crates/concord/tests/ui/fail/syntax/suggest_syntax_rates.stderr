@@ -1,0 +1,95 @@
+error: [C3-RATE] the `rate_limits` registry of client `Windows` accepts `windows NAME { ... }` and `policy NAME(formals) { ... }`; did you mean `windows`?
+ --> tests/ui/fail/syntax/suggest_syntax_rates.rs:3:69
+  |
+3 | api! { client Windows { base "https://example.test/"; rate_limits { window limits { allow 1 per 1s; } } } }
+  |                                                                     ^^^^^^
+
+error: [C3-RATE] the `rate_limits` registry of client `Policy` accepts `windows NAME { ... }` and `policy NAME(formals) { ... }`; did you mean `policy`?
+ --> tests/ui/fail/syntax/suggest_syntax_rates.rs:4:68
+  |
+4 | api! { client Policy { base "https://example.test/"; rate_limits { polciy reads() { id "reads"; key [origin]; allow 1 per 1s; } } } }
+  |                                                                    ^^^^^^
+
+error: [C3-RATE] expected `allow N per DURATION;` in window set `limits` of client `Allow`; did you mean `allow`?
+ --> tests/ui/fail/syntax/suggest_syntax_rates.rs:5:84
+  |
+5 | api! { client Allow { base "https://example.test/"; rate_limits { windows limits { allwo 1 per 1s; } } } }
+  |                                                                                    ^^^^^
+
+error: expected `per`; did you mean `per`?
+ --> tests/ui/fail/syntax/suggest_syntax_rates.rs:6:90
+  |
+6 | api! { client Per { base "https://example.test/"; rate_limits { windows limits { allow 1 pre 1s; } } } }
+  |                                                                                          ^^^
+
+error: [C3-RATE] every rate policy begins with an explicit `id "...";` (policy `reads` of client `Id`); did you mean `id`?
+ --> tests/ui/fail/syntax/suggest_syntax_rates.rs:7:81
+  |
+7 | api! { client Id { base "https://example.test/"; rate_limits { policy reads() { ID "reads"; key [origin]; allow 1 per 1s; } } } }
+  |                                                                                 ^^
+
+error: [C3-RATE] policy `reads` of client `Key` requires `key [origin, "label" = formal, ...];` after its `id`; did you mean `key`?
+ --> tests/ui/fail/syntax/suggest_syntax_rates.rs:8:94
+  |
+8 | api! { client Key { base "https://example.test/"; rate_limits { policy reads() { id "reads"; kye [origin]; allow 1 per 1s; } } } }
+  |                                                                                              ^^^
+
+error: [C3-MIGRATE] rate key labels are explicit in v3: write `"orgin" = orgin` (the label is state-affecting and independent of the Rust name; policy `reads` of client `Origin`); did you mean `origin`?
+ --> tests/ui/fail/syntax/suggest_syntax_rates.rs:9:102
+  |
+9 | api! { client Origin { base "https://example.test/"; rate_limits { policy reads() { id "reads"; key [orgin]; allow 1 per 1s; } } } }
+  |                                                                                                      ^^^^^
+
+error: [C3-MIGRATE] rate key labels are explicit in v3: write `"endpiont" = endpiont` to use an explicit label (the inline rate policy of endpoint `Endpoint::read`); did you mean `endpoint`?
+  --> tests/ui/fail/syntax/suggest_syntax_rates.rs:10:105
+   |
+10 | api! { client Endpoint { base "https://example.test/"; GET read() -> () { rate_limit { id "reads"; key [endpiont]; allow 1 per 1s; }...
+   |                                                                                                         ^^^^^^^^
+
+error: expected `,`; did you mean `via`?
+  --> tests/ui/fail/syntax/suggest_syntax_rates.rs:11:129
+   |
+11 | ...ts { policy reads(tenant) { id "reads"; key ["tenant" = tenant vai Encoder]; allow 1 per 1s; } } } }
+   |                                                                   ^^^
+
+error: [C3-RATE] expected `allow N per DURATION;` in policy `reads` of client `Cost`; did you mean `cost`?
+  --> tests/ui/fail/syntax/suggest_syntax_rates.rs:12:109
+   |
+12 | api! { client Cost { base "https://example.test/"; rate_limits { policy reads() { id "reads"; key [origin]; cots 1; allow 1 per 1s; ...
+   |                                                                                                             ^^^^
+
+error: [C3-RATE] expected `allow N per DURATION;` in policy `reads` of client `Using`; did you mean `using`?
+  --> tests/ui/fail/syntax/suggest_syntax_rates.rs:13:110
+   |
+13 | api! { client Using { base "https://example.test/"; rate_limits { policy reads() { id "reads"; key [origin]; usnig limits; } } } }
+   |                                                                                                              ^^^^^
+
+error: expected `cost`; did you mean `cost`?
+  --> tests/ui/fail/syntax/suggest_syntax_rates.rs:14:78
+   |
+14 | api! { client NamedCost { base "https://example.test/"; rate_limit reads() { cots 1; } } }
+   |                                                                              ^^^^
+
+error: [C3-RATE] the short attachment form of client `ShortKey` is `rate_limit "id" key [...] (cost N)? using SET;`; did you mean `key`?
+  --> tests/ui/fail/syntax/suggest_syntax_rates.rs:15:75
+   |
+15 | api! { client ShortKey { base "https://example.test/"; rate_limit "reads" kye [origin] using limits; } }
+   |                                                                           ^^^
+
+error: [C3-RATE] the short attachment form of client `ShortUsing` ends with `using WINDOW_SET;`; did you mean `using`?
+  --> tests/ui/fail/syntax/suggest_syntax_rates.rs:16:90
+   |
+16 | api! { client ShortUsing { base "https://example.test/"; rate_limit "reads" key [origin] usnig limits; } }
+   |                                                                                          ^^^^^
+
+error: [C3-MIGRATE] rate key labels are explicit in v3: write `"endpiont" = endpiont` to use an explicit label (the inline rate policy of client `InvalidClientDimension`)
+  --> tests/ui/fail/syntax/suggest_syntax_rates.rs:19:100
+   |
+19 | api! { client InvalidClientDimension { base "https://example.test/"; rate_limit { id "reads"; key [endpiont]; allow 1 per 1s; } } }
+   |                                                                                                    ^^^^^^^^
+
+error: [C3-MIGRATE] rate key labels are explicit in v3: write `"endpiont" = endpiont` to use an explicit label (the short rate attachment of scope `InvalidScopeDimension::region`)
+  --> tests/ui/fail/syntax/suggest_syntax_rates.rs:20:110
+   |
+20 | api! { client InvalidScopeDimension { base "https://example.test/"; scope region() { rate_limit "reads" key [endpiont] using limits;...
+   |                                                                                                              ^^^^^^^^

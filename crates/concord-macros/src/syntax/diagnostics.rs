@@ -7,11 +7,37 @@
 
 use http::HeaderName;
 use proc_macro2::Span;
+use syn::ext::IdentExt;
+use syn::parse::{Parse, ParseStream};
 use syn::{Ident, LitInt, LitStr};
 use url::Url;
 
 use super::ast::Clause;
 use crate::semantic::surface::{canonical_ident, to_snake_case};
+
+/// Suggests grammar words without consuming the unexpected token.
+pub(crate) fn keyword_suggestion(input: ParseStream<'_>, candidates: &[&str]) -> String {
+    input
+        .fork()
+        .call(Ident::parse_any)
+        .map(|written| crate::suggestions::suggestion(&canonical_ident(&written), candidates))
+        .unwrap_or_default()
+}
+
+/// Retains the parser's original diagnostic and span when adding a keyword hint.
+pub(crate) fn parse_with_keywords<T: Parse>(
+    input: ParseStream<'_>,
+    candidates: &[&str],
+) -> syn::Result<T> {
+    input.parse().map_err(|error| {
+        let hint = keyword_suggestion(input, candidates);
+        if hint.is_empty() {
+            error
+        } else {
+            syn::Error::new(error.span(), format!("{error}{hint}"))
+        }
+    })
+}
 
 /// Stable diagnostic families (§19.1).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

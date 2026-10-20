@@ -14,8 +14,8 @@ use super::ast::{
     Reference, StatementKind, SubdomainOperation, Template, TemplatePart, TemplateSegment,
 };
 use super::diagnostics::{
-    Code, coded, validate_integer, validate_public_header_name, validate_query_key,
-    validate_static_host_label,
+    Code, coded, keyword_suggestion, parse_with_keywords, validate_integer,
+    validate_public_header_name, validate_query_key, validate_static_host_label,
 };
 use super::keyword;
 
@@ -46,6 +46,12 @@ pub(crate) fn parse_subdomain(
         ));
     }
     let content;
+    if !input.peek(syn::token::Bracket) {
+        return Err(input.error(format!(
+            "expected square brackets{}",
+            keyword_suggestion(input, if replace { &[] } else { &["replace", "off"] })
+        )));
+    }
     bracketed!(content in input);
     let mut atoms = Vec::new();
     while !content.is_empty() {
@@ -57,7 +63,14 @@ pub(crate) fn parse_subdomain(
         if content.is_empty() {
             break;
         }
-        content.parse::<Token![,]>()?;
+        parse_with_keywords::<Token![,]>(
+            &content,
+            if matches!(atoms.last(), Some(Atom::Reference { via: None, .. })) {
+                &["via"]
+            } else {
+                &[]
+            },
+        )?;
     }
     if atoms.is_empty() {
         return Err(coded(
@@ -98,7 +111,8 @@ pub(crate) fn parse_path(input: ParseStream<'_>, owner: &str) -> syn::Result<Pat
     }
     let literal: LitStr = input.parse().map_err(|_| {
         input.error(format!(
-            "[C3-PATH] `path` in {owner} requires one relative template string such as `path \"items/{{id}}\";`, `path replace \"...\";` or `path off;`"
+            "[C3-PATH] `path` in {owner} requires one relative template string such as `path \"items/{{id}}\";`, `path replace \"...\";` or `path off;`{}",
+            keyword_suggestion(input, if replace { &[] } else { &["replace", "off"] })
         ))
     })?;
     let template = parse_template(&literal, owner)?;
@@ -308,7 +322,10 @@ impl Parse for HoleSyntax {
             None
         };
         if !input.is_empty() {
-            return Err(input.error("unexpected tokens"));
+            return Err(input.error(format!(
+                "unexpected tokens{}",
+                keyword_suggestion(input, if via.is_none() { &["via"] } else { &[] })
+            )));
         }
         Ok(Self { reference, via })
     }
@@ -338,12 +355,14 @@ fn parse_hole(
         )
     })?;
     let tokens = respan(tokens, literal.span());
-    let parsed: HoleSyntax = syn::parse2(tokens).map_err(|_| {
+    let parsed: HoleSyntax = syn::parse2(tokens).map_err(|error| {
+        let message = error.to_string();
+        let hint = message.find("; did you mean ").map_or("", |start| &message[start..]);
         template_error(
             literal,
             range,
             owner,
-            "a hole names one declared total value: `{name}`, `{owner.name}` or `{name via Adapter}`; it cannot evaluate expressions or select optional structure",
+            format!("a hole names one declared total value: `{{name}}`, `{{owner.name}}` or `{{name via Adapter}}`; it cannot evaluate expressions or select optional structure{hint}"),
         )
     })?;
     Ok((parsed.reference, parsed.via))
@@ -395,7 +414,8 @@ pub(crate) fn parse_key_block(
             input.span(),
             Code::Place,
             format!(
-                "`{family_name}` in {owner} requires `{{ ... }}`, `{family_name} replace {{ ... }}` or `{family_name} off;`"
+                "`{family_name}` in {owner} requires `{{ ... }}`, `{family_name} replace {{ ... }}` or `{family_name} off;`{}",
+                keyword_suggestion(input, if replace { &[] } else { &["replace", "off"] })
             ),
         ));
     }
@@ -435,7 +455,8 @@ fn parse_key_statement(
     };
     let key: LitStr = input.parse().map_err(|_| {
         input.error(format!(
-            "[C3-PLACE] a key statement in {owner} starts with a static string key; keys are not interpolated (write `\"key\" = value;`)"
+            "[C3-PLACE] a key statement in {owner} starts with a static string key; keys are not interpolated (write `\"key\" = value;`){}",
+            keyword_suggestion(input, if kind == StatementKind::Introduce { &["remove", "replace", "when_present", "append"] } else { &[] })
         ))
     })?;
     match family {
@@ -444,6 +465,7 @@ fn parse_key_statement(
             validate_public_header_name(&key, owner)?;
         }
     }
+    let mut emission_start = None;
     let emission = if kind == StatementKind::Remove {
         None
     } else {
@@ -455,9 +477,34 @@ fn parse_key_statement(
             ));
         }
         input.parse::<Token![=]>()?;
+        emission_start = (!input.peek(keyword::each)).then(|| input.fork());
         Some(parse_emission(input, owner)?)
     };
-    input.parse::<Token![;]>()?;
+    parse_with_keywords::<Token![;]>(
+        input,
+        if matches!(
+            emission.as_ref(),
+            Some(
+                Emission::Each { via: None, .. }
+                    | Emission::Atom(Atom::Reference { via: None, .. })
+            )
+        ) {
+            &["via"]
+        } else {
+            &[]
+        },
+    )
+    .map_err(|error| {
+        let hint = emission_start
+            .as_ref()
+            .map(|start| keyword_suggestion(start, &["each"]))
+            .unwrap_or_default();
+        if hint.is_empty() {
+            error
+        } else {
+            syn::Error::new(error.span(), format!("{error}{hint}"))
+        }
+    })?;
     Ok(KeyStatement {
         kind,
         key,
@@ -626,7 +673,14 @@ pub(crate) fn parse_atom(input: ParseStream<'_>, depth: usize, owner: &str) -> s
             if content.is_empty() {
                 break;
             }
-            content.parse::<Token![,]>()?;
+            parse_with_keywords::<Token![,]>(
+                &content,
+                if matches!(parts.last(), Some(Atom::Reference { via: None, .. })) {
+                    &["via"]
+                } else {
+                    &[]
+                },
+            )?;
         }
         if parts.is_empty() {
             return Err(coded(
@@ -651,7 +705,18 @@ pub(crate) fn parse_atom(input: ParseStream<'_>, depth: usize, owner: &str) -> s
             ),
         ));
     }
-    let reference = parse_reference(input, owner)?;
+    let concat_hint = if input.peek2(syn::token::Bracket) {
+        keyword_suggestion(input, &["concat"])
+    } else {
+        String::new()
+    };
+    let reference = parse_reference(input, owner).map_err(|error| {
+        if concat_hint.is_empty() {
+            error
+        } else {
+            syn::Error::new(error.span(), format!("{error}{concat_hint}"))
+        }
+    })?;
     let via = if input.peek(keyword::via) {
         input.parse::<keyword::via>()?;
         Some(Box::new(input.parse::<Type>()?))
@@ -735,7 +800,12 @@ pub(crate) fn parse_duration(literal: &LitInt, owner: &str) -> syn::Result<Durat
             literal.span(),
             Code::Owner,
             format!(
-                "duration unit must be one of `ms`, `s`, `m`, or `h` (in {owner}); write e.g. `250ms` or `5s`"
+                "duration unit must be one of `ms`, `s`, `m`, or `h` (in {owner}); write e.g. `250ms` or `5s`{}",
+                if literal.suffix().is_empty() {
+                    String::new()
+                } else {
+                    crate::suggestions::suggestion(literal.suffix(), ["ms", "s", "m", "h"])
+                }
             ),
         )),
     }

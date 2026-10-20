@@ -1,4 +1,4 @@
-error: [C3-NAME] `regional` is not the client or a visible ancestor scope of client `Api`; qualify with `client.` or the name of an enclosing scope
+error: [C3-NAME] `regional` is not the client or a visible ancestor scope of client `Api`; qualify with `client.` or the name of an enclosing scope; `region` is declared by scope `Api::regional`, which is not visible here
   --> tests/ui/fail/rate_limits/rate_limit_client_scope_dimension.rs:12:29
    |
 12 |             key ["region" = regional.region];

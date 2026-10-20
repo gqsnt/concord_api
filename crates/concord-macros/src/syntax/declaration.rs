@@ -18,8 +18,8 @@ use super::ast::{
 };
 use super::credentials::{parse_auth, parse_credentials};
 use super::diagnostics::{
-    Code, client_label, coded, endpoint_label, insert_clause, related, scope_label, validate_base,
-    validate_endpoint_id, validate_snake_source_identifier,
+    Code, client_label, coded, endpoint_label, insert_clause, keyword_suggestion, related,
+    scope_label, validate_base, validate_endpoint_id, validate_snake_source_identifier,
 };
 use super::keyword;
 use super::pagination::parse_pagination;
@@ -57,7 +57,10 @@ impl Parse for SourceApi {
             return Err(coded(
                 input.span(),
                 Code::Owner,
-                "an `api!` invocation begins with exactly one `client Name { ... }` declaration",
+                format!(
+                    "an `api!` invocation begins with exactly one `client Name {{ ... }}` declaration{}",
+                    keyword_suggestion(&fork, &["client"])
+                ),
             ));
         }
         let client: SourceClient = input.parse()?;
@@ -217,6 +220,7 @@ fn child_span(child: &SourceChild) -> Span {
 }
 
 fn unsupported(input: ParseStream<'_>, kind: OwnerKind, owner: &str) -> syn::Error {
+    let hint = clause_suggestion(input, kind);
     if input.peek(keyword::retry) {
         return coded(
             input.span(),
@@ -231,7 +235,7 @@ fn unsupported(input: ParseStream<'_>, kind: OwnerKind, owner: &str) -> syn::Err
             input.span(),
             Code::Owner,
             format!(
-                "`secret` and `credential` declarations in {owner} belong inside the client `credentials {{ ... }}` block"
+                "`secret` and `credential` declarations in {owner} belong inside the client `credentials {{ ... }}` block{hint}"
             ),
         );
     }
@@ -247,7 +251,7 @@ fn unsupported(input: ParseStream<'_>, kind: OwnerKind, owner: &str) -> syn::Err
             input.span(),
             Code::Owner,
             format!(
-                "unsupported client entry in {owner}; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause"
+                "unsupported client entry in {owner}; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause{hint}"
             ),
         ),
         OwnerKind::Scope => {
@@ -260,7 +264,7 @@ fn unsupported(input: ParseStream<'_>, kind: OwnerKind, owner: &str) -> syn::Err
                     input.span(),
                     Code::Owner,
                     format!(
-                        "this declaration is client-only and cannot appear in {owner}; move it to the client preamble (scope inputs are scope parameters)"
+                        "this declaration is client-only and cannot appear in {owner}; move it to the client preamble (scope inputs are scope parameters){hint}"
                     ),
                 );
             }
@@ -275,7 +279,7 @@ fn unsupported(input: ParseStream<'_>, kind: OwnerKind, owner: &str) -> syn::Err
                     input.span(),
                     Code::Owner,
                     format!(
-                        "`id`, `status`, `effect`, `absent on`, `paginate` and `expose` are endpoint-only clauses and cannot appear in {owner}; move the clause into each endpoint that needs it"
+                        "`id`, `status`, `effect`, `absent on`, `paginate` and `expose` are endpoint-only clauses and cannot appear in {owner}; move the clause into each endpoint that needs it{hint}"
                     ),
                 );
             }
@@ -283,7 +287,7 @@ fn unsupported(input: ParseStream<'_>, kind: OwnerKind, owner: &str) -> syn::Err
                 input.span(),
                 Code::Owner,
                 format!(
-                    "unsupported scope entry in {owner}; expected a child scope or endpoint, or a `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause"
+                    "unsupported scope entry in {owner}; expected a child scope or endpoint, or a `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause{hint}"
                 ),
             )
         }
@@ -293,7 +297,7 @@ fn unsupported(input: ParseStream<'_>, kind: OwnerKind, owner: &str) -> syn::Err
                     input.span(),
                     Code::Owner,
                     format!(
-                        "{owner} cannot own a subdomain clause; select DNS labels on a client or scope"
+                        "{owner} cannot own a subdomain clause; select DNS labels on a client or scope{hint}"
                     ),
                 );
             }
@@ -302,7 +306,7 @@ fn unsupported(input: ParseStream<'_>, kind: OwnerKind, owner: &str) -> syn::Err
                     input.span(),
                     Code::Rep,
                     format!(
-                        "representation exceptions of {owner} are inline: write `body name: Input via RequestRepresentation` or `-> Output via ResponseRepresentation`"
+                        "representation exceptions of {owner} are inline: write `body name: Input via RequestRepresentation` or `-> Output via ResponseRepresentation`{hint}"
                     ),
                 );
             }
@@ -315,7 +319,7 @@ fn unsupported(input: ParseStream<'_>, kind: OwnerKind, owner: &str) -> syn::Err
                     input.span(),
                     Code::Owner,
                     format!(
-                        "this declaration is client-only and cannot appear on {owner}; move it to the client preamble (endpoint inputs are endpoint parameters)"
+                        "this declaration is client-only and cannot appear on {owner}; move it to the client preamble (endpoint inputs are endpoint parameters){hint}"
                     ),
                 );
             }
@@ -332,11 +336,80 @@ fn unsupported(input: ParseStream<'_>, kind: OwnerKind, owner: &str) -> syn::Err
                 input.span(),
                 Code::Owner,
                 format!(
-                    "unsupported endpoint clause in {owner}; expected `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `id`, `status`, `effect`, `absent on`, `paginate` or `expose accepted_bytes`"
+                    "unsupported endpoint clause in {owner}; expected `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `id`, `status`, `effect`, `absent on`, `paginate` or `expose accepted_bytes`{hint}"
                 ),
             )
         }
     }
+}
+
+fn clause_suggestion(input: ParseStream<'_>, kind: OwnerKind) -> String {
+    let Ok(written) = input.fork().parse::<Ident>() else {
+        return String::new();
+    };
+    let written = canonical_ident(&written);
+    let candidates = [
+        "base",
+        "values",
+        "credentials",
+        "rate_limits",
+        "request",
+        "response",
+        "subdomain",
+        "path",
+        "query",
+        "headers",
+        "auth",
+        "timeout",
+        "rate_limit",
+        "id",
+        "status",
+        "effect",
+        "absent",
+        "paginate",
+        "expose",
+        "scope",
+        "GET",
+        "HEAD",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "OPTIONS",
+        "METHOD",
+        "secret",
+        "credential",
+    ];
+    let placement = |candidate: &str| match candidate {
+        "base" | "values" | "credentials" | "rate_limits" if kind != OwnerKind::Client => {
+            Some("a client")
+        }
+        "id" | "status" | "effect" | "absent" | "paginate" | "expose"
+            if kind != OwnerKind::Endpoint =>
+        {
+            Some("an endpoint")
+        }
+        "subdomain" if kind == OwnerKind::Endpoint => Some("a client or a scope"),
+        "request" | "response" if kind == OwnerKind::Endpoint => Some("a client or a scope"),
+        "scope" | "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS" | "METHOD"
+            if kind == OwnerKind::Endpoint =>
+        {
+            Some("a client or a scope")
+        }
+        "secret" | "credential" => Some("a client `credentials` block"),
+        _ => None,
+    };
+    if candidates.contains(&written.as_str()) {
+        return placement(&written)
+            .map(|level| format!("; `{written}` belongs in {level}"))
+            .unwrap_or_default();
+    }
+    crate::suggestions::suggestion(
+        &written,
+        candidates
+            .into_iter()
+            .filter(|candidate| placement(candidate).is_none()),
+    )
 }
 
 fn child_starts(input: ParseStream<'_>) -> bool {
@@ -536,6 +609,14 @@ fn parse_endpoint(input: ParseStream<'_>, parent: Parent<'_>) -> syn::Result<Sou
         return Ok(endpoint);
     }
     let clauses;
+    if !input.peek(syn::token::Brace) {
+        // The output representation selector is optional, so a misspelling
+        // otherwise reaches the generic opening-brace error.
+        return Err(input.error(format!(
+            "expected curly braces{}",
+            keyword_suggestion(input, &["via"])
+        )));
+    }
     braced!(clauses in input);
     while !clauses.is_empty() {
         let key_span = clauses.span();
@@ -563,7 +644,8 @@ fn parse_endpoint(input: ParseStream<'_>, parent: Parent<'_>) -> syn::Result<Sou
                     clauses.span(),
                     Code::Owner,
                     format!(
-                        "`effect` in {owner} requires `safe`, `idempotent`, or `non_idempotent`; write `effect idempotent;`"
+                        "`effect` in {owner} requires `safe`, `idempotent`, or `non_idempotent`; write `effect idempotent;`{}",
+                        keyword_suggestion(&clauses, &["safe", "idempotent", "non_idempotent"])
                     ),
                 ));
             };
@@ -588,7 +670,8 @@ fn parse_endpoint(input: ParseStream<'_>, parent: Parent<'_>) -> syn::Result<Sou
             clauses.parse::<keyword::absent>()?;
             clauses.parse::<keyword::on>().map_err(|_| {
                 clauses.error(format!(
-                    "[C3-REP] expected `absent on STATUS (, STATUS)*;` in {owner}; write `absent on 404;`"
+                    "[C3-REP] expected `absent on STATUS (, STATUS)*;` in {owner}; write `absent on 404;`{}",
+                    keyword_suggestion(&clauses, &["on"])
                 ))
             })?;
             let mut codes = BTreeSet::new();
@@ -635,7 +718,10 @@ fn parse_endpoint(input: ParseStream<'_>, parent: Parent<'_>) -> syn::Result<Sou
                 return Err(coded(
                     clauses.span(),
                     Code::Owner,
-                    format!("the only supported exposure of {owner} is `expose accepted_bytes;`"),
+                    format!(
+                        "the only supported exposure of {owner} is `expose accepted_bytes;`{}",
+                        keyword_suggestion(&clauses, &["accepted_bytes"])
+                    ),
                 ));
             }
             clauses.parse::<keyword::accepted_bytes>()?;
@@ -788,14 +874,14 @@ fn parse_status(input: ParseStream<'_>, owner: &str) -> syn::Result<StatusDecl> 
             ));
         }
         while !content.is_empty() {
-            parse_status_item(&content, &mut codes, owner)?;
+            parse_status_item(&content, &mut codes, owner, false)?;
             if content.is_empty() {
                 break;
             }
             content.parse::<Token![,]>()?;
         }
     } else {
-        parse_status_item(input, &mut codes, owner)?;
+        parse_status_item(input, &mut codes, owner, true)?;
     }
     Ok(StatusDecl::Codes(codes.into_iter().collect()))
 }
@@ -804,10 +890,12 @@ fn parse_status_item(
     input: ParseStream<'_>,
     codes: &mut BTreeSet<u16>,
     owner: &str,
+    allow_success: bool,
 ) -> syn::Result<()> {
     let first: syn::LitInt = input.parse().map_err(|_| {
         input.error(format!(
-            "[C3-REP] a status item of {owner} requires a three-digit HTTP status; write `200` or `200..=204`"
+            "[C3-REP] a status item of {owner} requires a three-digit HTTP status; write `200` or `200..=204`{}",
+            keyword_suggestion(input, if allow_success { &["success"] } else { &[] })
         ))
     })?;
     let start = parse_status_code(&first, owner)?;

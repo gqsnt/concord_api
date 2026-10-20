@@ -1,0 +1,83 @@
+error: [C3-NAME] `tennat` is not a value of client `SuggestClientPathApi`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`; did you mean `tenant`?
+  --> tests/ui/fail/names/suggest_values_contexts.rs:12:14
+   |
+12 |         path "tenants/{tennat}";
+   |              ^^^^^^^^^^^^^^^^^^
+
+error: [C3-PATH] in path template hole at bytes 8..16 of client `SuggestClientPathApi`
+  --> tests/ui/fail/names/suggest_values_contexts.rs:12:14
+   |
+12 |         path "tenants/{tennat}";
+   |              ^^^^^^^^^^^^^^^^^^
+
+error: [C3-NAME] `regoin` is not a value of scope `SuggestScopePathApi::regional`; declare `regoin` as a value of this owner, or qualify an ancestor value as `client.regoin` or `<scope>.regoin`; did you mean `region`?
+  --> tests/ui/fail/names/suggest_values_contexts.rs:21:18
+   |
+21 |             path "regions/{regoin}";
+   |                  ^^^^^^^^^^^^^^^^^^
+
+error: [C3-PATH] in path template hole at bytes 8..16 of scope `SuggestScopePathApi::regional`
+  --> tests/ui/fail/names/suggest_values_contexts.rs:21:18
+   |
+21 |             path "regions/{regoin}";
+   |                  ^^^^^^^^^^^^^^^^^^
+
+error: [C3-NAME] `item_di` is not a value of endpoint `SuggestEndpointPathApi::read`; declare `item_di` as a value of this owner, or qualify an ancestor value as `client.item_di` or `<scope>.item_di`; did you mean `item_id`?
+  --> tests/ui/fail/names/suggest_values_contexts.rs:31:18
+   |
+31 |             path "items/prefix-{item_di}-suffix";
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: [C3-PATH] in path template hole at bytes 13..22 of endpoint `SuggestEndpointPathApi::read`
+  --> tests/ui/fail/names/suggest_values_contexts.rs:31:18
+   |
+31 |             path "items/prefix-{item_di}-suffix";
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: [C3-NAME] `regoin` is not a value of client `SuggestDnsAtomApi`; declare `regoin` as a value of this owner, or qualify an ancestor value as `client.regoin` or `<scope>.regoin`; did you mean `region`?
+  --> tests/ui/fail/names/suggest_values_contexts.rs:40:20
+   |
+40 |         subdomain [regoin];
+   |                    ^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of client `SuggestDnsConcatApi` (referenced from scope `SuggestDnsConcatApi::regional`); declare it there or qualify the owner that declares it; did you mean `client.tenant`?
+  --> tests/ui/fail/names/suggest_values_contexts.rs:50:47
+   |
+50 |             subdomain [concat ["api-", client.tennat]];
+   |                                               ^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of endpoint `SuggestQueryConcatApi::read`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`; did you mean `tenant`?
+  --> tests/ui/fail/names/suggest_values_contexts.rs:60:50
+   |
+60 |             query { "label" = concat ["tenant-", tennat]; }
+   |                                                  ^^^^^^
+
+error: [C3-NAME] `regoin` is not a value of scope `SuggestHeaderConcatApi::regional` (referenced from endpoint `SuggestHeaderConcatApi::regional::read`); declare it there or qualify the owner that declares it; did you mean `regional.region`?
+  --> tests/ui/fail/names/suggest_values_contexts.rs:70:68
+   |
+70 |                 headers { "X-Region" = concat ["region-", regional.regoin]; }
+   |                                                                    ^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of endpoint `SuggestRateBindingApi::read`; declare `tennat` as a value of this owner, or qualify an ancestor value as `client.tennat` or `<scope>.tennat`; did you mean `tenant`?
+  --> tests/ui/fail/names/suggest_values_contexts.rs:87:44
+   |
+87 |             rate_limit per_tenant(tenant = tennat);
+   |                                            ^^^^^^
+
+error: [C3-NAME] `tennat` is not a value of client `SuggestInlineRateApi` (referenced from endpoint `SuggestInlineRateApi::read`); declare it there or qualify the owner that declares it; did you mean `client.tenant`?
+  --> tests/ui/fail/names/suggest_values_contexts.rs:99:48
+   |
+99 |                 key [origin, "tenant" = client.tennat];
+   |                                                ^^^^^^
+
+error: [C3-NAME] `ofset` is not a value of endpoint `SuggestPaginationLocalApi::read`; declare `ofset` as a value of this owner, or qualify an ancestor value as `client.ofset` or `<scope>.ofset`; did you mean `offset`?
+   --> tests/ui/fail/names/suggest_values_contexts.rs:111:43
+    |
+111 |                 init OffsetInit { offset: ofset, page_size: std::num::NonZeroU32::MIN };
+    |                                           ^^^^^
+
+error: [C3-NAME] `initial_ofset` is not a value of client `SuggestPaginationAncestorApi` (referenced from endpoint `SuggestPaginationAncestorApi::read`); declare it there or qualify the owner that declares it; did you mean `client.initial_offset`?
+   --> tests/ui/fail/names/suggest_values_contexts.rs:124:50
+    |
+124 |                 init OffsetInit { offset: client.initial_ofset, page_size: std::num::NonZeroU32::MIN };
+    |                                                  ^^^^^^^^^^^^^

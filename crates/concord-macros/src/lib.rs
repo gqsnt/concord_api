@@ -17,6 +17,7 @@ mod emit;
 #[cfg(test)]
 mod generated_surface;
 mod semantic;
+mod suggestions;
 mod syntax;
 
 use proc_macro::TokenStream;

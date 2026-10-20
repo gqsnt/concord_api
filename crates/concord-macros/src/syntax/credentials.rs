@@ -14,7 +14,8 @@ use super::ast::{
     CredentialSource, CredentialsBlock, SecretDecl,
 };
 use super::diagnostics::{
-    Code, coded, validate_auth_header_name, validate_auth_query_name, validate_authorization_scheme,
+    Code, coded, keyword_suggestion, parse_with_keywords, validate_auth_header_name,
+    validate_auth_query_name, validate_authorization_scheme,
 };
 use super::keyword;
 use super::values::{AttrSite, parse_attrs};
@@ -71,7 +72,8 @@ pub(crate) fn parse_credentials(
                 body.span(),
                 Code::Auth,
                 format!(
-                    "the credentials block of {owner} accepts only `secret NAME;` and `credential NAME = source;`"
+                    "the credentials block of {owner} accepts only `secret NAME;` and `credential NAME = source;`{}",
+                    keyword_suggestion(&body, &["secret", "credential"])
                 ),
             ));
         }
@@ -182,7 +184,8 @@ fn parse_credential_source(
         input.span(),
         Code::Auth,
         format!(
-            "the source of {context} must be `api_key(..)`, `bearer(..)`, `basic(..)`, `endpoint PATH` or `custom Type`"
+            "the source of {context} must be `api_key(..)`, `bearer(..)`, `basic(..)`, `endpoint PATH` or `custom Type`{}",
+            keyword_suggestion(input, &["api_key", "bearer", "basic", "endpoint", "custom"])
         ),
     ))
 }
@@ -193,8 +196,24 @@ fn parse_secret_reference(
     context: &str,
 ) -> syn::Result<Ident> {
     input.parse::<keyword::secret>().map_err(|_| {
+        let hint = (|| -> syn::Result<String> {
+            let fork = input.fork();
+            let qualifier: Ident = fork.parse()?;
+            fork.parse::<Token![.]>()?;
+            let name: Ident = fork.parse()?;
+            if crate::suggestions::best_matches(&canonical_ident(&qualifier), ["secret"]).is_empty()
+            {
+                return Ok(String::new());
+            }
+            Ok(crate::suggestions::qualified_name_suggestion(
+                &canonical_ident(&name),
+                secrets,
+                "secret.",
+            ))
+        })()
+        .unwrap_or_else(|_| keyword_suggestion(input, &["secret"]));
         input.error(format!(
-            "[C3-AUTH] expected `secret.NAME` in the source of {context}"
+            "[C3-AUTH] expected `secret.NAME` in the source of {context}{hint}"
         ))
     })?;
     input.parse::<Token![.]>()?;
@@ -204,9 +223,14 @@ fn parse_secret_reference(
             name.span(),
             Code::Auth,
             format!(
-                "unknown or not-yet-declared secret `{}` in the source of {context}; declare `secret {};` earlier in the credentials block",
+                "unknown or not-yet-declared secret `{}` in the source of {context}; declare `secret {};` earlier in the credentials block{}",
                 canonical_ident(&name),
-                canonical_ident(&name)
+                canonical_ident(&name),
+                crate::suggestions::qualified_name_suggestion(
+                    &canonical_ident(&name),
+                    secrets,
+                    "secret."
+                )
             ),
         ));
     }
@@ -229,7 +253,8 @@ pub(crate) fn parse_auth(input: ParseStream<'_>, owner: &str) -> syn::Result<Aut
             input.span(),
             Code::Auth,
             format!(
-                "group the auth placements of {owner} in `auth {{ ... }}` or `auth replace {{ ... }}`, or write `auth off;`"
+                "group the auth placements of {owner} in `auth {{ ... }}` or `auth replace {{ ... }}`, or write `auth off;`{}",
+                keyword_suggestion(input, if replace { &[] } else { &["replace", "off"] })
             ),
         ));
     }
@@ -281,7 +306,11 @@ fn parse_auth_placement(input: ParseStream<'_>, owner: &str) -> syn::Result<Auth
             input.span(),
             Code::Auth,
             format!(
-                "an auth placement of {owner} is `bearer`, `basic`, `authorization`, `header \"Name\" =` or `query \"name\" =` followed by a credential name"
+                "an auth placement of {owner} is `bearer`, `basic`, `authorization`, `header \"Name\" =` or `query \"name\" =` followed by a credential name{}",
+                keyword_suggestion(
+                    input,
+                    &["bearer", "basic", "authorization", "header", "query"]
+                )
             ),
         ));
     };
@@ -301,14 +330,25 @@ fn parse_auth_placement(input: ParseStream<'_>, owner: &str) -> syn::Result<Auth
                 input.span(),
                 Code::Auth,
                 format!(
-                    "`challenge` in {owner} requires `never`, `unauthorized` or `unauthorized_or_forbidden`"
+                    "`challenge` in {owner} requires `never`, `unauthorized` or `unauthorized_or_forbidden`{}",
+                    keyword_suggestion(
+                        input,
+                        &["never", "unauthorized", "unauthorized_or_forbidden"]
+                    )
                 ),
             ));
         })
     } else {
         None
     };
-    input.parse::<Token![;]>()?;
+    parse_with_keywords::<Token![;]>(
+        input,
+        if challenge.is_none() {
+            &["challenge"]
+        } else {
+            &[]
+        },
+    )?;
     Ok(AuthPlacement {
         kind,
         credential,
