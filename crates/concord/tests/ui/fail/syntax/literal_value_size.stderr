@@ -1,0 +1,25 @@
+error: [C3-PLACE] literal components of a query value in endpoint `OversizedQueryLiteral::fetch` exceed the 65536-byte formatted public-value limit; shorten the literal value or concatenation
+   --> tests/ui/fail/syntax/literal_value_size.rs:13:27
+    |
+ 13 |   ...   query { "q" = "\
+    |  _____________________^
+ 14 | | ...       aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...
+ 15 | | ...       aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...
+ 16 | | ...       aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...
+...   |
+526 | | ...       a\
+527 | | ...       "; }
+    | |___________^
+
+error: [C3-PLACE] literal components of a header value in endpoint `OversizedHeaderLiteral::fetch` exceed the 65536-byte formatted public-value limit; shorten the literal value or concatenation
+   --> tests/ui/fail/syntax/literal_value_size.rs:538:34
+    |
+538 |   ...   headers { "X-Test" = "\
+    |  ____________________________^
+539 | | ...       ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé...
+540 | | ...       ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé...
+541 | | ...       ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé...
+...   |
+795 | | ...       a\
+796 | | ...       "; }
+    | |___________^

@@ -1,0 +1,29 @@
+error: [C3-PLACE] a header literal value in client `ClientLiteral` contains bytes HTTP headers cannot carry; remove ASCII control bytes other than horizontal tab, including DEL
+ --> tests/ui/fail/syntax/header_literal_values.rs:8:30
+  |
+8 |         headers { "X-Test" = "bad\rvalue"; }
+  |                              ^^^^^^^^^^^^
+
+error: [C3-PLACE] a header literal value in scope `ScopeLiteral::nested` contains bytes HTTP headers cannot carry; remove ASCII control bytes other than horizontal tab, including DEL
+  --> tests/ui/fail/syntax/header_literal_values.rs:17:55
+   |
+17 |         scope nested() { headers replace { "X-Test" = '\0'; } }
+   |                                                       ^^^^
+
+error: [C3-PLACE] a header literal value in endpoint `EndpointConcat::fetch` contains bytes HTTP headers cannot carry; remove ASCII control bytes other than horizontal tab, including DEL
+  --> tests/ui/fail/syntax/header_literal_values.rs:25:109
+   |
+25 |         GET fetch(value: String) -> () via Empty { headers { append "X-Test" = concat [value, concat ["ok", "bad\n"]]; } }
+   |                                                                                                             ^^^^^^^
+
+error: [C3-PLACE] a header literal value in endpoint `ReplaceLiteral::fetch` contains bytes HTTP headers cannot carry; remove ASCII control bytes other than horizontal tab, including DEL
+  --> tests/ui/fail/syntax/header_literal_values.rs:33:68
+   |
+33 |         GET fetch() -> () via Empty { headers { replace "X-Test" = '\u{7f}'; } }
+   |                                                                    ^^^^^^^^
+
+error: [C3-PLACE] a header literal value in endpoint `WhenPresentLiteral::fetch` contains bytes HTTP headers cannot carry; remove ASCII control bytes other than horizontal tab, including DEL
+  --> tests/ui/fail/syntax/header_literal_values.rs:41:73
+   |
+41 |         GET fetch() -> () via Empty { headers { when_present "X-Test" = "bad\u{1f}"; } }
+   |                                                                         ^^^^^^^^^^^

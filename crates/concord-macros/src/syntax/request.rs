@@ -5,6 +5,8 @@
 
 use std::time::Duration;
 
+use proc_macro2::Span;
+
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::{Ident, LitBool, LitChar, LitInt, LitStr, Token, Type, braced, bracketed};
@@ -455,7 +457,11 @@ fn parse_key_statement(
             ));
         }
         input.parse::<Token![=]>()?;
-        Some(parse_emission(input, owner)?)
+        let emission = parse_emission(input, owner)?;
+        if let Emission::Atom(atom) = &emission {
+            validate_head_literals(atom, family, owner)?;
+        }
+        Some(emission)
     };
     input.parse::<Token![;]>()?;
     Ok(KeyStatement {
@@ -464,6 +470,62 @@ fn parse_key_statement(
         emission,
         span,
     })
+}
+
+/// Literal bytes are written verbatim by core, including inside concatenations.
+/// Dynamic references contribute an unknown (possibly empty) string.
+fn validate_head_literals(atom: &Atom, family: PlacementFamily, owner: &str) -> syn::Result<usize> {
+    let text = match atom {
+        Atom::Str(literal) => literal.value(),
+        Atom::Char(literal) => literal.value().to_string(),
+        Atom::Bool(literal) => literal.value.to_string(),
+        Atom::Int { negative, literal } => format!(
+            "{}{}",
+            if *negative { "-" } else { "" },
+            literal.base10_digits()
+        ),
+        Atom::Reference { .. } => return Ok(0),
+        Atom::Concat { parts, .. } => {
+            let mut bytes = 0usize;
+            for part in parts {
+                bytes = bytes.saturating_add(validate_head_literals(part, family, owner)?);
+            }
+            return validate_head_literal_size(bytes, atom.span(), family, owner);
+        }
+    };
+    if family == PlacementFamily::Header && http::HeaderValue::from_str(&text).is_err() {
+        return Err(coded(
+            atom.span(),
+            Code::Place,
+            format!(
+                "a header literal value in {owner} contains bytes HTTP headers cannot carry; remove ASCII control bytes other than horizontal tab, including DEL"
+            ),
+        ));
+    }
+    validate_head_literal_size(text.len(), atom.span(), family, owner)
+}
+
+fn validate_head_literal_size(
+    bytes: usize,
+    span: Span,
+    family: PlacementFamily,
+    owner: &str,
+) -> syn::Result<usize> {
+    if bytes > crate::MAX_FORMATTED_PUBLIC_VALUE_BYTES {
+        let family = match family {
+            PlacementFamily::Query => "query",
+            PlacementFamily::Header => "header",
+        };
+        return Err(coded(
+            span,
+            Code::Place,
+            format!(
+                "literal components of a {family} value in {owner} exceed the {}-byte formatted public-value limit; shorten the literal value or concatenation",
+                crate::MAX_FORMATTED_PUBLIC_VALUE_BYTES
+            ),
+        ));
+    }
+    Ok(bytes)
 }
 
 fn parse_emission(input: ParseStream<'_>, owner: &str) -> syn::Result<Emission> {

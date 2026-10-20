@@ -1297,3 +1297,37 @@ fn coded_diagnostics_name_their_owner_and_a_correction() {
         ],
     );
 }
+
+#[test]
+fn head_literals_are_checked_in_every_owner_and_statement_form() {
+    for family in ["query", "headers"] {
+        for block in ["", "replace"] {
+            for statement in ["", "replace", "when_present", "append"] {
+                for owner in ["client", "scope", "endpoint"] {
+                    let literal = if family == "headers" {
+                        "\"bad\\n\"".to_owned()
+                    } else {
+                        format!(
+                            "{:?}",
+                            "x".repeat(crate::MAX_FORMATTED_PUBLIC_VALUE_BYTES + 1)
+                        )
+                    };
+                    for atom in [
+                        literal.clone(),
+                        format!("concat [true, concat [{literal}, 42]]"),
+                    ] {
+                        let clause =
+                            format!("{family} {block} {{ {statement} \"X-Test\" = {atom}; }}");
+                        let (body, label) = match owner {
+                            "client" => (clause, "client `A`"),
+                            "scope" => (format!("scope s() {{ {clause} }}"), "scope `A::s`"),
+                            _ => (format!("GET e() -> T {{ {clause} }}"), "endpoint `A::e`"),
+                        };
+                        let source = format!("client A {{ base \"http://a.test/\"; {body} }}");
+                        assert_err(source.parse().unwrap(), &["[C3-PLACE]", label]);
+                    }
+                }
+            }
+        }
+    }
+}

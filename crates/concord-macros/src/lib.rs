@@ -26,6 +26,7 @@ use syn::{Token, parenthesized};
 
 // Core owns these public structural limits. Compiler boundary tests exercise
 // the same exact first-excess behavior without coupling this crate to core.
+const MAX_FORMATTED_PUBLIC_VALUE_BYTES: usize = 65_536;
 const MAX_AUTH_PLACEMENTS: usize = 64;
 const MAX_AUTH_PLACEMENT_NAME_BYTES: usize = 256;
 const MAX_AUTHORIZATION_SCHEME_BYTES: usize = 256;

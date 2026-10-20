@@ -25,6 +25,7 @@ const MACRO_SRC: &str = "crates/concord-macros/src";
 /// Named macro copies that must exist and equal the core constant of the
 /// same name.
 const NAMED_COPIES: &[&str] = &[
+    "MAX_FORMATTED_PUBLIC_VALUE_BYTES",
     "MAX_AUTH_PLACEMENTS",
     "MAX_AUTH_PLACEMENT_NAME_BYTES",
     "MAX_AUTHORIZATION_SCHEME_BYTES",
@@ -119,6 +120,10 @@ fn compiled_core() -> BTreeMap<&'static str, u64> {
     use concord_core::contracts as core;
     let value = |number: usize| u64::try_from(number).expect("limit fits u64");
     BTreeMap::from([
+        (
+            "MAX_FORMATTED_PUBLIC_VALUE_BYTES",
+            value(core::MAX_FORMATTED_PUBLIC_VALUE_BYTES),
+        ),
         ("MAX_AUTH_PLACEMENTS", value(core::MAX_AUTH_PLACEMENTS)),
         (
             "MAX_AUTH_PLACEMENT_NAME_BYTES",

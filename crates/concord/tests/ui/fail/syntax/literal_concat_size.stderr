@@ -1,0 +1,18 @@
+error: [C3-PLACE] literal components of a query value in endpoint `OversizedConcatComponent::fetch` exceed the 65536-byte formatted public-value limit; shorten the literal value or concatenation
+   --> tests/ui/fail/syntax/literal_concat_size.rs:13:42
+    |
+ 13 |   ...   query { "q" = concat [value, "\
+    |  ____________________________________^
+ 14 | | ...       aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...
+ 15 | | ...       aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...
+ 16 | | ...       aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...
+...   |
+526 | | ...       a\
+527 | | ...       "]; }
+    | |___________^
+
+error: [C3-PLACE] literal components of a query value in endpoint `OversizedConcatSum::fetch` exceed the 65536-byte formatted public-value limit; shorten the literal value or concatenation
+   --> tests/ui/fail/syntax/literal_concat_size.rs:538:27
+    |
+538 |             query { "q" = concat ["\
+    |                           ^^^^^^
