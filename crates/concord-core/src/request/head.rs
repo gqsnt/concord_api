@@ -27,6 +27,7 @@ use crate::redaction::render_observed_url;
 #[doc(hidden)]
 #[derive(Clone, Debug)]
 pub struct RequestMeta {
+    etag_revalidation: bool,
     endpoint: EndpointId,
     method: Method,
     timeout: TimeoutSelection,
@@ -79,6 +80,7 @@ impl RequestMeta {
         effect: Effect,
     ) -> Self {
         Self {
+            etag_revalidation: false,
             endpoint: EndpointId::from_static(endpoint),
             method,
             timeout: inherited_timeout
@@ -92,12 +94,25 @@ impl RequestMeta {
     #[must_use]
     pub fn from_description(description: &EndpointDescription) -> Self {
         Self {
+            etag_revalidation: false,
             endpoint: description.endpoint_id().clone(),
             method: description.method().clone(),
             timeout: description.timeout(),
             accepted_status: description.accepted_status().clone(),
             effect: description.effect(),
         }
+    }
+
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_etag_revalidation(mut self) -> Self {
+        self.etag_revalidation = true;
+        self
+    }
+
+    #[doc(hidden)]
+    pub const fn etag_revalidation(&self) -> bool {
+        self.etag_revalidation
     }
 
     #[doc(hidden)]

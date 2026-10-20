@@ -1,0 +1,7 @@
+error[E0080]: evaluation panicked: [C3-REP] `revalidate etag` requires a buffered response driver in endpoint `RecordStreamResponse::records`; select a buffered representation or remove `revalidate etag`
+ --> tests/ui/fail/capabilities/revalidation_item_stream.rs:8:13
+  |
+8 |             revalidate etag;
+  |             ^^^^^^^^^^ evaluation of `record_stream_response::_` failed here
+  |
+  = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

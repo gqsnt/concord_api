@@ -217,6 +217,15 @@ fn child_span(child: &SourceChild) -> Span {
 }
 
 fn unsupported(input: ParseStream<'_>, kind: OwnerKind, owner: &str) -> syn::Error {
+    if input.peek(keyword::revalidate) {
+        return coded(
+            input.span(),
+            Code::Owner,
+            format!(
+                "`revalidate etag` is an endpoint-only clause and cannot appear in {owner}; move it into each endpoint that needs it"
+            ),
+        );
+    }
     if input.peek(keyword::retry) {
         return coded(
             input.span(),
@@ -332,7 +341,7 @@ fn unsupported(input: ParseStream<'_>, kind: OwnerKind, owner: &str) -> syn::Err
                 input.span(),
                 Code::Owner,
                 format!(
-                    "unsupported endpoint clause in {owner}; expected `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `id`, `status`, `effect`, `absent on`, `paginate` or `expose accepted_bytes`"
+                    "unsupported endpoint clause in {owner}; expected `path`, `query`, `headers`, `auth`, `timeout`, `rate_limit`, `id`, `status`, `effect`, `absent on`, `paginate`, `revalidate` or `expose accepted_bytes`"
                 ),
             )
         }
@@ -529,6 +538,7 @@ fn parse_endpoint(input: ParseStream<'_>, parent: Parent<'_>) -> syn::Result<Sou
         effect: None,
         absence: None,
         pagination: None,
+        revalidate_etag: None,
         expose_accepted_bytes: None,
     };
     if input.peek(Token![;]) {
@@ -539,7 +549,35 @@ fn parse_endpoint(input: ParseStream<'_>, parent: Parent<'_>) -> syn::Result<Sou
     braced!(clauses in input);
     while !clauses.is_empty() {
         let key_span = clauses.span();
-        if clauses.peek(keyword::paginate) {
+        if clauses.peek(keyword::revalidate) {
+            clauses.parse::<keyword::revalidate>()?;
+            if !clauses.peek(keyword::etag) {
+                return Err(coded(
+                    clauses.span(),
+                    Code::Owner,
+                    format!(
+                        "the only supported revalidation mode of {owner} is ETag; write `revalidate etag;`"
+                    ),
+                ));
+            }
+            clauses.parse::<keyword::etag>()?;
+            clauses.parse::<Token![;]>().map_err(|_| {
+                coded(
+                    clauses.span(),
+                    Code::Owner,
+                    format!("`revalidate etag` in {owner} ends with `;`; write `revalidate etag;`"),
+                )
+            })?;
+            insert_clause(
+                &mut endpoint.revalidate_etag,
+                Clause {
+                    key_span,
+                    value: (),
+                },
+                "revalidate etag",
+                &owner,
+            )?;
+        } else if clauses.peek(keyword::paginate) {
             let value = parse_pagination(&clauses, &owner)?;
             insert_clause(
                 &mut endpoint.pagination,

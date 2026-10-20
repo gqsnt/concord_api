@@ -1,0 +1,43 @@
+error: [C3-OWNER] `revalidate etag` is an endpoint-only clause and cannot appear in client `ClientClause`; move it into each endpoint that needs it
+ --> tests/ui/fail/revalidation/declaration.rs:6:9
+  |
+6 |         revalidate etag;
+  |         ^^^^^^^^^^
+
+error: [C3-OWNER] `revalidate etag` is an endpoint-only clause and cannot appear in scope `ScopeClause::resources`; move it into each endpoint that needs it
+  --> tests/ui/fail/revalidation/declaration.rs:14:13
+   |
+14 |             revalidate etag;
+   |             ^^^^^^^^^^
+
+error: [C3-OWNER] duplicate `revalidate etag` clause for endpoint `DuplicateClause::item`; singleton clauses are not last-writer-wins, so keep exactly one `revalidate etag` clause
+  --> tests/ui/fail/revalidation/declaration.rs:24:13
+   |
+24 |             revalidate etag;
+   |             ^^^^^^^^^^
+
+error: note: the first `revalidate etag` clause is here
+  --> tests/ui/fail/revalidation/declaration.rs:23:13
+   |
+23 |             revalidate etag;
+   |             ^^^^^^^^^^
+
+error: [C3-OWNER] the only supported revalidation mode of endpoint `UnknownMode::item` is ETag; write `revalidate etag;`
+  --> tests/ui/fail/revalidation/declaration.rs:33:24
+   |
+33 |             revalidate last_modified;
+   |                        ^^^^^^^^^^^^^
+
+error: [C3-OWNER] `revalidate etag` in endpoint `MissingTerminator::item` ends with `;`; write `revalidate etag;`
+  --> tests/ui/fail/revalidation/declaration.rs:43:9
+   |
+43 |         }
+   |         ^
+
+warning: unused import: `Text`
+ --> tests/ui/fail/revalidation/declaration.rs:1:15
+  |
+1 | use concord::{Text, api};
+  |               ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

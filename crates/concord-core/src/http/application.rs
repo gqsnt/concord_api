@@ -8,7 +8,7 @@ use bytes::Bytes;
 use bytes::BytesMut;
 use futures_core::Stream;
 use http::header::CONTENT_LENGTH;
-use http::{HeaderMap, Method, StatusCode, Version};
+use http::{HeaderMap, HeaderValue, Method, StatusCode, Version};
 
 #[cfg(test)]
 use concord_test_support::executor::ApplicationChannel;
@@ -32,6 +32,19 @@ pub(crate) struct ApplicationRequest {
 }
 
 impl ApplicationRequest {
+    pub(crate) fn revalidation_key(
+        &self,
+        cache: &crate::revalidation::RevalidationCache,
+        endpoint: &str,
+    ) -> crate::revalidation::CacheKey {
+        cache.key(
+            endpoint,
+            self.native.method(),
+            self.native.url(),
+            self.native.headers(),
+        )
+    }
+
     pub(crate) fn insert_auth_header(&mut self, name: http::HeaderName, value: http::HeaderValue) {
         self.native.headers_mut().insert(name, value);
     }
@@ -87,6 +100,12 @@ impl DispatchFailure {
 }
 
 pub(crate) struct ApplicationResponse {
+    revalidation: Option<(
+        crate::client::ClientCore,
+        crate::revalidation::CacheKey,
+        crate::revalidation::Entity,
+    )>,
+    content_length_override: Option<Option<u64>>,
     native: Option<reqwest::Response>,
     endpoint: EndpointId,
     method: Method,
@@ -94,6 +113,49 @@ pub(crate) struct ApplicationResponse {
 }
 
 impl ApplicationResponse {
+    pub(crate) fn from_entity(
+        entity: crate::revalidation::Entity,
+        endpoint: EndpointId,
+        method: Method,
+    ) -> Self {
+        let content_length = entity.content_length;
+        let mut response = http::Response::new(entity.body);
+        *response.status_mut() = StatusCode::OK;
+        *response.version_mut() = entity.version;
+        *response.headers_mut() = entity.headers;
+        Self {
+            revalidation: None,
+            content_length_override: Some(content_length),
+            native: Some(reqwest::Response::from(response)),
+            endpoint,
+            method,
+            progress: ResponseChunkProgress::default(),
+        }
+    }
+
+    pub(crate) fn capture_revalidation(
+        &mut self,
+        core: crate::client::ClientCore,
+        key: crate::revalidation::CacheKey,
+        tag: HeaderValue,
+    ) {
+        let entity = crate::revalidation::Entity {
+            tag,
+            headers: self.headers().clone(),
+            version: self.version(),
+            content_length: self.content_length(),
+            body: Bytes::new(),
+        };
+        self.revalidation = Some((core, key, entity));
+    }
+
+    pub(crate) fn store_buffered_body(&mut self, body: &Bytes) {
+        if let Some((core, key, mut entity)) = self.revalidation.take() {
+            entity.body = body.clone();
+            core.revalidation_cache().store(key, Some(entity));
+        }
+    }
+
     fn native(&self) -> &reqwest::Response {
         self.native
             .as_ref()
@@ -113,7 +175,8 @@ impl ApplicationResponse {
     }
 
     pub(crate) fn content_length(&self) -> Option<u64> {
-        self.native().content_length()
+        self.content_length_override
+            .unwrap_or_else(|| self.native().content_length())
     }
 
     /// Charges every nonempty body chunk later acquired from this response
@@ -180,6 +243,8 @@ impl ApplicationResponse {
         method: Method,
     ) -> Self {
         Self {
+            revalidation: None,
+            content_length_override: None,
             native: Some(native),
             endpoint,
             method,
@@ -471,6 +536,8 @@ impl ApplicationHttp {
         };
 
         Ok(ApplicationResponse {
+            revalidation: None,
+            content_length_override: None,
             native: Some(self.decoding.response(native).await),
             endpoint: endpoint.clone(),
             method: method.clone(),

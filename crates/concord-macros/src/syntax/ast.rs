@@ -81,6 +81,7 @@ pub(crate) struct SourceEndpoint {
     pub(crate) effect: Option<Clause<EffectDecl>>,
     pub(crate) absence: Option<Clause<Vec<u16>>>,
     pub(crate) pagination: Option<Clause<PaginationDecl>>,
+    pub(crate) revalidate_etag: Option<Clause<()>>,
     pub(crate) expose_accepted_bytes: Option<Span>,
 }
 

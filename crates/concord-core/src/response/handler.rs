@@ -202,7 +202,9 @@ pub(crate) async fn acquire_buffered(input: ResponseInput) -> Result<Bytes, ApiE
                 }
                 body.extend_from_slice(&chunk);
             }
-            Ok::<Bytes, ApiError>(body.freeze())
+            let body = body.freeze();
+            response.store_buffered_body(&body);
+            Ok::<Bytes, ApiError>(body)
         })
         .await
         .map_err(|_| timeout(&timeout_endpoint, &method))?

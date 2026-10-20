@@ -395,6 +395,12 @@ fn endpoint_card(model: &Model, index: usize) -> String {
         }
     );
     let _ = writeln!(out, "- Timeout: {}", timeout_text(entry.effective_timeout));
+    if entry.revalidate_etag.is_some() {
+        let _ = writeln!(
+            out,
+            "- ETag revalidation: matching calls send a conditional request; a 304 reuses retained buffered response bytes through normal validation and conversion"
+        );
+    }
     if entry.effective_auth.is_empty() {
         let _ = writeln!(out, "- Authentication: none");
     } else {
@@ -748,6 +754,29 @@ mod tests {
                 "generated docs lack `{needle}`:\n{docs}"
             );
         }
+    }
+
+    #[test]
+    fn revalidating_endpoint_cards_explain_conditional_requests() {
+        let file = expand(quote! {
+            client ConditionalApi {
+                base "https://example.test/";
+                response Text;
+                GET read() -> String { revalidate etag; }
+                GET ordinary() -> String;
+            }
+        });
+        let (conditional, _) = constructor_docs(&file, "read");
+        assert_contains(
+            &conditional,
+            &[
+                "ETag revalidation",
+                "conditional request",
+                "normal validation and conversion",
+            ],
+        );
+        let (ordinary, _) = constructor_docs(&file, "ordinary");
+        assert!(!ordinary.contains("ETag revalidation"));
     }
 
     #[test]

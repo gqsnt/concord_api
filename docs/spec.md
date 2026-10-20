@@ -53,7 +53,8 @@ owner_preamble   := owner_attachment
 owner_attachment := path | subdomain | query | headers | auth
                   | timeout | request_default | response_default | rate_attachment
 endpoint_clause  := path | query | headers | auth | timeout | rate_attachment
-                  | endpoint_id | status | effect | absence | pagination | expose
+                  | endpoint_id | status | effect | absence | pagination
+                  | expose | revalidation
 
 base             := "base" string ";"
 values           := "values" "{" (value ";")* "}"
@@ -97,6 +98,7 @@ status_item      := status_code | status_code "..=" status_code
 effect           := "effect" ("safe" | "idempotent" | "non_idempotent") ";"
 absence          := "absent" "on" status_code ("," status_code)* ";"
 expose           := "expose" "accepted_bytes" ";"
+revalidation     := "revalidate" "etag" ";"
 
 credentials      := "credentials" "{" credential_decl* "}"
 credential_decl  := attrs "secret" ident ";"
@@ -156,7 +158,8 @@ destination      := ident | "(" ident ("," ident)+ ","? ")"
 - **Multiplicity (LANG-02).** At most one `base`, `values`, `credentials` and
   `rate_limits` per client; one clause per non-rate attachment family per
   owner; one body per endpoint; one `id`, `status`, `effect`, `absent on`,
-  `paginate` and `expose` per endpoint. Rate attachments may repeat (§13).
+  `paginate`, `expose` and `revalidate` per endpoint. Rate attachments may repeat
+  (§13).
   Duplicated singleton clauses are errors, never last-writer-wins. An empty
   explicit query/header block is legal; an empty `concat` is not.
 - Secrets are always required builder inputs. `secret NAME?` is rejected:
@@ -177,7 +180,7 @@ destination      := ident | "(" ident ("," ident)+ ","? ")"
 | Auth | Yes | Yes | Yes | Ordered append; explicit `replace`/`off` |
 | Timeout | Yes | Yes | Yes | Nearest finite selection; root default 30 seconds |
 | Rate attachment | Yes | Yes | Yes | Additive (§13) |
-| ID/status/effect/absence/pagination/expose | No | No | Yes | Endpoint-local |
+| ID/status/effect/absence/pagination/expose/revalidation | No | No | Yes | Endpoint-local |
 
 Preambles precede children, so each owner's attachments have one location.
 Clause order across different endpoint families does not imply execution
@@ -682,6 +685,21 @@ client OutcomeApi {
   status shortcut.
 - **Accepted bytes.** `expose accepted_bytes;` adds the `.accepted_bytes()`
   terminal for buffered or discard normal pairs (§10.4).
+- **ETag revalidation.** `revalidate etag;` is endpoint-only and may occur once.
+  `etag` is the only supported mode. It requires `GET`/`HEAD` with their default
+  safe effect, or an explicit `effect safe;`, a buffered response representation
+  and no pagination. Streaming and discard drivers are rejected. A complete
+  200 response with an ETag is retained in a bounded LRU store unless its
+  body exceeds the byte bound or `Cache-Control` contains `no-store`. A 200
+  without an ETag or with `no-store` removes the previous entry. A
+  matching later request sends `If-None-Match`; a 304 reuses the retained
+  response bytes through the normal buffered response contract. A 304 without
+  a matching retained response is a contract failure. The cache key includes
+  the prepared request identity, including hashed authentication material, so
+  credentials cannot share entries accidentally. Runtime configuration selects
+  `revalidation_cache(entries, bytes)` through `configure_runtime`; defaults
+  are 256 entries and 8 MiB, and zero in either limit disables storage. See
+  [Responses](responses.md#etag-revalidation) and [Runtime](runtime.md).
 
 ## 11. Credentials and authentication
 

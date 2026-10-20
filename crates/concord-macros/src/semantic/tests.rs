@@ -817,6 +817,97 @@ fn rate_attachments_bind_exactly_deduplicate_identical_repeats_and_reject_confli
 }
 
 #[test]
+fn etag_revalidation_requires_an_endpoint_singleton_safe_effect_and_no_pagination() {
+    let model = ok(quote! {
+        client A {
+            base "https://a.test/";
+            response Text;
+            GET ordinary() -> String;
+            GET read() -> String { revalidate etag; }
+            POST safe() -> String { revalidate etag; effect safe; }
+        }
+    });
+    assert!(endpoint(&model, "ordinary").revalidate_etag.is_none());
+    assert!(endpoint(&model, "read").revalidate_etag.is_some());
+    assert!(endpoint(&model, "safe").revalidate_etag.is_some());
+    for tokens in [
+        quote!(POST read() -> String { revalidate etag; }),
+        quote!(GET read() -> String { revalidate etag; effect idempotent; }),
+    ] {
+        assert_err(
+            quote! {
+                client A {
+                    base "https://a.test/";
+                    response Text;
+                    #tokens
+                }
+            },
+            &["[C3-REP]", "endpoint `A::read`", "effect safe"],
+        );
+    }
+    assert_err(
+        quote! {
+            client A {
+                base "https://a.test/";
+                response Text;
+                GET read(query page: u32 = 1) -> String {
+                    paginate via Pages { init Start { page: page }; cursor -> page; }
+                    revalidate etag;
+                }
+            }
+        },
+        &[
+            "[C3-REP]",
+            "endpoint `A::read`",
+            "cannot combine with pagination",
+        ],
+    );
+    assert_err(
+        quote! {
+            client A {
+                base "https://a.test/";
+                response Text;
+                GET read() -> String { revalidate etag; revalidate etag; }
+            }
+        },
+        &[
+            "[C3-OWNER]",
+            "duplicate `revalidate etag`",
+            "endpoint `A::read`",
+        ],
+    );
+    assert_err(
+        quote! {
+            client A {
+                base "https://a.test/";
+                response Text;
+                GET read() -> String { revalidate last_modified; }
+            }
+        },
+        &[
+            "[C3-OWNER]",
+            "endpoint `A::read`",
+            "only supported revalidation mode",
+        ],
+    );
+    assert_err(
+        quote! {
+            client A { base "https://a.test/"; revalidate etag; }
+        },
+        &["[C3-OWNER]", "client `A`", "endpoint-only"],
+    );
+    assert_err(
+        quote! {
+            client A {
+                base "https://a.test/";
+                scope resources() { revalidate etag; }
+            }
+        },
+        &["[C3-OWNER]", "scope `A::resources`", "endpoint-only"],
+    );
+}
+
+#[test]
 fn pagination_requires_safe_effect_and_scalar_endpoint_destinations() {
     assert_err(
         quote! {

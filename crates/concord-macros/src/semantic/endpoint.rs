@@ -95,6 +95,26 @@ pub(crate) fn resolve_contract(resolver: &mut Resolver, endpoint: usize) -> syn:
         Some(clause) => (clause.value, true),
         None => (entry.method.default_effect(), false),
     };
+    if let Some(clause) = &source.revalidate_etag {
+        if effect != EffectDecl::Safe {
+            return Err(coded(
+                clause.key_span,
+                Code::Rep,
+                format!(
+                    "`revalidate etag` requires an effective `effect safe` in {label}; remove revalidation or assert `effect safe;` only when the application operation is safe"
+                ),
+            ));
+        }
+        if source.pagination.is_some() {
+            return Err(coded(
+                clause.key_span,
+                Code::Rep,
+                format!(
+                    "`revalidate etag` cannot combine with pagination in {label}; remove `revalidate etag` or `paginate`"
+                ),
+            ));
+        }
+    }
     let absence = match &source.absence {
         None => None,
         Some(clause) => {

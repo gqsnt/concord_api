@@ -157,6 +157,7 @@ const ENDPOINT_CLAUSES: &[&str] = &[
     "`absent on`",
     "`paginate`",
     "`expose accepted_bytes`",
+    "`revalidate`",
 ];
 
 /// Every terminal keyword of the canonical v3 grammar (§3.2, §11.1, §12.1,
@@ -185,6 +186,7 @@ const V3_KEYWORDS: &[&str] = &[
     "each",
     "effect",
     "endpoint",
+    "etag",
     "explicit",
     "expose",
     "header",
@@ -210,6 +212,7 @@ const V3_KEYWORDS: &[&str] = &[
     "replace",
     "request",
     "response",
+    "revalidate",
     "safe",
     "scope",
     "secret",
@@ -814,6 +817,7 @@ fn looks_like_dsl(line: &str) -> bool {
         "timeout ",
         "status ",
         "effect ",
+        "revalidate ",
         "paginate via ",
         "rate_limits {",
         "rate_limit ",
@@ -1685,6 +1689,7 @@ fn check_language_projection_agreement(
 ) -> Result<(), String> {
     check_parser_clause_agreement(root, errors)?;
     check_grammar_keyword_agreement(root, errors)?;
+    check_revalidation_documentation(root, errors)?;
     check_optional_secret_agreement(root, errors)?;
     check_generated_name_agreement(root, errors)?;
     check_rate_dimension_agreement(root, errors)?;
@@ -1751,6 +1756,54 @@ fn check_language_projection_agreement(
                 "renamed façade must document a `concord` dependency alias and retain `[lib] name = \"concord\"`"
                     .to_owned(),
             );
+        }
+    }
+    Ok(())
+}
+
+/// Keep the opt-in revalidation contract and its bounded runtime controls visible.
+fn check_revalidation_documentation(root: &Path, errors: &mut Vec<String>) -> Result<(), String> {
+    for (path, required) in [
+        (
+            "docs/spec.md",
+            &[
+                "revalidate",
+                "etag",
+                "effect safe;",
+                "no pagination",
+                "contract failure",
+            ][..],
+        ),
+        (
+            "docs/responses.md",
+            &[
+                "revalidate etag;",
+                "If-None-Match",
+                "304",
+                "buffered",
+                "hashed authentication",
+                "LRU",
+                "contract failure",
+            ][..],
+        ),
+        (
+            "docs/runtime.md",
+            &[
+                "revalidation_cache(entries, bytes)",
+                "256 entries",
+                "8 MiB",
+                "zero in either",
+                "LRU",
+            ][..],
+        ),
+    ] {
+        let source = read(&root.join(path))?;
+        for required in required {
+            if !source.contains(required) {
+                errors.push(format!(
+                    "{path}: missing ETag revalidation contract `{required}`"
+                ));
+            }
         }
     }
     Ok(())
@@ -2670,6 +2723,7 @@ mod tests {
             "timeout 5s;",
             "status success;",
             "effect safe;",
+            "revalidate etag;",
             "paginate via OffsetPages {",
             "rate_limits {",
             "rate_limit shared();",

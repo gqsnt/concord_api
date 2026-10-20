@@ -313,6 +313,10 @@ impl TreeState {
             absence: None,
             absence_span: span,
             pagination: None,
+            revalidate_etag: source
+                .revalidate_etag
+                .as_ref()
+                .map(|clause| clause.key_span),
             expose_accepted_bytes: source.expose_accepted_bytes.is_some(),
             path: None,
             program: empty_program(),

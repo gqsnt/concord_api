@@ -642,6 +642,8 @@ pub(crate) struct Endpoint {
     /// where head-absence obligations on the generated code are reported.
     pub(crate) absence_span: Span,
     pub(crate) pagination: Option<Pagination>,
+    /// The opt-in clause span, retained for the buffered-driver assertion.
+    pub(crate) revalidate_etag: Option<Span>,
     pub(crate) expose_accepted_bytes: bool,
     pub(crate) path: Option<LocalPath>,
     pub(crate) program: LocalProgram,

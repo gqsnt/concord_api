@@ -33,6 +33,7 @@ mod redaction;
 mod request;
 mod response;
 pub mod retry;
+mod revalidation;
 mod runtime;
 mod value;
 

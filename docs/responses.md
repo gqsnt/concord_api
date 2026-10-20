@@ -80,6 +80,41 @@ validated (100-599, increasing, disjoint), no final accepted status is below
 200, and accepted statuses may not overlap an effective auth challenge. A status
 outside the set is a rejected status (below).
 
+## ETag revalidation
+
+Declare `revalidate etag;` once in an endpoint body to opt in. It is not a
+client or scope default, and `etag` is the only mode. The endpoint must use
+`GET`/`HEAD` with their default safe effect, or explicitly declare `effect safe;`.
+Its response representation must be buffered, and it cannot paginate or use a
+streaming or discard driver.
+
+A complete 200 response carrying a strong or weak `ETag` populates the client's
+bounded LRU store with the tag, raw body and response metadata needed to decode
+it again. `Cache-Control: no-store` prevents storage. A 200 without an ETag or
+with `no-store` removes any earlier entry for that request. A body larger than
+the configured byte bound is delivered without being retained.
+
+Every later matching call performs a managed network operation, sending
+`If-None-Match` with the exact stored tag. A 304 reuses the retained response
+bytes through the endpoint's normal buffered validation and conversion
+contract, with status 200, even when 304 is outside the accepted status set.
+A 304 without a matching retained response is a contract failure, including
+when storage is disabled or the entry was evicted while the call was in flight.
+
+The key includes the endpoint, method, final URL including query, and all
+request headers after authentication, with hashed authentication material.
+Different credentials, header values and query values cannot share entries.
+Raw credentials and sensitive request values are not retained in the key;
+cache diagnostics never expose bodies, tags or key material. The store is
+shared by a built client's endpoints and clones, and evicts least recently
+used entries until both its entry and body-byte limits hold. Every call
+revalidates; freshness lifetimes do not skip network operations.
+
+Configure it on the client builder with
+`configure_runtime(|runtime| runtime.revalidation_cache(entries, bytes))`.
+The defaults are 256 entries and 8 MiB; zero in either limit disables storage.
+See [Runtime configuration](runtime.md#runtimeconfigbuilder).
+
 ## Response representations
 
 ```text

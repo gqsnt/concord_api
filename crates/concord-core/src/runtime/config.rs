@@ -20,6 +20,7 @@ use crate::runtime::{WallClock, default_wall_clock};
 
 /// Private immutable finite runtime configuration.
 pub(crate) struct RuntimeConfig {
+    pub(crate) revalidation_cache: crate::revalidation::RevalidationCache,
     pub(crate) runtime_endpoint_timeout: Option<Duration>,
     pub(crate) request_body_limit: NonZeroUsize,
     pub(crate) response_body_limit: NonZeroUsize,
@@ -123,6 +124,10 @@ impl RuntimeConfigBuilder {
         let rate_limiter_capability = rate_limiter.capability();
         Self {
             config: RuntimeConfig {
+                revalidation_cache: crate::revalidation::RevalidationCache::new(
+                    256,
+                    8 * 1024 * 1024,
+                ),
                 runtime_endpoint_timeout: Some(Duration::from_secs(
                     DEFAULT_OPERATION_TIMEOUT_SECONDS,
                 )),
@@ -166,6 +171,16 @@ impl RuntimeConfigBuilder {
             stream_selection: StreamSelection::default(),
             limit_selection: LimitSelection::default(),
         }
+    }
+
+    /// Bounds client-wide entity-tag storage by entry count and stored body bytes.
+    ///
+    /// Defaults to 256 entries and 8 MiB. Zero for either bound disables storing.
+    #[must_use]
+    pub fn revalidation_cache(mut self, entries: usize, bytes: usize) -> Self {
+        self.config.revalidation_cache =
+            crate::revalidation::RevalidationCache::new(entries, bytes);
+        self
     }
 
     /// Sets the default Concord operation timeout inherited by runtime endpoints.

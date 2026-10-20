@@ -189,6 +189,30 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
             }
         }
     });
+    // Driver selection is resolved by Rust, including aliases and custom
+    // representations. The sealed driver's acquisition constant keeps this
+    // check accurate without guessing from authored type names.
+    let revalidation_driver = endpoint.revalidate_etag.map(|span| {
+        let message = lit(&format!(
+            "[C3-REP] `revalidate etag` requires a buffered response driver in endpoint `{}`; select a buffered representation or remove `revalidate etag`",
+            endpoint.display,
+        ));
+        located_at(
+            quote! {
+                const _: () = ::std::assert!(
+                    ::std::matches!(
+                        <<#response_spec as #p::ResponseRepresentation<#output>>::Driver as #f::response::ResponseDriver>::ACQUISITION,
+                        #p::ResponseAcquisition::Buffered
+                    ),
+                    #message
+                );
+            },
+            span,
+        )
+    });
+    let revalidation_meta = endpoint
+        .revalidate_etag
+        .map(|_| quote!(.with_etag_revalidation()));
 
     // ---- pagination ----
     let pageable = endpoint.pagination.as_ref().map(|pagination| {
@@ -500,6 +524,8 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
         // compile error, and no representation code runs to discover it.
         const _: () = #p::assert_response_accept(#response_accept);
 
+        #revalidation_driver
+
         impl #p::EndpointSpec for #spec {
             type Input = #input;
             type Body = #body_spec;
@@ -507,7 +533,7 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
             type Response = #response_spec;
 
             fn request_meta(&self) -> #p::RequestMeta {
-                #p::RequestMeta::from_description(Self::__description())
+                #p::RequestMeta::from_description(Self::__description()) #revalidation_meta
             }
 
             fn prepare_head(

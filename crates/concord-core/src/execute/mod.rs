@@ -670,6 +670,29 @@ where
             }
         };
         let status = attempt.response.status();
+        if head.meta().etag_revalidation() && status == StatusCode::NOT_MODIFIED {
+            let entity = attempt
+                .revalidation_key
+                .filter(|_| attempt.conditional_sent)
+                .and_then(|key| core.revalidation_cache().get(key))
+                .ok_or_else(|| {
+                    ApiError::classified(
+                        head.endpoint_id().clone(),
+                        head.method().clone(),
+                        ErrorCategory::ResponseContract,
+                    )
+                    .with_stage(
+                        FailureStage::ResponseConversion,
+                        DispatchKnowledge::ResponseObserved,
+                    )
+                })?;
+            let response = crate::http::application::ApplicationResponse::from_entity(
+                entity,
+                head.endpoint_id().clone(),
+                head.method().clone(),
+            );
+            break AttemptOutcome::Accepted(response, None);
+        }
 
         if let Some(challenge_index) = attempt.applied_auth.challenge_index(status) {
             journal.enter(FailureStage::RejectedResponse);
@@ -776,7 +799,7 @@ where
         }
 
         if head.accepted_status().contains(status) {
-            break AttemptOutcome::Accepted(attempt.response);
+            break AttemptOutcome::Accepted(attempt.response, attempt.revalidation_key);
         }
 
         journal.enter(FailureStage::RejectedResponse);
@@ -818,8 +841,8 @@ where
         )
         .with_provider_acquisition(journal.provider_acquisition())
     };
-    let response = match outcome {
-        AttemptOutcome::Accepted(response) => response,
+    let (response, revalidation_key) = match outcome {
+        AttemptOutcome::Accepted(response, key) => (response, key),
         AttemptOutcome::Absent(response) => {
             let status = response.status();
             let version = response.version();
@@ -851,6 +874,33 @@ where
     // Accepted branch: acquisition and conversion failures are terminal and
     // never retried, whatever a classifier would recommend.
     journal.enter(FailureStage::ResponseAcquisition);
+    let mut response = response;
+    if let Some(key) = revalidation_key.filter(|_| response.status() == StatusCode::OK) {
+        let tag = response.headers().get(http::header::ETAG).cloned();
+        let no_store = response
+            .headers()
+            .get_all(http::header::CACHE_CONTROL)
+            .iter()
+            .any(|value| {
+                value
+                    .as_bytes()
+                    .split(|byte| *byte == b',')
+                    .any(|directive| {
+                        let name = directive
+                            .split(|byte| *byte == b'=')
+                            .next()
+                            .unwrap_or_default();
+                        name.trim_ascii().eq_ignore_ascii_case(b"no-store")
+                    })
+            });
+        if let Some(tag) = tag.filter(|_| !no_store) {
+            response.capture_revalidation(core.clone(), key, tag);
+        } else {
+            // A replacing response invalidates the previous entity even if
+            // acquiring or decoding the new response subsequently fails.
+            core.revalidation_cache().store(key, None);
+        }
+    }
     let status = response.status();
     let version = response.version();
     let headers = response.headers().clone();
@@ -1244,12 +1294,17 @@ struct AttemptResponse {
     response: crate::http::application::ApplicationResponse,
     applied_auth: PreparedAuthPlan,
     server_delay: Option<ServerDelayHint>,
+    revalidation_key: Option<crate::revalidation::CacheKey>,
+    conditional_sent: bool,
 }
 
 /// The selected result branch of the final attempt.
 enum AttemptOutcome {
     /// A payload-success status on the ordinary accepted branch.
-    Accepted(crate::http::application::ApplicationResponse),
+    Accepted(
+        crate::http::application::ApplicationResponse,
+        Option<crate::revalidation::CacheKey>,
+    ),
     /// A declared head-only expected-absence status.
     Absent(crate::http::application::ApplicationResponse),
 }
@@ -1393,6 +1448,15 @@ async fn send_attempt(
         .request_ready(&request_event);
     check_deadline(deadline, head.endpoint_id(), head.method())?;
     finalized_auth.materialize(&mut request, head.endpoint_id(), head.method())?;
+    let revalidation_key = head
+        .meta()
+        .etag_revalidation()
+        .then(|| request.revalidation_key(core.revalidation_cache(), head.endpoint()));
+    let mut conditional_sent = false;
+    if let Some(entity) = revalidation_key.and_then(|key| core.revalidation_cache().get(key)) {
+        request.insert_auth_header(http::header::IF_NONE_MATCH, entity.tag);
+        conditional_sent = true;
+    }
     check_deadline(deadline, head.endpoint_id(), head.method())?;
     // CONTROL-03: a cancellation signal observed before handoff prevents it.
     if controls.is_some_and(RequestControlState::is_cancelled) {
@@ -1492,6 +1556,8 @@ async fn send_attempt(
         response,
         applied_auth,
         server_delay,
+        revalidation_key,
+        conditional_sent,
     })
 }
 

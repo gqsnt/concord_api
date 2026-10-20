@@ -7,6 +7,9 @@ fn current_language_surface_and_diagnostics() {
     cases.compile_fail("tests/ui/fail/names/*.rs");
     // V3-E08: head-only absence capability conflicts (§10.2).
     cases.compile_fail("tests/ui/fail/absence/*.rs");
+    cases.compile_fail("tests/ui/fail/revalidation/*.rs");
+    #[cfg(feature = "ndjson")]
+    cases.compile_fail("tests/ui/fail/capabilities/revalidation_item_stream.rs");
     // V3-O01: call-site deprecation of generated items (§3.5, §19.2).
     cases.compile_fail("tests/ui/fail/deprecation/*.rs");
     cases.compile_fail("tests/ui/fail/authentication/*.rs");

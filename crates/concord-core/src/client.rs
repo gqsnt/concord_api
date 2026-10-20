@@ -136,6 +136,10 @@ impl ClientCore {
         })
     }
 
+    pub(crate) fn revalidation_cache(&self) -> &crate::revalidation::RevalidationCache {
+        &self.inner.runtime.revalidation_cache
+    }
+
     pub(crate) fn base_url(&self) -> &Url {
         &self.inner.base_url
     }

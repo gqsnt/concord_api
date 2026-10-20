@@ -78,13 +78,14 @@ whatever `allow_http()` says.
 ## `RuntimeConfigBuilder`
 
 Count and size setters take primitive values (§20.4); zero is a build error
-except where a disable method exists.
+except where a disable method or an explicit zero-disable rule exists.
 
 | Method | Argument | Default |
 |---|---|---|
 | `runtime_endpoint_timeout` | positive `Duration` | 30 s, for runtime descriptions without an owner selection |
 | `request_body_limit` | positive `usize` bytes | 16 MiB |
 | `response_body_limit` | positive `usize` bytes | 16 MiB (buffered accepted responses) |
+| `revalidation_cache(entries, bytes)` | two `usize` limits; zero in either disables storage | 256 entries, 8 MiB |
 | `stream_response_limit` | positive `usize` bytes | 16 MiB |
 | `status_body_limit` / `disable_status_body_capture` | positive `usize` / none | 64 KiB |
 | `provider_request_limit`, `provider_response_limit` | positive `usize` bytes | 1 MiB each |
@@ -103,6 +104,12 @@ except where a disable method exists.
 | `retry_policy` / `disable_retry_policy` | `RetryPolicy` / none | no retry |
 | `operation_observer` | `Arc<dyn OperationObserver>` | none |
 | `debug` | `DebugLevel` (`None`, `Basic`, `Headers`) | `None` |
+
+`configure_runtime(|runtime| runtime.revalidation_cache(entries, bytes))`
+sets the shared client ETag store limits. Entries are evicted in LRU order to
+fit both limits. Only endpoints declaring `revalidate etag;` use the store;
+[Responses](responses.md#etag-revalidation) describes the request identity and
+304 contract. Disabling storage does not make an unmatched 304 acceptable.
 
 The aggregate handoff ceiling (`aggregate_max_sends`, 2,000 by default) counts
 every application handoff of one traversal and is intersected with a request's
@@ -142,6 +149,7 @@ never wraparound, hidden truncation or an unbounded fallback.
 |---|---|
 | Operation timeout | 30 s when omitted; finite |
 | Request body / buffered response / stream bytes | 16 MiB each, configurable |
+| ETag revalidation cache | 256 entries / 8 MiB; LRU; zero in either limit disables storage |
 | Status body capture | 64 KiB, configurable, explicit disable |
 | Provider request/response body | 1 MiB each |
 | Provider helper sends | 4 per acquisition; hard maximum 64 |
