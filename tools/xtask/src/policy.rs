@@ -22,6 +22,7 @@ const FORBIDDEN_PROCESS_ARTIFACTS: &[&str] = &[
 pub(crate) fn run(root: &Path) -> Result<(), String> {
     let metadata = metadata(root.join("Cargo.toml"))?;
     check_dependency_direction(&metadata)?;
+    check_record_features(&metadata)?;
     check_versions(&metadata)?;
     check_licenses(root, &metadata)?;
     check_release_stage(metadata.packages.iter().map(|package| {
@@ -218,6 +219,45 @@ fn check_dependency_direction(metadata: &Metadata) -> Result<(), String> {
     Ok(())
 }
 
+/// Concrete record formats preserve the facade's generic record contracts.
+fn check_record_features(metadata: &Metadata) -> Result<(), String> {
+    let facade = package(metadata, "concord")?;
+    for feature in ["csv", "ndjson", "sse"] {
+        require_feature_targets(
+            &facade.features,
+            "concord",
+            feature,
+            &["records", &format!("concord_extras/{feature}")],
+        )?;
+    }
+    let extras = package(metadata, "concord-extras")?;
+    require_feature_targets(
+        &extras.features,
+        "concord-extras",
+        "sse",
+        &["concord_core/records", "dep:mime", "dep:tokio"],
+    )
+}
+
+fn require_feature_targets(
+    features: &BTreeMap<String, Vec<String>>,
+    package: &str,
+    feature: &str,
+    required: &[&str],
+) -> Result<(), String> {
+    let targets = features
+        .get(feature)
+        .ok_or_else(|| format!("{package} is missing the `{feature}` feature"))?;
+    for target in required {
+        if !targets.iter().any(|value| value == target) {
+            return Err(format!(
+                "{package} feature `{feature}` must enable `{target}`"
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn check_versions(metadata: &Metadata) -> Result<(), String> {
     let versions = metadata
         .packages
@@ -347,7 +387,10 @@ fn check_generated_paths(directory: &Path) -> Result<(), String> {
 mod tests {
     use cargo_metadata::semver::Version;
 
-    use super::{ReleaseFacts, check_locked_recipes, check_release_stage, justfile_recipes};
+    use super::{
+        ReleaseFacts, check_locked_recipes, check_release_stage, justfile_recipes,
+        require_feature_targets,
+    };
 
     const JUSTFILE: &str = "set shell := [\"bash\"]\n\n[windows]\nset shell := [\"pwsh\"]\n\ndefault:\n    @just --list\n\nfmt:\n    cargo fmt --all -- --check\n\ncheck:\n    cargo check --workspace --locked\n    cargo run --locked -p concord-xtask -- policy --locked\n\n# Complete validation.\nverify-implementation: fmt check test\n\ntest:\n    cargo nextest --version\n    cargo test --workspace --locked\n\nbench:\n    cargo bench --no-run\n";
 
@@ -388,6 +431,22 @@ mod tests {
         )
         .expect("justfile");
         check_locked_recipes(&justfile).expect("repository justfile");
+    }
+
+    #[test]
+    fn record_features_require_generic_contracts_and_concrete_implementation() {
+        let mut features = std::collections::BTreeMap::from([(
+            "sse".to_owned(),
+            vec!["records".to_owned(), "concord_extras/sse".to_owned()],
+        )]);
+        let required = ["records", "concord_extras/sse"];
+        require_feature_targets(&features, "concord", "sse", &required).expect("wired feature");
+        features.get_mut("sse").expect("sse").remove(0);
+        let error = require_feature_targets(&features, "concord", "sse", &required)
+            .expect_err("missing generic contracts");
+        assert!(error.contains("must enable `records`"), "{error}");
+        features.clear();
+        assert!(require_feature_targets(&features, "concord", "sse", &required).is_err());
     }
 
     fn facts<'a>(name: &'a str, version: &'a Version, publishable: bool) -> ReleaseFacts<'a> {

@@ -330,7 +330,9 @@ The facade re-exports at its root (§7.2): `api!`, `ApiError`,
 `concord::body`, `concord::response`, `concord::pagination`, `concord::auth`,
 `concord::rate_limit` (including `rate_limit::LocalRateLimiter` with the
 `rate-limit` feature), `concord::retry` and `concord::inspection`.
-`concord::prelude` gathers the common declaration imports.
+`concord::prelude` gathers the common declaration imports. The `sse` feature
+adds `records::EventStream`, `records::ServerEvent` and `records::EventSource`,
+also available from the prelude; it implies the generic `records` contracts.
 
 ## Generated-code compatibility
 

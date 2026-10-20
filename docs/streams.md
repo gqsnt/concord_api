@@ -12,6 +12,7 @@ its completion or failure is reported by the stream itself.
 GET download() -> ByteStream via Binary;          // managed bytes
 GET watch() -> ItemStream<Event> via NdJson;      // managed records
 GET rows() -> ItemStream<(String, u32)> via Csv;  // managed CSV records
+GET events() -> ItemStream<ServerEvent> via EventStream; // server-sent events
 ```
 
 `ByteStream` and `ItemStream<T>` (feature `records`) are managed, owned,
@@ -38,6 +39,58 @@ api! {
     }
 }
 ```
+
+## Server-sent events
+
+The opt-in `sse` feature implies `records`. It exports `EventStream`,
+`ServerEvent` and `EventSource` through `concord::records` and
+`concord::prelude`. Declare an SSE response as
+`ItemStream<ServerEvent> via EventStream`; the representation validates
+`text/event-stream` and frames events within the managed record stream's
+finite byte, record, frame, idle and lifetime limits.
+
+`ServerEvent` carries the event's protocol fields. SSE comments and control
+fields are handled by the decoder; consumers receive complete events through
+`next()`. Opening an SSE response is acquisition, and its summary reports
+consumption just like other record streams.
+
+`EventSource` provides explicit application-controlled reconnection around
+managed SSE operations. Each connection remains a separate bounded operation;
+selecting `EventStream` alone does not reconnect. Reconnection and continuation
+are distinct from the runtime's request retry policy.
+
+<!-- concord-pseudocode -->
+```rust
+use concord::records::{EventSource, EventStream, ServerEvent};
+
+// In api!: GET resume(header("Last-Event-ID") last_event_id?: String)
+//              -> ItemStream<ServerEvent> via EventStream;
+let mut source = EventSource::new(move |last_event_id| {
+    let feed = feed.clone();
+    async move { feed.resume().set_last_event_id_if_some(last_event_id).await }
+}).with_max_reconnects(5);
+while let Some(event) = source.next().await {
+    let event = event?;
+    consume(event.event(), event.data(), event.last_event_id());
+}
+```
+
+EOF and transport failures reconnect after three seconds by default, or the
+latest valid `retry` value in milliseconds. IDs and retry values persist across
+connections, including updates in blocks without data; an empty `id` clears
+the resume ID. `with_last_event_id` sets the initial resume ID and
+`with_reconnect_time` changes the initial delay. `with_max_reconnects(n)` bounds
+consecutive reconnections without an event; delivering an event resets that
+count. A 204 response ends the source. Status, media-type, limit and other
+non-transport failures are yielded once and end it. Dropping a pending source
+`next()` cancels its wait and open connection.
+
+SSE uses UTF-8 replacement decoding, ignores one leading BOM, and recognizes
+CRLF, LF and CR line endings. Multiple `data` lines join with LF; no data field
+means no dispatched event, and EOF discards a block without a terminating blank
+line. Each line (without its terminator) and each event's data is limited to
+1 MiB. The runtime frame limit also bounds staged line and event data together.
+Comments and ignored fields are consumed without accumulating between blocks.
 
 ## Consuming a stream
 

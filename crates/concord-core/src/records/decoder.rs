@@ -20,7 +20,7 @@ use super::RecordError;
 /// boundaries and may exceed the staging limit when they contain smaller
 /// logical records. `decode_eof` owns exact final framing semantics.
 /// `max_buffered_bytes` is an independently enforced positive finite staging
-/// bound.
+/// bound, shared by the supplied buffer and reported `buffered_bytes`.
 ///
 /// Core enforces net staging-buffer progress across each callback.
 /// Implementations must not increase the supplied staging buffer's length.
@@ -83,6 +83,25 @@ pub trait RecordDecoder: Sized + Send + 'static {
 
     /// Resolves at most one final record under the same progress contract.
     fn decode_eof(&mut self, buffer: &mut BytesMut) -> Result<Option<Self::Record>, RecordError>;
+
+    /// Bytes retained by the decoder while assembling the current record.
+    ///
+    /// These count toward the same staging ceiling as the supplied buffer.
+    /// Decoders that consume partial framing into owned storage must report
+    /// that storage here so a small runtime frame limit remains a hard bound.
+    fn buffered_bytes(&self) -> usize {
+        0
+    }
+
+    /// Limits the next transfer from pending transport bytes into staging.
+    ///
+    /// A decoder that expands text while retaining partial records can stop
+    /// at a framing boundary, avoiding staging unrelated later records beside
+    /// the expanded text. Return a positive length no larger than `input.len()`
+    /// when input is nonempty. The default stages all available input.
+    fn input_bytes(&self, input: &[u8]) -> usize {
+        input.len()
+    }
 
     /// Returns the positive finite maximum number of undecoded staged bytes.
     fn max_buffered_bytes() -> NonZeroUsize;

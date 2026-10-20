@@ -2143,6 +2143,18 @@ fn check_facade_exports(root: &Path, errors: &mut Vec<String>) -> Result<(), Str
                 .to_owned(),
         );
     }
+    for name in ["Csv", "NdJson", "EventStream", "ServerEvent", "EventSource"] {
+        for module in ["records", "prelude"] {
+            if !modules
+                .get(module)
+                .is_some_and(|names| names.contains(name))
+            {
+                errors.push(format!(
+                    "crates/concord/src/lib.rs: `{module}::{name}` must be reachable"
+                ));
+            }
+        }
+    }
     let guide = read(&root.join("docs/generated_client.md"))?;
     for name in FACADE_ROOT_EXPORTS {
         if !guide.contains(&format!("`{name}`")) {
@@ -3138,6 +3150,7 @@ mod tests {
         let (features, defaults) = manifest_features(real);
         assert!(features.contains("rate-limit") && features.contains("multipart"));
         assert!(defaults.contains("default-tls") && !defaults.contains("json"));
+        assert!(features.contains("sse") && !defaults.contains("sse"));
     }
 
     #[test]

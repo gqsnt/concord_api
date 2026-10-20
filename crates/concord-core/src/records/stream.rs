@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::fmt;
 #[cfg(test)]
 use std::marker::PhantomData;
@@ -132,8 +133,8 @@ const fn stream_error_kind(kind: RecordErrorKind) -> StreamErrorKind {
 /// correlated error. Transport chunks are never record boundaries. The
 /// decoder owns final-record policy at end of body (for example NDJSON parses
 /// a final nonempty line without a newline exactly once; CSV rejects an
-/// unterminated quote), and an incomplete tail is an error, never a silently
-/// dropped record. A partial stream never becomes a complete success.
+/// unterminated quote; SSE discards an event without its final blank line).
+/// A partial stream never becomes a complete success.
 ///
 /// # Lifecycle and cancellation
 ///
@@ -162,6 +163,7 @@ const fn stream_error_kind(kind: RecordErrorKind) -> StreamErrorKind {
 pub struct ItemStream<T> {
     body: ByteStream,
     records: Box<dyn ErasedRecords<T>>,
+    extension: Option<Box<dyn Any + Send>>,
 }
 
 impl<T> ItemStream<T>
@@ -177,19 +179,29 @@ where
     /// before the first body poll.
     #[doc(hidden)]
     pub fn decode_with<D>(
-        mut body: ByteStream,
+        body: ByteStream,
         head: &ResponseHead<'_>,
     ) -> Result<Self, ResponseBodyError>
     where
         D: RecordDecoder<Record = T>,
     {
         let decoder = D::start(head).map_err(response_error)?;
+        Ok(Self::decode_with_decoder(body, decoder))
+    }
+
+    /// Builds a managed stream with an already initialized decoder.
+    #[doc(hidden)]
+    pub fn decode_with_decoder<D>(mut body: ByteStream, decoder: D) -> Self
+    where
+        D: RecordDecoder<Record = T>,
+    {
         body.core.set_item_kind();
         let frame = D::max_buffered_bytes().min(body.core.limits().frame);
-        Ok(Self {
+        Self {
             body,
             records: Box::new(RecordDriver::new(decoder, frame)),
-        })
+            extension: None,
+        }
     }
 
     /// Groups items into non-empty batches of at most `size` items.
@@ -205,6 +217,18 @@ where
 }
 
 impl<T> ItemStream<T> {
+    /// Retains representation-specific state for an adapter of this stream.
+    #[doc(hidden)]
+    pub fn set_extension<E: Any + Send>(&mut self, extension: E) {
+        self.extension = Some(Box::new(extension));
+    }
+
+    /// Borrows representation-specific state without exposing decoder internals.
+    #[doc(hidden)]
+    pub fn extension<E: Any + Send>(&self) -> Option<&E> {
+        self.extension.as_ref()?.downcast_ref()
+    }
+
     /// Returns the next complete record, `None` after the final record or
     /// after the one terminal error.
     ///
@@ -232,7 +256,7 @@ impl<T> ItemStream<T> {
     #[must_use]
     pub fn finish(mut self) -> StreamSummary {
         self.records.release();
-        let Self { body, records } = self;
+        let Self { body, records, .. } = self;
         drop(records);
         body.finish()
     }

@@ -5,8 +5,12 @@
 
 #[cfg(feature = "csv")]
 mod csv;
+#[cfg(feature = "sse")]
+mod event_source;
 #[cfg(feature = "ndjson")]
 mod ndjson;
+#[cfg(feature = "sse")]
+mod sse;
 
 #[cfg(feature = "csv")]
 pub use csv::{
@@ -15,3 +19,8 @@ pub use csv::{
 };
 #[cfg(feature = "ndjson")]
 pub use ndjson::NdJson;
+
+#[cfg(feature = "sse")]
+pub use event_source::EventSource;
+#[cfg(feature = "sse")]
+pub use sse::{EventStream, ServerEvent};

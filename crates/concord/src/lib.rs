@@ -235,6 +235,8 @@ pub mod prelude {
     pub use crate::records::Csv;
     #[cfg(feature = "ndjson")]
     pub use crate::records::NdJson;
+    #[cfg(feature = "sse")]
+    pub use crate::records::{EventSource, EventStream, ServerEvent};
     pub use crate::{
         ApiError, ApiResponse, ByteStream, Bytes, ClientBuildError, Discard, Empty, SecretString,
         Text, api,
@@ -256,6 +258,8 @@ pub mod records {
         CommaDelimiter, Csv, CsvDelimiter, CsvHeaderMode, HasHeader, NoHeader, SemicolonDelimiter,
         TabDelimiter,
     };
+    #[cfg(feature = "sse")]
+    pub use concord_extras::records::{EventSource, EventStream, ServerEvent};
 }
 
 /// Bounded response specifications, acquisition modes, and response metadata.

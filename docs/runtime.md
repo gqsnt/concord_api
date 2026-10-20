@@ -194,7 +194,7 @@ obligations (LIMIT-02).
 Features add integrations without changing the meaning of an enabled
 declaration; a representation whose feature is missing is a compile error, not
 a fallback. The facade's defaults are `default-tls`, `http2` and `rate-limit`;
-`json`, `oauth2-client`, `records`, `csv`, `ndjson`, `multipart`, `gzip`,
+`json`, `oauth2-client`, `records`, `csv`, `ndjson`, `sse`, `multipart`, `gzip`,
 `brotli` and `deflate` are opt-in. The [README](../README.md#cargo-features)
 feature matrix is checked against the facade manifest. The core runtime needs
 no JSON dependency to execute a declaration; the `concord.contract/3`

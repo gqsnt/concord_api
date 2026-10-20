@@ -147,7 +147,7 @@ ordinary and custom request/response representations, custom authentication
 providers, endpoint-backed credential storage, rate limiting, policy retries,
 accepted response metadata, bounded status bodies, explicit accepted-byte
 terminals, unbound requests and validated runtime endpoints, with JSON,
-NDJSON, CSV, multipart, OAuth2 client credentials, TLS, HTTP/2 and gzip/Brotli/
+NDJSON, CSV, server-sent events, multipart, OAuth2 client credentials, TLS, HTTP/2 and gzip/Brotli/
 deflate decompression feature paths.
 
 One closed invocation is the unit of semantic validation. Support types, DTOs,
@@ -161,6 +161,6 @@ middleware, redirects, cookies or caching, `CONNECT`/`TRACE`, WebSockets or
 upgrades, a general status-callback DSL, implicit `Option`/`Vec` wire
 inference, generic query-object serialization, optional path/DNS structure,
 body defaults, infinite timeouts or streams, background pagination prefetch,
-automatic stream reconnection, a distributed-limiter backend, or independently
+implicit stream reconnection, a distributed-limiter backend, or independently
 validated macro fragments. These are scope decisions; an application needing
 them uses a lower-level HTTP client or a separately designed product boundary.

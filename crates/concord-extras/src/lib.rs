@@ -15,5 +15,5 @@ pub mod codec;
 pub mod pagination;
 #[cfg(feature = "rate-limit")]
 pub mod rate_limit;
-#[cfg(any(feature = "csv", feature = "ndjson"))]
+#[cfg(any(feature = "csv", feature = "ndjson", feature = "sse"))]
 pub mod records;

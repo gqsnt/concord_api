@@ -101,7 +101,8 @@ where
             if after > before || matches!(&decoded, Ok(Some(_)) if after >= before) {
                 return Err(self.terminate(RecordErrorKind::Internal));
             }
-            if after > self.max_staged_bytes {
+            let staged = after.saturating_add(self.decoder.buffered_bytes());
+            if staged > self.max_staged_bytes {
                 return Err(self.terminate(RecordErrorKind::LimitExceeded));
             }
 
@@ -121,11 +122,15 @@ where
             }
 
             if !self.pending.is_empty() {
-                let remaining = self.max_staged_bytes - self.staging.len();
+                let remaining = self.max_staged_bytes - staged;
                 if remaining == 0 {
                     return Err(self.terminate(RecordErrorKind::LimitExceeded));
                 }
-                let amount = remaining.min(self.pending.len());
+                let requested = self.decoder.input_bytes(&self.pending);
+                if requested == 0 || requested > self.pending.len() {
+                    return Err(self.terminate(RecordErrorKind::Internal));
+                }
+                let amount = remaining.min(requested);
                 let staged = self.pending.split_to(amount);
                 self.staging.extend_from_slice(&staged);
                 if self.pending.is_empty() {
@@ -197,6 +202,52 @@ mod tests {
 
     use super::*;
     use crate::response::ResponseHead;
+
+    #[derive(Default)]
+    struct PartialDecoder(Vec<u8>);
+
+    impl RecordDecoder for PartialDecoder {
+        type Record = ();
+
+        fn start(_: &ResponseHead<'_>) -> Result<Self, RecordError> {
+            Ok(Self::default())
+        }
+
+        fn decode(&mut self, buffer: &mut BytesMut) -> Result<Option<()>, RecordError> {
+            self.0.extend_from_slice(buffer);
+            buffer.clear();
+            Ok(None)
+        }
+
+        fn decode_eof(&mut self, buffer: &mut BytesMut) -> Result<Option<()>, RecordError> {
+            self.decode(buffer)
+        }
+
+        fn buffered_bytes(&self) -> usize {
+            self.0.len()
+        }
+
+        fn max_buffered_bytes() -> NonZeroUsize {
+            NonZeroUsize::new(8).unwrap()
+        }
+    }
+
+    #[test]
+    fn partial_record_storage_shares_the_staging_ceiling_across_transport_chunks() {
+        let mut driver =
+            RecordDriver::new(PartialDecoder::default(), NonZeroUsize::new(8).unwrap());
+        assert!(matches!(driver.advance().unwrap(), RecordStep::NeedInput));
+        driver.supply_input(Bytes::from_static(b"1234")).unwrap();
+        assert!(matches!(driver.advance().unwrap(), RecordStep::NeedInput));
+        driver.supply_input(Bytes::from_static(b"56789")).unwrap();
+        let error = match driver.advance() {
+            Err(error) => error,
+            Ok(_) => panic!("decoder-owned bytes must count toward the ceiling"),
+        };
+        assert_eq!(error.kind(), RecordErrorKind::LimitExceeded);
+        assert_eq!(driver.decoder.0.len(), 8);
+        assert!(driver.staging.is_empty());
+    }
 
     struct LineDecoder;
 

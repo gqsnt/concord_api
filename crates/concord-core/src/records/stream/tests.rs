@@ -180,6 +180,7 @@ where
     ItemStream {
         body,
         records: Box::new(RecordDriver::new(decoder, frame)),
+        extension: None,
     }
 }
 
