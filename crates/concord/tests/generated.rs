@@ -12,5 +12,7 @@ mod generated {
     mod record_formats;
     mod representation_inheritance;
     mod shaping;
+    #[cfg(feature = "sse")]
+    mod sse;
     mod surface;
 }

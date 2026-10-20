@@ -2143,6 +2143,20 @@ fn check_facade_exports(root: &Path, errors: &mut Vec<String>) -> Result<(), Str
                 .to_owned(),
         );
     }
+    for (module, name) in [
+        ("records", "EventStream"),
+        ("records", "ServerEvent"),
+        ("prelude", "EventStream"),
+    ] {
+        if !modules
+            .get(module)
+            .is_some_and(|names| names.contains(name))
+        {
+            errors.push(format!(
+                "crates/concord/src/lib.rs: required SSE re-export `{module}::{name}` is missing"
+            ));
+        }
+    }
     let guide = read(&root.join("docs/generated_client.md"))?;
     for name in FACADE_ROOT_EXPORTS {
         if !guide.contains(&format!("`{name}`")) {
@@ -3137,6 +3151,7 @@ mod tests {
         let real = include_str!("../../../crates/concord/Cargo.toml");
         let (features, defaults) = manifest_features(real);
         assert!(features.contains("rate-limit") && features.contains("multipart"));
+        assert!(features.contains("sse") && !defaults.contains("sse"));
         assert!(defaults.contains("default-tls") && !defaults.contains("json"));
     }
 

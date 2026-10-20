@@ -120,6 +120,7 @@ change the meaning of an enabled declaration.
 | `records` | no | Framed record streams (`ItemStream`) |
 | `csv` | no | CSV records (implies `records`) |
 | `ndjson` | no | NDJSON records (implies `records`) |
+| `sse` | no | Server-sent event responses (`EventStream`, implies `records`) |
 | `multipart` | no | Request-only `body::Multipart` bodies |
 | `gzip` | no | gzip response decompression |
 | `brotli` | no | Brotli response decompression |

@@ -165,6 +165,7 @@ for the paired `ExampleCodec`.
 | `Empty` | `()` via `Buffered` | validates an empty accepted body; a nonempty body is an error, not silently discarded |
 | `Discard` | `()` via `DiscardDriver` | reports a discarded, unread body, not EOF |
 | `NdJson` (feature `ndjson`) | `Vec<T>`, `ItemStream<T>` | framed records; empty lines ignored; a final nonempty line without LF is parsed once (request records: see [Request bodies](request_bodies.md)) |
+| `EventStream` (feature `sse`) | `Vec<ServerEvent>`, `ItemStream<ServerEvent>` | response-only UTF-8 server-sent events; requires `text/event-stream`; see [Streams](streams.md#server-sent-events) |
 | `Csv` (feature `csv`) | `Vec<T>`, `ItemStream<T>` | configured dialect and header mode; no unbounded buffering to find a bad record |
 
 No representation is guessed from the output type, and a missing feature is a

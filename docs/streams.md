@@ -12,6 +12,7 @@ its completion or failure is reported by the stream itself.
 GET download() -> ByteStream via Binary;          // managed bytes
 GET watch() -> ItemStream<Event> via NdJson;      // managed records
 GET rows() -> ItemStream<(String, u32)> via Csv;  // managed CSV records
+GET events() -> ItemStream<ServerEvent> via EventStream; // server-sent events
 ```
 
 `ByteStream` and `ItemStream<T>` (feature `records`) are managed, owned,
@@ -38,6 +39,35 @@ api! {
     }
 }
 ```
+
+## Server-sent events
+
+The independent `sse` feature implies `records` and exposes
+`concord::records::{EventStream, ServerEvent}`. `EventStream` is also in the
+prelude. It supports `ItemStream<ServerEvent>` for lazy consumption and
+`Vec<ServerEvent>` for a complete bounded response. It is a response-only
+representation and does not require `json`, `ndjson` or `csv`.
+
+`EventStream` negotiates and requires `text/event-stream`; a missing or
+incompatible Content-Type fails before body decoding. Events decode UTF-8 with
+replacement characters for invalid sequences.
+LF, CRLF and CR delimit lines, blank lines delimit events, and one leading
+UTF-8 BOM is ignored. Multiple `data` fields join with LF, comments and unknown
+fields are ignored, and an absent or empty `event` field selects `message`.
+Only blocks containing a `data` field dispatch an event. An incomplete final
+block is discarded at EOF.
+
+Each `ServerEvent` exposes `event()`, `data()`, `last_event_id()` and
+`retry()`. IDs persist across blocks, an empty ID resets the value, and IDs
+containing NUL are ignored. Decimal `retry` values are retained as
+`Duration` values in milliseconds; malformed or overflowing values are
+ignored. Lines and accumulated event data each have a 1 MiB limit, with the
+runtime frame cap imposing an additional staging ceiling.
+Concord does not reconnect, sleep for retry hints or send `Last-Event-ID`
+automatically. An application that reconnects creates a new managed operation
+and chooses its own continuation policy. The normal finite stream lease,
+idle, body, frame and record limits still apply; comments consume bytes and
+never reset the total lease.
 
 ## Consuming a stream
 

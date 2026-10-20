@@ -23,6 +23,7 @@ pub(crate) fn run(root: &Path) -> Result<(), String> {
     let metadata = metadata(root.join("Cargo.toml"))?;
     check_dependency_direction(&metadata)?;
     check_versions(&metadata)?;
+    check_sse_features(&metadata)?;
     check_licenses(root, &metadata)?;
     check_release_stage(metadata.packages.iter().map(|package| {
         ReleaseFacts {
@@ -41,6 +42,7 @@ pub(crate) fn run(root: &Path) -> Result<(), String> {
     let justfile = fs::read_to_string(root.join("justfile"))
         .map_err(|error| format!("could not read justfile: {error}"))?;
     check_locked_recipes(&justfile)?;
+    check_sse_gates(&justfile)?;
     println!(
         "repository policy checks passed ({limit_copies} macro limit copies match concord-core; verify-implementation cargo commands are --locked)"
     );
@@ -218,6 +220,84 @@ fn check_dependency_direction(metadata: &Metadata) -> Result<(), String> {
     Ok(())
 }
 
+/// SSE remains an independent opt-in response integration.
+fn check_sse_features(metadata: &Metadata) -> Result<(), String> {
+    for (name, expected) in [
+        ("concord", ["records", "concord_extras/sse"]),
+        ("concord-extras", ["concord_core/records", "dep:mime"]),
+    ] {
+        let package = package(metadata, name)?;
+        let actual = package
+            .features
+            .get("sse")
+            .map(|features| features.iter().map(String::as_str).collect::<BTreeSet<_>>())
+            .unwrap_or_default();
+        let expected = BTreeSet::from(expected);
+        if actual != expected {
+            return Err(format!(
+                "{name} sse feature must enable exactly {expected:?}, found {actual:?}"
+            ));
+        }
+        if package
+            .features
+            .get("default")
+            .is_some_and(|features| features.iter().any(|feature| feature == "sse"))
+        {
+            return Err(format!("{name} sse feature must remain opt-in"));
+        }
+    }
+    Ok(())
+}
+
+/// Keep isolated SSE checks in the maintained implementation gate.
+fn check_sse_gates(justfile: &str) -> Result<(), String> {
+    let recipes = justfile_recipes(justfile);
+    for (recipe, command) in [
+        (
+            "check",
+            "cargo check -p concord --lib --no-default-features --features sse --locked",
+        ),
+        (
+            "check",
+            "cargo check -p concord-extras --lib --no-default-features --features sse --locked",
+        ),
+        (
+            "docs",
+            "cargo rustdoc -p concord --no-default-features --features sse --locked -- -D warnings",
+        ),
+        (
+            "docs",
+            "cargo rustdoc -p concord-extras --no-default-features --features sse --locked -- -D warnings",
+        ),
+        (
+            "test-matrix",
+            "cargo test --locked -p concord-extras --no-default-features --features sse",
+        ),
+        (
+            "test-matrix",
+            "cargo test --locked -p concord --no-default-features --features sse",
+        ),
+    ] {
+        if !recipes
+            .get(recipe)
+            .is_some_and(|(_, commands)| commands.iter().any(|actual| actual == command))
+        {
+            return Err(format!(
+                "justfile `{recipe}` is missing isolated SSE gate: {command}"
+            ));
+        }
+        if !recipes
+            .get(VERIFY_RECIPE)
+            .is_some_and(|(dependencies, _)| dependencies.iter().any(|name| name == recipe))
+        {
+            return Err(format!(
+                "`{VERIFY_RECIPE}` must include SSE gate recipe `{recipe}`"
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn check_versions(metadata: &Metadata) -> Result<(), String> {
     let versions = metadata
         .packages
@@ -347,7 +427,9 @@ fn check_generated_paths(directory: &Path) -> Result<(), String> {
 mod tests {
     use cargo_metadata::semver::Version;
 
-    use super::{ReleaseFacts, check_locked_recipes, check_release_stage, justfile_recipes};
+    use super::{
+        ReleaseFacts, check_locked_recipes, check_release_stage, check_sse_gates, justfile_recipes,
+    };
 
     const JUSTFILE: &str = "set shell := [\"bash\"]\n\n[windows]\nset shell := [\"pwsh\"]\n\ndefault:\n    @just --list\n\nfmt:\n    cargo fmt --all -- --check\n\ncheck:\n    cargo check --workspace --locked\n    cargo run --locked -p concord-xtask -- policy --locked\n\n# Complete validation.\nverify-implementation: fmt check test\n\ntest:\n    cargo nextest --version\n    cargo test --workspace --locked\n\nbench:\n    cargo bench --no-run\n";
 
@@ -388,6 +470,25 @@ mod tests {
         )
         .expect("justfile");
         check_locked_recipes(&justfile).expect("repository justfile");
+    }
+
+    #[test]
+    fn isolated_sse_gates_are_required_by_the_implementation_gate() {
+        let justfile = include_str!("../../../justfile");
+        check_sse_gates(justfile).expect("isolated SSE coverage");
+        for command in justfile
+            .lines()
+            .map(str::trim)
+            .filter(|line| line.starts_with("cargo ") && line.contains("--features sse"))
+        {
+            let missing = justfile.replace(command, "");
+            assert!(check_sse_gates(&missing).is_err(), "missing {command}");
+        }
+        let missing_recipe = justfile.replace(
+            "verify-implementation: fmt check",
+            "verify-implementation: fmt",
+        );
+        assert!(check_sse_gates(&missing_recipe).is_err());
     }
 
     fn facts<'a>(name: &'a str, version: &'a Version, publishable: bool) -> ReleaseFacts<'a> {

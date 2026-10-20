@@ -16,6 +16,8 @@ check:
     cargo check -p concord --lib --no-default-features --features records --locked
     cargo check -p concord --lib --no-default-features --features csv --locked
     cargo check -p concord --lib --no-default-features --features ndjson --locked
+    cargo check -p concord --lib --no-default-features --features sse --locked
+    cargo check -p concord-extras --lib --no-default-features --features sse --locked
     cargo check -p concord --lib --no-default-features --features json --locked
     cargo check -p concord --lib --no-default-features --features oauth2-client --locked
     cargo check -p concord --lib --no-default-features --features multipart --locked
@@ -60,6 +62,8 @@ docs:
     cargo rustdoc -p concord-extras --features rate-limit --locked -- -D warnings
     cargo rustdoc -p concord --features csv --locked -- -D warnings
     cargo rustdoc -p concord --features ndjson --locked -- -D warnings
+    cargo rustdoc -p concord --no-default-features --features sse --locked -- -D warnings
+    cargo rustdoc -p concord-extras --no-default-features --features sse --locked -- -D warnings
     cargo rustdoc -p concord --features json --locked -- -D warnings
     cargo rustdoc -p concord --all-features --locked -- -D warnings
     cargo rustdoc -p concord-core --all-features --locked -- -D warnings
@@ -117,6 +121,8 @@ test-matrix:
     cargo test --locked -p concord --no-default-features
     cargo test --locked -p concord-core --no-default-features
     cargo test --locked -p concord-extras --no-default-features
+    cargo test --locked -p concord-extras --no-default-features --features sse
+    cargo test --locked -p concord --no-default-features --features sse
 
 # The `ui` test targets set `test = false`; they run only when named.
 ui-matrix:
