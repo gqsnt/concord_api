@@ -14,6 +14,7 @@ response, forge a binding, read other credentials or bypass the executor
 | `RequestRepresentation<I>` | the exact body input, body limit, validated ID and method; one managed `PreparedBody` | reading auth, rate or the native request; a conflicting transport header |
 | `ResponseRepresentation<O>` | the accepted head and the core-driver body; a typed output | changing accepted status or contact evidence; a new native driver |
 | `PaginationController<P>` | the complete page, declared bounded metadata, the remaining item budget; the next state and items | mutating unmapped values, origin, auth, rate, time or effect; sending |
+| `ResumableController<P>` | its own next-request state; deterministic state encoding and validated restoration | credentials, body capture, I/O, or changing endpoint authority |
 | `CredentialProvider` | protected source material and reason, bounded `ProviderHttp` to declared origins | the application client, other credential slots, undeclared helper origins |
 | `RateLimiter` | the complete protected key plan; typed admission and feedback | bodies, credentials, raw headers; changing the current result in feedback |
 | `RetryClassifier` | sanitized semantic failure facts | declaring dispatch certainty or bypassing effect, replay or deadline gates |
@@ -358,6 +359,56 @@ GET feed(query after?: String, query count: NonZeroU32 = DEFAULT_PAGE_SIZE)
     }
 }
 ```
+
+### Durable controller state
+
+Implement `ResumableController<P>` in addition to `PaginationController<P>`
+to opt a custom controller into `Pages::checkpoint()` and the generated
+`request.resume_pages(&checkpoint, maximum_pages)` method. The declaration's
+`paginate via` and `init` syntax stays the same. A controller without this
+extra contract remains usable for ordinary traversal; checkpoint creation
+returns `CheckpointErrorKind::NotResumable`.
+
+```text
+pub trait ResumableController<P>: PaginationController<P> {
+    fn save_state(&self) -> Vec<u8>;
+    fn restore_state(state: &[u8]) -> Result<Self, PaginationError>;
+}
+```
+
+`save_state` encodes the complete state needed for the next request, including
+any page size or controller policy needed by `advance`. Use a versioned,
+deterministic format that can be restored by a recreated client in another
+process. Avoid addresses, allocation identities, randomized hashes or
+process-local registries. The core token is limited to 4,096 ASCII characters,
+including endpoint and controller identification, binding and encoding
+overhead; controller state must fit within the remaining space.
+
+`restore_state` must validate the version, complete encoding, numeric ranges
+and controller invariants before constructing state. Return a value-free
+`PaginationError` for unsupported or malformed state; core exposes restoration
+failure as a typed checkpoint error. Both methods are synchronous and must be
+prompt, bounded and free of I/O or other external effects. Their authority is
+limited to their own controller state. They never acquire credentials,
+prepare bodies or send a request.
+
+State is stored as plain data in the token. Include neither credentials nor
+body bytes, and avoid sensitive application values. Inputs retained through
+controller initialization must be public for checkpointing. Generated requests
+reject checkpoint creation and resume with `CheckpointErrorKind::SensitiveCursor`
+when a cursor destination or any value referenced by `init` is classified
+`#[sensitive]`, including client and scope values. This rejection does not inspect
+or sanitize arbitrary custom state. Custom implementations own the contents of
+their state encoding and must keep errors free of state values. Core's
+`Checkpoint` debug output omits the state. A token checksum detects accidental
+corruption and grants no authenticity guarantee.
+
+The first-party offset and page-number controllers preserve both position
+and page size. The string and primitive-integer cursor controllers preserve
+the whole optional cursor, distinguishing absence from a present empty
+string or zero. Header and link controllers preserve their next string
+cursor. See [saving and resuming a position](pagination.md#saving-and-resuming-a-position)
+for traversal lifetime, request binding and application persistence rules.
 
 ## Credential providers
 

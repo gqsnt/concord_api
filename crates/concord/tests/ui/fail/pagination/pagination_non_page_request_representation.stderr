@@ -33,6 +33,41 @@ note: required by a bound in `BodySpec::page_capable_for`
    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `BodySpec::page_capable_for`
 
 error[E0277]: [C3-PAGE] `NonPageRepresentation` does not promise page-stable request bodies for `std::string::String`
+  --> tests/ui/fail/pagination/pagination_non_page_request_representation.rs:32:1
+   |
+32 | / api! {
+33 | |     client NonRepeatableCodecApi {
+34 | |         base "https://example.test";
+...  |
+38 | |             paginate via OffsetPagination {
+   | |             -------- required by a bound introduced by this call
+...  |
+44 | | }
+   | |_^ a paginated endpoint prepares this body again for every page
+   |
+help: the trait `PageRequestRepresentation<std::string::String>` is not implemented for `NonPageRepresentation`
+  --> tests/ui/fail/pagination/pagination_non_page_request_representation.rs:22:1
+   |
+22 | pub struct NonPageRepresentation;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: pagination requires the explicit `PageRequestRepresentation<std::string::String>` opt-in; `Clone` alone does not establish the page-body promise
+   = note: select a page-capable representation with `via R` (such as `Json`, `Text` or `Binary`), implement `PageRequestRepresentation<std::string::String>` when every clone prepares the same body, or remove `paginate`
+help: the trait `PageRequestRepresentation<std::string::String>` is implemented for `concord::Text`
+  --> $WORKSPACE/crates/concord-core/src/body/spec.rs
+   |
+   | impl PageRequestRepresentation<String> for Text {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `concord::__private::checkpoint_input`
+  --> $WORKSPACE/crates/concord-core/src/pagination/checkpoint_input.rs
+   |
+   | pub fn checkpoint_input<E>(
+   |        ---------------- required by a bound in this function
+...
+   |     E::Body: PageRequestRepresentation<E::Input>,
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `checkpoint_input`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [C3-PAGE] `NonPageRepresentation` does not promise page-stable request bodies for `std::string::String`
   --> tests/ui/fail/pagination/pagination_non_page_request_representation.rs:38:13
    |
 38 |             paginate via OffsetPagination {
@@ -61,6 +96,37 @@ note: required by a bound in `concord::__private::pages_request`
 ...
    |     E::Body: PageRequestRepresentation<E::Input>,
    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `pages_request`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [C3-PAGE] `NonPageRepresentation` does not promise page-stable request bodies for `std::string::String`
+  --> tests/ui/fail/pagination/pagination_non_page_request_representation.rs:38:13
+   |
+38 |             paginate via OffsetPagination {
+   |             ^^^^^^^^
+   |             |
+   |             a paginated endpoint prepares this body again for every page
+   |             required by a bound introduced by this call
+   |
+help: the trait `PageRequestRepresentation<std::string::String>` is not implemented for `NonPageRepresentation`
+  --> tests/ui/fail/pagination/pagination_non_page_request_representation.rs:22:1
+   |
+22 | pub struct NonPageRepresentation;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: pagination requires the explicit `PageRequestRepresentation<std::string::String>` opt-in; `Clone` alone does not establish the page-body promise
+   = note: select a page-capable representation with `via R` (such as `Json`, `Text` or `Binary`), implement `PageRequestRepresentation<std::string::String>` when every clone prepares the same body, or remove `paginate`
+help: the trait `PageRequestRepresentation<std::string::String>` is implemented for `concord::Text`
+  --> $WORKSPACE/crates/concord-core/src/body/spec.rs
+   |
+   | impl PageRequestRepresentation<String> for Text {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `concord::__private::resume_pages_request`
+  --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
+   |
+   | pub fn resume_pages_request<E>(
+   |        -------------------- required by a bound in this function
+...
+   |     E::Body: PageRequestRepresentation<E::Input>,
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `resume_pages_request`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: [C3-PAGE] `NonPageRepresentation` does not promise page-stable request bodies for `std::string::String`
@@ -160,6 +226,42 @@ note: required by a bound in `BodySpec::page_capable_for`
    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `BodySpec::page_capable_for`
 
 error[E0277]: [C3-PAGE] `NonPageRepresentation` does not promise page-stable request bodies for `std::string::String`
+  --> tests/ui/fail/pagination/pagination_non_page_request_representation.rs:47:1
+   |
+47 | / api! {
+48 | |     client OptionalNonPageBodyApi {
+49 | |         base "https://example.test";
+...  |
+53 | |             paginate via OffsetPagination {
+   | |             -------- required by a bound introduced by this call
+...  |
+59 | | }
+   | |_^ a paginated endpoint prepares this body again for every page
+   |
+help: the trait `PageRequestRepresentation<std::string::String>` is not implemented for `NonPageRepresentation`
+  --> tests/ui/fail/pagination/pagination_non_page_request_representation.rs:22:1
+   |
+22 | pub struct NonPageRepresentation;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: pagination requires the explicit `PageRequestRepresentation<std::string::String>` opt-in; `Clone` alone does not establish the page-body promise
+   = note: select a page-capable representation with `via R` (such as `Json`, `Text` or `Binary`), implement `PageRequestRepresentation<std::string::String>` when every clone prepares the same body, or remove `paginate`
+help: the trait `PageRequestRepresentation<std::string::String>` is implemented for `concord::Text`
+  --> $WORKSPACE/crates/concord-core/src/body/spec.rs
+   |
+   | impl PageRequestRepresentation<String> for Text {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `concord::__private::OptionalRequestRepresentation<NonPageRepresentation>` to implement `PageRequestRepresentation<Option<std::string::String>>`
+note: required by a bound in `concord::__private::checkpoint_input`
+  --> $WORKSPACE/crates/concord-core/src/pagination/checkpoint_input.rs
+   |
+   | pub fn checkpoint_input<E>(
+   |        ---------------- required by a bound in this function
+...
+   |     E::Body: PageRequestRepresentation<E::Input>,
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `checkpoint_input`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [C3-PAGE] `NonPageRepresentation` does not promise page-stable request bodies for `std::string::String`
   --> tests/ui/fail/pagination/pagination_non_page_request_representation.rs:53:13
    |
 53 |             paginate via OffsetPagination {
@@ -189,6 +291,38 @@ note: required by a bound in `concord::__private::pages_request`
 ...
    |     E::Body: PageRequestRepresentation<E::Input>,
    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `pages_request`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [C3-PAGE] `NonPageRepresentation` does not promise page-stable request bodies for `std::string::String`
+  --> tests/ui/fail/pagination/pagination_non_page_request_representation.rs:53:13
+   |
+53 |             paginate via OffsetPagination {
+   |             ^^^^^^^^
+   |             |
+   |             a paginated endpoint prepares this body again for every page
+   |             required by a bound introduced by this call
+   |
+help: the trait `PageRequestRepresentation<std::string::String>` is not implemented for `NonPageRepresentation`
+  --> tests/ui/fail/pagination/pagination_non_page_request_representation.rs:22:1
+   |
+22 | pub struct NonPageRepresentation;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: pagination requires the explicit `PageRequestRepresentation<std::string::String>` opt-in; `Clone` alone does not establish the page-body promise
+   = note: select a page-capable representation with `via R` (such as `Json`, `Text` or `Binary`), implement `PageRequestRepresentation<std::string::String>` when every clone prepares the same body, or remove `paginate`
+help: the trait `PageRequestRepresentation<std::string::String>` is implemented for `concord::Text`
+  --> $WORKSPACE/crates/concord-core/src/body/spec.rs
+   |
+   | impl PageRequestRepresentation<String> for Text {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `concord::__private::OptionalRequestRepresentation<NonPageRepresentation>` to implement `PageRequestRepresentation<Option<std::string::String>>`
+note: required by a bound in `concord::__private::resume_pages_request`
+  --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
+   |
+   | pub fn resume_pages_request<E>(
+   |        -------------------- required by a bound in this function
+...
+   |     E::Body: PageRequestRepresentation<E::Input>,
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `resume_pages_request`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: [C3-PAGE] `NonPageRepresentation` does not promise page-stable request bodies for `std::string::String`

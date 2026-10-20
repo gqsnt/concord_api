@@ -66,6 +66,8 @@ pub(super) trait ErasedTraversal<Item>: Send {
     /// Returns the current value-free summary.
     fn summary(&self) -> TraversalSummary;
 
+    fn checkpoint(&self) -> Result<super::Checkpoint, super::CheckpointError>;
+
     /// Records an application stop unless already terminal and returns the
     /// final summary.
     fn finish(&mut self) -> TraversalSummary;
@@ -206,6 +208,9 @@ where
     in_flight: Option<MeterSnapshot>,
     observed: bool,
     drop_report: DropReport,
+    checkpoint_position: Option<(Vec<u8>, u32)>,
+    restored: Option<E::Controller>,
+    page_index_base: u32,
 }
 
 type Item<E> = PageItem<E>;
@@ -273,7 +278,84 @@ where
             in_flight: None,
             observed: false,
             drop_report,
+            checkpoint_position: None,
+            restored: None,
+            page_index_base: 0,
         }
+    }
+
+    pub(super) fn zero_bound(&mut self) {
+        self.phase = Phase::Terminal;
+        self.summary.stop_reason = StopReason::PageBound;
+    }
+
+    pub(super) fn resume(
+        &mut self,
+        checkpoint: &super::Checkpoint,
+    ) -> Result<(), super::CheckpointError>
+    where
+        E::Controller: super::ResumableController<E::Output>,
+    {
+        use super::{CheckpointError as Error, CheckpointErrorKind as Kind};
+        if self.meta.endpoint_id().as_str() != checkpoint.endpoint {
+            return Err(Error::new(Kind::EndpointMismatch));
+        }
+        if std::any::type_name::<E::Controller>() != checkpoint.controller {
+            return Err(Error::new(Kind::ControllerMismatch));
+        }
+        if self.template.checkpoint_sensitive_cursor() {
+            return Err(Error::new(Kind::SensitiveCursor));
+        }
+        let fingerprint = super::identity::deterministic_digest(&self.template.checkpoint_input()?);
+        if fingerprint != checkpoint.fingerprint {
+            return Err(Error::new(Kind::InputMismatch));
+        }
+        let codec = super::CheckpointCodec::<E::Controller, E::Output>::new();
+        let controller = codec
+            .restore(&checkpoint.state)
+            .map_err(|_| Error::new(Kind::Malformed))?;
+        self.template.apply_cursor(controller.cursor());
+        self.page_index_base = checkpoint.next_index;
+        self.active_page_index = checkpoint.next_index;
+        self.restored = Some(controller);
+        self.checkpoint_position = Some((checkpoint.state.clone(), checkpoint.next_index));
+        Ok(())
+    }
+
+    fn save_checkpoint(&self) -> Result<super::Checkpoint, super::CheckpointError> {
+        use super::{CheckpointError as Error, CheckpointErrorKind as Kind};
+        let codec = self
+            .template
+            .checkpoint_codec()
+            .ok_or_else(|| Error::new(Kind::NotResumable))?;
+        if self.template.checkpoint_sensitive_cursor() {
+            return Err(Error::new(Kind::SensitiveCursor));
+        }
+        if matches!(
+            self.summary.stop_reason,
+            StopReason::Exhausted | StopReason::Application | StopReason::Cancelled
+        ) {
+            return Err(Error::new(Kind::Finished));
+        }
+        let (state, next_index) = match &self.checkpoint_position {
+            Some((state, index)) => (state.clone(), *index),
+            None if matches!(self.phase, Phase::Unstarted) || self.summary.pages_received == 0 => {
+                let controller = <E::Controller as PaginationController<E::Output>>::start(
+                    self.template.controller_init(),
+                )
+                .map_err(|_| Error::new(Kind::Malformed))?;
+                (codec.save(&controller), self.page_index_base)
+            }
+            None => return Err(Error::new(Kind::Finished)),
+        };
+        super::Checkpoint {
+            endpoint: self.meta.endpoint_id().as_str().to_owned(),
+            controller: std::any::type_name::<E::Controller>().to_owned(),
+            fingerprint: super::identity::deterministic_digest(&self.template.checkpoint_input()?),
+            state,
+            next_index,
+        }
+        .validate_size()
     }
 
     async fn fetch_next(&mut self) -> Result<Option<Page<Item<E>>>, ApiError> {
@@ -336,10 +418,18 @@ where
         }
 
         self.check_deadline(FailureStage::Preparation)?;
-        let init = self.template.controller_init();
-        let controller = <E::Controller as PaginationController<E::Output>>::start(init);
+        let controller = match self.restored.take() {
+            Some(controller) => Ok(controller),
+            None => <E::Controller as PaginationController<E::Output>>::start(
+                self.template.controller_init(),
+            ),
+        };
         self.check_deadline(FailureStage::Preparation)?;
         let controller = controller.map_err(|error| self.pagination_stop(error))?;
+
+        if let Some(codec) = self.template.checkpoint_codec() {
+            self.checkpoint_position = Some((codec.save(&controller), self.page_index_base));
+        }
 
         let current_head = self.public_head(&self.template)?;
         let current_identity = self.identity(&current_head)?;
@@ -376,7 +466,10 @@ where
         else {
             return Err(Stop::failed(self.internal_error()));
         };
-        let page_index = self.summary.pages_received;
+        let page_index = self
+            .page_index_base
+            .checked_add(self.summary.pages_received)
+            .ok_or_else(|| self.decision_stop(PaginationErrorKind::Overflow))?;
         self.active_page_index = page_index;
 
         self.check_deadline(FailureStage::BeforeDispatch)?;
@@ -471,6 +564,7 @@ where
 
         match next {
             None => {
+                self.checkpoint_position = None;
                 self.summary.continuation = ContinuationKnowledge::Exhausted;
                 self.summary.stop_reason = StopReason::Exhausted;
             }
@@ -478,6 +572,12 @@ where
                 // The continuation is validated before this page is yielded,
                 // even when the bound has just been reached.
                 let endpoint = self.validate_continuation(&next)?;
+                if let Some(codec) = self.template.checkpoint_codec() {
+                    let index = page_index
+                        .checked_add(1)
+                        .ok_or_else(|| self.decision_stop(PaginationErrorKind::Overflow))?;
+                    self.checkpoint_position = Some((codec.save(&next), index));
+                }
                 self.summary.continuation = ContinuationKnowledge::NextRequestKnown;
                 if self.summary.pages_received >= self.summary.effective_page_bound {
                     self.summary.stop_reason = StopReason::PageBound;
@@ -899,6 +999,10 @@ where
 
     fn summary(&self) -> TraversalSummary {
         self.snapshot()
+    }
+
+    fn checkpoint(&self) -> Result<super::Checkpoint, super::CheckpointError> {
+        self.save_checkpoint()
     }
 
     fn finish(&mut self) -> TraversalSummary {

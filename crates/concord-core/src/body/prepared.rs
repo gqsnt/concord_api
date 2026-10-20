@@ -128,6 +128,33 @@ enum BodySource {
 }
 
 impl PreparedBody {
+    /// Encodes buffered body bytes and exact media metadata for an internal
+    /// durable-request fingerprint. No streaming source is polled or created.
+    pub(crate) fn checkpoint_bytes(&self) -> Result<Vec<u8>, crate::pagination::CheckpointError> {
+        let bytes = match &self.source {
+            BodySource::Empty => &[][..],
+            BodySource::Bytes(bytes) => bytes.as_ref(),
+            _ => {
+                return Err(crate::pagination::CheckpointError::new(
+                    crate::pagination::CheckpointErrorKind::NotResumable,
+                ));
+            }
+        };
+        let mut output = Vec::new();
+        output.push(u8::from(matches!(self.source, BodySource::Bytes(_))));
+        match &self.content_type {
+            Some(media) => {
+                output.push(1);
+                output.extend_from_slice(&(media.as_bytes().len() as u64).to_be_bytes());
+                output.extend_from_slice(media.as_bytes());
+            }
+            None => output.push(0),
+        }
+        output.extend_from_slice(&(bytes.len() as u64).to_be_bytes());
+        output.extend_from_slice(bytes);
+        Ok(output)
+    }
+
     /// Creates an explicitly empty, mechanically replayable body.
     ///
     /// An empty prepared body produces zero bytes and owns no `Content-Type`

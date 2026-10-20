@@ -32,11 +32,21 @@
 //!   canonical identity vectors retained for cycle detection (a hash only
 //!   indexes them; equality is never decided by the hash alone).
 //!
+//! Lazy traversals can save their next request with [`Pages::checkpoint`] and
+//! resume on a freshly built client with the generated `resume_pages` method.
+//! Built-in controllers opt into [`ResumableController`]; custom controllers
+//! implement it to supply a deterministic state format. [`Checkpoint`] tokens
+//! bind the endpoint, controller and public non-cursor inputs, omit credentials
+//! and sensitive values, and detect corruption with a checksum. Tokens are
+//! plain data, not encrypted or authenticated. Sensitive cursor destinations
+//! cannot be checkpointed.
+//!
 //! Custom page shapes need no iterable marker: any response representation
 //! with the complete `Buffered` driver is pageable by a controller that knows
 //! how to extract its items.
 
 mod bridge;
+mod checkpoint;
 mod controller;
 mod engine;
 mod error;
@@ -59,7 +69,7 @@ pub use terminals::{CollectAll, CollectPrefix, Page, Pages, Prefix};
 #[doc(hidden)]
 pub use bridge::{
     ControllerCursor, ControllerInit, PageItem, PageableEndpoint, collect_all_request,
-    collect_prefix_request, pages_request,
+    collect_prefix_request, pages_request, resume_pages_request,
 };
 
 pub(crate) use meter::TraversalMeter;
@@ -68,3 +78,7 @@ pub(crate) use meter::TraversalMeter;
 mod runtime_tests;
 #[cfg(test)]
 mod tests;
+
+#[doc(hidden)]
+pub use checkpoint::CheckpointCodec;
+pub use checkpoint::{Checkpoint, CheckpointError, CheckpointErrorKind, ResumableController};

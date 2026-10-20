@@ -140,7 +140,7 @@ Capability terminals exist only when declared (CALL-03):
 | Declared by | Terminal |
 |---|---|
 | `expose accepted_bytes;` | `accepted_bytes()` returning `AcceptedBytesRequest` |
-| `paginate via ...` | `pages(n)`, `collect_prefix(n)`, `collect_all(NonZeroU32)` |
+| `paginate via ...` | `pages(n)`, `collect_prefix(n)`, `collect_all(NonZeroU32)`; `resume_pages(&checkpoint, n)` when the controller implements `ResumableController` |
 | being the source of `credential x = endpoint path` | `store_as_x()` returning `StoreRequest` |
 
 The named request implements the open `RequestControls` trait itself, so

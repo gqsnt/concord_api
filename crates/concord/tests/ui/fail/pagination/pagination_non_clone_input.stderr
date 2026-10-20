@@ -32,6 +32,34 @@ error[E0277]: the trait bound `NonCloneInput: Clone` is not satisfied
 46 | |     client NonClonePageInputApi {
 47 | |         base "https://example.test";
 ...  |
+54 | |             paginate via OffsetPagination {
+   | |             -------- required by a bound introduced by this call
+...  |
+60 | | }
+   | |_^ the trait `Clone` is not implemented for `NonCloneInput`
+   |
+note: required by a bound in `concord::__private::checkpoint_input`
+  --> $WORKSPACE/crates/concord-core/src/pagination/checkpoint_input.rs
+   |
+   | pub fn checkpoint_input<E>(
+   |        ---------------- required by a bound in this function
+...
+   |     E::Input: Clone,
+   |               ^^^^^ required by this bound in `checkpoint_input`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: consider annotating `NonCloneInput` with `#[derive(Clone)]`
+   |
+24 + #[derive(Clone)]
+25 | pub struct NonCloneInput;
+   |
+
+error[E0277]: the trait bound `NonCloneInput: Clone` is not satisfied
+  --> tests/ui/fail/pagination/pagination_non_clone_input.rs:45:1
+   |
+45 | / api! {
+46 | |     client NonClonePageInputApi {
+47 | |         base "https://example.test";
+...  |
 60 | | }
    | |_^ the trait `Clone` is not implemented for `NonCloneInput`
    |
@@ -59,6 +87,30 @@ note: required by a bound in `concord::__private::pages_request`
 ...
    |     E::Input: Clone,
    |               ^^^^^ required by this bound in `pages_request`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: consider annotating `NonCloneInput` with `#[derive(Clone)]`
+   |
+24 + #[derive(Clone)]
+25 | pub struct NonCloneInput;
+   |
+
+error[E0277]: the trait bound `NonCloneInput: Clone` is not satisfied
+  --> tests/ui/fail/pagination/pagination_non_clone_input.rs:54:13
+   |
+54 |             paginate via OffsetPagination {
+   |             ^^^^^^^^
+   |             |
+   |             the trait `Clone` is not implemented for `NonCloneInput`
+   |             required by a bound introduced by this call
+   |
+note: required by a bound in `concord::__private::resume_pages_request`
+  --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
+   |
+   | pub fn resume_pages_request<E>(
+   |        -------------------- required by a bound in this function
+...
+   |     E::Input: Clone,
+   |               ^^^^^ required by this bound in `resume_pages_request`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider annotating `NonCloneInput` with `#[derive(Clone)]`
    |

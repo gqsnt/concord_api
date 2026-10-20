@@ -379,3 +379,254 @@ fn controller_descriptions_declare_bounded_interests() {
         PaginationDescription::NONE
     );
 }
+
+fn round_trip<P, C>(controller: &C) -> C
+where
+    C: ResumableController<P>,
+    C::Cursor: std::fmt::Debug + PartialEq,
+{
+    let state = controller.save_state();
+    let restored = C::restore_state(&state).expect("valid saved state");
+    assert_eq!(restored.cursor(), controller.cursor());
+    assert_eq!(restored.save_state(), state, "canonical encoding");
+    restored
+}
+
+fn rejects_state<P, C>(state: &[u8])
+where
+    C: ResumableController<P>,
+{
+    let error = C::restore_state(state).err().expect("invalid state");
+    assert_eq!(error.kind(), PaginationErrorKind::Controller);
+    assert_eq!(error.to_string(), "pagination failed");
+    assert_eq!(
+        format!("{error:?}"),
+        "PaginationError { kind: Controller, safe_message: None }"
+    );
+}
+
+#[test]
+fn resumed_offset_and_page_preserve_position_size_and_checked_progression() {
+    let controller = round_trip::<Vec<u8>, _>(&offset_start(7, 2));
+    let Ok(PageStep::Continue { next, items }) =
+        advance(controller, vec![1_u8, 2], &HeaderMap::new(), 10)
+    else {
+        panic!("restored full offset page continues");
+    };
+    assert_eq!(items, [1, 2]);
+    assert_eq!(next.offset, 9);
+    assert!(matches!(
+        advance(
+            round_trip::<Vec<u8>, _>(&next),
+            vec![3_u8],
+            &HeaderMap::new(),
+            10
+        ),
+        Ok(PageStep::Done { .. })
+    ));
+    let controller = round_trip::<Vec<u8>, _>(&PagePagination {
+        page: NonZeroU64::new(4).unwrap(),
+        page_size: NonZeroU32::new(2).unwrap(),
+    });
+    let Ok(PageStep::Continue { next, .. }) =
+        advance(controller, vec![1_u8, 2], &HeaderMap::new(), 10)
+    else {
+        panic!("restored full numbered page continues");
+    };
+    assert_eq!(next.page.get(), 5);
+    for controller in [offset_start(u64::MAX, 1), offset_start(0, u32::MAX)] {
+        round_trip::<Vec<u8>, _>(&controller);
+    }
+    let controller = round_trip::<Vec<u8>, _>(&PagePagination {
+        page: NonZeroU64::MAX,
+        page_size: NonZeroU32::new(1).unwrap(),
+    });
+    let error = advance(controller, vec![1_u8], &HeaderMap::new(), 10)
+        .err()
+        .expect("overflow remains checked after restore");
+    assert_eq!(error.kind(), PaginationErrorKind::Overflow);
+}
+
+#[test]
+fn resumed_string_controllers_preserve_optional_cursors_and_advance() {
+    for cursor in [
+        None,
+        Some(String::new()),
+        Some("secret-雪\0cursor".to_owned()),
+    ] {
+        round_trip::<CursorPage, _>(&CursorPagination {
+            cursor: cursor.clone(),
+        });
+        round_trip::<Vec<u8>, _>(&NextHeaderPagination {
+            cursor: cursor.clone(),
+        });
+        round_trip::<Vec<u8>, _>(&LinkCursorPagination { cursor });
+    }
+    let cursor = round_trip::<CursorPage, _>(&CursorPagination { cursor: None });
+    let Ok(PageStep::Continue { next, items }) = advance(
+        cursor,
+        CursorPage {
+            items: vec![1],
+            next: Some("next".to_owned()),
+        },
+        &HeaderMap::new(),
+        10,
+    ) else {
+        panic!("restored cursor follows the next page");
+    };
+    assert_eq!(items, [1]);
+    assert_eq!(
+        round_trip::<CursorPage, _>(&next).cursor.as_deref(),
+        Some("next")
+    );
+
+    let header = round_trip::<Vec<u8>, _>(&NextHeaderPagination { cursor: None });
+    let mut headers = HeaderMap::new();
+    headers.insert("x-next-cursor", HeaderValue::from_static("next-header"));
+    let Ok(PageStep::Continue { next, .. }) = advance(header, vec![1_u8], &headers, 10) else {
+        panic!("restored header controller advances");
+    };
+    assert_eq!(next.cursor.as_deref(), Some("next-header"));
+    let link = round_trip::<Vec<u8>, _>(&link_start());
+    let headers = link_headers(&["<?view=summary&cursor=next-link&limit=2>; rel=next"]);
+    let Ok(PageStep::Continue { next, .. }) = advance(link, vec![1_u8], &headers, 10) else {
+        panic!("restored link controller advances");
+    };
+    assert_eq!(next.cursor.as_deref(), Some("next-link"));
+}
+
+struct IntegerCursorPage<C>(Option<C>);
+
+impl<C> IntoIterator for IntegerCursorPage<C> {
+    type Item = u8;
+    type IntoIter = std::iter::Empty<u8>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        std::iter::empty()
+    }
+}
+
+impl<C> HasNextCursor<C> for IntegerCursorPage<C> {
+    fn next_cursor(&self) -> Option<&C> {
+        self.0.as_ref()
+    }
+}
+
+#[test]
+fn all_primitive_integer_cursors_round_trip_boundaries_and_continue() {
+    macro_rules! check {
+        ($($cursor:ty),+ $(,)?) => {$(
+            for cursor in [None, Some(<$cursor>::MIN), Some(0), Some(<$cursor>::MAX)] {
+                let controller = round_trip::<IntegerCursorPage<$cursor>, _>(
+                    &CursorPagination { cursor },
+                );
+                let Ok(PageStep::Continue { next, .. }) = advance(
+                    controller, IntegerCursorPage(Some(<$cursor>::MAX)), &HeaderMap::new(), 10,
+                ) else {
+                    panic!("restored integer cursor advances");
+                };
+                assert_eq!(next.cursor, Some(<$cursor>::MAX));
+            }
+        )+};
+    }
+    check!(
+        u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize
+    );
+}
+
+#[test]
+fn saved_state_has_explicit_version_and_big_endian_representation() {
+    assert_eq!(
+        <OffsetPagination as ResumableController<Vec<u8>>>::save_state(&offset_start(7, 2)),
+        b"CCP\x01\x01\0\0\0\0\0\0\0\x07\0\0\0\x02"
+    );
+    assert_eq!(
+        <CursorPagination<String> as ResumableController<CursorPage>>::save_state(
+            &CursorPagination { cursor: None }
+        ),
+        b"CCP\x01\x03\x00"
+    );
+    assert_eq!(
+        <CursorPagination<String> as ResumableController<CursorPage>>::save_state(
+            &CursorPagination {
+                cursor: Some(String::new())
+            }
+        ),
+        b"CCP\x01\x03\x01"
+    );
+    assert_eq!(
+        <CursorPagination<i16> as ResumableController<IntegerCursorPage<i16>>>::save_state(
+            &CursorPagination { cursor: Some(-2) }
+        ),
+        b"CCP\x01\x17\x01\xff\xfe"
+    );
+}
+
+#[test]
+fn saved_state_rejects_truncation_wrong_versions_types_and_invalid_values() {
+    let state = <OffsetPagination as ResumableController<Vec<u8>>>::save_state(&offset_start(7, 2));
+    for length in 0..state.len() {
+        rejects_state::<Vec<u8>, OffsetPagination>(&state[..length]);
+    }
+    let mut malformed = state.clone();
+    malformed.push(0);
+    rejects_state::<Vec<u8>, OffsetPagination>(&malformed);
+    malformed = state.clone();
+    malformed[3] = 2;
+    rejects_state::<Vec<u8>, OffsetPagination>(&malformed);
+    malformed = state.clone();
+    malformed[0] = b'X';
+    rejects_state::<Vec<u8>, OffsetPagination>(&malformed);
+    rejects_state::<Vec<u8>, PagePagination>(&state);
+    malformed = state;
+    malformed[13..17].fill(0);
+    rejects_state::<Vec<u8>, OffsetPagination>(&malformed);
+    malformed[4] = 2;
+    rejects_state::<Vec<u8>, PagePagination>(&malformed);
+    malformed[5..13].fill(0);
+    malformed[16] = 1;
+    rejects_state::<Vec<u8>, PagePagination>(&malformed);
+
+    for payload in [&b""[..], &[2], &[0, 1], &[1, 0xff]] {
+        rejects_state::<CursorPage, CursorPagination<String>>(&encode_state(3, payload));
+        rejects_state::<Vec<u8>, NextHeaderPagination>(&encode_state(4, payload));
+        rejects_state::<Vec<u8>, LinkCursorPagination>(&encode_state(5, payload));
+    }
+    rejects_state::<Vec<u8>, NextHeaderPagination>(&encode_string_state(5, &None));
+    rejects_state::<Vec<u8>, LinkCursorPagination>(&encode_string_state(4, &None));
+    macro_rules! check_integer {
+        ($cursor:ty, $tag:literal, $width:expr) => {
+            for payload in [
+                vec![],
+                vec![2],
+                vec![0, 1],
+                vec![1; $width],
+                vec![1; $width + 2],
+            ] {
+                rejects_state::<IntegerCursorPage<$cursor>, CursorPagination<$cursor>>(
+                    &encode_state($tag, &payload),
+                );
+            }
+        };
+    }
+    check_integer!(u8, 16, 1);
+    check_integer!(u16, 17, 2);
+    check_integer!(u32, 18, 4);
+    check_integer!(u64, 19, 8);
+    check_integer!(u128, 20, 16);
+    check_integer!(usize, 21, 16);
+    check_integer!(i8, 22, 1);
+    check_integer!(i16, 23, 2);
+    check_integer!(i32, 24, 4);
+    check_integer!(i64, 25, 8);
+    check_integer!(i128, 26, 16);
+    check_integer!(isize, 27, 16);
+    rejects_state::<IntegerCursorPage<usize>, CursorPagination<usize>>(&encode_state(
+        21,
+        &[&[1][..], &u128::MAX.to_be_bytes()].concat(),
+    ));
+    rejects_state::<IntegerCursorPage<isize>, CursorPagination<isize>>(&encode_state(
+        27,
+        &[&[1][..], &i128::MAX.to_be_bytes()].concat(),
+    ));
+}

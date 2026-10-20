@@ -150,8 +150,10 @@ impl<Item> fmt::Debug for Prefix<Item> {
 ///   the summary retains [`StopReason::Failed`].
 /// * Dropping a started traversal records cancellation, never EOF or rollback.
 ///
-/// This strict rule is deliberate: a resumable cancellation mode would need
-/// durable pending-page accounting and is not provided.
+/// A completed fetch failure retains its pending position for
+/// [`checkpoint`](Self::checkpoint), so a new traversal can retry that page.
+/// Dropping an in-flight fetch cancels this traversal; save a checkpoint before
+/// starting the fetch when recovery from cancellation is needed.
 pub struct Pages<Item> {
     traversal: Option<Box<dyn ErasedTraversal<Item>>>,
     settled: TraversalSummary,
@@ -167,22 +169,15 @@ where
     E::Response: ResponseRepresentation<E::Output, Driver = Buffered>,
 {
     let drop_report: DropReport = Arc::new(Mutex::new(None));
-    if maximum_pages == 0 {
-        // No shaping, body, controller, credential, quota, transport or
-        // operation allocation: the request is dropped inert.
-        drop(request);
-        return Pages {
-            traversal: None,
-            settled: TraversalSummary::zero_bound(),
-            drop_report,
-        };
-    }
-    let traversal = Traversal::new(
+    let mut traversal = Traversal::new(
         request,
         maximum_pages,
         TraversalMode::Incremental,
         Arc::clone(&drop_report),
     );
+    if maximum_pages == 0 {
+        traversal.zero_bound();
+    }
     let settled = ErasedTraversal::summary(&traversal);
     Pages {
         traversal: Some(Box::new(traversal)),
@@ -191,7 +186,49 @@ where
     }
 }
 
+pub(super) fn new_resumed_pages<E>(
+    request: Request<E>,
+    checkpoint: &super::Checkpoint,
+    maximum_pages: u32,
+) -> Result<Pages<PageItem<E>>, super::CheckpointError>
+where
+    E: PageableEndpoint,
+    E::Controller: super::ResumableController<E::Output>,
+    E::Input: Clone,
+    E::Body: PageRequestRepresentation<E::Input>,
+    E::Response: ResponseRepresentation<E::Output, Driver = Buffered>,
+{
+    let drop_report: DropReport = Arc::new(Mutex::new(None));
+    let mut traversal = Traversal::new(
+        request,
+        maximum_pages,
+        TraversalMode::Incremental,
+        Arc::clone(&drop_report),
+    );
+    traversal.resume(checkpoint)?;
+    if maximum_pages == 0 {
+        traversal.zero_bound();
+    }
+    let settled = ErasedTraversal::summary(&traversal);
+    Ok(Pages {
+        traversal: Some(Box::new(traversal)),
+        settled,
+        drop_report,
+    })
+}
+
 impl<Item> Pages<Item> {
+    /// Saves the next page position, including after a page bound or fetch failure.
+    ///
+    /// # Errors
+    /// Returns a value-free error if finished, unsupported, sensitive or oversized.
+    pub fn checkpoint(&self) -> Result<super::Checkpoint, super::CheckpointError> {
+        self.traversal
+            .as_ref()
+            .ok_or_else(|| super::CheckpointError::new(super::CheckpointErrorKind::Finished))?
+            .checkpoint()
+    }
+
     /// Fetches, validates and delivers the next page, or returns `Ok(None)`
     /// once the traversal is exhausted, bounded, finished, failed or
     /// cancelled. See the type-level documentation for cancellation rules.
@@ -276,13 +313,7 @@ impl<Item> Future for NextPage<'_, Item> {
         };
         this.in_flight = None;
         let summary = traversal.summary();
-        if summary.is_terminal() {
-            // Release controller, template and identity storage now; the
-            // terminal traversal's drop guard is a no-op.
-            drop(traversal);
-        } else {
-            this.pages.traversal = Some(traversal);
-        }
+        this.pages.traversal = Some(traversal);
         this.pages.settled = summary;
         Poll::Ready(result)
     }

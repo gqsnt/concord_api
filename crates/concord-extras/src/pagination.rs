@@ -15,13 +15,18 @@
 //! Controllers never truncate a page: a batch larger than the remaining item
 //! budget fails with `CollectedItemCeilingExceeded`. Core independently
 //! validates every continuation (shaping, fixed facts, cycles and budgets).
+//!
+//! All built-in controllers support [`ResumableController`]; typed cursor
+//! controllers support `String` and primitive integers. State uses a versioned,
+//! controller-specific binary encoding and contains the cursor verbatim, so
+//! applications must protect saved state as sensitive data.
 
 use std::num::{NonZeroU32, NonZeroU64};
 
 use concord_core::contracts::{HeaderName, Url};
 use concord_core::pagination::{
     PageDecisionLimits, PageResponse, PageStep, PaginationController, PaginationDescription,
-    PaginationError, PaginationErrorKind,
+    PaginationError, PaginationErrorKind, ResumableController,
 };
 
 /// A decoded page that exposes an optional next cursor by reference.
@@ -374,6 +379,191 @@ where
         })
     }
 }
+
+// Version 1: magic/version, controller/type tag, then a strictly sized payload.
+// Integers are big endian; pointer-sized cursors use a fixed 128-bit encoding
+// and are range-checked when restored on the current architecture.
+const STATE_PREFIX: &[u8] = b"CCP\x01";
+
+fn encode_state(tag: u8, payload: &[u8]) -> Vec<u8> {
+    let mut state = STATE_PREFIX.to_vec();
+    state.push(tag);
+    state.extend_from_slice(payload);
+    state
+}
+
+fn state_payload(state: &[u8], tag: u8) -> Result<&[u8], PaginationError> {
+    let payload = state.strip_prefix(STATE_PREFIX).ok_or_else(invalid_state)?;
+    match payload.split_first() {
+        Some((&actual, payload)) if actual == tag => Ok(payload),
+        _ => Err(invalid_state()),
+    }
+}
+
+const fn invalid_state() -> PaginationError {
+    PaginationError::new(PaginationErrorKind::Controller)
+}
+
+fn encode_string_state(tag: u8, cursor: &Option<String>) -> Vec<u8> {
+    let mut state = encode_state(tag, &[u8::from(cursor.is_some())]);
+    if let Some(cursor) = cursor {
+        state.extend_from_slice(cursor.as_bytes());
+    }
+    state
+}
+
+fn restore_string_state(state: &[u8], tag: u8) -> Result<Option<String>, PaginationError> {
+    match state_payload(state, tag)?.split_first() {
+        Some((0, [])) => Ok(None),
+        Some((1, value)) => std::str::from_utf8(value)
+            .map(|value| Some(value.to_owned()))
+            .map_err(|_| invalid_state()),
+        _ => Err(invalid_state()),
+    }
+}
+
+impl<Page> ResumableController<Page> for OffsetPagination
+where
+    Page: IntoIterator + Send + 'static,
+    Page::Item: Send + 'static,
+{
+    fn save_state(&self) -> Vec<u8> {
+        let mut state = encode_state(1, &self.offset.to_be_bytes());
+        state.extend_from_slice(&self.page_size.get().to_be_bytes());
+        state
+    }
+
+    fn restore_state(state: &[u8]) -> Result<Self, PaginationError> {
+        let payload: &[u8; 12] = state_payload(state, 1)?
+            .try_into()
+            .map_err(|_| invalid_state())?;
+        let offset = u64::from_be_bytes(payload[..8].try_into().map_err(|_| invalid_state())?);
+        let size = u32::from_be_bytes(payload[8..].try_into().map_err(|_| invalid_state())?);
+        Ok(Self {
+            offset,
+            page_size: NonZeroU32::new(size).ok_or_else(invalid_state)?,
+        })
+    }
+}
+
+impl<Page> ResumableController<Page> for PagePagination
+where
+    Page: IntoIterator + Send + 'static,
+    Page::Item: Send + 'static,
+{
+    fn save_state(&self) -> Vec<u8> {
+        let mut state = encode_state(2, &self.page.get().to_be_bytes());
+        state.extend_from_slice(&self.page_size.get().to_be_bytes());
+        state
+    }
+
+    fn restore_state(state: &[u8]) -> Result<Self, PaginationError> {
+        let payload: &[u8; 12] = state_payload(state, 2)?
+            .try_into()
+            .map_err(|_| invalid_state())?;
+        let page = u64::from_be_bytes(payload[..8].try_into().map_err(|_| invalid_state())?);
+        let size = u32::from_be_bytes(payload[8..].try_into().map_err(|_| invalid_state())?);
+        Ok(Self {
+            page: NonZeroU64::new(page).ok_or_else(invalid_state)?,
+            page_size: NonZeroU32::new(size).ok_or_else(invalid_state)?,
+        })
+    }
+}
+
+impl<Page> ResumableController<Page> for CursorPagination<String>
+where
+    Page: HasNextCursor<String> + IntoIterator + Send + 'static,
+    Page::Item: Send + 'static,
+{
+    fn save_state(&self) -> Vec<u8> {
+        encode_string_state(3, &self.cursor)
+    }
+
+    fn restore_state(state: &[u8]) -> Result<Self, PaginationError> {
+        Ok(Self {
+            cursor: restore_string_state(state, 3)?,
+        })
+    }
+}
+
+macro_rules! resumable_string_header_controller {
+    ($controller:ty, $tag:literal) => {
+        impl<Page> ResumableController<Page> for $controller
+        where
+            Page: IntoIterator + Send + 'static,
+            Page::Item: Send + 'static,
+        {
+            fn save_state(&self) -> Vec<u8> {
+                encode_string_state($tag, &self.cursor)
+            }
+
+            fn restore_state(state: &[u8]) -> Result<Self, PaginationError> {
+                Ok(Self {
+                    cursor: restore_string_state(state, $tag)?,
+                })
+            }
+        }
+    };
+}
+
+resumable_string_header_controller!(NextHeaderPagination, 4);
+resumable_string_header_controller!(LinkCursorPagination, 5);
+
+fn restore_integer<T, Wire>(value: Wire) -> Result<T, PaginationError>
+where
+    T: TryFrom<Wire>,
+{
+    T::try_from(value).map_err(|_| invalid_state())
+}
+
+macro_rules! resumable_integer_cursor {
+    ($cursor:ty, $wire:ty, $tag:literal) => {
+        resumable_integer_cursor!($cursor, $wire, $tag, |cursor: $cursor| cursor);
+    };
+    ($cursor:ty, $wire:ty, $tag:literal, $to_wire:expr) => {
+        impl<Page> ResumableController<Page> for CursorPagination<$cursor>
+        where
+            Page: HasNextCursor<$cursor> + IntoIterator + Send + 'static,
+            Page::Item: Send + 'static,
+        {
+            fn save_state(&self) -> Vec<u8> {
+                let mut state = encode_state($tag, &[u8::from(self.cursor.is_some())]);
+                if let Some(cursor) = self.cursor {
+                    let to_wire = $to_wire;
+                    let value: $wire = to_wire(cursor);
+                    state.extend_from_slice(&value.to_be_bytes());
+                }
+                state
+            }
+
+            fn restore_state(state: &[u8]) -> Result<Self, PaginationError> {
+                let cursor = match state_payload(state, $tag)?.split_first() {
+                    Some((0, [])) => None,
+                    Some((1, bytes)) => {
+                        let bytes = bytes.try_into().map_err(|_| invalid_state())?;
+                        let value = <$wire>::from_be_bytes(bytes);
+                        Some(restore_integer(value)?)
+                    }
+                    _ => return Err(invalid_state()),
+                };
+                Ok(Self { cursor })
+            }
+        }
+    };
+}
+
+resumable_integer_cursor!(u8, u8, 16);
+resumable_integer_cursor!(u16, u16, 17);
+resumable_integer_cursor!(u32, u32, 18);
+resumable_integer_cursor!(u64, u64, 19);
+resumable_integer_cursor!(u128, u128, 20);
+resumable_integer_cursor!(usize, u128, 21, |cursor: usize| cursor as u128);
+resumable_integer_cursor!(i8, i8, 22);
+resumable_integer_cursor!(i16, i16, 23);
+resumable_integer_cursor!(i32, i32, 24);
+resumable_integer_cursor!(i64, i64, 25);
+resumable_integer_cursor!(i128, i128, 26);
+resumable_integer_cursor!(isize, i128, 27, |cursor: isize| cursor as i128);
 
 const fn invalid_continuation() -> PaginationError {
     PaginationError::new(PaginationErrorKind::InvalidContinuation)

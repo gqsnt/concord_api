@@ -307,6 +307,7 @@ const REQUEST_METHODS: &[&str] = &[
     "response",
     "accepted_bytes",
     "pages",
+    "resume_pages",
     "collect_prefix",
     "collect_all",
     "into_future",

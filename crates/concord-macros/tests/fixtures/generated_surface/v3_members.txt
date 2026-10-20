@@ -158,6 +158,7 @@ surface::region::shelf::ListingRequest reset_count self 0
 surface::region::shelf::ListingRequest reset_offset self 0
 surface::region::shelf::ListingRequest reset_timeout self 0
 surface::region::shelf::ListingRequest response self 0
+surface::region::shelf::ListingRequest resume_pages self 2
 surface::region::shelf::ListingRequest set_count self 1
 surface::region::shelf::ListingRequest set_count_if_some self 1
 surface::region::shelf::ListingRequest set_filter self 1

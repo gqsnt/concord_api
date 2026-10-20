@@ -180,11 +180,12 @@ pub mod http {
 /// controllers.
 pub mod pagination {
     pub use concord_core::pagination::{
-        CollectAll, CollectPrefix, ContinuationKnowledge, DEFAULT_TRAVERSAL_MAX_HANDOFFS,
-        MAX_PAGE_ATTEMPTS, MAX_PAGINATION_HEADER_BYTES, MAX_PAGINATION_HEADER_INTERESTS, Page,
-        PageCorrelation, PageDecisionLimits, PageResponse, PageStep, Pages, PaginationController,
-        PaginationDescription, PaginationError, PaginationErrorKind, Prefix, StopReason,
-        TraversalSummary,
+        Checkpoint, CheckpointError, CheckpointErrorKind, CollectAll, CollectPrefix,
+        ContinuationKnowledge, DEFAULT_TRAVERSAL_MAX_HANDOFFS, MAX_PAGE_ATTEMPTS,
+        MAX_PAGINATION_HEADER_BYTES, MAX_PAGINATION_HEADER_INTERESTS, Page, PageCorrelation,
+        PageDecisionLimits, PageResponse, PageStep, Pages, PaginationController,
+        PaginationDescription, PaginationError, PaginationErrorKind, Prefix, ResumableController,
+        StopReason, TraversalSummary,
     };
     pub use concord_extras::pagination::{
         CursorInit, CursorPagination, HasNextCursor, LinkCursorPagination, NEXT_CURSOR_HEADER,

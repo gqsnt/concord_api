@@ -26,6 +26,25 @@ error[E0271]: type mismatch resolving `<Binary as ResponseRepresentation<ByteStr
    |             expected `Buffered`, found `Streaming`
    |             required by a bound introduced by this call
    |
+note: required by a bound in `concord::__private::resume_pages_request`
+  --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
+   |
+   | pub fn resume_pages_request<E>(
+   |        -------------------- required by a bound in this function
+...
+   |     E::Response: ResponseRepresentation<E::Output, Driver = Buffered>,
+   |                                                    ^^^^^^^^^^^^^^^^^ required by this bound in `resume_pages_request`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0271]: type mismatch resolving `<Binary as ResponseRepresentation<ByteStream>>::Driver == Buffered`
+  --> tests/ui/fail/pagination/pagination_modes.rs:52:13
+   |
+52 |             paginate via crate::Once {
+   |             ^^^^^^^^
+   |             |
+   |             expected `Buffered`, found `Streaming`
+   |             required by a bound introduced by this call
+   |
 note: required by a bound in `concord::__private::collect_prefix_request`
   --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
    |
@@ -72,6 +91,25 @@ note: required by a bound in `concord::__private::pages_request`
 ...
    |     E::Response: ResponseRepresentation<E::Output, Driver = Buffered>,
    |                                                    ^^^^^^^^^^^^^^^^^ required by this bound in `pages_request`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0271]: type mismatch resolving `<Discard as ResponseRepresentation<()>>::Driver == Buffered`
+  --> tests/ui/fail/pagination/pagination_modes.rs:65:13
+   |
+65 |             paginate via crate::Once {
+   |             ^^^^^^^^
+   |             |
+   |             expected `Buffered`, found `DiscardDriver`
+   |             required by a bound introduced by this call
+   |
+note: required by a bound in `concord::__private::resume_pages_request`
+  --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
+   |
+   | pub fn resume_pages_request<E>(
+   |        -------------------- required by a bound in this function
+...
+   |     E::Response: ResponseRepresentation<E::Output, Driver = Buffered>,
+   |                                                    ^^^^^^^^^^^^^^^^^ required by this bound in `resume_pages_request`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0271]: type mismatch resolving `<Discard as ResponseRepresentation<()>>::Driver == Buffered`

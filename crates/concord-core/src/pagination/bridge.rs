@@ -76,6 +76,21 @@ pub trait PageableEndpoint: EndpointSpec + Sized {
     /// Controller interpreting pages of the endpoint's decoded output.
     type Controller: PaginationController<Self::Output>;
 
+    /// Optional durable state callbacks selected by generated code.
+    fn checkpoint_codec(&self) -> Option<super::CheckpointCodec<Self::Controller, Self::Output>> {
+        None
+    }
+
+    /// Canonical public non-cursor inputs, excluding all sensitive values.
+    fn checkpoint_input(&self) -> Result<Vec<u8>, super::CheckpointError> {
+        Ok(Vec::new())
+    }
+
+    /// Whether a mapped cursor destination is sensitive.
+    fn checkpoint_sensitive_cursor(&self) -> bool {
+        false
+    }
+
     /// Builds the controller's public initialization value.
     fn controller_init(&self) -> ControllerInit<Self>;
 
@@ -142,4 +157,21 @@ where
     E::Response: ResponseRepresentation<E::Output, Driver = Buffered>,
 {
     new_collect_all(request, maximum_pages)
+}
+
+/// Restores a lazy traversal through the ordinary managed pipeline.
+#[doc(hidden)]
+pub fn resume_pages_request<E>(
+    request: Request<E>,
+    checkpoint: &super::Checkpoint,
+    maximum_pages: u32,
+) -> Result<Pages<PageItem<E>>, super::CheckpointError>
+where
+    E: PageableEndpoint,
+    E::Controller: super::ResumableController<E::Output>,
+    E::Input: Clone,
+    E::Body: PageRequestRepresentation<E::Input>,
+    E::Response: ResponseRepresentation<E::Output, Driver = Buffered>,
+{
+    super::terminals::new_resumed_pages(request, checkpoint, maximum_pages)
 }

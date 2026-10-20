@@ -6,6 +6,7 @@ mod generated {
     pub(crate) mod authentication;
     #[cfg(feature = "records")]
     mod buffered_records;
+    mod checkpoints;
     pub(crate) mod pagination;
     pub(crate) mod rate_limits;
     #[cfg(any(feature = "csv", feature = "ndjson"))]

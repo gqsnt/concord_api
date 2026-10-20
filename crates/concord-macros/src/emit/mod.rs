@@ -7,6 +7,7 @@
 //! Hidden storage fields stay private: navigation methods are emitted in the
 //! child module (a descendant may access its ancestors' private fields).
 
+mod checkpoint;
 mod client;
 mod contract;
 mod docs;

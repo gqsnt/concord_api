@@ -189,6 +189,93 @@ pub async fn find_summary(
 Processing time between loop iterations counts against the aggregate deadline,
 and stopping early never requires reconstructing auth, quota or retry state.
 
+### Saving and resuming a position
+
+`Pages::checkpoint()` returns `Result<Checkpoint, CheckpointError>`. A checkpoint
+describes the next page after the last batch delivered to the application. It
+is available before the first fetch, between pages, at a page bound, and after
+a fetch failure. Saving performs no HTTP, credential acquisition or quota
+admission. It may call the controller's synchronous state methods, shape the
+public request binding and prepare a cloned buffered body to fingerprint it.
+
+`Checkpoint::to_token()` produces a portable ASCII token of at most 4,096
+characters. `Checkpoint::from_token(&str)` validates and reloads it;
+`next_page_index()` reports the next zero-based page index. Recreate the typed
+request and call `request.resume_pages(&checkpoint, maximum_pages)` to obtain
+`Result<Pages<Item>, CheckpointError>`:
+
+<!-- concord-pseudocode -->
+```rust
+use concord::pagination::{Checkpoint, ContinuationKnowledge};
+
+let mut pages = client.offset(0, page_size).pages(2);
+while let Some(page) = pages.next_page().await? {
+    persist_items(page.into_items()).await?;
+    if pages.summary().continuation() == ContinuationKnowledge::NextRequestKnown {
+        persist_token(pages.checkpoint()?.to_token()).await?;
+    }
+}
+
+// Later, possibly in another process, recreate the same public inputs.
+let checkpoint = Checkpoint::from_token(&load_token().await?)?;
+let mut resumed = client
+    .offset(0, page_size)
+    .resume_pages(&checkpoint, 2)?;
+while let Some(page) = resumed.next_page().await? {
+    persist_items(page.into_items()).await?;
+    if resumed.summary().continuation() == ContinuationKnowledge::NextRequestKnown {
+        persist_token(resumed.checkpoint()?.to_token()).await?;
+    }
+}
+```
+
+Save a token only when another request is known; exhaustion returns
+`CheckpointErrorKind::Finished`. A checkpoint can also be
+saved before starting, when no batch has been delivered. Saving after a failed
+fetch retries the failed page; no earlier explicit checkpoint is required.
+An exhausted or cancelled traversal cannot create a new checkpoint. A
+zero-bound `pages(0)` can save its initial position without fetching; a
+zero-bound resumed traversal retains its supplied position without fetching.
+
+Resuming is a new traversal: it allocates a new operation identity and deadline
+on its first fetch, and starts fresh item, byte, send, retry and cycle-detection
+budgets. The new page bound counts pages fetched by this traversal. Summary
+counters describe this traversal only; `Page::index()`, metadata and error page
+indices continue from the checkpoint's `next_page_index()`. Resume construction
+performs validation and shaping but no managed operation or HTTP request.
+
+Core binds a token to the endpoint, controller type and public non-cursor
+request inputs, including the logical origin, path and public query/header
+occurrences, plus a fingerprint of the buffered body and its media type. A
+different endpoint, controller, public input or body is rejected before
+dispatch. Sensitive non-cursor query/header values and credentials are
+excluded from this binding; the recreated request supplies their current
+values. The cursor slots are restored from the token, so their
+starting values do not need to match. Apply new controls to the recreated
+request before calling `resume_pages`. Recreate the same semantic request body
+and credential configuration yourself; tokens contain neither body bytes nor
+credential material and are not an authentication mechanism. A stream,
+factory or multipart body cannot be fingerprinted synchronously and returns
+`NotResumable` without executing the body source.
+
+Checkpoints require an opted-in `ResumableController`; ordinary custom
+controllers continue to work with `.pages()` and report `NotResumable` when
+asked for a checkpoint. The built-in offset, page-number, header and link
+controllers support checkpoints, as does `CursorPagination<String>` and its
+primitive integer variants. See [controller extensions](extensions.md#durable-controller-state).
+
+Tokens encode controller state as plain data. A checksum detects corruption;
+it does not prevent a caller from forging a token. Protect stored tokens and
+do not log them. A `#[sensitive]` cursor destination or controller-initialization input is
+rejected with `SensitiveCursor`, even before the first fetch. `Checkpoint` debug output and
+checkpoint errors omit state and input values. Malformed, unsupported-version
+and oversized tokens produce typed, value-free errors.
+
+Checkpointing does not commit application work or provide exactly-once
+delivery. Store processed items and their checkpoint with the consistency your
+application needs; replaying a saved token can deliver those items again, and
+provider data may change between traversals.
+
 ## Summary facts
 
 `TraversalSummary` is owned and cloneable: `operation_id()`, `stop_reason()`,
@@ -257,8 +344,9 @@ statuses, retry responses and failed partial acquisitions (PAGE-04). The item
 ceiling applies to the whole current batch; no page is silently truncated.
 
 Dropping an **unpolled** `next_page()` future changes nothing. Dropping a
-**started** one cancels the whole traversal and records `Cancelled`; it cannot
-resume. A fetch error is returned once, then `next_page()` returns `Ok(None)`
+**started** one cancels the whole traversal and records `Cancelled`; that
+traversal cannot continue. An earlier saved checkpoint can start a new
+traversal. A fetch error is returned once, then `next_page()` returns `Ok(None)`
 with `Failed` retained. `finish()` preserves an already terminal state and
 otherwise records `Application`. Dropping a started traversal records
 cancellation, never EOF or rollback. (Stream reads differ: see

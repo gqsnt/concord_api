@@ -12,6 +12,7 @@ fn current_language_surface_and_diagnostics() {
     cases.compile_fail("tests/ui/fail/authentication/*.rs");
     cases.compile_fail("tests/ui/fail/rate_limits/*.rs");
     for path in [
+        "tests/ui/fail/pagination/checkpoint_nonresumable.rs",
         "tests/ui/fail/pagination/non_paginated_no_paginate.rs",
         "tests/ui/fail/pagination/numeric_page_limit_absent.rs",
         "tests/ui/fail/pagination/pagination_bounds.rs",

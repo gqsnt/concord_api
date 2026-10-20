@@ -47,9 +47,12 @@ pub use crate::limits::{
 };
 #[doc(hidden)]
 pub use crate::pagination::{
-    ControllerCursor, ControllerInit, PageItem, PageableEndpoint, collect_all_request,
-    collect_prefix_request, pages_request,
+    CheckpointCodec, ControllerCursor, ControllerInit, PageItem, PageableEndpoint,
+    collect_all_request, collect_prefix_request, pages_request, resume_pages_request,
 };
+
+#[path = "pagination/checkpoint_input.rs"]
+mod checkpoint_input;
 #[doc(hidden)]
 pub use crate::rate_limit::{
     RateKeyEncoder, RateKeyPart, RateLimitDeclaration, RateLimitId, RateLimitKey, RateLimitKeyPart,
@@ -76,6 +79,8 @@ pub use crate::runtime::defaults::{
     DEFAULT_STATUS_BODY_BYTES, DEFAULT_STREAM_FRAME_BYTES, DEFAULT_STREAM_IDLE_SECONDS,
     DEFAULT_STREAM_LIFETIME_SECONDS, DEFAULT_STREAM_MAX_RECORDS, DEFAULT_STREAM_RESPONSE_BYTES,
 };
+#[doc(hidden)]
+pub use checkpoint_input::checkpoint_input;
 
 /// Constructs the absent value of a head-only expected-absence result.
 ///

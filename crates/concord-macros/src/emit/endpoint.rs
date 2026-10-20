@@ -191,6 +191,7 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
     });
 
     // ---- pagination ----
+    let checkpoint = super::checkpoint::items(context, index);
     let pageable = endpoint.pagination.as_ref().map(|pagination| {
         let controller = context.rust_type(&pagination.controller);
         let init_type = context.rust_path(&pagination.init_type);
@@ -294,9 +295,12 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
             quote!(fn apply_cursor(&mut self, __concord_cursor: #p::ControllerCursor<Self>)),
             span,
         );
+        let checkpoint_methods = located_at(super::checkpoint::methods(context, index), pagination.span);
         quote! {
             #head {
                 #controller_head #controller #controller_end
+
+                #checkpoint_methods
 
                 #init_signature {
                     #init_assert
@@ -524,6 +528,7 @@ pub(crate) fn items(context: &Context<'_>, index: usize) -> TokenStream {
             }
         }
 
+        #checkpoint
         #pageable
 
         #[doc = #request_doc]
@@ -750,6 +755,25 @@ fn terminals(context: &Context<'_>, index: usize) -> TokenStream {
             /// into the traversal; ordinary `.await` never paginates.
             pub fn pages(self, __concord_maximum_pages: u32) -> #f::pagination::Pages<#p::PageItem<#spec>> {
                 (#p::pages_request)(self.__inner, __concord_maximum_pages)
+            }
+
+            /// Resumes a durable traversal position with this request's current
+            /// controls. Public inputs must match the checkpoint; the saved
+            /// controller supplies the next cursor.
+            ///
+            /// # Errors
+            /// Returns a value-free checkpoint error when the endpoint,
+            /// controller or public inputs differ, or the saved state is invalid.
+            pub fn resume_pages<__ConcordController>(
+                self,
+                __concord_checkpoint: &#f::pagination::Checkpoint,
+                __concord_maximum_pages: u32,
+            ) -> ::std::result::Result<#f::pagination::Pages<#p::PageItem<#spec>>, #f::pagination::CheckpointError>
+            where
+                #spec: #p::PageableEndpoint<Controller = __ConcordController>,
+                __ConcordController: #f::pagination::ResumableController<#output>,
+            {
+                (#p::resume_pages_request)(self.__inner, __concord_checkpoint, __concord_maximum_pages)
             }
 
             /// Collects the items of at most `maximum_pages` pages together with a
