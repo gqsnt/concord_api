@@ -1,6 +1,7 @@
 # ADR 0007 — Read-only operation observation
 
-- **Status:** Selected and mechanically supported on Windows/Linux; human operator comprehension remains unknown for public freeze
+- **Status:** Retained unchanged in v3.0.0-beta.1 (v3 specification §13.3 EXEC-04, §17.1).
+- **v2.1 status (historical):** Selected and mechanically supported on Windows/Linux; human operator comprehension remains unknown for public freeze. That platform evidence is v2.1 evidence; v3 was not run on Windows.
 
 ## Decision
 

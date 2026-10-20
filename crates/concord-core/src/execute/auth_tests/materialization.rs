@@ -25,7 +25,7 @@ async fn production_managed_reqwest_inserts_auth_over_real_tls_loopback() {
         core,
         &selector,
         ChallengePolicy::Never,
-        RequestBody::bytes(Bytes::new()),
+        PreparedBody::bytes(Bytes::new()),
     )
     .await
     .expect("real managed authenticated request");
@@ -248,11 +248,10 @@ async fn prepared_bearer_basic_header_and_query_auth_use_only_the_native_boundar
         let endpoint =
             RuntimeEndpoint::builder(EndpointId::from_static("runtime.auth"), Method::GET)
                 .path(segment)
-                .auth(auth)
-                .accepted_bytes()
+                .response::<Binary, Bytes>()
                 .build()
                 .expect("prepared authentication endpoint");
-        let actual = Request::new(core.clone(), endpoint)
+        let actual = bind_protected(&core, [auth], endpoint)
             .await
             .expect("prepared authenticated request");
         assert_eq!(actual, expected);
@@ -315,27 +314,28 @@ async fn prepared_authentication_attachments_materialize_in_builder_order() {
     );
     let endpoint =
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.ordered_auth"), Method::GET)
-            .auth(
-                Auth::header(
-                    http::HeaderName::from_static("x-first-auth"),
-                    CredentialRef::new(first),
-                )
-                .expect("valid first header placement"),
-            )
-            .auth(
-                Auth::header(
-                    http::HeaderName::from_static("x-second-auth"),
-                    CredentialRef::new(second),
-                )
-                .expect("valid second header placement"),
-            )
-            .accepted_bytes()
+            .response::<Binary, Bytes>()
             .build()
             .expect("ordered prepared authentication endpoint");
 
-    Request::new(core, endpoint)
-        .await
-        .expect("ordered prepared authentication request");
+    bind_protected(
+        &core,
+        [
+            Auth::header(
+                http::HeaderName::from_static("x-first-auth"),
+                CredentialRef::new(first),
+            )
+            .expect("valid first header placement"),
+            Auth::header(
+                http::HeaderName::from_static("x-second-auth"),
+                CredentialRef::new(second),
+            )
+            .expect("valid second header placement"),
+        ],
+        endpoint,
+    )
+    .await
+    .expect("ordered prepared authentication request");
     assert_eq!(
         calls.lock().expect("ordered prepared calls").as_slice(),
         ["first", "second"]

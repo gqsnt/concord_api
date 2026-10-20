@@ -1,21 +1,21 @@
+//! The first-party OAuth2 client-credentials provider through the generated
+//! provider lifecycle: declared token origin, bounded provider HTTP, local
+//! credential controls and value-free failures (§11.2, AUTH-02).
+
 #![cfg(all(feature = "oauth2-client", feature = "default-tls"))]
 
 use std::error::Error;
-use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use concord::api;
-use concord::auth::{
-    AccessToken, AuthError, BoxFuture, CredentialProvider, CredentialRequest,
-    OAuth2ClientCredentials,
-};
-use concord::error::ErrorCategory;
+use concord::auth::{AccessToken, BoxFuture, OAuth2ClientCredentials};
+use concord::error::{ErrorCategory, FailureStage};
 use concord::rate_limit::{
-    NoopRateLimiter, RateLimitError, RateLimitErrorKind, RateLimitPermit, RateLimitRequest,
-    RateLimiter,
+    Enforcement, LimiterCapability, NoopRateLimiter, RateLimitError, RateLimitErrorKind,
+    RateLimitPermit, RateLimitRequest, RateLimiter,
 };
+use concord::{Binary, Bytes, api};
 use concord_test_support::tls::TlsServer;
 
 type OAuthAlias = OAuth2ClientCredentials;
@@ -28,12 +28,12 @@ api! {
             credential oauth = custom OAuthAlias;
         }
 
-
-    GET protected() -> Bytes via Binary {
-        auth { bearer oauth challenge unauthorized; }
-        rate_limit { id "concord.oauth2.1"; key [origin]; cost 1;  allow 1 per 1s; }
+        GET protected() -> Bytes via Binary {
+            auth { bearer oauth challenge unauthorized; }
+            rate_limit { id "concord.oauth2.1"; key [origin]; cost 1; allow 1 per 1s; }
+        }
     }
-}}
+}
 
 api! {
     client ProviderPathApi {
@@ -43,24 +43,13 @@ api! {
             credential aliased = custom OAuthAlias;
             credential qualified = custom concord::auth::OAuth2ClientCredentials;
         }
-    }
-}
 
-struct LocalAccessTokenProvider {
-    calls: Arc<AtomicUsize>,
-    token: &'static str,
-}
-
-impl CredentialProvider for LocalAccessTokenProvider {
-    type Material = AccessToken;
-
-    fn acquire<'a>(
-        &'a self,
-        _context: CredentialRequest<'a>,
-    ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        let token = self.token;
-        Box::pin(async move { Ok(AccessToken::try_new(token).expect("bounded test access token")) })
+        GET both() -> Bytes via Binary {
+            auth {
+                bearer aliased;
+                header "X-Qualified" = qualified;
+            }
+        }
     }
 }
 
@@ -69,6 +58,10 @@ struct FailingLimiter {
 }
 
 impl RateLimiter for FailingLimiter {
+    fn capability(&self) -> LimiterCapability {
+        LimiterCapability::new(Enforcement::Local, "concord.tests.failing", 1)
+    }
+
     fn acquire<'a>(
         &'a self,
         _request: RateLimitRequest<'a>,
@@ -101,38 +94,44 @@ fn render_error_chain(error: &(dyn Error + 'static)) -> String {
 }
 
 #[tokio::test]
-async fn custom_provider_paths_are_type_neutral_inert_and_replaceable() {
-    let first_calls = Arc::new(AtomicUsize::new(0));
-    let second_calls = Arc::new(AtomicUsize::new(0));
+async fn custom_provider_paths_are_type_neutral_inert_and_locally_controllable() {
+    let server = TlsServer::start().expect("never-contacted token server");
+    let token_url = server.url("localhost", "/token");
+    let certificate = server.certificate_pem();
+    // The alias and the fully qualified path select the same provider type:
+    // spelling carries no macro semantics.
     let client = ProviderPathApi::builder()
-        .aliased_provider(LocalAccessTokenProvider {
-            calls: Arc::clone(&first_calls),
-            token: "first-local-token",
-        })
-        .qualified_provider(LocalAccessTokenProvider {
-            calls: Arc::clone(&second_calls),
-            token: "second-local-token",
-        })
+        .aliased(provider(&token_url))
+        .qualified(provider(&token_url))
+        .configure_http(move |http| http.http1_only().add_root_certificate_pem(certificate))
+        .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
         .build()
         .expect("provider-path client");
 
-    assert_eq!(first_calls.load(Ordering::SeqCst), 0);
-    assert_eq!(second_calls.load(Ordering::SeqCst), 0);
-    assert!(!client.credentials().aliased().is_set());
-    assert!(!client.credentials().qualified().is_set());
-
+    // Building and planning perform no provider acquisition.
+    let plan = client.both().plan().expect("inert plan");
+    assert!(plan.capabilities().authentication());
+    // Local controls replace or clear provider-slot material synchronously
+    // without any network work. (v2's runtime provider replacement is
+    // removed: providers are builder inputs; §11.3.)
     client
         .credentials()
-        .aliased()
-        .replace_provider(provider("https://auth.example.test/token"))
-        .await
-        .expect("same-material provider replacement");
-    assert_eq!(first_calls.load(Ordering::SeqCst), 0);
-    assert!(!client.credentials().aliased().is_set());
+        .replace_aliased(AccessToken::try_new("manual-aliased").expect("bounded token"))
+        .expect("manual aliased material");
+    client
+        .credentials()
+        .clear_qualified()
+        .expect("clear qualified slot");
+    client
+        .credentials()
+        .clear_aliased()
+        .expect("clear aliased slot");
+    std::thread::sleep(Duration::from_millis(50));
+    assert!(server.requests().is_empty());
 }
 
 #[tokio::test]
-async fn oauth_extra_executes_through_generated_provider_lifecycle_and_generic_replacement() {
+async fn oauth_extra_executes_through_generated_provider_lifecycle_and_local_replacement() {
     const TOKEN: &str = "oauth-provider-response-token-sentinel-40de";
     const RESPONSE: &[u8] =
         br#"{"access_token":"oauth-provider-response-token-sentinel-40de","token_type":"bearer","expires_in":3600}"#;
@@ -147,7 +146,7 @@ async fn oauth_extra_executes_through_generated_provider_lifecycle_and_generic_r
     });
     let certificate = server.certificate_pem();
     let client = OAuthRuntimeApi::builder()
-        .oauth_provider(provider(&token_url))
+        .oauth(provider(&token_url))
         .configure_http(move |http| http.http1_only().add_root_certificate_pem(certificate))
         .configure_runtime(move |runtime| runtime.rate_limiter(limiter))
         .build()
@@ -158,8 +157,8 @@ async fn oauth_extra_executes_through_generated_provider_lifecycle_and_generic_r
         .await
         .expect_err("explicit limiter stops before application transport");
     assert_eq!(error.category(), ErrorCategory::RateLimit);
+    assert_eq!(error.failure_stage(), FailureStage::RateAdmission);
     assert_eq!(limiter_calls.load(Ordering::SeqCst), 1);
-    assert!(client.credentials().oauth().is_set());
     server
         .wait_for_requests(1, Duration::from_secs(2))
         .expect("provider request reached isolated TLS server");
@@ -183,29 +182,34 @@ async fn oauth_extra_executes_through_generated_provider_lifecycle_and_generic_r
         b"grant_type=client_credentials&scope=users.read+offline"
     );
 
-    let local_calls = Arc::new(AtomicUsize::new(0));
+    // The acquired material is installed: a later call reuses it without a
+    // second token request.
+    let reused = client
+        .protected()
+        .await
+        .expect_err("limiter still stops the application request");
+    assert_eq!(reused.category(), ErrorCategory::RateLimit);
+    assert_eq!(server.requests().len(), 1);
+
+    // A manual local replacement installs new material; no provider call.
     client
         .credentials()
-        .oauth()
-        .replace_provider(LocalAccessTokenProvider {
-            calls: Arc::clone(&local_calls),
-            token: "replacement-local-token-sentinel-f4c2",
-        })
-        .await
-        .expect("generic provider replacement");
-    assert!(!client.credentials().oauth().is_set());
+        .replace_oauth(
+            AccessToken::try_new("replacement-local-token-sentinel-f4c2").expect("bounded token"),
+        )
+        .expect("local replacement");
     let second = client
         .protected()
         .await
         .expect_err("replacement still reaches explicit limiter");
     assert_eq!(second.category(), ErrorCategory::RateLimit);
-    assert_eq!(local_calls.load(Ordering::SeqCst), 1);
-    assert_eq!(limiter_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(limiter_calls.load(Ordering::SeqCst), 3);
     assert_eq!(server.requests().len(), 1);
 
     let rendered = format!(
-        "{}\n{}",
+        "{}\n{}\n{}",
         render_error_chain(&error),
+        render_error_chain(&reused),
         render_error_chain(&second)
     );
     for sentinel in [
@@ -229,7 +233,7 @@ async fn oauth_form_body_uses_runtime_provider_limit_before_transport() {
     const SCOPE_SENTINEL: &str = "oauth-runtime-limit-scope-sentinel-73e0";
     let server = TlsServer::start().expect("bounded OAuth provider TLS server");
     server
-        .queue_response(200, br#"{"access_token":"unused"}"#)
+        .queue_response(200, br#"{"access_token":"unused","token_type":"bearer"}"#)
         .expect("defensive provider response");
     let token_url = server.url("localhost", "/request-limit-sentinel-93c1");
     let certificate = server.certificate_pem();
@@ -240,11 +244,11 @@ async fn oauth_form_body_uses_runtime_provider_limit_before_transport() {
         .build()
         .expect("bounded OAuth provider");
     let client = OAuthRuntimeApi::builder()
-        .oauth_provider(oauth)
+        .oauth(oauth)
         .configure_http(move |http| http.http1_only().add_root_certificate_pem(certificate))
         .configure_runtime(|runtime| {
             runtime
-                .provider_request_limit(NonZeroUsize::new(1).expect("finite request limit"))
+                .provider_request_limit(1)
                 .rate_limiter(Arc::new(NoopRateLimiter::new()))
         })
         .build()
@@ -255,6 +259,7 @@ async fn oauth_form_body_uses_runtime_provider_limit_before_transport() {
         .await
         .expect_err("OAuth form exceeds the runtime provider request limit");
     assert_eq!(error.category(), ErrorCategory::AuthenticationProvider);
+    assert_eq!(error.failure_stage(), FailureStage::CredentialPreflight);
     assert!(server.requests().is_empty());
     let rendered = render_error_chain(&error);
     for sentinel in [
@@ -281,13 +286,9 @@ async fn oversized_provider_response_remains_bounded_and_body_safe() {
     });
     let certificate = server.certificate_pem();
     let client = OAuthRuntimeApi::builder()
-        .oauth_provider(provider(&token_url))
+        .oauth(provider(&token_url))
         .configure_http(move |http| http.http1_only().add_root_certificate_pem(certificate))
-        .configure_runtime(move |runtime| {
-            runtime
-                .provider_response_limit(NonZeroUsize::new(4).expect("finite response limit"))
-                .rate_limiter(limiter)
-        })
+        .configure_runtime(move |runtime| runtime.provider_response_limit(4).rate_limiter(limiter))
         .build()
         .expect("bounded generated OAuth client");
 

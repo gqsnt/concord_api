@@ -1,11 +1,75 @@
-# v2.1 claim–evidence ledger
+# Claim–evidence ledger (v3)
 
-**Status:** Active evidence ledger for the unpublished beta and stable-publication boundary
+**Status:** Active evidence ledger for the unpublished `3.0.0-beta.1` beta and
+its publication boundary. Lifecycle and gates are owned by
+[`release_gate_status.md`](release_gate_status.md).
 
-Consequential claims move state only when compilation, tests, measurements, or
+Consequential claims move state only when compilation, tests, measurements or
 human tasks provide evidence. The permitted states are Observed, Inferred,
-Assumed, Desired, Candidate, Selected, Supported, Disconfirmed, Unknown, and
-Deferred.
+Assumed, Desired, Candidate, Selected, Supported, Disconfirmed, Unknown and
+Deferred. For the original v3 rows, **Supported** means a result was observed and is
+recorded in [`evidence/v3_documentation_slice_observations.md`](evidence/v3_documentation_slice_observations.md)
+(runs 1–8, Linux x86_64, `rustc 1.95.0`); **Selected** means the behavior is
+implemented and its tests exist in this tree, but this ledger did not observe
+their results — those are recorded in the implementation report
+(`IMPLEMENTATION_REPORT.md`, produced separately). Claims C68–C70 record the
+repairs of the external review's findings F01–F03 (see
+[`release_gate_status.md`](release_gate_status.md#external-review-of-the-fc3e4d1-return)):
+their tests are in tree and recorded in the r2 validation run, which this
+ledger did not observe. That historical evidence does not establish current platform/toolchain gates. R7
+adds source-bound native observations below; its commands and failures are in
+[the R7 validation](reviews/r7_validation.md).
+
+## Historical V3 claims and later dispositions
+
+Rows below retain the source scope of their cited runs. Current correction
+claims appear at the end; old converter claims C54/C70 are superseded by ADR
+0027 and are not promises of the current product.
+
+| ID | Claim | State | Evidence/gate | Falsifier | Decision dependency |
+|---|---|---|---|---|---|
+| C40 | The workspace version is `3.0.0-beta.1` and all eleven workspace package manifests set `publish = false` | Observed | `grep` of `Cargo.toml` and every package manifest, 2026-09-26 | a manifest without `publish = false` or a different workspace version | lifecycle |
+| C41 | Historical R6 validation used Linux x86_64 with `rustc 1.95.0` (stable) because the pinned `1.97.1` and MSRV `1.86` toolchains were not installable offline | Observed | `rustc --version --verbose`, `rust-toolchain.toml`, `rust-version = "1.86"`, 2026-09-26 | a recorded run on either toolchain | evidence boundary |
+| C42 | The R7 implementation executes successfully on native Windows | Supported | Complete `just verify-implementation`, pin 1.97.1, candidate `e19c7bf`; R7 validation and source identity | a reproduced maintained failure on those inputs | beta source qualification |
+| C43 | The R7 public libraries pass pin 1.97.1 and MSRV 1.86.0, with reviewed pinned UI expectations | Supported | Windows and Linux complete gates, including explicit UI and MSRV constituent; R7 validation | an exact-input pin/MSRV or UI failure | FEATURE-01 |
+| C44 | A bare name binds only the current owner; redundant current-owner qualification is rejected; scope names are unique per ancestor chain (LANG-03) | Supported | run 1: `bare_names_bind_only_the_current_owner`, `redundant_qualification_of_the_current_owner_is_a_migration_error`, `scope_names_are_unique_along_one_ancestor_chain` (ADR 0022) | a bare reference resolving to an ancestor | ADR 0022 |
+| C45 | Direct placement is a normal introduction and PATCH-02 preconditions are enforced at declaration time | Supported | run 1: `direct_placement_is_a_normal_introduction_and_values_can_have_several_uses`, `introduction_conflicts_name_both_writers`, `replace_when_present_and_remove_require_an_earlier_writer`, `family_off_cannot_coexist_with_direct_placements_but_replace_can` (ADR 0015) | an accepted conflicting introduction or a missing-target override | ADR 0015 |
+| C46 | Suppressed query/header emissions are never encoded, `when_present` ordering follows §6.3 and key sensitivity is sticky | Supported | runs 3–4: `suppressed_emissions_are_never_encoded`, `when_present_none_preserves_order_some_replaces_at_new_position`, `sensitivity_is_sticky_across_replacement_and_fences` in `crates/concord-core/src/request/program.rs` | a suppressed encoder invoked or a key declassified | ADR 0015 |
+| C47 | The macro's value-control model generates exactly the §4.3 matrix (`set_x`, `replace_x`, `set_x_if_some`, `omit_x`, `reset_x`) | Supported | run 1: `value_controls_follow_the_structural_matrix` (ADR 0014) | a control generated outside the matrix | ADR 0014 |
+| C48 | Generated setters apply the exact VALUE-03 transitions at runtime, including nested `Some(None)` | Selected | `nested_optional_slot_operations_follow_the_exact_transitions` in `crates/concord/tests/generated/current_language.rs` (not run by this ledger) | a transition that differs from VALUE-03 | ADR 0014 |
+| C49 | Credential slots keep a separate intent epoch and installed version, and every §11.3 ordering produces the required result | Supported | runs 3–4: the ordering tests in `crates/concord-core/src/auth/slot/intent_tests.rs`; run 4: `crates/concord-core/src/execute/auth_tests/store.rs` (ADR 0021). Runs 3–4 predate the F01 repair, which moved installation into the executor's finalization step (`SlotSelector::install_with_expiry`); the ordering tests are unchanged and the storage finalization is claim C68 | any §11.3 ordering producing a different outcome | ADR 0021 |
+| C50 | Pagination terminals report distinct truths; zero bounds do no work; a dropped started fetch cancels the traversal | Supported | runs 3–4: `crates/concord-core/src/pagination/runtime_tests/` (`complete_prefix_and_lazy_terminals_report_distinct_truths`, `zero_bounds_perform_no_work_and_report_page_bound_unknown`, `dropping_a_started_fetch_cancels_the_traversal`) (ADR 0017) | a partial success returned as complete, or work done for a zero bound | ADR 0017 |
+| C51 | Runtime endpoints carry the owner projection and cannot target private auth, and construction/bind do no value, body, credential, limiter or transport work | Supported | runs 3–4: `owner_projection_is_carried_and_the_plan_matches_the_send`, `protected::public_writers_cannot_target_private_auth_even_when_absent` (module `request::runtime_endpoint::tests::protected`), `construction_and_binding_never_encode_iterate_or_prepare`, `plan_and_bind_do_no_body_credential_limiter_or_transport_work` (ADR 0024) | a runtime bind that adds a private target or does work | ADR 0024 |
+| C52 | The local limiter admits a multi-policy plan atomically, keeps labels in bucket identity and separates equal windows under different IDs | Supported | run 5: `multi_policy_state_capacity_failure_debits_no_prefix`, `labels_are_part_of_bucket_identity_and_cost_is_not`, `same_windows_under_different_ids_are_separate_buckets`; `every_schema_change_under_one_id_fails_closed_before_state_use` (ADR 0023) | a prefix debit, or a shared bucket across labels or IDs | ADR 0023 |
+| C53 | Generated rate keys preserve the v2.1 baseline bytes and the Riot/Catalog sharing relations | Selected | `crates/concord/tests/generated/rate_limits.rs` and `crates/concord-examples/tests/baseline_recording.rs` (not run by this ledger) | a changed key byte or sharing relation | ADR 0023, MIGRATE-02 |
+| C54 | `migrate-v3` output compiles through the real macro and reproduces the captured v2.1 Riot and Catalog recordings | Supported | run 2 (the tool before the F03 repair): `migrated_riot_reproduces_the_v2_1_recording`, `migrated_catalog_reproduces_the_v2_1_recording`, `nested_option_setters_keep_the_v2_1_outer_slot_law`, `direct_placement_keeps_the_v2_1_wire_order`. After the F03 repair the same tests and the compiled receiver-identity controls `migrated_v3::unrelated_receivers_keep_their_original_setter_results`, `migrated_v3::postfix_unrelated_receivers_keep_their_original_results`, `migrated_v3::round3_unrelated_calls_keep_their_original_results` and `migrated_v3::local_page_limit_calls_keep_their_original_results` are tests in tree, recorded in the r2 validation run (not observed by this ledger); receiver identity itself is claim C70 | a recording mismatch | MIGRATE-03 |
+| C55 | `contract export`, `check` and `diff` round-trip through the xtask binary and reject unknown targets with the usage status | Supported | run 2: `tools/xtask/tests/contract_cli.rs` (2 passed) | a round-trip or exit-status failure | EXPLAIN-03 |
+| C56 | A downstream-generated named request implements `RequestControls`, `IntoFuture` and its own setters in a separate crate, and a foreign `RequestControls` impl gains no native access | Supported | run 6: `downstream_named_requests_implement_controls_future_and_their_own_setters`, `distinct_requests_and_terminals_pass_the_consumers_generic_helper`, `a_foreign_request_controls_implementation_gains_no_native_access` (ADR 0026) | a failing two-crate compile or run | CALL-02, ADR 0026 |
+| C57 | Head-only `absent on` never polls the missing body, and `NotFound<R>` acquires and bounds a 404 body | Supported | run 4: `v3_e08_absence_is_head_only_and_never_polls_the_irrelevant_body`; run 5: `v3_e09_not_found_acquires_the_404_body_and_maps_it_to_none`, `v3_e09_not_found_404_body_still_obeys_limits_and_completeness` (ADR 0019) | a polled 404 body under `absent on` | ADR 0019 |
+| C58 | `RuntimeConfigBuilder` provides every §20.4 setter | Selected | `aggregate_max_sends` was absent when this ledger was first written (`grep`, 2026-09-26) and was added later that day with build-time validation; tests `limit_setters_take_primitives_and_report_invalid_latest_selection` (`crates/concord-core/src/runtime/config.rs`) and `configured_aggregate_send_ceiling_is_intersected_with_the_call_send_cap` (`crates/concord/tests/generated/pagination.rs`); results in `IMPLEMENTATION_REPORT.md` | a §20.4 setter missing or not validated at build | ADR 0025 |
+| C59 | The `justfile` provides the `just verify-implementation` recipe named in spec §28.2 | Selected | recipe added 2026-09-26 (format, check/clippy/test matrix, MSRV, fixtures, docs, downstream, tools, bench, source export; external gates excluded); `just` itself is not installed in the Linux validation environment, so its commands were run individually (see `IMPLEMENTATION_REPORT.md`) | the recipe omits an implementation-owned check or includes an external release gate | BUILD-01 |
+| C60 | `cargo run -p concord-xtask -- release-audit` passes on an exact commit | Unknown | run 8 (documentation branch): exit 1 at `docs-check` (missing `semantic/symbols.rs`, since fixed); the repository has no `main` branch, so the audit's `git merge-base main HEAD` step has no integration base — naming one is an owner decision. The implementation report records a scratch-clone run with `main` = the unmodified v2.1 baseline commit, which is not the owner's integration branch | an exit-0 audit on the owner's integration branch at the exact candidate commit | beta integration |
+| C61 | `cargo run -p concord-xtask -- docs-check` passes on an exact commit | Selected | run 7 (documentation branch) failed on the removed `semantic/symbols.rs`; the checker was re-pointed at the v3 macro sources (2026-09-26); recorded results in `IMPLEMENTATION_REPORT.md` | a nonzero run on the candidate commit | DOC-01 |
+| C62 | The façade and macro crate-level rustdoc describe the v3 value controls | Selected | corrected 2026-09-26 in `crates/concord/src/lib.rs` and `crates/concord-macros/src/lib.rs` (VALUE-03 wording); rustdoc `-D warnings` results in `IMPLEMENTATION_REPORT.md` | crate docs contradict the §4.3 matrix | DOC-01 |
+| C63 | Unfamiliar humans comprehend the v3 surface | Unknown | no qualifying participants; the `dx_study/` packet was updated to V3 on 16 October 2026 | a revised protocol completed with real anonymized evidence | public freeze |
+| C64 | An independent reviewer can penetrate the v3 Rustdoc and `concord.contract/3` diff | Unknown | no qualifying independent human review; the `rustdoc_review/` packet was updated to V3 on 16 October 2026 | a completed independent review | public freeze |
+| C65 | This repository grants a software license suitable for public packages | Unknown | no license file or manifest license field (`grep`, 2026-09-26) | an owner decision implemented consistently | Gate 0 |
+| C66 | Performance of v3 relative to the v2.1 baseline is measured on the same host and toolchain | Selected | `tools/perf/measurements/{expansion_scale,head_cost}_linux_2026-09-26_final.txt` and `ATTRIBUTION.md` (scale 1/10/100/500/1000, local and parent edits, cold/warm compile, allocations and steady head costs, v2.1 export built on the same host); planning time remains +3–7% on three rows, partly unexplained and within about ±5% run noise, so performance acceptance is not claimed | a same-host rerun contradicting the recorded numbers | V3-O07 |
+| C67 | Generated endpoints validate their static `ACCEPT` once before any client exists (spec §9.5) | Selected | the macro emits `const _: () = __private::assert_response_accept(...)` per endpoint (`crates/concord-macros/src/emit/endpoint.rs`, added 2026-09-26 after this ledger first recorded the gap); UI fixture `crates/concord/tests/ui/fail/capabilities/invalid_static_accept.rs`; runtime descriptors validate at `build()` (`static_accept_values_are_validated_once_at_compile_or_bind_time` in `crates/concord-core/src/execute/tests/body_outcomes.rs`) | an invalid static `ACCEPT` compiles or reaches a request | ADR 0016 |
+| C68 | Explicit credential storage finalizes after local installation: the operation journal stays open through it, deadline and cancellation are decided before installing (before and after the material's `expires_at()` read), the storage result (`Installed`, `Superseded` or the error) is fixed before its single `OperationFinished` and cannot be changed by it (`Installed`/`Superseded` observed as `Success`, an installation failure at `CredentialInstall` with the same operation ID and retained response facts), spent material is released only after that observation, and a cancelled provider leader publishes `Reevaluate` before dropping retired material (§11.4, EXEC-04; review F01) | Selected | tests in tree, recorded in the r2 validation run: `execute::auth_tests::store::review_f01_final_observer_cannot_turn_store_success_into_timeout`, `execute::auth_tests::store::review_f01_failed_install_is_not_observed_as_final_success`, `execute::auth_tests::store::deadline_applies_through_local_installation` (corrected oracle), `delay_during_the_exchange_prevents_installation`, `final_observation_follows_installation_of_the_returned_version`, `slow_final_observer_cannot_change_installed`, `slow_final_observer_cannot_change_superseded`, `slow_final_observer_cannot_change_a_fixed_install_error`, `slow_final_observer_cannot_change_a_fixed_exchange_error`, `concurrent_replacement_during_the_exchange_is_superseded_and_observed_once`, `cancellation_before_installation_prevents_it`, `cancellation_during_the_exchange_prevents_installation`, `cancellation_while_the_exchange_is_in_flight_installs_nothing`, `deadline_before_installation_is_reported_over_a_superseded_intent`, `retired_material_drop_panic_is_observed_after_the_installed_result`, `superseded_material_drop_panic_is_observed_after_the_superseded_result`, `uninstalled_material_drop_panic_is_observed_after_a_timeout_before_installation`, `uninstalled_material_drop_panic_is_observed_after_a_failed_installation`, `last_store_reference_is_released_after_the_installed_result_is_observed` (same module); `auth::slot::tests::cancelled_leader_publishes_reevaluation_before_dropping_retired_material`; `crates/concord/tests/generated/authentication.rs`: `v3_e15_failed_local_install_returns_a_correlated_error_with_contact_facts`, `v3_e15_slow_final_observer_cannot_change_a_fixed_storage_result` (ADR 0021) | a final observation that precedes installation or disagrees with the returned storage result, a slow final observer changing a fixed result, or an installation after the deadline or a cancellation | V3-E15, V3-E21, ADR 0021 |
+| C69 | An outstanding pending read whose idle budget is exhausted yields exactly one `IdleTimeout` before any later data, empty chunk, end of body or read error is accepted, and any read completion observed at or after the total lease end yields one `LeaseExpired` (which takes precedence), in byte and record streams; the verdict is `StreamLease::check(now)` at every poll and at every observed completion, and a cooperative empty-chunk yield keeps the acquisition pending (STREAM-02/03; review F02) | Selected | tests in tree, recorded in the r2 validation run: `response::stream::tests::review_f02_ready_data_cannot_erase_expired_pending_idle`, `response::stream::tests::review_f02_ready_eof_cannot_erase_expired_pending_idle`, `response::stream::tests::review_postfix_f02_completion_after_total_and_idle_precedence`, `review_postfix_f02_completion_after_total_lease_only`, `review_postfix_f02_abandon_at_empty_chunk_yield`, `v3_p10_overdue_empty_chunks_then_ready_data_are_one_idle_timeout`, `executor_handoff::v3_p10_overdue_body_after_an_abandoned_read_is_one_idle_timeout_without_resend` and the `v3_p10_postfix_f02_*` tests (same module); `records::stream::tests::v3_p10_overdue_ready_data_cannot_complete_a_staged_record`, `v3_p10_overdue_eof_cannot_finalize_a_staged_tail_record`, `v3_p10_overdue_empty_chunks_then_record_data_are_one_idle_timeout`, `executor_handoff::v3_p10_overdue_record_body_after_an_abandoned_read_is_one_idle_timeout_without_resend`, `v3_p10_postfix_f02_a_read_completing_after_the_lease_end_cannot_complete_a_staged_record`; `crates/concord-extras/tests/contracts/record_streams.rs`: `ndjson::v3_p10_overdue_ndjson_record_data_is_one_idle_timeout_without_resend`, `ndjson::v3_p10_overdue_eof_cannot_finalize_an_unterminated_ndjson_line`, `csv::v3_p10_overdue_csv_record_data_is_one_idle_timeout_without_resend`, `csv::v3_p10_overdue_eof_cannot_finalize_an_unterminated_csv_record`, with positive controls (ADR 0011) | overdue data delivered, an overdue end of body reported as a clean end or completing a staged record, a second error or a resend, or `IdleTimeout` reported after the lease end | V3-P10, ADR 0011 |
+| C70 | `migrate-v3` makes an automatic caller rewrite (setter rename, `paginate` terminal, runtime `NonZero` `.get()`, builder path) only when it proves the call reaches the generated item; unrelated receivers (same-leaf qualified types, same-named fields of other structs, aliases and imports of other types, shadowed functions, qualified UFCS, wrappers without an explicit unwrap, macro and `#[cfg]` sites, interception-prone calls without dispatch completeness, types of other crates) keep their code and are reported (MIGRATE-03; review F03) | Selected | tests in tree, recorded in the r2 validation run: `migration::tests::review_f03_qualified_unrelated_request_type_is_not_renamed`, `migration::tests::review_f03_same_field_name_in_another_struct_is_not_receiver_proof`, the seven `migration::tests::receiver_identity_*` tests, `migration::tests::paginate_rewrites_require_a_proved_receiver_and_concord_page_limit`, `migration::tests::page_limit_import_removal_ignores_a_local_page_limit`, the `migration::tests::postfix_f03_*` tests, the `migration::tests::default_deny::*` (`round3_f03_*`) tests, and the compiled controls `migrated_v3::unrelated_receivers_keep_their_original_setter_results`, `migrated_v3::postfix_unrelated_receivers_keep_their_original_results`, `migrated_v3::round3_unrelated_calls_keep_their_original_results`, `migrated_v3::local_page_limit_calls_keep_their_original_results`, the `migration::tests::round4::round4_f03_*` and `migration::tests::round5::round5_f03_*` tests, `migrated_v3::round4_unrelated_calls_keep_their_original_results`, `migrated_v3::round5_unrelated_calls_keep_their_original_results` (decision record, MIGRATE-03 receiver identity) | an unrelated receiver's call rewritten, or an unproved candidate left unchanged without a diagnostic | V3-O04, MIGRATE-03 |
+
+| C71 | R7-01 through R7-08 correct the demonstrated native boundary failures | Supported | R7 findings, baseline test overlays/receipts, final supported-platform matrices; R7-02 simple direct-parent example is separately refuted | same composed probe escapes a repaired boundary | R7 correction scope |
+| C72 | Buffered selected drivers avoid stream-only handoff allocation | Supported | Matched clean control `3b1e6c1` versus candidate `e19c7bf`: warm/cold minus one allocation and 24 bytes, future 5,888 bytes unchanged; no latency claim | lost stream correlation/cancellation or missing allocation reduction on that workload | R7-S01 only |
+| C73 | 500-endpoint generated contract initialization fits the native Windows default debug stack | Supported | Before `17e105c` stack overflow; final-patched-scale exit 0 at `e19c7bf`, default stack, same expansion/export sizes across S01 | the maintained 500-endpoint fixture overflows on the recorded host | bounded adjacent correction |
+| C74 | Preserved migration/storage/idle repairs and package mechanics execute on the R7 candidate | Supported | Complete Windows/Linux matrices retain earlier controls and recordings; Windows extracted-only package rehearsal exit 0 | recorded migration result or package consumer disagrees | machine evidence for C68-C70 and R5 controls, no human acceptance |
+
+## Historical v2.1 claims
+
+The rows below are the v2.1 ledger (claims C0–C32) as recorded on 2026-09-04
+in the v2.1 repository. They are retained as history and were **not
+re-evaluated for v3**; their evidence refers to v2.1 SHAs.
 
 | ID | Claim | State | Evidence/gate | Falsifier | Decision dependency |
 |---|---|---|---|---|---|
@@ -42,3 +106,114 @@ Deferred.
 | C30 | the prior beta candidate passed its maintained repository checks | Supported | Historical `0f72e865...`: Windows `just verify` exit 0; explicit locked suite, packages, scale/performance, and Windows/Linux platform runs are recorded in `dev_doc/evidence/beta_candidate_0f72e865.md` | evidence record is shown inaccurate | historical beta evidence only; not final-convergence evidence |
 | C31 | macOS is required support for Concord v2.1 | Disconfirmed | Owner decision: Windows and Linux are supported and mandatory; macOS is not currently supported or release-gated | a later explicit owner support-boundary decision | platform policy |
 | C32 | the verified v2.1 beta is integrated locally into `main` without flattening release history | Observed | the merge commit containing this row has pre-merge `main` `f7464c58...` and verified release parent `bc4efb03...`; terminal topology/status checks are recorded in the operator handoff | merge topology differs, or a prohibited push/tag/publication/history rewrite is observed | local beta integration state |
+
+## C75 — R8 authentication correction qualification (2026-10-12)
+
+**Source scope:** `cef236aa2502df5653d77de2975051b5a6d49565`; final documentation changes retain compiled
+inputs, with exact final push identity in the delivered external receipt.
+**CONFIRMED_FIXED:** R8-01/02/03/04 on native discriminating BEFORE/AFTER paths.
+Complete maintained Windows native and Linux/WSL pin 1.97.1/MSRV 1.86.0 gates
+pass; Windows package/workflow/default deny and both analyzers pass. All-features
+deny exits 4 for owner-reserved POL-01 only. [R8 findings](reviews/r8_findings.md)
+and [validation](reviews/r8_validation.md) distinguish controls, setup failures,
+old evidence, platform/feature scope and public malformed-OAuth behavior change.
+No broad performance, human, external-spec, stable, license or publication
+acceptance follows. C74 and historical R7 evidence remain preserved.
+
+## 16 October 2026 source review
+
+These claims apply only to ff1be9cb588bcc664c366a55abe555590e7de01e and the
+[review scope](reviews/2026_10_16_review.md). Earlier claim states retain their
+historical source meaning.
+
+| ID | Claim | State | Evidence/gate | Falsifier | Decision dependency |
+|---|---|---|---|---|---|
+| C76 | The reviewed source passes native Linux all-feature Cargo tests and structural docs/policy/release checks | Observed | External review packet: 1,977 passes; exact-source logs and clean source receipt | A maintained failure on those exact inputs | Source-specific machine evidence |
+| C77 | Exact-source CI retains the all-feature dependency-license rejection | Observed | Run 38317897762: eight jobs successful, one failed; POL-01 for three Brotli-related BSD-3-Clause dependencies | A later approved policy/result on a qualified candidate | Owner policy decision |
+| C78 | Technical correction closure was accepted at the ff1 source-review point | Unknown | Historical 16 October review: eight code findings, documentation corrections, source/evidence reconciliation and performance work remained open; later engineering results are recorded separately below | Completed corrections and exact-source qualification after that review | Historical engineering acceptance only; stable/human decisions are C87 and C63/C64 |
+
+## 16 October 2026 direct correction candidate
+
+| ID | Claim | State | Evidence/gate | Falsifier | Decision dependency |
+|---|---|---|---|---|---|
+| C79 | V3 is the sole supported version; conversion, the old body alias and old-binary import are retired | Selected | Explicit owner instruction; ADR 0027; physical removal manifest and native CLI/UI boundary tests | A supported old grammar/runtime/import/alias remains | Current product scope |
+| C80 | The seven retained code findings have direct corrections and targeted native evidence | Observed | [Correction report](reviews/2026_10_16_corrections.md), agent cross-reviews and raw command receipts | A discriminating regression still escapes its corrected boundary | Final integrated gate |
+| C81 | Current V3 oracles preserve keys, schema, auth, identity and sharing | Observed | 92 Riot contexts, Catalog key oracle and 70 targeted schema/example/downstream tests; only the declared Riot User-Agent version changes | Unintended recording or key/state change | R01/R02/R06/R13 under V3-only scope |
+| C82 | The correction's separate authority inputs were inspected with owner authorization | Observed | [Owner decisions](owner_release_decisions.md) and the correction record; private source content and the separate authority annex are not included in the public evidence archive | A source-scope or authorization mismatch | Latest V3-only owner instruction and ADR 0027 govern current product scope |
+| C83 | The final delivered source passes its integrated checks and matches its export and return receipt | Candidate | Completed earlier machine qualification is C84; final CLI/UI/documentation integration, source audit/export and `FINAL_RETURN_RECEIPT.json` must identify the delivery commit in the [final-return workflow](../.github/workflows/v3-final-return.yml) artifact | A failed required final check, changed qualified inputs or a source/receipt mismatch | Current delivery closure; no future PASS inferred |
+
+C60's missing-main explanation was an earlier environment fact. The 16 October
+review observed a successful exact-source release audit and the preserved main
+`3765907aa2e424997bfd8f2fcdcc95275e6142f5`. This does not pre-qualify a later
+candidate. C63/C64 remain human Unknowns; preparing V3 protocols or performing
+an implementer review is a separate observation, not a participant result.
+
+## 17 October 2026 source-bound qualification
+
+Engineering machine qualification and stable/public acceptance are separate
+claims. C78 retains the review-time engineering state; C83 owns the final
+delivery receipt. The observations below do not change C63/C64 or supply any
+owner release decision. Full native detail is in the
+[native qualification report](reviews/2026_10_17_closure/NATIVE_QUALIFICATION_REPORT.md);
+measurement interpretation is in the
+[performance report](reviews/2026_10_17_closure/PERFORMANCE_REPORT.md).
+
+| ID | Claim | State | Evidence/gate | Falsifier | Decision dependency |
+|---|---|---|---|---|---|
+| C84 | The corrected `579e8eac9a436a57ebc5ea3fcc2e7da3cf330c31` source completes the maintained Linux and Windows implementation gates and analyzers | Supported | [Linux run 38981477842](https://github.com/gqsnt/concord_api/actions/runs/38981477842/job/117243098047) completed successfully on 16 October; [Windows CI #29](https://github.com/gqsnt/concord_api/actions/runs/38981477798/job/117243098210) completed successfully on 17 October at 00:29:48 UTC, including analyzer; native receipts and original logs preserve source identity | A required constituent did not run, failed, or used a different source/toolchain than its receipt | Machine qualification of those exact inputs; final delivery remains C83 |
+| C85 | The corrected V3's runtime and scale costs have measured and bounded attribution | Observed | [Paired campaign](https://github.com/gqsnt/concord_api/actions/runs/38981477842) and [attribution run](https://github.com/gqsnt/concord_api/actions/runs/38983860434) completed; the performance report retains raw measurements, allocation/layout attribution and compiler attribution | A raw measurement or source identity contradicts the report, or a reported mechanism is not supported by the recorded layout/compiler evidence | V3-O07 on the recorded host/workloads; no universal latency or per-feature timing claim |
+| C86 | CI #29 has nine successful jobs and one dependency-license-policy failure | Observed | [CI run 38981477798](https://github.com/gqsnt/concord_api/actions/runs/38981477798), exact `579e8ea`; native policy summary is `advisories ok, bans ok, licenses FAILED, sources ok`; POL-01 concerns the three recorded Brotli-related dependencies | Different terminal jobs or native policy results for that run | Preserve the historical CI conclusion; the later dependency-policy decision is C88 |
+| C87 | Stable publication and a public API freeze have been accepted | Unknown | [Owner decisions](owner_release_decisions.md) retain legal/namespace/version/publication decisions; C63/C64 have no qualifying human observations; machine gates and implementer Rustdoc review do not provide those decisions or observations | Explicit applicable owner decisions and qualifying human evidence | Stable publication/public freeze, separate from unpublished-beta machine qualification |
+
+The CI history retains the earlier failures: #25's stale EOF-poll assertion and
+then-current Rustls advisories, #26's TLS-dependent facade fixtures in an isolated
+no-default run, and #27's corresponding core fixture. They are not relabeled as
+passes after later corrections. CI #25/#26's nominal MSRV jobs also used the
+repository toolchain through bare Cargo commands; explicit `+1.86.0` selection
+was corrected for #27 and the later native qualification. CI #28 provides a
+separate complete Windows success on `5b37722`.
+
+Later checks on `2f64782` and `2bba4e3` passed the ordinary default/all-feature
+test suites, including the strengthened inspection corpus by unconditional
+inclusion. The quiet nextest profile does not print an individual PASS line for
+every test. These successful suites are not a substitute for their complete
+Windows job or the final delivered source receipt. The public final-return
+archive must preserve the terminal statuses actually observed; private
+authority material remains separately held and is not published.
+
+## 17 October 2026 dependency-policy decision
+
+| ID | Claim | State | Evidence/gate | Falsifier | Decision dependency |
+|---|---|---|---|---|---|
+| C88 | BSD-3-Clause is permitted through explicit exceptions for `alloc-no-stdlib`, `alloc-stdlib` and `brotli` | Selected | New owner instruction and [deny.toml](../deny.toml); `brotli` also permits MIT for its conjunctive license; the global allowlist is unchanged | An exception covers another package or one of these declared licenses remains rejected | The updated source requires a successful CI run, all ten jobs successful and a native summary with all four policy checks successful; its receipt owns the result |
+
+CI #25 through #33 and their native license-policy failures remain historical
+observations. This dependency decision does not select the project's own
+license, change `publish = false`, or replace a required current-source result
+with a future PASS. The later project-license decision below resolves C65;
+publication remains a separate action.
+
+## 17 October 2026 follow-up: source license and agent exercises
+
+The owner subsequently authorized selecting an open-source license and asked
+agents to perform the prepared exercises and independent Rustdoc review. The
+[follow-up record](reviews/2026_10_17_followup/README.md) owns the new findings and
+local native evidence. The predecessor `570eec4` completed all ten jobs in
+[CI #34](https://github.com/gqsnt/concord_api/actions/runs/39022636141), including
+the native dependency-policy success; the follow-up still requires its own
+source-bound CI result.
+
+| ID | Claim | State | Evidence/gate | Falsifier | Decision dependency |
+|---|---|---|---|---|---|
+| C89 | Concord grants `MIT OR Apache-2.0` at the recipient's option | Observed | Owner-directed license selection; root license texts, all 17 package manifests and matching texts in the four public crates; repository and extracted-archive checks enforce the grant | A missing or altered text or different package license expression | Resolves the former C65 missing-license observation; publication remains separate |
+| C90 | The requested public user and independent Rustdoc exercises were executed by agents | Observed | Twelve user tasks, ten documentation/diff tasks, actual isolated source edits and eight new public-path integration tests; initial mistakes and rereview remain in the follow-up | A task reported completed without its answer or native check | Completes the requested technical evaluation; does not claim human comprehension in C63/C64 |
+| C91 | CSV preserves U+FEFF outside a single optional document-start BOM | Supported | Three old-code unit failures and two old-code HTTP failures; corrected run passes six unit and eight integration tests | A later character is stripped, malformed numeric data is accepted or a chunk-split initial BOM breaks quoted CSV | Follow-up correctness fix |
+| C92 | Rust highlighting retains compiled-documentation checks | Supported | Forty-nine converted Markdown fences; native classifier tests reject changed compiled excerpts, lost anchors, unsupported highlighting and dangling/duplicate markers | Highlighting change bypasses source or classification validation | Owner-requested Markdown rendering |
+| C93 | Generated endpoint cards identify request and response representation provenance independently | Supported | Native macro test covers root, scope, endpoint-local and explicit-fence cases; rendered documentation checks and independent rereview | A displayed origin differs from the effective contract or is absent from normal endpoint docs | Follow-up documentation correction |
+| C94 | Dependency-site changes identify only consumers of added or removed uses | Supported | Two generated-contract old-code failures; all 37 corrected inspector tests pass; two actual CLI replays preserve the original Catalog facts while excluding the unchanged root endpoint | An unchanged dependency use broadens a sites-only change, or another dependency change loses its full consumer coverage | Follow-up inspector correctness fix |
+| C95 | Feature-dependent user exercises agree with default-feature IDE analysis | Supported | CI #35's analyzer failure led to a complete-toolchain local reproduction with one unavailable `NdJson` import; matching source/Cargo feature gates yields a successful full diagnostic scan and eight executed tests | The analyzer still reports the import error, or the intended feature-enabled exercise run silently skips tests | Follow-up integration correction; the corrected source requires its own CI |
+
+No agent record is inserted into a human-result row. C63/C64 remain empirical
+human unknowns; the owner-directed technical exercise does not require those
+measurements to be invented or obtained. Historical performance and platform
+measurements retain their original source scopes.

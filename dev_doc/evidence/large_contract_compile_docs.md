@@ -1,5 +1,8 @@
 # Large-contract, compile, and documentation evidence
 
+**Status:** Historical v2.1 evidence; not evidence for the v3 tree. The v3
+scale measurement is recorded under `tools/perf/measurements/`.
+
 - **Recorded:** 2026-09-04
 - **Candidate measurements:** commits `f94c5de`, `62a4b35`; release-candidate reproduction at `9470e24`
 - **Baseline:** v2.0 commit `f7464c5`

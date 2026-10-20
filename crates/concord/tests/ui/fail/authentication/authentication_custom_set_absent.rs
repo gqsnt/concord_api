@@ -1,14 +1,23 @@
+// §11.3: the credential facade offers exactly `clear_<name>()` and
+// `replace_<name>(material)`; there is no ambiguous `set` alias, and a
+// custom provider is supplied to the builder under the credential's name.
 use concord::auth::{
     AuthError, BoxFuture, CredentialMaterial, CredentialProvider, CredentialRequest,
+    SecretCredential,
 };
-use concord::api;
+use concord::{Binary, Bytes, SecretString, api};
 
-#[derive(Clone)]
-struct SessionToken;
+pub struct SessionToken(SecretString);
 
 impl CredentialMaterial for SessionToken {}
 
-struct SessionProvider;
+impl SecretCredential for SessionToken {
+    fn expose_secret(&self) -> &str {
+        self.0.expose_secret()
+    }
+}
+
+pub struct SessionProvider;
 
 impl CredentialProvider for SessionProvider {
     type Material = SessionToken;
@@ -17,24 +26,28 @@ impl CredentialProvider for SessionProvider {
         &'a self,
         _context: CredentialRequest<'a>,
     ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
-        Box::pin(async { Ok(SessionToken) })
+        Box::pin(async { Ok(SessionToken(SecretString::try_new("provided").expect("secret"))) })
     }
 }
 
 api! {
     client Api {
-        timeout 30s;
-        base "http://example.test";
+        base "https://example.test";
         credentials {
             credential session = custom crate::SessionProvider;
+        }
+
+        GET read() -> Bytes via Binary {
+            auth { bearer session; }
         }
     }
 }
 
 fn main() {
     let client = Api::builder()
-        .session_provider(SessionProvider)
+        .session(SessionProvider)
         .build()
-        .unwrap();
-    let _ = client.credentials().session().set(SessionToken);
+        .expect("client");
+    let token = SessionToken(SecretString::try_new("manual").expect("secret"));
+    let _ = client.credentials().set_session(token);
 }

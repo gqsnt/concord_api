@@ -77,8 +77,8 @@ async fn response_acquisition_examples_execute_locally() {
 #[cfg(all(feature = "oauth2-client", feature = "default-tls"))]
 #[tokio::test]
 async fn actual_authentication_example_stores_and_applies_endpoint_credentials_over_tls() {
-    use concord::SecretString;
     use concord::auth::OAuth2ClientCredentials;
+    use concord::{SecretString, StoreOutcome};
     use concord_examples::authentication::api::AuthenticationApi;
     use concord_examples::authentication::extensions::ExampleProvider;
     use concord_test_support::proxy::ConnectProxy;
@@ -109,8 +109,8 @@ async fn actual_authentication_example_stores_and_applies_endpoint_credentials_o
         .bearer_token(SecretString::try_new("local-bearer").expect("bounded local bearer token"))
         .username(SecretString::try_new("local-user").expect("bounded local username"))
         .password(SecretString::try_new("local-password").expect("bounded local password"))
-        .oauth_provider(oauth)
-        .custom_provider(ExampleProvider)
+        .oauth(oauth)
+        .custom(ExampleProvider)
         .configure_http(move |http| {
             http.http1_only()
                 .proxy(proxy)
@@ -119,12 +119,18 @@ async fn actual_authentication_example_stores_and_applies_endpoint_credentials_o
         .build()
         .expect("authentication client");
 
-    client
+    let outcome = client
         .login()
         .store_as_acquired()
         .await
         .expect("endpoint credential acquisition");
-    assert!(client.credentials().acquired().is_set());
+    // v3 (AUTH-03, §23.1): explicit storage reports whether this intent
+    // installed a version; the later `session=` query proves the installed
+    // material is applied.
+    assert!(
+        matches!(outcome, StoreOutcome::Installed { .. }),
+        "the only pending intent installs"
+    );
     client
         .token_authorization()
         .await
@@ -177,7 +183,6 @@ async fn actual_body_example_round_trips_the_custom_codec_locally() {
 #[tokio::test]
 async fn actual_specification_example_runs_generated_and_runtime_endpoints_locally() {
     use concord::Bytes;
-    use concord::endpoint::Request;
     use concord::endpoint::{EndpointId, RuntimeEndpoint};
     use concord::http::Method;
     use concord_examples::request_response::specifications::{
@@ -206,12 +211,12 @@ async fn actual_specification_example_runs_generated_and_runtime_endpoints_local
         Method::POST,
     )
     .path("runtime")
-    .body_spec::<ExampleRequestSpec, _>(Bytes::from_static(b"runtime request"))
+    .body_repr::<ExampleRequestSpec, _>(Bytes::from_static(b"runtime request"))
     .response::<ExampleBufferedSpec, usize>()
     .build()
     .expect("runtime endpoint");
-    let request: Request<_> = endpoint
-        .try_bind(&client)
+    let request = client
+        .bind(endpoint)
         .expect("runtime endpoint binds to client");
     let runtime = request.await.expect("runtime specification request");
     assert_eq!(runtime, b"runtime".len());
@@ -227,7 +232,7 @@ async fn actual_specification_example_runs_generated_and_runtime_endpoints_local
 async fn actual_pagination_example_binds_each_next_offset_sequentially() {
     use std::num::NonZeroU32;
 
-    use concord::PageLimit;
+    use concord::pagination::{ContinuationKnowledge, StopReason};
     use concord_examples::pagination::PaginationApi;
 
     let server = ScriptedServer::start([
@@ -241,12 +246,19 @@ async fn actual_pagination_example_binds_each_next_offset_sequentially() {
         .build()
         .expect("pagination client");
 
-    let values = client
+    // §25.2: `.paginate(Prefix(n))` becomes `.collect_prefix(n)`; the prefix
+    // carries its summary, so exhaustion is explicit rather than implied.
+    let prefix = client
         .offset(0, NonZeroU32::new(2).expect("positive page size"))
-        .paginate(PageLimit::Prefix(3))
+        .collect_prefix(3)
         .await
         .expect("offset pagination");
-    assert_eq!(values, [1, 2, 3]);
+    assert_eq!(prefix.items(), [1, 2, 3]);
+    let summary = prefix.summary();
+    assert_eq!(summary.stop_reason(), StopReason::Exhausted);
+    assert_eq!(summary.continuation(), ContinuationKnowledge::Exhausted);
+    assert_eq!(summary.pages_received(), 2);
+    assert_eq!(summary.items_delivered(), 3);
 
     let requests = server.requests();
     assert_eq!(requests.len(), 2);
@@ -261,7 +273,7 @@ async fn actual_pagination_example_binds_each_next_offset_sequentially() {
 async fn post_pagination_repeats_one_stable_json_body_for_every_page() {
     use std::num::NonZeroU32;
 
-    use concord::PageLimit;
+    use concord::pagination::StopReason;
     use concord_examples::pagination::PaginationApi;
     use concord_examples::pagination::search::SearchFilter;
 
@@ -280,12 +292,14 @@ async fn post_pagination_repeats_one_stable_json_body_for_every_page() {
         include_archived: false,
     };
 
-    let values = client
+    let prefix = client
         .search(0, NonZeroU32::new(2).expect("positive page size"), filter)
-        .paginate(PageLimit::Prefix(2))
+        .collect_prefix(2)
         .await
         .expect("POST search pagination");
-    assert_eq!(values, [1, 2, 3]);
+    assert_eq!(prefix.items(), [1, 2, 3]);
+    // A `Done` on the final permitted page is exhaustion, not a page bound.
+    assert_eq!(prefix.summary().stop_reason(), StopReason::Exhausted);
 
     let requests = server.requests();
     assert_eq!(requests.len(), 2);
@@ -316,20 +330,21 @@ async fn actual_rate_limit_example_honors_an_explicit_downstream_limiter() {
     let limiter = CountingLimiter::new();
     let configured: Arc<dyn RateLimiter> = Arc::new(limiter.clone());
     let client = RateLimitApi::builder()
-        .set_tenant("tenant-a".to_owned())
+        .set_tenant("tenant-a")
         .configure_http(move |http| http.proxy(proxy))
         .configure_runtime(move |runtime| runtime.rate_limiter(configured))
         .build()
         .expect("rate-limit client");
 
     let value = client
-        .region("eu".to_owned())
-        .item("record-42".to_owned())
+        .region("eu")
+        .item("record-42")
         .await
         .expect("rate-limited request");
     assert_eq!(value, concord::Bytes::from_static(b"limited response"));
     assert_eq!(limiter.acquisitions(), 1);
     assert_eq!(server.request_count(), 1);
+    assert_eq!(server.requests()[0].header("x-tenant"), Some("tenant-a"));
 }
 
 #[cfg(feature = "rate-limit")]
@@ -360,14 +375,11 @@ async fn local_state_capacity_is_recoverable_without_evicting_an_existing_bucket
         .expect("bounded local-state client");
 
     assert_eq!(
-        client
-            .channel("first-key".to_owned())
-            .await
-            .expect("first bucket"),
+        client.channel("first-key").await.expect("first bucket"),
         concord::Bytes::from_static(b"first")
     );
     let error = client
-        .channel("new-high-cardinality-key".to_owned())
+        .channel("new-high-cardinality-key")
         .await
         .expect_err("new bucket must fail while bounded state is full");
     assert!(is_recoverable_state_capacity(&error));
@@ -379,7 +391,7 @@ async fn local_state_capacity_is_recoverable_without_evicting_an_existing_bucket
 
     assert_eq!(
         client
-            .channel("first-key".to_owned())
+            .channel("first-key")
             .await
             .expect("existing bucket remains operational"),
         concord::Bytes::from_static(b"retained")
@@ -435,24 +447,23 @@ async fn independently_built_clients_can_share_one_local_limiter_object() {
 
 #[cfg(all(feature = "records", feature = "csv", feature = "ndjson"))]
 mod record_boundaries {
-    use std::pin::Pin;
-
-    use concord::records::{ItemStream, RecordError};
+    use concord::ApiError;
+    use concord::records::ItemStream;
+    use concord::response::StreamState;
     use concord_examples::request_response::records::RecordsApi;
-    use futures_core::Stream;
 
     use super::{ResponseScript, ScriptedServer, proxy};
 
-    async fn collect<T>(mut stream: ItemStream<T>) -> Result<Vec<T>, RecordError>
+    async fn collect<T>(mut stream: ItemStream<T>) -> Result<Vec<T>, ApiError>
     where
         T: Send + 'static,
     {
         let mut values = Vec::new();
-        while let Some(value) =
-            std::future::poll_fn(|context| Pin::new(&mut stream).poll_next(context)).await
-        {
+        while let Some(value) = stream.next().await {
             values.push(value?);
         }
+        // Reaching `None` is actual EOF, which `finish` preserves.
+        assert_eq!(stream.finish().state(), StreamState::Eof);
         Ok(values)
     }
 

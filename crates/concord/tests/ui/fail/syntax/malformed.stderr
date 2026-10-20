@@ -1,5 +1,5 @@
-error: unsupported scope entry; expected a child scope, HTTP endpoint, or `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit` clause
-  --> tests/ui/fail/syntax/malformed.rs:11:9
+error: [C3-OWNER] unsupported scope entry in scope `MalformedApi::resources`; expected a child scope or endpoint, or a `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause
+  --> tests/ui/fail/syntax/malformed.rs:14:13
    |
-11 |         FETCH ById(endpoint_value: String) -> Empty {
-   |         ^^^^^
+14 |             FETCH by_id(endpoint_value: String) -> () via Empty {
+   |             ^^^^^

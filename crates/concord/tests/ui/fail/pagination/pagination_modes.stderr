@@ -1,189 +1,113 @@
-error[E0277]: the trait bound `concord::Binary: PageResponseRepresentation<concord::Bytes>` is not satisfied
-  --> tests/ui/fail/pagination/pagination_modes.rs:43:1
+error[E0271]: type mismatch resolving `<Binary as ResponseRepresentation<ByteStream>>::Driver == Buffered`
+  --> tests/ui/fail/pagination/pagination_modes.rs:52:13
    |
-43 | / api! {
-44 | |     client BytesPagination {
-45 | |         timeout 30s;
-46 | |         base "https://example.test";
-...  |
-52 | | }}
-   | |__^ the trait `DecodeBody` is not implemented for `concord::Binary`
+52 |             paginate via crate::Once {
+   |             ^^^^^^^^
+   |             |
+   |             expected `Buffered`, found `Streaming`
+   |             required by a bound introduced by this call
    |
-help: the trait `DecodeBody` is implemented for `concord::Text`
-  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
+note: required by a bound in `concord::__private::pages_request`
+  --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
    |
-   | impl DecodeBody for Text {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^
-   = note: required for `concord::Binary` to implement `PageResponseRepresentation<concord::Bytes>`
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `concord::Empty: PageResponseRepresentation<()>` is not satisfied
-  --> tests/ui/fail/pagination/pagination_modes.rs:54:1
-   |
-54 | / api! {
-55 | |     client NoContentPagination {
-56 | |         timeout 30s;
-57 | |         base "https://example.test";
-...  |
-63 | | }}
-   | |__^ the trait `DecodeBody` is not implemented for `concord::Empty`
-   |
-help: the trait `DecodeBody` is implemented for `concord::Text`
-  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
-   |
-   | impl DecodeBody for Text {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^
-   = note: required for `concord::Empty` to implement `PageResponseRepresentation<()>`
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   | pub fn pages_request<E>(request: Request<E>, maximum_pages: u32) -> Pages<PageItem<E>>
+   |        ------------- required by a bound in this function
+...
+   |     E::Response: ResponseRepresentation<E::Output, Driver = Buffered>,
+   |                                                    ^^^^^^^^^^^^^^^^^ required by this bound in `pages_request`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0271]: type mismatch resolving `<Binary as ResponseRepresentation<ByteStream>>::Driver == Buffered`
-  --> tests/ui/fail/pagination/pagination_modes.rs:65:1
+  --> tests/ui/fail/pagination/pagination_modes.rs:52:13
    |
-65 | / api! {
-66 | |     client StreamPagination {
-67 | |         timeout 30s;
-68 | |         base "https://example.test";
-...  |
-74 | | }}
-   | |__^ expected `Buffered`, found `Streaming`
+52 |             paginate via crate::Once {
+   |             ^^^^^^^^
+   |             |
+   |             expected `Buffered`, found `Streaming`
+   |             required by a bound introduced by this call
    |
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `concord::Binary: PageResponseRepresentation<ByteStream>` is not satisfied
-  --> tests/ui/fail/pagination/pagination_modes.rs:65:1
+note: required by a bound in `concord::__private::collect_prefix_request`
+  --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
    |
-65 | / api! {
-66 | |     client StreamPagination {
-67 | |         timeout 30s;
-68 | |         base "https://example.test";
-...  |
-74 | | }}
-   | |__^ the trait `DecodeBody` is not implemented for `concord::Binary`
-   |
-help: the trait `DecodeBody` is implemented for `concord::Text`
-  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
-   |
-   | impl DecodeBody for Text {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^
-   = note: required for `concord::Binary` to implement `PageResponseRepresentation<ByteStream>`
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `concord::Binary: DecodeBody` is not satisfied
-  --> tests/ui/fail/pagination/pagination_modes.rs:43:1
-   |
-43 | / api! {
-44 | |     client BytesPagination {
-45 | |         timeout 30s;
-46 | |         base "https://example.test";
-...  |
-52 | | }}
-   | |__^ the trait `DecodeBody` is not implemented for `concord::Binary`
-   |
-help: the trait `DecodeBody` is implemented for `concord::Text`
-  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
-   |
-   | impl DecodeBody for Text {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^
-   = note: required for `concord::Binary` to implement `PageResponseRepresentation<concord::Bytes>`
-note: required for `bytes_pagination::Read` to implement `concord::__private::EndpointSpec`
-  --> tests/ui/fail/pagination/pagination_modes.rs:43:1
-   |
-43 | / api! {
-44 | |     client BytesPagination {
-45 | |         timeout 30s;
-46 | |         base "https://example.test";
-...  |
-49 | |     GET read() -> Bytes via Binary {
-   | |         ^^^^
-...  |
-52 | | }}
-   | |__^ unsatisfied trait bound introduced here
-note: required by a bound in `concord::__private::request_plan`
-  --> $WORKSPACE/crates/concord-core/src/__private.rs
-   |
-   | pub fn request_plan<E>(
-   |        ------------ required by a bound in this function
+   | pub fn collect_prefix_request<E>(
+   |        ---------------------- required by a bound in this function
 ...
-   |     E: EndpointSpec,
-   |        ^^^^^^^^^^^^ required by this bound in `request_plan`
+   |     E::Response: ResponseRepresentation<E::Output, Driver = Buffered>,
+   |                                                    ^^^^^^^^^^^^^^^^^ required by this bound in `collect_prefix_request`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `concord::Empty: DecodeBody` is not satisfied
-  --> tests/ui/fail/pagination/pagination_modes.rs:54:1
+error[E0271]: type mismatch resolving `<Binary as ResponseRepresentation<ByteStream>>::Driver == Buffered`
+  --> tests/ui/fail/pagination/pagination_modes.rs:52:13
    |
-54 | / api! {
-55 | |     client NoContentPagination {
-56 | |         timeout 30s;
-57 | |         base "https://example.test";
-...  |
-63 | | }}
-   | |__^ the trait `DecodeBody` is not implemented for `concord::Empty`
+52 |             paginate via crate::Once {
+   |             ^^^^^^^^
+   |             |
+   |             expected `Buffered`, found `Streaming`
+   |             required by a bound introduced by this call
    |
-help: the trait `DecodeBody` is implemented for `concord::Text`
-  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
+note: required by a bound in `concord::__private::collect_all_request`
+  --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
    |
-   | impl DecodeBody for Text {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^
-   = note: required for `concord::Empty` to implement `PageResponseRepresentation<()>`
-note: required for `no_content_pagination::Read` to implement `concord::__private::EndpointSpec`
-  --> tests/ui/fail/pagination/pagination_modes.rs:54:1
-   |
-54 | / api! {
-55 | |     client NoContentPagination {
-56 | |         timeout 30s;
-57 | |         base "https://example.test";
-...  |
-60 | |     GET read() -> () via Empty {
-   | |         ^^^^
-...  |
-63 | | }}
-   | |__^ unsatisfied trait bound introduced here
-note: required by a bound in `concord::__private::request_plan`
-  --> $WORKSPACE/crates/concord-core/src/__private.rs
-   |
-   | pub fn request_plan<E>(
-   |        ------------ required by a bound in this function
+   | pub fn collect_all_request<E>(
+   |        ------------------- required by a bound in this function
 ...
-   |     E: EndpointSpec,
-   |        ^^^^^^^^^^^^ required by this bound in `request_plan`
+   |     E::Response: ResponseRepresentation<E::Output, Driver = Buffered>,
+   |                                                    ^^^^^^^^^^^^^^^^^ required by this bound in `collect_all_request`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `concord::Binary: DecodeBody` is not satisfied
-  --> tests/ui/fail/pagination/pagination_modes.rs:65:1
+error[E0271]: type mismatch resolving `<Discard as ResponseRepresentation<()>>::Driver == Buffered`
+  --> tests/ui/fail/pagination/pagination_modes.rs:65:13
    |
-65 | / api! {
-66 | |     client StreamPagination {
-67 | |         timeout 30s;
-68 | |         base "https://example.test";
-...  |
-74 | | }}
-   | |__^ the trait `DecodeBody` is not implemented for `concord::Binary`
+65 |             paginate via crate::Once {
+   |             ^^^^^^^^
+   |             |
+   |             expected `Buffered`, found `DiscardDriver`
+   |             required by a bound introduced by this call
    |
-help: the trait `DecodeBody` is implemented for `concord::Text`
-  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
+note: required by a bound in `concord::__private::pages_request`
+  --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
    |
-   | impl DecodeBody for Text {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^
-   = note: required for `concord::Binary` to implement `PageResponseRepresentation<ByteStream>`
-note: required for `stream_pagination::Read` to implement `concord::__private::EndpointSpec`
-  --> tests/ui/fail/pagination/pagination_modes.rs:65:1
-   |
-65 | / api! {
-66 | |     client StreamPagination {
-67 | |         timeout 30s;
-68 | |         base "https://example.test";
-...  |
-71 | |     GET read() -> ::concord::response::ByteStream via Binary {
-   | |         ^^^^
-...  |
-74 | | }}
-   | |__^ unsatisfied trait bound introduced here
-note: required by a bound in `concord::__private::request_plan`
-  --> $WORKSPACE/crates/concord-core/src/__private.rs
-   |
-   | pub fn request_plan<E>(
-   |        ------------ required by a bound in this function
+   | pub fn pages_request<E>(request: Request<E>, maximum_pages: u32) -> Pages<PageItem<E>>
+   |        ------------- required by a bound in this function
 ...
-   |     E: EndpointSpec,
-   |        ^^^^^^^^^^^^ required by this bound in `request_plan`
+   |     E::Response: ResponseRepresentation<E::Output, Driver = Buffered>,
+   |                                                    ^^^^^^^^^^^^^^^^^ required by this bound in `pages_request`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0271]: type mismatch resolving `<Discard as ResponseRepresentation<()>>::Driver == Buffered`
+  --> tests/ui/fail/pagination/pagination_modes.rs:65:13
+   |
+65 |             paginate via crate::Once {
+   |             ^^^^^^^^
+   |             |
+   |             expected `Buffered`, found `DiscardDriver`
+   |             required by a bound introduced by this call
+   |
+note: required by a bound in `concord::__private::collect_prefix_request`
+  --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
+   |
+   | pub fn collect_prefix_request<E>(
+   |        ---------------------- required by a bound in this function
+...
+   |     E::Response: ResponseRepresentation<E::Output, Driver = Buffered>,
+   |                                                    ^^^^^^^^^^^^^^^^^ required by this bound in `collect_prefix_request`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0271]: type mismatch resolving `<Discard as ResponseRepresentation<()>>::Driver == Buffered`
+  --> tests/ui/fail/pagination/pagination_modes.rs:65:13
+   |
+65 |             paginate via crate::Once {
+   |             ^^^^^^^^
+   |             |
+   |             expected `Buffered`, found `DiscardDriver`
+   |             required by a bound introduced by this call
+   |
+note: required by a bound in `concord::__private::collect_all_request`
+  --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
+   |
+   | pub fn collect_all_request<E>(
+   |        ------------------- required by a bound in this function
+...
+   |     E::Response: ResponseRepresentation<E::Output, Driver = Buffered>,
+   |                                                    ^^^^^^^^^^^^^^^^^ required by this bound in `collect_all_request`
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

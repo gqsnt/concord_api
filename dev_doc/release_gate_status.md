@@ -1,70 +1,190 @@
-# Concord v2.1 release-gate status
+# Concord V3 release-gate status
 
 <!-- concord-release-status-owner -->
 
-- **Canonical lifecycle status:** Concord v2.1 locally integrated unpublished beta (integration candidate / beta lifecycle)
-- **Workspace version:** `2.1.0-beta.1`
-- **Publication:** disabled in every intended public package manifest
-- **Supported-platform boundary:** Windows and Linux are supported and mandatory. macOS is not currently a supported or release-gated platform.
+- **Canonical lifecycle status:** Concord V3 integration candidate / beta; unpublished source branch.
+  The corrected implementation has completed the source-bound Linux and Windows
+  machine gates below. Final delivery qualification remains tied to its own receipt.
+- **Publication:** disabled — the source beta is unpublished.
+- **Workspace version:** `3.0.0-beta.1`; every workspace package has `publish = false`.
+- **Recorded:** 2026-10-17, using public source
+  `570eec460dee1d83828ae48e35396ae07652aabc` as the fully qualified predecessor.
+  The subsequent [follow-up](reviews/2026_10_17_followup/README.md) adds the source
+  license, agent exercises, Rust highlighting, CSV correction and documentation fixes.
+  Its final source and supported-platform results belong to its own CI/evidence receipt.
+- **Supported platforms:** Windows and Linux are supported and mandatory.
+  macOS is not currently a supported or release-gated platform.
+- **Version scope:** V3 only, selected by the owner;
+  [ADR 0027](adrs/0027-v3-only-product.md) retires conversion and older-binary obligations.
 
-**Beta integration decision:** COMPLETE LOCALLY, SUBJECT TO THIS MERGE COMMIT'S
-TERMINAL VERIFICATION — verified release candidate `bc4efb03...` was
-fast-forwarded to `release/v2.1-readiness` and merged with `--no-ff` into local
-`main`. The active language, generated API, runtime/security, documentation,
-no-retrocompatibility, Windows, Linux, exact-candidate, and source-export gates
-passed on that exact release parent. This merge is valid only when the complete
-Windows/Linux matrix also exits 0 on the exact merge commit.
+This is the sole authoritative lifecycle record. The
+[final report](reviews/2026_10_17_closure/CONCORD_V3_FINAL_REPORT.md),
+[native qualification report](reviews/2026_10_17_closure/NATIVE_QUALIFICATION_REPORT.md) and
+[performance report](reviews/2026_10_17_closure/PERFORMANCE_REPORT.md) explain the completed
+work and its evidence boundaries. The [16 October correction report](reviews/2026_10_16_corrections.md)
+and earlier dated records retain their original source scope.
 
-**Stable publication decision:** BLOCKED — owner package/license authority and
-unobtained human-freeze evidence remain open. Stable `2.1.0`, tags, final public
-package names, registry publication, and publication claims are not authorized.
+## Current correction candidate
 
-This is the repository's only authoritative lifecycle and gate-status document.
-README files, `FINAL.md`, the claim ledger, ADRs, and evidence records may
-summarize it but do not define another status.
+The last completed integrated run is [CI #34](https://github.com/gqsnt/concord_api/actions/runs/39022636141)
+on `570eec460dee1d83828ae48e35396ae07652aabc`: all ten jobs passed, including
+dependency policy. [Final return #3](https://github.com/gqsnt/concord_api/actions/runs/39022636212)
+passed all 33 expected native outcomes. Those results qualify that predecessor;
+the follow-up is checked on its own source and does not inherit a PASS from it.
 
-## Beta integration gates
+The seven retained code findings have direct corrections and discriminating
+native regression evidence. V3R-01 is closed by retiring the unsupported
+converter, not by certifying a conversion algorithm. The current product has
+one V3 grammar, runtime and state schema; its former transition tests and
+compatibility paths are not part of the supported surface. See the
+[V3-only report](reviews/2026_10_17_closure/V3_ONLY_REPORT.md).
 
-| Integration gate | Current state | Evidence boundary |
-|---|---|---|
-| Active language and generated API | **Passed on exact release parent `bc4efb03...`** | Default/all-feature nextest, 190 macro tests, and no-default/all-feature/core UI configurations passed on Windows and Linux. |
-| Runtime and information-flow security | **Passed on exact release parent `bc4efb03...`** | Both complete maintained aggregates and explicit locked workspace tests passed on Windows and Linux. |
-| Documentation and canonical examples | **Passed on exact release parent `bc4efb03...`** | README, quick start, overview, and Riot walkthrough are owned by compiled source anchors; docs-check validated six machine-owned canonical anchors on both platforms. |
-| No compatibility path | **Passed on exact release parent `bc4efb03...`** | The 107-file active scan and focused compile-fail fixtures passed. Retired spellings remain only in migration diagnostics/tooling/docs, negative fixtures, and explicit history. |
-| Windows | **Passed on exact release parent `bc4efb03...`** | `just verify` and the explicit locked terminal commands exited 0 on Windows AMD64. |
-| Linux | **Passed on exact release parent `bc4efb03...`** | The same commands exited 0 as native x86_64 Linux binaries on Ubuntu 26.04.1 under WSL2. |
-| Exact candidate, clean tree, branch diff, and source export | **Passed on `bc4efb03...`** | Release audit reported the exact SHA and empty status; source export extracted and audited 888 entries on both platforms. |
-| Exact local merge commit | **Terminal repeat gate** | This merge commit receives the same complete Windows/Linux aggregate, explicit locked checks, source export, release audit, parent-topology check, and clean status. The self-referential SHA/result is recorded in the operator handoff. |
+| Gate | Current source-bound state |
+|---|---|
+| Targeted corrections and integrated runtime tests | Passed on the recorded correction inputs; historical failed attempts and their repairs remain in the native report |
+| Linux maintained implementation gate and analyzer | **Pass** on `579e8eac9a436a57ebc5ea3fcc2e7da3cf330c31`, [qualification run 38981477842](https://github.com/gqsnt/concord_api/actions/runs/38981477842/job/117243098047); full gate finished 16 October at 23:48:11 UTC, analyzer at 23:49:52 UTC, followed by source/lifecycle audit and artifact upload |
+| Windows maintained implementation gate and analyzer | **Pass** on the same `579e8ea` source, [CI #29 job](https://github.com/gqsnt/concord_api/actions/runs/38981477798/job/117243098210); full gate finished 17 October at 00:23:52 UTC, analyzer at 00:27:33 UTC, job at 00:29:48 UTC |
+| Earlier complete Windows control | **Pass** on `5b3772236d7c1b71f86ebeba35f7d33a30cf3b64`, [CI #28 job](https://github.com/gqsnt/concord_api/actions/runs/38978327078/job/117233004279); a separate source-bound result |
+| Performance V3-O07 | Paired runtime/scale campaign and bounded runtime/compiler attribution completed; retained costs and interpretation are in the [performance report](reviews/2026_10_17_closure/PERFORMANCE_REPORT.md) |
+| Source/evidence return | Native qualification and historical CI archives are retained; the final public source export, integrated checks and archive integrity require the delivery commit's receipt. The private acceptance annex is delivered separately; completion of one combined archive containing it is not claimed. |
+| Owner-requested exercise and Rustdoc review | Executed by agents; task answers, real contract diffs, compiler/runtime checks and independent rereview are recorded in the follow-up. Human metrics C63/C64 remain unmeasured. |
+| Project source license | **MIT OR Apache-2.0**; 17 October owner-directed selection is implemented in texts, package metadata and archive checks |
+| Main integration / stable publication | Separate owner actions; not performed by this correction |
+| Dependency license policy | Three package-specific BSD-3-Clause exceptions authorized on 17 October 2026; the updated candidate must pass all ten CI jobs, including dependency policy, with results bound to its own receipt |
 
-The absence of a macOS run is retained as a historical fact in older evidence.
-It is not missing evidence for this support boundary and does not block beta
-integration or stable publication.
+The complete `579e8ea` qualification includes the maintained feature, isolated
+package, compiler, fixture, documentation, downstream/package and source-export
+checks. Its ordinary [CI #29](https://github.com/gqsnt/concord_api/actions/runs/38981477798)
+is nevertheless **failure**: nine jobs succeeded and the all-features dependency
+license-policy job failed. A green implementation gate does not turn that
+workflow into a green CI result.
+
+Later changes strengthen the inspection mutation assertions, capture two required
+body-arity diagnostics, reject ignored contract-CLI options and complete public
+documentation. Their final integration must be checked on its own source. The
+[final-return workflow](../.github/workflows/v3-final-return.yml) generates
+`FINAL_RETURN_RECEIPT.json` in its artifact; this document does not assert that a
+future run has passed. The receipt, source archive and final run identify the
+delivered commit and its exact checks.
+
+The earlier R7 statement that Edition 1 was not supplied describes that
+commission. Later authorized authority review resolved the missing-input
+uncertainty for this correction; it does not erase the earlier limit or imply
+that private source material belongs in a public archive. The public package
+contains repository evidence; the separate private authority annex is not
+published here.
+
+**Beta integration decision:** ordinary `concord-v3` source update authorized; main integration remains a separate owner action.
+**Stable publication decision:** **Blocked — owner authority required** for the separate release decisions below.
+
+## Historical R8 integration state
+
+All four R8 findings are CONFIRMED_FIXED on native discriminating paths. New
+Windows native and Linux/WSL qualification passes `just verify-implementation`
+with pin 1.97.1 and MSRV 1.86.0. Windows package/workflow/default deny and both
+analyzers pass. All-feature deny on both platforms retains POL-01 (exit 4,
+BSD-3-Clause rejection for alloc-no-stdlib/alloc-stdlib/brotli); no license policy
+was changed. [R8 validation](reviews/r8_validation.md) and
+[handoff](reviews/r8_handoff.md) bind the new source/evidence. Later Markdown/JSON
+changes retain the exact compiled inputs; final SHA/tree, ordinary branch push,
+remote verification and CI are in the delivered post-commit receipt.
+
+The R8 commission authorizes ordinary source-branch push to concord-v3 only.
+Main/user/foreign work is preserved. Publication remains disabled; beta
+integration, legal authority, namespace, broader V3-O07 performance, external
+Edition 1, human review and stable publication decisions remain separate and open.
+
+## Historical R7 integration state
+
+| Item | State and evidence |
+|---|---|
+| Exact R6 import | **Done** — commit `16f61c0753b313b8c559a4a57dd3dfbe1d2e7345`, exact R6 tree `0b1688a9f1e22898328d7d28eeedf87d7d44e5e1`, 1,019 verified source hashes. Original claimed R6 commit/parent absent; [provenance](reviews/r7_import.json) records reconciliation. |
+| R7-01 through R7-08 | **CONFIRMED_FIXED** on native discriminating paths with controls; R7-02's simple direct-parent example is refuted but a qualified path confirmed the defect. See [findings](reviews/r7_findings.md). |
+| R5-01 migration follow-up and earlier migration/storage/idle fixes | **Retained and exercised** by the native migration, recording, fixture and composed runtime suites. No independent human reacceptance is inferred. |
+| Native Windows, pin 1.97.1, MSRV 1.86.0 | **Pass, exit 0** — complete `just verify-implementation`, including MSRV; receipt `final-windows-implementation2`. |
+| Linux/WSL, pin 1.97.1, MSRV 1.86.0 | **Pass, exit 0** — complete same gate with task TMPDIR; receipt `final-linux-implementation3`. |
+| Packaged downstream, workflow, dependency policy and analyzer | **Pass, exit 0** — Windows package/workflow/deny/analyzer and Linux deny/analyzer; standalone Linux pwsh/actionlint unavailable. Exact scope in R7 validation. |
+| R7-S01 | **Accepted in narrow allocation scope** — one allocation and 24 bytes saved in warm/cold buffered execution; boxed future unchanged. No latency benefit claimed. |
+| V3-O07 broader performance | **Not accepted** — the bounded S01 result and 500-endpoint stack repair do not close the broader obligation. |
+| Source branch push | **Authorized** by the R7 commission for `concord-v3`; exact final remote SHA and CI state are recorded after the commit in the delivered receipt. |
+| Merge into main, tags, releases, stable version and publication | **Not performed or authorized** by this commission. |
+
+Main remains `3765907aa2e424997bfd8f2fcdcc95275e6142f5`. Work is isolated in a
+separate worktree; primary checkout and foreign/unknown work are preserved.
+The R6 archive's prior no-push restriction describes an earlier commission and
+is superseded only for this authorized ordinary source-branch push.
+
+## Historical R7/R8 validation environment and limits
+
+Windows 11 Professional build 26200, native x86_64 MSVC; Linux Ubuntu 26.04 in
+WSL2, kernel 6.18.40.1, x86_64 GNU. Both use pin
+`rustc 1.97.1 (8bab26f4f 2026-07-14)` and MSRV
+`rustc 1.86.0 (05f9846f8 2025-03-31)`. Separate checkouts/targets retain BEFORE
+and AFTER evidence. UI differences were inspected before refreshing affected
+expectations under the pin; unchanged expectations are qualified by the matrix.
+
+Fresh dependency policy identified RUSTSEC-2026-0285 in imported Rustls 0.23.42;
+the final lock uses patched 0.23.45 and WebPKI 0.103.15 without policy exceptions.
+Linux's shared full `/tmp` caused an intermediate doctest linker SIGBUS;
+the recorded rerun uses a task-owned disk TMPDIR and preserves foreign files.
+Failed, setup and interrupted attempts remain separate historical receipts.
+
+The external Edition 1 specification was not supplied for R7; full external-spec
+conformance was not independently re-established. No macOS, human comprehension,
+independent human Rustdoc/diff review, package ownership or stable-release result
+is inferred from these machine gates. CI is distinct from local qualification.
+
+## External review of the `fc3e4d1` return
+
+The 26 September source review retained the beta and reopened F01 storage
+finalization (V3-E15/E21), F02 idle/read completion (V3-P10) and F03 migration
+receiver identity (V3-O04). Their repairs and later R3/R4/R5 macro/member controls
+are preserved in R6 and pass the R7 machine suites. Claims C68–C70 retain the
+original evidence history; current native evidence is mapped separately in C74.
+This does not fabricate independent human acceptance. R7 adds the decoder
+completion boundary to the shared stream precheck contract.
+
+## Repository audit commands
+
+`just release-audit` runs docs checks, requires the preserved local main merge
+base, a clean worktree, placeholder/clock/authority scans and the exact unpublished
+beta lifecycle. `just source-export` archives and audits an exact clean commit.
+Final documentation and exact-commit closure results must be read from the generated
+final-return receipt for that delivery; full implementation qualification belongs
+to the source-bound candidate above.
 
 ## Stable-publication gates
 
-| Stable gate | State | Required evidence or authority |
-|---|---|---|
-| Gate 0 — package identity, legal authority, and release namespace | **Blocked — owner authority required** | Owner-selected license, approved and controlled package names, official metadata, and final-name package rehearsal. Registry `concord` was observed to identify an unrelated project; unoccupied-at-query candidate names are not reservations. |
-| Gate 3 — unfamiliar-human comprehension | **Unknown/Blocked for public freeze** | Zero qualifying external participants have completed the maintained study. No comprehension claim is made. The owner must decide whether and how this evidence gates public compatibility freeze. |
-| Independent Rustdoc/semantic-diff review | **Unknown/Blocked for public freeze** | Zero qualifying independent reviews have completed the packet. Implementer or AI review is not substituted. The owner must decide whether this evidence is mandatory for public freeze. |
-| Stable lifecycle and publication mechanics | **Blocked** | Gate 0 and the owner-selected human-freeze policy must close before stable `2.1.0`, final names/metadata, tag, publication rehearsal, or registry action. |
+| Gate | State |
+|---|---|
+| Source license | **Implemented** — MIT OR Apache-2.0, selected under the 17 October owner instruction; source and archive checks enforce the choice. |
+| Registry namespace and publication metadata | **Blocked — owner authority required** for the separate registry publication action. |
+| Supported-platform machine qualification | See source-bound matrix above; machine success alone does not authorize integration or publication. |
+| Requested user and independent Rustdoc exercises | Agent execution is recorded in the follow-up; optional empirical human metrics remain unmeasured. |
+| Stable V3 API freeze, version, tags and registry publication | **Blocked** — reserved owner decisions in [the release packet](owner_release_decisions.md). |
 
-Mechanical Gates 1, 2, and 4–9 have selected implementations supported by the
-exact Windows/Linux release-parent evidence. Gate 10's machine portion is part
-of the beta integration table above; its independent-human portion remains
-explicitly unknown for public freeze. The terminal merge-commit matrix is a
-validity condition of the local integration, not a stable-publication claim.
+Dependency license-policy success is separate from the project's implemented
+MIT OR Apache-2.0 grant and from registry authority. CI #25 through #33 retain their recorded BSD-3-Clause
+rejections for `alloc-no-stdlib`, `alloc-stdlib` and `brotli`.
 
-## Evidence boundary
+On 17 October 2026 the owner authorized correcting that dependency policy.
+[deny.toml](../deny.toml) records explicit exceptions for those three packages;
+the `brotli` exception also permits MIT to cover its `BSD-3-Clause AND MIT`
+expression. BSD-3-Clause is not added to the global allowlist. The resulting
+`570eec4` candidate passed all ten CI #34 jobs and all four dependency-policy
+checks. The follow-up implements the separate project license and requires its
+own current-source result; `publish = false` remains in force. Locked fixture fetching and
+explicit pinned Rust sources corrected the earlier CI setup failures.
 
-`dev_doc/evidence/final_integration_candidate_6967c378.md` records the current
-implementation-candidate matrix and the evidence-seal rule.
-`dev_doc/evidence/local_beta_merge.md` records the merge parents, method, and
-self-referential exact-merge verification boundary.
-`dev_doc/evidence/beta_candidate_0f72e865.md` remains historical
-prior-candidate evidence. Exact terminal and merge evidence is recorded without
-claiming macOS, legal authority, package control, publication readiness, or
-human comprehension.
+## History
 
-No push, tag, publication, license selection, registry ownership, human result,
-or unsupported platform execution may be inferred from this status.
+The unmodified R6 lifecycle file is permanently preserved in import commit
+`16f61c0`; it reported only historical Linux/rustc 1.95 validation, unrun native
+Windows/pin/MSRV and absent local-main history in the earlier isolated repository.
+Those statements remain historical, not the current gate state. R6's claimed
+integration commits `60d7de4`/`5c1c13c` were unavailable in this repository.
+The [v3 documentation slice](evidence/v3_documentation_slice_observations.md) and
+v2.1 records ([local beta merge](evidence/local_beta_merge.md),
+[final candidate](evidence/final_integration_candidate_6967c378.md),
+[verification](release_verification_2_1.md)) retain their original source scope.
+The preserved R6 archive and all R7 receipts remain outside the source tree.

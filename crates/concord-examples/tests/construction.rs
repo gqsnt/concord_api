@@ -23,7 +23,7 @@ fn imports_and_constructs_every_enabled_canonical_declaration() {
                 .expect("protocol recovery configuration");
         concord_examples::contracts::full_dsl::construct().expect("full DSL construction");
         let reference = ReferenceApi::builder()
-            .set_tenant("tenant-a".to_owned())
+            .set_tenant("tenant-a")
             .api_key(SecretString::try_new("construction-key").expect("bounded construction key"))
             .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
             .build()
@@ -52,8 +52,13 @@ fn imports_and_constructs_every_enabled_canonical_declaration() {
     }
 
     #[cfg(all(feature = "json", feature = "rate-limit", feature = "default-tls"))]
-    concord_examples::contracts::catalog_contract::construct()
-        .expect("complete current catalog construction");
+    {
+        let _canonical = concord_examples::application::construction::build_catalog(
+            "tenant-a".to_owned(),
+            SecretString::try_new("construction-bootstrap").expect("bounded bootstrap key"),
+        )
+        .expect("canonical §22 catalog construction through the §23.1 builder");
+    }
 
     #[cfg(feature = "json")]
     {

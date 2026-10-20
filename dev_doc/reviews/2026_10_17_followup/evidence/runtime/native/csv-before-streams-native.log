@@ -1,0 +1,28 @@
+    Finished `test` profile [unoptimized] target(s) in 0.06s
+     Running tests/contracts.rs (/workspace/scratch/69ac10347cac/v3-followup/target/debug/deps/contracts-36ede3cd9b6fa02a)
+
+running 2 tests
+test contracts::record_streams::csv::csv_later_bom_cannot_be_removed_to_turn_an_invalid_integer_into_valid_data ... FAILED
+test contracts::record_streams::csv::csv_split_document_bom_precedes_a_quoted_header_in_a_managed_stream ... FAILED
+
+failures:
+
+---- contracts::record_streams::csv::csv_later_bom_cannot_be_removed_to_turn_an_invalid_integer_into_valid_data stdout ----
+
+thread 'contracts::record_streams::csv::csv_later_bom_cannot_be_removed_to_turn_an_invalid_integer_into_valid_data' (12062) panicked at crates/concord-extras/tests/contracts/record_streams.rs:381:14:
+U+FEFF is data, so this field is not a u32: Row { id: 2 }
+
+---- contracts::record_streams::csv::csv_split_document_bom_precedes_a_quoted_header_in_a_managed_stream stdout ----
+
+thread 'contracts::record_streams::csv::csv_split_document_bom_precedes_a_quoted_header_in_a_managed_stream' (12063) panicked at crates/concord-extras/tests/contracts/record_streams.rs:359:49:
+called `Result::unwrap()` on an `Err` value: ApiError { endpoint: EndpointId("record_streams.export"), method: GET, category: ResponseDecoding, configuration_kind: None, auth_kind: None, rate_limit_kind: None, pagination_kind: None, failure_stage: StreamConsumption, dispatch_knowledge: ResponseObserved, operation_id: Some(OperationId(<opaque>)), parent_operation_id: None, provider_acquisition: None, last_attempt: Some(AttemptFacts { attempt: AttemptInfo { index: 0, policy_retry_index: 0, authentication_recovery: false }, dispatch_knowledge: ResponseObserved, status: Some(200) }), operation_counts: None, http_status: None, last_response_status: Some(200), authentication_error: None, rate_limit_error: None, pagination_error: None, traversal: None, stream: Some(StreamSummary { state: Failed, endpoint: EndpointId("record_streams.export"), method: GET, operation_id: OperationId(<opaque>), attempt: AttemptInfo { index: 0, policy_retry_index: 0, authentication_recovery: false }, status: 200, acquired_bytes: 9, delivered_records: 0, body_disposition: Failed, error_kind: Some(InvalidFraming) }) }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    contracts::record_streams::csv::csv_later_bom_cannot_be_removed_to_turn_an_invalid_integer_into_valid_data
+    contracts::record_streams::csv::csv_split_document_bom_precedes_a_quoted_header_in_a_managed_stream
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.06s
+
+error: test failed, to rerun pass `-p concord-extras --test contracts`

@@ -1,153 +1,338 @@
-# Execution policy
+# Execution policy: controls, time and truthful outcomes
 
-Every generated request, unbound-bound request, runtime endpoint, retry, auth recovery, accepted-byte terminal, stream acquisition, and pagination page uses one executor and one ordering model.
+Every generated, unbound, runtime-bound, accepted-byte, storage, stream and
+traversal request enters one managed executor. This page covers what a caller
+can control per request (§8) and what the executor guarantees about each
+operation and its errors (§13).
 
-## Operation identities
+## Request controls
+
+Every bound request and configurable terminal retains three things
+(CONTROL-01): its **effective declared timeout**, its **selected timeout** and
+independent additional **caps**. A selected timeout is a preference; a cap is a
+constraint.
 
 ```text
-logical operation
-  ├─ visible attempt 0
-  │    └─ optional transport-private physical recovery
-  ├─ policy backoff
-  ├─ visible attempt 1
-  └─ fixed outcome
-
-pagination aggregate
-  ├─ page operation 0 → visible attempts
-  ├─ page operation 1 → visible attempts
-  └─ aggregate outcome
+request.timeout(duration) -> Result<Self, ControlError>
+request.reset_timeout() -> Self
+request.cancel_with(token) -> Result<Self, ControlError>
+request.with_options(&options) -> Self
+request.control_summary() -> ControlSummary
 ```
 
-Do not collapse these identities, counts, or budgets.
+These are inherent on generated requests and on the configurable terminal
+wrappers `ResponseRequest`, `AcceptedBytesRequest`, `StoreRequest`,
+`CollectPrefix` and `CollectAll`. `cancel_with`, `with_options` and
+`control_summary` are also the open `RequestControls` trait. An already
+constructed `Pages` iterator and an acquired stream carry the controls captured
+from the request and expose no setters: apply controls before calling
+`.pages()` or awaiting a stream.
 
-## Terminal start
+- `timeout(d)` replaces the selected finite duration; `reset_timeout()`
+  restores the declared (or 30-second default) duration. Neither removes a cap.
+- A zero or unrepresentable duration is a `ControlError`
+  (`ZeroDuration`, `UnrepresentableDuration`) before anything executes.
 
-When a terminal is first polled:
+### Caps with `CallOptions`
 
-1. validate terminal-local input;
-2. `PageLimit::Prefix(0)` returns empty before operation allocation or effects;
-3. allocate operation/aggregate identity;
-4. capture immutable client/request/runtime snapshot;
-5. create one absolute deadline and finite counters.
+```text
+CallOptions::new()                                   // == CallOptions::default(): no additional caps
+    .cap_timeout(Duration) -> Result<Self, ControlError>
+    .cap_sends(u32)
+    .cap_replays(u32)
+    .cap_response_bytes(NonZeroUsize)
+    .cap_stream_lifetime(Duration) -> Result<Self, ControlError>
+    .cap_stream_idle(Duration) -> Result<Self, ControlError>
+```
 
-Construction, controls, descriptions, and planning remain inert.
+Repeated setters intersect; `with_options` takes the componentwise minimum of
+every present cap. A missing cap means no *additional* restriction, not
+unbounded execution. Caps propagate through `.response()`,
+`.accepted_bytes()`, `.store_as_*()`, `.pages()` and both collection terminals;
+transforming a request never drops a restriction. A 5-second cap followed by
+`timeout(60s)` still ends the operation at 5 seconds.
 
-## Public preparation
+- `cap_sends(n)` counts every application attempt handoff, including the first
+  submission of each later page. Zero is valid and prevents dispatch without
+  running body or credential preparation first.
+- `cap_replays(n)` counts extra automatic submissions from policy retry or auth
+  recovery, cumulatively across a traversal.
+- Caps never grant a retry that effect, body or authority rules disallow.
 
-For a direct request or each page:
+`ControlSummary` reports the declared, selected and effective timeout
+(`declared_timeout()`, `selected_timeout()`, `effective_timeout()`), each cap and
+the number of cancellation sources, with no token internals or request values.
 
-1. resolve effective contract and representation defaults;
-2. apply page-controlled endpoint values;
-3. shape method, logical URL, public query, and public headers once;
-4. derive real and sanitized observation atoms from the same encoding events;
-5. enforce component/count/byte/reserved-owner bounds;
-6. obtain body structural metadata without materialization.
+### Cancellation
 
-No credentials, body bytes, rate admission, or native request exist yet.
+`CancellationToken::new()` is a cheap cloneable handle with `cancel()`,
+`is_cancelled()` and an awaitable `cancelled()`. Clones share one signal and it
+never resets. A request combines up to eight distinct signals by OR; re-adding
+the same signal deduplicates, and a ninth returns
+`ControlError::TooManyCancellationSources` rather than dropping a restriction.
 
-## Body preparation
+Unpolled requests start nothing, reserve no storage intent and emit no events
+(CONTROL-03). A token observed before first dispatch prevents it. Dropping a
+polled future cancels owned local work. Cancellation cannot retract a request
+already handed to the transport, undo a remote effect, refund committed quota or
+erase contact evidence. Page fetches and stream reads have deliberately
+different drop rules ([Pagination](pagination.md), [Streams](streams.md)).
 
-If a body is present:
+## One absolute deadline
 
-1. call representation `prepare` exactly once for this direct/page request;
-2. validate metadata/media/body limits;
-3. retain managed prepared state;
-4. check deadline after synchronous extension code.
+The deadline begins at the first terminal poll and covers public rendering,
+body preparation, credential and rate waits, every attempt, retry sleep,
+acquisition, conversion and controller callbacks. It is never restarted for
+another attempt or page. Time is checked before and after synchronous extension
+calls, but synchronous Rust cannot be preempted: a blocking callback delays the
+result. Final observation runs after the result is fixed and can delay delivery
+beyond the nominal deadline without changing the result (EXEC-04). For
+`.store_as_*()`, local credential installation belongs to the result: the
+deadline and cancellation are decided immediately before installing, and the
+final observation follows the installed, superseded or failed storage outcome
+([Authentication](auth.md#explicit-credential-storage)).
 
-Deterministic local preparation failure consumes no remote rate admission.
+## The operation pipeline
 
-## Visible attempt loop
+| Phase | Behavior |
+|---|---|
+| 0. First poll | Validate controls and cancellation, allocate the operation identity and deadline, reserve an explicit storage intent if applicable |
+| 1. Public selection | Compose the symbolic query/header programs, resolve suppression and outer presence, validate key and target ownership |
+| 2. Public rendering | Encode only surviving atoms and protected rate dimensions within bounds |
+| 3. Body preparation | Prepare a present body once under the deadline and byte ceiling |
+| 4. Credential preflight | Obtain only the declared required material |
+| 5. Attempt admission | Enforce send/replay caps and the retry budget; acquire complete conjunctive quota admission |
+| 6. Final freshness | Verify applied credential versions are still usable; at most two restarts per attempt |
+| 7. Native handoff | Apply private credentials, finish framing, record handoff, send under the remaining deadline |
+| 8. Response head | Record `ResponseObserved`, parse the server delay once, send limiter feedback, attribute a challenge |
+| 9. Result branch | Permitted recovery or retry, or normal payload / expected absence / rejected-status acquisition |
+| 10. Completion | Fix the result, status, contact and counts; observe; return the typed result or a correlated error |
 
-For each visible attempt candidate:
+Planning (`plan()`) shares phases 1-2 and never runs phases 3-10: it cannot
+trigger a provider, encode a body, acquire a limiter or open a connection
+(EXEC-03). Freshness restarts do not reset the deadline or inflate attempt
+caps, and no lock is held across I/O.
 
-1. check deadline and local/aggregate attempt ceilings;
-2. allocate attempt identity and emit read-only attempt-start evidence;
-3. resolve current credential material/version under private state;
-4. construct/reconstruct one managed attempt body from prepared state;
-5. acquire the complete effective rate plan under remaining deadline;
-6. place private auth and construct the native request in core;
-7. cross the transport boundary and advance dispatch knowledge;
-8. execute transport, including only protocol-proven physical recovery;
-9. receive a response head or transport failure.
+## Identities and dispatch knowledge
 
-### Why this order
+A direct operation, a traversal, a page, a provider acquisition, a visible
+attempt and a transport-private physical try are distinct identities (EXEC-01).
+Page and attempt indexes are zero-based in machine metadata.
 
-- public shaping is credential-free and inspectable;
-- local body errors do not spend quota;
-- known unavailable credentials do not spend provider quota;
-- attempt body construction happens before admission when it can fail synchronously;
-- private data is placed only after admission and immediately before dispatch;
-- a body producer failure during transport is a real attempted request.
+```text
+DispatchKnowledge: NotDispatched < PossiblyDispatched < ResponseObserved
+```
 
-If a body family demonstrably holds excessive attempt resources while waiting for rate admission, introduce a narrow two-phase prepared-body contract rather than reordering the entire executor.
+The operation's aggregate is a monotone join and never regresses. Receiving a
+response head records `ResponseObserved` irrevocably; a later body failure or a
+later attempt's connect failure cannot clear it. Only positive, core-native
+proof of no application submission settles an attempt as `NotDispatched`; a
+drop, timeout or ambiguous transport failure settles as `PossiblyDispatched`.
+`may_have_reached_server()` means the aggregate is not `NotDispatched`; it does
+not prove an effect or success.
 
-## Transport failure
+## Errors
 
-1. preserve exact transport phase and dispatch knowledge;
-2. finish attempt evidence;
-3. if protocol proves no processing and native body supports physical replay, perform finite transport-private recovery inside the same visible attempt;
-4. otherwise build a bounded retry view;
-5. ask application retry classifier;
-6. apply effect/body/count/budget/deadline gates;
-7. compute jittered backoff and server not-before;
-8. wait under the same absolute deadline;
-9. acquire shared retry-load budget immediately before the new visible attempt;
-10. loop or return the original failure.
+`ApiError` is value-free and exposes:
 
-## Response head
+| Accessor | Meaning |
+|---|---|
+| `category()` | stable `ErrorCategory` (`Configuration`, `RequestEncoding`, `RequestBody`, `AuthenticationUnavailable`, `AuthenticationProvider`, `AuthenticationRejected`, `RateLimit`, `Timeout`, `Connect`, `Transport`, `HttpStatus`, `ResponseBody`, `ResponseDecoding`, `ResponseContract`, `Pagination`, ...) |
+| `failure_stage()` | `FailureStage`: `Preparation`, `CredentialPreflight`, `RateAdmission`, `BeforeDispatch`, `DuringDispatchOrUnknown`, `RejectedResponse`, `ResponseAcquisition`, `ResponseConversion`, `PaginationDecision`, `CredentialInstall`, `StreamConsumption` |
+| `endpoint_id()`, `method()` | the validated operational endpoint ID and method |
+| `operation_id()`, `parent_operation_id()` | operation identities, when an operation started |
+| `dispatch_knowledge()`, `may_have_reached_server()` | aggregate dispatch knowledge |
+| `last_attempt()`, `operation_counts()` | last-attempt facts and bounded counts, separately from the aggregate |
+| `http_status()`, `last_response_status()`, `http_response()` | status facts and the rejected-status body ([Responses](responses.md)) |
+| `auth_kind()`, `rate_limit_kind()`, `pagination_kind()`, `configuration_kind()` | category-specific kinds |
+| `traversal_summary()`, `stream_summary()` | the traversal or stream summary, when applicable |
+| `retry_after()` | the parsed server delay, when one was observed |
 
-1. set `ResponseObserved`;
-2. parse standardized server delay once;
-3. deliver synchronous non-result-determining limiter feedback;
-4. attribute at most one auth challenge and possibly recover/replay once;
-5. apply endpoint status;
-6. rejected status enters policy retry or bounded status error;
-7. accepted status enters representation validation/acquisition/conversion;
-8. finish visible-attempt evidence.
+Response-chunk errors, timeouts after a head, decode failures, controller
+rejections and failed credential installation all keep the current dispatch
+knowledge and status (EXEC-02). The last attempt can be definitively unsent
+while an earlier attempt was observed. `ControlError` and `ClientBuildError`
+occur before any operation and carry no fabricated operation ID. Displays and
+`source()` chains never contain raw URLs, headers, bodies or decoder messages.
 
-No generic response-head veto hook exists.
+## Reconciling failed writes
 
-## Complete outcome
+For a failed write, `ResponseObserved` or `PossiblyDispatched` means the
+application may need reconciliation with its durable command ID; it does not
+mean "retryable". Even an observed 2xx followed by a body failure can have
+committed the write. The canonical example keeps the command ID, never
+resubmits under a new one, and formats its own wrapper types without printing
+the ID or payload:
 
-1. fix `Result<T, ApiError>`;
-2. call non-fallible bounded `OperationFinished` observer event inline;
-3. return the already fixed result.
+<!-- concord-source: crates/concord-examples/src/application/reconciliation.rs#reconciliation -->
+```rust
+use std::fmt;
 
-Intermediate observer time contributes to the remaining budget and is checked
-after return. Completion observation begins only after the semantic result is
-fixed. A slow synchronous completion callback can therefore delay caller
-delivery past the nominal deadline, but its return or contained panic cannot
-change the fixed result.
+use concord::{ApiError, CallOptions, DispatchKnowledge};
 
-## Stream outcome
+use super::execute::execute;
+use crate::contracts::catalog_v3::{Item, UpdateInput, catalog_api};
 
-1. fix successful accepted stream acquisition;
-2. emit operation finish/stream-open evidence;
-3. return the stream;
-4. the stream wrapper later emits correlated finish/failure/drop evidence.
+/// A durable application command identifier (for example persisted before
+/// the first attempt). Formatting never prints the value.
+#[derive(Clone, Eq, PartialEq)]
+pub struct CommandId(String);
 
-Request success never claims complete stream consumption.
+impl CommandId {
+    /// Wraps an application-generated durable identifier.
+    #[must_use]
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
 
-## Pagination aggregate
+    /// Explicitly exposes the identifier for reconciliation or storage.
+    #[must_use]
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
 
-1. one aggregate identity, deadline, shared retry budget, page/item/byte/send/cycle limits;
-2. validate controller;
-3. bind one page snapshot;
-4. execute the complete page lifecycle above;
-5. construct bounded `PageResponse<Page>`;
-6. call controller `advance`;
-7. enforce item, byte, identity, and progress limits;
-8. continue or fix one aggregate outcome;
-9. emit one aggregate final event.
+impl fmt::Debug for CommandId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("CommandId(<redacted>)")
+    }
+}
 
-A page has its own visible-attempt ceiling but no fresh operation deadline or shared retry budget.
+/// One durable title change: the command identifier and its payload.
+pub struct TitleChange {
+    /// Target item.
+    pub item_id: String,
+    /// Durable command identifier sent as `Idempotency-Key`.
+    pub command_id: CommandId,
+    /// New title (application data; not formatted automatically).
+    pub title: String,
+}
 
-## Cancellation
+impl fmt::Debug for TitleChange {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TitleChange")
+            .field("item_id", &"<redacted>")
+            .field("command_id", &self.command_id)
+            .field("title", &"<redacted>")
+            .finish()
+    }
+}
 
-Dropping the terminal stops further local polling and propagates cancellation to owned futures/waits. It cannot retract bytes already handed to transport or prove a remote effect did not commit. Current dispatch knowledge is preserved.
+/// Why a write did not return a confirmed item.
+pub enum WriteFailure {
+    /// Concord settled that the application request was not dispatched. The
+    /// same command may be submitted again later, with the same identifier.
+    NotDispatched {
+        /// The retained durable identifier.
+        command_id: CommandId,
+        /// The value-free library error.
+        error: ApiError,
+    },
+    /// The request may have reached the provider (possibly dispatched or a
+    /// response was observed). Reconcile using the retained identifier; do not
+    /// resubmit under a new one.
+    OutcomeUnknown {
+        /// The retained durable identifier.
+        command_id: CommandId,
+        /// The value-free library error.
+        error: ApiError,
+    },
+}
 
-No correctness-critical detached task survives without an explicit owner, finite bound, shutdown, and error path.
+impl WriteFailure {
+    /// Returns the retained durable command identifier.
+    #[must_use]
+    pub fn command_id(&self) -> &CommandId {
+        match self {
+            Self::NotDispatched { command_id, .. } | Self::OutcomeUnknown { command_id, .. } => {
+                command_id
+            }
+        }
+    }
 
-## Cooperative synchronous code
+    /// Returns the underlying value-free library error.
+    #[must_use]
+    pub fn error(&self) -> &ApiError {
+        match self {
+            Self::NotDispatched { error, .. } | Self::OutcomeUnknown { error, .. } => error,
+        }
+    }
 
-`RequestAtom`, representation metadata/preparation, controller transition, retry classification, and observer calls are synchronous trust boundaries. They must be prompt, finite, non-blocking, and avoid external I/O. Core can check the deadline before/after but cannot preempt arbitrary blocking Rust code.
+    /// Whether explicit reconciliation is required before any new attempt.
+    #[must_use]
+    pub fn needs_reconciliation(&self) -> bool {
+        matches!(self, Self::OutcomeUnknown { .. })
+    }
+
+    fn classification(&self) -> &'static str {
+        match self {
+            Self::NotDispatched { .. } => "NotDispatched",
+            Self::OutcomeUnknown { .. } => "OutcomeUnknown",
+        }
+    }
+}
+
+impl fmt::Debug for WriteFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let error = self.error();
+        formatter
+            .debug_struct("WriteFailure")
+            .field("classification", &self.classification())
+            .field("command_id", self.command_id())
+            .field("dispatch", &error.dispatch_knowledge())
+            .field("stage", &error.failure_stage())
+            .field("status", &error.last_response_status())
+            .finish()
+    }
+}
+
+impl fmt::Display for WriteFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let error = self.error();
+        write!(
+            formatter,
+            "title change {} ({:?}, stage {:?}); command identifier retained for reconciliation",
+            self.classification(),
+            error.dispatch_knowledge(),
+            error.failure_stage(),
+        )
+    }
+}
+
+impl std::error::Error for WriteFailure {}
+
+/// Classifies a failed write by the journal's aggregate dispatch knowledge.
+#[must_use]
+pub fn classify(command_id: CommandId, error: ApiError) -> WriteFailure {
+    match error.dispatch_knowledge() {
+        DispatchKnowledge::NotDispatched => WriteFailure::NotDispatched { command_id, error },
+        _ => WriteFailure::OutcomeUnknown { command_id, error },
+    }
+}
+
+/// Submits one title change exactly once under the caller's limits.
+///
+/// # Errors
+///
+/// A [`WriteFailure`] that keeps the durable command identifier.
+pub async fn change_title(
+    scope: &catalog_api::regional::Regional,
+    change: TitleChange,
+    limits: &CallOptions,
+) -> Result<Item, WriteFailure> {
+    let TitleChange {
+        item_id,
+        command_id,
+        title,
+    } = change;
+    let request = scope.update_item(item_id, command_id.expose(), UpdateInput { title });
+    execute(request, limits)
+        .await
+        .map_err(|error| classify(command_id, error))
+}
+```
+
+Concord's errors are value-free; application wrapper types are not
+automatically so. Implement `Debug`/`Display` deliberately for types that carry
+identifiers or payloads, as above.

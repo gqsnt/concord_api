@@ -1,13 +1,7 @@
-error[E0053]: method `metadata` has an incompatible type for trait
- --> tests/ui/fail/request_spec_metadata_signature.rs:9:10
-  |
-9 |     ) -> Result<String, BodyError> {
-  |          ^^^^^^^^^^^^^^^^^^^^^^^^^ expected `RequestBodyMetadata`, found `String`
-  |
-  = note: expected signature `fn(&String, RequestBodyContext<'_>) -> Result<RequestBodyMetadata, BodyError>`
-             found signature `fn(&String, RequestBodyContext<'_>) -> Result<String, BodyError>`
-help: change the output type to match the trait
-  |
-9 -     ) -> Result<String, BodyError> {
-9 +     ) -> Result<RequestBodyMetadata, BodyError> {
-  |
+error[E0407]: method `metadata` is not a member of trait `RequestRepresentation`
+  --> tests/ui/fail/request_spec_metadata_signature.rs:9:5
+   |
+ 9 | /     fn metadata(_input: &String, _context: RequestBodyContext<'_>) -> Result<(), BodyError> {
+10 | |         Ok(())
+11 | |     }
+   | |_____^ not a member of trait `RequestRepresentation`

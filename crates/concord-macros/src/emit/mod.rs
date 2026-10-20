@@ -1,433 +1,203 @@
-use std::collections::{HashMap, HashSet};
+//! Code generation from the resolved semantic model.
+//!
+//! Every generated item targets the facade's versioned `__private` bridge.
+//! Generated support modules mirror the owner tree: the client module holds
+//! the builder, root state, credential facade, contract and root endpoints;
+//! each scope module holds its handle, state, unbound handle and endpoints.
+//! Hidden storage fields stay private: navigation methods are emitted in the
+//! child module (a descendant may access its ancestors' private fields).
 
-use proc_macro2::{Ident, Span, TokenStream};
-use quote::{ToTokens, quote, quote_spanned};
-use syn::spanned::Spanned;
-use syn::{PathArguments, Type};
-
-use crate::semantic::model::{
-    AcceptedStatus, Api, AttachmentFamily, AttachmentOperation, Child, Client, CloneEligibility,
-    Credential, CredentialSource, Effect, Endpoint, NormalizedConfig, NormalizedRateLimitDimension,
-    ObservationClass, PaginationInitializer, PaginationValue, QueryCardinality, RequiredArgument,
-    ResolvedAuthPlacement, ResolvedChallengePolicy, ResolvedDefault, ResolvedExpr, ResolvedMethod,
-    ResolvedValue, Scope, Value, ValuePresence, ValueReference,
-};
-use crate::semantic::surface::{canonical_ident, public_ident, to_snake_case, value_setter_ident};
-
-mod assertions;
-mod bridge;
 mod client;
-mod credentials;
-mod descriptions;
+mod contract;
 mod docs;
-mod endpoints;
-mod helpers;
-mod requests;
-mod scopes;
-mod shaping;
-mod unbound;
+mod endpoint;
+mod head;
+mod owner;
+mod rust_paths;
 
-use assertions::*;
-use bridge::*;
-use client::*;
-use credentials::*;
-use descriptions::*;
-use docs::*;
-use endpoints::*;
-use helpers::*;
-use requests::*;
-use scopes::*;
-use shaping::*;
-use unbound::*;
+use std::time::Duration;
 
-pub(crate) fn generate(api: &Api, facade_path: &TokenStream) -> TokenStream {
-    generate_client(&api.client, facade_path)
+use proc_macro2::{Span, TokenStream};
+use quote::quote;
+
+use crate::semantic::{Model, Site, VRef};
+
+/// Generated-code contract version shared with core.
+pub(crate) const GENERATED_CONTRACT_VERSION: u32 = 35;
+
+pub(crate) fn generate(model: &Model, facade: &TokenStream) -> TokenStream {
+    let context = Context {
+        model,
+        f: facade,
+        rust_depth: 1,
+    };
+    client::generate(&context)
 }
 
-#[cfg(test)]
-mod test_support {
-    use quote::quote;
+pub(crate) struct Context<'a> {
+    pub(crate) model: &'a Model,
+    pub(crate) f: &'a TokenStream,
+    /// Generated module distance from the `api!` invocation.
+    pub(crate) rust_depth: usize,
+}
 
-    use super::*;
-    use crate::semantic;
-
-    pub(super) fn api() -> Api {
-        semantic::test_support::resolve_tokens(quote! {
-            client ArtifactApi {
-                timeout 30s;
-                base "https://example.test";
-                values { tenant: String; }
-                credentials {
-                    secret bearer_value;
-                    credential bearer = bearer(secret.bearer_value);
-                }
-
-            GET fetch_item(id: String, verbose?: bool) -> Bytes via Binary {
-                path [client.tenant, endpoint.id];
-                auth { bearer bearer; }
-                expose accepted_bytes;
-            }
-            scope resources(region: String) {
-                GET list() -> () via Empty;
-            }
-        }})
+impl Context<'_> {
+    pub(crate) fn rust_type(&self, ty: &syn::Type) -> syn::Type {
+        rust_paths::ty(ty, self.rust_depth)
     }
 
-    pub(super) fn endpoint(api: &Api) -> &Endpoint {
-        api.client
-            .children
-            .iter()
-            .find_map(|child| match child {
-                Child::Endpoint(endpoint) => Some(endpoint),
-                Child::Scope(_) => None,
-            })
-            .expect("root endpoint")
+    pub(crate) fn rust_path(&self, path: &syn::Path) -> syn::Path {
+        rust_paths::path(path, self.rust_depth)
     }
 
-    pub(super) fn scope(api: &Api) -> &Scope {
-        api.client
-            .children
-            .iter()
-            .find_map(|child| match child {
-                Child::Scope(scope) => Some(scope.as_ref()),
-                Child::Endpoint(_) => None,
-            })
-            .expect("root scope")
-    }
-
-    pub(super) fn facade_path() -> TokenStream {
-        quote!(::concord)
+    /// `F::__private`.
+    pub(crate) fn p(&self) -> TokenStream {
+        let f = self.f;
+        quote!(#f::__private)
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::fs;
+/// `super::super::...` repeated `count` times (empty for zero).
+pub(crate) fn supers(count: usize) -> TokenStream {
+    let supers = (0..count).map(|_| quote!(super::));
+    quote!(#(#supers)*)
+}
 
-    use quote::quote;
+pub(crate) fn duration_tokens(duration: Duration) -> TokenStream {
+    let seconds = duration.as_secs();
+    let nanos = duration.subsec_nanos();
+    quote!(::std::time::Duration::new(#seconds, #nanos))
+}
 
-    use super::*;
-    use crate::semantic;
-
-    #[test]
-    fn complete_generation_consumes_normalized_singular_client_ir() {
-        let api = semantic::test_support::resolve_tokens(quote! {
-            client FirstApi {
-                timeout 30s;
-                base "https://example.test";
-                values { tenant: String; }
-
-            GET root(id: String, verbose?: bool) -> Bytes via Binary {
-                path [client.tenant, endpoint.id];
-            }
-            scope resources(region: String) {
-                GET list() -> () via Empty;
-            }
-        }});
-        let output = generate(&api, &quote!(::concord)).to_string();
-        assert!(!output.contains("FirstApiRegions"));
-        assert!(output.contains("RootRequest"));
-        assert!(output.contains("resources"));
-        assert!(output.contains("map_endpoint"));
-        assert!(!output.contains("RequestExt"));
-        assert!(!output.contains("pub mod facades"));
-        assert!(!output.contains("pub mod endpoints"));
-    }
-
-    #[test]
-    fn generated_value_mutations_use_the_exact_set_omit_reset_matrix() {
-        let api = semantic::test_support::resolve_tokens(quote! {
-            client ControlApi {
-                timeout 30s;
-                base "https://example.test";
-                values {
-                    required_client_value: String;
-                    optional_client_value?: String;
-                    #[default]
-                    defaulted_client_value: u32;
-                    defaulted_optional_client_value?: Option<String> = None;
-                    build: String;
-                    timeout?: u64;
-                    response: bool = true;
-                    debug: String;
-                }
-
-            scope group(
-                required_scope_value: String,
-                optional_scope_value?: String,
-                defaulted_scope_value: u32 = 20,
-                defaulted_optional_scope_value?: Option<String> = None,
-            ) {
-                GET item(
-                    required_endpoint_value: String,
-                    optional_endpoint_value?: String,
-                    defaulted_endpoint_value: u32 = 30,
-                    defaulted_optional_endpoint_value?: Option<String> = None,
-                    defaulted_optional_vector_endpoint_value?: Option<Vec<String>> = None,
-                ) -> Bytes via Binary;
-            }
-        }});
-        let output = generate(&api, &quote!(::concord)).to_string();
-        assert!(matches!(
-            api.client.values[2].initializer,
-            Some(ResolvedDefault::TraitDefault(_))
-        ));
-        assert!(output.contains(":: core :: default :: Default :: default ()"));
-
-        for method in [
-            "set_required_client_value",
-            "set_optional_client_value",
-            "omit_optional_client_value",
-            "set_defaulted_client_value",
-            "reset_defaulted_client_value",
-            "set_defaulted_optional_client_value",
-            "omit_defaulted_optional_client_value",
-            "reset_defaulted_optional_client_value",
-            "set_build",
-            "set_timeout",
-            "set_response",
-            "reset_response",
-            "set_debug",
-            "set_optional_scope_value",
-            "omit_optional_scope_value",
-            "set_defaulted_scope_value",
-            "reset_defaulted_scope_value",
-            "set_defaulted_optional_scope_value",
-            "omit_defaulted_optional_scope_value",
-            "reset_defaulted_optional_scope_value",
-            "set_optional_endpoint_value",
-            "omit_optional_endpoint_value",
-            "set_defaulted_endpoint_value",
-            "reset_defaulted_endpoint_value",
-            "set_defaulted_optional_endpoint_value",
-            "omit_defaulted_optional_endpoint_value",
-            "reset_defaulted_optional_endpoint_value",
-            "set_defaulted_optional_vector_endpoint_value",
-            "omit_defaulted_optional_vector_endpoint_value",
-            "reset_defaulted_optional_vector_endpoint_value",
-        ] {
-            assert!(output.contains(&format!("pub fn {method}")), "{method}");
+pub(crate) fn option_duration(duration: Option<Duration>) -> TokenStream {
+    match duration {
+        Some(duration) => {
+            let duration = duration_tokens(duration);
+            quote!(::std::option::Option::Some(#duration))
         }
-        for absent in [
-            "set_required_scope_value",
-            "set_required_endpoint_value",
-            "with_optional_client_value",
-            "with_defaulted_optional_client_value",
-            "with_optional_scope_value",
-            "with_defaulted_optional_scope_value",
-            "with_optional_endpoint_value",
-            "with_defaulted_optional_endpoint_value",
-            "with_defaulted_optional_vector_endpoint_value",
-            "omit_required_client_value",
-            "reset_required_client_value",
-            "reset_optional_client_value",
-            "omit_defaulted_client_value",
-            "omit_required_scope_value",
-            "reset_required_scope_value",
-            "reset_optional_scope_value",
-            "omit_defaulted_scope_value",
-            "omit_required_endpoint_value",
-            "reset_required_endpoint_value",
-            "reset_optional_endpoint_value",
-            "omit_defaulted_endpoint_value",
-            "required_client_value",
-            "optional_client_value",
-            "defaulted_client_value",
-            "optional_scope_value",
-            "defaulted_scope_value",
-            "optional_endpoint_value",
-            "defaulted_endpoint_value",
-        ] {
-            assert!(
-                !output.contains(&format!("pub fn {absent}")),
-                "unexpected generated method {absent}"
-            );
-        }
-        assert!(output.contains("pub fn group"));
-        assert!(output.contains("pub fn item"));
-        assert!(
-            output.contains(
-                "pub fn set_defaulted_optional_client_value (mut self , value : :: std :: option :: Option < Option < String > >)"
-            )
-        );
-        assert!(
-            output.contains(
-                "pub fn set_defaulted_optional_scope_value (mut self , value : :: std :: option :: Option < Option < String > >)"
-            )
-        );
-        assert!(
-            output.contains(
-                "pub fn set_defaulted_optional_endpoint_value (mut self , value : :: std :: option :: Option < Option < String > >)"
-            )
-        );
-        assert!(output.contains(
-            "pub fn set_defaulted_optional_vector_endpoint_value (mut self , value : :: std :: option :: Option < Option < Vec < String > > >)"
-        ));
-        let endpoint = semantic::test_support::endpoint(&api.client.children, "item");
-        let request = generate_request_wrapper(
-            &api.client,
-            &[test_support::scope(&api)],
-            endpoint,
-            RequestBridge {
-                support_path: &quote!(super),
-                generated_core: &quote!(::concord),
-            },
-            &quote!(::concord),
-            &quote!(),
-        )
-        .to_string();
-        assert!(request.contains("endpoint . set_optional_endpoint_value (value)"));
-        assert!(request.contains("endpoint . reset_defaulted_endpoint_value ()"));
-        assert!(request.contains("endpoint . set_defaulted_optional_endpoint_value (value)"));
-        assert!(request.contains("endpoint . omit_defaulted_optional_endpoint_value ()"));
-        assert!(request.contains("endpoint . reset_defaulted_optional_endpoint_value ()"));
-        assert!(
-            request.contains("endpoint . set_defaulted_optional_vector_endpoint_value (value)")
-        );
-        assert!(request.contains("endpoint . omit_defaulted_optional_vector_endpoint_value ()"));
-        assert!(request.contains("endpoint . reset_defaulted_optional_vector_endpoint_value ()"));
-        assert!(!request.contains("set_optional_scope_value"));
-        assert!(!request.contains("set_defaulted_scope_value"));
+        None => quote!(::std::option::Option::None),
     }
+}
 
-    #[test]
-    fn normalized_semantic_enums_preserve_emitted_contract_behavior() {
-        let api = semantic::test_support::resolve_tokens(quote! {
-            client NormalizedApi {
-                timeout 30s;
-                base "https://example.test";
-                values {
-                    region: String = "eu";
-                    enabled: bool = true;
-                }
-                credentials {
-                    secret token;
-                    credential bearer = bearer(secret.token);
-                }
+/// How `self` reaches values in a generated method body.
+#[derive(Clone, Copy)]
+pub(crate) enum Access {
+    /// `self` is the `__State` of owner `owner`.
+    OwnerState(usize),
+    /// `self` has `__owner` (the state of the endpoint's owner) and
+    /// `__local` (the endpoint's value storage).
+    Endpoint(usize),
+}
 
-            METHOD("PROPFIND") inspect() -> () via Empty {
-                auth { bearer bearer challenge unauthorized_or_forbidden; }
-            }
-        }});
-        let endpoint = test_support::endpoint(&api);
-
-        assert!(matches!(
-            api.client.values[0].initializer,
-            Some(ResolvedDefault::String(_))
-        ));
-        assert!(matches!(
-            api.client.values[1].initializer,
-            Some(ResolvedDefault::Boolean(_))
-        ));
-        assert!(
-            matches!(&endpoint.method, ResolvedMethod::Custom(value) if value.value() == "PROPFIND")
-        );
-        assert!(matches!(
-            endpoint.config.auth[0].kind,
-            ResolvedAuthPlacement::Bearer
-        ));
-        assert_eq!(
-            endpoint.config.auth[0].challenge,
-            ResolvedChallengePolicy::UnauthorizedOrForbidden
-        );
-
-        let output = generate(&api, &quote!(::concord)).to_string();
-        for expected in ["PROPFIND", "UnauthorizedOrForbidden", "\"eu\"", "true"] {
-            assert!(
-                output.contains(expected),
-                "normalized emission omitted `{expected}`"
-            );
+impl Access {
+    fn owner(self, model: &Model) -> usize {
+        match self {
+            Self::OwnerState(owner) => owner,
+            Self::Endpoint(endpoint) => model.endpoints[endpoint].owner,
         }
     }
 
-    #[test]
-    fn custom_authorization_emits_dedicated_calls_bounds_and_safe_docs() {
-        let api = semantic::test_support::resolve_tokens(quote! {
-            client AuthorizationApi {
-                timeout 30s;
-                base "https://example.test";
-                credentials {
-                    secret key;
-                    credential exact = api_key(secret.key);
-                    credential custom = custom crate::SessionProvider;
-                }
-
-            GET exact() -> Bytes via Binary {
-                auth { authorization = exact; }
-            }
-            GET scheme() -> Bytes via Binary {
-                auth { authorization "tOkEn" = custom challenge unauthorized; }
-            }
-        }});
-        let output = generate(&api, &quote!(::concord)).to_string();
-
-        assert!(output.contains("Auth :: authorization :: < :: concord :: auth :: ApiKey >"));
-        assert!(output.contains("Auth :: authorization_with_scheme"));
-        assert!(output.contains("\"tOkEn\""));
-        assert!(output.contains("SecretCredential"));
-        assert!(output.contains("exact Authorization value"));
-        assert!(output.contains("tOkEn Authorization scheme"));
-        assert!(!output.contains("Authorization : tOkEn"));
-    }
-
-    #[test]
-    fn production_emit_is_grammar_independent_and_uses_facade_feature_terms() {
-        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let emit_dir = manifest.join("src/emit");
-        let syntax_path = ["crate", "::", "syntax"].concat();
-        let implementation_feature_names = [
-            ["concord", "_core/"].concat(),
-            ["concord", "-core/"].concat(),
-        ];
-
-        for entry in fs::read_dir(&emit_dir).expect("emit source directory") {
-            let path = entry.expect("emit source entry").path();
-            if path.extension().and_then(|extension| extension.to_str()) != Some("rs") {
-                continue;
-            }
-            let source = fs::read_to_string(&path).expect("emit source");
-            assert!(
-                !source.contains(&syntax_path),
-                "{} imports source grammar",
-                path.display()
-            );
-            for forbidden in &implementation_feature_names {
-                assert!(
-                    !source.contains(forbidden.as_str()),
-                    "{} names implementation-crate feature `{forbidden}`",
-                    path.display()
-                );
-            }
-        }
-
-        let model =
-            fs::read_to_string(manifest.join("src/semantic/model.rs")).expect("semantic model");
-        assert!(
-            !model.contains(&syntax_path),
-            "semantic model imports source grammar"
-        );
-        let model_tokens = model
-            .split(|character: char| !character.is_alphanumeric() && character != '_')
-            .collect::<HashSet<_>>();
-        for source_enum in [
-            "AuthChallenge",
-            "AuthPlacementKind",
-            "DefaultExpr",
-            "MethodKind",
-            "ValueKind",
-        ] {
-            assert!(
-                !model_tokens.contains(source_enum),
-                "semantic model exposes source enum `{source_enum}`"
-            );
-        }
-
-        let output = generate(&test_support::api(), &quote!(::concord)).to_string();
-        for forbidden in &implementation_feature_names {
-            assert!(
-                !output.contains(forbidden.as_str()),
-                "generated output names implementation-crate feature `{forbidden}`"
-            );
+    fn base(self) -> TokenStream {
+        match self {
+            Self::OwnerState(_) => quote!(self),
+            Self::Endpoint(_) => quote!(self.__owner),
         }
     }
+}
+
+/// Expression reaching the state of `target` (an ancestor or the owner
+/// itself) from `access`.
+pub(crate) fn owner_state_expr(model: &Model, access: Access, target: usize) -> TokenStream {
+    let owner = access.owner(model);
+    let hops = model.owners[owner].depth - model.owners[target].depth;
+    let base = access.base();
+    let parents = (0..hops).map(|_| quote!(.__parent));
+    quote!(#base #(#parents)*)
+}
+
+/// Expression of the storage field of `key` (`Arc<T>` or `Option<Arc<T>>`).
+pub(crate) fn value_field_expr(model: &Model, access: Access, key: VRef) -> TokenStream {
+    let value = model.value(key);
+    let field = &value.field;
+    match key.site {
+        Site::Endpoint(_) => quote!(self.__local.#field),
+        Site::Owner(0) => {
+            let state = owner_state_expr(model, access, 0);
+            quote!(#state.#field)
+        }
+        Site::Owner(owner) => {
+            let state = owner_state_expr(model, access, owner);
+            quote!(#state.__local.#field)
+        }
+    }
+}
+
+/// Expression of a total value's payload reference `&T`.
+pub(crate) fn total_ref(model: &Model, access: Access, key: VRef) -> TokenStream {
+    let field = value_field_expr(model, access, key);
+    quote!(&*#field)
+}
+
+/// Expression of the root state from `access`.
+pub(crate) fn root_expr(model: &Model, access: Access) -> TokenStream {
+    owner_state_expr(model, access, 0)
+}
+
+pub(crate) fn lit(text: &str) -> syn::LitStr {
+    syn::LitStr::new(text, Span::call_site())
+}
+
+/// Relocates every token to `span` for diagnostics while keeping each token's
+/// own name resolution (`Span::located_at`).
+///
+/// DIAG-01: an obligation that fails on generated tokens is then reported at
+/// the declaration clause that selected them rather than across the whole
+/// invocation. Only the location changes; hygiene is untouched.
+pub(crate) fn located_at(tokens: TokenStream, span: Span) -> TokenStream {
+    tokens
+        .into_iter()
+        .map(|tree| match tree {
+            proc_macro2::TokenTree::Group(group) => {
+                let mut relocated =
+                    proc_macro2::Group::new(group.delimiter(), located_at(group.stream(), span));
+                relocated.set_span(group.span().located_at(span));
+                proc_macro2::TokenTree::Group(relocated)
+            }
+            mut other => {
+                other.set_span(other.span().located_at(span));
+                other
+            }
+        })
+        .collect()
+}
+
+/// `#[allow(deprecated)]` for generated support items when the declaration
+/// deprecates a client, scope or endpoint (§3.5).
+///
+/// Deprecation must fire where user code names or calls a deprecated
+/// generated item, never inside the generated code that implements it:
+/// without this, the request/intent/handle impls and the fields of a
+/// deprecated generated type report deprecation at the declaration, which
+/// breaks `#![deny(deprecated)]` crates. It is emitted only when needed, so an
+/// ordinary declaration keeps every deprecation warning for user types it
+/// names. Deprecated values need nothing: their controls are never called
+/// internally.
+pub(crate) fn internal_deprecation_allowance(model: &Model) -> TokenStream {
+    let deprecated = model
+        .owners
+        .iter()
+        .map(|owner| &owner.meta)
+        .chain(model.endpoints.iter().map(|endpoint| &endpoint.meta))
+        .any(|meta| meta.deprecated.is_some());
+    if deprecated {
+        quote!(#[allow(deprecated)])
+    } else {
+        TokenStream::new()
+    }
+}
+
+pub(crate) fn contract_assertion(context: &Context<'_>) -> TokenStream {
+    let p = context.p();
+    let version = GENERATED_CONTRACT_VERSION;
+    quote!(const _: () = #p::assert_generated_contract(#version);)
 }

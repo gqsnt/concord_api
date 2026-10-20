@@ -1,4 +1,6 @@
-use concord::api;
+// §11.1: one secret may feed several credential sources, each placed at its
+// own exclusive target (AUTH-01).
+use concord::{Empty, api};
 
 api! {
     client SharedSecretApi {
@@ -14,8 +16,8 @@ api! {
             query "api_key" = query_key;
         }
 
-
-    GET read() -> () via Empty;
-}}
+        GET read() -> () via Empty;
+    }
+}
 
 fn main() {}

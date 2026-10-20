@@ -1,35 +1,112 @@
-# Concord v2.1 public change matrix
+# V3 public contract inventory
 
-| Area | Supplied v2.0.0 / earlier v1-style surface | v2.1 target | Consequence |
-|---|---|---|---|
-| source tree | client then sibling scopes/endpoints | all children inside client | module/navigation/source symmetry |
-| client values | `vars` | `values` | clearer retained-fact vocabulary |
-| optionality | exact `Option<T>` token recognized | postfix `?`; type opaque | alias transparency; breaking declarations |
-| collection repetition | inferred/trait/wrapper behavior | explicit `each` at placement | cardinality visible |
-| defaults | `= default` | `#[default]` | explicit trait-default policy |
-| optional control | inner `.set_x(T)`, `.clear_x()` | exact `.set_x(Option<T>)`, `.omit_x()`, plus initialized `.reset_x()` | nested optional truth, explicit omission/reset, released `with_x` namespace |
-| owner refs | `vars`, `scope`, `ep` | `client`, exact scope name, `endpoint` | no search rebinding |
-| scalar composition | `fmt[...]` | `concat [...]` | one bounded atom |
-| scalar wire text | implicit `Display` | `RequestAtom` or `via Adapter` | stable protocol role |
-| host | `host [...]` replaces labels | `subdomain` prepend/replace/off | composable domain hierarchy |
-| query/header | implicit optional/repetition; symbols in candidate | assignment, `when_present`, `append`, `each`, `remove` | word-visible inheritance/cardinality |
-| request body | `#[body] body: Json<T>` | `body input: T` + inherited/local representation | exact caller input |
-| response | `-> Json<T>` / wrapper towers | `-> T`, representation default or inline `via` | exact awaited output |
-| representation | leaf wrapper/spec | client/scope directional default + inline exception/fence | lower repetition, effective provenance required |
-| status | hidden in response spec | endpoint `status` finite set/range | reflectable success boundary |
-| effect | method/repeatability binary | `safe`, `idempotent`, `non_idempotent` | pagination and retry truth |
-| response bytes | universal `.response_bytes()` on modes | endpoint `expose accepted_bytes` + `.accepted_bytes()` | explicit authority/capability |
-| streams | decoder/acquisition wrapper types | `ByteStream`, `ItemStream<T>`, `RequestStream<T>` | exact lifecycle without mechanism leakage |
-| timeout | optional/off/per-page recreation | one finite absolute operation deadline | bounded truthful operation |
-| retry | policy + hidden method/body assumptions | app classifier/backoff/budget under effect/body/dispatch gates | no unsafe amplification |
-| server delay | extras parses independently | one core `ServerDelayHint` | no duplicate waiting |
-| auth | private source/slot model with leaf clauses | retained model, grouped auth, exact challenge attribution | stronger security and readability |
-| rate policies | `by`, windows, implicit local feature fallback | stable IDs/key/cost/`allow`; explicit limiter | truthful enforcement scope |
-| rate feedback | observer can fail current result | future-admission non-fallible feedback | response cannot be hidden |
-| pagination | response Vec/trait extraction, per-page concerns | safe complete page; controller owns items+continuation | envelope/header support; bounded authority |
-| hooks | broad before/response/completion authority | read-only `OperationObserver` + narrow policy owners | no middleware import |
-| plan | `SafeRequestPlan` | `RequestPlan` credential-free/redaction-aware | honest disclosure guarantee |
-| error | implementation/stage variants and hook errors | stable category/stage/dispatch/IDs + safe diagnostics | caller decision model |
-| unbound | flat/explicit endpoint forms | isomorphic `Client::unbound()` tree | same domain language |
-| runtime endpoint | dynamic builder under old semantics | full v2.1 patch/representation/status/effect, fallible `try_bind` | same executor, no authority escape |
-| public version | local `main` at `f7464c5` is 2.0.0 | 2.1.0 target | intentional source/API break remains an owner/product-history decision |
+**Status:** current `3.0.0-beta.1` surface, updated 17 October 2026.
+The workspace supports V3 only. [Version policy](../docs/version_policy.md)
+and [ADR 0027](adrs/0027-v3-only-product.md) define that boundary.
+The facade source and maintained public-API/generated-surface tests are the
+executable inventory; this page summarizes the entry points and caller laws.
+
+## Facade and modules
+
+| Entry point | V3 responsibility |
+|---|---|
+| `concord::api!` | One canonical, closed client declaration with nested owners and endpoints |
+| Facade root | Common requests, values, controls, cancellation, errors, metadata, streams, secrets and representations |
+| `concord::inspection` | Value-free `ContractDescription`, owners, endpoint facts and provenance |
+| `concord::endpoint` | Generated request contracts, storage requests, bound runtime requests and runtime operation facts |
+| `concord::body` | `PreparedBody`, `BodyDescription`, representations, bounded streams and optional multipart |
+| `concord::response` | Static representation negotiation, sealed acquisition drivers, absence and stream outcomes |
+| `concord::codec` | Explicit encode/decode roles and buffered representations; `NotFound` for buffered absence |
+| `concord::pagination` | `Pages`, `CollectPrefix`, `CollectAll`, typed controller Init/Cursor, prefix and traversal outcomes |
+| `concord::rate_limit` | Explicit policy IDs, typed canonical keys, current schemas, atomic admission and limiter capability |
+| `concord::auth` | Material/provider roles, bounded provider HTTP, exact origins, installed credential versions and storage outcomes |
+| `concord::error` | Stable failure categories, dispatch facts, operation counts and safe diagnostics |
+| `concord::retry`, `runtime`, `hooks` | Managed retry policy, finite runtime configuration and read-only observation |
+| `concord::records` | Feature-gated bounded record streams and CSV/NDJSON adapters |
+
+## Generated caller laws
+
+| Surface | Contract |
+|---|---|
+| Required constructor inputs | Exact authored payload type in declaration order, including required bodies; no synthesized setter |
+| `set_x` | Select a payload through `IntoValue<T>` |
+| `replace_x(Option<T>)` | Replace the complete optional slot; `None` means absence |
+| `set_x_if_some(Option<T>)` | `None` keeps the existing selection |
+| `omit_x` / `reset_x` | Explicit omission / restoration of the retained initialized value, where the value shape supports it |
+| `IntoValue<T>` | Closed conversions: identity, `&str` to `String`, and `&String` to `String` |
+| Clone | Body-free requests and intents are cloneable without requiring a cloneable response; body-bearing ones require a fresh request/factory |
+| `RequestControls` | Common call options, cancellation and control summaries on named requests and terminal wrappers |
+| Timeout controls | Caller selection remains under the operation's existing finite caps |
+| `.await` | One complete declared response/page or an acquired managed stream, according to the representation |
+| `.pages(n)` | Lazy bounded page traversal |
+| `.collect_prefix(n)` | Bounded aggregate with an explicit prefix/traversal outcome |
+| `.collect_all(NonZeroU32)` | Complete aggregate or a failure when completeness cannot be established within the bound |
+| `.response()` / `.accepted_bytes()` | Response metadata / explicit byte acquisition where the endpoint grants that capability |
+| `.store_as_x()` | Explicit installation request returning `Installed` or `Superseded` under the latest-started intent protocol |
+| `Client::contract()` / `.description()` | Static symbolic facts without executing payload defaults, body code, providers or transport |
+| Generated names | Deterministic canonical conversion; collisions include a scope's own handle type and report both origins through `C3-GENERATED` |
+| Generator bindings | Private generated bindings use the reserved `__concord` namespace; ordinary authored identifiers and constants keep their Rust meaning |
+
+## Runtime endpoints
+
+| Surface | Contract |
+|---|---|
+| `owner.bind(endpoint)` | Fallible V3 binding through the selected client/scope projection |
+| `owner.plan_runtime(&endpoint)` | Public planning through that same projection |
+| Query/header programs | The same ordered replacement, conditional, append, removal and sensitivity laws as generated declarations |
+| Paths and DNS | Bounded atom encoding under the selected logical origin |
+| `body_repr::<B, T>(input)` / `response::<R, O>()` | Explicit directional representation selection |
+| Authentication | Safe removal or disabling of inherited placements; private authority comes from the declared owner |
+| Runtime configuration | Primitive numeric setters validated at build; finite operation, stream and traversal ceilings |
+
+## Extension roles
+
+| Role | Contract |
+|---|---|
+| `RequestRepresentation` | One preparation returns the core-owned `PreparedBody` with actual media, length and replay facts |
+| `ResponseRepresentation` | Static `ACCEPT` plus a declared response driver |
+| `EncodeBody` / `DecodeBody` | Native V3 codec roles used by explicit representation adapters |
+| `RequestAtom` / `AtomEncoder<T>` | Explicit bounded scalar protocol encoding; `DisplayAtom` is an opt-in formatting adapter |
+| `PaginationController<P>` | Private controller state with public typed Init/Cursor, complete page input and bounded continuation decisions |
+| `RateKeyPart` / `RateKeyEncoder<T>` | Named encoding identity and canonical framed bytes |
+| `RateLimiter` | Atomic all-or-none admission and truthful capability; V3 shared state is checked against its registered schema |
+| `CredentialProvider` | Exact declared HTTP origins; acquisition deadline and cancellation cover callbacks and local installation |
+| `OperationObserver` | Bounded, borrowed, sanitized facts; no operation mutation or veto |
+
+## Contract tooling
+
+The canonical example target `catalog` uses the maintained
+`catalog_v3::CatalogApi` declaration. The complete registry contains
+`fixture-catalog` and, with the `examples` feature, `catalog`, `riot` and
+`data-dragon`. `contract list`, `export`, `check` and `diff` operate on the
+current `concord.contract/3` schema. The former
+`catalog-v3` CLI alias, older contract schemas and V2 conversion command are
+outside the supported surface. The source module name `catalog_v3` is the
+canonical V3 example name.
+
+## Maintained inventory
+
+- `crates/concord/tests/public_api/` checks facade namespaces and public imports.
+- `crates/concord/tests/generated_identifier_hygiene.rs` checks caller identifiers
+  against the generator's reserved internal namespace.
+- `crates/concord-macros/src/generated_surface.rs` checks the pure V3 generated
+  member snapshot in `crates/concord-macros/tests/fixtures/generated_surface/`.
+- `tests/downstream/` checks authored API and consumer code in separate crates.
+- Facade/core UI suites verify language boundaries and public trait obligations,
+  including required body argument arity, request clone restrictions and foreign
+  `RequestControls` implementations.
+- `crates/concord-inspect/tests/generated_contract.rs` checks semantic contract
+  edits, including affected endpoint sets, inherited provenance and sensitivity.
+- `tools/xtask/tests/contract_cli.rs` checks the registered targets, contract
+  round trips and command-specific option validation.
+- [Generated-client documentation](../docs/generated_client.md) and
+  [request/value controls](../docs/requests_and_values.md) explain ordinary use.
+
+The closure changes preserve this V3 caller surface. Removing unused private
+`__with` helpers, reusing one resolved inspection program per owner and removing
+a redundant response future layer are internal changes; their measured scope
+belongs to the [performance report](reviews/2026_10_17_closure/PERFORMANCE_REPORT.md). [Release-gate status](release_gate_status.md)
+binds qualification to its exact source receipts.
+
+Earlier transition inventories remain available in Git history. They do not
+add a supported version or a conversion path to the current product.

@@ -1,0 +1,197 @@
+error[E0277]: [C3-REP] `RequestOnly` is not a response representation for result type `std::string::String`
+  --> tests/ui/fail/capabilities/representation_role_mismatch.rs:32:34
+   |
+32 |         GET read() -> String via crate::RequestOnly;
+   |                                  ^^^^^^^^^^^^^^^^^^ selected as the response representation of a `std::string::String` result
+   |
+help: the trait `DecodeBody` is not implemented for `RequestOnly`
+  --> tests/ui/fail/capabilities/representation_role_mismatch.rs:20:1
+   |
+20 | pub struct RequestOnly;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+   = note: a result needs `ResponseRepresentation<std::string::String>` or a complete buffered `DecodeBody` decoder whose `Output` is `std::string::String`; a request-only representation cannot decode a response, and with `absent on` the result is `Option<T>` decoded by a buffered representation of `T`
+   = note: write `-> std::string::String via R` with a representation producing this result, or select a direction default with `response R;` on an owner
+help: the trait `DecodeBody` is implemented for `concord::Text`
+  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
+   |
+   | impl DecodeBody for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `RequestOnly` to implement `ResponseRepresentation<std::string::String>`
+note: required by a bound in `concord::__private::EndpointSpec::Response`
+  --> $WORKSPACE/crates/concord-core/src/request/endpoint.rs
+   |
+   |     type Response: ResponseRepresentation<Self::Output>;
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `EndpointSpec::Response`
+
+error[E0277]: [C3-REP] `RequestOnly` is not a response representation for result type `std::string::String`
+  --> tests/ui/fail/capabilities/representation_role_mismatch.rs:39:18
+   |
+39 |         response crate::RequestOnly;
+   |                  ^^^^^^^^^^^^^^^^^^ selected as the response representation of a `std::string::String` result
+   |
+help: the trait `DecodeBody` is not implemented for `RequestOnly`
+  --> tests/ui/fail/capabilities/representation_role_mismatch.rs:20:1
+   |
+20 | pub struct RequestOnly;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+   = note: a result needs `ResponseRepresentation<std::string::String>` or a complete buffered `DecodeBody` decoder whose `Output` is `std::string::String`; a request-only representation cannot decode a response, and with `absent on` the result is `Option<T>` decoded by a buffered representation of `T`
+   = note: write `-> std::string::String via R` with a representation producing this result, or select a direction default with `response R;` on an owner
+help: the trait `DecodeBody` is implemented for `concord::Text`
+  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
+   |
+   | impl DecodeBody for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `RequestOnly` to implement `ResponseRepresentation<std::string::String>`
+note: required by a bound in `concord::__private::EndpointSpec::Response`
+  --> $WORKSPACE/crates/concord-core/src/request/endpoint.rs
+   |
+   |     type Response: ResponseRepresentation<Self::Output>;
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `EndpointSpec::Response`
+
+error[E0277]: [C3-REP] `concord::__private::OptionalRequestRepresentation<ResponseOnly>` is not a request representation for body type `Option<concord::Bytes>`
+  --> tests/ui/fail/capabilities/representation_role_mismatch.rs:49:43
+   |
+49 |         POST write(body input?: Bytes via crate::ResponseOnly) -> Bytes via Binary;
+   |                                           ^^^^^ selected as the request representation of a `Option<concord::Bytes>` body
+   |
+   = help: the trait `RequestRepresentation<Option<concord::Bytes>>` is not implemented for `concord::__private::OptionalRequestRepresentation<ResponseOnly>`
+   = note: a request body needs `RequestRepresentation<Option<concord::Bytes>>` or a complete buffered `EncodeBody` encoder; a response-only representation cannot encode a body
+   = note: write `body name: Option<concord::Bytes> via R` with a representation for this input, or select a direction default with `request R;` on an owner
+help: the trait `RequestRepresentation<Option<Input>>` is implemented for `concord::__private::OptionalRequestRepresentation<R>`
+  --> $WORKSPACE/crates/concord-core/src/body/spec.rs
+   |
+   | / impl<R, Input> RequestRepresentation<Option<Input>> for OptionalRequestRepresentation<R>
+   | | where
+   | |     R: RequestRepresentation<Input>,
+   | |     Input: Send + 'static,
+   | |__________________________^
+note: required by a bound in `concord::__private::EndpointSpec::Body`
+  --> $WORKSPACE/crates/concord-core/src/request/endpoint.rs
+   |
+   |     type Body: RequestRepresentation<Self::Input>;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `EndpointSpec::Body`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [C3-REP] `RequestOnly` is not a response representation for result type `std::string::String`
+  --> tests/ui/fail/capabilities/representation_role_mismatch.rs:32:34
+   |
+32 |         GET read() -> String via crate::RequestOnly;
+   |                                  ^^^^^^^^^^^^^^^^^^ selected as the response representation of a `std::string::String` result
+   |
+help: the trait `DecodeBody` is not implemented for `RequestOnly`
+  --> tests/ui/fail/capabilities/representation_role_mismatch.rs:20:1
+   |
+20 | pub struct RequestOnly;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+   = note: a result needs `ResponseRepresentation<std::string::String>` or a complete buffered `DecodeBody` decoder whose `Output` is `std::string::String`; a request-only representation cannot decode a response, and with `absent on` the result is `Option<T>` decoded by a buffered representation of `T`
+   = note: write `-> std::string::String via R` with a representation producing this result, or select a direction default with `response R;` on an owner
+help: the trait `DecodeBody` is implemented for `concord::Text`
+  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
+   |
+   | impl DecodeBody for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `RequestOnly` to implement `ResponseRepresentation<std::string::String>`
+note: required by a bound in `ResultSpec::from_representation`
+  --> $WORKSPACE/crates/concord-core/src/inspection/endpoint.rs
+   |
+   |     pub const fn from_representation<R, O>(output_type: &'static str) -> Self
+   |                  ------------------- required by a bound in this associated function
+   |     where
+   |         R: ResponseRepresentation<O>,
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `ResultSpec::from_representation`
+
+error[E0277]: [C3-REP] `RequestOnly` is not a response representation for result type `std::string::String`
+  --> tests/ui/fail/capabilities/representation_role_mismatch.rs:32:34
+   |
+32 |         GET read() -> String via crate::RequestOnly;
+   |                                  ^^^^^^^^^^^^^^^^^^ selected as the response representation of a `std::string::String` result
+   |
+help: the trait `DecodeBody` is not implemented for `RequestOnly`
+  --> tests/ui/fail/capabilities/representation_role_mismatch.rs:20:1
+   |
+20 | pub struct RequestOnly;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+   = note: a result needs `ResponseRepresentation<std::string::String>` or a complete buffered `DecodeBody` decoder whose `Output` is `std::string::String`; a request-only representation cannot decode a response, and with `absent on` the result is `Option<T>` decoded by a buffered representation of `T`
+   = note: write `-> std::string::String via R` with a representation producing this result, or select a direction default with `response R;` on an owner
+help: the trait `DecodeBody` is implemented for `concord::Text`
+  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
+   |
+   | impl DecodeBody for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `RequestOnly` to implement `ResponseRepresentation<std::string::String>`
+
+error[E0277]: [C3-REP] `RequestOnly` is not a response representation for result type `std::string::String`
+  --> tests/ui/fail/capabilities/representation_role_mismatch.rs:39:18
+   |
+39 |         response crate::RequestOnly;
+   |                  ^^^^^^^^^^^^^^^^^^ selected as the response representation of a `std::string::String` result
+   |
+help: the trait `DecodeBody` is not implemented for `RequestOnly`
+  --> tests/ui/fail/capabilities/representation_role_mismatch.rs:20:1
+   |
+20 | pub struct RequestOnly;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+   = note: a result needs `ResponseRepresentation<std::string::String>` or a complete buffered `DecodeBody` decoder whose `Output` is `std::string::String`; a request-only representation cannot decode a response, and with `absent on` the result is `Option<T>` decoded by a buffered representation of `T`
+   = note: write `-> std::string::String via R` with a representation producing this result, or select a direction default with `response R;` on an owner
+help: the trait `DecodeBody` is implemented for `concord::Text`
+  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
+   |
+   | impl DecodeBody for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `RequestOnly` to implement `ResponseRepresentation<std::string::String>`
+note: required by a bound in `ResultSpec::from_representation`
+  --> $WORKSPACE/crates/concord-core/src/inspection/endpoint.rs
+   |
+   |     pub const fn from_representation<R, O>(output_type: &'static str) -> Self
+   |                  ------------------- required by a bound in this associated function
+   |     where
+   |         R: ResponseRepresentation<O>,
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `ResultSpec::from_representation`
+
+error[E0277]: [C3-REP] `RequestOnly` is not a response representation for result type `std::string::String`
+  --> tests/ui/fail/capabilities/representation_role_mismatch.rs:39:18
+   |
+39 |         response crate::RequestOnly;
+   |                  ^^^^^^^^^^^^^^^^^^ selected as the response representation of a `std::string::String` result
+   |
+help: the trait `DecodeBody` is not implemented for `RequestOnly`
+  --> tests/ui/fail/capabilities/representation_role_mismatch.rs:20:1
+   |
+20 | pub struct RequestOnly;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+   = note: a result needs `ResponseRepresentation<std::string::String>` or a complete buffered `DecodeBody` decoder whose `Output` is `std::string::String`; a request-only representation cannot decode a response, and with `absent on` the result is `Option<T>` decoded by a buffered representation of `T`
+   = note: write `-> std::string::String via R` with a representation producing this result, or select a direction default with `response R;` on an owner
+help: the trait `DecodeBody` is implemented for `concord::Text`
+  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
+   |
+   | impl DecodeBody for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `RequestOnly` to implement `ResponseRepresentation<std::string::String>`
+
+error[E0277]: [C3-REP] `ResponseOnly` is not a request representation for body type `concord::Bytes`
+  --> tests/ui/fail/capabilities/representation_role_mismatch.rs:49:43
+   |
+49 |         POST write(body input?: Bytes via crate::ResponseOnly) -> Bytes via Binary;
+   |                                           ^^^^^^^^^^^^^^^^^^^ selected as the request representation of a `concord::Bytes` body
+   |
+help: the trait `EncodeBody` is not implemented for `ResponseOnly`
+  --> tests/ui/fail/capabilities/representation_role_mismatch.rs:10:1
+   |
+10 | pub struct ResponseOnly;
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: a request body needs `RequestRepresentation<concord::Bytes>` or a complete buffered `EncodeBody` encoder; a response-only representation cannot encode a body
+   = note: write `body name: concord::Bytes via R` with a representation for this input, or select a direction default with `request R;` on an owner
+help: the trait `EncodeBody` is implemented for `concord::Text`
+  --> $WORKSPACE/crates/concord-core/src/codec/mod.rs
+   |
+   | impl EncodeBody for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `ResponseOnly` to implement `RequestRepresentation<concord::Bytes>`
+note: required by a bound in `BodySpec::from_representation`
+  --> $WORKSPACE/crates/concord-core/src/inspection/endpoint.rs
+   |
+   |     pub const fn from_representation<B, I>(name: &'static str, input_type: &'static str) -> Self
+   |                  ------------------- required by a bound in this associated function
+   |     where
+   |         B: RequestRepresentation<I>,
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `BodySpec::from_representation`

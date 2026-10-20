@@ -1,0 +1,192 @@
+Concord generated-contract scale measurement, r2 remeasurement on the repaired tree (V3-O07, spec section 28.4;
+external review section 6), recorded verbatim from real runs.
+
+Supersedes nothing: expansion_scale_linux_2026-09-26.txt (a32ab46) and expansion_scale_linux_2026-09-26_final.txt
+(d30e23d) are kept unchanged as history. These are measurements, not a performance acceptance.
+
+Host:        Linux 6.18.44-fc-v37 x86_64, Intel(R) Xeon(R) Processor @ 2.10GHz, 2 CPUs, 7 GiB RAM. The only job on
+             the host during the runs; load averages before and after every command are in the log (1-minute load
+             0.73-1.59 over the block: the probe itself keeps one to two cores busy).
+Toolchain:   rustc 1.95.0 (59807616e 2026-04-14), cargo 1.95.0 (f2d3ce0bd 2026-03-21), RUSTUP_TOOLCHAIN=stable
+Env:         CARGO_TARGET_DIR=/home/claude/targets/perf2 CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2 (inherited by the
+             fixture builds; the --incremental runs set CARGO_INCREMENTAL=1 for the fixture only, in
+             <target>/incremental-fixture)
+v3 source:   this workspace at commit 89b2cbcd1866e5ef58e908cf3e1fb9b1a0cea051, clean before and after the block
+             (0 modified/untracked paths; the fixture lives under the ignored target/). Relative to the repaired tree
+             ed1ef3c it only adds tools/perf/src/bin/head_first_use.rs, which the fixture does not use. The commit
+             adding this file changes only tools/perf/measurements/.
+v2.1 source: `git archive baseline-v2.1` = eefca26c80ffe67ab5b70d6605cc713d63549b89 (unmodified v2.1 export plus the
+             head-cost probe copies, which the fixture does not use), extracted to /home/claude/scratch_perf/v21;
+             the fixture copies the measured checkout's Cargo.lock, so both dialects resolve the same external
+             dependency versions
+Probe:       tools/perf/src/bin/expansion_scale.rs, unchanged since expansion_scale_linux_2026-09-26_final.txt (same
+             sha256 ee13eb82..., in the log); run from this workspace for both dialects (--baseline-v2-1 points the
+             fixture at the v2.1 export)
+Expansion:   cargo-expand is not installed, so the probe uses the identical rustc pretty-printer
+             (`cargo rustc --profile check -- -Zunpretty=expanded`, RUSTC_BOOTSTRAP=1); fixture builds use the same
+             RUSTC_BOOTSTRAP value. Counts are comparable only within this method.
+
+Columns (unchanged from the final file):
+  build ms           rebuild of the fixture after the previous scale point's source (a whole-crate rebuild)
+  edit ms            representative local edit: endpoint 0's route changes, then a rebuild
+  parent edit ms     representative parent edit: on top of the local edit, the root `timeout 30s` that every endpoint
+                     inherits becomes `timeout 31s`, then a rebuild
+  cold ms            `cargo clean -p concord-expansion-scale` then a build. CAVEAT (review section 6): this cleans only
+                     the generated fixture package; every dependency (concord, concord-core, the macros, tokio, ...)
+                     stays built, so it is not a from-scratch cold build.
+  warm ms            an immediate no-op rebuild (cargo freshness check only)
+  binary bytes       CAVEAT: unstripped debug executables of the fixture; not a release or distribution size.
+  description bytes  CAVEAT: the concord.contract/3 export (v3) versus the v2.1 tool snapshot: different formats that
+                     carry different content (v3 records the full per-endpoint effective contract of section 18.2);
+                     not equal-work serialization and not comparable 1:1.
+Each probe invocation first builds the dependency graph in an unreported warm-up at 1 endpoint. Cargo's progress
+lines (Compiling/Finished/Running) are filtered from the log; everything the probe printed is verbatim.
+
+Commands (exit codes are in the log after every command):
+  cargo build -p concord-perf --bin expansion_scale                                                    exit 0
+  cargo run -p concord-perf --bin expansion_scale                                                      exit 0
+  cargo run -p concord-perf --bin expansion_scale -- --baseline-v2-1 /home/claude/scratch_perf/v21     exit 0
+  cargo run -p concord-perf --bin expansion_scale -- 100 100 100                                       exit 0
+  cargo run -p concord-perf --bin expansion_scale -- --baseline-v2-1 <v2.1 export> 100 100 100         exit 0
+  cargo run -p concord-perf --bin expansion_scale -- --incremental                                     exit 0
+  cargo run -p concord-perf --bin expansion_scale -- --incremental --baseline-v2-1 <v2.1 export>       exit 0
+
+================================================================================================================
+Verbatim log
+================================================================================================================
+measured v3 commit: 89b2cbcd1866e5ef58e908cf3e1fb9b1a0cea051
+status: 0 modified/untracked paths
+host: Linux 6.18.44-fc-v37 x86_64; model name	: Intel(R) Xeon(R) Processor @ 2.10GHz; 2 CPUs; 7 GiB RAM
+toolchain: rustc 1.95.0 (59807616e 2026-04-14); cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+env: RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=/home/claude/targets/perf2 CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2
+cargo-expand available: error: no such command: `expand`
+ee13eb820326b1e7247f25e538adf8f616e5e162236a514a30bca046d692fb42  tools/perf/src/bin/expansion_scale.rs
+v2.1 export: eefca26c80ffe67ab5b70d6605cc713d63549b89 at /home/claude/scratch_perf/v21
+$ cargo build -p concord-perf --bin expansion_scale
+[build expansion_scale] exit 0
+$ cargo run -p concord-perf --bin expansion_scale --
+(uptime before:  23:46:36 up 11:01,  0 user,  load average: 0.73, 0.74, 0.81)
+dialect: V3; concord: /home/claude/work/concord/.claude/worktrees/agent-ae8d8b3e7a7774dd5; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 686 | 24653 | 2374 | 130 | 70 | 165 | 552 | 534 | 51473360 | 9888 | 506 | 501 | 116 |
+| 10 | 3796 | 137706 | 12526 | 724 | 367 | 186 | 706 | 719 | 51515672 | 62268 | 731 | 702 | 120 |
+| 100 | 34891 | 1268241 | 114046 | 6664 | 3337 | 460 | 2850 | 3002 | 51941672 | 586068 | 2764 | 2767 | 116 |
+| 500 | 173091 | 6292841 | 565246 | 33064 | 16537 | 1959 | 13329 | 13231 | 53855648 | 2914068 | 13354 | 13396 | 121 |
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 3907 | 27418 | 27499 | 56287560 | 5824068 | 27919 | 27476 | 119 |
+[v3 default counts] exit 0 (uptime after:  23:50:25 up 11:05,  0 user,  load average: 1.02, 0.98, 0.91)
+$ cargo run -p concord-perf --bin expansion_scale -- --baseline-v2-1 /home/claude/scratch_perf/v21
+(uptime before:  23:50:25 up 11:05,  0 user,  load average: 1.02, 0.98, 0.91)
+dialect: V2_1; concord: /home/claude/scratch_perf/v21; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 725 | 30132 | 2196 | 101 | 39 | 159 | 436 | 417 | 31979984 | 1649 | 441 | 434 | 117 |
+| 10 | 3713 | 171369 | 10485 | 497 | 219 | 192 | 650 | 622 | 32084712 | 13214 | 622 | 641 | 114 |
+| 100 | 33593 | 1585989 | 93375 | 4457 | 2019 | 498 | 2265 | 2235 | 33132856 | 128864 | 2305 | 2296 | 119 |
+| 500 | 166393 | 7883189 | 461775 | 22057 | 10019 | 2053 | 10224 | 10332 | 37796400 | 642864 | 10043 | 9838 | 122 |
+| 1000 | 332393 | 15754689 | 922275 | 44057 | 20019 | 3735 | 20609 | 20240 | 43646904 | 1285364 | 20143 | 20549 | 118 |
+[v2.1 default counts] exit 0 (uptime after:  23:53:46 up 11:08,  0 user,  load average: 1.04, 1.08, 0.99)
+$ cargo run -p concord-perf --bin expansion_scale -- 100 100 100
+(uptime before:  23:53:46 up 11:08,  0 user,  load average: 1.04, 1.08, 0.99)
+dialect: V3; concord: /home/claude/work/concord/.claude/worktrees/agent-ae8d8b3e7a7774dd5; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 34891 | 1268241 | 114046 | 6664 | 3337 | 473 | 2865 | 2778 | 51941672 | 586068 | 2822 | 2844 | 121 |
+| 100 | 34891 | 1268241 | 114046 | 6664 | 3337 | 469 | 2870 | 2737 | 51941672 | 586068 | 2878 | 2817 | 116 |
+| 100 | 34891 | 1268241 | 114046 | 6664 | 3337 | 443 | 2733 | 2774 | 51941672 | 586068 | 2871 | 2816 | 119 |
+[v3 100 x3] exit 0 (uptime after:  23:55:21 up 11:10,  0 user,  load average: 1.43, 1.23, 1.05)
+$ cargo run -p concord-perf --bin expansion_scale -- --baseline-v2-1 /home/claude/scratch_perf/v21 100 100 100
+(uptime before:  23:55:21 up 11:10,  0 user,  load average: 1.43, 1.23, 1.05)
+dialect: V2_1; concord: /home/claude/scratch_perf/v21; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 33593 | 1585989 | 93375 | 4457 | 2019 | 479 | 2325 | 2244 | 33132856 | 128864 | 2326 | 2237 | 110 |
+| 100 | 33593 | 1585989 | 93375 | 4457 | 2019 | 493 | 2360 | 2265 | 33132856 | 128864 | 2339 | 2274 | 116 |
+| 100 | 33593 | 1585989 | 93375 | 4457 | 2019 | 492 | 2277 | 2305 | 33132856 | 128864 | 2481 | 2296 | 118 |
+[v2.1 100 x3] exit 0 (uptime after:  23:56:47 up 11:11,  0 user,  load average: 1.59, 1.35, 1.12)
+$ cargo run -p concord-perf --bin expansion_scale -- --incremental
+(uptime before:  23:56:47 up 11:11,  0 user,  load average: 1.59, 1.35, 1.12)
+dialect: V3; concord: /home/claude/work/concord/.claude/worktrees/agent-ae8d8b3e7a7774dd5; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=1
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 686 | 24653 | 2374 | 130 | 70 | 220 | 463 | 606 | 53745576 | 9888 | 547 | 607 | 119 |
+| 10 | 3796 | 137706 | 12526 | 724 | 367 | 194 | 860 | 889 | 53788136 | 62268 | 597 | 920 | 116 |
+| 100 | 34891 | 1268241 | 114046 | 6664 | 3337 | 474 | 3504 | 3883 | 54217208 | 586068 | 1330 | 3515 | 119 |
+| 500 | 173091 | 6292841 | 565246 | 33064 | 16537 | 1961 | 16902 | 17472 | 56145152 | 2914068 | 6112 | 16256 | 122 |
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 4237 | 35076 | 35920 | 58551776 | 5824068 | 12133 | 32525 | 119 |
+[v3 incremental] exit 0 (uptime after:  00:01:25 up 11:16,  0 user,  load average: 1.06, 1.32, 1.18)
+$ cargo run -p concord-perf --bin expansion_scale -- --incremental --baseline-v2-1 /home/claude/scratch_perf/v21
+(uptime before:  00:01:25 up 11:16,  0 user,  load average: 1.06, 1.32, 1.18)
+dialect: V2_1; concord: /home/claude/scratch_perf/v21; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=1
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 725 | 30132 | 2196 | 101 | 39 | 177 | 369 | 503 | 33144896 | 1649 | 436 | 559 | 120 |
+| 10 | 3713 | 171369 | 10485 | 497 | 219 | 196 | 694 | 691 | 33249736 | 13214 | 520 | 721 | 118 |
+| 100 | 33593 | 1585989 | 93375 | 4457 | 2019 | 610 | 2718 | 2733 | 34298760 | 128864 | 1681 | 2716 | 113 |
+| 500 | 166393 | 7883189 | 461775 | 22057 | 10019 | 2003 | 12078 | 12592 | 38966656 | 642864 | 7222 | 12134 | 117 |
+| 1000 | 332393 | 15754689 | 922275 | 44057 | 20019 | 4126 | 25218 | 25379 | 44801720 | 1285364 | 14949 | 24081 | 124 |
+[v2.1 incremental] exit 0 (uptime after:  00:04:16 up 11:19,  0 user,  load average: 1.01, 1.20, 1.15)
+done:  00:04:16 up 11:19,  0 user,  load average: 1.01, 1.20, 1.15
+status after: 0 modified/untracked paths
+
+================================================================================================================
+Derived comparison (computed from the tables above; v3 relative to v2.1, same host, toolchain and method)
+================================================================================================================
+
+At 1000 endpoints (default runs, CARGO_INCREMENTAL=0; single runs):
+  expanded lines +4.05% (332393 -> 345841), identical to the d30e23d final file in both dialects (every
+  size point's lines/characters/fragments/declarations/methods and description bytes are unchanged)
+  expansion time +4.6% (3735 -> 3907 ms)
+  build +33.0% (20609 -> 27418 ms), local edit +35.9% (20240 -> 27499 ms), parent edit +38.6%
+  (20143 -> 27919 ms), cold (fixture package only) +33.7% (20549 -> 27476 ms); warm (no-op) 118 -> 119 ms
+  binary (unstripped debug) 43.65 MB -> 56.29 MB (+28.96%); v3's is 112,384 B larger than at d30e23d
+  (56,175,176), v2.1's is byte-for-byte the same size; binary growth from 1 to 1000 endpoints 11.67 MB (v2.1)
+  versus 4.81 MB (v3)
+  description export 1285364 -> 5824068 bytes (different formats and content; see the caveat above)
+
+Per-size deltas, v3 relative to v2.1 (build / edit / parent edit / cold):
+  1: +26.6% / +28.1% / +14.7% / +15.4%       10: +8.6% / +15.6% / +17.5% / +9.5%
+  100: +25.8% / +34.3% / +19.9% / +20.5%     500: +30.4% / +28.1% / +33.0% / +36.2%
+  1000: +33.0% / +35.9% / +38.6% / +33.7%
+
+Noise. The repeated 100-endpoint rows: v3 build 2733-2870 ms (default run 2850), edit 2737-2778 (3002), parent
+edit 2822-2878 (2764), cold 2816-2844 (2767); v2.1 build 2277-2360 (2265), edit 2244-2305 (2235), parent edit
+2326-2481 (2305), cold 2237-2296 (2296). That is up to about +/-5% between runs of one point (the default-run
+v3 edit value 3002 is 8% above its repeats), so single per-size percentages differ by several points from run to
+run. Absolute times of BOTH dialects are 10-20% higher than in the d30e23d final file on the same host (v2.1
+1000-endpoint build 18078 -> 20609 ms with byte-identical v2.1 sources), so only same-block comparisons are
+meaningful. In the final file the 1000-endpoint build delta was +28.0% (d30e23d); here +33.0%. The generated
+code is unchanged in size, but F01/slice-E runtime changes make the generic operation futures that every
+endpoint instantiates larger (ATTRIBUTION.md); whether that, or run-to-run/host variation, explains the five
+points was not isolated (single runs at 1000 endpoints).
+
+Growth over the five fixture sizes (default runs): expanded lines are exactly affine in the endpoint count (v3
+345.5 lines per endpoint, v2.1 332.0). Marginal build cost per endpoint over 1->100 / 100->500 / 500->1000:
+v3 23.21 / 26.20 / 28.18 ms, v2.1 18.47 / 19.90 / 20.77 ms (edit, parent edit and cold show the same pattern).
+Both grow faster than linearly on these points, v3 somewhat more (500->1000 slope 1.08x its 100->500 slope, v2.1
+1.04x), but each size is a single run and the +/-5% repeat spread is as large as that curvature difference, so
+the data do not establish a super-linear trend for either dialect, and no trend is called linear. Over the whole
+range the marginal build cost is 26.89 ms per endpoint (v3) versus 20.19 ms (v2.1).
+
+With CARGO_INCREMENTAL=1 (1000 endpoints): build +39.1% (25218 -> 35076 ms), local edit +41.5%
+(25379 -> 35920), parent edit -18.8% (14949 -> 12133), cold +35.1% (24081 -> 32525). As before, the one-route
+local edit costs about a whole rebuild in both dialects while the root-timeout parent edit is much cheaper; why
+the one-route edit invalidates almost every incremental unit was not investigated.
+
+Attribution (unchanged in kind from the final file): the compile-time and size growth is generated code for new
+functionality (typed owner projections and value readers per owner and endpoint (section 16.3), per-endpoint
+request/intent/view types, the value-control matrix (section 4.3), the full static contract description (section
+18.2) and the contract export), plus the monomorphized runtime futures per endpoint. It was not broken down per
+generated item.

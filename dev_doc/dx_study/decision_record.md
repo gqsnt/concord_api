@@ -1,17 +1,22 @@
 # Gate 3 decision record
 
-## Selected v2.1 surface
+**Status:** v3 protocol decision, revised 2026-10-16.
 
-ADR 0012 selects `set_x(Option<T>)`, `omit_x()`, and initialized-only
-`reset_x()`. The generated `with_x` alias and its namespace reservation are
-absent. The final-surface comprehension protocol evaluates that exact surface;
-it does not postpone a v2.1 syntax decision.
+## Selected v3 surface
+
+The value matrix selects payload `set_x`, exact `replace_x(Option<T>)`,
+conditional `set_x_if_some(Option<T>)`, optional-only `omit_x()` and
+initialized-only `reset_x()`. Reset restores the retained initial state.
+Required uninitialized scope/endpoint constructor inputs have no setters.
+The pagination terminals are `collect_all`, `collect_prefix` and `pages`.
+The protocol evaluates this selected surface, including nested optional values;
+it does not reopen the language design.
 
 ## Current evidence state
 
 Zero qualifying humans have completed the protocol, so comprehension remains
 Unknown and Gate 3 is Unknown/Blocked for public compatibility freeze. This
-does not block local integration of an unpublished `2.1.0-beta.N` after its
+does not block integration of the unpublished `3.0.0-beta.1` after its
 technical, documentation, Windows, and Linux gates pass.
 
 ## Stop rule

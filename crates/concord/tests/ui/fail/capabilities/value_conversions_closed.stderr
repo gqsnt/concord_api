@@ -1,0 +1,216 @@
+error[E0277]: [C3-PLACE] `u32` does not convert into the declared input type `u64`
+  --> tests/ui/fail/capabilities/value_conversions_closed.rs:33:48
+   |
+33 |     let _ = ConversionApi::builder().set_limit(narrow);
+   |                                      --------- ^^^^^^ expected `u64` or a closed conversion into it
+   |                                      |
+   |                                      required by a bound introduced by this call
+   |
+   = help: the trait `IntoValue<u64>` is not implemented for `u32`
+   = note: the complete conversion set is identity, `&str -> String` and `&String -> String`; there is no numeric widening, `Display` fallback, parsing or user registration
+   = note: construct the exact `u64` value explicitly: call a domain newtype's constructor, or convert numbers with `From`/`TryFrom`
+help: the following other types implement trait `IntoValue<T>`
+  --> $WORKSPACE/crates/concord-core/src/value.rs
+   |
+   | impl IntoValue<String> for &str {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&str`
+...
+   | impl IntoValue<String> for &String {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&std::string::String`
+note: required by a bound in `ConversionApiBuilder::set_limit`
+  --> tests/ui/fail/capabilities/value_conversions_closed.rs:17:1
+   |
+17 | / api! {
+18 | |     client ConversionApi {
+19 | |         base "https://conversions.example.test";
+20 | |         values {
+21 | |             query region?: String;
+22 | |             query limit?: u64;
+   | |                   ----- required by a bound in this associated function
+...  |
+29 | | }
+   | |_^ required by this bound in `ConversionApiBuilder::set_limit`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [C3-PLACE] `u32` does not convert into the declared input type `std::string::String`
+  --> tests/ui/fail/capabilities/value_conversions_closed.rs:36:49
+   |
+36 |     let _ = ConversionApi::builder().set_region(7_u32);
+   |                                      ---------- ^^^^^ expected `std::string::String` or a closed conversion into it
+   |                                      |
+   |                                      required by a bound introduced by this call
+   |
+   = help: the trait `IntoValue<std::string::String>` is not implemented for `u32`
+   = note: the complete conversion set is identity, `&str -> String` and `&String -> String`; there is no numeric widening, `Display` fallback, parsing or user registration
+   = note: construct the exact `std::string::String` value explicitly: call a domain newtype's constructor, or convert numbers with `From`/`TryFrom`
+help: the following other types implement trait `IntoValue<T>`
+  --> $WORKSPACE/crates/concord-core/src/value.rs
+   |
+   | impl IntoValue<String> for &str {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&str`
+...
+   | impl IntoValue<String> for &String {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&std::string::String`
+note: required by a bound in `ConversionApiBuilder::set_region`
+  --> tests/ui/fail/capabilities/value_conversions_closed.rs:17:1
+   |
+17 | / api! {
+18 | |     client ConversionApi {
+19 | |         base "https://conversions.example.test";
+20 | |         values {
+21 | |             query region?: String;
+   | |                   ------ required by a bound in this associated function
+...  |
+29 | | }
+   | |_^ required by this bound in `ConversionApiBuilder::set_region`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/ui/fail/capabilities/value_conversions_closed.rs:37:58
+   |
+37 |     let _ = ConversionApi::builder().replace_region(Some("eu"));
+   |                                                     ---- ^^^^ expected `String`, found `&str`
+   |                                                     |
+   |                                                     arguments to this enum variant are incorrect
+   |
+help: the type constructed contains `&'static str` due to the type of the argument passed
+  --> tests/ui/fail/capabilities/value_conversions_closed.rs:37:53
+   |
+37 |     let _ = ConversionApi::builder().replace_region(Some("eu"));
+   |                                                     ^^^^^----^
+   |                                                          |
+   |                                                          this argument influences the type of `Some`
+note: tuple variant defined here
+  --> $RUST/core/src/option.rs
+   |
+   |     Some(#[stable(feature = "rust1", since = "1.0.0")] T),
+   |     ^^^^
+help: try using a conversion method
+   |
+37 |     let _ = ConversionApi::builder().replace_region(Some("eu".to_string()));
+   |                                                              ++++++++++++
+
+error[E0308]: mismatched types
+  --> tests/ui/fail/capabilities/value_conversions_closed.rs:38:62
+   |
+38 |     let _ = ConversionApi::builder().set_region_if_some(Some("eu"));
+   |                                                         ---- ^^^^ expected `String`, found `&str`
+   |                                                         |
+   |                                                         arguments to this enum variant are incorrect
+   |
+help: the type constructed contains `&'static str` due to the type of the argument passed
+  --> tests/ui/fail/capabilities/value_conversions_closed.rs:38:57
+   |
+38 |     let _ = ConversionApi::builder().set_region_if_some(Some("eu"));
+   |                                                         ^^^^^----^
+   |                                                              |
+   |                                                              this argument influences the type of `Some`
+note: tuple variant defined here
+  --> $RUST/core/src/option.rs
+   |
+   |     Some(#[stable(feature = "rust1", since = "1.0.0")] T),
+   |     ^^^^
+help: try using a conversion method
+   |
+38 |     let _ = ConversionApi::builder().set_region_if_some(Some("eu".to_string()));
+   |                                                                  ++++++++++++
+
+error[E0277]: [C3-PLACE] `&str` does not convert into the declared input type `ItemId`
+  --> tests/ui/fail/capabilities/value_conversions_closed.rs:41:25
+   |
+41 |     let _ = client.item("42", Vec::new());
+   |                    ---- ^^^^ expected `ItemId` or a closed conversion into it
+   |                    |
+   |                    required by a bound introduced by this call
+   |
+   = note: the complete conversion set is identity, `&str -> String` and `&String -> String`; there is no numeric widening, `Display` fallback, parsing or user registration
+   = note: construct the exact `ItemId` value explicitly: call a domain newtype's constructor, or convert numbers with `From`/`TryFrom`
+help: the trait `IntoValue<ItemId>` is not implemented for `&str`
+      but trait `IntoValue<std::string::String>` is implemented for it
+  --> $WORKSPACE/crates/concord-core/src/value.rs
+   |
+   | impl IntoValue<String> for &str {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `std::string::String`, found `ItemId`
+note: required by a bound in `conversion_api::<impl ConversionApi>::item`
+  --> tests/ui/fail/capabilities/value_conversions_closed.rs:17:1
+   |
+17 | / api! {
+18 | |     client ConversionApi {
+19 | |         base "https://conversions.example.test";
+20 | |         values {
+...  |
+25 | |         GET item(id: crate::ItemId, query("tag") each tags: Vec<String>) -> Bytes via Binary {
+   | |             ---- required by a bound in this associated function
+...  |
+29 | | }
+   | |_^ required by this bound in `conversion_api::<impl ConversionApi>::item`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [C3-PLACE] `[std::string::String; 1]` does not convert into the declared input type `Vec<std::string::String>`
+  --> tests/ui/fail/capabilities/value_conversions_closed.rs:42:50
+   |
+42 |     let _ = client.item(ItemId("42".to_owned()), ["a".to_owned()]);
+   |                    ----                          ^^^^^^^^^^^^^^^^ expected `Vec<std::string::String>` or a closed conversion into it
+   |                    |
+   |                    required by a bound introduced by this call
+   |
+   = help: the trait `IntoValue<Vec<std::string::String>>` is not implemented for `[std::string::String; 1]`
+   = note: the complete conversion set is identity, `&str -> String` and `&String -> String`; there is no numeric widening, `Display` fallback, parsing or user registration
+   = note: construct the exact `Vec<std::string::String>` value explicitly: call a domain newtype's constructor, or convert numbers with `From`/`TryFrom`
+help: the following other types implement trait `IntoValue<T>`
+  --> $WORKSPACE/crates/concord-core/src/value.rs
+   |
+   | impl IntoValue<String> for &str {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&str`
+...
+   | impl IntoValue<String> for &String {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&std::string::String`
+note: required by a bound in `conversion_api::<impl ConversionApi>::item`
+  --> tests/ui/fail/capabilities/value_conversions_closed.rs:17:1
+   |
+17 | / api! {
+18 | |     client ConversionApi {
+19 | |         base "https://conversions.example.test";
+20 | |         values {
+...  |
+25 | |         GET item(id: crate::ItemId, query("tag") each tags: Vec<String>) -> Bytes via Binary {
+   | |             ---- required by a bound in this associated function
+...  |
+29 | | }
+   | |_^ required by this bound in `conversion_api::<impl ConversionApi>::item`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [C3-PLACE] `Vec<&str>` does not convert into the declared input type `Vec<std::string::String>`
+  --> tests/ui/fail/capabilities/value_conversions_closed.rs:43:50
+   |
+43 |     let _ = client.item(ItemId("42".to_owned()), vec!["a"]);
+   |                    ----                          ^^^^^^^^^ expected `Vec<std::string::String>` or a closed conversion into it
+   |                    |
+   |                    required by a bound introduced by this call
+   |
+   = help: the trait `IntoValue<Vec<std::string::String>>` is not implemented for `Vec<&str>`
+   = note: the complete conversion set is identity, `&str -> String` and `&String -> String`; there is no numeric widening, `Display` fallback, parsing or user registration
+   = note: construct the exact `Vec<std::string::String>` value explicitly: call a domain newtype's constructor, or convert numbers with `From`/`TryFrom`
+help: the following other types implement trait `IntoValue<T>`
+  --> $WORKSPACE/crates/concord-core/src/value.rs
+   |
+   | impl IntoValue<String> for &str {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&str`
+...
+   | impl IntoValue<String> for &String {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&std::string::String`
+note: required by a bound in `conversion_api::<impl ConversionApi>::item`
+  --> tests/ui/fail/capabilities/value_conversions_closed.rs:17:1
+   |
+17 | / api! {
+18 | |     client ConversionApi {
+19 | |         base "https://conversions.example.test";
+20 | |         values {
+...  |
+25 | |         GET item(id: crate::ItemId, query("tag") each tags: Vec<String>) -> Bytes via Binary {
+   | |             ---- required by a bound in this associated function
+...  |
+29 | | }
+   | |_^ required by this bound in `conversion_api::<impl ConversionApi>::item`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,5 +1,11 @@
-error: one effective request head permits at most 256 retained components
-  --> tests/ui/fail/syntax/request_head_component_limit.rs:11:9
+error: [C3-PLACE] endpoint `HeadComponentLimit::fetch` always retains 257 request head components (DNS labels, path segments, query pairs, headers and auth placements); one effective request head permits at most 256 retained components, so replace inherited contributions (`path replace`, `query replace`, `headers replace`) or combine values
+  --> tests/ui/fail/syntax/request_head_component_limit.rs:15:13
    |
-11 |     GET fetch() -> () via concord::Empty {
-   |         ^^^^^
+15 |         GET fetch() -> () via Empty {
+   |             ^^^^^
+
+error: [C3-PLACE] endpoint `InheritedComponentLimit::nested::fetch` always retains 257 request head components (DNS labels, path segments, query pairs, headers and auth placements); one effective request head permits at most 256 retained components, so replace inherited contributions (`path replace`, `query replace`, `headers replace`) or combine values
+  --> tests/ui/fail/syntax/request_head_component_limit.rs:31:17
+   |
+31 |             GET fetch() -> () via Empty {
+   |                 ^^^^^

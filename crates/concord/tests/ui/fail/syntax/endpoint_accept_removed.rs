@@ -1,8 +1,11 @@
-use concord::api;
+// §25.2: endpoint `accept` is retired; negotiation is the response
+// representation's static `ACCEPT` constant.
+#![allow(unused_imports)]
+
+use concord::{Text, api};
 
 api! {
     client RemovedAcceptApi {
-        timeout 30s;
         base "https://example.test";
 
         GET read() -> String via Text {

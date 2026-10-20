@@ -64,14 +64,32 @@ impl runtime::codec::DecodeBody for PageCodec {
 }
 
 pub struct RenamedController {
+    cursor: Option<String>,
+}
+
+/// Public initialization of [`RenamedController`] (v3 controllers take a
+/// public `Init` and map one whole `Cursor` slot).
+pub struct RenamedStart {
     pub cursor: Option<String>,
 }
 
 impl runtime::pagination::PaginationController<Vec<u8>> for RenamedController {
     type Item = u8;
+    type Init = RenamedStart;
+    type Cursor = Option<String>;
 
     const DESCRIPTION: runtime::pagination::PaginationDescription =
         runtime::pagination::PaginationDescription::NONE;
+
+    fn start(init: Self::Init) -> Result<Self, runtime::pagination::PaginationError> {
+        Ok(Self {
+            cursor: init.cursor,
+        })
+    }
+
+    fn cursor(&self) -> Self::Cursor {
+        self.cursor.clone()
+    }
 
     fn advance(
         self,
@@ -88,67 +106,76 @@ impl runtime::pagination::PaginationController<Vec<u8>> for RenamedController {
 api! {
     client RenamedApi {
         timeout 30s;
-        base "http://renamed.example.test";
+        base "http://renamed.example.test/";
+        // v3 values need a reachable semantic use; direct placements keep the
+        // v2.1 caller surface (setters) this fixture exercises.
         values {
-            tenant: String;
-            locale?: String;
-            page_size: u32 = 25;
+            header("X-Tenant") tenant: String;
+            query locale?: String;
+            query page_size: u32 = 25;
         }
         credentials {
             secret api_key;
             credential application_key = api_key(secret.api_key);
         }
 
+        scope resources(
+            scope_value: String,
+            query region?: String,
+            query scope_limit: u32 = 50,
+        ) {
+            path "scopes/{scope_value}/resources";
 
-    scope resources(
-        scope_value: String,
-        region?: String,
-        scope_limit: u32 = 50,
-    ) {
-        path ["scopes", resources.scope_value, "resources"];
-        POST by_id(
-            endpoint_value: String,
-            verbose?: bool,
-            limit: u32 = 10,
-            body body: String via ::runtime::Text,
-        ) -> String via ::runtime::Text {
-            path [endpoint.endpoint_value];
-            auth { authorization "Token" = application_key; }
-        }
-        POST custom(body body: String via crate::WireCodec) -> String via crate::WireCodec {
-            expose accepted_bytes;
-        }
-        POST stream_upload(
-            body body: ::runtime::body::RequestStream via ::runtime::Binary,
-        ) -> ::runtime::Bytes via ::runtime::Binary;
-        GET stream_download() -> ::runtime::response::ByteStream via ::runtime::Binary;
-        POST multipart_upload(
-            body body: ::runtime::body::MultipartBody via ::runtime::body::Multipart,
-        ) -> () via ::runtime::Empty;
-        POST pages(
-            cursor?: String,
-            body filter: String via ::runtime::Text,
-        ) -> Vec<u8> via crate::PageCodec {
-            query { "cursor" = endpoint.cursor; }
-            effect safe;
-            paginate via crate::RenamedController {
-                cursor -> endpoint.cursor;
+            POST by_id(
+                endpoint_value: String,
+                query verbose?: bool,
+                query limit: u32 = 10,
+                body body: String via ::runtime::Text,
+            ) -> String via ::runtime::Text {
+                path "{endpoint_value}";
+                auth { authorization "Token" = application_key; }
+            }
+
+            POST custom(body body: String via crate::WireCodec) -> String via crate::WireCodec {
+                expose accepted_bytes;
+            }
+
+            POST stream_upload(
+                body body: ::runtime::body::RequestStream via ::runtime::Binary,
+            ) -> ::runtime::Bytes via ::runtime::Binary;
+
+            GET stream_download() -> ::runtime::response::ByteStream via ::runtime::Binary;
+
+            POST multipart_upload(
+                body body: ::runtime::body::MultipartBody via ::runtime::body::Multipart,
+            ) -> () via ::runtime::Empty;
+
+            POST pages(
+                query cursor?: String,
+                body filter: String via ::runtime::Text,
+            ) -> Vec<u8> via crate::PageCodec {
+                effect safe;
+                paginate via crate::RenamedController {
+                    init crate::RenamedStart { cursor: cursor };
+                    cursor -> cursor;
+                }
             }
         }
     }
-}}
+}
 
 api! {
     client RenamedRateApi {
         timeout 30s;
-        base "http://renamed-rate.example.test";
+        base "http://renamed-rate.example.test/";
         values {
             tenant: String;
         }
         rate_limits {
             policy tenant_reads(tenant) {
                 id "renamed.tenant.read";
-                key [tenant];
+                // v3 labels are explicit; `"tenant"` is the v2.1 implicit label.
+                key ["tenant" = tenant];
                 cost 1;
                 allow 10 per 1m;
             }
@@ -160,11 +187,11 @@ api! {
             allow 10 per 1m;
         }
 
-
-    GET read() -> ::runtime::Bytes via ::runtime::Binary {
-        rate_limit tenant_reads(tenant = client.tenant);
+        GET read() -> ::runtime::Bytes via ::runtime::Binary {
+            rate_limit tenant_reads(tenant = client.tenant);
+        }
     }
-}}
+}
 
 pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
     let retry_policy = runtime::retry::RetryPolicy::builder()
@@ -179,24 +206,26 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
         )
         .retry(retry_policy)
         .build()?;
-    let _ = client.credentials().application_key().credential();
+    // The v3 credential facade is local management (clear/replace).
+    let _: Result<(), runtime::auth::AuthError> = client.credentials().clear_application_key();
+    // v2.1 exact optional setters `set_x(Some(..))` are v3 `replace_x` (§25.2).
     let request = client
         .resources("renamed-scope".to_owned())
-        .set_region(Some("eu".to_owned()))
+        .replace_region(Some("eu".to_owned()))
         .set_scope_limit(20)
         .reset_scope_limit()
         .by_id("renamed-endpoint".to_owned(), "renamed-body".to_owned())
-        .set_verbose(Some(true))
+        .replace_verbose(Some(true))
         .set_limit(20)
         .reset_limit();
     let _: renamed_api::resources::ByIdRequest = request;
     let endpoint = RenamedApi::unbound()
         .resources("renamed-scope".to_owned())
-        .set_region(Some("eu".to_owned()))
+        .replace_region(Some("eu".to_owned()))
         .set_scope_limit(20)
         .reset_scope_limit()
         .by_id("renamed-endpoint".to_owned(), "renamed-body".to_owned())
-        .set_verbose(Some(true))
+        .replace_verbose(Some(true))
         .set_limit(20)
         .reset_limit();
     let _: renamed_api::resources::ByIdRequest = client.request(endpoint);
@@ -210,24 +239,28 @@ pub fn proof() -> Result<(), runtime::prelude::ClientBuildError> {
     .response::<runtime::Text, String>()
     .build()
     .expect("valid renamed runtime endpoint");
-    let _: runtime::endpoint::Request<_> = runtime_endpoint
-        .try_bind(&client)
+    // v3 binds runtime endpoints at the owner projection.
+    let _: runtime::endpoint::BoundRuntimeRequest<runtime::Text, String> = client
+        .bind(runtime_endpoint)
         .expect("renamed runtime endpoint binds to the generated client");
     let bytes_request: renamed_api::resources::CustomRequest = client
         .resources("renamed-scope".to_owned())
         .custom("custom-body".to_owned());
-    let _: runtime::endpoint::AcceptedBytesRequest<_> = bytes_request.accepted_bytes();
-    let _: renamed_api::resources::StreamUploadRequest =
-        client.resources("renamed-scope".to_owned()).stream_upload(
-            runtime::body::RequestStream::from_bytes(runtime::Bytes::from_static(b"renamed stream")),
-        );
+    // v3 erases the endpoint type behind the accepted-bytes terminal.
+    let _: runtime::endpoint::AcceptedBytesRequest = bytes_request.accepted_bytes();
+    let _: renamed_api::resources::StreamUploadRequest = client
+        .resources("renamed-scope".to_owned())
+        .stream_upload(runtime::body::RequestStream::from_bytes(
+            runtime::Bytes::from_static(b"renamed stream"),
+        ));
     let _: renamed_api::resources::StreamDownloadRequest = client
         .resources("renamed-scope".to_owned())
         .stream_download();
-    let _: runtime::pagination::PaginatedRequest<_> = client
+    // v2.1 `.paginate(PageLimit::Prefix(1))` is the v3 bounded prefix terminal.
+    let _: runtime::pagination::CollectPrefix<_> = client
         .resources("renamed-scope".to_owned())
         .pages("renamed-page-body".to_owned())
-        .paginate(runtime::prelude::PageLimit::Prefix(1));
+        .collect_prefix(1);
     let multipart = runtime::body::MultipartBody::new()
         .part(
             "field",

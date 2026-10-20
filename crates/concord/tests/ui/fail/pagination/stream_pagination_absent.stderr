@@ -1,19 +1,25 @@
-error[E0599]: no method named `paginate` found for struct `DownloadRequest` in the current scope
-  --> tests/ui/fail/pagination/stream_pagination_absent.rs:20:10
+error[E0599]: no method named `pages` found for struct `DownloadRequest` in the current scope
+  --> tests/ui/fail/pagination/stream_pagination_absent.rs:18:43
    |
- 3 | / api! {
- 4 | |     client StreamingApi {
- 5 | |         timeout 30s;
- 6 | |         base "http://streaming.example.test";
+ 5 | / api! {
+ 6 | |     client StreamingApi {
+ 7 | |         base "http://streaming.example.test";
 ...  |
-13 | | }}
-   | |__- method `paginate` not found for this struct
+14 | | }
+   | |_- method `pages` not found for this struct
 ...
-17 |       let _ = client
-   |  _____________-
-18 | |         .transfers()
-19 | |         .download()
-20 | |         .paginate(concord::PageLimit::Prefix(1));
-   | |         -^^^^^^^^ method not found in `DownloadRequest`
-   | |_________|
+18 |       let _ = client.transfers().download().pages(1);
+   |                                             ^^^^^ method not found in `DownloadRequest`
+
+error[E0599]: no method named `collect_prefix` found for struct `DownloadRequest` in the current scope
+  --> tests/ui/fail/pagination/stream_pagination_absent.rs:19:43
    |
+ 5 | / api! {
+ 6 | |     client StreamingApi {
+ 7 | |         base "http://streaming.example.test";
+...  |
+14 | | }
+   | |_- method `collect_prefix` not found for this struct
+...
+19 |       let _ = client.transfers().download().collect_prefix(1);
+   |                                             ^^^^^^^^^^^^^^ method not found in `DownloadRequest`

@@ -1,17 +1,17 @@
 #![forbid(unsafe_code)]
 
-use runtime::{Bytes, api};
+use runtime::{Binary, Bytes, api};
 
 api! {
     client EmptyGeneratedApi {
         timeout 30s;
         base "http://no-local-limiter-empty.example.test/";
 
-
-    GET read() -> Bytes via Binary {
-        path ["read"];
+        GET read() -> Bytes via Binary {
+            path "read";
+        }
     }
-}}
+}
 
 api! {
     client LimitedGeneratedApi {
@@ -27,9 +27,9 @@ api! {
             }
         }
 
-
-    GET read() -> Bytes via Binary {
-        path ["read"];
-        rate_limit fixture_limit();
+        GET read() -> Bytes via Binary {
+            path "read";
+            rate_limit fixture_limit();
+        }
     }
-}}
+}

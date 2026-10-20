@@ -2,13 +2,16 @@ use std::error::Error;
 use std::fmt;
 use std::time::Duration;
 
-use crate::error::AuthErrorKind;
+use crate::error::{AuthErrorKind, ProviderAcquisitionFacts};
 
 /// A bounded, secret-safe credential-provider or credential-state failure.
 pub struct AuthError {
     kind: AuthErrorKind,
     safe_message: Option<Box<str>>,
     retry_after: Option<Duration>,
+    /// Journal facts of the provider acquisition that produced this failure,
+    /// attached by core when the acquisition settles (EXEC-01).
+    provider: Option<ProviderAcquisitionFacts>,
 }
 
 impl AuthError {
@@ -19,6 +22,7 @@ impl AuthError {
             kind,
             safe_message: None,
             retry_after: None,
+            provider: None,
         }
     }
 
@@ -29,6 +33,7 @@ impl AuthError {
             kind,
             safe_message: Some(message.into().into_boxed_str()),
             retry_after: None,
+            provider: None,
         }
     }
 
@@ -56,7 +61,23 @@ impl AuthError {
             kind: self.kind,
             safe_message: self.safe_message.clone(),
             retry_after: self.retry_after,
+            provider: self.provider,
         }
+    }
+
+    /// Attributes this failure to the settled provider acquisition that
+    /// produced it.
+    pub(crate) const fn with_provider_acquisition(
+        mut self,
+        facts: ProviderAcquisitionFacts,
+    ) -> Self {
+        self.provider = Some(facts);
+        self
+    }
+
+    /// Returns the provider acquisition that produced this failure, if any.
+    pub(crate) const fn provider_acquisition(&self) -> Option<ProviderAcquisitionFacts> {
+        self.provider
     }
 
     pub(crate) fn safe_message(&self) -> Option<&str> {

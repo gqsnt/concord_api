@@ -1,576 +1,219 @@
-use std::collections::HashMap;
+//! Semantic resolution of the v3 declaration language.
+//!
+//! Resolution order:
+//!
+//! 1. flatten the owner/endpoint tree (preorder, declaration order) and
+//!    register every value with its structural state;
+//! 2. resolve credential sources, secrets and the rate registry;
+//! 3. for every owner (parents first) and then every endpoint, resolve local
+//!    attachments against LANG-03 reference rules, normalize query/header
+//!    programs (inherited → family fence → direct placements → block
+//!    statements), check structural preconditions (PATCH-02), header
+//!    ownership (HEAD-01), auth (AUTH-01) and rates (RATE-01..03), and
+//!    compute effective views;
+//! 4. select representations, status/effect/absence/pagination facts and
+//!    operational identities;
+//! 5. compute liveness (VALUE-06), generated names and collisions (CALL-01)
+//!    and the limiter requirement.
+
+pub(crate) mod model;
+pub(crate) mod surface;
 
 mod auth;
-mod head_limits;
-mod inheritance;
-pub(crate) mod model;
-mod pagination;
-mod rate_limits;
-pub(crate) mod surface;
-mod symbols;
-
-use proc_macro2::Span;
-use syn::Ident;
-
-use self::model::{
-    AcceptedStatus, Api, Child, Client, ContractId, Credential, DeclarationMetadata, Effect,
-    Endpoint, NormalizedAuth, NormalizedConfig, RequestBody, ResolvedChallengePolicy,
-    ResolvedMethod, Scope, Value,
-};
-use self::surface::{
-    canonical_ident, client_surface, endpoint_surface, finalize_endpoint_surfaces, scope_surface,
-    to_snake_case, validate_surface_modules,
-};
-use crate::syntax::ast::{
-    DeclarationAttributes, EffectDecl, MethodKind as SourceMethod, SourceApi, SourceChild,
-    SourceEndpoint, SourceScope, StatusDecl,
-};
-use auth::{
-    convert_credentials, resolve_endpoint_credentials, validate_credential_cycles,
-    validate_credential_names,
-};
-use inheritance::local_attachment_ir;
-use pagination::{pagination_bound_values, validate_pagination_binding_destinations};
-use rate_limits::{
-    RateLimitDefinition, RateLimitResolutionContext, resolve_rate_limit_definitions,
-    source_tree_declares_rate_limits, validate_effective_rate_limit_pagination_dependencies,
-    validate_rate_limit_definitions_used,
-};
-use symbols::{
-    ScopeFrame, convert_values, validate_child_methods, validate_endpoint_setters,
-    validate_setter_namespace,
-};
-
-type RateLimitWindowSchema = (u32, std::time::Duration);
-type RateLimitSchema = (Vec<String>, Vec<RateLimitWindowSchema>, Span);
-
-struct Resolver<'a> {
-    base: &'a syn::LitStr,
-    client_name: &'a Ident,
-    client_values: &'a [Value],
-    credentials: &'a [Credential],
-    rate_limit_definitions: Vec<RateLimitDefinition>,
-    rate_limit_ids: HashMap<String, RateLimitSchema>,
-    next_scope_id: usize,
-    next_endpoint_id: usize,
-}
-
-pub(crate) fn resolve(source: SourceApi) -> syn::Result<Api> {
-    let SourceApi {
-        client: source_client,
-    } = source;
-    let source_children = source_client.children.clone();
-    let source_declares_limiter =
-        source_tree_declares_rate_limits(&source_client.attachment_site, &source_children);
-    let rate_limit_definitions = resolve_rate_limit_definitions(
-        &source_client.name,
-        source_client
-            .rate_limits
-            .map(|clause| clause.value)
-            .unwrap_or_default(),
-    )?;
-    let values = convert_values(
-        source_client
-            .values
-            .map(|clause| clause.value)
-            .unwrap_or_default(),
-    )?;
-    validate_setter_namespace(&values, "client builder", true, true)?;
-    let (secrets, mut credentials) =
-        convert_credentials(source_client.credentials.map(|clause| clause.value))?;
-    validate_credential_names(&values, &secrets, &credentials)?;
-
-    let client_name = source_client.name;
-    let base = source_client.base.value;
-    let surface = client_surface(&client_name);
-    let local_attachments = local_attachment_ir(&source_client.attachment_site, "client");
-    let (config, children, rate_limit_profiles) = {
-        let mut resolver = Resolver {
-            base: &base,
-            client_name: &client_name,
-            client_values: &values,
-            credentials: &credentials,
-            rate_limit_definitions,
-            rate_limit_ids: HashMap::new(),
-            next_scope_id: 0,
-            next_endpoint_id: 0,
-        };
-        let config = resolver.normalize_attachment_site(
-            &source_client.attachment_site,
-            &NormalizedConfig::default(),
-            &[],
-            None,
-            &RateLimitResolutionContext {
-                lexical_origin: "client",
-            },
-        )?;
-        let children = resolver.resolve_children(source_children, &config, &[], &[])?;
-        validate_rate_limit_definitions_used(&resolver.rate_limit_definitions)?;
-        let rate_limit_profiles = resolver
-            .rate_limit_definitions
-            .iter()
-            .map(RateLimitDefinition::profile)
-            .collect();
-        (config, children, rate_limit_profiles)
-    };
-    validate_contract_ids(&children)?;
-    resolve_endpoint_credentials(&mut credentials, &children)?;
-    let mut children = children;
-    finalize_endpoint_surfaces(&mut children, &credentials)?;
-    validate_surface_modules(&children, None, "generated client module")?;
-    validate_credential_cycles(&credentials, &children)?;
-    validate_child_methods(&children, &[], "client", true)?;
-
-    let client = Client {
-        attributes: declaration_metadata(source_client.attributes),
-        name: client_name,
-        surface,
-        base,
-        values,
-        secrets,
-        credentials,
-        rate_limit_profiles,
-        requires_limiter: source_declares_limiter,
-        config,
-        local_attachments,
-        children,
-    };
-
-    Ok(Api { client })
-}
-
-impl Resolver<'_> {
-    fn resolve_children(
-        &mut self,
-        source: Vec<SourceChild>,
-        parent: &NormalizedConfig,
-        visible_scopes: &[ScopeFrame],
-        scope_path: &[Ident],
-    ) -> syn::Result<Vec<Child>> {
-        let mut children = Vec::new();
-        for child in source {
-            children.push(match child {
-                SourceChild::Scope(scope) => Child::Scope(Box::new(self.resolve_scope(
-                    *scope,
-                    parent,
-                    visible_scopes,
-                    scope_path,
-                )?)),
-                SourceChild::Endpoint(endpoint) => Child::Endpoint(self.resolve_endpoint(
-                    endpoint,
-                    parent,
-                    visible_scopes,
-                    scope_path,
-                )?),
-            });
-        }
-        Ok(children)
-    }
-
-    fn resolve_scope(
-        &mut self,
-        source: SourceScope,
-        parent: &NormalizedConfig,
-        visible_scopes: &[ScopeFrame],
-        scope_path: &[Ident],
-    ) -> syn::Result<Scope> {
-        let id = self.next_scope_id;
-        self.next_scope_id += 1;
-        let parameters = convert_values(source.parameters)?;
-        if let Some(existing) = visible_scopes
-            .iter()
-            .find(|scope| canonical_ident(&scope.name) == canonical_ident(&source.name))
-        {
-            let mut error = source.name.span().error(format!(
-                "scope identifier `{}` duplicates an ancestor and would make owner references ambiguous",
-                canonical_ident(&source.name)
-            ));
-            error.combine(
-                existing
-                    .name
-                    .span()
-                    .error("the ancestor scope is declared here"),
-            );
-            return Err(error);
-        }
-        validate_setter_namespace(&parameters, "scope facade", false, false)?;
-
-        let mut frames = visible_scopes.to_vec();
-        frames.push(ScopeFrame {
-            id,
-            name: source.name.clone(),
-            values: parameters.clone(),
-        });
-        let mut path = scope_path.to_vec();
-        path.push(source.name.clone());
-        let lexical_origin = format!(
-            "scope {}",
-            path.iter()
-                .map(canonical_ident)
-                .collect::<Vec<_>>()
-                .join("::")
-        );
-        let local_attachments = local_attachment_ir(&source.attachment_site, &lexical_origin);
-        let config = self.normalize_attachment_site(
-            &source.attachment_site,
-            parent,
-            &frames,
-            None,
-            &RateLimitResolutionContext {
-                lexical_origin: &lexical_origin,
-            },
-        )?;
-        let children = self.resolve_children(source.children, &config, &frames, &path)?;
-        validate_child_methods(&children, &parameters, "scope facade", false)?;
-
-        let surface = scope_surface(&source.name);
-        Ok(Scope {
-            id,
-            attributes: declaration_metadata(source.attributes),
-            name: source.name,
-            surface,
-            parameters,
-            config,
-            local_attachments,
-            children,
-        })
-    }
-
-    fn resolve_endpoint(
-        &mut self,
-        source: SourceEndpoint,
-        parent: &NormalizedConfig,
-        visible_scopes: &[ScopeFrame],
-        scope_path: &[Ident],
-    ) -> syn::Result<Endpoint> {
-        let id = self.next_endpoint_id;
-        self.next_endpoint_id += 1;
-        let parameters = convert_values(source.parameters)?;
-        validate_endpoint_setters(&parameters)?;
-        let pagination = self.resolve_pagination(
-            source.pagination.map(|clause| clause.value),
-            visible_scopes,
-            &parameters,
-        )?;
-        let pagination_values = pagination_bound_values(
-            pagination.as_ref(),
-            self.client_values,
-            visible_scopes,
-            &parameters,
-        );
-
-        let dsl_path = scope_path
-            .iter()
-            .cloned()
-            .chain(std::iter::once(source.name.clone()))
-            .collect::<Vec<_>>();
-        let contract_id = source.contract_id.map_or_else(
-            || ContractId {
-                value: contract_path(self.client_name, &dsl_path),
-                explicit: false,
-                span: source.name.span(),
-            },
-            |clause| ContractId {
-                value: clause.value.value(),
-                explicit: true,
-                span: clause.value.span(),
-            },
-        );
-        let lexical_origin = format!(
-            "endpoint {}",
-            dsl_path
-                .iter()
-                .map(canonical_ident)
-                .collect::<Vec<_>>()
-                .join("::")
-        );
-        let local_attachments = local_attachment_ir(&source.attachment_site, &lexical_origin);
-        let config = self.normalize_attachment_site(
-            &source.attachment_site,
-            parent,
-            visible_scopes,
-            Some(&parameters),
-            &RateLimitResolutionContext {
-                lexical_origin: &lexical_origin,
-            },
-        )?;
-        validate_effective_rate_limit_pagination_dependencies(&config, &pagination_values)?;
-        validate_pagination_binding_destinations(&pagination_values)?;
-        head_limits::validate_static_head(self.base, &config, source.name.span())?;
-        let body_position = source.body.as_ref().map(|body| body.position);
-        let body_presence = source.body.as_ref().map(|body| body.presence);
-        let body_name = source.body.as_ref().map(|body| body.name.clone());
-        let body = source
-            .body
-            .map(|body| -> syn::Result<RequestBody> {
-                let (spec_type, representation_origin) = body.spec_type.map_or_else(
-                    || {
-                        config
-                            .request_representation
-                            .representation
-                            .clone()
-                            .map(|representation| {
-                                (
-                                    *representation,
-                                    config
-                                        .request_representation
-                                        .origin
-                                        .clone()
-                                        .unwrap_or_else(|| "inherited request default".to_owned()),
-                                )
-                            })
-                            .ok_or_else(|| {
-                                body.name.span().error(
-                                    "request body has no effective representation; add `request Representation;` to a client/scope or inline `via Representation`",
-                                )
-                            })
-                    },
-                    |representation| Ok((representation, format!("{lexical_origin} inline body"))),
-                )?;
-                let input_type = body.input_type;
-                let effective_input_type = if matches!(
-                    body.presence,
-                    crate::syntax::ast::ValuePresence::Optional
-                )
-                {
-                    syn::parse_quote!(::std::option::Option<#input_type>)
-                } else {
-                    input_type.clone()
-                };
-                Ok(RequestBody {
-                    name: body.name,
-                    input_type,
-                    effective_input_type,
-                    spec_type,
-                    presence: match body.presence {
-                        crate::syntax::ast::ValuePresence::Required => model::ValuePresence::Required,
-                        crate::syntax::ast::ValuePresence::Optional => model::ValuePresence::Optional,
-                    },
-                    representation_origin,
-                    docs: body.docs.into_iter().map(|doc| doc.value()).collect(),
-                })
-            })
-            .transpose()?;
-        let method = resolve_method(source.method);
-        let output = source.output;
-        let (response_spec, response_representation_origin) = source.response_spec.map_or_else(
-            || {
-                config
-                    .response_representation
-                    .representation
-                    .clone()
-                    .map(|representation| {
-                        (
-                            *representation,
-                            config
-                                .response_representation
-                                .origin
-                                .clone()
-                                .unwrap_or_else(|| "inherited response default".to_owned()),
-                        )
-                    })
-                    .ok_or_else(|| {
-                        source.name.span().error(
-                            "endpoint result has no effective representation; add `response Representation;` to a client/scope or inline `via Representation`",
-                        )
-                    })
-            },
-            |representation| Ok((representation, format!("{lexical_origin} inline result"))),
-        )?;
-        let effect_explicit = source.effect.is_some();
-        let effect = source.effect.map_or_else(
-            || method_default_effect(&method),
-            |clause| match clause.value {
-                EffectDecl::Safe => Effect::Safe,
-                EffectDecl::Idempotent => Effect::Idempotent,
-                EffectDecl::NonIdempotent => Effect::NonIdempotent,
-            },
-        );
-        let status_explicit = source.status.is_some();
-        let status_span = source.status.as_ref().map(|clause| clause.key_span);
-        let accepted_status = source
-            .status
-            .map_or(AcceptedStatus::Success, |clause| match clause.value {
-                StatusDecl::Success => AcceptedStatus::Success,
-                StatusDecl::Codes(codes) => AcceptedStatus::Codes(codes),
-            });
-        if pagination.is_some() && effect != Effect::Safe {
-            return Err(source
-                .name
-                .span()
-                .error("ordinary pagination requires endpoint effect `safe`"));
-        }
-        if let Some(span) = status_span {
-            validate_status_challenge_separation(&accepted_status, &config.auth, span)?;
-        }
-        let expose_accepted_bytes = source.expose_accepted_bytes.is_some();
-        let surface = endpoint_surface(
-            self.client_name,
-            scope_path,
-            &source.name,
-            &parameters,
-            body_position
-                .zip(body_presence)
-                .zip(body_name.as_ref())
-                .map(|((position, presence), name)| (position, presence, name)),
-            pagination.is_some(),
-            expose_accepted_bytes,
-        );
-        Ok(Endpoint {
-            id,
-            attributes: declaration_metadata(source.attributes),
-            method,
-            name: source.name,
-            surface,
-            parameters,
-            body,
-            contract_id,
-            config,
-            local_attachments,
-            output,
-            response_spec,
-            response_representation_origin,
-            pagination,
-            dsl_path,
-            accepted_status,
-            status_explicit,
-            effect,
-            effect_explicit,
-            expose_accepted_bytes,
-        })
-    }
-}
-
-fn validate_status_challenge_separation(
-    status: &AcceptedStatus,
-    auth: &[NormalizedAuth],
-    span: Span,
-) -> syn::Result<()> {
-    let accepts = |code| match status {
-        AcceptedStatus::Success => false,
-        AcceptedStatus::Codes(codes) => codes.binary_search(&code).is_ok(),
-    };
-    let conflicts = auth.iter().any(|placement| match placement.challenge {
-        ResolvedChallengePolicy::Never => false,
-        ResolvedChallengePolicy::Unauthorized => accepts(401),
-        ResolvedChallengePolicy::UnauthorizedOrForbidden => accepts(401) || accepts(403),
-    });
-    if conflicts {
-        Err(span.error(
-            "an accepted endpoint status cannot also be an effective authentication challenge",
-        ))
-    } else {
-        Ok(())
-    }
-}
-
-fn resolve_method(source: SourceMethod) -> ResolvedMethod {
-    match source {
-        SourceMethod::Get => ResolvedMethod::Get,
-        SourceMethod::Post => ResolvedMethod::Post,
-        SourceMethod::Put => ResolvedMethod::Put,
-        SourceMethod::Patch => ResolvedMethod::Patch,
-        SourceMethod::Delete => ResolvedMethod::Delete,
-        SourceMethod::Head => ResolvedMethod::Head,
-        SourceMethod::Options => ResolvedMethod::Options,
-        SourceMethod::Custom(value) => ResolvedMethod::Custom(value),
-    }
-}
-
-fn method_default_effect(method: &ResolvedMethod) -> Effect {
-    match method {
-        ResolvedMethod::Get | ResolvedMethod::Head | ResolvedMethod::Options => Effect::Safe,
-        ResolvedMethod::Put | ResolvedMethod::Delete => Effect::Idempotent,
-        ResolvedMethod::Post | ResolvedMethod::Patch | ResolvedMethod::Custom(_) => {
-            Effect::NonIdempotent
-        }
-    }
-}
-
-fn declaration_metadata(source: DeclarationAttributes) -> DeclarationMetadata {
-    DeclarationMetadata {
-        docs: source.docs.into_iter().map(|doc| doc.value()).collect(),
-        deprecated: source.deprecated.map(|note| note.value()),
-    }
-}
-
-fn contract_path(client: &Ident, path: &[Ident]) -> String {
-    std::iter::once(to_snake_case(&canonical_ident(client)))
-        .chain(path.iter().map(canonical_ident))
-        .collect::<Vec<_>>()
-        .join(".")
-}
-
-fn validate_contract_ids(children: &[Child]) -> syn::Result<()> {
-    fn visit(children: &[Child], ids: &mut HashMap<String, Span>) -> syn::Result<()> {
-        for child in children {
-            match child {
-                Child::Scope(scope) => visit(&scope.children, ids)?,
-                Child::Endpoint(endpoint) => {
-                    if let Some(first) = ids.insert(
-                        endpoint.contract_id.value.clone(),
-                        endpoint.contract_id.span,
-                    ) {
-                        let mut error = endpoint.contract_id.span.error(format!(
-                            "endpoint contract ID `{}` is not unique within this client",
-                            endpoint.contract_id.value
-                        ));
-                        error.combine(
-                            first.error("the first endpoint via this contract ID is here"),
-                        );
-                        return Err(error);
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
-    visit(children, &mut HashMap::new())
-}
-
-trait SpanError {
-    fn error(self, message: impl std::fmt::Display) -> syn::Error;
-}
-
-impl SpanError for Span {
-    fn error(self, message: impl std::fmt::Display) -> syn::Error {
-        syn::Error::new(self, message)
-    }
-}
-
-#[cfg(test)]
-pub(crate) mod test_support {
-    use super::*;
-
-    pub(crate) fn resolve_tokens(tokens: proc_macro2::TokenStream) -> Api {
-        try_resolve_tokens(tokens).expect("normalized semantic model")
-    }
-
-    pub(crate) fn try_resolve_tokens(tokens: proc_macro2::TokenStream) -> syn::Result<Api> {
-        let source = crate::syntax::parse(tokens)?;
-        resolve(source)
-    }
-
-    fn find_endpoint<'a>(children: &'a [Child], name: &str) -> Option<&'a Endpoint> {
-        for child in children {
-            match child {
-                Child::Endpoint(endpoint) if endpoint.name == name => return Some(endpoint),
-                Child::Scope(scope) => {
-                    if let Some(endpoint) = find_endpoint(&scope.children, name) {
-                        return Some(endpoint);
-                    }
-                }
-                Child::Endpoint(_) => {}
-            }
-        }
-        None
-    }
-
-    pub(crate) fn endpoint<'a>(children: &'a [Child], name: &str) -> &'a Endpoint {
-        find_endpoint(children, name).unwrap_or_else(|| panic!("endpoint `{name}`"))
-    }
-}
+mod endpoint;
+mod head;
+mod limits;
+mod names;
+mod rates;
+mod tree;
 
 #[cfg(test)]
 mod tests;
+
+use crate::syntax::ast::{Attrs, Reference, SourceApi};
+use crate::syntax::diagnostics::{Code, coded};
+pub(crate) use model::*;
+use surface::canonical_ident;
+
+/// Resolves one parsed declaration into the semantic model.
+pub(crate) fn resolve(api: SourceApi) -> syn::Result<Model> {
+    let mut resolver = tree::build(api)?;
+    auth::resolve_credentials(&mut resolver)?;
+    rates::resolve_registry(&mut resolver)?;
+    for owner in 0..resolver.model.owners.len() {
+        head::resolve_owner(&mut resolver, owner)?;
+        auth::resolve_owner(&mut resolver, owner)?;
+        rates::resolve_owner(&mut resolver, owner)?;
+    }
+    for endpoint in 0..resolver.model.endpoints.len() {
+        endpoint::resolve_contract(&mut resolver, endpoint)?;
+        head::resolve_endpoint(&mut resolver, endpoint)?;
+        auth::resolve_endpoint(&mut resolver, endpoint)?;
+        rates::resolve_endpoint(&mut resolver, endpoint)?;
+        endpoint::resolve_pagination(&mut resolver, endpoint)?;
+    }
+    auth::validate_credential_graph(&resolver)?;
+    rates::validate_identities(&resolver)?;
+    limits::check_static_head_bounds(&resolver.model)?;
+    names::resolve_liveness(&mut resolver)?;
+    names::resolve_identities(&mut resolver)?;
+    names::resolve_surfaces(&mut resolver)?;
+    names::check_shadowing(&resolver)?;
+    resolver.model.client.requires_limiter = resolver
+        .model
+        .owners
+        .iter()
+        .any(|owner| !owner.effective_rates.is_empty())
+        || resolver
+            .model
+            .endpoints
+            .iter()
+            .any(|endpoint| !endpoint.effective_rates.is_empty());
+    Ok(resolver.model)
+}
+
+/// Syntax retained per owner/endpoint until its attachments are resolved.
+pub(crate) struct Resolver {
+    pub(crate) model: Model,
+    pub(crate) owner_sources: Vec<tree::OwnerSource>,
+    pub(crate) endpoint_sources: Vec<crate::syntax::ast::SourceEndpoint>,
+    pub(crate) credentials_source: Option<crate::syntax::ast::CredentialsBlock>,
+    pub(crate) registry_source: Option<crate::syntax::ast::RateRegistry>,
+    /// Final potential key writers per owner (for structural checks).
+    pub(crate) owner_potential: Vec<head::Potential>,
+    /// Final potential key writers per endpoint.
+    pub(crate) endpoint_potential: Vec<head::Potential>,
+}
+
+impl Resolver {
+    /// Diagnostic owner label of `site` (``endpoint `Api::item` ``).
+    pub(crate) fn site_label(&self, site: Site) -> String {
+        self.model.site_label(site)
+    }
+
+    pub(crate) fn site_display(&self, site: Site) -> String {
+        match site {
+            Site::Owner(owner) => self.model.owners[owner].display.clone(),
+            Site::Endpoint(endpoint) => self.model.endpoints[endpoint].display.clone(),
+        }
+    }
+
+    fn site_values(&self, site: Site) -> &[Value] {
+        match site {
+            Site::Owner(owner) => &self.model.owners[owner].values,
+            Site::Endpoint(endpoint) => &self.model.endpoints[endpoint].values,
+        }
+    }
+
+    /// Owner chain (root first) visible from `site`, excluding an endpoint.
+    pub(crate) fn owner_chain(&self, site: Site) -> Vec<usize> {
+        match site {
+            Site::Owner(owner) => self.model.chain(owner),
+            Site::Endpoint(endpoint) => self.model.chain(self.model.endpoints[endpoint].owner),
+        }
+    }
+
+    /// Resolves one reference in the context of `site` (LANG-03).
+    pub(crate) fn resolve_ref(&self, site: Site, reference: &Reference) -> syn::Result<VRef> {
+        let name = canonical_ident(&reference.name);
+        let find = |site: Site| {
+            self.site_values(site)
+                .iter()
+                .position(|value| value.logical == name)
+                .map(|index| VRef { site, index })
+        };
+        let Some(owner) = &reference.owner else {
+            if let Some(found) = find(site) {
+                return Ok(found);
+            }
+            let mut suggestions = Vec::new();
+            for ancestor in self.owner_chain(site).into_iter().rev() {
+                if Site::Owner(ancestor) == site {
+                    continue;
+                }
+                if find(Site::Owner(ancestor)).is_some() {
+                    suggestions.push(if ancestor == 0 {
+                        format!("client.{name}")
+                    } else {
+                        format!("{}.{name}", self.model.owners[ancestor].logical)
+                    });
+                }
+            }
+            let hint = if suggestions.is_empty() {
+                format!(
+                    "; declare `{name}` as a value of this owner, or qualify an ancestor value as `client.{name}` or `<scope>.{name}`"
+                )
+            } else {
+                format!(
+                    "; a bare name binds only the current owner's values — did you mean `{}`?",
+                    suggestions.join("` or `")
+                )
+            };
+            return Err(coded(
+                reference.span,
+                Code::Name,
+                format!("`{name}` is not a value of {}{hint}", self.site_label(site)),
+            ));
+        };
+        let qualifier = canonical_ident(owner);
+        if qualifier == "endpoint" {
+            return Err(coded(
+                reference.span,
+                Code::Migrate,
+                format!(
+                    "`endpoint.{name}` is redundant qualification of the current endpoint ({}); write the bare name `{name}`",
+                    self.site_label(site)
+                ),
+            ));
+        }
+        let chain = self.owner_chain(site);
+        let target = if qualifier == "client" {
+            0
+        } else {
+            let Some(target) = chain.iter().copied().find(|ancestor| {
+                *ancestor != 0 && self.model.owners[*ancestor].logical == qualifier
+            }) else {
+                return Err(coded(
+                    owner.span(),
+                    Code::Name,
+                    format!(
+                        "`{qualifier}` is not the client or a visible ancestor scope of {}; qualify with `client.` or the name of an enclosing scope",
+                        self.site_label(site)
+                    ),
+                ));
+            };
+            target
+        };
+        if Site::Owner(target) == site {
+            return Err(coded(
+                reference.span,
+                Code::Migrate,
+                format!(
+                    "`{qualifier}.{name}` redundantly qualifies the current owner ({}); write the bare name `{name}`",
+                    self.site_label(site)
+                ),
+            ));
+        }
+        find(Site::Owner(target)).ok_or_else(|| {
+            coded(
+                reference.name.span(),
+                Code::Name,
+                format!(
+                    "`{name}` is not a value of {} (referenced from {}); declare it there or qualify the owner that declares it",
+                    self.model.owner_label(target),
+                    self.site_label(site)
+                ),
+            )
+        })
+    }
+}
+
+pub(crate) fn meta_from(attrs: &Attrs) -> Meta {
+    Meta {
+        docs: attrs.docs.iter().map(|doc| doc.value()).collect(),
+        deprecated: attrs.deprecated.as_ref().map(|deprecation| Deprecation {
+            note: deprecation.note.as_ref().map(syn::LitStr::value),
+            since: deprecation.since.as_ref().map(syn::LitStr::value),
+        }),
+    }
+}

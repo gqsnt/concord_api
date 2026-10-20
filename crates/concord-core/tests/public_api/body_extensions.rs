@@ -3,8 +3,8 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use concord_core::contracts::{
-    Binary, BodyError, BodyErrorKind, BodyFactory, BodyKind, Bytes, HeaderValue,
-    MAX_EMPTY_REQUEST_CHUNKS, PageRequestRepresentation, RequestBody, RequestStream, Text,
+    Binary, BodyError, BodyErrorKind, BodyFactory, BodyKind, Bytes, MAX_EMPTY_REQUEST_CHUNKS,
+    PageRequestRepresentation, PreparedBody, RequestStream, Text,
 };
 use futures_core::Stream;
 
@@ -23,10 +23,6 @@ impl Stream for DownstreamStream {
 struct DownstreamFactory;
 
 impl BodyFactory for DownstreamFactory {
-    fn content_type(&self) -> Option<HeaderValue> {
-        Some(HeaderValue::from_static("application/x-downstream-body"))
-    }
-
     fn create(&self) -> Result<RequestStream, BodyError> {
         Ok(RequestStream::from_bytes(Bytes::from_static(b"fresh-body")))
     }
@@ -47,12 +43,16 @@ fn downstream_body_contracts_need_only_the_contract_surface() {
     let reader = RequestStream::from_reader(std::io::Cursor::new(b"reader".to_vec()));
     assert_send(&reader);
 
-    let bytes = RequestBody::bytes(Bytes::from_static(b"bytes"));
+    let bytes = PreparedBody::bytes(Bytes::from_static(b"bytes"));
     assert_eq!(bytes.kind(), BodyKind::Buffered);
-    let stream = RequestBody::stream(stream);
+    let stream = PreparedBody::stream(stream);
     assert_eq!(stream.kind(), BodyKind::Stream);
-    let factory = RequestBody::factory(DownstreamFactory);
+    let factory = PreparedBody::factory(DownstreamFactory)
+        .content_type("application/x-downstream-body")
+        .expect("factory media type");
     assert_eq!(factory.kind(), BodyKind::Stream);
+    assert_eq!(factory.media_type(), Some("application/x-downstream-body"));
+    assert!(factory.is_replayable());
     assert_send(&factory);
     assert_sync(&DownstreamFactory);
     assert_eq!(MAX_EMPTY_REQUEST_CHUNKS, 1_024);

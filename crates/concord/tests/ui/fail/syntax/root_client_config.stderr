@@ -1,5 +1,35 @@
-error: a v2.1 client must explicitly declare one positive finite `timeout DURATION;`
- --> tests/ui/fail/syntax/root_client_config.rs:4:12
-  |
-4 |     client RootConfigApi {
-  |            ^^^^^^^^^^^^^
+error: [C3-OWNER] an `api!` invocation accepts exactly one closed `client` (client `RootConfigApi` is already declared); move scopes and endpoints inside it, or declare another client in a separate invocation
+  --> tests/ui/fail/syntax/root_client_config.rs:15:5
+   |
+15 |     timeout 5s;
+   |     ^^^^^^^
+
+error: [C3-OWNER] client `MissingBaseApi` requires exactly one fixed base; write `base "https://...";` in its preamble
+  --> tests/ui/fail/syntax/root_client_config.rs:19:12
+   |
+19 |     client MissingBaseApi {
+   |            ^^^^^^^^^^^^^^
+
+error: [C3-OWNER] durations must be greater than zero (in client `ZeroTimeoutApi`); write a positive duration such as `1s`
+  --> tests/ui/fail/syntax/root_client_config.rs:27:17
+   |
+27 |         timeout 0s;
+   |                 ^^
+
+error: [C3-OWNER] timeout in client `FractionalTimeoutApi` requires a duration such as `250ms`, `5s`, `10m` or `1h`
+  --> tests/ui/fail/syntax/root_client_config.rs:34:21
+   |
+34 |         timeout 1.5s;
+   |                     ^
+
+error: [C3-OWNER] duration unit must be one of `ms`, `s`, `m`, or `h` (in client `UnitlessTimeoutApi`); write e.g. `250ms` or `5s`
+  --> tests/ui/fail/syntax/root_client_config.rs:41:17
+   |
+41 |         timeout 30;
+   |                 ^^
+
+error: [C3-OWNER] `timeout off` is not supported in client `TimeoutOffApi`; declare one positive finite duration such as `timeout 30s;`
+  --> tests/ui/fail/syntax/root_client_config.rs:48:17
+   |
+48 |         timeout off;
+   |                 ^^^

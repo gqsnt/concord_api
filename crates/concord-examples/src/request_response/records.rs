@@ -6,7 +6,6 @@
 //! `tests/local_runtime.rs`.
 
 use std::num::NonZeroUsize;
-use std::pin::Pin;
 
 use concord::api;
 use concord::codec::{Bytes, BytesMut};
@@ -17,12 +16,12 @@ use concord::records::{
 use concord::response::{
     Buffered, ResponseBodyError, ResponseDriver, ResponseHead, ResponseRepresentation, Streaming,
 };
-use futures_core::Stream as _;
 
 /// Header-bearing, semicolon-delimited CSV used by the configured endpoint.
 pub type ConfCsv = Csv<HasHeader, SemicolonDelimiter>;
 
 // ANCHOR: record_decoder_extension
+/// A `|`-terminated UTF-8 record decoder with a final unterminated record.
 pub struct PipeRecords;
 
 /// Representation marker hiding the pipe decoder from endpoint outputs.
@@ -31,9 +30,7 @@ pub struct PipeDelimited;
 impl RecordDecoder for PipeRecords {
     type Record = String;
 
-    fn accept() -> Option<&'static str> {
-        Some("application/x-pipe-records")
-    }
+    const ACCEPT: Option<&'static str> = Some("application/x-pipe-records");
 
     fn start(_head: &ResponseHead<'_>) -> Result<Self, RecordError> {
         Ok(Self)
@@ -76,9 +73,7 @@ impl RecordDecoder for PipeRecords {
 impl ResponseRepresentation<Vec<String>> for PipeDelimited {
     type Driver = Buffered;
 
-    fn accept() -> Option<&'static str> {
-        PipeRecords::accept()
-    }
+    const ACCEPT: Option<&'static str> = PipeRecords::ACCEPT;
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         validate_record_decoder::<PipeRecords>(head)
@@ -92,9 +87,7 @@ impl ResponseRepresentation<Vec<String>> for PipeDelimited {
 impl ResponseRepresentation<ItemStream<String>> for PipeDelimited {
     type Driver = Streaming;
 
-    fn accept() -> Option<&'static str> {
-        PipeRecords::accept()
-    }
+    const ACCEPT: Option<&'static str> = PipeRecords::ACCEPT;
 
     fn from_body(
         body: <Self::Driver as ResponseDriver>::Body,
@@ -107,25 +100,25 @@ impl ResponseRepresentation<ItemStream<String>> for PipeDelimited {
 // ANCHOR: records_contract
 api! {
     client RecordsApi {
-        timeout 30s;
         base "http://records.example.test/";
+        timeout 30s;
 
-
-    GET custom() -> ItemStream<String> via crate::request_response::records::PipeDelimited;
-    GET buffered_custom() -> Vec<String> via crate::request_response::records::PipeDelimited;
-    GET csv_rows() -> Vec<(String, u32)> via Csv;
-    GET csv_stream() -> ItemStream<(String, u32)> via Csv;
-    GET configured_csv_rows() -> Vec<(String, u32)> via crate::request_response::records::ConfCsv;
-    GET configured_csv_stream() -> ItemStream<(String, u32)> via crate::request_response::records::ConfCsv;
-    GET nd_json_values() -> Vec<u32> via NdJson;
-    GET nd_json_stream() -> ItemStream<u32> via NdJson;
-}}
+        GET custom() -> ItemStream<String> via PipeDelimited;
+        GET buffered_custom() -> Vec<String> via PipeDelimited;
+        GET csv_rows() -> Vec<(String, u32)> via Csv;
+        GET csv_stream() -> ItemStream<(String, u32)> via Csv;
+        GET configured_csv_rows() -> Vec<(String, u32)> via ConfCsv;
+        GET configured_csv_stream() -> ItemStream<(String, u32)> via ConfCsv;
+        GET nd_json_values() -> Vec<u32> via NdJson;
+        GET nd_json_stream() -> ItemStream<u32> via NdJson;
+    }
+}
 // ANCHOR_END: records_contract
 
 /// Constructs all record-stream requests without opening a connection.
 // ANCHOR: record_requests
 pub fn construct() -> Result<(), concord::ClientBuildError> {
-    let client = RecordsApi::builder().build()?;
+    let client = RecordsApi::new()?;
     let _: records_api::CustomRequest = client.custom();
     let _: records_api::BufferedCustomRequest = client.buffered_custom();
     let _: records_api::CsvRowsRequest = client.csv_rows();
@@ -145,9 +138,7 @@ pub async fn read_csv_rows(
 ) -> Result<Vec<(String, u32)>, Box<dyn std::error::Error>> {
     let mut stream = client.csv_stream().await?;
     let mut rows = Vec::new();
-    while let Some(row) =
-        std::future::poll_fn(|context| Pin::new(&mut stream).poll_next(context)).await
-    {
+    while let Some(row) = stream.next().await {
         rows.push(row?);
     }
     Ok(rows)

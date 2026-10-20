@@ -1,146 +1,186 @@
-use std::collections::HashSet;
+//! Pagination Init/Cursor syntax (§14.1).
 
 use syn::parse::ParseStream;
-use syn::{Ident, LitBool, LitChar, LitFloat, LitInt, LitStr, Token, Type, braced};
+use syn::spanned::Spanned;
+use syn::{
+    Ident, LitBool, LitChar, LitFloat, LitInt, LitStr, Path, Token, Type, braced, parenthesized,
+};
 
-use super::ast::{PaginationDecl, PaginationField, PaginationInitializer, PaginationValue};
-use super::diagnostics::SpanError;
+use super::ast::{InitValue, PaginationDecl};
+use super::diagnostics::{Code, coded, related};
 use super::keyword;
-use super::values::parse_stable_default;
+use super::request::parse_reference;
+use super::values::parse_stable_value;
 use crate::semantic::surface::canonical_ident;
 
-pub(super) fn parse_pagination(input: ParseStream<'_>) -> syn::Result<PaginationDecl> {
+pub(crate) fn parse_pagination(input: ParseStream<'_>, owner: &str) -> syn::Result<PaginationDecl> {
     input.parse::<keyword::paginate>()?;
-    if input.peek(keyword::with) {
-        let old: keyword::with = input.parse()?;
-        return Err(old
-            .span
-            .error("v2.1 replaced pagination keyword `with` with `via`"));
-    }
-    if !input.peek(keyword::via) {
-        return Err(input.error(
-            "v1 pagination syntax was removed; pagination requires `paginate via Controller { field -> endpoint.slot; stable = value; }`",
-        ));
-    }
-    input.parse::<keyword::via>()?;
-    let controller: Type = input.parse().map_err(|_| {
-        input.error("`paginate via` requires one Rust controller type and a binding block")
+    input.parse::<keyword::via>().map_err(|_| {
+        input.error(format!(
+            "[C3-PAGE] pagination of {owner} is `paginate via Controller {{ init Init {{ ... }}; cursor -> slot; }}`"
+        ))
     })?;
+    let controller: Type = input.parse()?;
     let body;
     braced!(body in input);
-    let mut fields = Vec::new();
-    let mut seen_fields = HashSet::new();
-    let mut seen_destinations = HashSet::new();
-    while !body.is_empty() {
-        let name: Ident = body
-            .parse()
-            .map_err(|_| body.error("a pagination controller field begins with its field name"))?;
-        let canonical = canonical_ident(&name);
-        if !seen_fields.insert(canonical.clone()) {
-            return Err(name.span().error(format!(
-                "duplicate pagination controller field `{canonical}`"
-            )));
-        }
-        let initializer = if body.peek(Token![->]) {
-            body.parse::<Token![->]>()?;
-            let namespace: Ident = body.parse()?;
-            if canonical_ident(&namespace) != "endpoint" {
-                return Err(namespace.span().error(
-                    "a live pagination binding may update only an endpoint-owned slot (`field -> endpoint.name`)",
-                ));
-            }
-            body.parse::<Token![.]>()?;
-            let destination: Ident = body.parse()?;
-            if body.peek(Token![.])
-                || body.peek(syn::token::Paren)
-                || body.peek(syn::token::Bracket)
-                || body.peek(Token![!])
-            {
-                return Err(body.error(
-                    "a live pagination destination must be one direct `endpoint.NAME` reference",
-                ));
-            }
-            let destination_name = canonical_ident(&destination);
-            if !seen_destinations.insert(destination_name.clone()) {
-                return Err(destination.span().error(format!(
-                    "duplicate live pagination destination `endpoint.{destination_name}`"
-                )));
-            }
-            PaginationInitializer::Live {
-                namespace,
-                destination,
-            }
-        } else if body.peek(Token![=]) {
-            body.parse::<Token![=]>()?;
-            PaginationInitializer::Value(parse_pagination_value(&body)?)
-        } else if body.peek(Token![:]) || body.peek(keyword::bind) {
-            return Err(body.error(
-                "v1 pagination field syntax was removed; use `field -> endpoint.slot;` for live authority or `field = value;` for stable state",
+    if !body.peek(keyword::init) {
+        if body.fork().parse::<Ident>().is_ok() && (body.peek2(Token![->]) || body.peek2(Token![=]))
+        {
+            return Err(coded(
+                body.span(),
+                Code::Migrate,
+                format!(
+                    "v2 public controller-field bindings were replaced: write `init InitType {{ field: value, ... }}; cursor -> slot;` in {owner}"
+                ),
             ));
-        } else {
-            return Err(body
-                .error("pagination fields require `-> endpoint.slot` or `= stable_initializer`"));
-        };
-        body.parse::<Token![;]>()?;
-        fields.push(PaginationField { name, initializer });
-    }
-    Ok(PaginationDecl { controller, fields })
-}
-
-fn parse_pagination_value(input: ParseStream<'_>) -> syn::Result<PaginationValue> {
-    if input.peek(Token![default]) {
-        let keyword: Token![default] = input.parse()?;
-        return Err(keyword.span.error(
-            "`default` is not a pagination initializer; use a stable literal, const/static path, or visible total owner reference",
+        }
+        return Err(coded(
+            body.span(),
+            Code::Page,
+            format!(
+                "the pagination block of {owner} begins with `init InitType {{ field: value, ... }};`"
+            ),
         ));
     }
-    if input.peek(LitStr)
-        || input.peek(LitChar)
-        || input.peek(LitInt)
-        || input.peek(LitFloat)
-        || input.peek(LitBool)
-        || input.peek(Token![-])
-    {
-        return parse_stable_default(input).map(PaginationValue::Stable);
-    }
-    let fork = input.fork();
-    if fork.parse::<Ident>().is_ok() && fork.peek(Token![.]) {
-        let namespace: Ident = input.parse()?;
-        match canonical_ident(&namespace).as_str() {
-            "vars" => {
-                return Err(namespace
-                    .span()
-                    .error("v1 `vars.NAME` was removed; use `client.NAME`"));
-            }
-            "scope" => {
-                return Err(namespace.span().error(
-                    "v1 `scope.NAME` was removed; use the actual visible scope identifier",
-                ));
-            }
-            "ep" => {
-                return Err(namespace
-                    .span()
-                    .error("v1 `ep.NAME` was removed; use `endpoint.NAME`"));
-            }
-            _ => {}
+    body.parse::<keyword::init>()?;
+    let init_type: Path = body.parse()?;
+    let fields_content;
+    braced!(fields_content in body);
+    let mut init_fields: Vec<(Ident, InitValue)> = Vec::new();
+    while !fields_content.is_empty() {
+        if fields_content.peek(Token![..]) {
+            return Err(coded(
+                fields_content.span(),
+                Code::Page,
+                format!(
+                    "`..Default::default()` is not DSL syntax (Init of {owner}); supply every Init field or name a Rust constant"
+                ),
+            ));
         }
-        input.parse::<Token![.]>()?;
-        let name: Ident = input.parse()?;
-        if input.peek(Token![.])
-            || input.peek(syn::token::Paren)
-            || input.peek(syn::token::Bracket)
-            || input.peek(Token![!])
+        let field: Ident = fields_content.parse()?;
+        fields_content.parse::<Token![:]>()?;
+        let value = if fields_content.peek(LitStr)
+            || fields_content.peek(LitChar)
+            || fields_content.peek(LitBool)
+            || fields_content.peek(LitInt)
+            || fields_content.peek(LitFloat)
+            || fields_content.peek(Token![-])
+            || is_constant_path(&fields_content)
         {
-            return Err(input
-                .error("pagination stable references must be one direct owner/value reference"));
+            InitValue::Stable(parse_stable_value(&fields_content, owner)?)
+        } else {
+            InitValue::Reference(parse_reference(&fields_content, owner)?)
+        };
+        if let Some((existing, _)) = init_fields
+            .iter()
+            .find(|(existing, _)| canonical_ident(existing) == canonical_ident(&field))
+        {
+            let error = coded(
+                field.span(),
+                Code::Page,
+                format!(
+                    "duplicate Init field `{}` in the pagination of {owner}; assign each field once",
+                    canonical_ident(&field)
+                ),
+            );
+            return Err(related(error, existing.span(), "first assignment here"));
         }
-        return Ok(PaginationValue::Reference { namespace, name });
+        init_fields.push((field, value));
+        if fields_content.is_empty() {
+            break;
+        }
+        fields_content.parse::<Token![,]>()?;
     }
-    parse_stable_default(input)
-        .map(PaginationValue::Stable)
-        .map_err(|_| {
-            input.error(
-                "pagination initializers accept only direct total owner references, supported literals, or Rust const/static paths",
-            )
+    body.parse::<Token![;]>()?;
+    if !body.peek(keyword::cursor) {
+        return Err(coded(
+            body.span(),
+            Code::Page,
+            format!(
+                "the pagination block of {owner} ends with `cursor -> slot;` or `cursor -> (a, b);`"
+            ),
+        ));
+    }
+    let cursor_span = body.span();
+    body.parse::<keyword::cursor>()?;
+    body.parse::<Token![->]>()?;
+    let (cursor, tuple) = if body.peek(syn::token::Paren) {
+        let content;
+        parenthesized!(content in body);
+        let mut names: Vec<Ident> = Vec::new();
+        while !content.is_empty() {
+            names.push(content.parse()?);
+            if content.is_empty() {
+                break;
+            }
+            content.parse::<Token![,]>()?;
+        }
+        if names.len() < 2 {
+            return Err(coded(
+                cursor_span,
+                Code::Page,
+                format!(
+                    "a tuple cursor destination of {owner} names at least two endpoint slots; write `cursor -> slot;` for one slot"
+                ),
+            ));
+        }
+        (names, true)
+    } else {
+        let name: Ident = body.parse()?;
+        if body.peek(Token![.]) {
+            let fork = body.fork();
+            let slot = fork
+                .parse::<Token![.]>()
+                .and_then(|_| fork.parse::<Ident>())
+                .map_or_else(|_| "slot".to_owned(), |slot| canonical_ident(&slot));
+            return Err(coded(
+                name.span(),
+                Code::Page,
+                format!(
+                    "cursor destinations of {owner} are bare endpoint-owned slots, never `endpoint.x`, client or scope values; declare `{slot}` as an endpoint parameter and write `cursor -> {slot};`"
+                ),
+            ));
+        }
+        (vec![name], false)
+    };
+    body.parse::<Token![;]>()?;
+    if !body.is_empty() {
+        return Err(coded(
+            body.span(),
+            Code::Page,
+            format!(
+                "unexpected tokens after `cursor -> ...;` in the pagination of {owner}; the cursor mapping is the last statement"
+            ),
+        ));
+    }
+    Ok(PaginationDecl {
+        controller,
+        init_type,
+        init_fields,
+        cursor,
+        tuple,
+        cursor_span: cursor_span.span(),
+    })
+}
+
+/// A path whose last segment starts with an uppercase letter or contains `::`
+/// is treated as a Rust constant; a bare lowercase identifier or `owner.name`
+/// is a value reference.
+fn is_constant_path(input: ParseStream<'_>) -> bool {
+    let fork = input.fork();
+    let Ok(path) = fork.parse::<Path>() else {
+        return false;
+    };
+    if fork.peek(Token![.]) {
+        return false;
+    }
+    path.segments.len() > 1
+        || path.segments.last().is_some_and(|segment| {
+            segment
+                .ident
+                .to_string()
+                .chars()
+                .next()
+                .is_some_and(char::is_uppercase)
         })
 }

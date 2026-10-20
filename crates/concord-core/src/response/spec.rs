@@ -7,8 +7,9 @@ use crate::codec::{Binary, DecodeBody, DecodeContext};
 use crate::endpoint::ResponseAcquisition;
 use crate::hooks::{BoxFuture, CompletionOutcome};
 
+use super::absence::ExpectedAbsence;
 use super::handler::ResponseInput;
-use super::{ByteStream, ExecutionMeta, ResponseBodyError, ResponseBodyErrorKind};
+use super::{BodyDisposition, ByteStream, ExecutionMeta, ResponseBodyError, ResponseBodyErrorKind};
 
 pub(crate) mod private {
     use crate::error::ApiError;
@@ -18,6 +19,7 @@ pub(crate) mod private {
 
     pub trait Sealed: Send + Sync + 'static {
         const COMPLETION_OUTCOME: CompletionOutcome;
+        const BODY_DISPOSITION: super::BodyDisposition;
 
         fn preflight(input: &ResponseInput) -> Result<(), ApiError>;
 
@@ -40,18 +42,53 @@ pub(crate) mod private {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Buffered;
 
-/// Lazy bounded response acquisition as one media-independent [`ByteStream`].
+/// Lazy bounded response acquisition as one media-independent managed
+/// [`ByteStream`].
+///
+/// The endpoint await returns after accepted-head validation and opening the
+/// stream (completion `StreamOpened`, body disposition
+/// [`BodyDisposition::StreamOpened`]); consumption then runs under the
+/// stream's finite lease, idle, byte, record and frame limits. See
+/// [`ByteStream`] for the acquisition-versus-consumption contract.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Streaming;
 
 /// Accepted response-body discard without polling the native body.
+///
+/// The native body is dropped unread: it is never polled and never drained,
+/// so no body byte limit applies and the outcome reports
+/// [`BodyDisposition::DiscardedUnread`]. This is not complete consumption of
+/// the body.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct DiscardDriver;
 
 /// A core-owned accepted-response acquisition mode.
 ///
-/// Applications may select one of Concord's public marker types but cannot
-/// implement another mode or obtain a native or unbounded response body.
+/// The trait is sealed: its only modes are [`Buffered`] (complete bounded
+/// `Bytes` before conversion), [`Streaming`] (a managed [`ByteStream`] with
+/// its own finite post-acquisition contract) and [`DiscardDriver`] (the
+/// accepted native body is dropped without polling).
+///
+/// # Extension contract
+///
+/// * **Ownership.** Core owns the native response body in every mode and
+///   hands a representation only the mode's [`Body`](Self::Body) value.
+/// * **Concurrency.** The markers are stateless; independent responses are
+///   acquired concurrently without shared driver state.
+/// * **Cancellation.** Acquisition runs under the operation deadline (and,
+///   for a stream, its lease and idle timeouts); dropping the operation or
+///   stream stops acquisition without polling further.
+/// * **Input sensitivity.** The acquired body may be sensitive; no mode
+///   formats body bytes into diagnostics.
+/// * **Errors.** Acquisition failures (limits, transport errors, timeouts)
+///   are value-free core errors reported before any representation
+///   conversion runs.
+/// * **Resource obligations.** Every mode is bounded by core: the configured
+///   response or stream byte limits, the empty-chunk ceiling and finite time
+///   leases.
+/// * **Negative capabilities.** Applications may select one of these markers
+///   but cannot implement another mode or obtain a native or unbounded
+///   response body.
 pub trait ResponseDriver: private::Sealed + Send + Sync + 'static {
     /// Semantic body value delivered after core-owned acquisition.
     ///
@@ -81,6 +118,7 @@ impl ResponseDriver for DiscardDriver {
 
 impl private::Sealed for Buffered {
     const COMPLETION_OUTCOME: CompletionOutcome = CompletionOutcome::Success;
+    const BODY_DISPOSITION: BodyDisposition = BodyDisposition::Complete;
 
     fn preflight(input: &ResponseInput) -> Result<(), crate::error::ApiError> {
         super::handler::preflight_buffered(input)
@@ -99,6 +137,7 @@ impl private::Sealed for Buffered {
 
 impl private::Sealed for Streaming {
     const COMPLETION_OUTCOME: CompletionOutcome = CompletionOutcome::StreamOpened;
+    const BODY_DISPOSITION: BodyDisposition = BodyDisposition::StreamOpened;
 
     fn preflight(input: &ResponseInput) -> Result<(), crate::error::ApiError> {
         super::handler::preflight_streaming(input)
@@ -117,6 +156,7 @@ impl private::Sealed for Streaming {
 
 impl private::Sealed for DiscardDriver {
     const COMPLETION_OUTCOME: CompletionOutcome = CompletionOutcome::Success;
+    const BODY_DISPOSITION: BodyDisposition = BodyDisposition::DiscardedUnread;
 
     fn preflight(input: &ResponseInput) -> Result<(), crate::error::ApiError> {
         super::handler::preflight_discard(input)
@@ -137,8 +177,23 @@ impl private::Sealed for DiscardDriver {
 /// endpoint-declared accepted-byte terminals.
 ///
 /// Concord implements this trait only for [`Buffered`] and [`DiscardDriver`].
-/// Applications cannot implement new response modes because [`ResponseDriver`]
-/// is itself sealed.
+///
+/// # Extension contract
+///
+/// * **Ownership.** Core keeps ownership of the acquired bytes and returns
+///   them, bounded, through the accepted-bytes terminal.
+/// * **Concurrency.** The markers are stateless and carry no shared state.
+/// * **Cancellation.** The acquisition obligations of [`ResponseDriver`]
+///   apply; dropping the terminal stops acquisition.
+/// * **Input sensitivity.** Accepted bytes may be sensitive and are never
+///   formatted into diagnostics.
+/// * **Errors.** Acquisition failures are value-free core errors; the
+///   capability adds none of its own.
+/// * **Resource obligations.** The configured response byte limit bounds the
+///   retained bytes.
+/// * **Negative capabilities.** Applications cannot implement new response
+///   modes because [`ResponseDriver`] is itself sealed, so no terminal can
+///   expose a streaming or native body as accepted bytes.
 pub trait AcceptedBytesDriver: ResponseDriver {}
 
 impl AcceptedBytesDriver for Buffered {}
@@ -155,7 +210,8 @@ impl AcceptedBytesDriver for DiscardDriver {}
 /// owns their logging and storage behavior. No native response or transport
 /// handle is exposed.
 pub struct ResponseHead<'a> {
-    /// Stable generated or runtime endpoint identity.
+    /// Operational endpoint ID: an explicit `id` pin or a navigation-derived ID
+    /// for a generated endpoint, the validated ID of a runtime endpoint.
     pub endpoint: &'a str,
     /// Application HTTP method.
     pub method: &'a Method,
@@ -177,8 +233,15 @@ pub struct ResponseHead<'a> {
 /// Converts one core-owned acquisition mode into an application output.
 ///
 /// Concord first performs limiter observation, authoritative authentication
-/// challenge handling, and endpoint-owned status acceptance. A rejected status
-/// stays on the bounded status error path and never enters this extension.
+/// challenge handling, head-only expected absence (an endpoint's `absent on`
+/// statuses never reach the representation) and endpoint-owned status
+/// acceptance. A rejected status stays on the bounded status error path and
+/// never enters this extension, except through the explicit application call
+/// `HttpResponseFailure::decode_status_body`, which runs the same callbacks on
+/// retained complete bytes without network work.
+///
+/// Negotiation is the static [`ResponseRepresentation::ACCEPT`] constant; no
+/// user function runs merely to discover the `Accept` header.
 ///
 /// For an accepted status, Concord performs the selected mode's known-length
 /// preflight. `validate` runs next, before the first body poll. Concord alone
@@ -186,22 +249,46 @@ pub struct ResponseHead<'a> {
 /// value, and only then calls `from_body`. The validation and conversion
 /// callbacks are also synchronous and followed by deadline checks. These
 /// callbacks cannot replace challenge ordering, limits, completion, native-body
-/// ownership, or the three sealed modes. No native response or transport handle
-/// is supplied to a callback.
+/// ownership, or the three sealed modes.
 ///
 /// For pagination, core additionally charges the exact acquired buffered body
 /// length to the operation's aggregate response-byte budget before retaining
 /// decoded page items. The item-count limit independently bounds collection
-/// structure. A custom decoder that expands a small body into disproportionately
-/// large application-owned state remains trusted extension code.
+/// structure.
 ///
-/// Calls for independent responses may overlap. The accepted head and mode
-/// body can contain sensitive application data; implementations own their
-/// logging, storage, CPU, memory, metric cardinality, and external I/O behavior.
-/// Concord's acquisition limit bounds retained wire bytes, not the heap size of
-/// the output value produced by `from_body`. Every core-owned body-polling mode
-/// suppresses empty transport chunks and applies the same finite response-wide
-/// empty-chunk ceiling before extension conversion.
+/// # Extension contract
+///
+/// * **Ownership.** `from_body` takes ownership of the mode's acquired body
+///   and moves the output to the caller; the response head is borrowed.
+///   Representations are marker types that Concord never constructs.
+/// * **Concurrency.** Calls for independent responses may overlap.
+/// * **Cancellation.** The callbacks are synchronous and cannot be
+///   preempted; core checks the operation deadline after each one, and
+///   cancellation prevents only later Concord work.
+/// * **Input sensitivity.** The accepted head and mode body can contain
+///   sensitive application data; implementations own their logging, storage
+///   and metrics.
+/// * **Errors.** Return a [`ResponseBodyError`]; core keeps its structural
+///   kind, discards application text before automatic diagnostics, and
+///   treats the failure as terminal (never retried).
+/// * **Resource obligations.** Implementations own their CPU, memory, metric
+///   cardinality and external I/O behavior. Concord's acquisition limit
+///   bounds retained wire bytes, not the heap size of the output value
+///   produced by `from_body`; a custom decoder that expands a small body into
+///   disproportionately large application-owned state remains trusted
+///   extension code. Every core-owned body-polling mode suppresses empty
+///   transport chunks and applies the same finite response-wide empty-chunk
+///   ceiling before extension conversion.
+/// * **Negative capabilities.** A representation cannot change the accepted
+///   status, contact evidence or absence rule, cannot obtain a native
+///   response or transport handle, and cannot grant itself a new acquisition
+///   mode.
+#[diagnostic::on_unimplemented(
+    message = "[C3-REP] `{Self}` is not a response representation for result type `{Output}`",
+    label = "selected as the response representation of a `{Output}` result",
+    note = "a result needs `ResponseRepresentation<{Output}>` or a complete buffered `DecodeBody` decoder whose `Output` is `{Output}`; a request-only representation cannot decode a response, and with `absent on` the result is `Option<T>` decoded by a buffered representation of `T`",
+    note = "write `-> {Output} via R` with a representation producing this result, or select a direction default with `response R;` on an owner"
+)]
 pub trait ResponseRepresentation<Output>: Send + Sync + 'static
 where
     Output: Send + 'static,
@@ -209,10 +296,14 @@ where
     /// Core-owned acquisition mode selected by this specification.
     type Driver: ResponseDriver;
 
-    /// Default validated `Accept` value inserted only when the request has none.
-    fn accept() -> Option<&'static str> {
-        None
-    }
+    /// Static `Accept` value negotiated for this representation.
+    ///
+    /// Inspection, descriptions and plans read this constant without running
+    /// user code. It is validated as an HTTP `Accept` value (no injected line
+    /// breaks) once, at compile time through the generated-code bridge or at
+    /// runtime endpoint build, and it is independent of response
+    /// `Content-Type` validation performed by [`Self::validate`].
+    const ACCEPT: Option<&'static str> = None;
 
     /// Validates the accepted response head before the first body poll.
     fn validate(_head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
@@ -234,12 +325,18 @@ where
     type Output: Send + 'static;
     type Driver: ResponseDriver;
 
+    /// Whether this selection can complete a declared head-only absence.
+    const SUPPORTS_ABSENCE: bool;
+
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError>;
 
     fn from_body(
         body: <Self::Driver as ResponseDriver>::Body,
         head: &ResponseHead<'_>,
     ) -> Result<Self::Output, ResponseBodyError>;
+
+    /// Constructs the absent outcome without invoking the representation.
+    fn absent_output(absence: &ExpectedAbsence<DeclaredOutput, R>) -> Option<Self::Output>;
 }
 
 pub(crate) struct DeclaredResponse<R>(std::marker::PhantomData<fn() -> R>);
@@ -252,6 +349,8 @@ where
     type Output = Output;
     type Driver = R::Driver;
 
+    const SUPPORTS_ABSENCE: bool = true;
+
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         R::validate(head)
     }
@@ -261,6 +360,10 @@ where
         head: &ResponseHead<'_>,
     ) -> Result<Self::Output, ResponseBodyError> {
         R::from_body(body, head)
+    }
+
+    fn absent_output(absence: &ExpectedAbsence<Output, R>) -> Option<Self::Output> {
+        Some(absence.absent_value())
     }
 }
 
@@ -274,6 +377,8 @@ where
     type Output = Bytes;
     type Driver = Buffered;
 
+    const SUPPORTS_ABSENCE: bool = false;
+
     fn validate(_head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         Ok(())
     }
@@ -284,6 +389,10 @@ where
     ) -> Result<Self::Output, ResponseBodyError> {
         Ok(body)
     }
+
+    fn absent_output(_absence: &ExpectedAbsence<Output, R>) -> Option<Self::Output> {
+        None
+    }
 }
 
 impl<C> ResponseRepresentation<C::Output> for C
@@ -292,9 +401,7 @@ where
 {
     type Driver = Buffered;
 
-    fn accept() -> Option<&'static str> {
-        C::ACCEPT
-    }
+    const ACCEPT: Option<&'static str> = C::ACCEPT;
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         let content_type = head
@@ -322,16 +429,25 @@ where
                 content_type,
             },
         )
-        .map_err(|_| ResponseBodyError::new(ResponseBodyErrorKind::Decode))
+        .map_err(|error| ResponseBodyError::new(codec_response_error_kind(error.kind())))
+    }
+}
+
+/// Maps one category-only codec failure to an accepted-response failure.
+pub(crate) const fn codec_response_error_kind(
+    kind: crate::codec::CodecErrorKind,
+) -> ResponseBodyErrorKind {
+    match kind {
+        crate::codec::CodecErrorKind::Decode => ResponseBodyErrorKind::Decode,
+        crate::codec::CodecErrorKind::Limit => ResponseBodyErrorKind::InvalidOutput,
+        crate::codec::CodecErrorKind::Encode => ResponseBodyErrorKind::Internal,
     }
 }
 
 impl ResponseRepresentation<Bytes> for Binary {
     type Driver = Buffered;
 
-    fn accept() -> Option<&'static str> {
-        Some("application/octet-stream")
-    }
+    const ACCEPT: Option<&'static str> = Some("application/octet-stream");
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         validate_exact_media(head, "application/octet-stream")
@@ -348,9 +464,7 @@ impl ResponseRepresentation<Bytes> for Binary {
 impl ResponseRepresentation<Vec<u8>> for Binary {
     type Driver = Buffered;
 
-    fn accept() -> Option<&'static str> {
-        Some("application/octet-stream")
-    }
+    const ACCEPT: Option<&'static str> = Some("application/octet-stream");
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         validate_exact_media(head, "application/octet-stream")
@@ -365,6 +479,9 @@ impl ResponseRepresentation<Vec<u8>> for Binary {
 }
 
 /// An accepted response that must contain zero decoded body bytes.
+///
+/// The body is acquired completely under the buffered limit; a nonempty body
+/// is a conversion error, never silently discarded.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Empty;
 
@@ -383,7 +500,10 @@ impl ResponseRepresentation<()> for Empty {
     }
 }
 
-/// An accepted response whose bounded body is ignored.
+/// An accepted response whose native body is dropped without being read.
+///
+/// `Discard` selects [`DiscardDriver`]: the body is never polled or drained,
+/// and the response reports [`BodyDisposition::DiscardedUnread`].
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Discard;
 
@@ -401,9 +521,7 @@ impl ResponseRepresentation<()> for Discard {
 impl ResponseRepresentation<ByteStream> for Binary {
     type Driver = Streaming;
 
-    fn accept() -> Option<&'static str> {
-        Some("application/octet-stream")
-    }
+    const ACCEPT: Option<&'static str> = Some("application/octet-stream");
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         validate_exact_media(head, "application/octet-stream")
@@ -438,23 +556,6 @@ fn validate_exact_media(
     }
 }
 
-/// Explicit capability for buffered response specifications that can be
-/// consumed by generated pagination.
-///
-/// Downstream buffered specifications opt in explicitly. Complete codecs
-/// receive the capability without any collection-shape inference; the selected
-/// pagination controller owns item extraction.
-/// Bytes, discard, byte streams, and record streams do not acquire it merely by
-/// implementing [`ResponseRepresentation`].
-pub trait PageResponseRepresentation<Output>:
-    ResponseRepresentation<Output, Driver = Buffered>
-where
-    Output: Send + 'static,
-{
-}
-
-impl<C> PageResponseRepresentation<C::Output> for C where C: DecodeBody {}
-
 pub(crate) fn completion_outcome<R, Output, S>() -> CompletionOutcome
 where
     R: ResponseRepresentation<Output>,
@@ -464,45 +565,165 @@ where
     <S::Driver as private::Sealed>::COMPLETION_OUTCOME
 }
 
-pub(crate) fn validate_accept(value: &str) -> Result<(), ResponseBodyError> {
-    let mut start = 0;
-    let mut quoted = false;
-    let mut escaped = false;
-    let bytes = value.as_bytes();
-    for (index, byte) in bytes.iter().copied().enumerate() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        match byte {
-            b'\\' if quoted => escaped = true,
-            b'"' => quoted = !quoted,
-            b',' if !quoted => {
-                validate_media_range(&value[start..index])?;
-                start = index + 1;
-            }
-            _ => {}
-        }
-    }
-    if quoted || escaped {
-        return Err(ResponseBodyError::new(
-            ResponseBodyErrorKind::InvalidMediaType,
-        ));
-    }
-    validate_media_range(&value[start..])
+pub(crate) fn body_disposition<R, Output, S>() -> BodyDisposition
+where
+    R: ResponseRepresentation<Output>,
+    Output: Send + 'static,
+    S: ResponseSelection<R, Output>,
+{
+    <S::Driver as private::Sealed>::BODY_DISPOSITION
 }
 
-fn validate_media_range(value: &str) -> Result<(), ResponseBodyError> {
-    let media = value
-        .trim()
-        .parse::<mime::Mime>()
-        .map_err(|_| ResponseBodyError::new(ResponseBodyErrorKind::InvalidMediaType))?;
-    if media.type_() == mime::STAR && media.subtype() != mime::STAR {
-        return Err(ResponseBodyError::new(
+/// Maximum byte length of one static representation `Accept` value.
+pub const MAX_ACCEPT_BYTES: usize = 4_096;
+
+pub(crate) fn validate_accept(value: &str) -> Result<(), ResponseBodyError> {
+    if accept_is_valid(value) {
+        Ok(())
+    } else {
+        Err(ResponseBodyError::new(
             ResponseBodyErrorKind::InvalidMediaType,
-        ));
+        ))
     }
-    Ok(())
+}
+
+/// Validates one HTTP `Accept` field value in constant context.
+///
+/// The grammar is RFC 9110 `#( media-range [ weight ] )` without empty list
+/// elements: each element is `type "/" subtype` (`*/*`, `type/*` or concrete),
+/// followed by `;`-separated `token "=" ( token / quoted-string )`
+/// parameters. Controls, line breaks and a `*/subtype` range are rejected.
+pub(crate) const fn accept_is_valid(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.is_empty() || bytes.len() > MAX_ACCEPT_BYTES {
+        return false;
+    }
+    let mut index = 0;
+    loop {
+        index = skip_ows(bytes, index);
+        let type_start = index;
+        index = skip_token(bytes, index);
+        if index == type_start || index >= bytes.len() || bytes[index] != b'/' {
+            return false;
+        }
+        let type_is_star = index - type_start == 1 && bytes[type_start] == b'*';
+        index += 1;
+        let subtype_start = index;
+        index = skip_token(bytes, index);
+        if index == subtype_start {
+            return false;
+        }
+        let subtype_is_star = index - subtype_start == 1 && bytes[subtype_start] == b'*';
+        if type_is_star && !subtype_is_star {
+            return false;
+        }
+        loop {
+            let after_ows = skip_ows(bytes, index);
+            if after_ows >= bytes.len() || bytes[after_ows] != b';' {
+                index = after_ows;
+                break;
+            }
+            index = skip_ows(bytes, after_ows + 1);
+            if index >= bytes.len() || bytes[index] == b',' || bytes[index] == b';' {
+                // The grammar permits an empty parameter after a semicolon.
+                continue;
+            }
+            let name_start = index;
+            index = skip_token(bytes, index);
+            if index == name_start || index >= bytes.len() || bytes[index] != b'=' {
+                return false;
+            }
+            index += 1;
+            if index < bytes.len() && bytes[index] == b'"' {
+                index += 1;
+                let mut closed = false;
+                while index < bytes.len() {
+                    let byte = bytes[index];
+                    if byte == b'"' {
+                        closed = true;
+                        index += 1;
+                        break;
+                    } else if byte == b'\\' {
+                        if index + 1 >= bytes.len() || !quoted_pair_byte(bytes[index + 1]) {
+                            return false;
+                        }
+                        index += 2;
+                    } else if qdtext_byte(byte) {
+                        index += 1;
+                    } else {
+                        return false;
+                    }
+                }
+                if !closed {
+                    return false;
+                }
+            } else {
+                let value_start = index;
+                index = skip_token(bytes, index);
+                if index == value_start {
+                    return false;
+                }
+            }
+        }
+        if index == bytes.len() {
+            return true;
+        }
+        if bytes[index] != b',' {
+            return false;
+        }
+        index += 1;
+        if skip_ows(bytes, index) == bytes.len() {
+            return false;
+        }
+    }
+}
+
+const fn skip_ows(bytes: &[u8], mut index: usize) -> usize {
+    while index < bytes.len() && (bytes[index] == b' ' || bytes[index] == b'\t') {
+        index += 1;
+    }
+    index
+}
+
+const fn skip_token(bytes: &[u8], mut index: usize) -> usize {
+    while index < bytes.len() && tchar(bytes[index]) {
+        index += 1;
+    }
+    index
+}
+
+const fn tchar(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric()
+        || matches!(
+            byte,
+            b'!' | b'#'
+                | b'$'
+                | b'%'
+                | b'&'
+                | b'\''
+                | b'*'
+                | b'+'
+                | b'-'
+                | b'.'
+                | b'^'
+                | b'_'
+                | b'`'
+                | b'|'
+                | b'~'
+        )
+}
+
+const fn qdtext_byte(byte: u8) -> bool {
+    byte == b'\t'
+        || byte == b' '
+        || byte == 0x21
+        || (byte >= 0x23 && byte <= 0x5b)
+        || (byte >= 0x5d && byte <= 0x7e)
+        || byte >= 0x80
+}
+
+const fn quoted_pair_byte(byte: u8) -> bool {
+    byte == b'\t' || byte == b' ' || (byte >= 0x21 && byte <= 0x7e) || byte >= 0x80
 }
 
 fn parse_exact_media_type(value: &str) -> Result<mime::Mime, ResponseBodyError> {

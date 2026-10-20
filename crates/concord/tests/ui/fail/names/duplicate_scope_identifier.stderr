@@ -1,11 +1,25 @@
-error: scope identifier `regional` duplicates an ancestor and would make owner references ambiguous
- --> tests/ui/fail/names/duplicate_scope_identifier.rs:9:19
-  |
-9 |             scope regional(code: String) {
-  |                   ^^^^^^^^
+error: [C3-NAME] scope `ReferenceApi::regional::regional` repeats the name of its enclosing scope `ReferenceApi::regional`; qualified references would be ambiguous, so rename one of the scopes
+  --> tests/ui/fail/names/duplicate_scope_identifier.rs:12:19
+   |
+12 |             scope regional(code: String) {
+   |                   ^^^^^^^^
 
-error: the ancestor scope is declared here
- --> tests/ui/fail/names/duplicate_scope_identifier.rs:8:15
+error: note: the enclosing scope is declared here
+ --> tests/ui/fail/names/duplicate_scope_identifier.rs:9:15
   |
-8 |         scope regional(id: String) {
+9 |         scope regional(id: String) {
   |               ^^^^^^^^
+
+error: [C3-NAME] `client`, `endpoint` and the `__concord` prefix are reserved owner names; rename scope `client` in client `ReservedScopeApi`
+  --> tests/ui/fail/names/duplicate_scope_identifier.rs:26:15
+   |
+26 |         scope client() {
+   |               ^^^^^^
+
+warning: unused imports: `Binary` and `Bytes`
+ --> tests/ui/fail/names/duplicate_scope_identifier.rs:3:15
+  |
+3 | use concord::{Binary, Bytes, api};
+  |               ^^^^^^  ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

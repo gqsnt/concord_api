@@ -1,11 +1,5 @@
-error: a endpoint `read` accepts one grouped `auth` attachment; `auth off` is exclusive
-  --> tests/ui/fail/authentication/generated_auth_first_excess.rs:15:9
+error: [C3-AUTH] endpoint `AuthPlacementFirstExcess::read` has 65 effective auth placements; at most 64 are allowed, so drop inherited placements with `auth replace { ... }`
+  --> tests/ui/fail/authentication/generated_auth_first_excess.rs:17:13
    |
-15 |         auth { query "auth-01" = key; }
-   |         ^^^^
-
-error: the first authentication attachment is here
-  --> tests/ui/fail/authentication/generated_auth_first_excess.rs:14:9
-   |
-14 |         auth { query "auth-00" = key; }
-   |         ^^^^
+17 |             auth {
+   |             ^^^^

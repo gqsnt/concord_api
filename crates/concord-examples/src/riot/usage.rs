@@ -9,7 +9,6 @@ use std::error::Error;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
-use concord::prelude::PageLimit;
 use concord::rate_limit::LocalRateLimiter;
 
 use super::api::{DDragonApi, RiotApi, d_dragon_api, riot_api};
@@ -30,13 +29,13 @@ pub fn construct() -> Result<(), concord::ClientBuildError> {
         .summoner_v4()
         .summoner_by_puuid("example-puuid".to_owned());
     // ANCHOR: riot_paginated_request
-    let _: concord::pagination::PaginatedRequest<_> = riot
+    let _: concord::pagination::CollectPrefix<String> = riot
         .regional(super::domain::RegionalRoute::Europe)
         .match_v5()
         .match_ids_by_puuid("example-puuid".to_owned())
-        .set_match_type(Some(MatchType::Ranked))
+        .set_match_type(MatchType::Ranked)
         .set_count(NonZeroU32::new(10).expect("positive page size"))
-        .paginate(PageLimit::Prefix(2));
+        .collect_prefix(2);
     // ANCHOR_END: riot_paginated_request
 
     let data_dragon = DDragonApi::builder().build()?;
@@ -104,7 +103,7 @@ pub async fn run_live_from_environment() -> Result<(), Box<dyn Error>> {
         .platform(crate::riot::domain::PlatformRoute::Euw1)
         .champion_mastery_v4()
         .top_masteries_by_puuid(account.puuid.clone())
-        .set_count(Some(5))
+        .set_count(5)
         .await?;
 
     println!("Top champion masteries: {}", top_masteries.len());
@@ -113,11 +112,12 @@ pub async fn run_live_from_environment() -> Result<(), Box<dyn Error>> {
         .regional(crate::riot::domain::RegionalRoute::Europe)
         .match_v5()
         .match_ids_by_puuid(account.puuid.clone())
-        .set_match_type(Some(MatchType::Ranked))
+        .set_match_type(MatchType::Ranked)
         .set_count(NonZeroU32::new(20).expect("20 is non-zero"))
-        .paginate(PageLimit::Prefix(2))
+        .collect_prefix(2)
         .await?;
 
+    let match_ids = match_ids.into_items();
     println!("Collected {} recent ranked match IDs", match_ids.len());
 
     if let Some(match_id) = match_ids.first() {

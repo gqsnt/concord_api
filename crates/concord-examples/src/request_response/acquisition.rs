@@ -3,6 +3,11 @@
 //! Required features: none. Mode: construction and deterministic local
 //! execution. Documentation owners: `docs/responses.md` and `docs/runtime.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
+//!
+//! `optional_message` shows the buffered absence pattern: `404` is an accepted
+//! status and the representation maps it to `None` after acquiring the
+//! complete bounded body. The head-only alternative is `absent on 404;`
+//! (see [`crate::contracts::catalog_v3`]), which never polls that body.
 
 use concord::http::StatusCode;
 use concord::response::{
@@ -17,9 +22,7 @@ pub struct OptionalText;
 impl ResponseRepresentation<Option<String>> for OptionalText {
     type Driver = Buffered;
 
-    fn accept() -> Option<&'static str> {
-        Some("text/plain")
-    }
+    const ACCEPT: Option<&'static str> = Some("text/plain");
 
     fn from_body(
         body: Bytes,
@@ -38,17 +41,18 @@ impl ResponseRepresentation<Option<String>> for OptionalText {
 // ANCHOR: response_acquisition_contract
 api! {
     client ResponseApi {
-        timeout 30s;
         base "http://responses.example.test/";
+        timeout 30s;
 
+        GET message() -> String via Text {
+            expose accepted_bytes;
+        }
 
-    GET message() -> String via Text {
-        expose accepted_bytes;
+        GET optional_message() -> Option<String> via OptionalText {
+            status [200..=299, 404];
+        }
     }
-    GET optional_message() -> Option<String> via crate::request_response::acquisition::OptionalText {
-        status [200..=299, 404];
-    }
-}}
+}
 // ANCHOR_END: response_acquisition_contract
 
 /// Builds the no-input client directly.

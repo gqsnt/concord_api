@@ -1,8 +1,6 @@
 #![cfg(any(feature = "csv", feature = "ndjson"))]
 
-use concord_core::contracts::{
-    Buffered, ItemStream, PageResponseRepresentation, ResponseRepresentation,
-};
+use concord_core::contracts::{Buffered, ItemStream, ResponseRepresentation};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -27,8 +25,7 @@ type HeaderlessTsv = concord_extras::records::Csv<
 fn concrete_record_decoders_expose_finite_public_core_contracts() {
     fn complete_page_spec<S>()
     where
-        S: ResponseRepresentation<Vec<Row>, Driver = Buffered>
-            + PageResponseRepresentation<Vec<Row>>,
+        S: ResponseRepresentation<Vec<Row>, Driver = Buffered>,
     {
     }
     fn item_stream_spec<S>()
@@ -42,7 +39,7 @@ fn concrete_record_decoders_expose_finite_public_core_contracts() {
         complete_page_spec::<concord_extras::records::Csv>();
         item_stream_spec::<concord_extras::records::Csv>();
         assert_eq!(
-            <concord_extras::records::Csv as ResponseRepresentation<Vec<Row>>>::accept(),
+            <concord_extras::records::Csv as ResponseRepresentation<Vec<Row>>>::ACCEPT,
             Some("text/csv")
         );
         complete_page_spec::<ConfCsv>();
@@ -53,7 +50,7 @@ fn concrete_record_decoders_expose_finite_public_core_contracts() {
         complete_page_spec::<concord_extras::records::NdJson>();
         item_stream_spec::<concord_extras::records::NdJson>();
         assert_eq!(
-            <concord_extras::records::NdJson as ResponseRepresentation<Vec<Row>>>::accept(),
+            <concord_extras::records::NdJson as ResponseRepresentation<Vec<Row>>>::ACCEPT,
             Some("application/x-ndjson")
         );
     }

@@ -1,5 +1,25 @@
-error: child name `http_status` is declared more than once within this scope
-  --> tests/ui/fail/names/normalized_collision.rs:12:13
+error: [C3-GENERATED] child name `http_status` is declared more than once within scope `CollisionApi::health`; rename one child (generated names are never suffixed)
+  --> tests/ui/fail/names/normalized_collision.rs:13:17
    |
-12 |         GET http_status() -> () via Empty;
-   |             ^^^^^^^^^^^
+13 |             GET http_status() -> () via Empty;
+   |                 ^^^^^^^^^^^
+
+error: note: the first child with this name is here
+  --> tests/ui/fail/names/normalized_collision.rs:12:17
+   |
+12 |             GET http_status() -> () via Empty;
+   |                 ^^^^^^^^^^^
+
+error: [C3-GENERATED] generated name `ItemListEndpoint` for unbound intent type of endpoint `item__list` on module of NormalizedApi collides with unbound intent type of endpoint `item_list`; rename one declaration (generated names are never suffixed or truncated)
+  --> tests/ui/fail/names/normalized_collision.rs:23:13
+   |
+23 |         GET item__list() -> () via Empty {
+   |             ^^^^^^^^^^
+
+warning: unused import: `Empty`
+ --> tests/ui/fail/names/normalized_collision.rs:4:15
+  |
+4 | use concord::{Empty, api};
+  |               ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

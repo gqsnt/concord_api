@@ -1,5 +1,5 @@
-error: rate-limit dimension `client.tenant` cannot use a Concord-optional slot
-  --> tests/ui/fail/rate_limits/rate_limit_optional_dimension.rs:10:89
+error: [C3-RATE] rate key value `tenant` is outer-optional; a custom dimension of client `Api` uses a required ordinary value, so declare it total (`tenant: T` or `tenant: T = V`)
+  --> tests/ui/fail/rate_limits/rate_limit_optional_dimension.rs:12:29
    |
-10 |         rate_limit { id "concord.rate_limit_optional_dimension.1"; cost 1;  key [client.tenant]; allow 1 per 1s; }
-   |                                                                                         ^^^^^^
+12 |             key ["tenant" = tenant];
+   |                             ^^^^^^

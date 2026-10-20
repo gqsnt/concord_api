@@ -1,5 +1,9 @@
+//! Representation selection by direction, nearest default, `explicit`
+//! fences and inline `via` (§9.1), as public contract facts.
+
 use concord::body::RequestRepresentation;
-use concord::endpoint::{AttachmentFamily, ResponseAcquisition};
+use concord::endpoint::ResponseAcquisition;
+use concord::inspection::RepresentationSource;
 use concord::response::{
     Buffered, DiscardDriver, ResponseBodyError, ResponseDriver, ResponseHead,
     ResponseRepresentation,
@@ -11,9 +15,7 @@ pub struct ParentBuffered;
 impl ResponseRepresentation<String> for ParentBuffered {
     type Driver = Buffered;
 
-    fn accept() -> Option<&'static str> {
-        Some("application/x-concord-parent")
-    }
+    const ACCEPT: Option<&'static str> = Some("application/x-concord-parent");
 
     fn from_body(
         body: <Self::Driver as ResponseDriver>::Body,
@@ -28,9 +30,7 @@ pub struct ParentDiscard;
 impl ResponseRepresentation<String> for ParentDiscard {
     type Driver = DiscardDriver;
 
-    fn accept() -> Option<&'static str> {
-        Some("application/x-concord-discard")
-    }
+    const ACCEPT: Option<&'static str> = Some("application/x-concord-discard");
 
     fn from_body(
         (): <Self::Driver as ResponseDriver>::Body,
@@ -94,78 +94,139 @@ fn inheritance_override_and_fence_provenance_are_public_contract_facts() {
     fn assert_request_representation<R: RequestRepresentation<String>>() {}
     assert_request_representation::<Text>();
 
-    let inherited = RepresentationInheritanceApi::unbound()
+    let contract = RepresentationInheritanceApi::contract();
+    let inherited_description = RepresentationInheritanceApi::unbound()
         .inherited("body".to_owned())
         .description();
-    let inherited = inherited.contract().expect("inherited details");
+    let inherited = inherited_description.contract().expect("inherited details");
     let inherited_body = inherited.body().expect("inherited body");
-    assert_eq!(inherited_body.specification_type(), "Text");
-    assert_eq!(inherited_body.representation_origin(), "client");
-    assert_eq!(inherited.response().specification_type(), "ParentBuffered");
-    assert_eq!(inherited.response().representation_origin(), "client");
+    assert_eq!(inherited_body.representation().type_name(), "Text");
     assert_eq!(
-        inherited.response().negotiation_media_type(),
+        inherited_body.representation().source(),
+        RepresentationSource::Inherited("RepresentationInheritanceApi")
+    );
+    assert_eq!(
+        inherited.result().representation().type_name(),
+        "ParentBuffered"
+    );
+    assert_eq!(
+        inherited.result().representation().source(),
+        RepresentationSource::Inherited("RepresentationInheritanceApi")
+    );
+    assert_eq!(
+        inherited.result().accept(),
+        Some("application/x-concord-parent")
+    );
+    assert_eq!(
+        inherited_description.response_accept(),
         Some("application/x-concord-parent")
     );
 
     let local = RepresentationInheritanceApi::unbound()
         .overrides()
         .local("body".to_owned())
-        .description();
-    let local = local.contract().expect("local details");
+        .description()
+        .contract()
+        .expect("local details");
     assert_eq!(
-        local.body().expect("local body").representation_origin(),
-        "scope overrides"
+        local.body().expect("local body").representation().source(),
+        RepresentationSource::Inherited("RepresentationInheritanceApi::overrides")
     );
-    assert_eq!(local.response().representation_origin(), "scope overrides");
-    assert_eq!(local.response().specification_type(), "Text");
+    assert_eq!(
+        local.result().representation().source(),
+        RepresentationSource::Inherited("RepresentationInheritanceApi::overrides")
+    );
+    assert_eq!(local.result().representation().type_name(), "Text");
 
     let explicit = RepresentationInheritanceApi::unbound()
         .fenced()
         .explicit("body".to_owned())
-        .description();
-    let explicit = explicit.contract().expect("explicit details");
+        .description()
+        .contract()
+        .expect("explicit details");
+    let explicit_body = explicit.body().expect("explicit body").representation();
+    assert_eq!(explicit_body.source(), RepresentationSource::Inline);
+    assert_eq!(explicit_body.type_name(), "Text");
     assert_eq!(
-        explicit
-            .body()
-            .expect("explicit body")
-            .representation_origin(),
-        "endpoint fenced::explicit inline body"
+        explicit.result().representation().source(),
+        RepresentationSource::Inline
     );
+    // The scope fence is the provenance of the explicit selection.
+    let fenced = contract
+        .owner("RepresentationInheritanceApi::fenced")
+        .expect("fenced scope")
+        .effective()
+        .expect("fenced view");
+    assert!(fenced.request_default().fenced());
+    assert!(fenced.response_default().fenced());
     assert_eq!(
-        explicit.response().representation_origin(),
-        "endpoint fenced::explicit inline result"
+        fenced.request_default().owner(),
+        Some("RepresentationInheritanceApi::fenced")
     );
-    assert!(explicit.effective_attachments().iter().any(|attachment| {
-        attachment.family() == AttachmentFamily::RequestRepresentation
-            && attachment.origin() == "scope fenced"
-    }));
-    assert!(explicit.effective_attachments().iter().any(|attachment| {
-        attachment.family() == AttachmentFamily::ResponseRepresentation
-            && attachment.origin() == "scope fenced"
-    }));
+    assert_eq!(fenced.response_default().type_name(), None);
+    let overrides = contract
+        .owner("RepresentationInheritanceApi::overrides")
+        .expect("overrides scope")
+        .effective()
+        .expect("overrides view");
+    assert!(!overrides.response_default().fenced());
+    assert_eq!(overrides.response_default().type_name(), Some("Text"));
 }
 
 #[test]
 fn parent_representation_diff_reports_caller_media_and_acquisition_changes() {
-    use concord::endpoint::{
-        SemanticChangeClass, contract_tool_snapshot, diff_contract_tool_snapshots,
-    };
+    use concord_inspect::{Axis, diff_documents, export_string, export_value, parse_document};
 
-    let before = contract_tool_snapshot(BeforeParentRepresentationApi::contract());
-    let after = contract_tool_snapshot(AfterParentRepresentationApi::contract())
-        .replace(
-            "AfterParentRepresentationApi",
-            "BeforeParentRepresentationApi",
-        )
-        .replace(
-            "after_parent_representation_api",
-            "before_parent_representation_api",
-        );
-    let changes = diff_contract_tool_snapshots(&before, &after);
-    assert!(changes.contains(&SemanticChangeClass::CallerApi));
-    assert!(changes.contains(&SemanticChangeClass::Wire));
-    assert!(changes.contains(&SemanticChangeClass::Capability));
+    let before = export_value(BeforeParentRepresentationApi::contract());
+    let after = parse_document(
+        &export_string(AfterParentRepresentationApi::contract())
+            .replace(
+                "AfterParentRepresentationApi",
+                "BeforeParentRepresentationApi",
+            )
+            .replace(
+                "after_parent_representation_api",
+                "before_parent_representation_api",
+            ),
+    )
+    .expect("renamed after document");
+    let report = diff_documents(&before, &after).expect("semantic diff");
+    assert!(!report.is_structurally_equal());
+    // §18.3 axes: the negotiated media is a wire change, Buffered -> Discard
+    // is a capability (driver) change, the inherited default is provenance
+    // and the representation type is an opaque Rust dependency. v2 also
+    // reported a caller-API change; in v3 the generated signatures (output
+    // type `String`, terminals) are identical, so `CallerApi` must NOT be
+    // claimed for this edit.
+    for axis in [
+        Axis::Wire,
+        Axis::Capability,
+        Axis::Provenance,
+        Axis::OpaqueDependency,
+    ] {
+        assert!(report.has_axis(axis), "{axis:?}: {}", report.to_text());
+    }
+    assert!(!report.has_axis(Axis::CallerApi), "{}", report.to_text());
+    let changed = report
+        .changed_endpoints()
+        .into_iter()
+        .map(|endpoint| endpoint.id().to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        changed,
+        [
+            "before_parent_representation_api.first",
+            "before_parent_representation_api.second"
+        ],
+        "{}",
+        report.to_text()
+    );
+    assert!(
+        report
+            .changes_on(Axis::Capability)
+            .iter()
+            .any(|change| { change.field() == "result.driver" })
+    );
 
     let first_before = BeforeParentRepresentationApi::unbound()
         .first()
@@ -184,12 +245,12 @@ fn parent_representation_diff_reports_caller_media_and_acquisition_changes() {
     let before_media = first_before
         .contract()
         .expect("before details")
-        .response()
-        .negotiation_media_type();
+        .result()
+        .accept();
     let after_media = first_after
         .contract()
         .expect("after details")
-        .response()
-        .negotiation_media_type();
+        .result()
+        .accept();
     assert_ne!(before_media, after_media);
 }

@@ -1,5 +1,11 @@
-error: `endpoint.NAME` is available only while shaping an endpoint
- --> tests/ui/fail/rate_limits/rate_limit_client_endpoint_dimension.rs:7:98
-  |
-7 |         rate_limit { id "concord.rate_limit_client_endpoint_dimension.1"; cost 1;  key [endpoint.account]; allow 1 per 1s; }
-  |                                                                                                  ^^^^^^^
+error: [C3-NAME] `account` is not a value of client `Api`; declare `account` as a value of this owner, or qualify an ancestor value as `client.account` or `<scope>.account`
+  --> tests/ui/fail/rate_limits/rate_limit_client_endpoint_dimension.rs:12:30
+   |
+12 |             key ["account" = account];
+   |                              ^^^^^^^
+
+error: [C3-MIGRATE] `endpoint.account` is redundant qualification of the current endpoint (client `QualifiedApi`); write the bare name `account`
+  --> tests/ui/fail/rate_limits/rate_limit_client_endpoint_dimension.rs:25:30
+   |
+25 |             key ["account" = endpoint.account];
+   |                              ^^^^^^^^

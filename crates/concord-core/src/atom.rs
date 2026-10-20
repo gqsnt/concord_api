@@ -118,7 +118,7 @@ impl<'a> BoundedAtomWriter<'a> {
     }
 
     /// Writes one value through an explicitly selected [`fmt::Display`]
-    /// compatibility adapter while preserving this writer's byte bound.
+    /// formatting adapter while preserving this writer's byte bound.
     ///
     /// This does not make `Display` a protocol default. It exists so a named
     /// [`AtomEncoder`] can deliberately opt one placement into display
@@ -156,9 +156,40 @@ impl<'a> BoundedAtomWriter<'a> {
 
 /// Owns one deterministic canonical public protocol atom for a value.
 ///
-/// Implementations must be prompt, finite, side-effect-free, and deterministic
-/// for an unchanged semantic value. This role does not grant omission,
-/// repetition, placement escaping, rate-key, or native request authority.
+/// Core calls `write_atom` while it shapes a request head (planning, each
+/// executed operation and each traversal page): for every route atom and for
+/// each query/header emission that survives the authored program.
+///
+/// # Extension contract
+///
+/// * **Ownership.** The value is borrowed from a request, scope or client
+///   snapshot for the duration of one call; the writer is borrowed from core.
+///   Nothing may be retained past the call.
+/// * **Concurrency.** Snapshot values are shared, so calls for independent
+///   operations may run concurrently on different threads.
+/// * **Cancellation.** The call is synchronous and cannot be preempted. It
+///   runs before credential, rate-limit, body or transport work; dropping the
+///   operation afterwards only prevents that later work.
+/// * **Input sensitivity.** The value may be `#[sensitive]`: core redacts the
+///   written atom in plans, errors and observers, but the implementation sees
+///   the plain value and must not log or store it.
+/// * **Errors.** Return a value-free [`AtomError`] ([`AtomErrorKind::Limit`]
+///   when the writer rejects a write). Core discards the partial atom and
+///   fails the request with a value-free configuration error before any
+///   network work.
+/// * **Resource obligations.** Output is bounded by the writer (at most
+///   65,536 bytes per atom); implementations must keep any temporary
+///   allocation and CPU work prompt, finite, side-effect-free and
+///   deterministic for an unchanged semantic value.
+/// * **Negative capabilities.** This role does not grant omission,
+///   repetition, placement escaping, rate-key, body, retry, credential or
+///   native request authority.
+#[diagnostic::on_unimplemented(
+    message = "[C3-ATOM] `{Self}` is not a scalar request atom",
+    label = "this placement writes exactly one scalar atom",
+    note = "`RequestAtom` owns one scalar path, DNS, query or header value; a sequence is never repeated implicitly",
+    note = "for one query/header occurrence per item write `\"key\" = each value;`; for one scalar write `value via Encoder` with an `AtomEncoder<{Self}>`, or implement `RequestAtom` for a domain type"
+)]
 pub trait RequestAtom {
     /// Writes exactly one logical atom into a core-bounded destination.
     fn write_atom(&self, output: &mut BoundedAtomWriter<'_>) -> Result<(), AtomError>;
@@ -168,6 +199,36 @@ pub trait RequestAtom {
 ///
 /// The adapter changes representation only. The authored placement retains
 /// ownership of optionality, occurrence cardinality, and context validation.
+/// Core calls `write` at the same points as [`RequestAtom::write_atom`]: while
+/// shaping a request head, for route atoms and surviving query/header
+/// emissions.
+///
+/// # Extension contract
+///
+/// * **Ownership.** Encoders are stateless marker types that Concord never
+///   constructs; the value and the writer are borrowed for one call and
+///   nothing may be retained.
+/// * **Concurrency.** `write` is an associated function over shared snapshot
+///   values; calls for independent operations may run concurrently.
+/// * **Cancellation.** The call is synchronous and cannot be preempted; it
+///   runs before credential, rate-limit, body or transport work.
+/// * **Input sensitivity.** The value may be `#[sensitive]`; core redacts the
+///   result in automatic output, but the encoder sees the plain value and
+///   must not log or store it.
+/// * **Errors.** Return a value-free [`AtomError`]; core discards the partial
+///   atom and fails the request with a value-free configuration error before
+///   any network work.
+/// * **Resource obligations.** Output is bounded by the writer (at most
+///   65,536 bytes per atom); temporary allocation and CPU work must stay
+///   prompt, finite, side-effect-free and deterministic.
+/// * **Negative capabilities.** An encoder cannot choose presence,
+///   repetition, the native URL, escaping, the body, retries or credentials.
+#[diagnostic::on_unimplemented(
+    message = "[C3-ATOM] `{Self}` is not an atom encoder for `{T}`",
+    label = "`via` selects `{Self}` as the atom adapter of a `{T}` value",
+    note = "an atom adapter implements `AtomEncoder<{T}>`; it is not a body representation, rate-key encoder or `Display` bridge",
+    note = "implement `AtomEncoder<{T}>` for the adapter, or remove `via` when `{T}` itself implements `RequestAtom`"
+)]
 pub trait AtomEncoder<T>
 where
     T: ?Sized,
@@ -177,6 +238,37 @@ where
 }
 
 /// Supplies stable by-reference order for an authored `each` emission.
+///
+/// Core iterates `ordered_values` while shaping a request head and encodes
+/// each item, in iteration order, as one occurrence of the authored key; an
+/// empty sequence emits no occurrence.
+///
+/// # Extension contract
+///
+/// * **Ownership.** The collection is borrowed from a snapshot; items are
+///   yielded by reference and never moved or retained by core.
+/// * **Concurrency.** Snapshot values are shared, so independent operations
+///   may iterate the same collection concurrently.
+/// * **Cancellation.** Iteration is synchronous and cannot be preempted; it
+///   runs before credential, rate-limit, body or transport work.
+/// * **Input sensitivity.** Items may be `#[sensitive]`; core redacts their
+///   occurrences in automatic output. Iteration itself must not log them.
+/// * **Errors.** Iteration cannot fail. Core stops consuming the iterator at
+///   the first item encoding failure or public head limit and fails the
+///   request with a value-free configuration error.
+/// * **Resource obligations.** The iterator must be finite and deterministic
+///   for an unchanged value; core bounds the resulting occurrences by the
+///   public head component, header count and byte limits.
+/// * **Negative capabilities.** The order is the only authority: this trait
+///   cannot emit occurrences itself or choose presence or keys, and an
+///   implementation must not present an unordered (for example hash-map)
+///   iteration order as protocol order.
+#[diagnostic::on_unimplemented(
+    message = "[C3-ATOM] `{Self}` is not a stable ordered sequence for `each`",
+    label = "`each` iterates this source by reference in a stable order",
+    note = "`each` requires `OrderedValues` (slices, arrays, `Vec` and other ordered collections); an unordered collection needs a deterministic ordered collection or adapter",
+    note = "to emit one scalar occurrence instead, remove `each` and place the value directly (with `via Encoder` when it needs an adapter)"
+)]
 pub trait OrderedValues {
     /// Exact item type exposed to the selected atom encoder.
     type Item;

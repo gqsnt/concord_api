@@ -1,11 +1,23 @@
-error: endpoint declares two request body parameters: `first` and `second`
-  --> tests/ui/fail/syntax/multiple_bodies.rs:11:51
+error: [C3-OWNER] endpoint `MultipleBodiesApi::submit` declares a second request body `second`; an endpoint has at most one body, so combine the payloads into one body type
+  --> tests/ui/fail/syntax/multiple_bodies.rs:10:55
    |
-11 |     POST submit(body first: String via Text, body second: Bytes via Binary) -> Bytes via Binary;
-   |                                                   ^^^^^^
+10 |         POST submit(body first: String via Text, body second: Bytes via Binary) -> Bytes via Binary;
+   |                                                       ^^^^^^
 
-error: the first request body is here
-  --> tests/ui/fail/syntax/multiple_bodies.rs:11:22
+error: note: the first request body is here
+  --> tests/ui/fail/syntax/multiple_bodies.rs:10:26
    |
-11 |     POST submit(body first: String via Text, body second: Bytes via Binary) -> Bytes via Binary;
-   |                      ^^^^^
+10 |         POST submit(body first: String via Text, body second: Bytes via Binary) -> Bytes via Binary;
+   |                          ^^^^^
+
+error: [C3-OWNER] request bodies are endpoint-only parameters and cannot be declared by scope `ScopeBodyApi::uploads`; declare `body name: T` among an endpoint's parameters
+  --> tests/ui/fail/syntax/multiple_bodies.rs:18:23
+   |
+18 |         scope uploads(body payload: Bytes via Binary) {
+   |                       ^^^^
+
+error: [C3-OWNER] request bodies are endpoint-only parameters and cannot appear in the `values` block of client `RootBodyApi`; declare `body name: T` among an endpoint's parameters
+  --> tests/ui/fail/syntax/multiple_bodies.rs:27:18
+   |
+27 |         values { body payload: Bytes; }
+   |                  ^^^^

@@ -15,9 +15,7 @@ struct SimpleRecordDecoder;
 impl RecordDecoder for SimpleRecordDecoder {
     type Record = Bytes;
 
-    fn accept() -> Option<&'static str> {
-        Some("application/x-concord-records")
-    }
+    const ACCEPT: Option<&'static str> = Some("application/x-concord-records");
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), RecordError> {
         SIMPLE_VALIDATE_CALLS.fetch_add(1, Ordering::SeqCst);
@@ -276,8 +274,7 @@ async fn aggregate_body_failures_precede_buffered_record_conversion() {
     let core = development_core(
         &executor,
         Arc::new(ProbeHooks::new()),
-        RuntimeConfigBuilder::new()
-            .response_body_limit(NonZeroUsize::new(4).expect("positive body limit")),
+        RuntimeConfigBuilder::new().response_body_limit(4),
     );
 
     let error = response_request::<BufferedRecords<SimpleRecordDecoder>>(core, None)
@@ -339,9 +336,8 @@ impl TestResponseRepresentation for AcceptedNotFoundBufferedRecords {
 impl ResponseRepresentation<Vec<Bytes>> for AcceptedNotFoundBufferedRecords {
     type Driver = Buffered;
 
-    fn accept() -> Option<&'static str> {
-        <BufferedRecords<SimpleRecordDecoder> as ResponseRepresentation<Vec<Bytes>>>::accept()
-    }
+    const ACCEPT: Option<&'static str> =
+        <BufferedRecords<SimpleRecordDecoder> as ResponseRepresentation<Vec<Bytes>>>::ACCEPT;
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         <BufferedRecords<SimpleRecordDecoder> as ResponseRepresentation<Vec<Bytes>>>::validate(head)

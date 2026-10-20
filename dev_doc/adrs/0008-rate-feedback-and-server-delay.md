@@ -1,6 +1,7 @@
 # ADR 0008 — Future-admission rate feedback and one server-delay fact
 
-- **Status:** Selected
+- **Status:** Retained in v3.0.0-beta.1 except the custom-limiter partial-reservation allowance below, which is superseded by [ADR 0023](0023-rate-window-sets-policy-identity-and-atomic-admission.md) (atomic all-or-none admission, RATE-04).
+- **v2.1 status (historical):** Selected
 
 ## Decision
 

@@ -128,6 +128,14 @@ impl OperationObserver for RetryLifecycleProbe {
 }
 
 impl RateLimiter for RetryLifecycleProbe {
+    fn capability(&self) -> crate::rate_limit::LimiterCapability {
+        crate::rate_limit::LimiterCapability::new(
+            crate::rate_limit::Enforcement::Local,
+            "test.retry-lifecycle-probe",
+            1,
+        )
+    }
+
     fn acquire<'a>(
         &'a self,
         request: RateLimitRequest<'a>,
@@ -396,7 +404,7 @@ async fn private_protocol_recovery_does_not_resend_a_one_shot_native_body() {
     )
     .expect("HTTP/2 one-shot core");
     let polls = Arc::new(AtomicUsize::new(0));
-    let body = RequestBody::stream(RequestStream::from_stream(BodyPollProbe::new(
+    let body = PreparedBody::stream(RequestStream::from_stream(BodyPollProbe::new(
         [ProbeFrame::Data(b"one-shot-protocol-body")],
         &polls,
     )));
@@ -864,7 +872,7 @@ async fn one_shot_suppression_consumes_no_shared_retry_budget() {
     let probe = Arc::new(RetryLifecycleProbe::default());
     let core = retry_core(&executor, Arc::clone(&probe), policy);
     let polls = Arc::new(AtomicUsize::new(0));
-    let one_shot = RequestBody::stream(
+    let one_shot = PreparedBody::stream(
         RequestStream::from_stream(BodyPollProbe::new([ProbeFrame::Data(b"one-shot")], &polls))
             .exact_length(8),
     );
@@ -942,7 +950,7 @@ async fn retry_body_reconstruction_failure_is_request_body_primary() {
         ))
         .expect("factory retry status");
     let calls = Arc::new(AtomicUsize::new(0));
-    let body = RequestBody::factory(FailSecondFactory {
+    let body = PreparedBody::factory(FailSecondFactory {
         calls: Arc::clone(&calls),
     });
     let probe = Arc::new(RetryLifecycleProbe::default());
@@ -1029,7 +1037,7 @@ enum RetryCancellationStage {
 }
 
 #[tokio::test]
-async fn cancellation_drops_every_awaited_retry_stage_without_completion() {
+async fn cancellation_drops_every_awaited_retry_stage_with_one_cancelled_completion() {
     for stage in [
         RetryCancellationStage::LimiterAcquire,
         RetryCancellationStage::NativeExecution,
@@ -1073,7 +1081,17 @@ async fn cancellation_drops_every_awaited_retry_stage_without_completion() {
         operation.abort();
         assert!(operation.await.is_err());
         tokio::task::yield_now().await;
-        assert!(probe.completions().is_empty());
+        // CONTROL-03 drop guard: exactly one synchronous `Cancelled`
+        // completion carrying the best known bounded facts.
+        let completions = probe.completions();
+        assert_eq!(completions.len(), 1);
+        assert_eq!(completions[0].outcome, CompletionOutcome::Cancelled);
+        assert_eq!(completions[0].attempts_started, 2);
+        assert_eq!(completions[0].policy_retries, 1);
+        assert_eq!(
+            completions[0].final_status,
+            Some(StatusCode::SERVICE_UNAVAILABLE)
+        );
         assert_eq!(probe.before_attempts().len(), 2);
         let expected_requests = match stage {
             RetryCancellationStage::LimiterAcquire => 1,
@@ -1114,7 +1132,7 @@ async fn buffered_bytes_are_reused_for_each_visible_retry() {
         policy_without_budget(1, |_| RetryDecision::Retry),
     );
 
-    let output = body_request(core, RequestBody::bytes(request_body))
+    let output = body_request(core, PreparedBody::bytes(request_body))
         .await
         .expect("buffered bytes retry succeeds");
 
@@ -1164,11 +1182,9 @@ async fn buffered_encoder_and_reconstructible_factory_follow_attempt_ownership()
         .application()
         .queue_response(ScriptedResponse::success(Bytes::from_static(b"factory-ok")))
         .expect("factory retry success");
-    let content_type_calls = Arc::new(AtomicUsize::new(0));
     let create_calls = Arc::new(AtomicUsize::new(0));
     let polls = Arc::new(AtomicUsize::new(0));
-    let factory_body = RequestBody::factory(ProbeBodyFactory {
-        content_type_calls: Arc::clone(&content_type_calls),
+    let factory_body = PreparedBody::factory(ProbeBodyFactory {
         create_calls: Arc::clone(&create_calls),
         polls: Arc::clone(&polls),
         fail: false,
@@ -1183,7 +1199,6 @@ async fn buffered_encoder_and_reconstructible_factory_follow_attempt_ownership()
         .await
         .expect("factory retry succeeds");
     assert_eq!(output, Bytes::from_static(b"factory-ok"));
-    assert_eq!(content_type_calls.load(Ordering::SeqCst), 1);
     assert_eq!(create_calls.load(Ordering::SeqCst), 2);
     assert!(polls.load(Ordering::SeqCst) >= 2);
 }
@@ -1217,9 +1232,12 @@ async fn multipart_retry_follows_recipe_replayability() {
         Arc::clone(&replayable_probe),
         policy_without_budget(1, |_| RetryDecision::Retry),
     );
-    let output = body_request(replayable_core, RequestBody::multipart(replayable))
-        .await
-        .expect("replayable multipart retries");
+    let output = body_request(
+        replayable_core,
+        PreparedBody::multipart(replayable).expect("prepared multipart body"),
+    )
+    .await
+    .expect("replayable multipart retries");
     assert_eq!(output, Bytes::from_static(b"multipart-ok"));
     assert_eq!(
         replayable_executor
@@ -1252,9 +1270,12 @@ async fn multipart_retry_follows_recipe_replayability() {
         Arc::clone(&one_shot_probe),
         policy_without_budget(1, |_| RetryDecision::Retry),
     );
-    let error = body_request(one_shot_core, RequestBody::multipart(one_shot))
-        .await
-        .expect_err("one-shot multipart suppresses optional retry");
+    let error = body_request(
+        one_shot_core,
+        PreparedBody::multipart(one_shot).expect("prepared multipart body"),
+    )
+    .await
+    .expect_err("one-shot multipart suppresses optional retry");
     assert_eq!(error.category(), ErrorCategory::HttpStatus);
     assert_eq!(
         error

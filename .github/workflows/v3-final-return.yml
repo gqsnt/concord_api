@@ -1,0 +1,80 @@
+name: V3 final source and evidence return
+
+on:
+  push:
+    branches: [concord-v3]
+    paths:
+      - .github/workflows/v3-final-return.yml
+      - scripts/qualification_final_return.py
+      - scripts/test_qualification_final_return.py
+      - dev_doc/reviews/2026_10_17_closure/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_BUILD_JOBS: "2"
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+  PYTHONDONTWRITEBYTECODE: "1"
+  RUSTUP_TOOLCHAIN: 1.97.1
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  final-return:
+    name: Verify and package the final source with native evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: 1.97.1
+          components: rustfmt
+      - uses: taiki-e/install-action@41049aa56687c35e0afa74eed4f09cec4f9afabf
+        with:
+          tool: just@1.46.0
+      - name: Preserve the real main reference and prepare isolated outputs
+        run: |
+          if ! git show-ref --verify --quiet refs/heads/main; then
+            git branch main origin/main
+          fi
+          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/final-return-target" >> "$GITHUB_ENV"
+      - name: Run final checks, verify CI, and assemble the return
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/qualification_final_return.py \
+            --source "$GITHUB_WORKSPACE" \
+            --out "$RUNNER_TEMP/final-return"
+      - name: Preserve the exact return and generated receipt
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Concord_V3_Final_Return-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/final-return/Concord_V3_Final_Return.zip
+            ${{ runner.temp }}/final-return/CONCORD_V3_FINAL_REPORT.md
+            ${{ runner.temp }}/final-return/FINAL_RETURN_RECEIPT.json
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
+      - name: Preserve incomplete native evidence on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: v3-incomplete-return-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/final-return
+          if-no-files-found: warn
+          retention-days: 90
+          compression-level: 6

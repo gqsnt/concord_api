@@ -1,126 +1,104 @@
-# Repository change map for v2.1
+# V3 repository responsibility map
 
-> **Historical implementation map — not current source of truth.** It records
-> the planned responsibility split before release-truth remediation.
-
-This map is based on the supplied v2.0.0 baseline. Paths were expected to be
-split or renamed during implementation while responsibilities remained clear.
+**Status:** current `3.0.0-beta.1` source map, updated 17 October 2026.
+Concord V3 is the sole product target; see [ADR 0027](adrs/0027-v3-only-product.md).
+This map locates implementation responsibilities. The
+[internal architecture](internals.md) describes their boundaries.
 
 ## `crates/concord-macros`
 
-### Syntax
 
-| Current path | v2.1 work |
+| V3 path | Responsibility |
 |---|---|
-| `syntax/ast.rs` | new client-contained tree, value axes, representation defaults/fences, status/effect, word patches, `via`, optional body |
-| `syntax/declaration.rs` | child containment/order, methods, endpoint result/body grammar |
-| `syntax/values.rs` | postfix `?`, defaults, sensitivity; delete type-name semantics |
-| `syntax/request.rs` | atom/adapter/concat, subdomain/path/query/header patch grammar |
-| `syntax/credentials.rs` | required static secrets, focused deferred-optional diagnostic, grouped auth, endpoint-source path |
-| `syntax/pagination.rs` | `paginate via`, bindings and initializer syntax |
-| `syntax/rate_limits.rs` | policy/id/key/cost/allow/bind syntax |
-| `syntax/keyword.rs` | remove old vocabulary, add v2.1 words |
-| `syntax/diagnostics.rs` | migration and semantic diagnostics |
-
-### Semantic
-
-| Current path | v2.1 work |
-|---|---|
-| `semantic/model.rs` | canonical IR: owner IDs, exact types, presence/init/sensitivity, representation/status/effect/capabilities/provenance |
-| `semantic/symbols.rs` | explicit owner references, endpoint source paths, generated collision namespace |
-| `semantic/inheritance.rs` | family-specific effective contracts and representation fences |
-| `semantic/surface.rs` | one direct/unbound/control/terminal surface model |
-| `semantic/auth.rs` | source graph, one challenge, private target ownership |
-| `semantic/pagination.rs` | safe effect, complete page, live destinations/header interests |
-| `semantic/rate_limits.rs` | stable IDs, canonical dimensions, additive policy validation |
-| `semantic/head_limits.rs` | adjust static/dynamic head bounds and atom metadata |
-
-### Emit
-
-| Current path | v2.1 work |
-|---|---|
-| `emit/assertions.rs` | focused representation/atom/sequence/page/material/rate obligations |
-| `emit/bridge.rs` | static effective metadata and one core bridge |
-| `emit/client.rs`, `scopes.rs`, `endpoints.rs`, `requests.rs` | v2.1 generated tree, controls, capabilities, unbound parity |
-| `emit/shaping.rs` | atom/adapter/word patch program, real+sanitized one-pass output |
-| `emit/credentials.rs` | slot/source/store/facade changes |
-| `emit/descriptions.rs`, `docs.rs` | effective representation/status/effect/provenance and task-first Rustdoc |
+| `syntax/ast.rs`, `syntax/declaration.rs` | Canonical v3 tokens and tree: client/scope/endpoint, parameter lists with direct placement, bodies, `via`, spans |
+| `syntax/values.rs` | Attributes (`#[default]`, `#[sensitive]`, docs, deprecation), `?` presence, stable initializers |
+| `syntax/request.rs` | Relative path templates, DNS atom lists, query/header blocks with `replace`/`when_present`/`append`/`remove`, timeouts, atoms |
+| `syntax/credentials.rs` | Credential sources and placements; rejects `secret NAME?;` |
+| `syntax/rate_limits.rs` | `windows` sets, `policy` with `id`/`key`/`cost`/`using`, attachments |
+| `syntax/pagination.rs` | `paginate via C { init … ; cursor -> … ; }` |
+| `syntax/diagnostics.rs`, `syntax/keyword.rs` | `[C3-…]` diagnostic codes, unsupported-form diagnostics |
+| `semantic/tree.rs` | Owner/endpoint tree flattening, value registration and reserved private value identifiers |
+| `semantic/head.rs` | Routes, DNS, normalized query/header programs, PATCH-02 preconditions, header ownership |
+| `semantic/auth.rs` | Credential graph and effective placements |
+| `semantic/rates.rs` | Rate registry, attachments, deduplication, identity |
+| `semantic/endpoint.rs` | Representations, status/effect/absence, accepted bytes, identity, pagination facts |
+| `semantic/names.rs`, `semantic/surface.rs` | Liveness, value controls, deterministic generated names and collisions, including each scope's own handle type (CALL-01) |
+| `semantic/limits.rs` | Statically certain head-structure bounds |
+| `semantic/model.rs` | The one resolved model |
+| `emit/client.rs` | Client type, builder, credential façade |
+| `emit/owner.rs` | Scope/client owner modules, handles, unbound handles, projections, runtime `bind`/`plan_runtime` |
+| `emit/endpoint.rs` | Endpoint specs, named requests, unbound intents, terminals, `RequestControls` impls and control-dependent private helpers |
+| `emit/head.rs` | Route/DNS/patch-program tables, value readers, auth placements, rate declarations |
+| `emit/contract.rs` | Local-fact input to core's `ContractBuilder` |
+| `emit/docs.rs` | Generated rustdoc cards (§19.2) |
 
 ## `crates/concord-core`
 
-### Contracts and construction
-
-- `contracts.rs`, `generated_contract.rs`, `endpoint.rs`, `construction.rs`: new static/effective descriptors, status/effect, representation metadata, build errors.
-- `client.rs`: explicit limiter selection, security-context identity, clone semantics.
-
-### Request/head/atoms
-
-- `request/head.rs`, `request/prepare.rs`, `request/prepared.rs`: atom writer/adapters, patch program, real/sanitized views, logical URL, reserved ownership.
-- add/rename modules for `RequestAtom`, `AtomEncoder`, `OrderedValues`, `RequestPlan` as appropriate.
-
-### Body and response
-
-- `body/spec.rs`, `body/prepared.rs`, `body/stream.rs`, `body/multipart.rs`: generic request representation, per-page prepare, replay/page capabilities.
-- `response/spec.rs`, `response/handler.rs`, `response/stream.rs`, `records/*`: generic response representation, sealed drivers, exact streams, endpoint status externalization.
-
-### Execution
-
-- `execute/mod.rs`: one normative v2.1 state machine.
-- `operation/*`: IDs/deadline/dispatch knowledge and page/attempt topology.
-- `error/*`: stable categories/stages/context and safe structured diagnostics.
-
-### Auth/retry/rate/pagination
-
-- `auth/*`: preserve versioned slots/systematic model; update source availability/challenge/store/facade.
-- `retry/*`: effect-aware gates, jitter/backoff, shared load budget timing, central server delay.
-- `rate_limit/*`: whole-plan admission, canonical key, non-fallible current-result feedback.
-- `pagination/*`: controller page response/step/header interests/safe effect/aggregate limits/per-page prepare.
-
-### Hooks/observation
-
-- replace `hooks/*` broad veto model with minimal read-only operation and stream events;
-- migrate debug policy to bounded diagnostics/observer configuration.
-
-### HTTP/runtime
-
-- `http/*`: fixed origin, proxy separation, transport-private recovery, content decoding and phase limits;
-- `runtime/*`: three configuration owners, finite defaults, runtime endpoint limits;
-- remove automatic redirect/native escape behavior if any.
-
-## `crates/concord-extras`
-
-| Current path | v2.1 work |
+| V3 path | Responsibility |
 |---|---|
-| `codec/json.rs` | zero-sized generic `Json`, safe path diagnostics |
-| `records/ndjson.rs`, `records/csv.rs` | collected/lazy representation pairs without public driver wrappers |
-| `pagination.rs` | controller-owned page interpretation, header/link variants |
-| `auth/oauth2_client.rs` | injected time, isolated provider HTTP, slot recovery contract |
-| `rate_limit/local.rs` | whole-plan admission, bounded state/fairness/clock |
-| `rate_limit/observer.rs` | remove/replace with non-result-determining feedback support |
-| new atom module | `DisplayAtom`, common canonical adapters |
-| new tracing module | `OperationObserver` adapter, no exporter/runtime queue in core |
+| `request/program.rs` | Symbolic query/header programs evaluated before encoding |
+| `request/owner.rs` | `OwnerProjection` shared by generated and runtime endpoints |
+| `request/runtime_endpoint/` (`mod.rs`, `bind.rs`, `emission.rs`, `facts.rs`) | Runtime endpoints as symbolic programs bound through the owner projection |
+| `request/head.rs`, `request/prepare.rs`, `request/pending.rs`, `request/options.rs` | Head composition and plans; `Request<E>`, erased `ResponseRequest<O>`, `AcceptedBytesRequest` |
+| `controls.rs` | `RequestControls`, `CallOptions`, `CancellationToken`, `ControlSummary` |
+| `value.rs` | Closed `IntoValue<T>` conversions |
+| `inspection/` | `ContractDescription`, `ContractBuilder`, resolver, owner/endpoint/rate/auth/value views; `resolve.rs` composes each owner's program once and reuses its operations and sensitivity facts |
+| `execute/mod.rs` | One managed engine for direct, page and storage operations: `execute_finalized_operation` with its synchronous `Finalization` step inside the journal (identity form `execute_prepared_operation` for direct requests and pages); `Executed<R>` (`ExecutedPage<T>` alias, no journal snapshot) |
+| `execute/journal.rs`, `error/journal.rs` | Bounded operation journal and value-free error facts |
+| `execute/store.rs` | `StoreRequest` and explicit storage; installation as the finalization step (`install_material`: caps before and after the `expires_at()` read, then `install_with_expiry`), `SpentMaterial` released after the observed result |
+| `auth/slot.rs`, `auth/version.rs`, `auth/recovery.rs`, `auth/origin.rs` | Intent epoch versus installed version (`install_with_expiry` returning `ReleasedMaterial`; retired flights re-evaluate before retired material is dropped), `StoreOutcome`, source-aware recovery, provider helper origins |
+| `body/spec.rs`, `body/prepared.rs`, `body/stream.rs`, `body/multipart.rs` | Single `prepare` → `PreparedBody` media authority |
+| `response/absence.rs`, `response/lease.rs`, `response/summary.rs` | `absent on` and `OptionalOutcome`; finite stream leases (`StreamLease::check(now)`: total lease, then pending-read idle; `on_empty(now)`, `on_yield(now)`); `StreamSummary` (`acquired_bytes`, `StreamErrorKind`) |
+| `response/spec.rs`, `response/handler.rs`, `response/stream.rs`, `response/metadata.rs` | Static `ACCEPT`, sealed drivers and direct response-acquisition dispatch, stream handoff (`StreamCore::precheck` and the completion check `reject_overdue_completion`), `BodyDisposition` |
+| `records/stream.rs` | `ItemStream<T>` framing over the same `StreamCore` lease and idle checks |
+| `pagination/controller.rs`, `engine.rs`, `terminals.rs`, `summary.rs`, `bridge.rs`, `meter.rs`, `identity.rs`, `limits.rs` | Init/Cursor controller contract; `Pages`/`CollectPrefix`/`CollectAll`; `TraversalSummary` |
+| `rate_limit/schema.rs`, `rate_limit/declaration.rs`, `rate_limit/canonical.rs`, `rate_limit/limiter.rs` | Policy schemas and limiter capability; typed key encoding with `ENCODING_ID`; atomic admission contract |
+| `retry/`, `runtime/config.rs`, `hooks/`, `redaction/`, `http/` | Replay authority, primitive-count configuration (§20.4), read-only observation, redaction, transport |
+| `__private.rs`, `generated_contract.rs` | Versioned generated-code bridge (contract version 35) |
 
-## `crates/concord`
+## Facade, extensions and inspection
 
-- re-export v2.1 macro, semantic types, representations, streams, errors, plans, policies;
-- remove old wrapper/trait/hook/response-bytes/safe-plan names;
-- keep normal generated use inherent without a mandatory prelude;
-- maintain additive feature semantics and no-default builds.
+| Path | Responsibility |
+|---|---|
+| `crates/concord/src/lib.rs` | Public V3 entry points, feature gates and generated-code bridge |
+| `crates/concord-extras/src/codec/` | JSON and other explicit representation adapters |
+| `crates/concord-extras/src/rate_limit/` | Local limiter and finite V3 shared-store conformance model |
+| `crates/concord-extras/src/records/` | CSV and NDJSON record codecs |
+| `crates/concord-inspect/src/` | `concord.contract/3` export, semantic check/diff and explanations |
 
-## Tests and examples
+## Examples, tests and tools
 
-- migrate all `crates/concord/tests/generated/*` surface/runtime tests;
-- rewrite UI fixtures for new grammar/diagnostics and removed language;
-- extend `runtime/deterministic.rs`, core ordering/retry/status/stream tests;
-- preserve/extend auth systematic tests;
-- rewrite pagination/rate/record tests to new contracts;
-- rewrite all examples and docs anchors;
-- migrate Riot to inherited JSON and local representation exceptions;
-- add 500/1,000-endpoint fixtures and stream/driver benchmarks.
+| Path | Responsibility |
+|---|---|
+| `crates/concord-examples/src/contracts/catalog_v3.rs` | Canonical V3 Catalog contract and public signatures |
+| `crates/concord-examples/src/application/` | Construction, storage, controls, planning, traversal, streaming and write reconciliation |
+| `crates/concord-examples/src/riot/` | 46-endpoint contract with regional routing and explicit policy sharing |
+| `fixtures/contracts/` | Current V3 recording and canonical rate-key oracles |
+| `crates/concord-examples/tests/baseline_recording.rs` | 92 Riot contexts and eight contract-edit controls |
+| `crates/concord/tests/` | Generated public paths, native HTTP/TLS, body/provider regressions, caller-identifier hygiene and UI diagnostics |
+| `crates/concord-inspect/tests/generated_contract.rs` | Mutation corpus with explicit affected-endpoint, provenance and sensitivity assertions |
+| `crates/concord-macros/tests/fixtures/generated_surface/` | Pure V3 generated-member inventory |
+| `tests/downstream/` | Separate API and application crates consuming the public contract |
+| `tools/xtask/src/contract/` | V3 export, check and diff; `fixture-catalog` plus `catalog`, `riot` and `data-dragon` under the examples feature; command-specific option validation |
+| `tools/xtask/src/docs_check.rs`, `doc_audit.rs` | Source-linked documentation and rendered Rustdoc checks |
+| `tools/xtask/src/fixtures.rs`, `msrv.rs` | Feature and supported-compiler contract fixtures |
+| `tools/xtask/src/source_export.rs`, `release_audit.rs` | Clean commit export and lifecycle/authority checks |
+| `tools/perf/` | Current V3 expansion, construction, planning and execution probes |
+| `scripts/verify_packaged_downstream.ps1` | Extracted archive consumers and Rustdoc validation |
+| `justfile`, `.github/workflows/ci.yml` | Maintained feature/compiler/platform qualification; explicit MSRV toolchain selection and full Windows implementation/analyzer jobs |
+| `.github/workflows/v3-qualification.yml`, `scripts/qualification/` | Exact-source Linux qualification and paired runtime/scale measurements with native command receipts |
+| `.github/workflows/v3-attribution.yml`, `scripts/qualification_attribution.py` | Bounded runtime/compiler attribution using retained measurement inputs |
+| `scripts/qualification_ci_logs.py` | SHA-checked CI metadata, original log archives and bounded native excerpts; historical failures stay separate |
+| `.github/workflows/v3-ui-body-arity.yml`, `scripts/qualification_ui_body_arity.py`, `scripts/ui_body_arity/` | Temporary capture and unchanged-input verification of required-body arity diagnostics before integration into the maintained UI suite |
 
-## Tools and CI
+| `.github/workflows/v3-final-return.yml`, `scripts/qualification_final_return.py`, `scripts/test_qualification_final_return.py` | Exact final CI, source and reviewed-edit validation, native CLI/Rustdoc controls, historical evidence, and frozen-manifest verification of the public return archive |
 
-- `xtask`: documentation truth, semantic descriptor diff, ambiguous migration report, expanded fixture generation, stale-vocabulary policy checks, release audit, and source export;
-- `tools/perf`: representation driver, large expansion, shaping, retry/rate/pagination benchmarks;
-- `scripts/check_docs_examples.ps1`: thin compatibility wrapper around Rust `xtask docs-check`;
-- CI/just: retain full gates, update package names/features/version only as required.
+## Historical changes
+
+Earlier implementation and review history is retained in dated
+[review records](reviews/2026_10_16_review.md) and Git. The conversion tool and
+older-binary state import are retired; no active responsibility is assigned to
+them. The [16 October correction report](reviews/2026_10_16_corrections.md)
+records the initial fixes; the [final report](reviews/2026_10_17_closure/CONCORD_V3_FINAL_REPORT.md)
+and [native qualification report](reviews/2026_10_17_closure/NATIVE_QUALIFICATION_REPORT.md)
+record the later integrated checks and remaining delivery boundary.

@@ -1,0 +1,411 @@
+{
+  "kind": "independent-agent-public-rustdoc-exercise",
+  "human_reviewers": 0,
+  "candidate_base": "570eec460dee1d83828ae48e35396ae07652aabc",
+  "scope": "Original fixture exports use an isolated checkout at candidate_base with exactly one public Catalog clause insertion. Corrected replay uses those unchanged original snapshots and the corrected shared-candidate CLI. Current rendered rereview uses recorded parent builds; base plus actual source-state digests is reported rather than a fabricated clean commit. No macro/core implementation source read by the Rustdoc reviewer.",
+  "path_note": "Display commands normalize absolute directories as ${REPOSITORY}, ${REVIEW_OUTPUT} and ${FOLLOWUP}. Source summaries retain full native tracked-diff, status and untracked-inventory hashes. Raw receipt/log hashes refer to originals retained with native evidence.",
+  "toolchain": {
+    "rustup_toolchain": "1.97.1",
+    "cargo_build_jobs": "4",
+    "cargo_profile_dev_debug": "0"
+  },
+  "corrected_binary": {
+    "path": "${FOLLOWUP}/target-inspect-sites/debug/concord-xtask",
+    "sha256": "b70446b302814d883e97cf185ed4abd25c2eeaf1a81a4650c5f7dd30e5f9d0b6",
+    "native_build_label": "inspect-sites-catalog-isolated",
+    "note": "An isolated target was used after the inspection reviewer recorded shared-target build failures; this reviewer independently executed the exact successful isolated binary."
+  },
+  "runs": [
+    {
+      "label": "rustdoc-contract-before",
+      "performed_by": "rustdoc reviewer",
+      "command": [
+        "cargo",
+        "run",
+        "--locked",
+        "-p",
+        "concord-xtask",
+        "--features",
+        "examples",
+        "--",
+        "contract",
+        "export",
+        "--target",
+        "catalog",
+        "--output",
+        "${REVIEW_OUTPUT}/catalog_before.contract.json"
+      ],
+      "cwd": "${REVIEW_OUTPUT}/candidate",
+      "started_at": "2026-10-17T11:38:52.012342+00:00",
+      "finished_at": "2026-10-17T11:39:12.115256+00:00",
+      "elapsed_seconds": 20.003,
+      "exit_code": 0,
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "status_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untracked_file_count": 0,
+        "untracked_inventory_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "status_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untracked_file_count": 0,
+        "untracked_inventory_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      },
+      "native_receipt_sha256": "a4a78615bd404c69c2654c8f0b7f1ebc85b3c2ee3c7e1edabf0bc56ed6a5cb44",
+      "native_log": "rustdoc-contract-before.log",
+      "native_log_bytes": 1328,
+      "native_log_sha256": "7cdda948684fbd8f980727dfd3b28dd2c93cb88645bd80aa8929958df76798ec"
+    },
+    {
+      "label": "rustdoc-contract-edit",
+      "performed_by": "rustdoc reviewer",
+      "command": [
+        "python3",
+        "${REVIEW_OUTPUT}/apply_scope_default.py"
+      ],
+      "cwd": "${REVIEW_OUTPUT}/candidate",
+      "started_at": "2026-10-17T11:39:42.726230+00:00",
+      "finished_at": "2026-10-17T11:39:42.763852+00:00",
+      "elapsed_seconds": 0.024,
+      "exit_code": 0,
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "status_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untracked_file_count": 0,
+        "untracked_inventory_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "d13d75cd434d3e4406db0f8c4ce0801d93e113ae4b0f44e10bee84bb01ec697b",
+        "status_sha256": "50e0ca8931c6c006bc508cedfdb058df0485a7edfc253b1a2076bee9f8124e07",
+        "untracked_file_count": 0,
+        "untracked_inventory_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      },
+      "native_receipt_sha256": "53b3ed9ab18074c2d60ce7e8da1dc8fac6d5991897870819968620a2f1dc3c59",
+      "native_log": "rustdoc-contract-edit.log",
+      "native_log_bytes": 69,
+      "native_log_sha256": "041ed1f4678f0ab00ab6264f8557195b873b74efbe11688e2cfb7eef8968458d"
+    },
+    {
+      "label": "rustdoc-contract-after",
+      "performed_by": "rustdoc reviewer",
+      "command": [
+        "cargo",
+        "run",
+        "--locked",
+        "-p",
+        "concord-xtask",
+        "--features",
+        "examples",
+        "--",
+        "contract",
+        "export",
+        "--target",
+        "catalog",
+        "--output",
+        "${REVIEW_OUTPUT}/catalog_after.contract.json"
+      ],
+      "cwd": "${REVIEW_OUTPUT}/candidate",
+      "started_at": "2026-10-17T11:39:43.032669+00:00",
+      "finished_at": "2026-10-17T11:39:58.728666+00:00",
+      "elapsed_seconds": 15.682,
+      "exit_code": 0,
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "d13d75cd434d3e4406db0f8c4ce0801d93e113ae4b0f44e10bee84bb01ec697b",
+        "status_sha256": "50e0ca8931c6c006bc508cedfdb058df0485a7edfc253b1a2076bee9f8124e07",
+        "untracked_file_count": 0,
+        "untracked_inventory_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "d13d75cd434d3e4406db0f8c4ce0801d93e113ae4b0f44e10bee84bb01ec697b",
+        "status_sha256": "50e0ca8931c6c006bc508cedfdb058df0485a7edfc253b1a2076bee9f8124e07",
+        "untracked_file_count": 0,
+        "untracked_inventory_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      },
+      "native_receipt_sha256": "6e7244baedb7e13cd0829df7a5c5e26c1682661e066ebd9d863e31c6a5f8d7e4",
+      "native_log": "rustdoc-contract-after.log",
+      "native_log_bytes": 667,
+      "native_log_sha256": "9be55fcd67af7ea4199a6e04abb3341b8a613401ba856d15623f7822f44349f8"
+    },
+    {
+      "label": "rustdoc-contract-diff",
+      "performed_by": "rustdoc reviewer",
+      "command": [
+        "cargo",
+        "run",
+        "--locked",
+        "-p",
+        "concord-xtask",
+        "--features",
+        "examples",
+        "--",
+        "contract",
+        "diff",
+        "${REVIEW_OUTPUT}/catalog_before.contract.json",
+        "${REVIEW_OUTPUT}/catalog_after.contract.json",
+        "--format",
+        "json"
+      ],
+      "cwd": "${REVIEW_OUTPUT}/candidate",
+      "started_at": "2026-10-17T11:40:30.915326+00:00",
+      "finished_at": "2026-10-17T11:40:31.033874+00:00",
+      "elapsed_seconds": 0.105,
+      "exit_code": 0,
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "d13d75cd434d3e4406db0f8c4ce0801d93e113ae4b0f44e10bee84bb01ec697b",
+        "status_sha256": "50e0ca8931c6c006bc508cedfdb058df0485a7edfc253b1a2076bee9f8124e07",
+        "untracked_file_count": 0,
+        "untracked_inventory_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "d13d75cd434d3e4406db0f8c4ce0801d93e113ae4b0f44e10bee84bb01ec697b",
+        "status_sha256": "50e0ca8931c6c006bc508cedfdb058df0485a7edfc253b1a2076bee9f8124e07",
+        "untracked_file_count": 0,
+        "untracked_inventory_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      },
+      "native_receipt_sha256": "2fd7c1414427dc1c90ea4516461da2644f4092c82c9542a510767f0c181c9e91",
+      "native_log": "rustdoc-contract-diff.log",
+      "native_log_bytes": 8386,
+      "native_log_sha256": "7631dda48734b86d826e07a5f9ec58419b3adcfbb586229051bb5acd6139bcf9"
+    },
+    {
+      "label": "inspect-sites-catalog-isolated",
+      "performed_by": "inspection reviewer; compiled binary provenance",
+      "command": [
+        "env",
+        "CARGO_TARGET_DIR=${FOLLOWUP}/target-inspect-sites",
+        "cargo",
+        "run",
+        "--locked",
+        "--offline",
+        "-p",
+        "concord-xtask",
+        "--features",
+        "examples",
+        "--",
+        "contract",
+        "diff",
+        "${REVIEW_OUTPUT}/catalog_before.contract.json",
+        "${REVIEW_OUTPUT}/catalog_after.contract.json",
+        "--format",
+        "json"
+      ],
+      "cwd": "${REPOSITORY}",
+      "started_at": "2026-10-17T11:49:09.747024+00:00",
+      "finished_at": "2026-10-17T11:49:44.566729+00:00",
+      "elapsed_seconds": 34.788,
+      "exit_code": 0,
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "b3aae1021fa3b489a232b2b21d78c33187077b9788f1fe92a5923226b29c6e5b",
+        "status_sha256": "dab6a614e30f66e970c2d7aac4072e9551737c94e8bf823458fb1d5a89a43b20",
+        "untracked_file_count": 32,
+        "untracked_inventory_sha256": "8c4e2963994959adaaf266d251f38c3103ed48d17c5ca6a2bb5f239a9e0ac8e7"
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "b3aae1021fa3b489a232b2b21d78c33187077b9788f1fe92a5923226b29c6e5b",
+        "status_sha256": "dab6a614e30f66e970c2d7aac4072e9551737c94e8bf823458fb1d5a89a43b20",
+        "untracked_file_count": 32,
+        "untracked_inventory_sha256": "3f5e6d05e54acaac4f6797ab5a41f03e762868b98dcebed58f2de143a0a90d5f"
+      },
+      "native_receipt_sha256": "e6ca1314e2524ac6c029be52d0b5256fdf3b3ff9a205351e3027da96c39b10f2",
+      "native_log": "inspect-sites-catalog-isolated.log",
+      "native_log_bytes": 12477,
+      "native_log_sha256": "9e435076ae4ad8b39ad9bca8a7dec1a5c268afa5bddd0880c829de7c4e840d32"
+    },
+    {
+      "label": "rustdoc-contract-diff-corrected",
+      "performed_by": "rustdoc reviewer; independent corrected replay",
+      "command": [
+        "${FOLLOWUP}/target-inspect-sites/debug/concord-xtask",
+        "contract",
+        "diff",
+        "${REPOSITORY}/dev_doc/reviews/2026_10_17_followup/evidence/rustdoc/catalog_before.contract.json",
+        "${REPOSITORY}/dev_doc/reviews/2026_10_17_followup/evidence/rustdoc/catalog_after.contract.json",
+        "--format",
+        "json"
+      ],
+      "cwd": "${REPOSITORY}",
+      "started_at": "2026-10-17T11:50:41.293326+00:00",
+      "finished_at": "2026-10-17T11:50:41.346096+00:00",
+      "elapsed_seconds": 0.019,
+      "exit_code": 0,
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "b3aae1021fa3b489a232b2b21d78c33187077b9788f1fe92a5923226b29c6e5b",
+        "status_sha256": "dab6a614e30f66e970c2d7aac4072e9551737c94e8bf823458fb1d5a89a43b20",
+        "untracked_file_count": 32,
+        "untracked_inventory_sha256": "20a7b3b4103428351976cf2abedb18d5f50b443f1533be476818f2b98fcd6c90"
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "b3aae1021fa3b489a232b2b21d78c33187077b9788f1fe92a5923226b29c6e5b",
+        "status_sha256": "dab6a614e30f66e970c2d7aac4072e9551737c94e8bf823458fb1d5a89a43b20",
+        "untracked_file_count": 32,
+        "untracked_inventory_sha256": "20a7b3b4103428351976cf2abedb18d5f50b443f1533be476818f2b98fcd6c90"
+      },
+      "native_receipt_sha256": "421897c0af34d5dc2b3a96e2439340a15599cef33793c7a966deaca3979b2864",
+      "native_log": "rustdoc-contract-diff-corrected.log",
+      "native_log_bytes": 7845,
+      "native_log_sha256": "fabc3c0a22715d0e8ea127b23c2541b3057fdfcf01ffbab2cdddfe596db07e85"
+    },
+    {
+      "label": "doc-audit-followup",
+      "performed_by": "parent agent; documentation build",
+      "command": [
+        "cargo",
+        "run",
+        "--locked",
+        "-p",
+        "concord-xtask",
+        "--all-features",
+        "--",
+        "doc-audit",
+        "--locked"
+      ],
+      "cwd": "${REPOSITORY}",
+      "started_at": "2026-10-17T11:42:51.513189+00:00",
+      "finished_at": "2026-10-17T11:44:23.819262+00:00",
+      "elapsed_seconds": 92.282,
+      "exit_code": 0,
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "118952fc0e9438576a16409cf804845f0600a060726014cbb5fd6ef9d3fd50b9",
+        "status_sha256": "52cdd03096f82422261ea891d8c4f3aab8c364893b99a5e0688c0071d7184f56",
+        "untracked_file_count": 14,
+        "untracked_inventory_sha256": "672088ee9f6e1c5f674e9daa3a670abda5ae4bd694abdcd931a7726233c54a59"
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "77618b57887a78d4a209f32b219a85acdb006f920ed0fced0a44db60fe5d2ad3",
+        "status_sha256": "71ee70cc6ce5369b06a5613a42f5263a8115bac3bfc63e1db8fe680bdfad2a93",
+        "untracked_file_count": 15,
+        "untracked_inventory_sha256": "e39c16b25c27a27c4ef003619a57541a6a148ce97972a871efa0b909e83864a9"
+      },
+      "native_receipt_sha256": "a891083e176ceed63424b84c16d36810c42bf55688d00a0c3025b392dd06532a",
+      "native_log": "doc-audit-followup.log",
+      "native_log_bytes": 1802,
+      "native_log_sha256": "55c2d1f9485de380e71540b5b014f63db5ba0975b1c9aa54052679573ca8716d"
+    },
+    {
+      "label": "redaction-rustdoc",
+      "performed_by": "parent agent; core documentation build",
+      "command": [
+        "cargo",
+        "rustdoc",
+        "-p",
+        "concord-core",
+        "--all-features",
+        "--locked",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "cwd": "${REPOSITORY}",
+      "started_at": "2026-10-17T11:47:01.824176+00:00",
+      "finished_at": "2026-10-17T11:47:10.343711+00:00",
+      "elapsed_seconds": 8.492,
+      "exit_code": 0,
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "9c4fea1bb7466b3d725108e1db2cb416dd6d1fa7c957dbc65e8b40e7fd3fbff0",
+        "status_sha256": "1d0351221e83763b36cc64f0ce0fdfef4e5bf8f20df3bd46bf32f6effe81afc0",
+        "untracked_file_count": 31,
+        "untracked_inventory_sha256": "5876e5ddaf37a51164229a243dc53b19646c75041d87743a43744eaf728bf25d"
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "b3aae1021fa3b489a232b2b21d78c33187077b9788f1fe92a5923226b29c6e5b",
+        "status_sha256": "dab6a614e30f66e970c2d7aac4072e9551737c94e8bf823458fb1d5a89a43b20",
+        "untracked_file_count": 31,
+        "untracked_inventory_sha256": "5876e5ddaf37a51164229a243dc53b19646c75041d87743a43744eaf728bf25d"
+      },
+      "native_receipt_sha256": "d1305d87223956aabf00d023aa8ff51f995e2071da24c543e5357aabfc442a48",
+      "native_log": "redaction-rustdoc.log",
+      "native_log_bytes": 738,
+      "native_log_sha256": "c1ea05ab193000df6eef39064d12acac7adf42da0239fe7b0119c68316ef9c4c"
+    },
+    {
+      "label": "facade-rustdoc",
+      "performed_by": "parent agent; facade documentation build",
+      "command": [
+        "env",
+        "RUSTDOCFLAGS=-Dwarnings",
+        "cargo",
+        "doc",
+        "-p",
+        "concord",
+        "--all-features",
+        "--no-deps",
+        "--locked",
+        "--offline"
+      ],
+      "cwd": "${REPOSITORY}",
+      "started_at": "2026-10-17T11:51:16.934379+00:00",
+      "finished_at": "2026-10-17T11:51:21.839069+00:00",
+      "elapsed_seconds": 4.871,
+      "exit_code": 0,
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "b3aae1021fa3b489a232b2b21d78c33187077b9788f1fe92a5923226b29c6e5b",
+        "status_sha256": "dab6a614e30f66e970c2d7aac4072e9551737c94e8bf823458fb1d5a89a43b20",
+        "untracked_file_count": 33,
+        "untracked_inventory_sha256": "246d1fee2b3a1d9c6fd727eae594619f11acf137403928c0e43bc6a92aa85bc6"
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "b3aae1021fa3b489a232b2b21d78c33187077b9788f1fe92a5923226b29c6e5b",
+        "status_sha256": "dab6a614e30f66e970c2d7aac4072e9551737c94e8bf823458fb1d5a89a43b20",
+        "untracked_file_count": 33,
+        "untracked_inventory_sha256": "246d1fee2b3a1d9c6fd727eae594619f11acf137403928c0e43bc6a92aa85bc6"
+      },
+      "native_receipt_sha256": "18b498466fbded6430268560914d3a68dda3a51675fe58b574594729f3314c28",
+      "native_log": "facade-rustdoc.log",
+      "native_log_bytes": 538,
+      "native_log_sha256": "358c6e8a130409135dbff72d72a4a77a6cd10cefbc5545acbb6ca98ef83ad54e"
+    }
+  ],
+  "artifacts": {
+    "catalog_after.contract.json": {
+      "bytes": 130036,
+      "sha256": "34f211cbf19049a74a59c7740d27fafa277484cabb2a79bb3bddd03ce3e580dd"
+    },
+    "catalog_before.contract.json": {
+      "bytes": 129849,
+      "sha256": "6565846a07e8490e44ca2989f4b54ffaf5db3e98dbdc76563e137ceb43e00b33"
+    },
+    "catalog_scope_default.corrected.diff.json": {
+      "bytes": 7845,
+      "sha256": "fabc3c0a22715d0e8ea127b23c2541b3057fdfcf01ffbab2cdddfe596db07e85"
+    },
+    "catalog_scope_default.original.diff.json": {
+      "bytes": 8037,
+      "sha256": "b17d5335d46e5216a74e4d7c68061fc81862123039faceecc764c7de6d88e59d"
+    },
+    "catalog_scope_default.patch": {
+      "bytes": 562,
+      "sha256": "d13d75cd434d3e4406db0f8c4ce0801d93e113ae4b0f44e10bee84bb01ec697b"
+    },
+    "observations.json": {
+      "bytes": 36854,
+      "sha256": "868566cf2d51e7ffdd1e5448b6d8ed98028e562bc35eb1dffccc59192b1dfb1c"
+    },
+    "rendered_checks_before_fixes.json": {
+      "bytes": 34021,
+      "sha256": "b8f38dbd60d3688ce4c486c495f85af15a276b23f9df105b027e84484e1ceb74"
+    },
+    "rendered_corrections.json": {
+      "bytes": 6345,
+      "sha256": "934e6afce0e10b0b5942c65afdeb0bbd221138d6acbd3aac7ce65586e1bf245c"
+    }
+  }
+}

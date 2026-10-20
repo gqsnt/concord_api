@@ -1,4 +1,7 @@
-use std::num::NonZeroUsize;
+//! The explicit accepted-bytes terminal (§10.4, V3-E09): it bypasses
+//! representation-specific accepted-head validation and conversion while
+//! retaining origin, status, `Accept` negotiation and body limits.
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
@@ -6,14 +9,22 @@ use concord::api;
 use concord::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};
 use concord::endpoint::AcceptedBytesRequest;
 use concord::error::ErrorCategory;
-use concord::http::{SafeProxy, StatusCode};
+use concord::http::StatusCode;
 use concord::response::{Buffered, ResponseBodyError, ResponseHead, ResponseRepresentation};
-use concord::{ApiResponse, Binary, Bytes};
+use concord::{ApiResponse, Binary, Bytes, Empty, Text};
 use concord_test_support::server::{BodyGate, ResponseScript, ScriptedServer};
+use tokio::sync::{Mutex, MutexGuard};
+
+use crate::support::loopback_proxy;
 
 static CONTENT_TYPE_VALIDATIONS: AtomicUsize = AtomicUsize::new(0);
 static DECODER_CALLS: AtomicUsize = AtomicUsize::new(0);
 static ACCEPTED_SPEC_CALLBACKS: AtomicUsize = AtomicUsize::new(0);
+static PROBE_LOCK: Mutex<()> = Mutex::const_new(());
+
+async fn probe_guard() -> MutexGuard<'static, ()> {
+    PROBE_LOCK.lock().await
+}
 
 pub struct ObservedCodec;
 
@@ -24,7 +35,7 @@ impl DecodeBody for ObservedCodec {
 
     fn validate_content_type(content_type: Option<&str>) -> Result<(), CodecError> {
         CONTENT_TYPE_VALIDATIONS.fetch_add(1, Ordering::SeqCst);
-        if content_type == Self::ACCEPT {
+        if content_type == <Self as DecodeBody>::ACCEPT {
             Ok(())
         } else {
             Err(CodecError::new(CodecErrorKind::Decode))
@@ -42,9 +53,7 @@ pub struct AcceptedMissing;
 impl ResponseRepresentation<String> for AcceptedMissing {
     type Driver = Buffered;
 
-    fn accept() -> Option<&'static str> {
-        Some("application/x-accepted-missing")
-    }
+    const ACCEPT: Option<&'static str> = Some("application/x-accepted-missing");
 
     fn validate(_head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         ACCEPTED_SPEC_CALLBACKS.fetch_add(1, Ordering::SeqCst);
@@ -59,46 +68,38 @@ impl ResponseRepresentation<String> for AcceptedMissing {
 
 api! {
     client AcceptedBytesApi {
-        timeout 30s;
         base "http://response-bytes.example.test/root/";
+        timeout 30s;
 
-
-    GET text_value() -> String via Text { path ["text"]; expose accepted_bytes; }
-    GET custom_value() -> String via crate::ObservedCodec { path ["custom"]; expose accepted_bytes; }
-    GET bytes_value() -> Bytes via Binary { path ["bytes"]; expose accepted_bytes; }
-    GET empty_value() -> () via Empty { path ["empty"]; expose accepted_bytes; }
-    GET accepted_missing() -> String via crate::AcceptedMissing {
-        path ["accepted"];
-        status 404;
-        expose accepted_bytes;
+        GET text_value() -> String via Text { path "text"; expose accepted_bytes; }
+        GET custom_value() -> String via ObservedCodec { path "custom"; expose accepted_bytes; }
+        GET bytes_value() -> Bytes via Binary { path "bytes"; expose accepted_bytes; }
+        GET empty_value() -> () via Empty { path "empty"; expose accepted_bytes; }
+        GET accepted_missing() -> String via AcceptedMissing {
+            path "accepted";
+            status 404;
+            expose accepted_bytes;
+        }
+        GET stream_value() -> ::concord::response::ByteStream via Binary { path "stream"; }
     }
-    GET stream_value() -> ::concord::response::ByteStream via Binary { path ["stream"]; }
-}}
+}
 
 api! {
     client AcceptedBytesJsonApi {
-        timeout 30s;
         base "http://response-bytes-json.example.test/";
+        timeout 30s;
 
-
-    GET json_value() -> Vec<u32> via crate::support::Json { expose accepted_bytes; }
-}}
-
-fn proxy(server: &ScriptedServer) -> SafeProxy {
-    SafeProxy::parse(server.url("")).expect("loopback proxy")
+        GET json_value() -> Vec<u32> via crate::support::Json { expose accepted_bytes; }
+    }
 }
 
 fn client(server: &ScriptedServer, response_limit: usize) -> AcceptedBytesApi {
     AcceptedBytesApi::builder()
         .configure_http({
-            let proxy = proxy(server);
+            let proxy = loopback_proxy(server);
             move |http| http.proxy(proxy)
         })
-        .configure_runtime(move |runtime| {
-            runtime.response_body_limit(
-                NonZeroUsize::new(response_limit).expect("nonzero response limit"),
-            )
-        })
+        .configure_runtime(move |runtime| runtime.response_body_limit(response_limit))
         .build()
         .expect("response-bytes client")
 }
@@ -107,24 +108,51 @@ fn client(server: &ScriptedServer, response_limit: usize) -> AcceptedBytesApi {
 fn eligible_generated_modes_expose_the_exact_accepted_bytes_terminal_type() {
     let client = AcceptedBytesApi::new().expect("side-effect-free client construction");
 
-    let _: AcceptedBytesRequest<_> = client.text_value().accepted_bytes();
-    let _: AcceptedBytesRequest<_> = client.custom_value().accepted_bytes();
-    let _: AcceptedBytesRequest<_> = client.bytes_value().accepted_bytes();
-    let _: AcceptedBytesRequest<_> = client.empty_value().accepted_bytes();
-    let _: AcceptedBytesRequest<_> = client.accepted_missing().accepted_bytes();
+    let _: AcceptedBytesRequest = client.text_value().accepted_bytes();
+    let _: AcceptedBytesRequest = client.custom_value().accepted_bytes();
+    let _: AcceptedBytesRequest = client.bytes_value().accepted_bytes();
+    let _: AcceptedBytesRequest = client.empty_value().accepted_bytes();
+    let _: AcceptedBytesRequest = client.accepted_missing().accepted_bytes();
 
     let _direct_await_remains_selected = client.bytes_value();
     let _metadata_terminal_remains_selected = client.bytes_value().response();
+
+    let contract = AcceptedBytesApi::contract();
+    for id in [
+        "accepted_bytes_api.text_value",
+        "accepted_bytes_api.custom_value",
+        "accepted_bytes_api.bytes_value",
+        "accepted_bytes_api.empty_value",
+        "accepted_bytes_api.accepted_missing",
+    ] {
+        assert!(
+            contract
+                .endpoint(id)
+                .expect("endpoint")
+                .terminals()
+                .accepted_bytes(),
+            "{id}"
+        );
+    }
+    // CALL-03: an undeclared terminal is absent, not a runtime error.
+    assert!(
+        !contract
+            .endpoint("accepted_bytes_api.stream_value")
+            .expect("stream endpoint")
+            .terminals()
+            .accepted_bytes()
+    );
 }
 
 #[test]
 fn generated_json_mode_exposes_the_accepted_bytes_terminal() {
     let client = AcceptedBytesJsonApi::new().expect("side-effect-free JSON client construction");
-    let _: AcceptedBytesRequest<_> = client.json_value().accepted_bytes();
+    let _: AcceptedBytesRequest = client.json_value().accepted_bytes();
 }
 
 #[tokio::test]
 async fn accepted_bytes_skips_declared_conversion_and_preserves_accept_status_and_metadata() {
+    let _guard = probe_guard().await;
     CONTENT_TYPE_VALIDATIONS.store(0, Ordering::SeqCst);
     DECODER_CALLS.store(0, Ordering::SeqCst);
     ACCEPTED_SPEC_CALLBACKS.store(0, Ordering::SeqCst);
@@ -184,7 +212,7 @@ async fn accepted_bytes_skips_declared_conversion_and_preserves_accept_status_an
     for expected in ["ApiResponse", "200", "header_count", "ExecutionMeta"] {
         assert!(
             debug.contains(expected),
-            "ApiResponse Debug omitted {expected}"
+            "ApiResponse Debug omitted {expected}: {debug}"
         );
     }
     assert_eq!(
@@ -212,7 +240,7 @@ async fn accepted_bytes_skips_declared_conversion_and_preserves_accept_status_an
         .empty_value()
         .accepted_bytes()
         .await
-        .expect("discard declaration still collects explicit bytes");
+        .expect("empty declaration still collects explicit bytes");
     assert_eq!(no_content.value(), b"no-content-still-collected".as_slice());
 
     let accepted = client
@@ -227,7 +255,8 @@ async fn accepted_bytes_skips_declared_conversion_and_preserves_accept_status_an
     let requests = server.requests();
     assert_eq!(
         requests[0].header("accept"),
-        Some("application/x-observed-codec")
+        Some("application/x-observed-codec"),
+        "accepted bytes keep the declared Accept negotiation"
     );
     assert_eq!(
         requests[4].header("accept"),
@@ -317,6 +346,52 @@ async fn accepted_bytes_limit_counts_post_decompression_bytes() {
         .await
         .expect_err("128 decoded bytes exceed the 64-byte response limit");
     assert_eq!(error.category(), ErrorCategory::ResponseBody);
+}
+
+/// PRODUCT-04: the brotli and deflate feature paths decode through a
+/// generated client, and the response limit counts decoded bytes.
+///
+/// The constants are reference encoder output for 128 `x` bytes, produced
+/// offline and deterministically because neither encoder is a dependency:
+/// `brotli` 8.0.4 `CompressorWriter` (quality 11, window 22) and Python
+/// `zlib.compress(b"x" * 128, 9)` (RFC 1950 zlib framing, which HTTP
+/// `Content-Encoding: deflate` denotes). Each is 12 encoded bytes.
+#[cfg(any(feature = "brotli", feature = "deflate"))]
+async fn assert_accepted_bytes_decode_and_limit_post_decompression(encoding: &str, encoded: &[u8]) {
+    let script = || ResponseScript::Complete {
+        status: 200,
+        headers: vec![("Content-Encoding".into(), encoding.into())],
+        body: encoded.to_vec(),
+    };
+    let server = ScriptedServer::start([script(), script()]).expect("compressed server");
+
+    let decoded = client(&server, 128)
+        .bytes_value()
+        .accepted_bytes()
+        .await
+        .expect("128 decoded bytes fit a 128-byte limit");
+    assert_eq!(decoded.value().as_ref(), &[b'x'; 128][..], "{encoding}");
+
+    let error = client(&server, 64)
+        .bytes_value()
+        .accepted_bytes()
+        .await
+        .expect_err("128 decoded bytes exceed the 64-byte response limit");
+    assert_eq!(error.category(), ErrorCategory::ResponseBody, "{encoding}");
+}
+
+#[cfg(feature = "brotli")]
+#[tokio::test]
+async fn accepted_bytes_limit_counts_brotli_post_decompression_bytes() {
+    const BROTLI_128_X: &[u8] = &[139, 63, 0, 248, 37, 240, 34, 177, 64, 32, 27, 3];
+    assert_accepted_bytes_decode_and_limit_post_decompression("br", BROTLI_128_X).await;
+}
+
+#[cfg(feature = "deflate")]
+#[tokio::test]
+async fn accepted_bytes_limit_counts_deflate_post_decompression_bytes() {
+    const DEFLATE_128_X: &[u8] = &[120, 218, 171, 168, 24, 88, 0, 0, 31, 97, 60, 1];
+    assert_accepted_bytes_decode_and_limit_post_decompression("deflate", DEFLATE_128_X).await;
 }
 
 #[tokio::test]

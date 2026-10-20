@@ -3,6 +3,7 @@
 pub(crate) mod application;
 pub(crate) mod build;
 mod config;
+mod content_decoding;
 #[cfg(test)]
 mod development;
 mod limits;
@@ -19,3 +20,4 @@ pub use limits::{
     MAX_ROOT_CERTIFICATES_TOTAL_BYTES,
 };
 pub use proxy::SafeProxy;
+pub(crate) use response_progress::AcquiredByteMeter;

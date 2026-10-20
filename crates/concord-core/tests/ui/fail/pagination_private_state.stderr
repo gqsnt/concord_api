@@ -1,25 +1,23 @@
-error[E0432]: unresolved import `concord_core::contracts::PaginationRequest`
- --> tests/ui/fail/pagination_private_state.rs:1:5
+error[E0616]: field `traversal` of struct `Pages` is private
+ --> tests/ui/fail/pagination_private_state.rs:7:20
   |
-1 | use concord_core::contracts::PaginationRequest;
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `PaginationRequest` in `contracts`
+7 |     let _ = &pages.traversal;
+  |                    ^^^^^^^^^ private field
 
-error[E0616]: field `request` of struct `PaginatedRequest` is private
- --> tests/ui/fail/pagination_private_state.rs:5:22
+error[E0599]: no method named `timeout` found for struct `Pages<Item>` in the current scope
+ --> tests/ui/fail/pagination_private_state.rs:8:19
   |
-5 |     let _ = &request.request;
-  |                      ^^^^^^^ private field
+8 |     let _ = pages.timeout(std::time::Duration::from_secs(1));
+  |                   ^^^^^^^ method not found in `Pages<u64>`
 
-error[E0616]: field `limit` of struct `PaginatedRequest` is private
- --> tests/ui/fail/pagination_private_state.rs:6:22
+error[E0599]: no method named `with_options` found for struct `Pages<Item>` in the current scope
+ --> tests/ui/fail/pagination_private_state.rs:9:19
   |
-6 |     let _ = &request.limit;
-  |                      ^^^^^ private field
+9 |     let _ = pages.with_options(&CallOptions::new());
+  |                   ^^^^^^^^^^^^ method not found in `Pages<u64>`
 
-error[E0277]: `PaginatedRequest<()>` doesn't implement `Debug`
- --> tests/ui/fail/pagination_private_state.rs:7:22
-  |
-7 |     let _ = format!("{request:?}");
-  |                      ^^^^^^^^^^^ `PaginatedRequest<()>` cannot be formatted using `{:?}` because it doesn't implement `Debug`
-  |
-  = help: the trait `Debug` is not implemented for `PaginatedRequest<()>`
+error[E0616]: field `collection` of struct `CollectPrefix` is private
+  --> tests/ui/fail/pagination_private_state.rs:13:24
+   |
+13 |     let _ = &collector.collection;
+   |                        ^^^^^^^^^^ private field

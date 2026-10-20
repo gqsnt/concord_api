@@ -1,107 +1,125 @@
-error: the fixed base must be absolute HTTP(S), contain a host, and contain no user information, query, or fragment
- --> tests/ui/fail/syntax/spec_rejections.rs:6:14
-  |
-6 |         base "https://user@example.test/";
-  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-error: the fixed base must be absolute HTTP(S), contain a host, and contain no user information, query, or fragment
-  --> tests/ui/fail/syntax/spec_rejections.rs:13:14
+error: [C3-OWNER] the fixed base of client `BaseUserInfoApi` must be absolute HTTP(S), contain a host, and contain no user information, query, or fragment; declare credentials in `credentials { ... }` and query pairs in `query { ... }`
+  --> tests/ui/fail/syntax/spec_rejections.rs:12:14
    |
-13 |         base "https://example.test/?page=1";
+12 |         base "https://user@example.test/";
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: [C3-OWNER] the fixed base of client `BaseQueryApi` must be absolute HTTP(S), contain a host, and contain no user information, query, or fragment; declare credentials in `credentials { ... }` and query pairs in `query { ... }`
+  --> tests/ui/fail/syntax/spec_rejections.rs:18:14
+   |
+18 |         base "https://example.test/?page=1";
    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: the fixed base must be absolute HTTP(S), contain a host, and contain no user information, query, or fragment
-  --> tests/ui/fail/syntax/spec_rejections.rs:20:14
+error: [C3-OWNER] the fixed base of client `BaseFragmentApi` must be absolute HTTP(S), contain a host, and contain no user information, query, or fragment; declare credentials in `credentials { ... }` and query pairs in `query { ... }`
+  --> tests/ui/fail/syntax/spec_rejections.rs:24:14
    |
-20 |         base "https://example.test/#fragment";
+24 |         base "https://example.test/#fragment";
    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: a static path atom must be one non-empty, non-dot segment without `/` or `\`
-  --> tests/ui/fail/syntax/spec_rejections.rs:28:15
+error: [C3-OWNER] the fixed base of client `BaseSchemeApi` must be absolute HTTP(S), contain a host, and contain no user information, query, or fragment; declare credentials in `credentials { ... }` and query pairs in `query { ... }`
+  --> tests/ui/fail/syntax/spec_rejections.rs:30:14
    |
-28 |         path [""];
-   |               ^^
+30 |         base "ftp://example.test/";
+   |              ^^^^^^^^^^^^^^^^^^^^^
 
-error: a static path atom must be one non-empty, non-dot segment without `/` or `\`
-  --> tests/ui/fail/syntax/spec_rejections.rs:36:15
+error: [C3-PATH] an empty path template appends nothing; omit the clause instead (path template of client `EmptyPathApi`, template bytes 0..0)
+  --> tests/ui/fail/syntax/spec_rejections.rs:37:14
    |
-36 |         path ["."];
-   |               ^^^
+37 |         path "";
+   |              ^^
 
-error: a static path atom must be one non-empty, non-dot segment without `/` or `\`
-  --> tests/ui/fail/syntax/spec_rejections.rs:44:15
+error: [C3-PATH] a path segment cannot be `.` or `..`; write the resolved relative path (path template of client `DotPathApi`, template bytes 0..1)
+  --> tests/ui/fail/syntax/spec_rejections.rs:44:14
    |
-44 |         path [".."];
-   |               ^^^^
+44 |         path ".";
+   |              ^^^
 
-error: a static path atom must be one non-empty, non-dot segment without `/` or `\`
-  --> tests/ui/fail/syntax/spec_rejections.rs:52:15
+error: [C3-PATH] a path segment cannot be `.` or `..`; write the resolved relative path (path template of client `DotDotPathApi`, template bytes 2..4)
+  --> tests/ui/fail/syntax/spec_rejections.rs:51:14
    |
-52 |         path ["/"];
-   |               ^^^
+51 |         path "a/..";
+   |              ^^^^^^
 
-error: a static path atom must be one non-empty, non-dot segment without `/` or `\`
-  --> tests/ui/fail/syntax/spec_rejections.rs:60:15
+error: [C3-PATH] a generated path template is relative: remove the leading `/` (path template of client `SlashPathApi`, template bytes 0..1)
+  --> tests/ui/fail/syntax/spec_rejections.rs:58:14
    |
-60 |         path ["\\"];
-   |               ^^^^
+58 |         path "/";
+   |              ^^^
 
-error: a static host atom must be one 1-63 byte ASCII DNS label beginning and ending with an alphanumeric character
-  --> tests/ui/fail/syntax/spec_rejections.rs:68:28
+error: [C3-PATH] a path segment cannot contain a backslash; use a scalar value/adapter when it is intentional segment data (path template of client `BackslashPathApi`, template bytes 0..1)
+  --> tests/ui/fail/syntax/spec_rejections.rs:65:14
    |
-68 |         subdomain replace ["bad_label"];
+65 |         path "\\";
+   |              ^^^^
+
+error: [C3-ATOM] a subdomain literal of client `InvalidHostApi` must be exactly one 1-63 byte lowercase ASCII DNS label (letters, digits, hyphens; no leading/trailing hyphen, no dots); write one list atom per label, such as `subdomain ["eu", "api"];`
+  --> tests/ui/fail/syntax/spec_rejections.rs:72:28
+   |
+72 |         subdomain replace ["bad_label"];
    |                            ^^^^^^^^^^^
 
-error: secrets are private credential sources and cannot appear in public expressions
-  --> tests/ui/fail/syntax/spec_rejections.rs:83:15
+error: [C3-ATOM] a subdomain literal of client `DottedHostApi` must be exactly one 1-63 byte lowercase ASCII DNS label (letters, digits, hyphens; no leading/trailing hyphen, no dots); write one list atom per label, such as `subdomain ["eu", "api"];`
+  --> tests/ui/fail/syntax/spec_rejections.rs:79:20
    |
-83 |         path [secret.token];
-   |               ^^^^^^
+79 |         subdomain ["eu.api"];
+   |                    ^^^^^^^^
 
-error: arbitrary Rust expressions are not supported; use `client.NAME`, `endpoint.NAME`, or a visible named scope owner
-  --> tests/ui/fail/syntax/spec_rejections.rs:95:15
+error: [C3-AUTH] secrets and credentials are private sources and cannot appear in public expressions of endpoint `SecretExpressionApi::read`; apply a credential with `auth { ... }`
+  --> tests/ui/fail/syntax/spec_rejections.rs:92:36
    |
-95 |         path [make_path()];
-   |               ^^^^^^^^^
+92 |             headers { "X-Public" = secret.token; }
+   |                                    ^^^^^^
 
-error: a endpoint `read` accepts one grouped `auth` attachment; `auth off` is exclusive
-   --> tests/ui/fail/syntax/spec_rejections.rs:113:9
+error: [C3-ATOM] empty `concat []` is invalid in endpoint `EmptyConcatApi::read`; write at least one part, such as `concat ["v", version]`, or remove the statement
+   --> tests/ui/fail/syntax/spec_rejections.rs:105:35
     |
-113 |         auth { header "x-key" = second; }
-    |         ^^^^
+105 |             headers { "X-Trace" = concat []; }
+    |                                   ^^^^^^
 
-error: the first authentication attachment is here
-   --> tests/ui/fail/syntax/spec_rejections.rs:112:9
+error: [C3-ATOM] arbitrary Rust expressions are not supported in endpoint `ArbitraryExpressionApi::read`; reference a declared value and adapt it with `via Encoder`
+   --> tests/ui/fail/syntax/spec_rejections.rs:115:35
     |
-112 |         auth { header "X-Key" = first; }
-    |         ^^^^
+115 |             headers { "X-Value" = make_value(); }
+    |                                   ^^^^^^^^^^
 
-error: a endpoint `read` accepts one grouped `auth` attachment; `auth off` is exclusive
-   --> tests/ui/fail/syntax/spec_rejections.rs:131:9
+error: [C3-AUTH] auth placement target `x-key` of endpoint `DuplicateAuthHeaderApi::read` is already claimed by an effective placement from DuplicateAuthHeaderApi::read; use `auth replace { ... }` to select a different placement
+   --> tests/ui/fail/syntax/spec_rejections.rs:133:17
     |
-131 |         auth { bearer second; }
-    |         ^^^^
+133 |                 header "x-key" = second;
+    |                 ^^^^^^
 
-error: the first authentication attachment is here
-   --> tests/ui/fail/syntax/spec_rejections.rs:130:9
+error: note: the earlier placement is here
+   --> tests/ui/fail/syntax/spec_rejections.rs:132:17
     |
-130 |         auth { bearer first; }
-    |         ^^^^
+132 |                 header "X-Key" = first;
+    |                 ^^^^^^
 
-error: this public header name is reserved by transport, authentication, cookies, or proxy authentication
-   --> tests/ui/fail/syntax/spec_rejections.rs:140:13
+error: [C3-AUTH] auth placement target `authorization` of endpoint `DuplicateAuthorizationApi::read` is already claimed by an effective placement from DuplicateAuthorizationApi::read; use `auth replace { ... }` to select a different placement
+   --> tests/ui/fail/syntax/spec_rejections.rs:152:17
     |
-140 |             "Authorization" = "public";
+152 |                 bearer second;
+    |                 ^^^^^^
+
+error: note: the earlier placement is here
+   --> tests/ui/fail/syntax/spec_rejections.rs:151:17
+    |
+151 |                 bearer first;
+    |                 ^^^^^^
+
+error: [C3-PLACE] `Authorization` is not a generic public-header target of client `ReservedPublicHeaderApi`; it is owned by transport, authentication, representation negotiation, body media, cookies or proxy handling (place credentials with `auth { ... }`; representations own media and negotiation)
+   --> tests/ui/fail/syntax/spec_rejections.rs:162:13
+    |
+162 |             "Authorization" = "public";
     |             ^^^^^^^^^^^^^^^
 
-error: an inline rate policy requires at least one positive window; add `allow 100 per 1m;`
-   --> tests/ui/fail/syntax/spec_rejections.rs:149:9
+error: [C3-RATE] the inline rate policy of client `EmptyInlineRateLimitApi` requires `using WINDOW_SET;` or at least one `allow N per DURATION;`
+   --> tests/ui/fail/syntax/spec_rejections.rs:170:76
     |
-149 |         rate_limit { id "concord.spec_rejections.1"; key [origin]; cost 1; }
-    |         ^^^^^^^^^^
+170 |         rate_limit { id "concord.spec_rejections.1"; key [origin]; cost 1; }
+    |                                                                            ^
 
-error: a reusable rate policy requires at least one positive window; add `allow 100 per 1m;`
-   --> tests/ui/fail/syntax/spec_rejections.rs:158:20
+error: [C3-RATE] policy `empty` of client `EmptyRateLimitProfileApi` requires `using WINDOW_SET;` or at least one `allow N per DURATION;`
+   --> tests/ui/fail/syntax/spec_rejections.rs:178:84
     |
-158 |             policy empty() { id "concord.spec_rejections.2"; key [origin]; cost 1; }
-    |                    ^^^^^
+178 |             policy empty() { id "concord.spec_rejections.2"; key [origin]; cost 1; }
+    |                                                                                    ^

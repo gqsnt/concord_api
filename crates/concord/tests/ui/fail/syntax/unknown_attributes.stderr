@@ -1,0 +1,53 @@
+error: [C3-OWNER] unsupported attribute on endpoint `UnknownEndpointAttributeApi::read`; supported attributes are docs, `#[deprecated]`, and (ordinary values only) `#[sensitive]` and `#[default]`
+  --> tests/ui/fail/syntax/unknown_attributes.rs:13:9
+   |
+13 |         #[inline]
+   |         ^
+
+error: [C3-OWNER] unsupported attribute on client value of client `UnknownValueAttributeApi`; supported attributes are docs, `#[deprecated]`, and (ordinary values only) `#[sensitive]` and `#[default]`
+  --> tests/ui/fail/syntax/unknown_attributes.rs:22:13
+   |
+22 |             #[serde(rename = "t")]
+   |             ^
+
+error: [C3-OWNER] child-level `cfg`/`cfg_attr` is not supported inside `api!` (on endpoint `ChildCfgApi::read`); condition the whole invocation or its enclosing module
+  --> tests/ui/fail/syntax/unknown_attributes.rs:32:9
+   |
+32 |         #[cfg(feature = "json")]
+   |         ^
+
+error: [C3-OWNER] child-level `cfg`/`cfg_attr` is not supported inside `api!` (on scope parameter of scope `ChildCfgAttrApi::regional`); condition the whole invocation or its enclosing module
+  --> tests/ui/fail/syntax/unknown_attributes.rs:41:24
+   |
+41 |         scope regional(#[cfg_attr(test, sensitive)] query region: String) {
+   |                        ^
+
+error: [C3-OWNER] `#[sensitive]` applies only to ordinary values; a request body of endpoint `SensitiveBodyApi::write` is protected or initialized by its role, so remove the attribute
+  --> tests/ui/fail/syntax/unknown_attributes.rs:51:20
+   |
+51 |         POST write(#[sensitive] body payload: Bytes via Binary) -> Bytes via Binary;
+   |                    ^
+
+error: [C3-OWNER] `#[sensitive]` applies only to ordinary values; scope `SensitiveScopeApi::regional` is protected or initialized by its role, so remove the attribute
+  --> tests/ui/fail/syntax/unknown_attributes.rs:59:9
+   |
+59 |         #[sensitive]
+   |         ^
+
+error: [C3-OWNER] `#[default]` applies only to ordinary values; endpoint `DefaultEndpointApi::read` is protected or initialized by its role, so remove the attribute
+  --> tests/ui/fail/syntax/unknown_attributes.rs:70:9
+   |
+70 |         #[default]
+   |         ^
+
+error: [C3-OWNER] a request body cannot be deprecated; deprecate endpoint `DeprecatedBodyApi::write` instead
+  --> tests/ui/fail/syntax/unknown_attributes.rs:79:20
+   |
+79 |         POST write(#[deprecated] body payload: Bytes via Binary) -> Bytes via Binary;
+   |                    ^
+
+error: [C3-OWNER] `#[sensitive]` must be a bare attribute on client value of client `SensitiveArgumentApi`; write `#[sensitive]`
+  --> tests/ui/fail/syntax/unknown_attributes.rs:87:13
+   |
+87 |             #[sensitive(always)]
+   |             ^

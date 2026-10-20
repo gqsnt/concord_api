@@ -1,43 +1,75 @@
-//! Generated and runtime-defined endpoint values share one request/executor.
+//! Generated and runtime-defined endpoints share one owner projection and
+//! one managed executor.
 //!
-//! Required features: none. Mode: construction, credential-free planning, and local
-//! execution. Documentation owner:
-//! `docs/runtime_endpoints.md`.
+//! Required features: none. Mode: construction, binding and credential-free
+//! planning. Documentation owner: `docs/runtime_endpoints.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
 use std::time::Duration;
 
-use concord::api;
-use concord::endpoint::{EndpointId, Request, RuntimeEndpoint};
-use concord::http::{HeaderName, Method};
+use concord::endpoint::{BoundRuntimeRequest, EndpointId, RequestPlan, RuntimeEndpoint};
+use concord::error::ConfigurationError;
+use concord::http::Method;
+use concord::{Empty, Text, api};
 
 // ANCHOR: runtime_endpoint_client
 api! {
     client PreparedApi {
-        timeout 30s;
         base "http://prepared.example.test/";
+        timeout 30s;
 
+        GET declared() -> () via Empty;
 
-    GET generated() -> () via Empty;
-}}
+        scope regional(region: String) {
+            timeout 10s;
+            path "regions/{region}";
+            headers { "X-Region" = region; }
+
+            GET declared() -> () via Empty;
+        }
+    }
+}
 // ANCHOR_END: runtime_endpoint_client
 
-/// Constructs one generated and one runtime-defined request.
 // ANCHOR: runtime_endpoint
-pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
-    let client = PreparedApi::builder().build()?;
-    let endpoint = RuntimeEndpoint::builder(EndpointId::new("prepared_api.lookup")?, Method::POST)
+/// Builds one runtime-defined endpoint descriptor.
+///
+/// Construction records a symbolic program: no value is encoded, no body is
+/// prepared and nothing is sent until the endpoint is bound and executed.
+///
+/// # Errors
+///
+/// The first latched structural error (invalid ID, key, method or a
+/// repeated singleton selection).
+pub fn lookup() -> Result<RuntimeEndpoint<Text, String>, ConfigurationError> {
+    RuntimeEndpoint::builder(EndpointId::new("prepared_api.lookup")?, Method::POST)
         .path("records")
         .path("42")
         .query("view", "summary")
-        .header(HeaderName::from_static("x-example"), "canonical")
+        .header("x-example", "canonical")
         .timeout(Duration::from_secs(5))
-        .body_codec::<crate::request_response::specifications::ExampleCodec>(
-            "request body".to_owned(),
-        )
-        .response::<crate::request_response::specifications::ExampleCodec, String>()
-        .build()?;
-    let _: Request<_> = endpoint.try_bind(&client)?;
-    Ok(())
+        .body_repr::<Text, _>("request body".to_owned())
+        .response::<Text, String>()
+        .build()
+}
+
+/// Binds the runtime endpoint at the client root and at a generated scope,
+/// and returns the scope's inert plan URL.
+///
+/// The scope binding inherits the scope's path, headers and timeout exactly
+/// as its generated `declared()` endpoint does; the runtime-local timeout
+/// selection still wins.
+///
+/// # Errors
+///
+/// Client construction, descriptor construction, or binding failures.
+pub fn construct() -> Result<String, Box<dyn std::error::Error>> {
+    let client = PreparedApi::builder().build()?;
+    let _root: BoundRuntimeRequest<Text, String> = client.bind(lookup()?)?;
+
+    let scope = client.regional("eu");
+    let plan: RequestPlan = scope.plan_runtime(&lookup()?)?;
+    let _scoped: BoundRuntimeRequest<Text, String> = scope.bind(lookup()?)?;
+    Ok(plan.observed_url().to_owned())
 }
 // ANCHOR_END: runtime_endpoint

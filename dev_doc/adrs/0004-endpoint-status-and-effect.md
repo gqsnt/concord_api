@@ -1,6 +1,7 @@
 # ADR 0004 — Endpoint-owned status and three effect classes
 
-- **Status:** Selected
+- **Status:** Retained in v3.0.0-beta.1 (v3 specification §10.1); extended by [ADR 0019](0019-head-only-expected-absence.md) with a separate expected-absence status set. v3 additionally forbids automatic authentication replay of a non-idempotent request after a response (RETRY-02).
+- **v2.1 status (historical):** Selected
 
 ## Decision
 

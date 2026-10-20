@@ -1,14 +1,51 @@
-error[E0599]: no method named `paginate` found for struct `ReadRequest` in the current scope
-  --> tests/ui/fail/pagination/non_paginated_no_paginate.rs:14:27
+error[E0599]: no method named `pages` found for struct `ReadRequest` in the current scope
+  --> tests/ui/fail/pagination/non_paginated_no_paginate.rs:15:27
    |
- 3 | / api! {
- 4 | |     client PlainApi {
- 5 | |         timeout 30s;
- 6 | |         base "http://plain.example.test/";
+ 5 | / api! {
+ 6 | |     client PlainApi {
+ 7 | |         base "http://plain.example.test/";
 ...  |
- 9 | |     GET read() -> Bytes via Binary;
-10 | | }}
-   | |__- method `paginate` not found for this struct
+11 | | }
+   | |_- method `pages` not found for this struct
 ...
-14 |       let _ = client.read().paginate(concord::PageLimit::Prefix(1));
+15 |       let _ = client.read().pages(1);
+   |                             ^^^^^ method not found in `ReadRequest`
+
+error[E0599]: no method named `collect_prefix` found for struct `ReadRequest` in the current scope
+  --> tests/ui/fail/pagination/non_paginated_no_paginate.rs:16:27
+   |
+ 5 | / api! {
+ 6 | |     client PlainApi {
+ 7 | |         base "http://plain.example.test/";
+...  |
+11 | | }
+   | |_- method `collect_prefix` not found for this struct
+...
+16 |       let _ = client.read().collect_prefix(1);
+   |                             ^^^^^^^^^^^^^^ method not found in `ReadRequest`
+
+error[E0599]: no method named `collect_all` found for struct `ReadRequest` in the current scope
+  --> tests/ui/fail/pagination/non_paginated_no_paginate.rs:17:27
+   |
+ 5 | / api! {
+ 6 | |     client PlainApi {
+ 7 | |         base "http://plain.example.test/";
+...  |
+11 | | }
+   | |_- method `collect_all` not found for this struct
+...
+17 |       let _ = client.read().collect_all(std::num::NonZeroU32::MIN);
+   |                             ^^^^^^^^^^^ method not found in `ReadRequest`
+
+error[E0599]: no method named `paginate` found for struct `ReadRequest` in the current scope
+  --> tests/ui/fail/pagination/non_paginated_no_paginate.rs:18:27
+   |
+ 5 | / api! {
+ 6 | |     client PlainApi {
+ 7 | |         base "http://plain.example.test/";
+...  |
+11 | | }
+   | |_- method `paginate` not found for this struct
+...
+18 |       let _ = client.read().paginate(1);
    |                             ^^^^^^^^ method not found in `ReadRequest`

@@ -4,13 +4,18 @@
 //! execution. Documentation owner:
 //! `docs/extensions.md`.
 //! Proving test: `tests/local_runtime.rs`.
+//!
+//! The limiter truthfully declares its capability: it admits every plan and
+//! only counts acquisitions, so it reports [`Enforcement::Unenforced`] and
+//! bound plans disclose that no quota is enforced.
 
 // ANCHOR: custom_limiter_extension
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use concord::rate_limit::{
-    BoxFuture, RateLimitError, RateLimitPermit, RateLimitRequest, RateLimiter,
+    BoxFuture, Enforcement, LimiterCapability, RateLimitError, RateLimitPermit, RateLimitRequest,
+    RateLimiter,
 };
 
 /// Deterministically grants attempts while exposing only a bounded counter.
@@ -34,6 +39,10 @@ impl CountingLimiter {
 }
 
 impl RateLimiter for CountingLimiter {
+    fn capability(&self) -> LimiterCapability {
+        LimiterCapability::new(Enforcement::Unenforced, "concord-examples.counting", 1)
+    }
+
     fn acquire<'a>(
         &'a self,
         _request: RateLimitRequest<'a>,

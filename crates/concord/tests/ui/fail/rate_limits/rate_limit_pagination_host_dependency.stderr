@@ -1,5 +1,5 @@
-error: a live pagination binding may update only an endpoint-owned slot (`field -> endpoint.name`)
-  --> tests/ui/fail/rate_limits/rate_limit_pagination_host_dependency.rs:15:27
+error: [C3-PAGE] cursor destination `region` is not an endpoint-owned value of endpoint `Api::pages::list`; destinations are bare endpoint slots, never client or scope values, so declare `region` as a parameter of the endpoint
+  --> tests/ui/fail/rate_limits/rate_limit_pagination_host_dependency.rs:21:31
    |
-15 |                 region -> pages.region;
-   |                           ^^^^^
+21 |                     cursor -> region;
+   |                               ^^^^^^

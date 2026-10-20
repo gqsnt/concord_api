@@ -1,0 +1,40 @@
+   Compiling serde_core v1.0.228
+   Compiling tower v0.5.3
+   Compiling tokio-util v0.7.18
+   Compiling hyper-util v0.1.20
+   Compiling tower-http v0.6.11
+   Compiling winnow v1.0.4
+   Compiling target-triple v1.0.0
+   Compiling toml_parser v1.1.2+spec-1.1.0
+   Compiling toml_writer v1.1.2+spec-1.1.0
+   Compiling reqwest v0.13.4
+   Compiling base64 v0.23.0
+   Compiling glob v0.3.3
+   Compiling termcolor v1.4.1
+   Compiling h2 v0.4.16
+   Compiling concord-test-support v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord-test-support)
+   Compiling serde_json v1.0.150
+   Compiling serde v1.0.228
+   Compiling concord-core v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord-core)
+   Compiling serde_spanned v1.1.1
+   Compiling toml_datetime v1.1.1+spec-1.1.0
+   Compiling toml v1.1.3+spec-1.1.0
+   Compiling trybuild v1.0.118
+   Compiling concord-extras v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord-extras)
+   Compiling concord-inspect v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord-inspect)
+   Compiling concord v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord)
+    Finished `test` profile [unoptimized] target(s) in 7.16s
+     Running tests/v3_user_exercises.rs (/workspace/scratch/69ac10347cac/v3-followup/target/debug/deps/v3_user_exercises-5e0d0589cabed8eb)
+
+running 8 tests
+test patches_distinguish_absence_empty_sequences_and_family_resets ... ok
+test nested_option_controls_preserve_inner_none_and_the_retained_initializer ... ok
+test zero_page_bounds_skip_even_invalid_public_shaping_and_allocate_no_operation ... ok
+test page_bound_outcomes_distinguish_preview_complete_and_lazy_use ... ok
+test byte_success_record_failure_and_cancellation_keep_distinct_stream_outcomes ... ok
+test representations_are_independent_even_when_every_rust_payload_is_string ... ok
+test append_each_preserves_the_declared_vector_and_adds_exact_wire_occurrences ... ok
+test effect_gates_observed_retries_independently_of_buffered_body_replayability ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+

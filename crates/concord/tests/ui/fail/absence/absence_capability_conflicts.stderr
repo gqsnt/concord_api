@@ -1,0 +1,23 @@
+error: [C3-REP] `absent on` cannot combine with `expose accepted_bytes` in endpoint `AbsenceWithAcceptedBytes::find`; use the buffered `NotFound<R>` representation when raw bytes are needed
+  --> tests/ui/fail/absence/absence_capability_conflicts.rs:17:13
+   |
+17 |             absent on 404;
+   |             ^^^^^^
+
+error: [C3-REP] absence status 404 of endpoint `AbsenceInAcceptedList::find` overlaps the accepted payload statuses; the sets are disjoint, so remove 404 from `status` or from `absent on`
+  --> tests/ui/fail/absence/absence_capability_conflicts.rs:30:13
+   |
+30 |             absent on 404;
+   |             ^^^^^^
+
+error: [C3-REP] absence status 404 of endpoint `AbsenceInAcceptedRange::find` overlaps the accepted payload statuses; the sets are disjoint, so remove 404 from `status` or from `absent on`
+  --> tests/ui/fail/absence/absence_capability_conflicts.rs:42:13
+   |
+42 |             absent on 404;
+   |             ^^^^^^
+
+error: [C3-REP] absence status 204 of endpoint `AbsenceInDefaultSuccess::find` overlaps the accepted payload statuses; the sets are disjoint, so remove 204 from `status` or from `absent on`
+  --> tests/ui/fail/absence/absence_capability_conflicts.rs:54:13
+   |
+54 |             absent on 204;
+   |             ^^^^^^

@@ -1,0 +1,469 @@
+{
+  "reviewer": "Independent AI agent, not a human reviewer",
+  "repo_head": "570eec460dee1d83828ae48e35396ae07652aabc",
+  "started_utc": "2026-10-17T11:28:27Z",
+  "method": "Task sheet read first. No rubric/results read before answers. Public docs and source documentation only; implementation excluded. Elapsed time measured from first prediction record to recorded answer; no compiler results implied.",
+  "tasks": {
+    "1": {
+      "started": 1792236507.0442522,
+      "prediction": "Expect a common API client builder/constructor needing a base URL plus endpoint-specific/auth values, with runtime configuration or limiter provided explicitly where relevant. Exact generated method names are unknown before navigation.",
+      "confidence_before_feedback": 2,
+      "ended": 1792236572.8583455,
+      "answer": "Use CatalogApi::builder().set_tenant(tenant).bootstrap_key(SecretString).configure_http(...).configure_runtime(|runtime| runtime.rate_limiter(Arc::new(LocalRateLimiter::new())).response_body_limit(...).pagination_max_pages(...)).build() for the canonical example. Root values, secrets and custom providers are supplied on builder. Any reachable rate policy requires an explicit limiter, including policies reachable only through runtime binding. new() is generated only when no required input/provider/limiter choice remains. build() accumulates missing/invalid configuration, performs no network access or provider acquisition, and defaults are retained from builder creation. Base URL belongs to the declaration, not a required caller-provided runtime argument.",
+      "paths": [
+        "README.md",
+        "docs/README.md",
+        "docs/quick_start.md \u00a7\u00a71\u20135",
+        "docs/generated_client.md Building a client",
+        "docs/runtime.md The two configuration closures, RuntimeConfigBuilder, Build-time validation",
+        "docs/rate_limits.md Selecting enforcement"
+      ],
+      "search_terms": [
+        "configure_runtime",
+        "limiter",
+        "rate policy",
+        "RuntimeConfig"
+      ],
+      "corrections": [
+        "Initial prediction incorrectly included base URL as a possible builder-required value; the documented base is declaration-owned."
+      ],
+      "friction": [
+        "Root-level examples/ directory was absent; README source anchors identify crates/concord-examples/src/ correctly.",
+        "Full rendered Rustdoc was not at the final bundle root; it was located in a nested older qualification archive."
+      ],
+      "macro_or_core_implementation_consulted": false,
+      "provisional_correctness": "Answered from public docs; later rubric comparison pending",
+      "elapsed_seconds": 65.8
+    },
+    "2": {
+      "started": 1792236572.8583815,
+      "prediction": "From the quick-start table: required root tenant has builder set_tenant and set_tenant_if_some; required regional region is positional only. Optional category supports set, exact Option replacement, conditional set and omit; initialized offset supports set, conditional set and retained reset, but no omit or exact Option replacement.",
+      "confidence_before_feedback": 5,
+      "ended": 1792236673.1653476,
+      "answer": "For the getting_started::domain_tree CatalogApi: required root tenant has builder set_tenant(impl IntoValue<String>) and set_tenant_if_some(Option<String>); required scope region is supplied to regional(...) and has no later controls. Optional category has payload set_category, replace_category(Option<String>) for exact absence/presence, set_category_if_some(Option<String>) with None preserving current state, and omit_category; no reset_category. Initialized required offset has set_offset, set_offset_if_some and reset_offset; no replace_offset or omit_offset. reset_offset restores its retained initializer without evaluation. Initialized optional values have every listed control. Required bodies have no controls after construction; optional-body setters accept an exact payload. Only identity and borrowed-string-to-String payload conversions are documented.",
+      "paths": [
+        "docs/quick_start.md Choose inputs exactly (previous task)",
+        "docs/generated_client.md Value controls; Generated rustdoc; canonical signatures",
+        "upstream rendered concord_examples/getting_started/domain_tree/catalog_api/struct.CatalogApiBuilder.html methods set_tenant, set_tenant_if_some, build",
+        "upstream rendered concord_examples/getting_started/domain_tree/catalog_api/regional/struct.ItemSummariesRequest.html type intro and category/offset methods"
+      ],
+      "search_terms": [
+        "set_tenant",
+        "set_tenant_if_some",
+        "set_category",
+        "replace_category",
+        "set_category_if_some",
+        "omit_category",
+        "set_offset",
+        "reset_offset",
+        "omit_offset",
+        "reset_category"
+      ],
+      "corrections": [],
+      "friction": [
+        "Two distinct maintained CatalogApi examples have different required item_summaries arguments; paths must be kept distinct. The guides label the canonical Catalog separately, so this is navigational care rather than a semantic defect.",
+        "The HTML parser initially displayed signatures only; reviewer tooling was corrected to include the containing method documentation. This was a tooling issue, not a product finding."
+      ],
+      "macro_or_core_implementation_consulted": false,
+      "provisional_correctness": "Answered from public docs and preliminary rendered pages; later rubric comparison pending",
+      "elapsed_seconds": 100.3
+    },
+    "3": {
+      "started": 1792236673.1653614,
+      "prediction": "Choose the canonical Catalog regional::find_item endpoint. It probably decodes Json inherited from the client root; the named regional scope might override it, so the effective contract should expose provenance rather than require guessing from the result type.",
+      "confidence_before_feedback": 3,
+      "ended": 1792236747.111169,
+      "answer": "Canonical CatalogApi::regional::find_item returns Option<Item> using Json inherited from client CatalogApi: the client declares response Json, regional has no response override/fence, and find_item has no inline via. A 404 is head-only absence and its body is not polled. Public inspection exposes the provenance through request.description().contract().expect(\"generated endpoint\").result().representation().source(), which has RepresentationSource::Inline or Inherited(owner path). For this declaration the expected source is Inherited(\"CatalogApi\"). This value is inferred from the public declaration, not claimed as an executed expression.",
+      "paths": [
+        "docs/modeling_apis.md canonical Catalog declaration and effective view",
+        "docs/planning_and_observation.md Static contracts",
+        "upstream rendered concord_examples/contracts/catalog_v3/catalog_api/regional/struct.FindItemRequest.html",
+        "upstream rendered concord_examples/contracts/catalog_v3/struct.CatalogApi.html#method.contract",
+        "upstream rendered concord/inspection/struct.EndpointDescription.html",
+        "upstream rendered concord/inspection/struct.EndpointContract.html",
+        "upstream rendered concord/inspection/struct.ResultContract.html",
+        "upstream rendered concord/inspection/struct.BodyContract.html",
+        "upstream rendered concord/inspection/struct.EffectiveRepresentation.html",
+        "upstream rendered concord/inspection/enum.RepresentationSource.html",
+        "upstream rendered concord/inspection/enum.PolicyOrigin.html (unrelated naming detour)"
+      ],
+      "search_terms": [
+        "response",
+        "request",
+        "scope",
+        "find_item",
+        "provenance",
+        "origin",
+        "representation",
+        "describe (wrong guess)",
+        "description",
+        "contract",
+        "response (wrong getter guess)",
+        "result"
+      ],
+      "corrections": [
+        "Guessed describe(); actual public method is description().",
+        "Guessed EndpointContract::response(); actual path is result().representation()."
+      ],
+      "friction": [
+        "Preliminary rendered contract card states Json but does not state its source, although auth/rate provenance is present. Current documentation does not show the short getter chain directly, requiring several public API hops. This remained findable without implementation reading."
+      ],
+      "macro_or_core_implementation_consulted": false,
+      "provisional_correctness": "Answered from maintained declaration and public inspection API; current rendered recheck pending",
+      "elapsed_seconds": 73.9
+    },
+    "4": {
+      "started": 1792236747.1111827,
+      "prediction": "Request inheritance chooses body preparation/encoding and response inheritance chooses accepted-response acquisition/decoding. They resolve independently through the owner tree; selecting or fencing one direction cannot select or fence the other. Bodyless endpoints need no request representation.",
+      "confidence_before_feedback": 5,
+      "ended": 1792236768.791428,
+      "answer": "Request and response are independently resolved directions: each chooses the nearest default unless its own inline via wins; its own explicit fence removes the inherited default. Request representation prepares the exact caller body, including media/length/replay facts. Response representation selects the accepted-body driver and typed conversion. Changing request Text cannot change response ParentBuffered, and an inline result via does not choose a body encoder. A bodyless endpoint needs no request representation; every declared result needs a response representation; Rust trait obligations validate suitability rather than guessing from type spellings.",
+      "paths": [
+        "docs/spec.md \u00a79 Representation defaults",
+        "docs/request_bodies.md Declaration",
+        "docs/responses.md Response representations"
+      ],
+      "search_terms": [
+        "\u00a79",
+        "Representation defaults"
+      ],
+      "corrections": [],
+      "friction": [],
+      "macro_or_core_implementation_consulted": false,
+      "provisional_correctness": "Answered from normative public docs",
+      "elapsed_seconds": 21.7
+    },
+    "5": {
+      "started": 1792236768.7914393,
+      "prediction": "An explicit fence removes the inherited default in one direction. A new descendant endpoint needs its own via in that direction if no closer descendant owner supplies a new default. All results need an effective response representation, while only endpoints with bodies need an effective request representation. The fence changes provenance and future edits even if the selected bytes happen to remain the same.",
+      "confidence_before_feedback": 5,
+      "ended": 1792236807.3678257,
+      "answer": "An owner request explicit or response explicit removes its inherited default in that direction; it means choose locally, not raw, empty, disabled or unbounded. Every new descendant result must obtain a response representation, and every body-bearing descendant must obtain a request representation. If the fence is still the closest applicable owner selection, that endpoint must supply the corresponding inline via. A nearer descendant owner may instead establish another default. A bodyless descendant is unaffected by a request-only fence. EffectiveRepresentation exposes blocking_fence and shadowed_default for provenance. Removing a fence can change future parent-edit effects even if current endpoint bytes stay equal.",
+      "paths": [
+        "docs/spec.md \u00a79 (opened during previous task)",
+        "docs/modeling_apis.md Representations",
+        "docs/request_bodies.md Declaration (opened during previous task)",
+        "upstream rendered concord/inspection/struct.EffectiveRepresentation.html#method.blocking_fence and #method.shadowed_default",
+        "docs/design_invariants.md, docs/mental_model.md (keyword search only)"
+      ],
+      "search_terms": [
+        "explicit",
+        "fence",
+        "default",
+        "blocking_fence",
+        "shadowed_default"
+      ],
+      "corrections": [],
+      "friction": [
+        "The task wording asks what a new descendant endpoint must declare; the precise answer must include the nearer-descendant-default exception, not imply fences permanently require inline via on every deeper endpoint. Public spec \u00a79 states the exception clearly."
+      ],
+      "macro_or_core_implementation_consulted": false,
+      "provisional_correctness": "Answered from normative public docs",
+      "elapsed_seconds": 38.6
+    },
+    "6": {
+      "started": 1792236807.3678381,
+      "prediction": "No before/after fixture is named by the task sheet. Select the complete RepresentationInheritanceApi declaration already encountered in public spec \u00a79, and change only the root response ParentBuffered to response Text. Predict inherited changes its effective response representation to Text; overrides::local stays Text from the overrides scope; fenced::explicit stays inline Text behind the response fence. Request representations and exact String result types stay unchanged. No other endpoint exists in that declaration.",
+      "confidence_before_feedback": 5,
+      "ended": 1792236853.0725849,
+      "answer": "For the explicitly recorded hypothetical root response ParentBuffered \u2192 Text edit to the public \u00a79 RepresentationInheritanceApi declaration: inherited changes effective response from ParentBuffered inherited from client to Text inherited from client; overrides::local stays Text inherited from the overrides scope; fenced::explicit stays inline Text with the fenced response fence recorded. All three request body representations remain Text; String caller input/output types remain the same. The root owner selection and opaque dependency set can also change in the static contract. No other endpoint is present in this selected declaration.",
+      "paths": [
+        "docs/spec.md \u00a79 complete RepresentationInheritanceApi declaration",
+        "docs/planning_and_observation.md Contract tooling"
+      ],
+      "search_terms": [
+        "Representation defaults",
+        "contract diff",
+        "registered targets"
+      ],
+      "corrections": [],
+      "friction": [
+        "The original task sheet supplies no concrete parent edit or named declaration. The reviewer had to choose the public spec example and state a hypothetical edit.",
+        "The documented CLI accepts registered targets, not arbitrary declaration files; RepresentationInheritanceApi is not named among the documented registered targets. No matching before/after export or diff is supplied by the task sheet."
+      ],
+      "macro_or_core_implementation_consulted": false,
+      "provisional_correctness": "Prediction complete from public declarations; comparison with actual generated contract diff pending a concrete fixture",
+      "elapsed_seconds": 45.7
+    },
+    "7": {
+      "started": 1792236853.072604,
+      "prediction": "For the recorded parent response edit, wire representation changes. Caller String signatures and explicit auth selections do not change; timeout and other declared runtime controls also do not change. ParentBuffered is an opaque custom type in the public snippet, so equivalent acquisition/runtime behavior cannot be asserted from its name. Expect the diff to disclose structural/opaque dependencies and avoid claiming semantic equivalence. No resulting diff has yet been supplied.",
+      "confidence_before_feedback": 3,
+      "ended": 1792236874.2238855,
+      "answer": "The original exercise cannot be completed literally at first contact: no resulting concord.contract/3 diff, paired snapshots, or exportable before/after targets are identified. Public docs do explain the axes: caller changes map to CallerApi/PresenceAndDefaults/Capability; wire to Wire; security to AuthAuthority and sensitivity-related structural changes; runtime to RuntimePolicy and the rate identity/coverage axes. Provenance, Documentation and OpaqueDependency must be considered separately, with Unknown never treated as unchanged. For the chosen hypothetical edit, String signatures and auth/timeout selections stay unchanged, response interpretation changes, and opaque custom-representation semantics need behavior evidence. This is a prediction and taxonomy answer, not an observed diff result.",
+      "paths": [
+        "docs/planning_and_observation.md Contract tooling",
+        "repository file-name search found fixtures/contracts/v3_catalog_recording.json and v3_riot_recording.json, but no paired task-specific fixture was supplied; their contents were not opened"
+      ],
+      "search_terms": [
+        "contract",
+        "diff",
+        "snapshot",
+        "registered targets"
+      ],
+      "corrections": [],
+      "friction": [
+        "Major: requested resulting diff is absent from the supplied task packet; a fresh reviewer cannot verify the named change without creating a fixture or modifying an export target."
+      ],
+      "macro_or_core_implementation_consulted": false,
+      "provisional_correctness": "Incomplete original task due to missing concrete diff fixture; follow-up execution required",
+      "elapsed_seconds": 21.2
+    },
+    "8": {
+      "started": 1792236874.223899,
+      "prediction": "Use collect_prefix(u32) when a bounded prefix is a useful result; collect_all(NonZeroU32) only when completeness is required and a page-bound stop must error; pages(u32) for lazy per-page processing. A bound is not provider exhaustion. Prefix and lazy summaries should distinguish why traversal stopped and count delivered work; a zero prefix/page bound should send no requests. Exact summary field and enum names need verification.",
+      "confidence_before_feedback": 4,
+      "ended": 1792236900.9637656,
+      "answer": "Choose collect_prefix(u32) for useful bounded partial results (Prefix<Item> with items and summary), collect_all(NonZeroU32) for required completeness (Vec only after PageStep::Done within the effective bound), and pages(u32) for lazy processing/search or deliberate application stop. Continued traversal at the bound produces PageBound/NextRequestKnown; collect_all returns Pagination/CompletionLimitExceeded with the summary rather than a success prefix. Done on the last allowed page is Exhausted without an extra request. Requested bound is intersected with runtime page ceiling. Zero prefix/pages does no shaping/controller/auth/quota/transport work and has PageBound/Unknown with no operation ID. Summary contains operation ID, stop reason, continuation, requested/effective bounds, received/delivered page and item counts, application attempts, replays, quota admissions, acquired bytes, identity bytes and aggregate dispatch knowledge, not a claim about items processed by application code. Apply controls before pages(); Pages lacks RequestControls. next_page() yields one error then Ok(None), so inspect the summary; finish() records Application unless already terminal. Dropping a started fetch cancels traversal; an unpolled dropped fetch does nothing.",
+      "paths": [
+        "docs/pagination.md Terminals, Summary facts, Page atomicity and progress, Resources and cancellation",
+        "upstream rendered concord/pagination/struct.Pages.html next_page, summary, finish",
+        "upstream rendered concord/pagination/struct.Prefix.html",
+        "upstream rendered concord/pagination/struct.CollectAll.html",
+        "upstream rendered concord/pagination/struct.TraversalSummary.html",
+        "upstream rendered concord/pagination/enum.StopReason.html",
+        "upstream rendered canonical ItemSummariesRequest terminal methods"
+      ],
+      "search_terms": [
+        "collect_prefix",
+        "collect_all",
+        "pages",
+        "summary",
+        "finish",
+        "StopReason"
+      ],
+      "corrections": [
+        "Verified exact completion error name as CompletionLimitExceeded in rendered CollectAll docs."
+      ],
+      "friction": [],
+      "macro_or_core_implementation_consulted": false,
+      "provisional_correctness": "Answered from public guide and preliminary rendered docs",
+      "elapsed_seconds": 26.7
+    },
+    "9": {
+      "started": 1792236900.9637797,
+      "prediction": "Successfully awaiting a ByteStream or ItemStream endpoint means status/head validation and acquisition of a managed stream, not EOF/completion. Later reading can complete, fail or be cancelled; early drop cannot claim exhaustion/rollback. Unlike pagination, dropping a single pending stream-read future may retain resumable stream state; exact summary names and drop behavior require verification.",
+      "confidence_before_feedback": 4,
+      "ended": 1792236939.3355813,
+      "answer": "Successful stream endpoint await validates the accepted head and opens a managed stream; operation completion and ApiResponse body disposition report StreamOpened, not completed download. Consumption later has Active/Eof/Application/Cancelled/Failed state in StreamSummary. Actual body completion and all records delivered establishes Eof; finish() before completion does not drain and records Application, preserving an existing terminal state. Dropping the handle early records Cancelled and releases native/decoder state. A terminal consumption error is delivered once, then next() returns None, while summary retains failure and original operation/attempt/status with ResponseObserved and FailureStage::StreamConsumption. Dropping only a pending next() future preserves stream state and resumes bounded acquisition later, without resend or resetting idle accounting. External cancellation cancels the whole stream. Finite total lease includes consumer pauses; idle counts pending-read time; byte/frame/record/time failures can occur after successful acquisition. No retry/auth recovery/native replay occurs after handoff. Acquisition metadata stays a snapshot, and stream summary supplies later facts.",
+      "paths": [
+        "docs/streams.md entire guide",
+        "upstream rendered concord/response/struct.ByteStream.html type documentation, next, summary, finish",
+        "upstream rendered concord/struct.ItemStream.html type documentation, next, summary, finish"
+      ],
+      "search_terms": [
+        "ByteStream",
+        "ItemStream",
+        "StreamSummary",
+        "StreamState",
+        "next",
+        "summary",
+        "finish"
+      ],
+      "corrections": [
+        "ItemStream is re-exported from the facade and lives under records, not response; corrected an initially guessed file path."
+      ],
+      "friction": [],
+      "macro_or_core_implementation_consulted": false,
+      "provisional_correctness": "Answered from public guide and preliminary rendered docs",
+      "elapsed_seconds": 38.4
+    },
+    "10": {
+      "started": 1792236939.3355935,
+      "prediction": "RequestPlan is explicit caller inspection of a bound request and should expose a redacted URL and non-sensitive selected header values; ApiResponse explicitly exposes accepted-response metadata. Automatic observers and Debug should retain structural facts/status/correlation, not exact URL/query/header values. Rate-limiter context should have opaque identities and declared policy labels rather than a raw URL or credentials. Exact exposed accessor names and which response header values are allowed need verification.",
+      "confidence_before_feedback": 3,
+      "ended": 1792237004.8109345,
+      "answer": "RequestPlan::observed_url() exposes the credential-free redaction-aware logical URL and public_headers() an ordered SanitizedHeaderMap as explicit caller authority; ordinary public values may still identify people or operations. Bodies, credential material and protected rate keys are absent. ApiResponse::url() exposes a credential-sanitized logical URL, while headers() returns actual accepted HeaderMap values, which can include credentials or other sensitive data. Those exact URL/header values are not safe automatic-log data; each wrapper Debug omits them. Automatic RequestTarget has only path-segment, query-occurrence and public-header-occurrence counts; exact path segments, query names/values, header names/values and full URL are absent. ResponseHeadObserved carries typed status, parsed bounded content_length and parsed server_delay, not arbitrary headers. Debug Headers adds those structural/typed facts, never header names/values. RateLimitRequest has IDs/method/page/attempt/capability plus protected canonical plan and no raw headers/bodies/credentials/full URL. logical_origin is an explicit exception: normalized textual origin is present only when the effective plan grants the built-in origin dimension; custom limiter code must protect it. cooldown_origin is opaque equality-only process-local identity with no host text even for empty plans. RateLimitResponse adds typed status/server_delay/cooldown_cap, not arbitrary headers.",
+      "paths": [
+        "docs/planning_and_observation.md Bound plans and Observing operations",
+        "docs/responses.md Terminals",
+        "docs/rate_limits.md Admission",
+        "upstream rendered concord/endpoint/struct.RequestPlan.html observed_url, public_headers",
+        "upstream rendered concord/struct.ApiResponse.html headers, url",
+        "upstream rendered concord/observation/enum.OperationEvent.html",
+        "upstream rendered concord/observation/struct.AttemptStarted.html",
+        "upstream rendered concord/observation/struct.ResponseHeadObserved.html",
+        "upstream rendered concord/observation/struct.RequestTarget.html",
+        "upstream rendered concord/observation/struct.SanitizedHeaders.html",
+        "upstream rendered concord/observation/struct.SanitizedHeaderMap.html",
+        "upstream rendered concord/rate_limit/struct.RateLimitRequest.html",
+        "upstream rendered concord/rate_limit/struct.RateLimitResponse.html",
+        "upstream rendered concord/rate_limit/struct.CooldownOrigin.html",
+        "upstream rendered concord/rate_limit/struct.RateLimitKey.html"
+      ],
+      "search_terms": [
+        "RequestPlan",
+        "ApiResponse",
+        "OperationEvent",
+        "AttemptStarted",
+        "ResponseHeadObserved",
+        "SanitizedHeaders",
+        "RequestTarget",
+        "RateLimitRequest",
+        "RateLimitResponse",
+        "CooldownOrigin",
+        "logical_origin"
+      ],
+      "corrections": [
+        "Verified that ApiResponse exposes actual accepted header values, rather than a sanitized header wrapper.",
+        "Verified the explicit textual logical_origin exception for a declared built-in origin dimension, distinct from opaque cooldown_origin.",
+        "RequestPlan is in endpoint, not inspection; corrected an initially guessed namespace."
+      ],
+      "friction": [
+        "Current public guide says operation events carry sanitized targets and headers, but preliminary rendered observer structs have value-free target counts and typed response fields with no arbitrary header map. The wording can blur explicit caller authority with automatic observation.",
+        "Current public guide lists five OperationEvent variants; preliminary rendered enum also has ProviderAcquisitionFinished.",
+        "SanitizedHeaderMap type-level wording says safe text although caller-facing plan docs correctly warn ordinary public values can remain sensitive."
+      ],
+      "macro_or_core_implementation_consulted": false,
+      "provisional_correctness": "Answered from public docs; current rendered recheck pending",
+      "elapsed_seconds": 65.5
+    }
+  },
+  "rendered_preliminary": {
+    "archive": "evidence/upstream/v3-linux-qualification-38981477842-1.zip",
+    "revision": "579e8eac9a436a57ebc5ea3fcc2e7da3cf330c31",
+    "source": "environment.json GITHUB_SHA",
+    "mode": "Visible rendered HTML text via standard-library parser, without source HTML; no browser timing or visual QA claimed."
+  },
+  "first_pass_completed_utc": "2026-10-17T11:36:44Z",
+  "first_pass_results_note": "All ten first answers recorded before opening packet README/results; task 7 records incomplete due to absent concrete fixture rather than inventing an observed diff.",
+  "followup_contract_exercise": {
+    "started": 1792237131.7728574,
+    "base_head": "570eec460dee1d83828ae48e35396ae07652aabc",
+    "edit": "Insert response Json; as the first clause of canonical CatalogApi scope regional, without changing root request/response choices or endpoint declarations.",
+    "prediction_before_exports_or_diff": "All seven regional endpoints can change structural provenance: item_summaries, item, find_item, update_item, feed and inspect inherit response Json from regional instead of CatalogApi; export keeps inline Binary but its recorded shadowed Json default should move from CatalogApi to regional. authenticate stays inherited Json from CatalogApi. All request-body choices, response type spellings, caller signatures, accepted statuses, auth, rate, timeout, pagination and driver choices should remain unchanged. Root defaults affect fewer descendants after a named-scope default is introduced, so future parent-edit behavior changes. Expect Provenance changes and possibly conservative Wire/OpaqueDependency classification by the semantic tool; do not infer actual wire-byte differences from those axes alone.",
+    "confidence_before_feedback": 4,
+    "implementation_consulted": false,
+    "ended": 1792237323.3576102,
+    "native_labels": [
+      "rustdoc-contract-before",
+      "rustdoc-contract-edit",
+      "rustdoc-contract-after",
+      "rustdoc-contract-diff"
+    ],
+    "native_exit_codes": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "observed_axes": [
+      "Provenance"
+    ],
+    "observed_verdict": "different",
+    "observed_change_count": 10,
+    "observed_changed_endpoint_records": [
+      "CatalogApi::regional::item_summaries",
+      "CatalogApi::regional::item",
+      "CatalogApi::regional::find_item",
+      "CatalogApi::regional::update_item",
+      "CatalogApi::regional::feed",
+      "CatalogApi::regional::export",
+      "CatalogApi::regional::inspect"
+    ],
+    "observed_reported_changed_endpoints": [
+      "CatalogApi::authenticate",
+      "CatalogApi::regional::export",
+      "CatalogApi::regional::feed",
+      "CatalogApi::regional::find_item",
+      "CatalogApi::regional::item",
+      "CatalogApi::regional::inspect",
+      "CatalogApi::regional::update_item",
+      "CatalogApi::regional::item_summaries"
+    ],
+    "observed_unresolved": [],
+    "correction": "Predicted the seven actual regional endpoint-record provenance changes, including export shadowed-default origin. Did not predict that the diff dependency sites row would associate the unchanged root authenticate endpoint, yielding eight changed_endpoints IDs. Root and inspection reviewer are investigating whether this association is intended or a defect; no implementation was consulted by this reviewer.",
+    "classification": "Observed report has only Provenance. No CallerApi, Wire, AuthAuthority, RuntimePolicy, rate schema/coverage, capability or opaque unresolved change was reported. Current codec types/traits were unchanged; this was an inert structural export/diff exercise, not a network wire test.",
+    "artifacts": {
+      "catalog_before.contract.json": "6565846a07e8490e44ca2989f4b54ffaf5db3e98dbdc76563e137ceb43e00b33",
+      "catalog_after.contract.json": "34f211cbf19049a74a59c7740d27fafa277484cabb2a79bb3bddd03ce3e580dd",
+      "catalog_scope_default.diff.json": "b17d5335d46e5216a74e4d7c68061fc81862123039faceecc764c7de6d88e59d"
+    },
+    "elapsed_seconds": 191.6
+  },
+  "correction_rereview": {
+    "started": 1792237841.0205872,
+    "kind": "targeted agent rereview after external fix feedback, not fresh first-contact prediction",
+    "expected": "The inspector reviewer reports a fix limiting dependency-site changes to relevant endpoint users. Replaying the unchanged before/after inputs should exclude unchanged root authenticate and retain all seven regional endpoints, ten changes and Provenance only.",
+    "binary_sha256": "b70446b302814d883e97cf185ed4abd25c2eeaf1a81a4650c5f7dd30e5f9d0b6",
+    "binary_build_native_label": "inspect-sites-catalog-isolated",
+    "no_macro_core_implementation_consulted": true,
+    "ended": 1792237868.6521041,
+    "native_label": "rustdoc-contract-diff-corrected",
+    "native_exit_code": 0,
+    "observed_changed_endpoints": [
+      {
+        "id": "catalog.item.export",
+        "path": "CatalogApi::regional::export"
+      },
+      {
+        "id": "catalog.item.feed",
+        "path": "CatalogApi::regional::feed"
+      },
+      {
+        "id": "catalog.item.find",
+        "path": "CatalogApi::regional::find_item"
+      },
+      {
+        "id": "catalog.item.get",
+        "path": "CatalogApi::regional::item"
+      },
+      {
+        "id": "catalog.item.inspect",
+        "path": "CatalogApi::regional::inspect"
+      },
+      {
+        "id": "catalog.item.update",
+        "path": "CatalogApi::regional::update_item"
+      },
+      {
+        "id": "catalog.items.list",
+        "path": "CatalogApi::regional::item_summaries"
+      }
+    ],
+    "observed_axes": [
+      "Provenance"
+    ],
+    "observed_change_count": 10,
+    "observed_unresolved": [],
+    "original_input_hashes_preserved": {
+      "catalog_before.contract.json": true,
+      "catalog_after.contract.json": true
+    },
+    "per_field_values_and_axes_unchanged": true,
+    "assessment": "Corrected summary names exactly the seven regional endpoint records, including export shadowed-default provenance, and excludes unchanged root authenticate. Same original snapshots; real independent CLI execution through the root native runner. Public docs only; implementation fix was performed/reviewed by another agent.",
+    "elapsed_seconds": 27.6
+  },
+  "final_documentation_rereview": {
+    "reviewed_at": "2026-10-17T11:52:31Z",
+    "checks": {
+      "find_item_response_origin_visible": true,
+      "update_request_and_response_origins_visible": true,
+      "export_inline_origin_visible": true,
+      "facade_header_data_qualification_visible": true,
+      "observer_guide_value_free_and_six_variants": true
+    },
+    "pages": [
+      "concord_examples/contracts/catalog_v3/catalog_api/regional/struct.FindItemRequest.html",
+      "concord_examples/contracts/catalog_v3/catalog_api/regional/struct.UpdateItemRequest.html",
+      "concord_examples/contracts/catalog_v3/catalog_api/regional/struct.ExportRequest.html",
+      "concord/observation/struct.SanitizedHeaderMap.html"
+    ],
+    "guide": "docs/planning_and_observation.md",
+    "macro_or_core_implementation_consulted": false,
+    "intermediate_correction": "The first post-fix reread found the core header-map documentation updated while the facade re-export remained stale. The facade-rustdoc rebuild refreshed that page; the final reread above observes the new qualification."
+  },
+  "final_agent_assessment": "All ten tasks completed after preparation/documentation/inspector corrections; original first-pass gap, predictions and surprising original diff remain preserved. No unresolved Critical misunderstanding or release-relevant Major finding from this agent exercise remains. Human review count remains zero.",
+  "final_task_assessments": {
+    "1": "Correct after recorded base-URL correction; current generated builder and public runtime configuration docs rechecked.",
+    "2": "Correct; current generated payload/exact/conditional/omit/reset signatures and meanings rechecked.",
+    "3": "Correct through public declaration/getters and compiled before snapshot; final generated card now exposes the source directly.",
+    "4": "Correct from normative public direction-resolution rules; no implementation reading required.",
+    "5": "Correct including bodyless and nearer-descendant-default qualifications; public provenance accessors rechecked.",
+    "6": "Complete in the executed canonical fixture. The initial specification hypothetical remains separately labeled unexecuted. Follow-up predicted seven actual endpoint-record changes, missed original tool over-association, and final corrected report matches those seven without altering the saved prediction.",
+    "7": "Initially incomplete because the fixture was missing. Completed with real compiled before/after exports and semantic diffs; original attribution defect preserved, corrected independent replay verified on unchanged inputs.",
+    "8": "Correct; current public terminal, completion-limit, zero-bound, cancellation and summary documentation rechecked.",
+    "9": "Correct; current public acquisition/later-consumption distinction and handle/read cancellation rules rechecked.",
+    "10": "Correct after recorded exact-header and granted-origin qualifications; final guide and facade wording corrections independently reread."
+  }
+}

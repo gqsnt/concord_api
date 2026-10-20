@@ -6,9 +6,14 @@ use std::time::Duration;
 
 use http::{Method, StatusCode};
 
-use crate::contract::{EndpointContractDescription, SharedEndpointContractDescription};
+use crate::body::BodyDescription;
 use crate::error::{ConfigurationError, ConfigurationErrorKind};
+use crate::inspection::{
+    AcceptedStatuses, ContractBuildError, ContractBuildErrorKind, ContractDescription,
+    EndpointContract,
+};
 use crate::redaction::SanitizedHeaderMap;
+use crate::request::RuntimeBindingFacts;
 
 pub use crate::limits::{
     MAX_FORMATTED_PUBLIC_VALUE_BYTES, MAX_REQUEST_HEAD_COMPONENTS, MAX_REQUEST_HEADER_BYTES,
@@ -28,6 +33,12 @@ enum EndpointIdStorage {
 }
 
 /// A bounded, public contract identity for one generated or runtime endpoint.
+///
+/// A generated endpoint's operational ID is either an explicit `id` pin or
+/// navigation-derived (`snake_case(Client).scope_path.endpoint`). A derived ID
+/// changes when the client, a scope or the endpoint is renamed or moved; it is
+/// not preserved across such refactors, so pin an explicit `id` wherever rate
+/// state or an external continuity contract depends on the ID.
 ///
 /// Generated declarations construct validated static identities through
 /// Concord's hidden generated-code bridge. Runtime endpoints use
@@ -212,7 +223,7 @@ pub enum Effect {
 }
 
 impl Effect {
-    /// Returns the conservative method-derived v2.1 default.
+    /// Returns the conservative method-derived effect.
     #[must_use]
     pub fn for_method(method: &Method) -> Self {
         match method.as_str() {
@@ -283,6 +294,59 @@ impl AcceptedStatus {
             Self::Success => None,
             Self::Codes(codes) => Some(codes),
         }
+    }
+}
+
+/// The endpoint-owned final statuses resolved as head-only expected absence.
+///
+/// Declared by `absent on`. The set is disjoint from the accepted payload
+/// statuses and from effective authentication challenges. Every code is a
+/// final status (`200..=599`); informational statuses are rejected. Core
+/// resolves absence after challenge processing and rate feedback and before
+/// accepted-head validation or any body poll, and drops the native body
+/// unread.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct AbsentStatus {
+    codes: Arc<[StatusCode]>,
+}
+
+impl AbsentStatus {
+    /// Validates and canonicalizes a nonempty, duplicate-free final status set.
+    pub fn codes(codes: impl IntoIterator<Item = StatusCode>) -> Result<Self, ConfigurationError> {
+        let mut codes = codes.into_iter().collect::<Vec<_>>();
+        codes.sort_unstable();
+        let duplicate = codes.windows(2).any(|pair| pair[0] == pair[1]);
+        if codes.is_empty()
+            || duplicate
+            || codes
+                .iter()
+                .any(|code| code.as_u16() < 200 || code.as_u16() > 599)
+        {
+            return Err(ConfigurationError::new(
+                ConfigurationErrorKind::InvalidValue,
+            ));
+        }
+        Ok(Self {
+            codes: codes.into(),
+        })
+    }
+
+    /// Returns whether a final response status is a declared absence.
+    #[must_use]
+    pub fn contains(&self, status: StatusCode) -> bool {
+        self.codes.binary_search(&status).is_ok()
+    }
+
+    /// Returns the canonical sorted absence codes.
+    #[must_use]
+    pub fn as_slice(&self) -> &[StatusCode] {
+        &self.codes
+    }
+
+    /// Returns whether any absence status is also an accepted status.
+    #[must_use]
+    pub fn overlaps(&self, accepted: &AcceptedStatus) -> bool {
+        self.codes.iter().any(|code| accepted.contains(*code))
     }
 }
 
@@ -391,71 +455,187 @@ pub struct EndpointDescription {
     route_shape: DescriptionText,
     body_category: RequestBodyCategory,
     body_specification: Option<&'static str>,
+    body_description: BodyDescription,
     response_acquisition: ResponseAcquisition,
+    response_accept: Option<&'static str>,
     capabilities: EndpointCapabilities,
     timeout: TimeoutSelection,
     accepted_status: AcceptedStatus,
+    absent_status: Option<AbsentStatus>,
     status_source: StatusSource,
     effect: Effect,
     effect_source: EffectSource,
-    contract: Option<SharedEndpointContractDescription>,
+    contract: Option<&'static EndpointContract>,
+    runtime: Option<Arc<RuntimeBindingFacts>>,
 }
 
 impl EndpointDescription {
-    pub(crate) fn with_runtime_owner(
+    /// Records the value-free runtime program facts of a runtime endpoint.
+    pub(crate) fn with_runtime_facts(mut self, facts: RuntimeBindingFacts) -> Self {
+        self.runtime = Some(Arc::new(facts));
+        self
+    }
+
+    /// Projects an unbound runtime description onto its binding owner: the
+    /// owner's effective timeout applies when no runtime-local selection
+    /// exists (§20.4), the capabilities report the *effective* authentication
+    /// and rate policies, and the runtime facts gain the owner provenance.
+    pub(crate) fn bound_runtime(
         &self,
-        timeout: Option<Duration>,
+        source_path: Arc<str>,
+        route_shape: Arc<str>,
+        owner_timeout: Option<Duration>,
         authentication: bool,
         rate_limits: bool,
+        facts: RuntimeBindingFacts,
     ) -> Self {
         let mut selected = self.clone();
         if matches!(selected.timeout, TimeoutSelection::InheritClient) {
             selected.timeout =
-                timeout.map_or(TimeoutSelection::InheritClient, TimeoutSelection::Explicit);
+                owner_timeout.map_or(TimeoutSelection::InheritClient, TimeoutSelection::Explicit);
         }
-        selected.capabilities.authentication |= authentication;
-        selected.capabilities.rate_limits |= rate_limits;
+        selected.source_path = DescriptionText::from_owned(source_path);
+        selected.route_shape = DescriptionText::from_owned(route_shape);
+        selected.capabilities.authentication = authentication;
+        selected.capabilities.rate_limits = rate_limits;
+        selected.runtime = Some(Arc::new(facts));
         selected
     }
 
-    #[doc(hidden)]
-    #[must_use]
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "generated descriptions contain one field for every public contract fact"
-    )]
-    pub fn generated(
-        id: EndpointId,
-        method: Method,
-        source_path: &'static str,
-        route_shape: &'static str,
-        body_category: RequestBodyCategory,
-        body_specification: Option<&'static str>,
-        response_acquisition: ResponseAcquisition,
-        capabilities: EndpointCapabilities,
-        timeout: TimeoutSelection,
-        accepted_status: AcceptedStatus,
-        status_source: StatusSource,
-        effect: Effect,
-        effect_source: EffectSource,
-        contract: EndpointContractDescription,
-    ) -> Self {
-        Self {
-            id,
+    /// Derives the runtime description of one generated endpoint from its
+    /// resolved contract record.
+    ///
+    /// This is the generated-code bridge for endpoint descriptions: generated
+    /// code builds the client's [`ContractDescription`] once in a
+    /// `LazyLock`, then derives each endpoint's `&'static EndpointDescription`
+    /// from it by operational ID, so the executor and inspection share one
+    /// source of meaning. Every runtime fact (method, route shape, body and
+    /// response facts, capabilities, timeout, statuses, effect) is read from
+    /// the record; nothing is evaluated.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ContractBuildErrorKind::UnknownEndpoint`] when `endpoint_id`
+    /// names no endpoint of `contract`, or
+    /// [`ContractBuildErrorKind::InvalidStatus`] if a recorded status is not a
+    /// valid HTTP status code.
+    pub fn from_contract(
+        contract: &'static ContractDescription,
+        endpoint_id: &str,
+    ) -> Result<Self, ContractBuildError> {
+        let record = contract.endpoint(endpoint_id).ok_or_else(|| {
+            ContractBuildError::new(
+                ContractBuildErrorKind::UnknownEndpoint,
+                Some(contract.client().path()),
+                Some(endpoint_id),
+            )
+        })?;
+        let invalid_status = || {
+            ContractBuildError::new(
+                ContractBuildErrorKind::InvalidStatus,
+                Some(record.path()),
+                Some("status"),
+            )
+        };
+        let method = Method::from_bytes(record.method().as_bytes()).map_err(|_| {
+            ContractBuildError::new(
+                ContractBuildErrorKind::InvalidMethod,
+                Some(record.path()),
+                Some("method"),
+            )
+        })?;
+        let accepted_status = match record.accepted() {
+            AcceptedStatuses::Success => AcceptedStatus::Success,
+            AcceptedStatuses::Explicit(ranges) => {
+                let mut codes = Vec::new();
+                for range in ranges.iter() {
+                    for code in range.start()..=range.end() {
+                        codes.push(StatusCode::from_u16(code).map_err(|_| invalid_status())?);
+                    }
+                }
+                AcceptedStatus::codes(codes).map_err(|_| invalid_status())?
+            }
+        };
+        let absent_status = match record.absent_on() {
+            None => None,
+            Some(codes) => Some(
+                AbsentStatus::codes(
+                    codes
+                        .iter()
+                        .map(|code| StatusCode::from_u16(*code).map_err(|_| invalid_status()))
+                        .collect::<Result<Vec<_>, _>>()?,
+                )
+                .map_err(|_| invalid_status())?,
+            ),
+        };
+        let (body_category, body_specification, body_description) = match record.body() {
+            None => (RequestBodyCategory::Empty, None, BodyDescription::EMPTY),
+            Some(body) => (
+                RequestBodyCategory::Specification,
+                Some(body.representation().type_name()),
+                body.description(),
+            ),
+        };
+        let route_shape = record.route_shape(|value| contract.display_ref(value));
+        // The contract is `'static`, so its validated ID text is too: a static
+        // identity makes every per-request copy (request metadata, plans,
+        // errors) a plain pointer copy instead of an atomic reference-count
+        // update (V3-O07 attribution). Equality, ordering and hashing compare
+        // the text, so the identity is unchanged.
+        let id: &'static str = record.identity().id().as_str();
+        Ok(Self {
+            id: EndpointId::from_static(id),
             method,
-            source_path: DescriptionText::from_static(source_path),
-            route_shape: DescriptionText::from_static(route_shape),
+            source_path: DescriptionText::from_static(record.path()),
+            route_shape: DescriptionText::from_owned(route_shape),
             body_category,
             body_specification,
-            response_acquisition,
-            capabilities,
-            timeout,
+            body_description,
+            response_acquisition: record.result().driver(),
+            response_accept: record.result().accept(),
+            capabilities: EndpointCapabilities::generated(
+                record.terminals().pagination(),
+                record.terminals().accepted_bytes(),
+                !record.terminals().store_as().is_empty(),
+                !record.auth().placements().is_empty(),
+                !record.policies().is_empty(),
+            ),
+            timeout: TimeoutSelection::Explicit(record.timeout().duration()),
             accepted_status,
-            status_source,
-            effect,
-            effect_source,
-            contract: Some(Arc::new(contract)),
-        }
+            absent_status,
+            status_source: record.status_source(),
+            effect: record.effect(),
+            effect_source: record.effect_source(),
+            contract: Some(record),
+            runtime: None,
+        })
+    }
+
+    /// Records the static request-representation description.
+    ///
+    /// Generated code passes `<Body as RequestRepresentation<Input>>::DESCRIPTION`;
+    /// no representation code runs.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_body_description(mut self, description: BodyDescription) -> Self {
+        self.body_description = description;
+        self
+    }
+
+    /// Records the static response representation `Accept` constant.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_response_accept(mut self, accept: Option<&'static str>) -> Self {
+        self.response_accept = accept;
+        self
+    }
+
+    /// Records the endpoint-owned head-only expected-absence status set.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_absent_status(mut self, absent_status: AbsentStatus) -> Self {
+        self.absent_status = Some(absent_status);
+        self
     }
 
     #[allow(
@@ -484,18 +664,24 @@ impl EndpointDescription {
             route_shape: DescriptionText::from_owned(route_shape),
             body_category,
             body_specification,
+            body_description: default_body_description(body_category),
             response_acquisition,
+            response_accept: None,
             capabilities,
             timeout,
             accepted_status,
+            absent_status: None,
             status_source,
             effect,
             effect_source,
             contract: None,
+            runtime: None,
         }
     }
 
-    /// Returns the stable public contract identity.
+    /// Returns the public operational endpoint ID: an explicit `id` pin or a
+    /// navigation-derived ID for a generated endpoint, the validated ID of a
+    /// runtime endpoint.
     #[must_use]
     pub fn id(&self) -> &str {
         self.id.as_str()
@@ -537,10 +723,32 @@ impl EndpointDescription {
         self.body_specification
     }
 
+    /// Returns the static request-representation description.
+    ///
+    /// This is explanation metadata read without running a representation.
+    /// The exact `Content-Type` and body length are deferred to preparation.
+    #[must_use]
+    pub const fn body_description(&self) -> BodyDescription {
+        self.body_description
+    }
+
     /// Returns the core-owned accepted-response acquisition category.
     #[must_use]
     pub const fn response_acquisition(&self) -> ResponseAcquisition {
         self.response_acquisition
+    }
+
+    /// Returns the response representation's static `Accept` constant when
+    /// the description recorded it.
+    #[must_use]
+    pub const fn response_accept(&self) -> Option<&'static str> {
+        self.response_accept
+    }
+
+    /// Returns the endpoint-owned head-only expected-absence statuses, if any.
+    #[must_use]
+    pub const fn absent_status(&self) -> Option<&AbsentStatus> {
+        self.absent_status.as_ref()
     }
 
     /// Returns the endpoint's compile-time capabilities and declared policy
@@ -580,12 +788,25 @@ impl EndpointDescription {
         self.effect_source
     }
 
-    /// Returns detailed generated contract facts when this description belongs
-    /// to a generated endpoint. Runtime-defined endpoints describe their
-    /// runtime-bound facts through the common accessors and return `None` here.
+    /// Returns the endpoint's complete resolved contract record when this
+    /// description belongs to a generated endpoint. Runtime-defined endpoints
+    /// describe their runtime-bound facts through the common accessors and
+    /// return `None` here.
     #[must_use]
-    pub fn contract(&self) -> Option<&EndpointContractDescription> {
-        self.contract.as_deref()
+    pub const fn contract(&self) -> Option<&'static EndpointContract> {
+        self.contract
+    }
+
+    /// Returns the value-free runtime program facts when this description
+    /// belongs to a runtime-defined endpoint: its binding owner (once bound),
+    /// path/query/header family modes, ordered keyed operations with their
+    /// sensitivity, the authentication disposition — including a prominent
+    /// record of any removed inherited authentication (RUNTIME-02) — and the
+    /// runtime-added rate policies (EXPLAIN-04). Generated endpoints return
+    /// `None`.
+    #[must_use]
+    pub fn runtime_binding(&self) -> Option<&RuntimeBindingFacts> {
+        self.runtime.as_deref()
     }
 }
 
@@ -599,14 +820,18 @@ impl fmt::Debug for EndpointDescription {
             .field("route_shape", &self.route_shape())
             .field("body_category", &self.body_category)
             .field("body_specification", &self.body_specification)
+            .field("body_description", &self.body_description)
             .field("response_acquisition", &self.response_acquisition)
+            .field("response_accept", &self.response_accept)
             .field("capabilities", &self.capabilities)
             .field("timeout", &self.timeout)
             .field("accepted_status", &self.accepted_status)
+            .field("absent_status", &self.absent_status)
             .field("status_source", &self.status_source)
             .field("effect", &self.effect)
             .field("effect_source", &self.effect_source)
-            .field("contract", &self.contract)
+            .field("contract", &self.contract.map(EndpointContract::path))
+            .field("runtime_binding", &self.runtime)
             .finish()
     }
 }
@@ -623,7 +848,7 @@ pub struct RequestPlan {
     public_headers: SanitizedHeaderMap,
     resolved_timeout: Option<Duration>,
     page_index: u32,
-    rate_limit_policy_count: usize,
+    rate_limit: crate::rate_limit::RatePlanSummary,
 }
 
 impl RequestPlan {
@@ -633,7 +858,7 @@ impl RequestPlan {
         public_headers: SanitizedHeaderMap,
         resolved_timeout: Option<Duration>,
         page_index: u32,
-        rate_limit_policy_count: usize,
+        rate_limit: crate::rate_limit::RatePlanSummary,
     ) -> Self {
         Self {
             description,
@@ -641,7 +866,7 @@ impl RequestPlan {
             public_headers,
             resolved_timeout,
             page_index,
-            rate_limit_policy_count,
+            rate_limit,
         }
     }
 
@@ -651,7 +876,7 @@ impl RequestPlan {
         &self.description
     }
 
-    /// Returns the stable endpoint ID.
+    /// Returns the operational endpoint ID (an explicit `id` pin or navigation-derived).
     #[must_use]
     pub fn endpoint_id(&self) -> &str {
         self.description.id()
@@ -702,6 +927,21 @@ impl RequestPlan {
         self.description.body_specification()
     }
 
+    /// Returns the static body family and media hint without preparing the
+    /// body. A multipart description reads "multipart/form-data; boundary
+    /// generated during execution"; the exact `Content-Type` and length are
+    /// deferred to preparation.
+    #[must_use]
+    pub const fn body_description(&self) -> BodyDescription {
+        self.description.body_description()
+    }
+
+    /// Returns the endpoint-owned head-only expected-absence statuses, if any.
+    #[must_use]
+    pub const fn absent_status(&self) -> Option<&AbsentStatus> {
+        self.description.absent_status()
+    }
+
     /// Returns the core-owned accepted-response acquisition category.
     #[must_use]
     pub const fn response_acquisition(&self) -> ResponseAcquisition {
@@ -730,11 +970,28 @@ impl RequestPlan {
     /// exposing their resolved keys.
     #[must_use]
     pub const fn rate_limit_policy_count(&self) -> usize {
-        self.rate_limit_policy_count
+        self.rate_limit.policy_count()
     }
 
-    /// Returns false because planning deliberately never invokes body metadata
-    /// or materialization callbacks.
+    /// Returns the effective policy IDs, key-label/encoding schemas, windows,
+    /// costs and actual enforcement choice, without key values or origin
+    /// text. Planning never acquires a limiter or registers a schema.
+    #[must_use]
+    pub const fn rate_limit(&self) -> &crate::rate_limit::RatePlanSummary {
+        &self.rate_limit
+    }
+
+    /// Returns the value-free runtime program and binding facts of a
+    /// runtime-defined endpoint, including every explicit runtime removal or
+    /// override with provenance (EXPLAIN-04); `None` for generated endpoints.
+    #[must_use]
+    pub fn runtime_binding(&self) -> Option<&RuntimeBindingFacts> {
+        self.description.runtime_binding()
+    }
+
+    /// Returns false because planning never prepares a body: the exact
+    /// `Content-Type`, multipart boundary and body length are deferred to
+    /// preparation.
     #[must_use]
     pub const fn dynamic_body_metadata_available(&self) -> bool {
         false
@@ -743,16 +1000,35 @@ impl RequestPlan {
 
 impl fmt::Debug for RequestPlan {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("RequestPlan")
+        let mut debug = formatter.debug_struct("RequestPlan");
+        if let Some(runtime) = self.description.runtime_binding() {
+            // RUNTIME-02: a removed inherited authentication is displayed
+            // prominently, before every other plan fact.
+            debug.field(
+                "runtime_authentication",
+                &format_args!("{}", runtime.authentication()),
+            );
+        }
+        debug
             .field("description", &self.description)
             .field("observed_url", &"<explicit accessor only>")
             .field("public_header_count", &self.public_headers.len())
             .field("resolved_timeout", &self.resolved_timeout)
             .field("page_index", &self.page_index)
-            .field("rate_limit_policy_count", &self.rate_limit_policy_count)
+            .field("rate_limit_policy_count", &self.rate_limit.policy_count())
+            .field(
+                "rate_limit_enforcement",
+                &self.rate_limit.enforcement_label(),
+            )
             .field("dynamic_body_metadata_available", &false)
             .finish()
+    }
+}
+
+const fn default_body_description(category: RequestBodyCategory) -> BodyDescription {
+    match category {
+        RequestBodyCategory::Empty => BodyDescription::EMPTY,
+        RequestBodyCategory::Specification => BodyDescription::UNKNOWN,
     }
 }
 

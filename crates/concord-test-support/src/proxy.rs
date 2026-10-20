@@ -74,7 +74,11 @@ fn connect_accept_loop(listener: TcpListener, upstream: SocketAddr, stop: Arc<At
                             if let Err(error) =
                                 tunnel_connect(client, upstream, Arc::clone(&tunnel_stop))
                             {
-                                if !tunnel_stop.load(Ordering::Acquire) {
+                                // A bounded response can be dropped while the
+                                // peer still writes TLS close-notify or a tail.
+                                // Peer disconnects are normal fixture teardown;
+                                // unexpected I/O and protocol errors still fail.
+                                if !tunnel_stop.load(Ordering::Acquire) && !closed_peer(&error) {
                                     panic!("CONNECT proxy tunnel failed: {error}");
                                 }
                             }
@@ -144,6 +148,9 @@ fn tunnel_connect(
     }
 
     let mut origin = TcpStream::connect_timeout(&upstream, Duration::from_secs(3))?;
+    // Relay small writes immediately in both directions (no Nagle stall).
+    client.set_nodelay(true)?;
+    origin.set_nodelay(true)?;
     client.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")?;
     client.flush()?;
     let poll = Duration::from_millis(25);
@@ -174,7 +181,7 @@ fn tunnel_connect(
                     progressed = true;
                 }
                 Err(error) if transient_read(&error) => {}
-                Err(error) if closed_read(&error) => client_open = false,
+                Err(error) if closed_peer(&error) => client_open = false,
                 Err(error) => return Err(error),
             }
         }
@@ -189,7 +196,7 @@ fn tunnel_connect(
                     progressed = true;
                 }
                 Err(error) if transient_read(&error) => {}
-                Err(error) if closed_read(&error) => origin_open = false,
+                Err(error) if closed_peer(&error) => origin_open = false,
                 Err(error) => return Err(error),
             }
         }
@@ -211,7 +218,7 @@ fn transient_read(error: &io::Error) -> bool {
     )
 }
 
-fn closed_read(error: &io::Error) -> bool {
+fn closed_peer(error: &io::Error) -> bool {
     matches!(
         error.kind(),
         io::ErrorKind::ConnectionAborted

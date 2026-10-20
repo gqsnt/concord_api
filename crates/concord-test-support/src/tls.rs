@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::io::{self, Read, Write};
+use std::io::{self, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -171,7 +171,9 @@ impl TlsRequest {
 
 struct TlsResponse {
     status: u16,
+    headers: Vec<(String, String)>,
     body: Vec<u8>,
+    wire_parts: Option<Vec<(Duration, Vec<u8>)>>,
 }
 
 struct Shared {
@@ -200,6 +202,36 @@ impl TlsServer {
         Self::start_with_client_auth(true)
     }
 
+    /// Starts the loopback server with a caller-supplied, non-secret test
+    /// identity instead of the fixed `localhost` fixture.
+    ///
+    /// `root_certificate_pem` is the trust anchor returned by
+    /// [`Self::certificate_pem`] for the client; `certificate_chain_pem` holds
+    /// the server chain (leaf first) and `private_key_pem` its PKCS#8 key.
+    /// This lets a fixed-HTTPS declaration whose logical host is not
+    /// `localhost` (for example `eu.api.catalog.example.test`) complete a real
+    /// verified TLS handshake through [`crate::proxy::ConnectProxy`]. The
+    /// material must be owned test fixture material, never a real credential.
+    pub fn start_with_identity_pem(
+        root_certificate_pem: &str,
+        certificate_chain_pem: &str,
+        private_key_pem: &str,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let certificate = single_pem_block(root_certificate_pem, "CERTIFICATE")?;
+        let certificate_chain = pem_blocks(certificate_chain_pem, "CERTIFICATE")?
+            .into_iter()
+            .map(CertificateDer::from)
+            .collect::<Vec<_>>();
+        if certificate_chain.is_empty() {
+            return Err("the TLS identity chain holds no certificate".into());
+        }
+        let key = PrivateKeyDer::from(PrivatePkcs8KeyDer::from(single_pem_block(
+            private_key_pem,
+            "PRIVATE KEY",
+        )?));
+        Self::start_with_identity(certificate, certificate_chain, key, false)
+    }
+
     fn start_with_client_auth(
         require_client_auth: bool,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
@@ -208,6 +240,15 @@ impl TlsServer {
         let private_key = STANDARD.decode(SERVER_PRIVATE_KEY_DER_BASE64)?;
         let certificate_chain = vec![CertificateDer::from(server_certificate)];
         let key = PrivateKeyDer::from(PrivatePkcs8KeyDer::from(private_key));
+        Self::start_with_identity(certificate, certificate_chain, key, require_client_auth)
+    }
+
+    fn start_with_identity(
+        certificate: Vec<u8>,
+        certificate_chain: Vec<CertificateDer<'static>>,
+        key: PrivateKeyDer<'static>,
+        require_client_auth: bool,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let builder = ServerConfig::builder();
         let config = if require_client_auth {
             let mut roots = RootCertStore::empty();
@@ -256,6 +297,32 @@ impl TlsServer {
 
     /// Queues one status and complete response body for the next request.
     pub fn queue_response(&self, status: u16, body: impl Into<Vec<u8>>) -> io::Result<()> {
+        self.queue_response_with_headers(status, &[], body)
+    }
+
+    /// Queues one status, extra response headers (for example `Location` or
+    /// `Set-Cookie`) and a complete body for the next request. Header names
+    /// and values must be single-line visible ASCII.
+    pub fn queue_response_with_headers(
+        &self,
+        status: u16,
+        headers: &[(&str, &str)],
+        body: impl Into<Vec<u8>>,
+    ) -> io::Result<()> {
+        if headers.iter().any(|(name, value)| {
+            name.is_empty()
+                || !name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_graphic() && byte != b':')
+                || !value
+                    .bytes()
+                    .all(|byte| byte == b' ' || byte.is_ascii_graphic())
+        }) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "TLS probe headers must be single-line visible ASCII",
+            ));
+        }
         if !(200..=599).contains(&status) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -268,7 +335,35 @@ impl TlsServer {
             .map_err(|_| io::Error::other("TLS response queue mutex poisoned"))?
             .push_back(TlsResponse {
                 status,
+                headers: headers
+                    .iter()
+                    .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+                    .collect(),
                 body: body.into(),
+                wire_parts: None,
+            });
+        Ok(())
+    }
+
+    /// Queues exact HTTP wire parts, each sent after its finite delay. The
+    /// connection closes after the last part, allowing truncated-body probes.
+    pub fn queue_wire_response(&self, parts: Vec<(Duration, Vec<u8>)>) -> io::Result<()> {
+        if parts.len() > 16
+            || parts
+                .iter()
+                .any(|(delay, bytes)| *delay > Duration::from_secs(5) || bytes.len() > 1024 * 1024)
+        {
+            return Err(io::Error::other("TLS wire fixture exceeds its bounds"));
+        }
+        self.shared
+            .responses
+            .lock()
+            .map_err(|_| io::Error::other("TLS response queue mutex poisoned"))?
+            .push_back(TlsResponse {
+                status: 200,
+                headers: Vec::new(),
+                body: Vec::new(),
+                wire_parts: Some(parts),
             });
         Ok(())
     }
@@ -384,8 +479,11 @@ fn handle_tls(tcp: TcpStream, connection_id: u64, config: Arc<ServerConfig>, sha
         .expect("failed to make accepted TLS socket blocking");
     tcp.set_read_timeout(Some(Duration::from_secs(2)))
         .expect("failed to set TLS read timeout");
+    // Small TLS records must not wait on Nagle/delayed-ACK interaction.
+    tcp.set_nodelay(true)
+        .expect("failed to disable Nagle on the TLS loopback connection");
     let connection = ServerConnection::new(config).expect("failed to create TLS connection");
-    let mut stream = StreamOwned::new(connection, tcp);
+    let mut stream = BufReader::new(StreamOwned::new(connection, tcp));
     loop {
         let Some(request) = read_request(&mut stream, connection_id) else {
             return;
@@ -405,66 +503,300 @@ fn handle_tls(tcp: TcpStream, connection_id: u64, config: Arc<ServerConfig>, sha
             .pop_front()
             .unwrap_or_else(|| TlsResponse {
                 status: 200,
+                headers: Vec::new(),
                 body: b"ok".to_vec(),
+                wire_parts: None,
             });
+        if let Some(parts) = response.wire_parts {
+            for (delay, bytes) in parts {
+                std::thread::sleep(delay);
+                if stream.get_mut().write_all(&bytes).is_err() || stream.get_mut().flush().is_err()
+                {
+                    return;
+                }
+            }
+            stream.get_mut().conn.send_close_notify();
+            let _ = stream.get_mut().flush();
+            return;
+        }
+        let extra_headers: String = response
+            .headers
+            .iter()
+            .map(|(name, value)| format!("{name}: {value}\r\n"))
+            .collect();
         let head = format!(
-            "HTTP/1.1 {} Scripted\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n",
+            "HTTP/1.1 {} Scripted\r\n{extra_headers}Content-Length: {}\r\nConnection: keep-alive\r\n\r\n",
             response.status,
             response.body.len()
         );
-        if stream.write_all(head.as_bytes()).is_err() || stream.write_all(&response.body).is_err() {
+        if stream.get_mut().write_all(head.as_bytes()).is_err()
+            || stream.get_mut().write_all(&response.body).is_err()
+        {
             return;
         }
-        if stream.flush().is_err() {
+        if stream.get_mut().flush().is_err() {
             return;
         }
     }
 }
 
-fn read_request(stream: &mut impl Read, connection_id: u64) -> Option<TlsRequest> {
+/// Parses one bounded HTTP/1 request. The connection-owned BufReader retains
+/// read-ahead for the next request. Unsupported/ambiguous framing closes the
+/// fixture connection without recording a successful empty-body request.
+fn read_request(stream: &mut impl io::BufRead, connection_id: u64) -> Option<TlsRequest> {
     const MAX_HEAD_BYTES: usize = 16 * 1024;
     const MAX_BODY_BYTES: usize = 1024 * 1024;
-
-    let mut bytes = Vec::new();
-    let mut block = [0_u8; 1024];
-    while bytes.windows(4).all(|window| window != b"\r\n\r\n") {
-        let count = stream.read(&mut block).ok()?;
-        if count == 0 || bytes.len() + count > MAX_HEAD_BYTES {
-            return None;
-        }
-        bytes.extend_from_slice(&block[..count]);
-    }
-    let end = bytes.windows(4).position(|window| window == b"\r\n\r\n")?;
-    let text = std::str::from_utf8(&bytes[..end]).ok()?;
-    let mut lines = text.split("\r\n");
-    let mut request_line = lines.next()?.split_whitespace();
-    let method = request_line.next()?.to_owned();
-    let target = request_line.next()?.to_owned();
-    let headers = lines
-        .filter_map(|line| line.split_once(':'))
-        .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_owned()))
-        .collect::<Vec<_>>();
-    let body_length = headers
-        .iter()
-        .find(|(name, _)| name == "content-length")
-        .map_or(Some(0), |(_, value)| value.parse::<usize>().ok())?;
-    if body_length > MAX_BODY_BYTES {
+    const MAX_TRAILER_BYTES: usize = 8 * 1024;
+    // Counts all consumed framing too, bounding tiny chunks and extensions.
+    let mut wire_budget = MAX_BODY_BYTES + 64 * 1024;
+    let mut head_budget = MAX_HEAD_BYTES;
+    let first = bounded_line(stream, &mut head_budget, &mut wire_budget)?;
+    let mut parts = std::str::from_utf8(&first).ok()?.split_whitespace();
+    let method = parts.next()?.to_owned();
+    let target = parts.next()?.to_owned();
+    if !matches!(parts.next()?, "HTTP/1.0" | "HTTP/1.1") || parts.next().is_some() {
         return None;
     }
-    let body_start = end + 4;
-    let total = body_start.checked_add(body_length)?;
-    while bytes.len() < total {
-        let count = stream.read(&mut block).ok()?;
-        if count == 0 || bytes.len() + count > total {
+    let mut headers = Vec::new();
+    loop {
+        let line = bounded_line(stream, &mut head_budget, &mut wire_budget)?;
+        if line.is_empty() {
+            break;
+        }
+        let (name, value) = std::str::from_utf8(&line).ok()?.split_once(':')?;
+        if name.is_empty() || !name.bytes().all(header_name_byte) {
             return None;
         }
-        bytes.extend_from_slice(&block[..count]);
+        if value
+            .bytes()
+            .any(|byte| byte < 0x20 && byte != b'\t' || byte == 0x7f)
+        {
+            return None;
+        }
+        headers.push((name.to_ascii_lowercase(), value.trim().to_owned()));
     }
+    let lengths = headers
+        .iter()
+        .filter(|(name, _)| name == "content-length")
+        .collect::<Vec<_>>();
+    let encodings = headers
+        .iter()
+        .filter(|(name, _)| name == "transfer-encoding")
+        .collect::<Vec<_>>();
+    if lengths.len() > 1
+        || encodings.len() > 1
+        || !lengths.is_empty() && !encodings.is_empty()
+        || headers.iter().any(|(name, _)| name == "expect")
+    {
+        return None;
+    }
+    let body = if let Some((_, encoding)) = encodings.first() {
+        if !encoding.eq_ignore_ascii_case("chunked") {
+            return None;
+        }
+        let mut body = Vec::new();
+        loop {
+            let mut line_budget = MAX_HEAD_BYTES;
+            let line = bounded_line(stream, &mut line_budget, &mut wire_budget)?;
+            let line = std::str::from_utf8(&line).ok()?;
+            let (size, extension) = line
+                .split_once(';')
+                .map_or((line, None), |(a, b)| (a, Some(b)));
+            if size.is_empty()
+                || !size.bytes().all(|byte| byte.is_ascii_hexdigit())
+                || extension
+                    .is_some_and(|value| value.bytes().any(|byte| !(0x20..=0x7e).contains(&byte)))
+            {
+                return None;
+            }
+            let size = usize::from_str_radix(size, 16).ok()?;
+            if size == 0 {
+                let mut trailer_budget = MAX_TRAILER_BYTES;
+                loop {
+                    let line = bounded_line(stream, &mut trailer_budget, &mut wire_budget)?;
+                    if line.is_empty() {
+                        break;
+                    }
+                    let (name, value) = std::str::from_utf8(&line).ok()?.split_once(':')?;
+                    if name.is_empty()
+                        || !name.bytes().all(header_name_byte)
+                        || name.eq_ignore_ascii_case("content-length")
+                        || name.eq_ignore_ascii_case("transfer-encoding")
+                        || value
+                            .bytes()
+                            .any(|byte| byte < 0x20 && byte != b'\t' || byte == 0x7f)
+                    {
+                        return None;
+                    }
+                }
+                break;
+            }
+            let total = body.len().checked_add(size)?;
+            if total > MAX_BODY_BYTES {
+                return None;
+            }
+            wire_budget = wire_budget.checked_sub(size.checked_add(2)?)?;
+            let start = body.len();
+            body.resize(total, 0);
+            stream.read_exact(&mut body[start..]).ok()?;
+            let mut ending = [0_u8; 2];
+            stream.read_exact(&mut ending).ok()?;
+            if ending != *b"\r\n" {
+                return None;
+            }
+        }
+        body
+    } else {
+        let length = match lengths.first() {
+            Some((_, value))
+                if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) =>
+            {
+                value.parse::<usize>().ok()?
+            }
+            Some(_) => return None,
+            None => 0,
+        };
+        if length > MAX_BODY_BYTES {
+            return None;
+        }
+        wire_budget.checked_sub(length)?;
+        let mut body = vec![0; length];
+        stream.read_exact(&mut body).ok()?;
+        body
+    };
     Some(TlsRequest {
         connection_id,
         method,
         target,
         headers,
-        body: bytes[body_start..total].to_vec(),
+        body,
     })
+}
+
+fn header_name_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte)
+}
+
+/// No read_until allocation: both line and total framing budgets apply before
+/// retaining each byte. Every accepted line ends with an exact CRLF.
+fn bounded_line(
+    stream: &mut impl io::BufRead,
+    line_budget: &mut usize,
+    wire_budget: &mut usize,
+) -> Option<Vec<u8>> {
+    let mut line = Vec::new();
+    loop {
+        *line_budget = line_budget.checked_sub(1)?;
+        *wire_budget = wire_budget.checked_sub(1)?;
+        let mut byte = [0_u8; 1];
+        stream.read_exact(&mut byte).ok()?;
+        line.push(byte[0]);
+        if byte[0] == b'\n' {
+            if line.len() < 2 || line[line.len() - 2] != b'\r' {
+                return None;
+            }
+            line.truncate(line.len() - 2);
+            return Some(line);
+        }
+    }
+}
+
+#[cfg(test)]
+mod s5_framing_regressions {
+    use super::*;
+    use std::io::{BufReader, Cursor};
+
+    #[test]
+    fn content_length_and_chunked_preserve_next_request() {
+        for wire in [
+            b"POST /one HTTP/1.1\r\nContent-Length: 5\r\n\r\nhelloGET /two HTTP/1.1\r\n\r\n".as_slice(),
+            b"POST /one HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n2;fixture=yes\r\nhe\r\n3\r\nllo\r\n0\r\nX-Fixture: yes\r\n\r\nGET /two HTTP/1.1\r\n\r\n".as_slice(),
+        ] {
+            let mut reader = BufReader::new(Cursor::new(wire));
+            let first = read_request(&mut reader, 7).expect("first request");
+            assert_eq!(first.body, b"hello");
+            let second = read_request(&mut reader, 7).expect("buffered next request");
+            assert_eq!(second.target, "/two");
+            assert_eq!(second.connection_id, 7);
+        }
+    }
+
+    #[test]
+    fn malformed_or_over_budget_framing_never_records_empty_success() {
+        for wire in [
+            "POST / HTTP/1.1\r\nContent-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
+            "POST / HTTP/1.1\r\nContent-Length: 5\r\nContent-Length: 5\r\n\r\nhello",
+            "POST / HTTP/1.1\r\nTransfer-Encoding: gzip, chunked\r\n\r\n0\r\n\r\n",
+            "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n1\r\nxXX0\r\n\r\n",
+            "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n100001\r\n",
+            "POST / HTTP/1.1\r\nContent-Length: 5\r\n\r\nhell",
+        ] {
+            assert!(read_request(&mut BufReader::new(Cursor::new(wire)), 0).is_none());
+        }
+        let long = format!("POST / HTTP/1.1\r\nX: {}\r\n\r\n", "x".repeat(16 * 1024));
+        assert!(read_request(&mut BufReader::new(Cursor::new(long)), 0).is_none());
+    }
+}
+
+/// Decodes every `-----BEGIN {label}-----` block of fixture PEM text.
+fn pem_blocks(
+    pem: &str,
+    label: &str,
+) -> Result<Vec<Vec<u8>>, Box<dyn std::error::Error + Send + Sync>> {
+    let begin = format!("-----BEGIN {label}-----");
+    let end = format!("-----END {label}-----");
+    let mut blocks = Vec::new();
+    let mut rest = pem;
+    while let Some(start) = rest.find(&begin) {
+        let body_start = start + begin.len();
+        let Some(length) = rest[body_start..].find(&end) else {
+            return Err(format!("unterminated PEM {label} block").into());
+        };
+        let encoded: String = rest[body_start..body_start + length]
+            .chars()
+            .filter(|character| !character.is_ascii_whitespace())
+            .collect();
+        blocks.push(STANDARD.decode(encoded)?);
+        rest = &rest[body_start + length + end.len()..];
+    }
+    Ok(blocks)
+}
+
+/// Decodes exactly one PEM block with `label`.
+fn single_pem_block(
+    pem: &str,
+    label: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    let mut blocks = pem_blocks(pem, label)?;
+    if blocks.len() != 1 {
+        return Err(format!("expected exactly one PEM {label} block").into());
+    }
+    Ok(blocks.remove(0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pem_identity_round_trips_the_fixed_fixture() {
+        let fixed = TlsServer::start().expect("fixed fixture server");
+        let root = String::from_utf8(fixed.certificate_pem()).expect("ASCII PEM");
+        assert_eq!(
+            single_pem_block(&root, "CERTIFICATE").expect("one block"),
+            fixed.certificate_der()
+        );
+        let twice = format!("{root}{root}");
+        assert_eq!(
+            pem_blocks(&twice, "CERTIFICATE").expect("two blocks").len(),
+            2
+        );
+        assert!(single_pem_block(&twice, "CERTIFICATE").is_err());
+        assert!(pem_blocks("-----BEGIN CERTIFICATE-----\nAAAA", "CERTIFICATE").is_err());
+
+        let identity = String::from_utf8(fixed.identity_pem()).expect("ASCII PEM");
+        let custom = TlsServer::start_with_identity_pem(&root, &identity, &identity)
+            .expect("caller-supplied identity server");
+        assert_eq!(custom.certificate_der(), fixed.certificate_der());
+    }
 }

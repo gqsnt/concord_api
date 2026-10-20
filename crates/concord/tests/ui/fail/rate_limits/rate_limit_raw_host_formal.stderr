@@ -1,5 +1,11 @@
-error: rate-key `host` was replaced by normalized logical `origin` in v2.1
- --> tests/ui/fail/rate_limits/rate_limit_raw_host_formal.rs:8:27
-  |
-8 |             policy shared(r#host) { id "concord.rate_limit_raw_host_formal.1"; cost 1;
-  |                           ^^^^^^
+error: [C3-MIGRATE] rate key labels are explicit in v3: write `"host" = host` (the label is state-affecting and independent of the Rust name; policy `shared` of client `RawHostFormalApi`)
+  --> tests/ui/fail/rate_limits/rate_limit_raw_host_formal.rs:14:22
+   |
+14 |                 key [r#host];
+   |                      ^^^^^^
+
+error: [C3-MIGRATE] rate key labels are explicit in v3: write `"host" = host` to use an explicit label (the inline rate policy of client `InlineHostApi`)
+  --> tests/ui/fail/rate_limits/rate_limit_raw_host_formal.rs:26:26
+   |
+26 |             key [origin, host];
+   |                          ^^^^

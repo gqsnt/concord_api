@@ -125,12 +125,16 @@ fn public_categories_are_matched_structurally() {
 #[test]
 fn pagination_ceiling_kinds_are_public_and_structured() {
     let kinds = [
-        PaginationErrorKind::InvalidLimit,
         PaginationErrorKind::Controller,
+        PaginationErrorKind::InvalidInitialCursor,
+        PaginationErrorKind::IneligibleEndpoint,
+        PaginationErrorKind::ForbiddenContinuationChange,
+        PaginationErrorKind::SendCapExhausted,
+        PaginationErrorKind::Cancelled,
         PaginationErrorKind::Overflow,
         PaginationErrorKind::RepeatedRequest,
         PaginationErrorKind::CompletionLimitExceeded,
-        PaginationErrorKind::PageCeilingExceeded,
+        PaginationErrorKind::AttemptCeilingExceeded,
         PaginationErrorKind::CollectedItemCeilingExceeded,
         PaginationErrorKind::IdentityStorageCeilingExceeded,
     ];
@@ -142,7 +146,7 @@ fn pagination_ceiling_kinds_are_public_and_structured() {
         );
     }
     assert_ne!(
-        PaginationErrorKind::PageCeilingExceeded,
+        PaginationErrorKind::AttemptCeilingExceeded,
         PaginationErrorKind::CompletionLimitExceeded
     );
     assert_ne!(

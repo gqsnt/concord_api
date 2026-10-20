@@ -4,12 +4,11 @@
 //! Documentation owner: `docs/pagination.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
 
-use concord::PageLimit;
-use concord::pagination::PaginatedRequest;
+use concord::pagination::CollectPrefix;
 
 use super::PaginationApi;
 
-/// Constructs a bounded cursor-pagination request.
+/// Constructs a bounded cursor-pagination prefix request.
 pub fn construct(client: &PaginationApi) {
-    let _: PaginatedRequest<_> = client.cursor().paginate(PageLimit::Prefix(2));
+    let _: CollectPrefix<u32> = client.cursor().collect_prefix(2);
 }

@@ -1,0 +1,11 @@
+error: [C3-GENERATED] generated name `ItemRequest` for request type of endpoint `item` on module of ScopeCollisionApi::item_request collides with handle of scope `item_request`; rename one declaration (generated names are never suffixed or truncated)
+ --> tests/ui/fail/names/scope_handle_collision.rs:7:17
+  |
+7 |             GET item() -> () via concord::Empty;
+  |                 ^^^^
+
+error: note: handle of scope `item_request` is declared here
+ --> tests/ui/fail/names/scope_handle_collision.rs:6:15
+  |
+6 |         scope item_request() {
+  |               ^^^^^^^^^^^^

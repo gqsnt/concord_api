@@ -1,0 +1,28 @@
+{
+  "old_endpoint_ids": [
+    "catalog.auth.login",
+    "catalog.item.export",
+    "catalog.item.feed",
+    "catalog.item.find",
+    "catalog.item.get",
+    "catalog.item.inspect",
+    "catalog.item.update",
+    "catalog.items.list"
+  ],
+  "corrected_endpoint_ids": [
+    "catalog.item.export",
+    "catalog.item.feed",
+    "catalog.item.find",
+    "catalog.item.get",
+    "catalog.item.inspect",
+    "catalog.item.update",
+    "catalog.items.list"
+  ],
+  "change_count": 10,
+  "axes": [
+    "Provenance"
+  ],
+  "unresolved": [],
+  "other_report_facts_identical": true,
+  "corrected_json_sha256": "fabc3c0a22715d0e8ea127b23c2541b3057fdfcf01ffbab2cdddfe596db07e85"
+}

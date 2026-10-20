@@ -1,0 +1,44 @@
+{
+  "reviewed_at": "2026-10-17T11:52:31Z",
+  "kind": "targeted independent agent reread of corrected public rendered pages and guide",
+  "native_build_labels": [
+    "doc-audit-followup",
+    "redaction-rustdoc",
+    "facade-rustdoc"
+  ],
+  "pages": [
+    {
+      "path": "concord_examples/contracts/catalog_v3/catalog_api/regional/struct.FindItemRequest.html",
+      "sha256": "f3a856bcee6a55884558ee012657d472678212fabeca47fe3bd908b8b3b285f3",
+      "type_documentation": "Expand description A head-only 404 is None; the body of that response is not polled. Named request for CatalogApi::regional::find_item . Holding it does not contact the server; .await executes one managed operation. Cloning creates an independent operation and grants no retry authority. \u00a7 Contract Operation: GET https://{regional.region}.api.catalog.example.test/root/{client.api_version}/regions/{regional.region}/items/{id} (endpoint ID catalog.item.find , explicit) Result: Option<Item> via Json ; response representation inherited from CatalogApi Request body: none Accepted statuses: 200..=299 Expected absence: None on 404 (head-only; that response body is dropped unread) Effect: safe (method default) Timeout: 20 s Authentication: bearer session (challenge on 401), from CatalogApi::regional Rate policy catalog.tenant.read : key [origin, \u201ctenant\u201d], cost 1, from CatalogApi::regional The complete effective contract is available from CatalogApi::contract() . \u00a7 Endpoint values id : ItemId (required)"
+    },
+    {
+      "path": "concord_examples/contracts/catalog_v3/catalog_api/regional/struct.UpdateItemRequest.html",
+      "sha256": "8223e0f2310e82fc31cc1900d539620e67d33bbf241f69f5052bdbfad380c3e9",
+      "type_documentation": "Expand description The provider asserts idempotence for this command-bearing update. Named request for CatalogApi::regional::update_item . Holding it does not contact the server; .await executes one managed operation. It is not Clone because the declaration has a body slot. \u00a7 Contract Operation: PUT https://{regional.region}.api.catalog.example.test/root/{client.api_version}/regions/{regional.region}/items/{id} (endpoint ID catalog.item.update , explicit) Result: Item via Json ; response representation inherited from CatalogApi Request body: input: UpdateInput via Json (required); request representation inherited from CatalogApi Accepted statuses: 200..=299 Effect: idempotent (declared) Timeout: 20 s Authentication: bearer session (challenge on 401), from CatalogApi::regional Rate policy catalog.tenant.read : key [origin, \u201ctenant\u201d], cost 1, from CatalogApi::regional Rate policy catalog.item.write : key [origin, endpoint, \u201cclient.tenant\u201d], cost 5, from CatalogApi::regional::update_item The complete effective contract is available from CatalogApi::contract() . \u00a7 Endpoint values id : ItemId (required) command_id : CommandId (required, sensitive (withheld from automatic observation))"
+    },
+    {
+      "path": "concord_examples/contracts/catalog_v3/catalog_api/regional/struct.ExportRequest.html",
+      "sha256": "2ef73337503fcccd8be9ccbf6ef89b87fd2f99db63c3f7b34076e56e50874f2d",
+      "type_documentation": "Expand description Returns a managed byte stream, not a completed export. Named request for CatalogApi::regional::export . Holding it does not contact the server; .await executes one managed operation. Cloning creates an independent operation and grants no retry authority. \u00a7 Contract Operation: GET https://{regional.region}.api.catalog.example.test/root/{client.api_version}/regions/{regional.region}/export (endpoint ID catalog.item.export , explicit) Result: ByteStream via Binary ; response representation selected by via on endpoint CatalogApi::regional::export Request body: none Accepted statuses: 200..=299 Effect: safe (method default) Timeout: 20 s Authentication: bearer session (challenge on 401), from CatalogApi::regional Rate policy catalog.tenant.read : key [origin, \u201ctenant\u201d], cost 1, from CatalogApi::regional The complete effective contract is available from CatalogApi::contract() ."
+    },
+    {
+      "path": "concord/observation/struct.SanitizedHeaderMap.html",
+      "sha256": "c8cbe40d674921015afe1460b399c2bcd8f88482895ca4944dcf11de750b5427",
+      "type_documentation": "Expand description An owned, credential-redacted view of public headers and structural markers. Unmarked public names and values can still contain application-sensitive data. These explicit caller-selected accessors are not automatic logging authority: protect their contents before storing or displaying them."
+    }
+  ],
+  "guide": {
+    "path": "docs/planning_and_observation.md",
+    "sha256": "5a8bc310ee6c8a23e6b1e209c00238093c80f9c6fe58677b7276d1102acfe7c7",
+    "excerpt": "`OperationEvent` is `AttemptStarted`, `ResponseHeadObserved`,\n`OperationFinished`, `ProviderAcquisitionFinished`, `PaginationFinished` or\n`StreamFinished`. Events carry\noperation and attempt identities, value-free target occurrence counts, typed\nresponse facts and outcomes. They expose no exact URL, path or query values,\nheader names or values, bodies, credential material or raw rate keys. Explicit\n`RequestPlan` and `ApiResponse` accessors provide the separate caller-selected\npublic URL/header view described above. Final\nevents run after the result is fixed and cannot change it; a slow final\ncallback can delay delivery. Observer panics are contained where Rust unwinds\nand counted only in bounded private diagnostics; no detached observer thread or\nqueue exists (EXEC-04).\n\n`DebugLevel::Basic` emits structural request/response metadata without headers;\n`DebugLevel::Headers` adds value-free request-target counts and typed response\nfacts. Header names and values are never included at any level."
+  },
+  "checks": {
+    "find_item_response_origin_visible": true,
+    "update_request_and_response_origins_visible": true,
+    "export_inline_origin_visible": true,
+    "facade_header_data_qualification_visible": true,
+    "observer_guide_value_free_and_six_variants": true
+  },
+  "intermediate_correction": "The first post-fix reread found the core header-map documentation updated while the facade re-export remained stale. The facade-rustdoc rebuild refreshed that page; the final reread above observes the new qualification."
+}

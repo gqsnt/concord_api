@@ -1,0 +1,816 @@
+[
+  {
+    "name": "after-auth-expanded-native",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "test",
+      "--locked",
+      "-p",
+      "concord-core",
+      "--lib",
+      "--all-features",
+      "r8_",
+      "--",
+      "--nocapture"
+    ],
+    "cwd": "G:/projects/concord_api-r8",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "09c560ad38b49021c5a10c80060674a45366fc3f",
+    "tree": "1497b8c163c44e0c5e9bcb2dd8e2d07af56f2517",
+    "start_utc": "2026-10-12T11:49:30.737604+00:00",
+    "end_utc": "2026-10-12T11:49:49.337941+00:00",
+    "exit_code": 0,
+    "log_sha256": "86e6155e1afe6381f0c89be8001dfaec405e92f6916b743fbd043315ed980e6b",
+    "diff_sha256": "d5b7e051d7a49be803b1116f428834221f5412a1ec8bb6004ef0476a0b46a285"
+  },
+  {
+    "name": "after-auth-expanded",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "test",
+      "--locked",
+      "-p",
+      "concord-core",
+      "--lib",
+      "--all-features",
+      "r8_",
+      "--",
+      "--nocapture"
+    ],
+    "cwd": "G:/projects/concord_api-r8",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "09c560ad38b49021c5a10c80060674a45366fc3f",
+    "tree": "1497b8c163c44e0c5e9bcb2dd8e2d07af56f2517",
+    "start_utc": "2026-10-12T11:49:11.296411+00:00",
+    "end_utc": "2026-10-12T11:49:14.561566+00:00",
+    "exit_code": 101,
+    "log_sha256": "c8631699edd02eb262129d2c36fab1661e4701af2c62a6aefd55a209316651f5",
+    "diff_sha256": "9898137db1fdac0e65531d8e5a7e85043a6af44610b76250267be5e3dee7d81a"
+  },
+  {
+    "name": "after-auth-provider",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "test",
+      "--locked",
+      "-p",
+      "concord-core",
+      "--lib",
+      "--all-features",
+      "r8_",
+      "--",
+      "--nocapture"
+    ],
+    "cwd": "G:/projects/concord_api-r8",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "09c560ad38b49021c5a10c80060674a45366fc3f",
+    "tree": "1497b8c163c44e0c5e9bcb2dd8e2d07af56f2517",
+    "start_utc": "2026-10-12T11:46:11.783647+00:00",
+    "end_utc": "2026-10-12T11:47:05.380455+00:00",
+    "exit_code": 0,
+    "log_sha256": "451f89db2423b5e08d277dec912b4f0ce58ad68fe086f57facff5ec8455814fc",
+    "diff_sha256": "8c2d15165219ac3c65a8c44de9892148b7eb48893fec24b25f904dd4178fe40a"
+  },
+  {
+    "name": "after-focused-final",
+    "command": [
+      "pwsh",
+      "-NoLogo",
+      "-NoProfile",
+      "-Command",
+      "cargo +1.97.1 test --locked -p concord-core --lib --all-features r8_ -- --nocapture; if ($LASTEXITCODE) { exit $LASTEXITCODE }; cargo +1.97.1 test --locked -p concord-extras --lib --all-features r8_ -- --nocapture; if ($LASTEXITCODE) { exit $LASTEXITCODE }; cargo +1.97.1 test --locked -p concord --test r8_oauth --all-features -- --nocapture; if ($LASTEXITCODE) { exit $LASTEXITCODE }; cargo +1.97.1 test --locked -p concord --test r7_oauth_delay --all-features -- --nocapture; exit $LASTEXITCODE"
+    ],
+    "cwd": "G:/projects/concord_api-r8",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "09c560ad38b49021c5a10c80060674a45366fc3f",
+    "tree": "1497b8c163c44e0c5e9bcb2dd8e2d07af56f2517",
+    "start_utc": "2026-10-12T11:50:33.432606+00:00",
+    "end_utc": "2026-10-12T11:51:03.885290+00:00",
+    "exit_code": 101,
+    "log_sha256": "592ee63083992ba11c2dd60d5a7ce7dcbca62128bb29b1e067aa8a5141af88ea",
+    "diff_sha256": "380c5926783e72009eca6eab79bdcc6dd4fd40d0e0775bbdfde72a5467a2dd6e"
+  },
+  {
+    "name": "after-focused-final2",
+    "command": [
+      "pwsh",
+      "-NoLogo",
+      "-NoProfile",
+      "-Command",
+      "cargo +1.97.1 test --locked -p concord-core --lib --all-features r8_ -- --nocapture; if ($LASTEXITCODE) { exit $LASTEXITCODE }; cargo +1.97.1 test --locked -p concord-extras --lib --all-features r8_ -- --nocapture; if ($LASTEXITCODE) { exit $LASTEXITCODE }; cargo +1.97.1 test --locked -p concord --test r8_oauth --all-features -- --nocapture; if ($LASTEXITCODE) { exit $LASTEXITCODE }; cargo +1.97.1 test --locked -p concord --test r7_oauth_delay --all-features -- --nocapture; exit $LASTEXITCODE"
+    ],
+    "cwd": "G:/projects/concord_api-r8",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "09c560ad38b49021c5a10c80060674a45366fc3f",
+    "tree": "1497b8c163c44e0c5e9bcb2dd8e2d07af56f2517",
+    "start_utc": "2026-10-12T11:51:29.650550+00:00",
+    "end_utc": "2026-10-12T11:51:44.076758+00:00",
+    "exit_code": 0,
+    "log_sha256": "94295fc4dc95760949359b1146758f9955f51aa2a2c968fe568f84bdca50be42",
+    "diff_sha256": "f8688ee262df42018d304f6f1cda6862a42e434bc865f7c321de3245f416c316"
+  },
+  {
+    "name": "after-oauth",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "test",
+      "--locked",
+      "-p",
+      "concord",
+      "--test",
+      "r8_oauth",
+      "--all-features",
+      "--",
+      "--nocapture"
+    ],
+    "cwd": "G:/projects/concord_api-r8",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "09c560ad38b49021c5a10c80060674a45366fc3f",
+    "tree": "1497b8c163c44e0c5e9bcb2dd8e2d07af56f2517",
+    "start_utc": "2026-10-12T11:46:15.120519+00:00",
+    "end_utc": "2026-10-12T11:47:22.533373+00:00",
+    "exit_code": 0,
+    "log_sha256": "f0b816f61106f9400cf1062682000945e4b546a00d2e2aa68bb244592b03401b",
+    "diff_sha256": "8c2d15165219ac3c65a8c44de9892148b7eb48893fec24b25f904dd4178fe40a"
+  },
+  {
+    "name": "before-auth-native",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "test",
+      "--locked",
+      "-p",
+      "concord-core",
+      "--lib",
+      "--all-features",
+      "r8_",
+      "--",
+      "--nocapture"
+    ],
+    "cwd": "G:/projects/concord_api-r8-before",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "09c560ad38b49021c5a10c80060674a45366fc3f",
+    "tree": "1497b8c163c44e0c5e9bcb2dd8e2d07af56f2517",
+    "start_utc": "2026-10-12T11:42:36.388543+00:00",
+    "end_utc": "2026-10-12T11:43:15.978369+00:00",
+    "exit_code": 101,
+    "log_sha256": "5e41e2940a4594439c44433d942b893596e06093e992c5de11c03bd3296b97ba",
+    "diff_sha256": "b8dd0201c908277a63bdd3107be23926c57b00e23191ba3f621e1db89c7a6dca"
+  },
+  {
+    "name": "before-auth",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "test",
+      "--locked",
+      "-p",
+      "concord-core",
+      "--lib",
+      "--all-features",
+      "r8_",
+      "--",
+      "--nocapture"
+    ],
+    "cwd": "G:/projects/concord_api-r8-before",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "09c560ad38b49021c5a10c80060674a45366fc3f",
+    "tree": "1497b8c163c44e0c5e9bcb2dd8e2d07af56f2517",
+    "start_utc": "2026-10-12T11:41:39.328751+00:00",
+    "end_utc": "2026-10-12T11:42:15.000107+00:00",
+    "exit_code": 101,
+    "log_sha256": "756effcd98d94d854624b09b0c99bd260eb6341683c64370e9ea805dafe0cee0",
+    "diff_sha256": "03ae08522768cb5aaa4018b33deef2dbefff100b64f4abf8879e3c20f44c786c"
+  },
+  {
+    "name": "before-body-cooldown-native",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "test",
+      "--locked",
+      "-p",
+      "concord",
+      "--test",
+      "r8_oauth",
+      "--all-features",
+      "r8_rejected",
+      "--",
+      "--nocapture"
+    ],
+    "cwd": "G:/projects/concord_api-r8-before",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "09c560ad38b49021c5a10c80060674a45366fc3f",
+    "tree": "1497b8c163c44e0c5e9bcb2dd8e2d07af56f2517",
+    "start_utc": "2026-10-12T11:44:19.559223+00:00",
+    "end_utc": "2026-10-12T11:44:28.120323+00:00",
+    "exit_code": 101,
+    "log_sha256": "864c47c5aabf381fafedba1366b251e78453cb741698978863889f222259e65a",
+    "diff_sha256": "f8e6c1e2eaa05b243fb8e3489415821472f0e0b2990816a2359f6b344dc9296d"
+  },
+  {
+    "name": "before-oauth-native",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "test",
+      "--locked",
+      "-p",
+      "concord",
+      "--test",
+      "r8_oauth",
+      "--all-features",
+      "--",
+      "--nocapture"
+    ],
+    "cwd": "G:/projects/concord_api-r8-before",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "09c560ad38b49021c5a10c80060674a45366fc3f",
+    "tree": "1497b8c163c44e0c5e9bcb2dd8e2d07af56f2517",
+    "start_utc": "2026-10-12T11:42:46.444415+00:00",
+    "end_utc": "2026-10-12T11:43:22.683511+00:00",
+    "exit_code": 101,
+    "log_sha256": "183e935f4af2200a59ab8ddbc9cb0c63efab85ee2c771c3c7265640771dd5c6d",
+    "diff_sha256": "b8dd0201c908277a63bdd3107be23926c57b00e23191ba3f621e1db89c7a6dca"
+  },
+  {
+    "name": "before-oauth",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "test",
+      "--locked",
+      "-p",
+      "concord",
+      "--test",
+      "r8_oauth",
+      "--all-features",
+      "--",
+      "--nocapture"
+    ],
+    "cwd": "G:/projects/concord_api-r8-before",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "09c560ad38b49021c5a10c80060674a45366fc3f",
+    "tree": "1497b8c163c44e0c5e9bcb2dd8e2d07af56f2517",
+    "start_utc": "2026-10-12T11:41:54.896820+00:00",
+    "end_utc": "2026-10-12T11:42:26.271045+00:00",
+    "exit_code": 101,
+    "log_sha256": "17966b0bc0086d2263b1f166d1d8d0a02410354ace00a8af64f7f48e3dfa047b",
+    "diff_sha256": "03ae08522768cb5aaa4018b33deef2dbefff100b64f4abf8879e3c20f44c786c"
+  },
+  {
+    "name": "before-provider-native",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "test",
+      "--locked",
+      "-p",
+      "concord-core",
+      "--lib",
+      "--all-features",
+      "http::provider::tests::r8_",
+      "--",
+      "--nocapture"
+    ],
+    "cwd": "G:/projects/concord_api-r8-before",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "09c560ad38b49021c5a10c80060674a45366fc3f",
+    "tree": "1497b8c163c44e0c5e9bcb2dd8e2d07af56f2517",
+    "start_utc": "2026-10-12T11:43:42.738050+00:00",
+    "end_utc": "2026-10-12T11:43:59.395353+00:00",
+    "exit_code": 101,
+    "log_sha256": "188a9a4fafcbf746fb779226d3004fc98eff3f9755f57077cb9ed851400d4647",
+    "diff_sha256": "f8e6c1e2eaa05b243fb8e3489415821472f0e0b2990816a2359f6b344dc9296d"
+  },
+  {
+    "name": "before-ttl-fixture-corrected",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "test",
+      "--locked",
+      "-p",
+      "concord",
+      "--test",
+      "r8_oauth",
+      "--all-features",
+      "r8_elapsed_tls",
+      "--",
+      "--nocapture"
+    ],
+    "cwd": "G:/projects/concord_api-r8-before",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "09c560ad38b49021c5a10c80060674a45366fc3f",
+    "tree": "1497b8c163c44e0c5e9bcb2dd8e2d07af56f2517",
+    "start_utc": "2026-10-12T12:25:28.715830+00:00",
+    "end_utc": "2026-10-12T12:25:39.629067+00:00",
+    "exit_code": 101,
+    "log_sha256": "c693ee3eb7740a24021b56638703654d7e3997483320476560f0e0b054c00dd8",
+    "diff_sha256": "dda06713155675ca39e40df00c52915eb356a84f9df4317a93fd6968013fa507"
+  },
+  {
+    "name": "before-ttl-long-fixture-control",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "test",
+      "--locked",
+      "-p",
+      "concord",
+      "--test",
+      "r8_oauth",
+      "--all-features",
+      "r8_delayed_long",
+      "--",
+      "--nocapture"
+    ],
+    "cwd": "G:/projects/concord_api-r8-before",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "09c560ad38b49021c5a10c80060674a45366fc3f",
+    "tree": "1497b8c163c44e0c5e9bcb2dd8e2d07af56f2517",
+    "start_utc": "2026-10-12T12:26:32.332076+00:00",
+    "end_utc": "2026-10-12T12:26:34.238683+00:00",
+    "exit_code": 0,
+    "log_sha256": "d279cc4e8384ee1815d11391b34ae0b29327b53085a2f9502c5374a3fe3ac0ba",
+    "diff_sha256": "dda06713155675ca39e40df00c52915eb356a84f9df4317a93fd6968013fa507"
+  },
+  {
+    "name": "before-wire-native",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "test",
+      "--locked",
+      "-p",
+      "concord",
+      "--test",
+      "r8_oauth",
+      "--all-features",
+      "r8_rejected_chunked",
+      "--",
+      "--nocapture"
+    ],
+    "cwd": "G:/projects/concord_api-r8-before",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "09c560ad38b49021c5a10c80060674a45366fc3f",
+    "tree": "1497b8c163c44e0c5e9bcb2dd8e2d07af56f2517",
+    "start_utc": "2026-10-12T11:44:54.849383+00:00",
+    "end_utc": "2026-10-12T11:44:57.243305+00:00",
+    "exit_code": 101,
+    "log_sha256": "a435793e345932afc327ffcd2b7048f5bd6faa55973962a81df715971c57ce31",
+    "diff_sha256": "396a5af014453826cd69380e7ed22b39f554c330505b26c51cdadbdf43246632"
+  },
+  {
+    "name": "final-docs-check",
+    "command": [
+      "just",
+      "docs-check"
+    ],
+    "cwd": "G:/projects/concord_api-r8",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "cef236aa2502df5653d77de2975051b5a6d49565",
+    "tree": "95cee7e3d7577478a1125768bd384e0c9eaa176d",
+    "start_utc": "2026-10-12T12:52:43.644450+00:00",
+    "end_utc": "2026-10-12T12:52:58.546864+00:00",
+    "exit_code": 0,
+    "log_sha256": "bc61adb16bfa7b832ba0020c0fabf984171c9e1ca6a45c9b14a48f23a6e1aaea",
+    "diff_sha256": "1d1f903eb30f79d12691b3252e5d1bc6cd1fe8053ebe6e3c6dd6fc2357de125f"
+  },
+  {
+    "name": "linux-analyzer",
+    "command": [
+      "just",
+      "analyzer"
+    ],
+    "cwd": "/home/canarit/concord_api-r8",
+    "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "sha": "060b74e8c397a45f72adf494c799650a795fa43a",
+    "tree": "81d840e5c4a4a6fa88b6215adcc168063f169675",
+    "start_utc": "2026-10-12T11:56:46.980580+00:00",
+    "end_utc": "2026-10-12T12:07:50.123920+00:00",
+    "exit_code": 0,
+    "log_sha256": "d2f470df4f6ac649eb78ef210c85ed5c65c4a3496c992a5f5e5f40f2debf9106",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "linux-analyzer2",
+    "command": [
+      "just",
+      "analyzer"
+    ],
+    "cwd": "/home/canarit/concord_api-r8",
+    "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "sha": "cef236aa2502df5653d77de2975051b5a6d49565",
+    "tree": "95cee7e3d7577478a1125768bd384e0c9eaa176d",
+    "start_utc": "2026-10-12T12:28:03.501392+00:00",
+    "end_utc": "2026-10-12T12:38:54.569641+00:00",
+    "exit_code": 0,
+    "log_sha256": "9296a4f82bb7d80b528704558e2fd9b15ceb264caf95592e214ded820dcea640",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "linux-deny-all-features",
+    "command": [
+      "cargo",
+      "deny",
+      "--all-features",
+      "check"
+    ],
+    "cwd": "/home/canarit/concord_api-r8",
+    "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "sha": "060b74e8c397a45f72adf494c799650a795fa43a",
+    "tree": "81d840e5c4a4a6fa88b6215adcc168063f169675",
+    "start_utc": "2026-10-12T11:55:24.816002+00:00",
+    "end_utc": "2026-10-12T11:55:27.620914+00:00",
+    "exit_code": 4,
+    "log_sha256": "d3b76f0306b34ba9bc4c0fb36b81b330a35331f2520dfcf123247a8c1ffb934b",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "linux-deny-all-features2",
+    "command": [
+      "cargo",
+      "deny",
+      "--all-features",
+      "check"
+    ],
+    "cwd": "/home/canarit/concord_api-r8",
+    "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "sha": "cef236aa2502df5653d77de2975051b5a6d49565",
+    "tree": "95cee7e3d7577478a1125768bd384e0c9eaa176d",
+    "start_utc": "2026-10-12T12:29:08.178671+00:00",
+    "end_utc": "2026-10-12T12:29:11.382646+00:00",
+    "exit_code": 4,
+    "log_sha256": "d3b76f0306b34ba9bc4c0fb36b81b330a35331f2520dfcf123247a8c1ffb934b",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "linux-deny-default",
+    "command": [
+      "cargo",
+      "deny",
+      "check"
+    ],
+    "cwd": "/home/canarit/concord_api-r8",
+    "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "sha": "060b74e8c397a45f72adf494c799650a795fa43a",
+    "tree": "81d840e5c4a4a6fa88b6215adcc168063f169675",
+    "start_utc": "2026-10-12T12:00:26.984944+00:00",
+    "end_utc": "2026-10-12T12:00:30.937768+00:00",
+    "exit_code": 0,
+    "log_sha256": "bb8044b08dcd5ac053b4de12879b938d3b886c8875a13c1420cc72eeaba26efd",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "linux-deny-default2",
+    "command": [
+      "cargo",
+      "deny",
+      "check"
+    ],
+    "cwd": "/home/canarit/concord_api-r8",
+    "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "sha": "cef236aa2502df5653d77de2975051b5a6d49565",
+    "tree": "95cee7e3d7577478a1125768bd384e0c9eaa176d",
+    "start_utc": "2026-10-12T12:29:04.407555+00:00",
+    "end_utc": "2026-10-12T12:29:07.901331+00:00",
+    "exit_code": 0,
+    "log_sha256": "bb8044b08dcd5ac053b4de12879b938d3b886c8875a13c1420cc72eeaba26efd",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "linux-focused-current",
+    "command": [
+      "bash",
+      "-lc",
+      "cargo +1.97.1 test --locked -p concord-core --lib --all-features r8_ -- --nocapture && cargo +1.97.1 test --locked -p concord-extras --lib --all-features r8_ -- --nocapture && cargo +1.97.1 test --locked -p concord --test r8_oauth --all-features -- --nocapture"
+    ],
+    "cwd": "/home/canarit/concord_api-r8",
+    "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "sha": "99a0718e0c3fbe8d38c62e0c060bcd832c84aa14",
+    "tree": "b85e5a3960d0ad9b6994d804085612c9269baa58",
+    "start_utc": "2026-10-12T12:18:31.861788+00:00",
+    "end_utc": "2026-10-12T12:19:22.496356+00:00",
+    "exit_code": 101,
+    "log_sha256": "cd7352843cb14656047d4f88b85cbe5c32a784178909817e21b140c456cf31da",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "linux-implementation",
+    "command": [
+      "just",
+      "verify-implementation"
+    ],
+    "cwd": "/home/canarit/concord_api-r8",
+    "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "sha": "060b74e8c397a45f72adf494c799650a795fa43a",
+    "tree": "81d840e5c4a4a6fa88b6215adcc168063f169675",
+    "start_utc": "2026-10-12T11:53:47.975811+00:00",
+    "end_utc": "2026-10-12T12:16:11.404129+00:00",
+    "exit_code": 0,
+    "log_sha256": "c06ba89c944b9ec26e6a35e0a22d6f49a1013c3cd10b692cf87d22811efbd636",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "linux-implementation2",
+    "command": [
+      "just",
+      "verify-implementation"
+    ],
+    "cwd": "/home/canarit/concord_api-r8",
+    "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "sha": "cef236aa2502df5653d77de2975051b5a6d49565",
+    "tree": "95cee7e3d7577478a1125768bd384e0c9eaa176d",
+    "start_utc": "2026-10-12T12:26:21.001608+00:00",
+    "end_utc": "2026-10-12T12:38:28.498230+00:00",
+    "exit_code": 0,
+    "log_sha256": "1c83774281a4621e82671d4a40c8fadb596e26a98c52e3c7a2fd827abfb5f767",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "linux-ttl-fixture-corrected",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "test",
+      "--locked",
+      "-p",
+      "concord",
+      "--test",
+      "r8_oauth",
+      "--all-features",
+      "--",
+      "--nocapture"
+    ],
+    "cwd": "/home/canarit/concord_api-r8",
+    "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "sha": "cef236aa2502df5653d77de2975051b5a6d49565",
+    "tree": "95cee7e3d7577478a1125768bd384e0c9eaa176d",
+    "start_utc": "2026-10-12T12:25:30.843798+00:00",
+    "end_utc": "2026-10-12T12:25:38.142093+00:00",
+    "exit_code": 0,
+    "log_sha256": "7b512ea94b5067bcb25d2c7dc4d8b859af8f6c4f7c7aa23de3118e512bbbb430",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "setup-linux-fixture-fetch",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "fetch",
+      "--locked",
+      "--manifest-path",
+      "fixtures/Cargo.toml"
+    ],
+    "cwd": "/home/canarit/concord_api-r8",
+    "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "sha": "060b74e8c397a45f72adf494c799650a795fa43a",
+    "tree": "81d840e5c4a4a6fa88b6215adcc168063f169675",
+    "start_utc": "2026-10-12T11:53:09.800243+00:00",
+    "end_utc": "2026-10-12T11:53:10.229366+00:00",
+    "exit_code": 0,
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "setup-windows-fixture-fetch",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "fetch",
+      "--locked",
+      "--manifest-path",
+      "fixtures/Cargo.toml"
+    ],
+    "cwd": "G:/projects/concord_api-r8",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "09c560ad38b49021c5a10c80060674a45366fc3f",
+    "tree": "1497b8c163c44e0c5e9bcb2dd8e2d07af56f2517",
+    "start_utc": "2026-10-12T11:51:38.186666+00:00",
+    "end_utc": "2026-10-12T11:51:39.327723+00:00",
+    "exit_code": 0,
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "diff_sha256": "f8688ee262df42018d304f6f1cda6862a42e434bc865f7c321de3245f416c316"
+  },
+  {
+    "name": "windows-analyzer",
+    "command": [
+      "just",
+      "analyzer"
+    ],
+    "cwd": "G:/projects/concord_api-r8",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "060b74e8c397a45f72adf494c799650a795fa43a",
+    "tree": "81d840e5c4a4a6fa88b6215adcc168063f169675",
+    "start_utc": "2026-10-12T11:53:58.371627+00:00",
+    "end_utc": "2026-10-12T12:02:26.225177+00:00",
+    "exit_code": 0,
+    "log_sha256": "b7278ebbea73494c8bb2f5c01dd296a41c869d807c6545312dbcc4e9d6afd842",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "windows-analyzer2",
+    "command": [
+      "just",
+      "analyzer"
+    ],
+    "cwd": "G:/projects/concord_api-r8",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "cef236aa2502df5653d77de2975051b5a6d49565",
+    "tree": "95cee7e3d7577478a1125768bd384e0c9eaa176d",
+    "start_utc": "2026-10-12T12:27:35.435787+00:00",
+    "end_utc": "2026-10-12T12:33:28.305523+00:00",
+    "exit_code": 0,
+    "log_sha256": "dd2f2f49e0406863c7ed576e776c34c4275227baf4e83327fe84ead4458e8a79",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "windows-auxiliary",
+    "command": [
+      "pwsh",
+      "-NoLogo",
+      "-NoProfile",
+      "-Command",
+      "just package; if ($LASTEXITCODE) { exit $LASTEXITCODE }; just workflow; if ($LASTEXITCODE) { exit $LASTEXITCODE }; just deny; exit $LASTEXITCODE"
+    ],
+    "cwd": "G:/projects/concord_api-r8",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "060b74e8c397a45f72adf494c799650a795fa43a",
+    "tree": "81d840e5c4a4a6fa88b6215adcc168063f169675",
+    "start_utc": "2026-10-12T11:53:10.801719+00:00",
+    "end_utc": "2026-10-12T11:55:00.750568+00:00",
+    "exit_code": 0,
+    "log_sha256": "460a759f23142d18174b0786e4d14a6d3b59d10256a7dbd9459e264c216deae7",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "windows-auxiliary2",
+    "command": [
+      "pwsh",
+      "-NoLogo",
+      "-NoProfile",
+      "-Command",
+      "just package; if ($LASTEXITCODE) { exit $LASTEXITCODE }; just workflow; if ($LASTEXITCODE) { exit $LASTEXITCODE }; just deny; exit $LASTEXITCODE"
+    ],
+    "cwd": "G:/projects/concord_api-r8",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "cef236aa2502df5653d77de2975051b5a6d49565",
+    "tree": "95cee7e3d7577478a1125768bd384e0c9eaa176d",
+    "start_utc": "2026-10-12T12:28:51.106218+00:00",
+    "end_utc": "2026-10-12T12:29:53.652804+00:00",
+    "exit_code": 0,
+    "log_sha256": "efd8ec9a1b70c60dc7c69b6be908d3aaf59e6bcf6835ff2cd27d33a9f693d1de",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "windows-deny-all-features",
+    "command": [
+      "cargo",
+      "deny",
+      "--all-features",
+      "check"
+    ],
+    "cwd": "G:/projects/concord_api-r8",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "060b74e8c397a45f72adf494c799650a795fa43a",
+    "tree": "81d840e5c4a4a6fa88b6215adcc168063f169675",
+    "start_utc": "2026-10-12T11:53:20.966294+00:00",
+    "end_utc": "2026-10-12T11:53:32.349911+00:00",
+    "exit_code": 4,
+    "log_sha256": "c7c9e3a12f43f7bf9c1550141c1324fa2ff6fa51580d28f20bf1649989985c47",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "windows-deny-all-features2",
+    "command": [
+      "cargo",
+      "deny",
+      "--all-features",
+      "check"
+    ],
+    "cwd": "G:/projects/concord_api-r8",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "cef236aa2502df5653d77de2975051b5a6d49565",
+    "tree": "95cee7e3d7577478a1125768bd384e0c9eaa176d",
+    "start_utc": "2026-10-12T12:29:00.958874+00:00",
+    "end_utc": "2026-10-12T12:29:03.325481+00:00",
+    "exit_code": 4,
+    "log_sha256": "c7c9e3a12f43f7bf9c1550141c1324fa2ff6fa51580d28f20bf1649989985c47",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "windows-implementation",
+    "command": [
+      "just",
+      "verify-implementation"
+    ],
+    "cwd": "G:/projects/concord_api-r8",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "060b74e8c397a45f72adf494c799650a795fa43a",
+    "tree": "81d840e5c4a4a6fa88b6215adcc168063f169675",
+    "start_utc": "2026-10-12T11:52:29.365841+00:00",
+    "end_utc": "2026-10-12T12:01:48.212954+00:00",
+    "exit_code": 1,
+    "log_sha256": "4514aa05291ebd0b29c9683d11543eded12a3a6354c23ba820df8f272b7876ef",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "windows-implementation2",
+    "command": [
+      "just",
+      "verify-implementation"
+    ],
+    "cwd": "G:/projects/concord_api-r8",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "b1f960d227826efb4653aa2b591abe0512cf4c45",
+    "tree": "948755b65c83be060971dbcb54fba26042ddb0e9",
+    "start_utc": "2026-10-12T12:03:02.696361+00:00",
+    "end_utc": "2026-10-12T12:06:46.092115+00:00",
+    "exit_code": 1,
+    "log_sha256": "b578af1e0e153c0cbc2fea5a872ffdcea9fa35cc560e2fc391b7858c1f89ea01",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "windows-implementation3",
+    "command": [
+      "just",
+      "verify-implementation"
+    ],
+    "cwd": "G:/projects/concord_api-r8",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "99a0718e0c3fbe8d38c62e0c060bcd832c84aa14",
+    "tree": "b85e5a3960d0ad9b6994d804085612c9269baa58",
+    "start_utc": "2026-10-12T12:08:59.614156+00:00",
+    "end_utc": "2026-10-12T12:24:27.524548+00:00",
+    "exit_code": 1,
+    "log_sha256": "a33661e3cdff871e7878217718479ec420d5a2be2df062fd11e40ca3b158178c",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "windows-implementation4",
+    "command": [
+      "just",
+      "verify-implementation"
+    ],
+    "cwd": "G:/projects/concord_api-r8",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "cef236aa2502df5653d77de2975051b5a6d49565",
+    "tree": "95cee7e3d7577478a1125768bd384e0c9eaa176d",
+    "start_utc": "2026-10-12T12:26:11.322895+00:00",
+    "end_utc": "2026-10-12T12:50:42.182688+00:00",
+    "exit_code": 0,
+    "log_sha256": "72e80f644e32fdd1e63d2f693ffa5b60186067fa58fd54fed51ae39f7147b1a2",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "windows-line-ending-regression",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "test",
+      "--locked",
+      "-p",
+      "concord-examples",
+      "--test",
+      "baseline_recording",
+      "--all-features"
+    ],
+    "cwd": "G:/projects/concord_api-r8",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "b1f960d227826efb4653aa2b591abe0512cf4c45",
+    "tree": "948755b65c83be060971dbcb54fba26042ddb0e9",
+    "start_utc": "2026-10-12T12:03:38.179661+00:00",
+    "end_utc": "2026-10-12T12:05:10.789514+00:00",
+    "exit_code": 0,
+    "log_sha256": "50be3999a3b806980f1b7489d370bededb2d54adfe0f5ac96e71be6978691240",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "windows-line-ending-surface",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "test",
+      "--locked",
+      "-p",
+      "concord-macros",
+      "--lib",
+      "generated_public_members_match"
+    ],
+    "cwd": "G:/projects/concord_api-r8",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sha": "99a0718e0c3fbe8d38c62e0c060bcd832c84aa14",
+    "tree": "b85e5a3960d0ad9b6994d804085612c9269baa58",
+    "start_utc": "2026-10-12T12:08:10.113756+00:00",
+    "end_utc": "2026-10-12T12:08:24.534629+00:00",
+    "exit_code": 0,
+    "log_sha256": "800b80f552f62fca2f9d08f252499f024f6aeab7d56572522f040ede0743b3ef",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+]

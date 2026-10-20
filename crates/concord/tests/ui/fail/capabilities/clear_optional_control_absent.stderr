@@ -1,25 +1,25 @@
 error[E0599]: no method named `clear_locale` found for struct `ClearControlApiBuilder` in the current scope
-  --> tests/ui/fail/capabilities/clear_optional_control_absent.rs:14:40
+  --> tests/ui/fail/capabilities/clear_optional_control_absent.rs:18:40
    |
- 3 | / api! {
- 4 | |     client ClearControlApi {
- 5 | |         timeout 30s;
- 6 | |         base "https://example.test";
+ 5 | / api! {
+ 6 | |     client ClearControlApi {
+ 7 | |         timeout 30s;
+ 8 | |         base "https://example.test";
 ...  |
-11 | | }
+14 | | }
    | |_- method `clear_locale` not found for this struct
 ...
-14 |       let _ = ClearControlApi::builder().clear_locale();
+18 |       let _ = ClearControlApi::builder().clear_locale();
    |                                          ^^^^^^^^^^^^
    |
 help: there is a method `set_locale` with a similar name, but with different arguments
-  --> tests/ui/fail/capabilities/clear_optional_control_absent.rs:3:1
+  --> tests/ui/fail/capabilities/clear_optional_control_absent.rs:5:1
    |
- 3 | / api! {
- 4 | |     client ClearControlApi {
- 5 | |         timeout 30s;
- 6 | |         base "https://example.test";
+ 5 | / api! {
+ 6 | |     client ClearControlApi {
+ 7 | |         timeout 30s;
+ 8 | |         base "https://example.test";
 ...  |
-11 | | }
+14 | | }
    | |_^
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

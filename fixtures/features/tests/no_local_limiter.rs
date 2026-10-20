@@ -1,7 +1,6 @@
 #![forbid(unsafe_code)]
 
 use std::io;
-use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -12,8 +11,8 @@ use runtime::endpoint::{EndpointId, RuntimeEndpoint};
 use runtime::error::{ClientBuildErrorKind, ErrorCategory};
 use runtime::http::{Method, SafeProxy};
 use runtime::rate_limit::{
-    BoxFuture, NoopRateLimiter, RateLimitError, RateLimitId, RateLimitKey, RateLimitPermit,
-    RateLimitPolicy, RateLimitRequest, RateLimitResponse, RateLimitWindow, RateLimiter,
+    BoxFuture, Enforcement, LimiterCapability, NoopRateLimiter, RateLimitDeclaration,
+    RateLimitError, RateLimitPermit, RateLimitRequest, RateLimitResponse, RateLimiter,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -61,6 +60,10 @@ impl CapturingLimiter {
 }
 
 impl RateLimiter for CapturingLimiter {
+    fn capability(&self) -> LimiterCapability {
+        LimiterCapability::new(Enforcement::Local, "concord.fixture.capturing", 1)
+    }
+
     fn acquire<'a>(
         &'a self,
         request: RateLimitRequest<'a>,
@@ -150,20 +153,27 @@ async fn read_request(stream: &mut TcpStream) -> io::Result<()> {
     Ok(())
 }
 
-fn runtime_rule(id: &str, key: RateLimitKey, cost: u32, windows: &[(u32, u64)]) -> RateLimitPolicy {
-    RateLimitPolicy::new(
-        RateLimitId::new(id).expect("runtime rate ID"),
-        key,
-        NonZeroU32::new(cost).expect("positive runtime cost"),
-        windows.iter().map(|(capacity, seconds)| {
-            RateLimitWindow::new(
-                NonZeroU32::new(*capacity).expect("positive runtime capacity"),
-                Duration::from_secs(*seconds),
-            )
-            .expect("runtime window")
-        }),
-    )
-    .expect("runtime rule")
+/// One runtime rate declaration: the built-in `origin` dimension when
+/// `origin` is set, then the labelled custom parts, with its cost and windows.
+fn runtime_rule(
+    id: &str,
+    origin: bool,
+    parts: &[(&str, &str)],
+    cost: u32,
+    windows: &[(u32, u64)],
+) -> RateLimitDeclaration {
+    let mut declaration = RateLimitDeclaration::new(id).cost(cost);
+    for (capacity, seconds) in windows {
+        declaration = declaration.window(*capacity, Duration::from_secs(*seconds));
+    }
+    if origin {
+        declaration = declaration.origin();
+    }
+    for (label, value) in parts {
+        declaration = declaration.part(label, *value);
+    }
+    declaration.validate().expect("runtime rule");
+    declaration
 }
 
 fn canonical_text(value: &str) -> Vec<u8> {
@@ -181,7 +191,9 @@ fn empty_runtime_endpoint() -> RuntimeEndpoint<runtime::Binary, Bytes> {
         Method::GET,
     )
     .path("runtime-empty")
-    .accepted_bytes()
+    // v2.1 `.accepted_bytes()` selected the raw `Binary`/`Bytes` output; v3
+    // selects the output pair explicitly (§16.1 `.response::<R, O>()`).
+    .response::<runtime::Binary, Bytes>()
     .build()
     .expect("empty runtime endpoint")
 }
@@ -192,23 +204,24 @@ fn explicit_runtime_endpoint() -> RuntimeEndpoint<runtime::Binary, Bytes> {
         Method::GET,
     )
     .path("runtime-explicit")
+    // v2.1 allowed a keyless (global) runtime rule; the v3 declaration
+    // rejects an empty key (`RateLimitDeclaration::validate` -> InvalidKey),
+    // so the first rule is keyed by the built-in logical `origin` dimension.
     .rate_limit(runtime_rule(
-        "Runtime::global",
-        RateLimitKey::global(),
+        "Runtime::origin",
+        true,
+        &[],
         2,
         &[(5, 1), (20, 10)],
     ))
     .rate_limit(runtime_rule(
         "Runtime::parts",
-        RateLimitKey::from_canonical_values([
-            ("tenant", "fixture-tenant"),
-            ("region", "fixture-region"),
-        ])
-        .expect("runtime explicit key"),
+        false,
+        &[("tenant", "fixture-tenant"), ("region", "fixture-region")],
         3,
         &[(7, 2)],
     ))
-    .accepted_bytes()
+    .response::<runtime::Binary, Bytes>()
     .build()
     .expect("explicit runtime endpoint")
 }
@@ -264,10 +277,7 @@ async fn generated_clients_fail_closed_without_local_limiter_unless_limiter_is_d
     let generated_plan = limiter.plans.lock().expect("generated plan capture");
     assert_eq!(generated_plan.len(), 1);
     assert_eq!(generated_plan[0].len(), 1);
-    assert_eq!(
-        generated_plan[0][0].id,
-        "fixture.generated.limit"
-    );
+    assert_eq!(generated_plan[0][0].id, "fixture.generated.limit");
     assert_eq!(
         generated_plan[0][0].parts,
         [(
@@ -300,22 +310,31 @@ async fn generated_clients_fail_closed_without_local_limiter_unless_limiter_is_d
         })
         .build()
         .expect("empty runtime fallback client");
-    empty_runtime_endpoint()
-        .try_bind(&empty_runtime_client)
+    // v3 binds runtime endpoints at the owner projection (`owner.bind`).
+    empty_runtime_client
+        .bind(empty_runtime_endpoint())
         .expect("empty runtime endpoint binds")
         .await
         .expect("empty runtime fallback request");
     assert_eq!(server.request_count(), 4);
 
-    let nonempty_fallback = explicit_runtime_endpoint()
-        .try_bind(&empty_runtime_client)
-        .expect("rate-limited runtime endpoint binds")
-        .await;
-    let error = nonempty_fallback.expect_err("runtime fallback must fail before send");
-    assert_eq!(error.category(), ErrorCategory::RateLimit);
+    // v2.1 bound a rate-limited runtime endpoint on a client without a
+    // limiter selection and failed its execution before send with
+    // RateLimit/InvalidConfiguration. v3 (RATE-01, V3-R11: a missing limiter
+    // cannot bypass build/bind) rejects the binding itself, so the fallback
+    // still never reaches a send.
+    let error = match empty_runtime_client.bind(explicit_runtime_endpoint()) {
+        Ok(_) => panic!("a rate-limited runtime endpoint must not bind without a limiter"),
+        Err(error) => error,
+    };
+    assert_eq!(error.category(), ErrorCategory::Configuration);
     assert_eq!(
-        error.rate_limit_kind(),
-        Some(runtime::rate_limit::RateLimitErrorKind::InvalidConfiguration)
+        error.configuration_kind(),
+        Some(runtime::error::ConfigurationErrorKind::InvalidRateLimit)
+    );
+    assert_eq!(
+        error.dispatch_knowledge(),
+        runtime::DispatchKnowledge::NotDispatched
     );
     assert_eq!(server.request_count(), 4);
 
@@ -331,8 +350,8 @@ async fn generated_clients_fail_closed_without_local_limiter_unless_limiter_is_d
         })
         .build()
         .expect("custom runtime limiter client");
-    explicit_runtime_endpoint()
-        .try_bind(&custom_runtime_client)
+    custom_runtime_client
+        .bind(explicit_runtime_endpoint())
         .expect("rate-limited runtime endpoint binds")
         .await
         .expect("custom runtime request");
@@ -341,8 +360,11 @@ async fn generated_clients_fail_closed_without_local_limiter_unless_limiter_is_d
         runtime_limiter.plans.lock().expect("runtime capture")[0],
         [
             CapturedRule {
-                id: "Runtime::global".to_owned(),
-                parts: vec![],
+                id: "Runtime::origin".to_owned(),
+                parts: vec![(
+                    "origin".to_owned(),
+                    canonical_text("http://no-local-limiter-empty.example.test:80"),
+                )],
                 cost: 2,
                 windows: vec![(5, Duration::from_secs(1)), (20, Duration::from_secs(10))]
             },
@@ -366,8 +388,8 @@ async fn generated_clients_fail_closed_without_local_limiter_unless_limiter_is_d
         .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
         .build()
         .expect("no-op runtime client");
-    explicit_runtime_endpoint()
-        .try_bind(&noop_runtime_client)
+    noop_runtime_client
+        .bind(explicit_runtime_endpoint())
         .expect("rate-limited runtime endpoint binds")
         .await
         .expect("no-op runtime request");

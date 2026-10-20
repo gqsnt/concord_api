@@ -1,0 +1,101 @@
+error: [C3-PATH] a generated path template is relative: remove the leading `/` (path template of endpoint `LeadingSlashApi::read`, template bytes 0..1)
+  --> tests/ui/fail/syntax/path_template_errors.rs:13:47
+   |
+13 |         GET read() -> Bytes via Binary { path "/items"; }
+   |                                               ^^^^^^^^
+
+error: [C3-PATH] trailing slashes are not supported in generated path templates; remove the trailing `/` (path template of endpoint `TrailingSlashApi::read`, template bytes 5..6)
+  --> tests/ui/fail/syntax/path_template_errors.rs:21:47
+   |
+21 |         GET read() -> Bytes via Binary { path "items/"; }
+   |                                               ^^^^^^^^
+
+error: [C3-PATH] empty path segment (`//`) is not accepted; remove the doubled `/` (path template of endpoint `EmptySegmentApi::read`, template bytes 6..6)
+  --> tests/ui/fail/syntax/path_template_errors.rs:29:47
+   |
+29 |         GET read() -> Bytes via Binary { path "items//detail"; }
+   |                                               ^^^^^^^^^^^^^^^
+
+error: [C3-PATH] a path segment cannot be `.` or `..`; write the resolved relative path (path template of endpoint `DotSegmentApi::read`, template bytes 6..7)
+  --> tests/ui/fail/syntax/path_template_errors.rs:37:47
+   |
+37 |         GET read() -> Bytes via Binary { path "items/./detail"; }
+   |                                               ^^^^^^^^^^^^^^^^
+
+error: [C3-PATH] a path segment cannot contain a backslash; use a scalar value/adapter when it is intentional segment data (path template of endpoint `BackslashSegmentApi::read`, template bytes 5..6)
+  --> tests/ui/fail/syntax/path_template_errors.rs:45:47
+   |
+45 |         GET read() -> Bytes via Binary { path "items\\detail"; }
+   |                                               ^^^^^^^^^^^^^^^
+
+error: [C3-PATH] unmatched `}`; write `}}` for a literal brace (path template of endpoint `UnmatchedCloseApi::read`, template bytes 5..6)
+  --> tests/ui/fail/syntax/path_template_errors.rs:53:47
+   |
+53 |         GET read() -> Bytes via Binary { path "items}"; }
+   |                                               ^^^^^^^^
+
+error: [C3-PATH] unterminated `{` hole; write `{{` for a literal brace (path template of endpoint `UnterminatedHoleApi::read`, template bytes 6..9)
+  --> tests/ui/fail/syntax/path_template_errors.rs:61:57
+   |
+61 |         GET read(id: String) -> Bytes via Binary { path "items/{id"; }
+   |                                                         ^^^^^^^^^^^
+
+error: [C3-PATH] an empty `{}` hole must name a declared value; write `{name}` (path template of endpoint `EmptyHoleApi::read`, template bytes 6..8)
+  --> tests/ui/fail/syntax/path_template_errors.rs:69:47
+   |
+69 |         GET read() -> Bytes via Binary { path "items/{}"; }
+   |                                               ^^^^^^^^^^
+
+error: [C3-PATH] path hole `id` (template bytes 6..10) of endpoint `OptionalHoleApi::read` names an outer-optional value; a hole names a total value and cannot select optional structure, so declare the value total or emit it as a query/header
+  --> tests/ui/fail/syntax/path_template_errors.rs:77:58
+   |
+77 |         GET read(id?: String) -> Bytes via Binary { path "items/{id}"; }
+   |                                                          ^^^^^^^^^^^^
+
+error: note: the value is declared here
+  --> tests/ui/fail/syntax/path_template_errors.rs:77:18
+   |
+77 |         GET read(id?: String) -> Bytes via Binary { path "items/{id}"; }
+   |                  ^^
+
+error: [C3-PATH] a literal `?` or `#` in a path template looks like query/fragment syntax; use a scalar value/adapter when the character is intentional segment data (path template of endpoint `QueryMarkApi::read`, template bytes 5..6)
+  --> tests/ui/fail/syntax/path_template_errors.rs:85:47
+   |
+85 |         GET read() -> Bytes via Binary { path "items?view=full"; }
+   |                                               ^^^^^^^^^^^^^^^^^
+
+error: [C3-PATH] a literal `?` or `#` in a path template looks like query/fragment syntax; use a scalar value/adapter when the character is intentional segment data (path template of endpoint `FragmentMarkApi::read`, template bytes 5..6)
+  --> tests/ui/fail/syntax/path_template_errors.rs:93:47
+   |
+93 |         GET read() -> Bytes via Binary { path "items#top"; }
+   |                                               ^^^^^^^^^^^
+
+error: [C3-PATH] a hole cannot contain braces; name a Rust type alias for a brace-delimited const-generic adapter (path template of endpoint `BracedAdapterApi::read`, template bytes 6..23)
+   --> tests/ui/fail/syntax/path_template_errors.rs:101:57
+    |
+101 |         GET read(id: String) -> Bytes via Binary { path "items/{id via Pad<{ 4 }>}"; }
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: [C3-PATH] a hole names one declared total value: `{name}`, `{owner.name}` or `{name via Adapter}`; it cannot evaluate expressions or select optional structure (path template of endpoint `TwoHoleReferenceApi::read`, template bytes 6..16)
+   --> tests/ui/fail/syntax/path_template_errors.rs:109:72
+    |
+109 |         GET read(id: String, other: String) -> Bytes via Binary { path "items/{id other}"; }
+    |                                                                        ^^^^^^^^^^^^^^^^^^
+
+error: [C3-PATH] a hole names one declared total value: `{name}`, `{owner.name}` or `{name via Adapter}`; it cannot evaluate expressions or select optional structure (path template of endpoint `EachHoleApi::read`, template bytes 6..16)
+   --> tests/ui/fail/syntax/path_template_errors.rs:117:63
+    |
+117 |         GET read(ids: Vec<String>) -> Bytes via Binary { path "items/{each ids}"; }
+    |                                                               ^^^^^^^^^^^^^^^^^^
+
+error: [C3-PATH] a generated path template is relative: remove the leading `/` (path template of scope `ReplaceTemplateApi::s`, template bytes 0..1)
+   --> tests/ui/fail/syntax/path_template_errors.rs:127:26
+    |
+127 |             path replace "/root";
+    |                          ^^^^^^^
+
+error: [C3-MIGRATE] v2 path atom lists were replaced by a relative template string: `path ["items", endpoint.id]` becomes `path "items/{id}";` (in endpoint `PathListApi::read`)
+   --> tests/ui/fail/syntax/path_template_errors.rs:138:57
+    |
+138 |         GET read(id: String) -> Bytes via Binary { path ["items", id]; }
+    |                                                         ^

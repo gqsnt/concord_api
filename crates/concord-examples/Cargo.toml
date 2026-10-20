@@ -4,6 +4,8 @@ description = "Compile-checked product examples for Concord"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 publish = false
 
 [features]
@@ -21,7 +23,7 @@ tokio = ["dep:tokio"]
 riot-live = ["json", "rate-limit", "default-tls", "http2", "tokio"]
 
 [dependencies]
-concord = { version = "=2.1.0-beta.1", path = "../concord", default-features = false }
+concord = { version = "=3.0.0-beta.1", path = "../concord", default-features = false }
 futures-core.workspace = true
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }

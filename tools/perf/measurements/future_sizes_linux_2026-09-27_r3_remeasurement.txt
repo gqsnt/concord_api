@@ -1,0 +1,246 @@
+Concord execution-future layout, r3 remeasurement (V3-O07; review 3 section 7 and the R3 instructions): the
+deterministic size probe for v2.1, the reviewed v3 (4c7b894) and the corrected v3 (1477d3a; and 2b82432, see below),
+recorded verbatim from real runs.
+
+File name: the requested name future_sizes_linux_2026-09-27_r3.txt is already taken, on the same date, by the
+layout-correction record, which is kept unchanged; this remeasurement is
+future_sizes_linux_2026-09-27_r3_remeasurement.txt. The warm, first-use and scale companions are
+head_cost_/first_use_/expansion_scale_linux_2026-09-27_r3.txt; the attribution is in ATTRIBUTION.md, section "r3
+remeasurement". These are measurements, not a performance acceptance.
+
+Probe method (future_sizes.rs, unchanged): size_of_val of the boxed `IntoFuture` operation future of
+`ExecApi::bounded()`, and the client-thread allocation count/bytes of one warm keep-alive loopback execution
+(allocation-counter; 50 warm-up + 200 counted). Both are deterministic for a tree + toolchain + target; each
+executable was run twice (block A) and once more after the 2b82432 build (block B) with identical output.
+
+Host:        Linux 6.18.44-fc-v37 x86_64, Intel(R) Xeon(R) Processor @ 2.80GHz, 2 CPUs, 7 GiB RAM. The r2 records
+             name an "@ 2.10GHz" model string on this host name: the underlying CPU differs, so absolute times are
+             NOT comparable with the r2 files; only same-session comparisons below are meaningful. The only job on
+             the host (no other cargo/rustc process during any timed block); load averages before/after every
+             block are in the logs.
+Toolchain:   rustc 1.95.0 (59807616e 2026-04-14), cargo 1.95.0 (f2d3ce0bd 2026-03-21), RUSTUP_TOOLCHAIN=stable
+Env:         CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2 (offline, vendored); CARGO_TARGET_DIR=/home/claude/targets/r3perf/<tree>,
+             ONE SUBDIRECTORY PER TREE. A first build block with the single shared directory
+             /home/claude/targets/r3perf was discarded: the reviewed-v3 export (same package names and versions,
+             same workspace-relative layout as the worktree) finished in 0.16 s and produced executables
+             byte-identical to the worktree's, i.e. cargo reused the worktree's artifacts for the export (path
+             packages hash workspace-relative paths and the dep-info still pointed at the unchanged worktree
+             sources). With one target directory per tree every tree is built from its own sources: the rebuilt
+             4c7b894 head_cost and head_first_use executables are byte-identical to the r2 v3 executables
+             (sha256 b4c58648..., c6935488...), the v2.1 ones to the r2 v2.1 executables (d6a56267..., 76d1d3ab...).
+Profile:     probes `--release` (as r2); expansion_scale probe debug (as r2); executables copied aside after each
+             build (sha256 below)
+
+Trees (built with the same toolchain, features, targets and workload in one session):
+  v2.1     `git archive baseline-v2.1` = eefca26c80ffe67ab5b70d6605cc713d63549b89 (unmodified v2.1 export) in
+           <scratch>/r3/v21, plus byte-identical copies of tools/perf/src/bin/head_cost.rs, head_first_use.rs,
+           future_sizes.rs and declaration_v2_1.rs.txt (as src/head_cost/declaration.rs), as r2 did
+  4c7b894  "reviewed v3": `git archive 4c7b894` (4c7b894d3998cc6952a10f6547a1aca0a236c0af) in <scratch>/r3/v3r.
+           head_first_use.rs is PRESENT there (byte-identical, not copied); future_sizes.rs is ABSENT there and was
+           copied byte-identically. Its crates/ are byte-identical to r2's measured 89b2cbc (`git diff --stat
+           89b2cbc 4c7b894 -- crates tools/perf/src tools/perf/benches` is empty).
+  1477d3a  "corrected v3": this worktree at 1477d3aceec2f1fb91bc2c74a01bcfec88a3f78a (branch v3-implementation
+           HEAD at the start of r3), clean (0 modified/untracked paths); includes the R3 layout correction in
+           crates/concord-core/src/execute/mod.rs. No probe change was needed (future_sizes.rs and
+           head_first_use.rs are committed), so nothing was committed before measuring.
+  2b82432  1477d3a + one product commit made in this remeasurement (crates/concord-core/src/redaction/names.rs:
+           allocation-free sensitive-name classification, plus a differential test; ATTRIBUTION.md "r3
+           remeasurement"), clean (0 modified/untracked paths); measured in a second block after the change,
+           again against v2.1, 4c7b894 and 1477d3a (the 1477d3a executables were kept aside).
+  <scratch> = /tmp/claude-0/-home-claude/6530d60a-7b79-5289-b9df-b4352bdedc76/scratchpad (deleted afterwards)
+
+Benchmark-relevant source differences between the trees:
+  $ git diff --stat 4c7b894 1477d3a -- crates tools/perf/src tools/perf/benches
+   crates/concord-core/src/execute/mod.rs |  63 +++++++++++-------
+   tools/perf/src/bin/future_sizes.rs     | 114 +++++++++++++++++++++++++++++++++
+   2 files changed, 155 insertions(+), 22 deletions(-)
+  $ git diff --stat 4c7b894 2b82432 -- crates tools/perf/src tools/perf/benches
+   crates/concord-core/src/execute/mod.rs             |  63 ++++++++----
+   crates/concord-core/src/redaction/names.rs         |  36 +++++--
+   .../src/redaction/tests/redaction_matrix.rs        |  63 ++++++++++++
+   tools/perf/src/bin/future_sizes.rs                 | 114 +++++++++++++++++++++
+   4 files changed, 244 insertions(+), 32 deletions(-)
+  (the other 4c7b894..1477d3a commits touch tools/xtask, docs and tests only; v2.1 differs everywhere)
+
+Probe sources (sha256; identical copies in every tree, see the setup log):
+  c2855474bcd351b65961189e7ae1282c95f1d864b0cf874049ed5e33cb8d60a1  tools/perf/src/bin/head_cost.rs
+  65f59778485ce7a27e473d06c9432268b812cf49bbd4e0b4cca522f7d65f80ca  tools/perf/src/bin/head_first_use.rs
+  ab3266847045a1260cb289f39e9bd78f93e644d23077a5ef43193aa1e5e34522  tools/perf/src/bin/future_sizes.rs
+  ee13eb820326b1e7247f25e538adf8f616e5e162236a514a30bca046d692fb42  tools/perf/src/bin/expansion_scale.rs
+  6a3c41fc23a82fbd3bdedb945b12bd6791b2d010f94a01cb21a752e250f10082  tools/perf/src/head_cost/declaration.rs
+  9d521734c4e491909b5d9020339e0c195c8d043f713edd6050c52d77ea1bfdd2  tools/perf/src/head_cost/declaration_v2_1.rs.txt
+  (unchanged since r2 except future_sizes.rs, which is new in r3)
+
+====================================================================================================================
+Verbatim log: setup (exports, probe copies, hashes)
+====================================================================================================================
+future_sizes.rs absent in 4c7b894: copied
+head_first_use present in 4c7b894 (not copied)
+c2855474bcd351b65961189e7ae1282c95f1d864b0cf874049ed5e33cb8d60a1  tools/perf/src/bin/head_cost.rs
+65f59778485ce7a27e473d06c9432268b812cf49bbd4e0b4cca522f7d65f80ca  tools/perf/src/bin/head_first_use.rs
+ab3266847045a1260cb289f39e9bd78f93e644d23077a5ef43193aa1e5e34522  tools/perf/src/bin/future_sizes.rs
+ee13eb820326b1e7247f25e538adf8f616e5e162236a514a30bca046d692fb42  tools/perf/src/bin/expansion_scale.rs
+6a3c41fc23a82fbd3bdedb945b12bd6791b2d010f94a01cb21a752e250f10082  tools/perf/src/head_cost/declaration.rs
+9d521734c4e491909b5d9020339e0c195c8d043f713edd6050c52d77ea1bfdd2  tools/perf/src/head_cost/declaration_v2_1.rs.txt
+c2855474bcd351b65961189e7ae1282c95f1d864b0cf874049ed5e33cb8d60a1  <scratch>/r3/v21/tools/perf/src/bin/head_cost.rs
+65f59778485ce7a27e473d06c9432268b812cf49bbd4e0b4cca522f7d65f80ca  <scratch>/r3/v21/tools/perf/src/bin/head_first_use.rs
+ab3266847045a1260cb289f39e9bd78f93e644d23077a5ef43193aa1e5e34522  <scratch>/r3/v21/tools/perf/src/bin/future_sizes.rs
+70e268fed3892b9f7628bb01e190f07b1911df40e697162712f00bdf61394185  <scratch>/r3/v21/tools/perf/src/bin/expansion_scale.rs
+9d521734c4e491909b5d9020339e0c195c8d043f713edd6050c52d77ea1bfdd2  <scratch>/r3/v21/tools/perf/src/head_cost/declaration.rs
+c2855474bcd351b65961189e7ae1282c95f1d864b0cf874049ed5e33cb8d60a1  <scratch>/r3/v3r/tools/perf/src/bin/head_cost.rs
+65f59778485ce7a27e473d06c9432268b812cf49bbd4e0b4cca522f7d65f80ca  <scratch>/r3/v3r/tools/perf/src/bin/head_first_use.rs
+ab3266847045a1260cb289f39e9bd78f93e644d23077a5ef43193aa1e5e34522  <scratch>/r3/v3r/tools/perf/src/bin/future_sizes.rs
+ee13eb820326b1e7247f25e538adf8f616e5e162236a514a30bca046d692fb42  <scratch>/r3/v3r/tools/perf/src/bin/expansion_scale.rs
+6a3c41fc23a82fbd3bdedb945b12bd6791b2d010f94a01cb21a752e250f10082  <scratch>/r3/v3r/tools/perf/src/head_cost/declaration.rs
+9d521734c4e491909b5d9020339e0c195c8d043f713edd6050c52d77ea1bfdd2  <scratch>/r3/v3r/tools/perf/src/head_cost/declaration_v2_1.rs.txt
+
+====================================================================================================================
+Verbatim log: builds, block A (one target directory per tree)
+====================================================================================================================
+measured commits and status (git, run in the worktree before each block):
+  $ git rev-parse HEAD            -> 1477d3aceec2f1fb91bc2c74a01bcfec88a3f78a   (blocks A of every file, scale session A)
+  $ git status --porcelain | wc -l -> 0
+  $ git rev-parse HEAD            -> 2b82432cc419f06b113b1efd976e4e109746b7bd   (blocks B/C, scale session B)
+  $ git status --porcelain | wc -l -> 0
+  2b82432 = 1477d3a + "perf(redaction): classify sensitive names without a normalized copy" (committed before
+  its block, after `cargo test -p concord-core --lib --all-features` 897 passed, `cargo test -p concord
+  --all-features --test generated --test runtime` 168 + 73 passed, `cargo test -p concord-perf --test
+  owner_snapshots` 3 passed, `cargo clippy -p concord-core --all-features --all-targets -- -D warnings` and
+  `cargo fmt --all -- --check` clean, all exit 0). The commit adding this file changes only
+  tools/perf/measurements/.
+
+host: Linux 6.18.44-fc-v37 x86_64; model name	: Intel(R) Xeon(R) Processor @ 2.80GHz; 2 CPUs; 7 GiB RAM
+toolchain: rustc 1.95.0 (59807616e 2026-04-14); cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+env: RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=/home/claude/targets/r3perf/<tree> CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2
+== builds (uptime:  06:24:48 up  1:51,  0 user,  load average: 1.06, 0.89, 0.64)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3c cargo build --release --locked -p concord-perf --bin head_cost --bin head_first_use --bin future_sizes
+    Finished `release` profile [optimized] target(s) in 1m 24s
+[build-v3c] exit 0
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3c cargo build --locked -p concord-perf --bin expansion_scale
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 36.46s
+[build-v3c-scale] exit 0
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3r cargo build --release --locked --offline --manifest-path <scratch>/r3/v3r/Cargo.toml -p concord-perf --bin head_cost --bin head_first_use --bin future_sizes
+    Finished `release` profile [optimized] target(s) in 1m 25s
+[build-v3r] exit 0
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3r cargo build --locked --offline --manifest-path <scratch>/r3/v3r/Cargo.toml -p concord-perf --bin expansion_scale
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 37.13s
+[build-v3r-scale] exit 0
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v21 cargo build --release --locked --offline --manifest-path <scratch>/r3/v21/Cargo.toml -p concord-perf --bin head_cost --bin head_first_use --bin future_sizes
+    Finished `release` profile [optimized] target(s) in 1m 14s
+[build-v21] exit 0
+executables copied aside:
+3358d235b3be0ee332c5f810a51afd0528eb02b22246d77eab23da56915b5f60  <scratch>/r3/bin/expansion_scale_v3c
+1f00a7c2163698e1a6eb04e1a859cd162d372e9df88686d2feacf021dff0b957  <scratch>/r3/bin/expansion_scale_v3r
+4208946d0911f5b106ca3a986a374faa182cc3725a2430d876523a619a116cb0  <scratch>/r3/bin/future_sizes_v21
+80813f690ec92c5913324ab09db01e1d55853849724a291122847805c76ab54c  <scratch>/r3/bin/future_sizes_v3c
+d516b2a25b5bd75ff7b4082f487ede4a584e72ec3df794660e2c15857a9103f0  <scratch>/r3/bin/future_sizes_v3r
+d6a562677033587a9c90b96249b3d7ed9f940531b254d3952f93116bdb573b30  <scratch>/r3/bin/head_cost_v21
+a1a6e0e2cf92a3b4526110c7d87122c8fa0e5c49c5ce6453e6a2b621cad7d599  <scratch>/r3/bin/head_cost_v3c
+b4c586484cd4a4618ad7994aa216b13a9d2b434b3524aeafd7a4737ba9065deb  <scratch>/r3/bin/head_cost_v3r
+76d1d3ab6f03443ff038592577616f50597a51eb009c214dbba2f00c0d53d859  <scratch>/r3/bin/head_first_use_v21
+071e07b8bc4492ffb59f7a988bf70b8df4be53bd468ef117ac4f0c19833e56a5  <scratch>/r3/bin/head_first_use_v3c
+c693548865b5686232b192656c120bd613dff3938ab1ccc800c563068ee0a7ee  <scratch>/r3/bin/head_first_use_v3r
+== builds done (uptime:  06:30:07 up  1:57,  0 user,  load average: 2.17, 1.74, 1.10)
+
+====================================================================================================================
+Verbatim log: build of 2b82432 (block B; the other trees reuse the block-A executables)
+====================================================================================================================
+== build (uptime:  07:28:49 up  2:55,  0 user,  load average: 1.07, 1.02, 0.98)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3c cargo build --release --locked -p concord-perf --bin head_cost --bin head_first_use --bin future_sizes
+    Finished `release` profile [optimized] target(s) in 24.06s
+[build-v3n] exit 0
+b77e47a05d243baa4057fee6fcc17219d5a64fface5a666204772869bb260aa1  <scratch>/r3/bin/future_sizes_v3n
+08161d0af6e95d1db702bb8a574b47b15a844843cd825c0373a7843372191377  <scratch>/r3/bin/head_cost_v3n
+55b010d472014d5407368b80c0e4523837c8d84f8fedb72223772c4d444cce8f  <scratch>/r3/bin/head_first_use_v3n
+== build done (uptime:  07:29:13 up  2:56,  0 user,  load average: 1.54, 1.13, 1.02)
+
+====================================================================================================================
+Verbatim log: block A
+====================================================================================================================
+== future_sizes (uptime before:  06:30:23 up  1:57,  0 user,  load average: 1.69, 1.65, 1.08)
+== future_sizes rep 1: v21
+$ <scratch>/r3/bin/future_sizes_v21
+concord-perf 2.1.0-beta.1 future-sizes probe (warmup 50, batch 200)
+boxed operation future (IntoFuture, ExecApi::bounded): 4624 B
+managed execution, client thread: 63.00 allocations/op, 24647.00 bytes/op
+[future_sizes rep 1 v21] exit 0
+== future_sizes rep 1: v3r
+$ <scratch>/r3/bin/future_sizes_v3r
+concord-perf 3.0.0-beta.1 future-sizes probe (warmup 50, batch 200)
+boxed operation future (IntoFuture, ExecApi::bounded): 7616 B
+managed execution, client thread: 63.00 allocations/op, 27991.00 bytes/op
+[future_sizes rep 1 v3r] exit 0
+== future_sizes rep 1: v3c
+$ <scratch>/r3/bin/future_sizes_v3c
+concord-perf 3.0.0-beta.1 future-sizes probe (warmup 50, batch 200)
+boxed operation future (IntoFuture, ExecApi::bounded): 5840 B
+managed execution, client thread: 63.00 allocations/op, 26215.00 bytes/op
+[future_sizes rep 1 v3c] exit 0
+== future_sizes rep 2: v21
+$ <scratch>/r3/bin/future_sizes_v21
+concord-perf 2.1.0-beta.1 future-sizes probe (warmup 50, batch 200)
+boxed operation future (IntoFuture, ExecApi::bounded): 4624 B
+managed execution, client thread: 63.00 allocations/op, 24647.00 bytes/op
+[future_sizes rep 2 v21] exit 0
+== future_sizes rep 2: v3r
+$ <scratch>/r3/bin/future_sizes_v3r
+concord-perf 3.0.0-beta.1 future-sizes probe (warmup 50, batch 200)
+boxed operation future (IntoFuture, ExecApi::bounded): 7616 B
+managed execution, client thread: 63.00 allocations/op, 27991.00 bytes/op
+[future_sizes rep 2 v3r] exit 0
+== future_sizes rep 2: v3c
+$ <scratch>/r3/bin/future_sizes_v3c
+concord-perf 3.0.0-beta.1 future-sizes probe (warmup 50, batch 200)
+boxed operation future (IntoFuture, ExecApi::bounded): 5840 B
+managed execution, client thread: 63.00 allocations/op, 26215.00 bytes/op
+[future_sizes rep 2 v3c] exit 0
+== future_sizes done (uptime after:  06:30:23 up  1:57,  0 user,  load average: 1.69, 1.65, 1.08)
+
+====================================================================================================================
+Verbatim log: block B (after the 2b82432 build)
+====================================================================================================================
+== future_sizes (uptime before:  07:30:36 up  2:57,  0 user,  load average: 0.41, 0.86, 0.93)
+== future_sizes rep 1: v21
+$ <scratch>/r3/bin/future_sizes_v21
+concord-perf 2.1.0-beta.1 future-sizes probe (warmup 50, batch 200)
+boxed operation future (IntoFuture, ExecApi::bounded): 4624 B
+managed execution, client thread: 63.00 allocations/op, 24647.00 bytes/op
+[future_sizes rep 1 v21] exit 0
+== future_sizes rep 1: v3r
+$ <scratch>/r3/bin/future_sizes_v3r
+concord-perf 3.0.0-beta.1 future-sizes probe (warmup 50, batch 200)
+boxed operation future (IntoFuture, ExecApi::bounded): 7616 B
+managed execution, client thread: 63.00 allocations/op, 27991.00 bytes/op
+[future_sizes rep 1 v3r] exit 0
+== future_sizes rep 1: v3c
+$ <scratch>/r3/bin/future_sizes_v3c
+concord-perf 3.0.0-beta.1 future-sizes probe (warmup 50, batch 200)
+boxed operation future (IntoFuture, ExecApi::bounded): 5840 B
+managed execution, client thread: 63.00 allocations/op, 26215.00 bytes/op
+[future_sizes rep 1 v3c] exit 0
+== future_sizes rep 1: v3n
+$ <scratch>/r3/bin/future_sizes_v3n
+concord-perf 3.0.0-beta.1 future-sizes probe (warmup 50, batch 200)
+boxed operation future (IntoFuture, ExecApi::bounded): 5840 B
+managed execution, client thread: 63.00 allocations/op, 26215.00 bytes/op
+[future_sizes rep 1 v3n] exit 0
+== future_sizes done (uptime after:  07:30:36 up  2:57,  0 user,  load average: 0.41, 0.86, 0.93)
+
+================================================================================================================
+Derived comparison
+================================================================================================================
+
+| tree                         | boxed operation future | allocations/op | bytes/op | bytes vs v2.1     | bytes vs 4c7b894 |
+|------------------------------|-----------------------:|---------------:|---------:|-------------------|------------------|
+| v2.1 (eefca26)               |                4,624 B |             63 |   24,647 |                   |                  |
+| reviewed v3 (4c7b894)        |                7,616 B |             63 |   27,991 | +3,344 (+13.6%)   |                  |
+| corrected v3 (1477d3a)       |                5,840 B |             63 |   26,215 | +1,568 (+6.4%)    | -1,776 (-6.3%)   |
+| 2b82432 (1477d3a + names.rs) |                5,840 B |             63 |   26,215 | +1,568 (+6.4%)    | -1,776 (-6.3%)   |
+
+- All three trees reproduce the earlier r3 layout record exactly (4,624 / 7,616 / 5,840 B; 24,647 / 27,991 /
+  26,215 B/op), now built from three separate trees in one session with one target directory per tree.
+- The execution delta falls by exactly the boxed-future reduction (-1,776 B) at an unchanged count; the other 62
+  allocations are unchanged in total. The remaining +1,568 B/op versus v2.1 are +1,216 B of boxed operation
+  future and +352 B of buffered-acquisition future (attribution: ATTRIBUTION.md, "r3 layout correction").
+- 2b82432 changes no execution byte or allocation (callgrind of head_cost: the sensitive-name classifier it
+  changes is called by plan rendering and the contract build, not by the managed execution path).

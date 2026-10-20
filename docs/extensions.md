@@ -1,161 +1,564 @@
-# Extensions and `concord-extras`
+# Extensions
 
-An extension is a public language. Each extension varies one semantic decision while core retains native execution, ordering, private authority, and finite resources.
+Concord's extension points are narrow semantic roles. Each receives only the
+facts and authority its role needs; none can obtain a native request or
+response, forge a binding, read other credentials or bypass the executor
+(§17).
 
-## General extension contract
+## Role contract matrix
 
-Every public extension documents:
+| Role | Legitimate inputs and decisions | Forbidden authority |
+|---|---|---|
+| `RequestAtom` / `AtomEncoder<T>` | one value, a bounded scalar writer | presence, repetition, native URL, body, retry or credential choices |
+| `OrderedValues` | a stable borrowed sequence order | implicit protocol emission or unordered-map iteration semantics |
+| `RequestRepresentation<I>` | the exact body input, body limit, validated ID and method; one managed `PreparedBody` | reading auth, rate or the native request; a conflicting transport header |
+| `ResponseRepresentation<O>` | the accepted head and the core-driver body; a typed output | changing accepted status or contact evidence; a new native driver |
+| `PaginationController<P>` | the complete page, declared bounded metadata, the remaining item budget; the next state and items | mutating unmapped values, origin, auth, rate, time or effect; sending |
+| `CredentialProvider` | protected source material and reason, bounded `ProviderHttp` to declared origins | the application client, other credential slots, undeclared helper origins |
+| `RateLimiter` | the complete protected key plan; typed admission and feedback | bodies, credentials, raw headers; changing the current result in feedback |
+| `RetryClassifier` | sanitized semantic failure facts | declaring dispatch certainty or bypassing effect, replay or deadline gates |
+| `OperationObserver` | bounded sanitized borrowed facts | mutation, veto, retries, asynchronous work through core |
 
-- semantic role and who consumes it;
-- exact inputs and information classification;
-- decisions/mutations it may perform;
-- state it may retain;
-- synchronous/async/cancellation obligations;
-- resource bounds;
-- stable error contract;
-- concurrency/`Send`/`Sync` semantics;
-- properties core still guarantees;
-- negative capabilities;
-- compatibility/sealing policy.
+Every public trait's rustdoc describes ownership, concurrency, cancellation,
+input sensitivity, error behavior, resource obligations and negative
+capabilities (EXT-01) in one `# Extension contract` section with those seven
+labelled bullets; `docs-check` fails when a public `concord-core` or
+`concord-extras` trait lacks any of them. Synchronous methods are trusted to
+be prompt, bounded and side-effect-free; asynchronous roles are polled under
+finite deadlines, and dropping their futures cannot roll back completed
+outside effects. Core bounds wire bytes, not a custom decoder's arbitrary heap
+use.
 
-No universal context, native request/response, arbitrary header map, or runtime mutation map.
+## Atoms and adapters
 
-## Synchronous trust boundary
+A type owns its canonical protocol spelling with `RequestAtom`; an explicit
+`AtomEncoder<T>` adapter chooses another spelling at one use, selected with
+`via` (for example `path "reports/{date via IsoDate}"`):
 
-Synchronous extension methods must terminate promptly, bound CPU/allocation, avoid blocking/external I/O, and avoid detached work. Core checks deadlines before/after but cannot preempt arbitrary Rust code.
+<!-- concord-source: crates/concord-examples/src/docs_spec.rs#atom_encoder_extension -->
+```rust
+/// A calendar day rendered by the explicit [`IsoDate`] path adapter.
+pub struct Day {
+    /// Four-digit year.
+    pub year: u16,
+    /// Month, 1-12.
+    pub month: u8,
+    /// Day of month, 1-31.
+    pub day: u8,
+}
 
-Async extension futures are polled under the remaining deadline/role cap and must be cancellation-safe.
+/// Explicit atom adapter rendering a [`Day`] as `YYYY-MM-DD`.
+pub struct IsoDate;
 
-## `RequestAtom`
-
-Owns one canonical public scalar representation. It does not decide URL context, omission, repetition, rate identity, body encoding, auth, or retry.
-
-Extras may provide:
-
-- `DisplayAtom` explicit compatibility adapter;
-- common time/ID/enum adapters;
-- bounded joined-collection adapters.
-
-Do not provide a blanket `Display` implementation.
-
-## `OrderedValues`
-
-Owns stable by-reference sequence order for `each`. It grants no query/header behavior until source explicitly writes `each`.
-
-Implement for clearly ordered standard sequences, not unordered maps/sets or every `IntoIterator`.
-
-## Request representation
-
-`RequestRepresentation<Input>` owns input-to-managed-body conversion, media metadata, and declared replay/page capabilities. It does not see public route/auth/rate/native request.
-
-Core owns body invocation count, limits, cancellation, visible attempt reconstruction, and native adaptation.
-
-## Response representation
-
-`ResponseRepresentation<Output>` owns accepted-head media validation and conversion through a supported sealed core driver. It does not own status acceptance or native response polling.
-
-Core owns acquisition modes, bytes/records/progress, cancellation, streams, and status order.
-
-## Sealed driver families
-
-Core may support a finite internal algebra:
-
-```text
-CompleteDocument
-CompleteBytes
-CollectRecords
-StreamRecords
-StreamBytes
-ValidateEmpty
-DiscardBody
+impl AtomEncoder<Day> for IsoDate {
+    fn write(value: &Day, out: &mut BoundedAtomWriter<'_>) -> Result<(), AtomError> {
+        out.push_str(&format!(
+            "{:04}-{:02}-{:02}",
+            value.year, value.month, value.day
+        ))
+    }
+}
 ```
 
-External representations may configure/select supported semantic adapters but cannot implement a driver that bypasses core.
+The writer checks every prospective append against the 65,536-byte atom limit
+before retaining it. Encoders must be deterministic, prompt and side-effect-free:
+plans and executions encode separately. `OrderedValues` supplies by-reference
+stable iteration for `each` (slices, arrays, vectors); give an unordered
+collection an explicit deterministic adapter.
 
-## Credential provider
+## Request representations
 
-Receives one acquisition reason, optional current material for refresh, isolated provider HTTP, and remaining deadline. It owns one credential-source protocol only.
+A full representation has one authority, `prepare`:
 
-No application client, endpoint body/output, limiter, observer, native request, or final application URL.
+<!-- concord-source: crates/concord-examples/src/request_response/specifications.rs#request_body_spec_extension -->
+```rust
+/// A raw-bytes request representation without a media type.
+pub struct ExampleRequestSpec;
 
-## Retry classifier
+impl RequestRepresentation<Bytes> for ExampleRequestSpec {
+    fn prepare(input: Bytes, _context: RequestBodyContext<'_>) -> Result<PreparedBody, BodyError> {
+        Ok(PreparedBody::bytes(input))
+    }
+}
+```
 
-Receives bounded semantic failure facts and recommends whether a policy retry is useful. Rejected-status input contains status and the standard parsed server delay, never arbitrary response headers. It cannot grant authority. Core still applies effect, dispatch, body, count, load-budget, and deadline gates.
+Return `PreparedBody::bytes`, `empty`, `stream`, `factory` or `multipart`, and
+set the exact media type once with `.content_type(..)`. Opt into
+`PageRequestRepresentation<I>` only when repeated preparations from the same
+captured input produce the same semantic body and media type. See
+[Request bodies](request_bodies.md).
 
-## Rate limiter
+## Response representations
 
-Receives complete effective policy plan, protected canonical keys, cost/windows, IDs, and deadline/cancellation. Admission may wait/reject/fail. Feedback is limited to typed status/server-delay/plan/attempt facts, is non-fallible for the current result, and only influences future policy state.
+<!-- concord-source: crates/concord-examples/src/request_response/specifications.rs#response_body_spec_extension -->
+```rust
+/// A buffered representation returning the accepted body length.
+pub struct ExampleBufferedSpec;
 
-No body, credentials, native request, response-header map, or unrestricted response.
+impl ResponseRepresentation<usize> for ExampleBufferedSpec {
+    type Driver = Buffered;
 
-## Pagination controller
+    fn from_body(body: Bytes, _head: &ResponseHead<'_>) -> Result<usize, ResponseBodyError> {
+        Ok(body.len())
+    }
+}
 
-Receives one complete `PageResponse<Page>` containing exact decoded page and only declared bounded metadata interests. It returns items plus completion/next state atomically.
+/// A streaming representation returning the managed byte stream itself.
+pub struct ExampleStreamingSpec;
 
-No client, auth, rate, native response, arbitrary headers, or request mutation.
+impl ResponseRepresentation<ByteStream> for ExampleStreamingSpec {
+    type Driver = Streaming;
 
-## Operation observer
+    fn from_body(
+        body: ByteStream,
+        _head: &ResponseHead<'_>,
+    ) -> Result<ByteStream, ResponseBodyError> {
+        Ok(body)
+    }
+}
 
-Receives bounded borrowed sanitized events and returns unit. It cannot mutate, veto, retry, or perform async work through core. Async export is an extras/application-owned bounded handoff.
+/// A discarding representation: the accepted body is dropped unread.
+pub struct ExampleDiscardSpec;
 
-## First-party extras
+impl ResponseRepresentation<()> for ExampleDiscardSpec {
+    type Driver = DiscardDriver;
 
-### Representations
+    fn from_body((): (), _head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
+        Ok(())
+    }
+}
+```
 
-- `Json`
-- `Text`
-- `Binary`
-- `Form`
-- `Empty`
-- `Discard`
-- `NdJson`
-- `Csv<Cfg>`
-- managed multipart and request-stream roles where features are enabled
+Choose the core driver (`Buffered`, `Streaming`, `DiscardDriver`), declare
+static negotiation with `const ACCEPT`, validate the accepted head in
+`validate` (before body acquisition) and convert in `from_body`. Only the
+buffered driver supports pagination and head-only absence. See
+[Responses](responses.md).
 
-Use the selected zero-sized generic markers whose Rust coherence, MSRV, and
-diagnostic checks pass mechanically. Do not expose decoder/driver wrapper towers
-in caller signatures.
+## Buffered codecs
 
-### Streams
+A codec that only encodes or decodes complete buffers implements `EncodeBody`
+and/or `DecodeBody`; blanket bridges provide the full representations, calling
+`encode` once under the body limit with the single `CONTENT_TYPE`, and
+forwarding `ACCEPT`, content-type validation and `decode`:
 
-- `ByteStream`
-- `ItemStream<T>`
-- `RequestStream<T>`
+<!-- concord-source: crates/concord-examples/src/request_response/specifications.rs#codec_extension -->
+```rust
+pub struct ExampleCodec;
 
-Keep decoder/driver internals private. The maintained boxed/enum/static
-comparison selects private boxed erasure while its allocation, throughput,
-lifecycle, compile-cost, and size budgets continue to pass.
+impl EncodeBody for ExampleCodec {
+    type Input = String;
 
-### Safe JSON diagnostics
+    const CONTENT_TYPE: Option<&'static str> = Some("application/vnd.concord.example");
 
-Use structured phase/reason and bounded sanitized paths. No raw payload or arbitrary `serde_json` error string in automatic public output.
+    fn encode(input: Self::Input, _context: EncodeContext<'_>) -> Result<Bytes, CodecError> {
+        Ok(Bytes::from(input))
+    }
+}
 
-### Pagination
+impl DecodeBody for ExampleCodec {
+    type Output = String;
 
-Provide offset, page-number, cursor-body, short-page, Link-header, and declared-header controllers. Link controllers reject cross-origin continuation.
+    const ACCEPT: Option<&'static str> = Some("application/vnd.concord.example");
 
-### OAuth2
+    fn validate_content_type(content_type: Option<&str>) -> Result<(), CodecError> {
+        if content_type == <Self as DecodeBody>::ACCEPT {
+            Ok(())
+        } else {
+            Err(CodecError::new(CodecErrorKind::Decode))
+        }
+    }
 
-One isolated credential provider with fixed/validated token origin, injected time, finite body limits, and no application client identity.
+    fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
+        String::from_utf8(body.to_vec()).map_err(|_| CodecError::new(CodecErrorKind::Decode))
+    }
+}
+```
 
-### Local rate limiter
+`EncodeContext` carries the endpoint, method and body limit; `DecodeContext`
+the endpoint, method, status and parsed Content-Type. `CodecError` is
+category-only (`Encode`, `Decode`, `Limit`). A codec implements either the
+convenience traits or the full traits for one pair, never both.
 
-Process-local implementation with bounded state, deterministic clock, documented fairness/eviction, and explicit name. Never imply distributed enforcement.
+## Record decoders
 
-### Tracing/OpenTelemetry adapter
+A framed record format implements `RecordDecoder`; `decode` consumes complete
+records from a bounded staging buffer and `decode_eof` handles a final
+unterminated record:
 
-Maps `OperationEvent`/stream events to safe bounded fields. It does not own exporter threads/queues in core and does not emit high-cardinality/raw values.
+<!-- concord-source: crates/concord-examples/src/request_response/records.rs#record_decoder_extension -->
+```rust
+/// A `|`-terminated UTF-8 record decoder with a final unterminated record.
+pub struct PipeRecords;
 
-### Test support
+/// Representation marker hiding the pipe decoder from endpoint outputs.
+pub struct PipeDelimited;
 
-Deterministic transport, clock, provider, limiter, observer, body, record, and pagination fixtures exercise the same public/core semantics. Test support must not create a production native mutation path.
+impl RecordDecoder for PipeRecords {
+    type Record = String;
 
-## Cargo features
+    const ACCEPT: Option<&'static str> = Some("application/x-pipe-records");
 
-Features add integrations/capabilities. They do not silently alter existing endpoint meaning, install policies, or create incompatible product personalities.
+    fn start(_head: &ResponseHead<'_>) -> Result<Self, RecordError> {
+        Ok(Self)
+    }
 
-Document no-default and focused feature combinations, MSRV, public dependency types, and default decompression behavior.
+    fn decode(&mut self, buffer: &mut BytesMut) -> Result<Option<String>, RecordError> {
+        let Some(end) = buffer.iter().position(|byte| *byte == b'|') else {
+            return Ok(None);
+        };
+        let mut record = buffer.split_to(end + 1);
+        record.truncate(end);
+        String::from_utf8(record.to_vec())
+            .map(Some)
+            .map_err(|error| {
+                drop(error);
+                RecordError::new(RecordErrorKind::Decode)
+            })
+    }
 
-## Sealing
+    fn decode_eof(&mut self, buffer: &mut BytesMut) -> Result<Option<String>, RecordError> {
+        if buffer.is_empty() {
+            Ok(None)
+        } else {
+            let record = buffer.split_to(buffer.len());
+            String::from_utf8(record.to_vec())
+                .map(Some)
+                .map_err(|error| {
+                    drop(error);
+                    RecordError::new(RecordErrorKind::Decode)
+                })
+        }
+    }
 
-Seal traits whose downstream implementation would expose unstable internals or bypass limits/security/ordering. Keep semantic roles implementable when downstream implementations are part of the product. Document the choice.
+    fn max_buffered_bytes() -> NonZeroUsize {
+        NonZeroUsize::new(64 * 1024).expect("positive example staging bound")
+    }
+}
+```
+
+Expose it through a buffered representation (`decode_complete_records`) for
+`Vec<T>` outputs and a streaming one (`ItemStream::decode_with`) for
+`ItemStream<T>` outputs. See [Streams](streams.md).
+
+## Pagination controllers
+
+A controller has a public initialization type (built by the declaration's
+`init` clause), private state, and a `Cursor` mapped whole onto an endpoint
+slot. The canonical envelope controller (§17.2) decodes nothing itself: `Json`
+decodes the envelope and the controller extracts items:
+
+<!-- concord-source: crates/concord-examples/src/pagination/envelope.rs#envelope_controller -->
+```rust
+use concord::pagination::{
+    PageDecisionLimits, PageResponse, PageStep, PaginationController, PaginationDescription,
+    PaginationError, PaginationErrorKind,
+};
+use serde::Deserialize;
+
+/// One provider page: a batch of items and an optional continuation cursor.
+#[derive(Deserialize)]
+pub struct Envelope<T> {
+    /// The page's items.
+    pub data: Vec<T>,
+    /// The next cursor; absent means the provider proved exhaustion.
+    pub next: Option<String>,
+}
+
+/// Public initialization data built by `init CursorStart { after: after }`.
+pub struct CursorStart {
+    /// Cursor of the first request; `None` requests the first page.
+    pub after: Option<String>,
+}
+
+/// Private controller state. `Cursor = Option<String>` maps onto the whole
+/// endpoint `after?: String` slot.
+pub struct EnvelopePages {
+    after: Option<String>,
+}
+
+impl<T: Send + 'static> PaginationController<Envelope<T>> for EnvelopePages {
+    type Item = T;
+    type Init = CursorStart;
+    type Cursor = Option<String>;
+    const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
+
+    fn start(init: Self::Init) -> Result<Self, PaginationError> {
+        Ok(Self { after: init.after })
+    }
+
+    fn cursor(&self) -> Self::Cursor {
+        self.after.clone()
+    }
+
+    fn advance(
+        self,
+        response: PageResponse<Envelope<T>>,
+        limits: PageDecisionLimits,
+    ) -> Result<PageStep<Self, T>, PaginationError> {
+        let Envelope { data, next } = response.into_page();
+        if data.len() > limits.remaining_items() {
+            return Err(PaginationError::new(
+                PaginationErrorKind::CollectedItemCeilingExceeded,
+            ));
+        }
+        match next {
+            None => Ok(PageStep::Done { items: data }),
+            Some(cursor) => {
+                // This fixture's domain contract rejects an empty or an
+                // immediately repeated provider cursor; core independently
+                // catches longer cycles and bounds.
+                if cursor.is_empty() || self.after.as_ref() == Some(&cursor) {
+                    return Err(PaginationError::new(
+                        PaginationErrorKind::InvalidContinuation,
+                    ));
+                }
+                Ok(PageStep::Continue {
+                    next: Self {
+                        after: Some(cursor),
+                    },
+                    items: data,
+                })
+            }
+        }
+    }
+}
+```
+
+```text
+pub trait PaginationController<P>: Sized + Send + 'static {
+    type Item: Send + 'static;
+    type Init: Send + 'static;
+    type Cursor: Clone + Send + Sync + 'static;
+    const DESCRIPTION: PaginationDescription;
+    fn start(init: Self::Init) -> Result<Self, PaginationError>;
+    fn cursor(&self) -> Self::Cursor;
+    fn advance(self, page: PageResponse<P>, limits: PageDecisionLimits)
+        -> Result<PageStep<Self, Self::Item>, PaginationError>;
+}
+```
+
+`advance` returns `PageStep::Done { items }` (provider-contract proof of
+exhaustion) or `PageStep::Continue { next, items }`. Core independently
+validates the next cursor through the same public shaping rules, rejects
+immediate and longer cycles, enforces item and byte bounds, and withholds the
+current batch if the continuation is invalid. `PaginationDescription` declares
+any header interests (at most 16, 64 KiB of evidence). The private field
+`after` can be renamed without touching the declaration:
+
+<!-- concord-pseudocode -->
+```rust
+GET feed(query after?: String, query count: NonZeroU32 = DEFAULT_PAGE_SIZE)
+    -> Envelope<ItemSummary>
+{
+    path "feed";
+    paginate via EnvelopePages {
+        init CursorStart { after: after };
+        cursor -> after;
+    }
+}
+```
+
+## Credential providers
+
+<!-- concord-source: crates/concord-examples/src/authentication/extensions.rs#credential_provider_extension -->
+```rust
+use std::fmt;
+use std::sync::LazyLock;
+use std::time::Duration;
+
+use concord::auth::{
+    AuthError, AuthErrorKind, BoxFuture, CredentialMaterial, CredentialProvider, CredentialRequest,
+    ProviderBody, ProviderOrigin, ProviderRequest, SecretCredential,
+};
+use concord::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};
+use concord::http::{HeaderName, HeaderValue, Method, Url};
+use concord::{Bytes, SecretString};
+
+/// Redacted credential material returned by the custom provider example.
+pub struct ExampleToken(SecretString);
+
+impl CredentialMaterial for ExampleToken {}
+
+impl SecretCredential for ExampleToken {
+    fn expose_secret(&self) -> &str {
+        self.0.expose_secret()
+    }
+}
+
+impl fmt::Debug for ExampleToken {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("ExampleToken(<redacted>)")
+    }
+}
+
+/// Decoder used by the endpoint-backed credential example.
+pub struct ExampleTokenCodec;
+
+impl DecodeBody for ExampleTokenCodec {
+    type Output = ExampleToken;
+
+    const ACCEPT: Option<&'static str> = Some("application/vnd.concord.token");
+
+    fn decode(body: Bytes, _context: DecodeContext<'_>) -> Result<Self::Output, CodecError> {
+        let token = String::from_utf8(body.to_vec())
+            .map_err(|_| CodecError::new(CodecErrorKind::Decode))?;
+        Ok(ExampleToken(
+            SecretString::try_from(token).map_err(|_| CodecError::new(CodecErrorKind::Limit))?,
+        ))
+    }
+}
+
+/// The only origin the example provider's helper HTTP may reach.
+static IDENTITY_ORIGIN: LazyLock<[ProviderOrigin; 1]> = LazyLock::new(|| {
+    [ProviderOrigin::parse("https://identity.example.test")
+        .expect("the fixed example identity origin is a valid HTTPS origin")]
+});
+
+/// A provider that demonstrates Concord's isolated provider HTTP capability.
+pub struct ExampleProvider;
+
+impl CredentialProvider for ExampleProvider {
+    type Material = ExampleToken;
+
+    fn acquire<'a>(
+        &'a self,
+        context: CredentialRequest<'a>,
+    ) -> BoxFuture<'a, Result<Self::Material, AuthError>> {
+        Box::pin(async move {
+            let request = ProviderRequest::new(
+                Method::POST,
+                Url::parse("https://identity.example.test/token")
+                    .expect("fixed provider URL is valid"),
+            )
+            .header(
+                HeaderName::from_static("content-type"),
+                HeaderValue::from_static("application/x-www-form-urlencoded"),
+            )
+            .body(ProviderBody::Bytes(Bytes::from_static(
+                b"grant_type=client_credentials",
+            )))
+            .timeout(Duration::from_secs(2));
+            let response = context.http.send(request).await?;
+            if !response.status().is_success() {
+                return Err(AuthError::new(AuthErrorKind::Acquisition));
+            }
+            let token = String::from_utf8(response.into_body().to_vec())
+                .map_err(|_| AuthError::new(AuthErrorKind::Acquisition))?;
+            Ok(ExampleToken(
+                SecretString::try_new(token).map_err(AuthError::from)?,
+            ))
+        })
+    }
+
+    fn http_origins(&self) -> &[ProviderOrigin] {
+        IDENTITY_ORIGIN.as_slice()
+    }
+}
+```
+
+`acquire` (and optionally `refresh`, which defaults to `acquire`) returns
+material implementing `CredentialMaterial` (plus `SecretCredential` for
+single-secret placements). `recovery_mode()` selects `None`, `InvalidateOnly`
+or `Refresh`. `http_origins()` declares the exact HTTPS origins the isolated
+`ProviderHttp` may reach; the empty default grants none, and any other
+destination is rejected before transport. See [Authentication](auth.md).
+
+## Rate limiters
+
+A limiter declares its enforcement truthfully and admits complete plans
+atomically:
+
+<!-- concord-source: crates/concord-examples/src/rate_limiting/custom_limiter.rs#custom_limiter_extension -->
+```rust
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use concord::rate_limit::{
+    BoxFuture, Enforcement, LimiterCapability, RateLimitError, RateLimitPermit, RateLimitRequest,
+    RateLimiter,
+};
+
+/// Deterministically grants attempts while exposing only a bounded counter.
+#[derive(Clone, Default)]
+pub struct CountingLimiter {
+    acquisitions: Arc<AtomicUsize>,
+}
+
+impl CountingLimiter {
+    /// Creates an empty counter.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns the number of completed acquisition calls.
+    #[must_use]
+    pub fn acquisitions(&self) -> usize {
+        self.acquisitions.load(Ordering::SeqCst)
+    }
+}
+
+impl RateLimiter for CountingLimiter {
+    fn capability(&self) -> LimiterCapability {
+        LimiterCapability::new(Enforcement::Unenforced, "concord-examples.counting", 1)
+    }
+
+    fn acquire<'a>(
+        &'a self,
+        _request: RateLimitRequest<'a>,
+    ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
+        self.acquisitions.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { Ok(RateLimitPermit::granted()) })
+    }
+}
+```
+
+<!-- concord-source: crates/concord-examples/src/rate_limiting/custom_limiter.rs#custom_limiter_install -->
+```rust
+pub fn install(
+    runtime: concord::runtime::RuntimeConfigBuilder,
+    limiter: Arc<CountingLimiter>,
+) -> concord::runtime::RuntimeConfigBuilder {
+    runtime.rate_limiter(limiter)
+}
+```
+
+`capability()` returns a `LimiterCapability` with the enforcement
+(`Local`, `Unenforced` or `SharedPersistent`), a bounded namespace and an
+algorithm version, snapshotted at build; plans disclose it.
+`acquire(RateLimitRequest)` sees the complete effective policies, protected
+canonical keys, endpoint/method/page/attempt facts and a schema descriptor per
+policy; it must admit the whole conjunctive plan or debit nothing (RATE-04). A
+`SharedPersistent` adapter registers and compares schemas inside `acquire` and
+fails closed on a mismatch. `observe(RateLimitResponse)` receives the status and
+the one parsed server delay and affects only future admission.
+`preparation_key_limit()` bounds resolved key bytes. A custom key encoding
+implements `RateKeyEncoder<T>` or `RateKeyPart` with a stable `ENCODING_ID`
+and writes through `CanonicalKeyWriter`. See [Rate limits](rate_limits.md).
+
+## Retry classifiers and observers
+
+A `RetryClassifier` (or a closure through `classify_fn`) sees a sanitized
+`RetryAttempt` and returns `RetryDecision::Retry` or `Stop`; it expresses
+appetite only ([Retry](retry.md)). An `OperationObserver` receives sanitized
+events after the fact and cannot influence the result
+([Planning and observation](planning_and_observation.md#observing-operations)).
+
+## The generic caller trait
+
+`RequestControls` is intentionally **unsealed**: applications may implement it
+on their own wrappers so generic helpers work. Implementing it grants no native
+request, binding, credential or executor access, and core never treats an
+implementation as authenticity evidence (CALL-02). Execution authority comes
+from core-owned validated bindings.
+
+## Testing extensions
+
+`concord-test-support` is a development/test crate: deterministic clocks,
+scripted providers and limiters, recording observers, body and record fixtures,
+and a loopback server, TLS server and CONNECT proxy for exercising downstream
+wrappers through public client behavior. It never bypasses shaping, auth, status
+or limits to make a test pass. Use owned fake secrets and sentinels only;
+recording helpers sanitize by default, and exact private wire assertions
+require explicit test-only capture of values the test supplied.

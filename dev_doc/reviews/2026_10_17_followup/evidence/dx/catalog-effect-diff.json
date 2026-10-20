@@ -1,0 +1,35 @@
+{
+  "axes": [
+    "RuntimePolicy"
+  ],
+  "changed_endpoints": [
+    {
+      "id": "catalog.item.update",
+      "path": "CatalogApi::regional::update_item"
+    }
+  ],
+  "changes": [
+    {
+      "after": "non_idempotent",
+      "after_origin": "CatalogApi::regional::update_item",
+      "axes": [
+        "RuntimePolicy"
+      ],
+      "before": "idempotent",
+      "before_origin": "CatalogApi::regional::update_item",
+      "collection": "endpoints",
+      "endpoints": [
+        {
+          "id": "catalog.item.update",
+          "path": "CatalogApi::regional::update_item"
+        }
+      ],
+      "field": "effect.value",
+      "record": "CatalogApi::regional::update_item"
+    }
+  ],
+  "contract_format": "concord.contract/3",
+  "format": "concord.contract-diff/3",
+  "unresolved": [],
+  "verdict": "different"
+}

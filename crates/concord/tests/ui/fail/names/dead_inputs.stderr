@@ -1,0 +1,23 @@
+error: [C3-NAME] required value `tenant` of client `DeadRequiredRoot` is used nowhere; every input needs a reachable semantic use (a wire expression, path/DNS component, rate dimension or pagination mapping), so place it (for example `query tenant: T`), reference it, or remove it
+  --> tests/ui/fail/names/dead_inputs.rs:13:18
+   |
+13 |         values { tenant: String; }
+   |                  ^^^^^^
+
+error: [C3-NAME] required value `tenant` of client `DeadRequiredDeprecated` is used nowhere; every input needs a reachable semantic use (a wire expression, path/DNS component, rate dimension or pagination mapping), so place it (for example `query tenant: T`), reference it, or remove it
+  --> tests/ui/fail/names/dead_inputs.rs:24:13
+   |
+24 |             tenant: String;
+   |             ^^^^^^
+
+error: [C3-NAME] value `verbose` of endpoint `DeadOptionalEndpoint::read` has no reachable semantic use; use it, remove it, or mark it `#[deprecated]` as an explicit deprecated no-op value
+  --> tests/ui/fail/names/dead_inputs.rs:35:18
+   |
+35 |         GET read(verbose?: bool) -> Bytes via Binary;
+   |                  ^^^^^^^
+
+error: [C3-NAME] value `page` of scope `DeadInitializedScope::pages` has no reachable semantic use; use it, remove it, or mark it `#[deprecated]` as an explicit deprecated no-op value
+  --> tests/ui/fail/names/dead_inputs.rs:43:21
+   |
+43 |         scope pages(page: u32 = 1) {
+   |                     ^^^^

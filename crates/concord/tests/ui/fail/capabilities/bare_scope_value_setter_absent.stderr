@@ -1,29 +1,18 @@
-error[E0061]: this method takes 1 argument but 0 arguments were supplied
-  --> tests/ui/fail/capabilities/bare_scope_value_setter_absent.rs:17:20
-   |
-17 |     let _ = client.control_scope().label("selected".to_owned());
-   |                    ^^^^^^^^^^^^^-- argument #1 of type `Option<String>` is missing
-   |
-note: method defined here
-  --> tests/ui/fail/capabilities/bare_scope_value_setter_absent.rs:10:11
-   |
-10 |     scope control_scope(label: Option<String>) {
-   |           ^^^^^^^^^^^^^ ---------------------
-help: provide the argument
-   |
-17 |     let _ = client.control_scope(/* Option<String> */).label("selected".to_owned());
-   |                                  ++++++++++++++++++++
-
 error[E0599]: no method named `label` found for struct `ControlScope` in the current scope
-  --> tests/ui/fail/capabilities/bare_scope_value_setter_absent.rs:17:36
+  --> tests/ui/fail/capabilities/bare_scope_value_setter_absent.rs:18:36
    |
- 4 | / api! {
- 5 | |     client ScopeSetterApi {
- 6 | |         timeout 30s;
- 7 | |         base "http://scope-setter.example.test";
+ 5 | / api! {
+ 6 | |     client ScopeSetterApi {
+ 7 | |         timeout 30s;
+ 8 | |         base "http://scope-setter.example.test";
 ...  |
-13 | | }}
-   | |__- method `label` not found for this struct
+14 | | }
+   | |_- method `label` not found for this struct
 ...
-17 |       let _ = client.control_scope().label("selected".to_owned());
-   |                                      ^^^^^ method not found in `ControlScope`
+18 |       let _ = client.control_scope().label("selected".to_owned());
+   |                                      ^^^^^
+   |
+help: there is a method `set_label` with a similar name
+   |
+18 |     let _ = client.control_scope().set_label("selected".to_owned());
+   |                                    ++++

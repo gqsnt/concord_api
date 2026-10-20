@@ -1,0 +1,43 @@
+error: [C3-MIGRATE] `endpoint.id` is redundant qualification of the current endpoint (endpoint `EndpointQualifiedApi::item`); write the bare name `id`
+  --> tests/ui/fail/names/redundant_current_owner_qualification.rs:11:18
+   |
+11 |             path "items/{endpoint.id}";
+   |                  ^^^^^^^^^^^^^^^^^^^^^
+
+error: [C3-PATH] in path template hole at bytes 6..19 of endpoint `EndpointQualifiedApi::item`
+  --> tests/ui/fail/names/redundant_current_owner_qualification.rs:11:18
+   |
+11 |             path "items/{endpoint.id}";
+   |                  ^^^^^^^^^^^^^^^^^^^^^
+
+error: [C3-MIGRATE] `regional.region` redundantly qualifies the current owner (scope `ScopeQualifiedApi::regional`); write the bare name `region`
+  --> tests/ui/fail/names/redundant_current_owner_qualification.rs:21:18
+   |
+21 |             path "regions/{regional.region}";
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: [C3-PATH] in path template hole at bytes 8..25 of scope `ScopeQualifiedApi::regional`
+  --> tests/ui/fail/names/redundant_current_owner_qualification.rs:21:18
+   |
+21 |             path "regions/{regional.region}";
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: [C3-MIGRATE] `client.tenant` redundantly qualifies the current owner (client `ClientQualifiedApi`); write the bare name `tenant`
+  --> tests/ui/fail/names/redundant_current_owner_qualification.rs:31:32
+   |
+31 |         headers { "X-Tenant" = client.tenant; }
+   |                                ^^^^^^
+
+error: [C3-MIGRATE] `endpoint.trace` is redundant qualification of the current endpoint (endpoint `EndpointQualifiedHeaderApi::item`); write the bare name `trace`
+  --> tests/ui/fail/names/redundant_current_owner_qualification.rs:42:35
+   |
+42 |             headers { "X-Trace" = endpoint.trace; }
+   |                                   ^^^^^^^^
+
+warning: unused imports: `Binary` and `Bytes`
+ --> tests/ui/fail/names/redundant_current_owner_qualification.rs:4:15
+  |
+4 | use concord::{Binary, Bytes, api};
+  |               ^^^^^^  ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

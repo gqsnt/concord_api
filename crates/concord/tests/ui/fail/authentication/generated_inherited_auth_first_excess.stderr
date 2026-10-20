@@ -1,11 +1,5 @@
-error: a client `InheritedAuthPlacementFirstExcess` accepts one grouped `auth` attachment; `auth off` is exclusive
-  --> tests/ui/fail/authentication/generated_inherited_auth_first_excess.rs:12:9
+error: [C3-AUTH] endpoint `InheritedAuthPlacementFirstExcess::secured::read` has 65 effective auth placements; at most 64 are allowed, so drop inherited placements with `auth replace { ... }`
+  --> tests/ui/fail/authentication/generated_inherited_auth_first_excess.rs:86:17
    |
-12 |         auth { query "auth-01" = key; }
-   |         ^^^^
-
-error: the first authentication attachment is here
-  --> tests/ui/fail/authentication/generated_inherited_auth_first_excess.rs:11:9
-   |
-11 |         auth { query "auth-00" = key; }
-   |         ^^^^
+86 |                 auth { query "auth-64" = key; }
+   |                 ^^^^

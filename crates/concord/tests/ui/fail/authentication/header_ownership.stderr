@@ -1,0 +1,65 @@
+error: [C3-AUTH] private auth target `x-api-key` of endpoint `OptionalPublicHeaderApi::read` collides with a public header writer (OptionalPublicHeaderApi::read direct placement `x-api-key`); public and private-auth targets have distinct owners, so rename or remove the public writer
+  --> tests/ui/fail/authentication/header_ownership.rs:17:16
+   |
+17 |         auth { header "X-Api-Key" = key; }
+   |                ^^^^^^
+
+error: note: the public writer is here
+  --> tests/ui/fail/authentication/header_ownership.rs:19:18
+   |
+19 |         GET read(header("x-api-key") public_key?: String) -> Bytes via Binary;
+   |                  ^^^^^^
+
+error: [C3-AUTH] private auth target `api_key` of endpoint `PublicQueryApi::read` collides with a public query writer (PublicQueryApi direct placement `api_key`); public and private-auth targets have distinct owners, so rename or remove the public writer
+  --> tests/ui/fail/authentication/header_ownership.rs:34:20
+   |
+34 |             auth { query "api_key" = key; }
+   |                    ^^^^^
+
+error: note: the public writer is here
+  --> tests/ui/fail/authentication/header_ownership.rs:27:18
+   |
+27 |         values { query api_key?: String; }
+   |                  ^^^^^
+
+error: [C3-PLACE] `Content-Type` is not a generic public-header target of endpoint `ContentTypeHeaderApi::write`; it is owned by transport, authentication, representation negotiation, body media, cookies or proxy handling (place credentials with `auth { ... }`; representations own media and negotiation)
+  --> tests/ui/fail/authentication/header_ownership.rs:45:23
+   |
+45 |             headers { "Content-Type" = "text/plain"; }
+   |                       ^^^^^^^^^^^^^^
+
+error: [C3-PLACE] `Accept` is not a generic public-header target of endpoint `AcceptPlacementApi::read`; it is owned by transport, authentication, representation negotiation, body media, cookies or proxy handling (place credentials with `auth { ... }`; representations own media and negotiation)
+  --> tests/ui/fail/authentication/header_ownership.rs:54:25
+   |
+54 |         GET read(header("Accept") accept?: String) -> Bytes via Binary;
+   |                         ^^^^^^^^
+
+error: [C3-PLACE] `transfer-encoding` is not a generic public-header target of client `TransferEncodingApi`; it is owned by transport, authentication, representation negotiation, body media, cookies or proxy handling (place credentials with `auth { ... }`; representations own media and negotiation)
+  --> tests/ui/fail/authentication/header_ownership.rs:62:19
+   |
+62 |         headers { "transfer-encoding" = "chunked"; }
+   |                   ^^^^^^^^^^^^^^^^^^^
+
+error: [C3-PLACE] `Host` is not a generic public-header target of endpoint `HostHeaderApi::read`; it is owned by transport, authentication, representation negotiation, body media, cookies or proxy handling (place credentials with `auth { ... }`; representations own media and negotiation)
+  --> tests/ui/fail/authentication/header_ownership.rs:71:23
+   |
+71 |             headers { "Host" = "other.example.test"; }
+   |                       ^^^^^^
+
+error: [C3-OVERRIDE] `User-Agent` is a singleton request field and cannot be repeated with `append` or `each` (in endpoint `SingletonEachApi::read`); use one scalar value or adapter
+  --> tests/ui/fail/authentication/header_ownership.rs:82:23
+   |
+82 |             headers { "User-Agent" = each agents; }
+   |                       ^^^^^^^^^^^^
+
+error: [C3-OVERRIDE] `range` is a singleton request field and cannot be repeated with `append` or `each` (in endpoint `SingletonAppendApi::read`); use one scalar value or adapter
+  --> tests/ui/fail/authentication/header_ownership.rs:93:23
+   |
+93 |             headers { append "range" = "bytes=2-3"; }
+   |                       ^^^^^^
+
+error: [C3-PLACE] public header name of client `InvalidHeaderNameApi` is not a valid HTTP field-name token; write a token such as `"X-Request-Id"`
+   --> tests/ui/fail/authentication/header_ownership.rs:102:19
+    |
+102 |         headers { "X Bad" = "1"; }
+    |                   ^^^^^^^

@@ -1,0 +1,829 @@
+Concord generated-contract scale measurement, r3 remeasurement: v2.1 versus the reviewed v3 (4c7b894) versus the
+corrected v3 (1477d3a), and after one product change (2b82432) (V3-O07, spec section 28.4; review 3 section 7 and
+the R3 instructions), recorded verbatim from real runs.
+
+Supersedes nothing: expansion_scale_linux_2026-09-26.txt, _final.txt and _r2.txt are kept unchanged. Companions:
+head_cost_/first_use_linux_2026-09-27_r3.txt, future_sizes_linux_2026-09-27_r3_remeasurement.txt; attribution in
+ATTRIBUTION.md, section "r3 remeasurement". These are measurements, not a performance acceptance.
+
+Host:        Linux 6.18.44-fc-v37 x86_64, Intel(R) Xeon(R) Processor @ 2.80GHz, 2 CPUs, 7 GiB RAM. The r2 records
+             name an "@ 2.10GHz" model string on this host name: the underlying CPU differs, so absolute times are
+             NOT comparable with the r2 files; only same-session comparisons below are meaningful. The only job on
+             the host (no other cargo/rustc process during any timed block); load averages before/after every
+             block are in the logs.
+Toolchain:   rustc 1.95.0 (59807616e 2026-04-14), cargo 1.95.0 (f2d3ce0bd 2026-03-21), RUSTUP_TOOLCHAIN=stable
+Env:         CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2 (offline, vendored); CARGO_TARGET_DIR=/home/claude/targets/r3perf/<tree>,
+             ONE SUBDIRECTORY PER TREE. A first build block with the single shared directory
+             /home/claude/targets/r3perf was discarded: the reviewed-v3 export (same package names and versions,
+             same workspace-relative layout as the worktree) finished in 0.16 s and produced executables
+             byte-identical to the worktree's, i.e. cargo reused the worktree's artifacts for the export (path
+             packages hash workspace-relative paths and the dep-info still pointed at the unchanged worktree
+             sources). With one target directory per tree every tree is built from its own sources: the rebuilt
+             4c7b894 head_cost and head_first_use executables are byte-identical to the r2 v3 executables
+             (sha256 b4c58648..., c6935488...), the v2.1 ones to the r2 v2.1 executables (d6a56267..., 76d1d3ab...).
+Profile:     probes `--release` (as r2); expansion_scale probe debug (as r2); executables copied aside after each
+             build (sha256 below)
+
+Trees (built with the same toolchain, features, targets and workload in one session):
+  v2.1     `git archive baseline-v2.1` = eefca26c80ffe67ab5b70d6605cc713d63549b89 (unmodified v2.1 export) in
+           <scratch>/r3/v21, plus byte-identical copies of tools/perf/src/bin/head_cost.rs, head_first_use.rs,
+           future_sizes.rs and declaration_v2_1.rs.txt (as src/head_cost/declaration.rs), as r2 did
+  4c7b894  "reviewed v3": `git archive 4c7b894` (4c7b894d3998cc6952a10f6547a1aca0a236c0af) in <scratch>/r3/v3r.
+           head_first_use.rs is PRESENT there (byte-identical, not copied); future_sizes.rs is ABSENT there and was
+           copied byte-identically. Its crates/ are byte-identical to r2's measured 89b2cbc (`git diff --stat
+           89b2cbc 4c7b894 -- crates tools/perf/src tools/perf/benches` is empty).
+  1477d3a  "corrected v3": this worktree at 1477d3aceec2f1fb91bc2c74a01bcfec88a3f78a (branch v3-implementation
+           HEAD at the start of r3), clean (0 modified/untracked paths); includes the R3 layout correction in
+           crates/concord-core/src/execute/mod.rs. No probe change was needed (future_sizes.rs and
+           head_first_use.rs are committed), so nothing was committed before measuring.
+  2b82432  1477d3a + one product commit made in this remeasurement (crates/concord-core/src/redaction/names.rs:
+           allocation-free sensitive-name classification, plus a differential test; ATTRIBUTION.md "r3
+           remeasurement"), clean (0 modified/untracked paths); measured in a second block after the change,
+           again against v2.1, 4c7b894 and 1477d3a (the 1477d3a executables were kept aside).
+  <scratch> = /tmp/claude-0/-home-claude/6530d60a-7b79-5289-b9df-b4352bdedc76/scratchpad (deleted afterwards)
+
+Benchmark-relevant source differences between the trees:
+  $ git diff --stat 4c7b894 1477d3a -- crates tools/perf/src tools/perf/benches
+   crates/concord-core/src/execute/mod.rs |  63 +++++++++++-------
+   tools/perf/src/bin/future_sizes.rs     | 114 +++++++++++++++++++++++++++++++++
+   2 files changed, 155 insertions(+), 22 deletions(-)
+  $ git diff --stat 4c7b894 2b82432 -- crates tools/perf/src tools/perf/benches
+   crates/concord-core/src/execute/mod.rs             |  63 ++++++++----
+   crates/concord-core/src/redaction/names.rs         |  36 +++++--
+   .../src/redaction/tests/redaction_matrix.rs        |  63 ++++++++++++
+   tools/perf/src/bin/future_sizes.rs                 | 114 +++++++++++++++++++++
+   4 files changed, 244 insertions(+), 32 deletions(-)
+  (the other 4c7b894..1477d3a commits touch tools/xtask, docs and tests only; v2.1 differs everywhere)
+
+Probe sources (sha256; identical copies in every tree, see the setup log):
+  c2855474bcd351b65961189e7ae1282c95f1d864b0cf874049ed5e33cb8d60a1  tools/perf/src/bin/head_cost.rs
+  65f59778485ce7a27e473d06c9432268b812cf49bbd4e0b4cca522f7d65f80ca  tools/perf/src/bin/head_first_use.rs
+  ab3266847045a1260cb289f39e9bd78f93e644d23077a5ef43193aa1e5e34522  tools/perf/src/bin/future_sizes.rs
+  ee13eb820326b1e7247f25e538adf8f616e5e162236a514a30bca046d692fb42  tools/perf/src/bin/expansion_scale.rs
+  6a3c41fc23a82fbd3bdedb945b12bd6791b2d010f94a01cb21a752e250f10082  tools/perf/src/head_cost/declaration.rs
+  9d521734c4e491909b5d9020339e0c195c8d043f713edd6050c52d77ea1bfdd2  tools/perf/src/head_cost/declaration_v2_1.rs.txt
+  (unchanged since r2 except future_sizes.rs, which is new in r3)
+
+Probe: tools/perf/src/bin/expansion_scale.rs, unchanged since r2 (sha256 ee13eb82...), debug build. The corrected
+and improved v3 and the v2.1 runs use the worktree's executable (`--baseline-v2-1 <v2.1 export>` for v2.1, as in
+r2); the 4c7b894 runs use the executable built in the 4c7b894 export (byte-identical source; it differs only by
+its embedded manifest directory, so its fixture is pinned to the 4c7b894 sources). Each tree has its own target
+directory (the fixture package name is the same in every tree). cargo-expand is not installed, so expansion uses
+`cargo rustc --profile check -- -Zunpretty=expanded` with RUSTC_BOOTSTRAP=1, and fixture builds use the same
+RUSTC_BOOTSTRAP value; counts are comparable only within this method.
+
+Columns (unchanged from r2):
+  build ms           rebuild of the fixture after the previous scale point's source (a whole-crate rebuild; for
+                     a `1000`-only invocation the previous source is the 1-endpoint warm-up)
+  edit ms            local edit: endpoint 0's route changes, then a rebuild
+  parent edit ms     on top of the local edit, the root `timeout 30s` becomes `timeout 31s`, then a rebuild
+  cold ms            `cargo clean -p concord-expansion-scale` then a build. CAVEAT: this cleans ONLY the generated
+                     fixture package; every dependency (concord, concord-core, the macros, tokio, ...) stays built,
+                     so it is not a from-scratch cold build.
+  warm ms            an immediate no-op rebuild (cargo freshness check only)
+  binary bytes       CAVEAT: unstripped DEBUG executables of the fixture; not a release or distribution size.
+  description bytes  CAVEAT: the concord.contract/3 export (v3) versus the v2.1 tool snapshot: different formats
+                     carrying different content; not equal-work serialization, not comparable 1:1.
+Each invocation first builds the dependency graph in an unreported warm-up at 1 endpoint. Cargo progress lines are
+not printed by the probe; everything it printed is verbatim below.
+
+Protocol:
+  Session A (worktree at 1477d3a, clean): full sweep (1, 10, 100, 500, 1000 endpoints) for 1477d3a and for v2.1,
+    then the 1000-endpoint row (default CARGO_INCREMENTAL=0, and --incremental) x3 for v2.1, 4c7b894 and 1477d3a,
+    the tree order rotated per repetition (rep 1: v2.1, 4c7b894, 1477d3a; rep 2: 4c7b894, 1477d3a, v2.1; rep 3:
+    1477d3a, v2.1, 4c7b894). 20 invocations, every one exited 0.
+  Session B (worktree at 2b82432, clean): full sweep for 2b82432, then the 1000-endpoint row (default and
+    --incremental) x3 for v2.1, 4c7b894 and 2b82432, rotated the same way. 19 invocations, every one exited 0.
+  Commands (tree = v21 | v3r = 4c7b894 | v3c = 1477d3a | v3n = 2b82432; v3n uses the v3c target directory):
+    CARGO_TARGET_DIR=/home/claude/targets/r3perf/<tree> <scratch>/r3/bin/expansion_scale_v3c            (sweep)
+    CARGO_TARGET_DIR=.../v21 <scratch>/r3/bin/expansion_scale_v3c --baseline-v2-1 <scratch>/r3/v21     (sweep)
+    CARGO_TARGET_DIR=.../<tree> <scratch>/r3/bin/expansion_scale_<v3c|v3r> [--baseline-v2-1 ...] 1000
+    CARGO_TARGET_DIR=.../<tree> <scratch>/r3/bin/expansion_scale_<v3c|v3r> [--baseline-v2-1 ...] --incremental 1000
+  Front-end/back-end split (after session B, single runs): `cargo rustc --bin concord-expansion-scale --
+  -Ztime-passes` on the 1000-endpoint fixture left by the last runs (v3: 2b82432, v2.1), non-incremental, same
+  target directories and RUSTC_BOOTSTRAP=1 (only the fixture crate recompiles).
+
+====================================================================================================================
+Verbatim log: setup (exports, probe copies, hashes)
+====================================================================================================================
+future_sizes.rs absent in 4c7b894: copied
+head_first_use present in 4c7b894 (not copied)
+c2855474bcd351b65961189e7ae1282c95f1d864b0cf874049ed5e33cb8d60a1  tools/perf/src/bin/head_cost.rs
+65f59778485ce7a27e473d06c9432268b812cf49bbd4e0b4cca522f7d65f80ca  tools/perf/src/bin/head_first_use.rs
+ab3266847045a1260cb289f39e9bd78f93e644d23077a5ef43193aa1e5e34522  tools/perf/src/bin/future_sizes.rs
+ee13eb820326b1e7247f25e538adf8f616e5e162236a514a30bca046d692fb42  tools/perf/src/bin/expansion_scale.rs
+6a3c41fc23a82fbd3bdedb945b12bd6791b2d010f94a01cb21a752e250f10082  tools/perf/src/head_cost/declaration.rs
+9d521734c4e491909b5d9020339e0c195c8d043f713edd6050c52d77ea1bfdd2  tools/perf/src/head_cost/declaration_v2_1.rs.txt
+c2855474bcd351b65961189e7ae1282c95f1d864b0cf874049ed5e33cb8d60a1  <scratch>/r3/v21/tools/perf/src/bin/head_cost.rs
+65f59778485ce7a27e473d06c9432268b812cf49bbd4e0b4cca522f7d65f80ca  <scratch>/r3/v21/tools/perf/src/bin/head_first_use.rs
+ab3266847045a1260cb289f39e9bd78f93e644d23077a5ef43193aa1e5e34522  <scratch>/r3/v21/tools/perf/src/bin/future_sizes.rs
+70e268fed3892b9f7628bb01e190f07b1911df40e697162712f00bdf61394185  <scratch>/r3/v21/tools/perf/src/bin/expansion_scale.rs
+9d521734c4e491909b5d9020339e0c195c8d043f713edd6050c52d77ea1bfdd2  <scratch>/r3/v21/tools/perf/src/head_cost/declaration.rs
+c2855474bcd351b65961189e7ae1282c95f1d864b0cf874049ed5e33cb8d60a1  <scratch>/r3/v3r/tools/perf/src/bin/head_cost.rs
+65f59778485ce7a27e473d06c9432268b812cf49bbd4e0b4cca522f7d65f80ca  <scratch>/r3/v3r/tools/perf/src/bin/head_first_use.rs
+ab3266847045a1260cb289f39e9bd78f93e644d23077a5ef43193aa1e5e34522  <scratch>/r3/v3r/tools/perf/src/bin/future_sizes.rs
+ee13eb820326b1e7247f25e538adf8f616e5e162236a514a30bca046d692fb42  <scratch>/r3/v3r/tools/perf/src/bin/expansion_scale.rs
+6a3c41fc23a82fbd3bdedb945b12bd6791b2d010f94a01cb21a752e250f10082  <scratch>/r3/v3r/tools/perf/src/head_cost/declaration.rs
+9d521734c4e491909b5d9020339e0c195c8d043f713edd6050c52d77ea1bfdd2  <scratch>/r3/v3r/tools/perf/src/head_cost/declaration_v2_1.rs.txt
+
+====================================================================================================================
+Verbatim log: builds, block A (one target directory per tree)
+====================================================================================================================
+measured commits and status (git, run in the worktree before each block):
+  $ git rev-parse HEAD            -> 1477d3aceec2f1fb91bc2c74a01bcfec88a3f78a   (blocks A of every file, scale session A)
+  $ git status --porcelain | wc -l -> 0
+  $ git rev-parse HEAD            -> 2b82432cc419f06b113b1efd976e4e109746b7bd   (blocks B/C, scale session B)
+  $ git status --porcelain | wc -l -> 0
+  2b82432 = 1477d3a + "perf(redaction): classify sensitive names without a normalized copy" (committed before
+  its block, after `cargo test -p concord-core --lib --all-features` 897 passed, `cargo test -p concord
+  --all-features --test generated --test runtime` 168 + 73 passed, `cargo test -p concord-perf --test
+  owner_snapshots` 3 passed, `cargo clippy -p concord-core --all-features --all-targets -- -D warnings` and
+  `cargo fmt --all -- --check` clean, all exit 0). The commit adding this file changes only
+  tools/perf/measurements/.
+
+host: Linux 6.18.44-fc-v37 x86_64; model name	: Intel(R) Xeon(R) Processor @ 2.80GHz; 2 CPUs; 7 GiB RAM
+toolchain: rustc 1.95.0 (59807616e 2026-04-14); cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+env: RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=/home/claude/targets/r3perf/<tree> CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2
+== builds (uptime:  06:24:48 up  1:51,  0 user,  load average: 1.06, 0.89, 0.64)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3c cargo build --release --locked -p concord-perf --bin head_cost --bin head_first_use --bin future_sizes
+    Finished `release` profile [optimized] target(s) in 1m 24s
+[build-v3c] exit 0
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3c cargo build --locked -p concord-perf --bin expansion_scale
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 36.46s
+[build-v3c-scale] exit 0
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3r cargo build --release --locked --offline --manifest-path <scratch>/r3/v3r/Cargo.toml -p concord-perf --bin head_cost --bin head_first_use --bin future_sizes
+    Finished `release` profile [optimized] target(s) in 1m 25s
+[build-v3r] exit 0
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3r cargo build --locked --offline --manifest-path <scratch>/r3/v3r/Cargo.toml -p concord-perf --bin expansion_scale
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 37.13s
+[build-v3r-scale] exit 0
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v21 cargo build --release --locked --offline --manifest-path <scratch>/r3/v21/Cargo.toml -p concord-perf --bin head_cost --bin head_first_use --bin future_sizes
+    Finished `release` profile [optimized] target(s) in 1m 14s
+[build-v21] exit 0
+executables copied aside:
+3358d235b3be0ee332c5f810a51afd0528eb02b22246d77eab23da56915b5f60  <scratch>/r3/bin/expansion_scale_v3c
+1f00a7c2163698e1a6eb04e1a859cd162d372e9df88686d2feacf021dff0b957  <scratch>/r3/bin/expansion_scale_v3r
+4208946d0911f5b106ca3a986a374faa182cc3725a2430d876523a619a116cb0  <scratch>/r3/bin/future_sizes_v21
+80813f690ec92c5913324ab09db01e1d55853849724a291122847805c76ab54c  <scratch>/r3/bin/future_sizes_v3c
+d516b2a25b5bd75ff7b4082f487ede4a584e72ec3df794660e2c15857a9103f0  <scratch>/r3/bin/future_sizes_v3r
+d6a562677033587a9c90b96249b3d7ed9f940531b254d3952f93116bdb573b30  <scratch>/r3/bin/head_cost_v21
+a1a6e0e2cf92a3b4526110c7d87122c8fa0e5c49c5ce6453e6a2b621cad7d599  <scratch>/r3/bin/head_cost_v3c
+b4c586484cd4a4618ad7994aa216b13a9d2b434b3524aeafd7a4737ba9065deb  <scratch>/r3/bin/head_cost_v3r
+76d1d3ab6f03443ff038592577616f50597a51eb009c214dbba2f00c0d53d859  <scratch>/r3/bin/head_first_use_v21
+071e07b8bc4492ffb59f7a988bf70b8df4be53bd468ef117ac4f0c19833e56a5  <scratch>/r3/bin/head_first_use_v3c
+c693548865b5686232b192656c120bd613dff3938ab1ccc800c563068ee0a7ee  <scratch>/r3/bin/head_first_use_v3r
+== builds done (uptime:  06:30:07 up  1:57,  0 user,  load average: 2.17, 1.74, 1.10)
+
+====================================================================================================================
+Verbatim log: build of 2b82432 (block B; the other trees reuse the block-A executables)
+====================================================================================================================
+== build (uptime:  07:28:49 up  2:55,  0 user,  load average: 1.07, 1.02, 0.98)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3c cargo build --release --locked -p concord-perf --bin head_cost --bin head_first_use --bin future_sizes
+    Finished `release` profile [optimized] target(s) in 24.06s
+[build-v3n] exit 0
+b77e47a05d243baa4057fee6fcc17219d5a64fface5a666204772869bb260aa1  <scratch>/r3/bin/future_sizes_v3n
+08161d0af6e95d1db702bb8a574b47b15a844843cd825c0373a7843372191377  <scratch>/r3/bin/head_cost_v3n
+55b010d472014d5407368b80c0e4523837c8d84f8fedb72223772c4d444cce8f  <scratch>/r3/bin/head_first_use_v3n
+== build done (uptime:  07:29:13 up  2:56,  0 user,  load average: 1.54, 1.13, 1.02)
+
+====================================================================================================================
+Verbatim log: session A
+====================================================================================================================
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3c <scratch>/r3/bin/expansion_scale_v3c
+(uptime before:  06:35:10 up  2:02,  0 user,  load average: 0.12, 0.75, 0.84)
+dialect: V3; concord: /home/claude/work/concord/.claude/worktrees/agent-afb27e46525c4c879; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 686 | 24653 | 2374 | 130 | 70 | 169 | 566 | 534 | 51492944 | 9888 | 538 | 482 | 114 |
+| 10 | 3796 | 137706 | 12526 | 724 | 367 | 181 | 730 | 684 | 51535248 | 62268 | 769 | 698 | 113 |
+| 100 | 34891 | 1268241 | 114046 | 6664 | 3337 | 443 | 2852 | 2967 | 51961256 | 586068 | 2908 | 2924 | 129 |
+| 500 | 173091 | 6292841 | 565246 | 33064 | 16537 | 1992 | 13140 | 12669 | 53875232 | 2914068 | 13604 | 13269 | 116 |
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 3937 | 27726 | 27909 | 56307120 | 5824068 | 28423 | 28216 | 127 |
+[v3c default sweep] exit 0 (uptime after:  06:39:06 up  2:06,  0 user,  load average: 1.00, 0.95, 0.92)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v21 <scratch>/r3/bin/expansion_scale_v3c --baseline-v2-1 <scratch>/r3/v21
+(uptime before:  06:39:06 up  2:06,  0 user,  load average: 1.00, 0.95, 0.92)
+dialect: V2_1; concord: <scratch>/r3/v21; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 725 | 30132 | 2196 | 101 | 39 | 167 | 436 | 425 | 32210104 | 1649 | 421 | 476 | 119 |
+| 10 | 3713 | 171369 | 10485 | 497 | 219 | 198 | 638 | 635 | 32314832 | 13214 | 630 | 636 | 114 |
+| 100 | 33593 | 1585989 | 93375 | 4457 | 2019 | 515 | 2232 | 2164 | 33362976 | 128864 | 2217 | 2263 | 122 |
+| 500 | 166393 | 7883189 | 461775 | 22057 | 10019 | 1972 | 9694 | 9932 | 38026520 | 642864 | 9834 | 9854 | 119 |
+| 1000 | 332393 | 15754689 | 922275 | 44057 | 20019 | 3906 | 19909 | 20558 | 43877096 | 1285364 | 20552 | 19955 | 119 |
+[v21 default sweep] exit 0 (uptime after:  06:42:12 up  2:09,  0 user,  load average: 1.09, 1.10, 1.00)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v21 <scratch>/r3/bin/expansion_scale_v3c --baseline-v2-1 <scratch>/r3/v21 1000
+(uptime before:  06:42:12 up  2:09,  0 user,  load average: 1.09, 1.10, 1.00)
+dialect: V2_1; concord: <scratch>/r3/v21; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 332393 | 15754689 | 922275 | 44057 | 20019 | 3956 | 19511 | 20287 | 43877096 | 1285364 | 20254 | 21263 | 133 |
+[rep 1 v21 1000 default] exit 0 (uptime after:  06:43:40 up  2:10,  0 user,  load average: 1.02, 1.07, 1.00)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v21 <scratch>/r3/bin/expansion_scale_v3c --baseline-v2-1 <scratch>/r3/v21 --incremental 1000
+(uptime before:  06:43:40 up  2:10,  0 user,  load average: 1.02, 1.07, 1.00)
+dialect: V2_1; concord: <scratch>/r3/v21; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=1
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 332393 | 15754689 | 922275 | 44057 | 20019 | 3903 | 24592 | 25816 | 44812136 | 1285364 | 14425 | 24086 | 116 |
+[rep 1 v21 1000 incremental] exit 0 (uptime after:  06:46:01 up  2:12,  0 user,  load average: 1.14, 1.18, 1.05)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3r <scratch>/r3/bin/expansion_scale_v3r  1000
+(uptime before:  06:46:01 up  2:12,  0 user,  load average: 1.14, 1.18, 1.05)
+dialect: V3; concord: <scratch>/r3/v3r; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 3904 | 26727 | 27056 | 56322528 | 5824068 | 26245 | 26566 | 112 |
+[rep 1 v3r 1000 default] exit 0 (uptime after:  06:48:36 up  2:15,  0 user,  load average: 1.25, 1.29, 1.12)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3r <scratch>/r3/bin/expansion_scale_v3r  --incremental 1000
+(uptime before:  06:48:36 up  2:15,  0 user,  load average: 1.25, 1.29, 1.12)
+dialect: V3; concord: <scratch>/r3/v3r; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=1
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 4063 | 33742 | 35779 | 58583000 | 5824068 | 12345 | 33101 | 126 |
+[rep 1 v3r 1000 incremental] exit 0 (uptime after:  06:51:29 up  2:18,  0 user,  load average: 1.15, 1.29, 1.16)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3c <scratch>/r3/bin/expansion_scale_v3c  1000
+(uptime before:  06:51:29 up  2:18,  0 user,  load average: 1.15, 1.29, 1.16)
+dialect: V3; concord: /home/claude/work/concord/.claude/worktrees/agent-afb27e46525c4c879; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 4143 | 26136 | 27176 | 56307120 | 5824068 | 26781 | 26700 | 114 |
+[rep 1 v3c 1000 default] exit 0 (uptime after:  06:53:25 up  2:20,  0 user,  load average: 1.12, 1.24, 1.16)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3c <scratch>/r3/bin/expansion_scale_v3c  --incremental 1000
+(uptime before:  06:53:25 up  2:20,  0 user,  load average: 1.12, 1.24, 1.16)
+dialect: V3; concord: /home/claude/work/concord/.claude/worktrees/agent-afb27e46525c4c879; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=1
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 3889 | 33817 | 34586 | 58561320 | 5824068 | 12323 | 33316 | 118 |
+[rep 1 v3c 1000 incremental] exit 0 (uptime after:  06:56:16 up  2:23,  0 user,  load average: 1.10, 1.26, 1.18)
+df: /dev/vda        252G   36G  6.4G  85% /
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3r <scratch>/r3/bin/expansion_scale_v3r  1000
+(uptime before:  06:56:16 up  2:23,  0 user,  load average: 1.10, 1.26, 1.18)
+dialect: V3; concord: <scratch>/r3/v3r; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 3869 | 26592 | 27045 | 56322528 | 5824068 | 26870 | 26476 | 116 |
+[rep 2 v3r 1000 default] exit 0 (uptime after:  06:58:12 up  2:25,  0 user,  load average: 1.01, 1.17, 1.16)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3r <scratch>/r3/bin/expansion_scale_v3r  --incremental 1000
+(uptime before:  06:58:12 up  2:25,  0 user,  load average: 1.01, 1.17, 1.16)
+dialect: V3; concord: <scratch>/r3/v3r; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=1
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 4087 | 34394 | 36112 | 58583000 | 5824068 | 12522 | 33306 | 121 |
+[rep 2 v3r 1000 incremental] exit 0 (uptime after:  07:00:18 up  2:27,  0 user,  load average: 1.00, 1.11, 1.13)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3c <scratch>/r3/bin/expansion_scale_v3c  1000
+(uptime before:  07:00:18 up  2:27,  0 user,  load average: 1.00, 1.11, 1.13)
+dialect: V3; concord: /home/claude/work/concord/.claude/worktrees/agent-afb27e46525c4c879; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 4017 | 26419 | 26633 | 56307120 | 5824068 | 26659 | 27061 | 121 |
+[rep 2 v3c 1000 default] exit 0 (uptime after:  07:02:14 up  2:29,  0 user,  load average: 1.17, 1.12, 1.13)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3c <scratch>/r3/bin/expansion_scale_v3c  --incremental 1000
+(uptime before:  07:02:14 up  2:29,  0 user,  load average: 1.17, 1.12, 1.13)
+dialect: V3; concord: /home/claude/work/concord/.claude/worktrees/agent-afb27e46525c4c879; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=1
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 4010 | 33556 | 35687 | 58561320 | 5824068 | 12339 | 33872 | 127 |
+[rep 2 v3c 1000 incremental] exit 0 (uptime after:  07:04:19 up  2:31,  0 user,  load average: 1.17, 1.10, 1.11)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v21 <scratch>/r3/bin/expansion_scale_v3c --baseline-v2-1 <scratch>/r3/v21 1000
+(uptime before:  07:04:19 up  2:31,  0 user,  load average: 1.17, 1.10, 1.11)
+dialect: V2_1; concord: <scratch>/r3/v21; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 332393 | 15754689 | 922275 | 44057 | 20019 | 3721 | 19599 | 19383 | 43877096 | 1285364 | 19354 | 18976 | 113 |
+[rep 2 v21 1000 default] exit 0 (uptime after:  07:05:43 up  2:32,  0 user,  load average: 1.10, 1.09, 1.10)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v21 <scratch>/r3/bin/expansion_scale_v3c --baseline-v2-1 <scratch>/r3/v21 --incremental 1000
+(uptime before:  07:05:43 up  2:32,  0 user,  load average: 1.10, 1.09, 1.10)
+dialect: V2_1; concord: <scratch>/r3/v21; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=1
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 332393 | 15754689 | 922275 | 44057 | 20019 | 3811 | 23958 | 24741 | 44812136 | 1285364 | 13744 | 23987 | 120 |
+[rep 2 v21 1000 incremental] exit 0 (uptime after:  07:07:17 up  2:34,  0 user,  load average: 1.09, 1.09, 1.10)
+df: /dev/vda        252G   36G  6.4G  85% /
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3c <scratch>/r3/bin/expansion_scale_v3c  1000
+(uptime before:  07:07:17 up  2:34,  0 user,  load average: 1.09, 1.09, 1.10)
+dialect: V3; concord: /home/claude/work/concord/.claude/worktrees/agent-afb27e46525c4c879; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 4006 | 26157 | 27018 | 56307120 | 5824068 | 26889 | 26025 | 120 |
+[rep 3 v3c 1000 default] exit 0 (uptime after:  07:09:12 up  2:36,  0 user,  load average: 1.15, 1.09, 1.09)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3c <scratch>/r3/bin/expansion_scale_v3c  --incremental 1000
+(uptime before:  07:09:12 up  2:36,  0 user,  load average: 1.15, 1.09, 1.09)
+dialect: V3; concord: /home/claude/work/concord/.claude/worktrees/agent-afb27e46525c4c879; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=1
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 4036 | 33291 | 35782 | 58561320 | 5824068 | 12646 | 33390 | 133 |
+[rep 3 v3c 1000 incremental] exit 0 (uptime after:  07:11:16 up  2:38,  0 user,  load average: 1.05, 1.08, 1.09)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v21 <scratch>/r3/bin/expansion_scale_v3c --baseline-v2-1 <scratch>/r3/v21 1000
+(uptime before:  07:11:16 up  2:38,  0 user,  load average: 1.05, 1.08, 1.09)
+dialect: V2_1; concord: <scratch>/r3/v21; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 332393 | 15754689 | 922275 | 44057 | 20019 | 3735 | 18944 | 19491 | 43877096 | 1285364 | 19655 | 19297 | 150 |
+[rep 3 v21 1000 default] exit 0 (uptime after:  07:12:40 up  2:39,  0 user,  load average: 1.01, 1.06, 1.08)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v21 <scratch>/r3/bin/expansion_scale_v3c --baseline-v2-1 <scratch>/r3/v21 --incremental 1000
+(uptime before:  07:12:40 up  2:39,  0 user,  load average: 1.01, 1.06, 1.08)
+dialect: V2_1; concord: <scratch>/r3/v21; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=1
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 332393 | 15754689 | 922275 | 44057 | 20019 | 3929 | 24034 | 26022 | 44812136 | 1285364 | 14003 | 23966 | 112 |
+[rep 3 v21 1000 incremental] exit 0 (uptime after:  07:14:16 up  2:41,  0 user,  load average: 1.00, 1.04, 1.07)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3r <scratch>/r3/bin/expansion_scale_v3r  1000
+(uptime before:  07:14:16 up  2:41,  0 user,  load average: 1.00, 1.04, 1.07)
+dialect: V3; concord: <scratch>/r3/v3r; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 3820 | 25973 | 26225 | 56322528 | 5824068 | 26603 | 26310 | 142 |
+[rep 3 v3r 1000 default] exit 0 (uptime after:  07:16:09 up  2:43,  0 user,  load average: 1.15, 1.06, 1.07)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3r <scratch>/r3/bin/expansion_scale_v3r  --incremental 1000
+(uptime before:  07:16:09 up  2:43,  0 user,  load average: 1.15, 1.06, 1.07)
+dialect: V3; concord: <scratch>/r3/v3r; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=1
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 3894 | 33153 | 34751 | 58583000 | 5824068 | 12337 | 33440 | 119 |
+[rep 3 v3r 1000 incremental] exit 0 (uptime after:  07:18:13 up  2:45,  0 user,  load average: 1.06, 1.05, 1.06)
+df: /dev/vda        252G   36G  6.4G  85% /
+== scale done (uptime:  07:18:13 up  2:45,  0 user,  load average: 1.06, 1.05, 1.06)
+
+====================================================================================================================
+Verbatim log: session B
+====================================================================================================================
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3c <scratch>/r3/bin/expansion_scale_v3c
+== tree v3n (v3n default sweep)
+(uptime before:  07:36:04 up  3:02,  0 user,  load average: 0.13, 0.44, 0.73)
+dialect: V3; concord: /home/claude/work/concord/.claude/worktrees/agent-afb27e46525c4c879; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 686 | 24653 | 2374 | 130 | 70 | 180 | 548 | 504 | 51427408 | 9888 | 503 | 480 | 113 |
+| 10 | 3796 | 137706 | 12526 | 724 | 367 | 183 | 739 | 679 | 51469656 | 62268 | 795 | 726 | 116 |
+| 100 | 34891 | 1268241 | 114046 | 6664 | 3337 | 443 | 2819 | 2703 | 51895656 | 586068 | 2662 | 2772 | 115 |
+| 500 | 173091 | 6292841 | 565246 | 33064 | 16537 | 1825 | 12727 | 13252 | 53809648 | 2914068 | 12952 | 12997 | 121 |
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 3954 | 27056 | 26927 | 56241600 | 5824068 | 25848 | 25603 | 123 |
+[v3n default sweep] exit 0 (uptime after:  07:39:43 up  3:06,  0 user,  load average: 1.00, 0.82, 0.84)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v21 <scratch>/r3/bin/expansion_scale_v3c --baseline-v2-1 <scratch>/r3/v21 1000
+== tree v21 (rep 1 v21 1000 default)
+(uptime before:  07:39:43 up  3:06,  0 user,  load average: 1.00, 0.82, 0.84)
+dialect: V2_1; concord: <scratch>/r3/v21; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 332393 | 15754689 | 922275 | 44057 | 20019 | 4097 | 19337 | 18755 | 43877096 | 1285364 | 19257 | 19444 | 114 |
+[rep 1 v21 1000 default] exit 0 (uptime after:  07:41:07 up  3:08,  0 user,  load average: 1.00, 0.87, 0.85)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v21 <scratch>/r3/bin/expansion_scale_v3c --baseline-v2-1 <scratch>/r3/v21 --incremental 1000
+== tree v21 (rep 1 v21 1000 incremental)
+(uptime before:  07:41:07 up  3:08,  0 user,  load average: 1.00, 0.87, 0.85)
+dialect: V2_1; concord: <scratch>/r3/v21; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=1
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 332393 | 15754689 | 922275 | 44057 | 20019 | 3873 | 23606 | 25310 | 44812136 | 1285364 | 14179 | 23388 | 116 |
+[rep 1 v21 1000 incremental] exit 0 (uptime after:  07:42:41 up  3:09,  0 user,  load average: 1.07, 0.92, 0.88)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3r <scratch>/r3/bin/expansion_scale_v3r  1000
+== tree v3r (rep 1 v3r 1000 default)
+(uptime before:  07:42:41 up  3:09,  0 user,  load average: 1.07, 0.92, 0.88)
+dialect: V3; concord: <scratch>/r3/v3r; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 3963 | 25378 | 25807 | 56322528 | 5824068 | 26791 | 26129 | 113 |
+[rep 1 v3r 1000 default] exit 0 (uptime after:  07:44:34 up  3:11,  0 user,  load average: 1.07, 0.99, 0.91)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3r <scratch>/r3/bin/expansion_scale_v3r  --incremental 1000
+== tree v3r (rep 1 v3r 1000 incremental)
+(uptime before:  07:44:34 up  3:11,  0 user,  load average: 1.07, 0.99, 0.91)
+dialect: V3; concord: <scratch>/r3/v3r; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=1
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 4083 | 34037 | 36666 | 58583000 | 5824068 | 12711 | 32766 | 117 |
+[rep 1 v3r 1000 incremental] exit 0 (uptime after:  07:46:40 up  3:13,  0 user,  load average: 1.02, 1.00, 0.93)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3c <scratch>/r3/bin/expansion_scale_v3c  1000
+== tree v3n (rep 1 v3n 1000 default)
+(uptime before:  07:46:40 up  3:13,  0 user,  load average: 1.02, 1.00, 0.93)
+dialect: V3; concord: /home/claude/work/concord/.claude/worktrees/agent-afb27e46525c4c879; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 3929 | 25097 | 26312 | 56241600 | 5824068 | 25670 | 25500 | 131 |
+[rep 1 v3n 1000 default] exit 0 (uptime after:  07:48:31 up  3:15,  0 user,  load average: 1.00, 1.00, 0.94)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3c <scratch>/r3/bin/expansion_scale_v3c  --incremental 1000
+== tree v3n (rep 1 v3n 1000 incremental)
+(uptime before:  07:48:31 up  3:15,  0 user,  load average: 1.00, 1.00, 0.94)
+dialect: V3; concord: /home/claude/work/concord/.claude/worktrees/agent-afb27e46525c4c879; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=1
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 4173 | 33624 | 34333 | 58547192 | 5824068 | 11978 | 32802 | 112 |
+[rep 1 v3n 1000 incremental] exit 0 (uptime after:  07:50:38 up  3:17,  0 user,  load average: 1.05, 1.02, 0.96)
+df: /dev/vda        252G   37G  5.1G  88% /
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3r <scratch>/r3/bin/expansion_scale_v3r  1000
+== tree v3r (rep 2 v3r 1000 default)
+(uptime before:  07:50:38 up  3:17,  0 user,  load average: 1.05, 1.02, 0.96)
+dialect: V3; concord: <scratch>/r3/v3r; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 3935 | 26149 | 26296 | 56322528 | 5824068 | 27223 | 26067 | 114 |
+[rep 2 v3r 1000 default] exit 0 (uptime after:  07:52:33 up  3:19,  0 user,  load average: 1.00, 1.01, 0.97)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3r <scratch>/r3/bin/expansion_scale_v3r  --incremental 1000
+== tree v3r (rep 2 v3r 1000 incremental)
+(uptime before:  07:52:33 up  3:19,  0 user,  load average: 1.00, 1.01, 0.97)
+dialect: V3; concord: <scratch>/r3/v3r; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=1
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 3988 | 32316 | 33913 | 58583000 | 5824068 | 12140 | 32057 | 124 |
+[rep 2 v3r 1000 incremental] exit 0 (uptime after:  07:54:33 up  3:21,  0 user,  load average: 1.04, 1.02, 0.99)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3c <scratch>/r3/bin/expansion_scale_v3c  1000
+== tree v3n (rep 2 v3n 1000 default)
+(uptime before:  07:54:33 up  3:21,  0 user,  load average: 1.04, 1.02, 0.99)
+dialect: V3; concord: /home/claude/work/concord/.claude/worktrees/agent-afb27e46525c4c879; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 3948 | 25338 | 25557 | 56241600 | 5824068 | 25701 | 25702 | 118 |
+[rep 2 v3n 1000 default] exit 0 (uptime after:  07:56:25 up  3:23,  0 user,  load average: 1.02, 1.02, 1.00)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3c <scratch>/r3/bin/expansion_scale_v3c  --incremental 1000
+== tree v3n (rep 2 v3n 1000 incremental)
+(uptime before:  07:56:25 up  3:23,  0 user,  load average: 1.02, 1.02, 1.00)
+dialect: V3; concord: /home/claude/work/concord/.claude/worktrees/agent-afb27e46525c4c879; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=1
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 3917 | 32133 | 34554 | 58547192 | 5824068 | 12082 | 31714 | 161 |
+[rep 2 v3n 1000 incremental] exit 0 (uptime after:  07:58:25 up  3:25,  0 user,  load average: 1.04, 1.03, 1.00)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v21 <scratch>/r3/bin/expansion_scale_v3c --baseline-v2-1 <scratch>/r3/v21 1000
+== tree v21 (rep 2 v21 1000 default)
+(uptime before:  07:58:25 up  3:25,  0 user,  load average: 1.04, 1.03, 1.00)
+dialect: V2_1; concord: <scratch>/r3/v21; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 332393 | 15754689 | 922275 | 44057 | 20019 | 3767 | 19611 | 19136 | 43877096 | 1285364 | 19524 | 19250 | 113 |
+[rep 2 v21 1000 default] exit 0 (uptime after:  07:59:49 up  3:26,  0 user,  load average: 1.01, 1.02, 1.00)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v21 <scratch>/r3/bin/expansion_scale_v3c --baseline-v2-1 <scratch>/r3/v21 --incremental 1000
+== tree v21 (rep 2 v21 1000 incremental)
+(uptime before:  07:59:49 up  3:26,  0 user,  load average: 1.01, 1.02, 1.00)
+dialect: V2_1; concord: <scratch>/r3/v21; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=1
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 332393 | 15754689 | 922275 | 44057 | 20019 | 3672 | 23605 | 24753 | 44812136 | 1285364 | 13928 | 23890 | 119 |
+[rep 2 v21 1000 incremental] exit 0 (uptime after:  08:01:22 up  3:28,  0 user,  load average: 1.07, 1.03, 1.00)
+df: /dev/vda        252G   37G  5.1G  88% /
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3c <scratch>/r3/bin/expansion_scale_v3c  1000
+== tree v3n (rep 3 v3n 1000 default)
+(uptime before:  08:01:22 up  3:28,  0 user,  load average: 1.07, 1.03, 1.00)
+dialect: V3; concord: /home/claude/work/concord/.claude/worktrees/agent-afb27e46525c4c879; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 3972 | 25928 | 25623 | 56241600 | 5824068 | 26428 | 26434 | 116 |
+[rep 3 v3n 1000 default] exit 0 (uptime after:  08:03:15 up  3:30,  0 user,  load average: 1.01, 1.01, 1.00)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3c <scratch>/r3/bin/expansion_scale_v3c  --incremental 1000
+== tree v3n (rep 3 v3n 1000 incremental)
+(uptime before:  08:03:15 up  3:30,  0 user,  load average: 1.01, 1.01, 1.00)
+dialect: V3; concord: /home/claude/work/concord/.claude/worktrees/agent-afb27e46525c4c879; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=1
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 3938 | 33365 | 35488 | 58547192 | 5824068 | 12263 | 33248 | 135 |
+[rep 3 v3n 1000 incremental] exit 0 (uptime after:  08:05:19 up  3:32,  0 user,  load average: 1.05, 1.02, 1.00)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v21 <scratch>/r3/bin/expansion_scale_v3c --baseline-v2-1 <scratch>/r3/v21 1000
+== tree v21 (rep 3 v21 1000 default)
+(uptime before:  08:05:19 up  3:32,  0 user,  load average: 1.05, 1.02, 1.00)
+dialect: V2_1; concord: <scratch>/r3/v21; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 332393 | 15754689 | 922275 | 44057 | 20019 | 4130 | 19777 | 19436 | 43877096 | 1285364 | 19846 | 19716 | 137 |
+[rep 3 v21 1000 default] exit 0 (uptime after:  08:06:45 up  3:33,  0 user,  load average: 1.01, 1.01, 1.00)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v21 <scratch>/r3/bin/expansion_scale_v3c --baseline-v2-1 <scratch>/r3/v21 --incremental 1000
+== tree v21 (rep 3 v21 1000 incremental)
+(uptime before:  08:06:45 up  3:33,  0 user,  load average: 1.01, 1.01, 1.00)
+dialect: V2_1; concord: <scratch>/r3/v21; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=1
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 332393 | 15754689 | 922275 | 44057 | 20019 | 3892 | 24574 | 25831 | 44812136 | 1285364 | 14372 | 23855 | 111 |
+[rep 3 v21 1000 incremental] exit 0 (uptime after:  08:08:21 up  3:35,  0 user,  load average: 1.07, 1.03, 1.00)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3r <scratch>/r3/bin/expansion_scale_v3r  1000
+== tree v3r (rep 3 v3r 1000 default)
+(uptime before:  08:08:21 up  3:35,  0 user,  load average: 1.07, 1.03, 1.00)
+dialect: V3; concord: <scratch>/r3/v3r; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=0
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 4225 | 27498 | 27288 | 56322528 | 5824068 | 27423 | 27509 | 116 |
+[rep 3 v3r 1000 default] exit 0 (uptime after:  08:10:20 up  3:37,  0 user,  load average: 1.15, 1.11, 1.03)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3r <scratch>/r3/bin/expansion_scale_v3r  --incremental 1000
+== tree v3r (rep 3 v3r 1000 incremental)
+(uptime before:  08:10:20 up  3:37,  0 user,  load average: 1.15, 1.11, 1.03)
+dialect: V3; concord: <scratch>/r3/v3r; expansion: rustc -Zunpretty=expanded (RUSTC_BOOTSTRAP=1); builds: debug with RUSTC_BOOTSTRAP=1 (dependency build scripts may select other code paths; compare only within this method); fixture CARGO_INCREMENTAL=1
+characters exclude leading indentation: a pretty-printed method chain nests one level per call, so raw widths grow with nesting depth, not code size
+columns: build = rebuild after the previous scale point's source; edit = local edit (endpoint 0's route); parent edit = root timeout changed on top of the local edit; cold = build after `cargo clean -p concord-expansion-scale` (dependencies still built); warm = immediate no-op rebuild
+| endpoints | lines | characters | fragments | declarations | methods | expand ms | build ms | edit ms | binary bytes | description bytes | parent edit ms | cold ms | warm ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1000 | 345841 | 12573591 | 1129246 | 66064 | 33037 | 4270 | 34305 | 36990 | 58583000 | 5824068 | 12559 | 32892 | 121 |
+[rep 3 v3r 1000 incremental] exit 0 (uptime after:  08:12:27 up  3:39,  0 user,  load average: 1.17, 1.10, 1.03)
+df: /dev/vda        252G   37G  5.1G  88% /
+== scale done (uptime:  08:12:27 up  3:39,  0 user,  load average: 1.17, 1.10, 1.03)
+
+====================================================================================================================
+Verbatim log: rustc -Ztime-passes (supporting)
+====================================================================================================================
+== v3-2b82432: endpoints in source: 1 fn lines; 175505 bytes (uptime:  08:14:02 up  3:40,  0 user,  load average: 0.24, 0.79, 0.93)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v3c cargo rustc --manifest-path /home/claude/work/concord/.claude/worktrees/agent-afb27e46525c4c879/target/perf/expansion-scale/fixture-v3/Cargo.toml --bin concord-expansion-scale -- -Ztime-passes
+[v3-2b82432 time-passes] exit 0
+== v2.1: endpoints in source: 1 fn lines; 144493 bytes (uptime:  08:14:29 up  3:41,  0 user,  load average: 0.50, 0.81, 0.93)
+$ CARGO_TARGET_DIR=/home/claude/targets/r3perf/v21 cargo rustc --manifest-path /home/claude/work/concord/.claude/worktrees/agent-afb27e46525c4c879/target/perf/expansion-scale/fixture-v2_1/Cargo.toml --bin concord-expansion-scale -- -Ztime-passes
+[v2.1 time-passes] exit 0
+
+--- v3 (2b82432) -Ztime-passes output ---
+time:   0.003; rss:   38MB ->   40MB (   +3MB)	parse_crate
+time:   0.000; rss:   45MB ->   45MB (   +0MB)	crate_injection
+time:   2.141; rss:   46MB ->  405MB ( +360MB)	expand_crate
+time:   2.141; rss:   45MB ->  405MB ( +360MB)	macro_expand_crate
+time:   0.026; rss:  405MB ->  405MB (   +0MB)	AST_validation
+time:   0.000; rss:  406MB ->  407MB (   +1MB)	finalize_imports
+time:   0.004; rss:  407MB ->  407MB (   +0MB)	compute_effective_visibilities
+time:   0.009; rss:  407MB ->  408MB (   +1MB)	finalize_macro_resolutions
+time:   0.525; rss:  408MB ->  514MB ( +105MB)	late_resolve_crate
+time:   0.018; rss:  514MB ->  514MB (   +0MB)	resolve_check_unused
+time:   0.035; rss:  514MB ->  514MB (   +0MB)	resolve_postprocess
+time:   0.592; rss:  406MB ->  514MB ( +108MB)	resolve_crate
+time:   0.018; rss:  515MB ->  515MB (   +0MB)	write_dep_info
+time:   0.019; rss:  515MB ->  516MB (   +0MB)	complete_gated_feature_checking
+time:   0.046; rss:  730MB ->  730MB (   +0MB)	drop_ast
+time:   0.006; rss:  642MB ->  641MB (   +0MB)	looking_for_entry_point
+time:   0.000; rss:  641MB ->  641MB (   +0MB)	check_externally_implementable_items
+time:   0.003; rss:  641MB ->  641MB (   +0MB)	looking_for_derive_registrar
+time:   0.000; rss:  635MB ->  635MB (   +0MB)	unused_lib_feature_checking
+time:   0.268; rss:  642MB ->  641MB (   +0MB)	misc_checking_1
+time:   2.701; rss:  641MB ->  750MB ( +108MB)	coherence_checking
+time:   0.000; rss:  750MB ->  750MB (   +0MB)	emit_ast_lowering_delayed_lints
+time:   9.894; rss:  641MB ->  845MB ( +204MB)	type_check_crate
+time:   9.008; rss:  845MB -> 1283MB ( +438MB)	MIR_borrow_checking
+time:   0.272; rss: 1296MB -> 1296MB (   +0MB)	module_lints
+time:   0.272; rss: 1296MB -> 1296MB (   +0MB)	lint_checking
+time:   0.266; rss: 1296MB -> 1296MB (   +0MB)	privacy_checking_modules
+time:   0.001; rss: 1296MB -> 1295MB (   -1MB)	check_lint_expectations
+time:   0.808; rss: 1283MB -> 1295MB (  +13MB)	misc_checking_3
+time:   0.050; rss: 1295MB -> 1298MB (   +2MB)	monomorphization_collector_root_collections
+time:   0.180; rss: 1298MB -> 1325MB (  +27MB)	monomorphization_collector_graph_walk
+time:   0.013; rss: 1325MB -> 1327MB (   +2MB)	partition_and_assert_distinct_symbols
+time:   0.000; rss: 1326MB -> 1328MB (   +2MB)	write_allocator_module
+time:   0.270; rss: 1330MB -> 1460MB ( +130MB)	codegen_to_LLVM_IR
+time:   0.669; rss: 1295MB -> 1460MB ( +164MB)	codegen_crate
+time:   0.000; rss: 1457MB -> 1457MB (   +0MB)	serialize_dep_graph
+time:   2.346; rss: 1377MB ->  721MB ( -657MB)	LLVM_passes
+time:   1.961; rss:  721MB ->  690MB (  -30MB)	finish_ongoing_codegen
+time:   0.000; rss:  688MB ->  686MB (   -2MB)	link_binary_check_files_are_writeable
+time:   0.274; rss:  670MB ->  584MB (  -87MB)	run_linker
+time:   0.276; rss:  688MB ->  584MB ( -105MB)	link_binary
+time:   0.276; rss:  688MB ->  584MB ( -105MB)	link_crate
+time:   0.276; rss:  688MB ->  584MB ( -105MB)	link
+time:  26.863; rss:   28MB ->   96MB (  +68MB)	total
+
+--- v2.1 -Ztime-passes output ---
+time:   0.003; rss:   37MB ->   40MB (   +2MB)	parse_crate
+time:   0.000; rss:   44MB ->   45MB (   +0MB)	crate_injection
+time:   2.113; rss:   45MB ->  423MB ( +378MB)	expand_crate
+time:   2.113; rss:   45MB ->  423MB ( +379MB)	macro_expand_crate
+time:   0.019; rss:  423MB ->  423MB (   +0MB)	AST_validation
+time:   0.000; rss:  423MB ->  424MB (   +0MB)	finalize_imports
+time:   0.003; rss:  424MB ->  424MB (   +0MB)	compute_effective_visibilities
+time:   0.007; rss:  424MB ->  424MB (   +1MB)	finalize_macro_resolutions
+time:   0.548; rss:  424MB ->  511MB (  +87MB)	late_resolve_crate
+time:   0.017; rss:  511MB ->  511MB (   +0MB)	resolve_check_unused
+time:   0.032; rss:  511MB ->  512MB (   +0MB)	resolve_postprocess
+time:   0.607; rss:  423MB ->  512MB (  +88MB)	resolve_crate
+time:   0.017; rss:  512MB ->  512MB (   +0MB)	write_dep_info
+time:   0.019; rss:  512MB ->  512MB (   +0MB)	complete_gated_feature_checking
+time:   0.046; rss:  702MB ->  702MB (   +0MB)	drop_ast
+time:   0.004; rss:  615MB ->  615MB (   +0MB)	looking_for_entry_point
+time:   0.000; rss:  615MB ->  615MB (   +0MB)	check_externally_implementable_items
+time:   0.002; rss:  615MB ->  615MB (   +0MB)	looking_for_derive_registrar
+time:   0.000; rss:  610MB ->  610MB (   +0MB)	unused_lib_feature_checking
+time:   0.193; rss:  615MB ->  612MB (   -2MB)	misc_checking_1
+time:   1.610; rss:  613MB ->  675MB (  +62MB)	coherence_checking
+time:   0.000; rss:  675MB ->  675MB (   +0MB)	emit_ast_lowering_delayed_lints
+time:   5.959; rss:  612MB ->  765MB ( +152MB)	type_check_crate
+time:   4.399; rss:  765MB ->  969MB ( +205MB)	MIR_borrow_checking
+time:   0.185; rss:  981MB ->  981MB (   +0MB)	module_lints
+time:   0.185; rss:  981MB ->  981MB (   +0MB)	lint_checking
+time:   0.186; rss:  981MB ->  981MB (   +0MB)	privacy_checking_modules
+time:   0.557; rss:  969MB ->  981MB (  +12MB)	misc_checking_3
+time:   0.028; rss:  981MB ->  982MB (   +1MB)	monomorphization_collector_root_collections
+time:   0.240; rss:  983MB -> 1027MB (  +44MB)	monomorphization_collector_graph_walk
+time:   0.013; rss: 1027MB -> 1029MB (   +2MB)	partition_and_assert_distinct_symbols
+time:   0.000; rss: 1029MB -> 1031MB (   +2MB)	write_allocator_module
+time:   0.543; rss: 1032MB -> 1195MB ( +164MB)	codegen_to_LLVM_IR
+time:   0.967; rss:  981MB -> 1195MB ( +214MB)	codegen_crate
+time:   0.000; rss: 1195MB -> 1195MB (   +0MB)	serialize_dep_graph
+time:   4.099; rss: 1110MB ->  713MB ( -397MB)	LLVM_passes
+time:   3.740; rss:  883MB ->  682MB ( -202MB)	finish_ongoing_codegen
+time:   0.203; rss:  664MB ->  545MB ( -118MB)	run_linker
+time:   0.205; rss:  682MB ->  545MB ( -136MB)	link_binary
+time:   0.205; rss:  682MB ->  545MB ( -136MB)	link_crate
+time:   0.205; rss:  682MB ->  545MB ( -136MB)	link
+time:  19.878; rss:   28MB ->   96MB (  +68MB)	total
+
+====================================================================================================================
+Derived comparison, session A (computed by a scratch script from the session-A log)
+====================================================================================================================
+Full sweeps (single runs per size):
+| endpoints | build v2.1 -> 1477d3a | edit | parent edit | cold (fixture only) | binary (unstripped debug) | lines |
+|---:|---|---|---|---|---|---|
+| 1 | 436 -> 566 (+29.8%) | 425 -> 534 (+25.6%) | 421 -> 538 (+27.8%) | 476 -> 482 (+1.3%) | 32210104 -> 51492944 (+59.9%) | 725 -> 686 (-5.4%) |
+| 10 | 638 -> 730 (+14.4%) | 635 -> 684 (+7.7%) | 630 -> 769 (+22.1%) | 636 -> 698 (+9.7%) | 32314832 -> 51535248 (+59.5%) | 3713 -> 3796 (+2.2%) |
+| 100 | 2232 -> 2852 (+27.8%) | 2164 -> 2967 (+37.1%) | 2217 -> 2908 (+31.2%) | 2263 -> 2924 (+29.2%) | 33362976 -> 51961256 (+55.7%) | 33593 -> 34891 (+3.9%) |
+| 500 | 9694 -> 13140 (+35.5%) | 9932 -> 12669 (+27.6%) | 9834 -> 13604 (+38.3%) | 9854 -> 13269 (+34.7%) | 38026520 -> 53875232 (+41.7%) | 166393 -> 173091 (+4.0%) |
+| 1000 | 19909 -> 27726 (+39.3%) | 20558 -> 27909 (+35.8%) | 20552 -> 28423 (+38.3%) | 19955 -> 28216 (+41.4%) | 43877096 -> 56307120 (+28.3%) | 332393 -> 345841 (+4.0%) |
+
+1000-endpoint rows, default (CARGO_INCREMENTAL=0); per-repetition values, median in brackets
+| tree | build ms | edit ms | parent edit ms | cold ms | warm ms | expand ms | binary bytes | description bytes |
+|---|---|---|---|---|---|---|---|---|
+| v2.1 (3 runs) | 19511, 19599, 18944 [19511] | 20287, 19383, 19491 [19491] | 20254, 19354, 19655 [19655] | 21263, 18976, 19297 [19297] | 133, 113, 150 [133] | 3956, 3721, 3735 [3735] | 43877096 | 1285364 |
+| 4c7b894 (3 runs) | 26727, 26592, 25973 [26592] | 27056, 27045, 26225 [27045] | 26245, 26870, 26603 [26603] | 26566, 26476, 26310 [26476] | 112, 116, 142 [116] | 3904, 3869, 3820 [3869] | 56322528 | 5824068 |
+| 1477d3a (3 runs) | 26136, 26419, 26157 [26157] | 27176, 26633, 27018 [27018] | 26781, 26659, 26889 [26781] | 26700, 27061, 26025 [26700] | 114, 121, 120 [120] | 4143, 4017, 4006 [4017] | 56307120 | 5824068 |
+
+1000-endpoint default, medians: 4c7b894 vs v2.1 / 1477d3a vs v2.1 / 1477d3a vs 4c7b894
+    build: +36.3% / +34.1% / -1.6%
+     edit: +38.8% / +38.6% / -0.1%
+   parent: +35.3% / +36.3% / +0.7%
+     cold: +37.2% / +38.4% / +0.8%
+   binary: +28.4% / +28.3% / -0.0%
+
+1000-endpoint rows, incremental (CARGO_INCREMENTAL=1 for the fixture); per-repetition values, median in brackets
+| tree | build ms | edit ms | parent edit ms | cold ms | warm ms | expand ms | binary bytes | description bytes |
+|---|---|---|---|---|---|---|---|---|
+| v2.1 (3 runs) | 24592, 23958, 24034 [24034] | 25816, 24741, 26022 [25816] | 14425, 13744, 14003 [14003] | 24086, 23987, 23966 [23987] | 116, 120, 112 [116] | 3903, 3811, 3929 [3903] | 44812136 | 1285364 |
+| 4c7b894 (3 runs) | 33742, 34394, 33153 [33742] | 35779, 36112, 34751 [35779] | 12345, 12522, 12337 [12345] | 33101, 33306, 33440 [33306] | 126, 121, 119 [121] | 4063, 4087, 3894 [4063] | 58583000 | 5824068 |
+| 1477d3a (3 runs) | 33817, 33556, 33291 [33556] | 34586, 35687, 35782 [35687] | 12323, 12339, 12646 [12339] | 33316, 33872, 33390 [33390] | 118, 127, 133 [127] | 3889, 4010, 4036 [4010] | 58561320 | 5824068 |
+
+1000-endpoint incremental, medians: 4c7b894 vs v2.1 / 1477d3a vs v2.1 / 1477d3a vs 4c7b894
+    build: +40.4% / +39.6% / -0.6%
+     edit: +38.6% / +38.2% / -0.3%
+   parent: -11.8% / -11.9% / -0.0%
+     cold: +38.9% / +39.2% / +0.3%
+   binary: +30.7% / +30.7% / -0.0%
+
+====================================================================================================================
+Derived comparison, session B (computed from the session-B log; the sweep table compares the 2b82432 sweep with the session-A v2.1 sweep)
+====================================================================================================================
+Full sweeps (single runs per size):
+| endpoints | build v2.1 -> 2b82432 | edit | parent edit | cold (fixture only) | binary (unstripped debug) | lines |
+|---:|---|---|---|---|---|---|
+| 1 | 436 -> 548 (+25.7%) | 425 -> 504 (+18.6%) | 421 -> 503 (+19.5%) | 476 -> 480 (+0.8%) | 32210104 -> 51427408 (+59.7%) | 725 -> 686 (-5.4%) |
+| 10 | 638 -> 739 (+15.8%) | 635 -> 679 (+6.9%) | 630 -> 795 (+26.2%) | 636 -> 726 (+14.2%) | 32314832 -> 51469656 (+59.3%) | 3713 -> 3796 (+2.2%) |
+| 100 | 2232 -> 2819 (+26.3%) | 2164 -> 2703 (+24.9%) | 2217 -> 2662 (+20.1%) | 2263 -> 2772 (+22.5%) | 33362976 -> 51895656 (+55.5%) | 33593 -> 34891 (+3.9%) |
+| 500 | 9694 -> 12727 (+31.3%) | 9932 -> 13252 (+33.4%) | 9834 -> 12952 (+31.7%) | 9854 -> 12997 (+31.9%) | 38026520 -> 53809648 (+41.5%) | 166393 -> 173091 (+4.0%) |
+| 1000 | 19909 -> 27056 (+35.9%) | 20558 -> 26927 (+31.0%) | 20552 -> 25848 (+25.8%) | 19955 -> 25603 (+28.3%) | 43877096 -> 56241600 (+28.2%) | 332393 -> 345841 (+4.0%) |
+
+1000-endpoint rows, default (CARGO_INCREMENTAL=0); per-repetition values, median in brackets
+| tree | build ms | edit ms | parent edit ms | cold ms | warm ms | expand ms | binary bytes | description bytes |
+|---|---|---|---|---|---|---|---|---|
+| v2.1 (3 runs) | 19337, 19611, 19777 [19611] | 18755, 19136, 19436 [19136] | 19257, 19524, 19846 [19524] | 19444, 19250, 19716 [19444] | 114, 113, 137 [114] | 4097, 3767, 4130 [4097] | 43877096 | 1285364 |
+| 4c7b894 (3 runs) | 25378, 26149, 27498 [26149] | 25807, 26296, 27288 [26296] | 26791, 27223, 27423 [27223] | 26129, 26067, 27509 [26129] | 113, 114, 116 [114] | 3963, 3935, 4225 [3963] | 56322528 | 5824068 |
+| 2b82432 (3 runs) | 25097, 25338, 25928 [25338] | 26312, 25557, 25623 [25623] | 25670, 25701, 26428 [25701] | 25500, 25702, 26434 [25702] | 131, 118, 116 [118] | 3929, 3948, 3972 [3948] | 56241600 | 5824068 |
+
+1000-endpoint default, medians: 4c7b894 vs v2.1 / 2b82432 vs v2.1 / 2b82432 vs 4c7b894
+    build: +33.3% / +29.2% / -3.1%
+     edit: +37.4% / +33.9% / -2.6%
+   parent: +39.4% / +31.6% / -5.6%
+     cold: +34.4% / +32.2% / -1.6%
+   binary: +28.4% / +28.2% / -0.1%
+
+1000-endpoint rows, incremental (CARGO_INCREMENTAL=1 for the fixture); per-repetition values, median in brackets
+| tree | build ms | edit ms | parent edit ms | cold ms | warm ms | expand ms | binary bytes | description bytes |
+|---|---|---|---|---|---|---|---|---|
+| v2.1 (3 runs) | 23606, 23605, 24574 [23606] | 25310, 24753, 25831 [25310] | 14179, 13928, 14372 [14179] | 23388, 23890, 23855 [23855] | 116, 119, 111 [116] | 3873, 3672, 3892 [3873] | 44812136 | 1285364 |
+| 4c7b894 (3 runs) | 34037, 32316, 34305 [34037] | 36666, 33913, 36990 [36666] | 12711, 12140, 12559 [12559] | 32766, 32057, 32892 [32766] | 117, 124, 121 [121] | 4083, 3988, 4270 [4083] | 58583000 | 5824068 |
+| 2b82432 (3 runs) | 33624, 32133, 33365 [33365] | 34333, 34554, 35488 [34554] | 11978, 12082, 12263 [12082] | 32802, 31714, 33248 [32802] | 112, 161, 135 [135] | 4173, 3917, 3938 [3938] | 58547192 | 5824068 |
+
+1000-endpoint incremental, medians: 4c7b894 vs v2.1 / 2b82432 vs v2.1 / 2b82432 vs 4c7b894
+    build: +44.2% / +41.3% / -2.0%
+     edit: +44.9% / +36.5% / -5.8%
+   parent: -11.4% / -14.8% / -3.8%
+     cold: +37.4% / +37.5% / +0.1%
+   binary: +30.7% / +30.7% / -0.1%
+
+====================================================================================================================
+Derived comparison: reading
+====================================================================================================================
+
+rustc -Ztime-passes, 1000-endpoint fixture crate, single runs (seconds; selected passes, from the verbatim
+outputs above):
+
+| pass                          | v2.1   | v3 (2b82432) | delta  |
+|-------------------------------|-------:|-------------:|-------:|
+| total                         | 19.878 |       26.863 | +6.985 |
+| macro_expand_crate            |  2.113 |        2.141 | +0.028 |
+| type_check_crate              |  5.959 |        9.894 | +3.935 |
+| MIR_borrow_checking           |  4.399 |        9.008 | +4.609 |
+| coherence_checking            |  1.610 |        2.701 | +1.091 |
+| codegen_crate                 |  0.967 |        0.669 | -0.298 |
+| LLVM_passes                   |  4.099 |        2.346 | -1.753 |
+| finish_ongoing_codegen        |  3.740 |        1.961 | -1.779 |
+| link                          |  0.205 |        0.276 | +0.071 |
+(passes nest, so the rows do not sum to the total; type_check_crate contains coherence_checking)
+
+Reading the numbers (attribution: ATTRIBUTION.md, "r3 remeasurement"):
+
+- 1000 endpoints, default mode (medians of 3 interleaved runs per tree and session):
+    session A: build   v2.1 19,511 -> 4c7b894 26,592 (+36.3%) -> 1477d3a 26,157 ms (+34.1%)
+               edit    19,491 -> 27,045 (+38.8%) -> 27,018 (+38.6%)
+               parent  19,655 -> 26,603 (+35.3%) -> 26,781 (+36.3%)
+               cold    19,297 -> 26,476 (+37.2%) -> 26,700 (+38.4%)
+    session B: build   v2.1 19,611 -> 4c7b894 26,149 (+33.3%) -> 2b82432 25,338 ms (+29.2%)
+               edit    19,136 -> 26,296 (+37.4%) -> 25,623 (+33.9%)
+               parent  19,524 -> 27,223 (+39.4%) -> 25,701 (+31.6%)
+               cold    19,444 -> 26,129 (+34.4%) -> 25,702 (+32.2%)
+  The v3 trees agree with each other within run-to-run noise: 1477d3a versus 4c7b894 -1.6%..+0.8% (A),
+  2b82432 versus 4c7b894 -1.6%..-5.6% (B). Single 1000-endpoint runs of one tree spread by up to about +/-4%
+  (4c7b894 build 25,378-27,498 ms over six runs, v2.1 18,944-19,777), so no difference between the three v3
+  trees is attributed; the source changes between them do not touch generated code or macros. Summary: +29% to
+  +39% versus v2.1 at 1000 endpoints in these runs (r2: +33% to +39%).
+- Incremental mode (fixture CARGO_INCREMENTAL=1), 1000 endpoints: build +39.6% / +41.3%, local edit +38.2% /
+  +36.5%, cold +39.2% / +37.5% (1477d3a in A / 2b82432 in B); parent edit is FASTER than v2.1 (-11.9% / -14.8%),
+  as in r2. The one-route local edit still costs about a whole rebuild in both dialects (not investigated).
+- Where the extra compile time goes (time-passes, one run each): all of it is front-end work on the generated
+  code. Type checking (+3.9 s), borrow checking (+4.6 s) and coherence (+1.1 s, inside type checking) grow by
+  +8.5 s together, while code generation and LLVM take 3.8 s LESS in v3 than in v2.1 (v2.1 instantiates more
+  generic runtime code in the fixture crate). Macro expansion is equal (2.11 vs 2.14 s). This matches the
+  generated-code volume: 66,064 versus 44,057 declaration-shaped lines (+50%) and 33,037 versus 20,019
+  function-shaped lines (+65%) at 1000 endpoints, while expanded lines differ by only +4.0%. It also means the
+  r2 conjecture that larger monomorphized execution futures per endpoint contribute to the build delta is not
+  supported: the back end got cheaper. The front-end growth is the generated code for new functionality
+  (typed owner projections and value readers, per-endpoint request/intent/view types, the value-control
+  matrix, the static contract description); reducing it would mean generating fewer or simpler items, a
+  generator redesign that is out of scope here.
+- Full sweeps (single runs per size; A: 1477d3a, B: 2b82432 against the session-A v2.1 sweep): build +14..+30%
+  at 1-100 endpoints, +31..+39% at 500-1000; the per-size percentages move by several points between the two v3
+  sweeps (for example 1000-endpoint parent edit +38.3% in A, +25.8% in B), which is the single-run noise above.
+  Expanded code and description sizes are identical in all v3 trees and to r2 (345,841 lines, 5,824,068
+  description bytes at 1000 endpoints; v2.1 332,393 / 1,285,364).
+- Binary (unstripped debug) at 1000 endpoints: 43,877,096 (v2.1) versus 56,322,528 (4c7b894), 56,307,120
+  (1477d3a), 56,241,600 (2b82432): +28.2..+28.4%. CAVEAT: debug executables embed source paths, and the trees
+  live at different paths (the 4c7b894 export's binary is 34,968 B larger than r2's for byte-identical
+  sources; the v2.1 binary is 230,192 B larger than r2's), so byte differences of this order between trees or
+  sessions are not attributable to code.
+
+Record hygiene (R3): trailing spaces at line ends of verbatim tool output (callgrind annotations and
+similar) and trailing blank lines were stripped so the file passes `git diff --check`; no other byte changed.

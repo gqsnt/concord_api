@@ -3,11 +3,14 @@ members = [
     "crates/concord",
     "crates/concord-core",
     "crates/concord-extras",
+    "crates/concord-inspect",
     "crates/concord-macros",
     "crates/concord-test-support",
     "crates/concord-examples",
     "tools/xtask",
     "tools/perf",
+    "tests/downstream/concord-downstream-api",
+    "tests/downstream/concord-downstream-app",
 ]
 default-members = [
     "crates/concord",
@@ -15,14 +18,18 @@ default-members = [
     "crates/concord-extras",
     "crates/concord-macros",
     "crates/concord-examples",
+    "tests/downstream/concord-downstream-api",
+    "tests/downstream/concord-downstream-app",
 ]
 exclude = ["fixtures"]
 resolver = "3"
 
 [workspace.package]
-version = "2.1.0-beta.1"
+version = "3.0.0-beta.1"
 edition = "2024"
 rust-version = "1.86"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/gqsnt/concord_api"
 
 [workspace.dependencies]
 base64 = "0.23.0"
@@ -39,11 +46,13 @@ proc-macro2 = "1.0.107"
 quote = "1.0.47"
 reqwest = { version = "0.13.4", default-features = false }
 regex = "1.11"
-rustls = { version = "0.23.42", default-features = false, features = [ "ring", "std", "tls12" ] }
+rustls = { version = "0.23.46", default-features = false, features = [ "ring", "std", "tls12" ] }
 serde = { version = "1.0", default-features = false, features = ["std"] }
 serde_json = "1.0"
 syn = "3.0.3"
 tokio = { version = "1.53", default-features = false }
+tower-http = { version = "0.6.11", default-features = false }
+tower-service = "0.3.3"
 url = "2.5.8"
 
 [workspace.lints.rust]

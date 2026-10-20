@@ -13,6 +13,7 @@ fn source_only_public_surface_failures_use_trybuild() {
     cases.compile_fail("tests/ui/fail/pagination_private_state.rs");
     cases.compile_fail("tests/ui/fail/request_spec_non_send_input.rs");
     cases.compile_fail("tests/ui/fail/request_spec_metadata_signature.rs");
+    cases.compile_fail("tests/ui/fail/optional_outcome_is_sealed.rs");
     #[cfg(not(feature = "records"))]
     cases.compile_fail("tests/ui/fail/response_mode_is_sealed.rs");
 }

@@ -1,0 +1,53 @@
+error: [C3-PAGE] a cursor destination of endpoint `BodyDestination::read` cannot be the request body; map the cursor to an endpoint value slot
+  --> tests/ui/fail/pagination/pagination_destinations.rs:22:27
+   |
+22 |                 cursor -> offset;
+   |                           ^^^^^^
+
+error: [C3-PAGE] cursor destination `offset` is not an endpoint-owned value of endpoint `ScopeDestination::pages::read`; destinations are bare endpoint slots, never client or scope values, so declare `offset` as a parameter of the endpoint
+  --> tests/ui/fail/pagination/pagination_destinations.rs:36:31
+   |
+36 |                     cursor -> offset;
+   |                               ^^^^^^
+
+error: [C3-PAGE] cursor destinations of endpoint `ClientDestination::read` are bare endpoint-owned slots, never `endpoint.x`, client or scope values; declare `offset` as an endpoint parameter and write `cursor -> offset;`
+  --> tests/ui/fail/pagination/pagination_destinations.rs:51:27
+   |
+51 |                 cursor -> client.offset;
+   |                           ^^^^^^
+
+error: [C3-PAGE] cursor destination `offset` of endpoint `EachDestination::read` is an `each` source; destinations are scalar slots, so map the cursor to a scalar value
+  --> tests/ui/fail/pagination/pagination_destinations.rs:64:27
+   |
+64 |                 cursor -> offset;
+   |                           ^^^^^^
+
+error: [C3-PAGE] cursor destination `offset` of endpoint `RepeatedDestination::read` is repeated; name each slot once
+  --> tests/ui/fail/pagination/pagination_destinations.rs:77:36
+   |
+77 |                 cursor -> (offset, offset);
+   |                                    ^^^^^^
+
+error: [C3-PAGE] cursor destination `offset` of endpoint `RateDestination::read` participates in the effective rate key of `pages.offset`; page-live values cannot be quota dimensions, so key the rate policy on a value the cursor does not change
+  --> tests/ui/fail/pagination/pagination_destinations.rs:98:27
+   |
+98 |                 cursor -> offset;
+   |                           ^^^^^^
+
+error: note: the rate attachment is here
+  --> tests/ui/fail/pagination/pagination_destinations.rs:95:13
+   |
+95 |             rate_limit per_offset(offset = offset);
+   |             ^^^^^^^^^^
+
+error: [C3-PAGE] endpoint `UnsafeEffect::read` is not `effect safe`; page eligibility requires a safe effect (pagination replays continuations), so write `effect safe;` when every page request is a read
+   --> tests/ui/fail/pagination/pagination_destinations.rs:109:13
+    |
+109 |             paginate via OffsetPagination {
+    |             ^^^^^^^^
+
+error: [C3-REP] `absent on` cannot combine with pagination in endpoint `AbsentPagination::read`; remove `absent on` or `paginate`
+   --> tests/ui/fail/pagination/pagination_destinations.rs:122:13
+    |
+122 |             absent on 404;
+    |             ^^^^^^

@@ -1,0 +1,231 @@
+{
+  "format": "concord.ai-exercise-evidence/1",
+  "participant_kind": "AI agent; not a human study",
+  "candidate": "570eec460dee1d83828ae48e35396ae07652aabc",
+  "timing_scope": "Native process durations, including compilation and Cargo lock waiting; no participant elapsed times measured.",
+  "path_normalization": "Portable commands replace only original absolute artifact paths with filenames beside this manifest. Exact original receipts remain outside the repository and are pinned by digest.",
+  "command_digest_format": "SHA-256 of original command argument array serialized as compact UTF-8 JSON, ensure_ascii=False, separators=(comma,colon).",
+  "artifacts": [
+    {
+      "path": "catalog-before.json",
+      "bytes": 129849,
+      "sha256": "6565846a07e8490e44ca2989f4b54ffaf5db3e98dbdc76563e137ceb43e00b33"
+    },
+    {
+      "path": "catalog-after.json",
+      "bytes": 129853,
+      "sha256": "a96780908319ac64f82ca6767d592d0efd1dabd7af931e0676effcf02fc45aeb"
+    },
+    {
+      "path": "catalog-effect-diff.json",
+      "bytes": 817,
+      "sha256": "b7ab04e7c055d3c901438f552253ce37472dc1bff52d0e84d050518427b6f2d2"
+    },
+    {
+      "path": "initial-predictions.md",
+      "bytes": 7609,
+      "sha256": "76299b96cfb7a3bd02fe68246d7ab4bde283d60040306ce2d561077ea23b7eae",
+      "original_working_record_sha256": "b3d2863c5e2284974ee9228a22ce9843e86baffdc357b44d13608b692ffc297b"
+    },
+    {
+      "path": "checked-answers.txt",
+      "bytes": 16289,
+      "sha256": "24f2b63b4095813b077b3603a72d91717bd30114e3ce76da3b3523841c90b188",
+      "original_working_record_sha256": "0b0fcbef648a1fe1781a8f616b12ac1ab3e622bfcae2ae62919fb40d8a6b2dd7"
+    },
+    {
+      "path": "catalog-effect.patch",
+      "bytes": 626,
+      "sha256": "a688998664a6d875f58612ebe709f6593658d8a5feb54497fa6260689053a071"
+    }
+  ],
+  "commands": [
+    {
+      "label": "user-exercises",
+      "portable_command": [
+        "cargo",
+        "test",
+        "-p",
+        "concord",
+        "--test",
+        "v3_user_exercises",
+        "--no-default-features",
+        "--features",
+        "json,ndjson",
+        "--locked"
+      ],
+      "original_command_sha256": "96dd4b9fee3f5438000d1ad1c1cbf4b84b35eccbe828dc9fba474e6849b9ec8b",
+      "cwd_role": "follow-up working checkout",
+      "started_at": "2026-10-17T11:39:26.032683+00:00",
+      "finished_at": "2026-10-17T11:39:33.420257+00:00",
+      "elapsed_seconds": 7.363,
+      "exit_code": 0,
+      "log_bytes": 2197,
+      "log_sha256": "2baf90972bc173fb17fb221c7fed9f5d3880ef2919b4024086330a62937f546b",
+      "original_receipt_sha256": "96127c645d118fe66b895708c8acc5b241c1eb12976c349f76490c1d45a33951",
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "dirty": true,
+        "git_status_porcelain": " M .gitattributes\n M Cargo.toml\n M README.md\n M crates/concord-core/Cargo.toml\n M crates/concord-core/src/redaction/headers.rs\n M crates/concord-examples/Cargo.toml\n M crates/concord-extras/Cargo.toml\n M crates/concord-extras/src/records/csv.rs\n M crates/concord-extras/tests/contracts/record_streams.rs\n M crates/concord-inspect/Cargo.toml\n M crates/concord-macros/Cargo.toml\n M crates/concord-macros/src/emit/docs.rs\n M crates/concord-test-support/Cargo.toml\n M crates/concord/Cargo.toml\n M dev_doc/adrs/0023-rate-window-sets-policy-identity-and-atomic-admission.md\n M dev_doc/history/concord_v2_1_second_release_readiness_audit.md\n M docs/auth.md\n M docs/evidence_and_release_gates.md\n M docs/extensions.md\n M docs/mental_model.md\n M docs/modeling_apis.md\n M docs/overview.md\n M docs/pagination.md\n M docs/planning_and_observation.md\n M docs/quick_start.md\n M docs/rate_limits.md\n M docs/request_bodies.md\n M docs/requests_and_values.md\n M docs/responses.md\n M docs/riot_walkthrough.md\n M docs/spec.md\n M docs/streams.md\n M fixtures/dependency/contract_mismatch/Cargo.toml\n M fixtures/dependency/contract_mismatch/incompatible_facade/Cargo.toml\n M fixtures/dependency/renamed_facade/Cargo.toml\n M fixtures/features/Cargo.toml\n M fixtures/msrv/core/Cargo.toml\n M fixtures/msrv/facade/Cargo.toml\n M scripts/verify_packaged_downstream.ps1\n M tests/downstream/concord-downstream-api/Cargo.toml\n M tests/downstream/concord-downstream-app/Cargo.toml\n M tools/perf/Cargo.toml\n M tools/xtask/Cargo.toml\n M tools/xtask/src/doc_audit.rs\n M tools/xtask/src/docs_check.rs\n M tools/xtask/src/policy.rs\n?? LICENSE-APACHE\n?? LICENSE-MIT\n?? crates/concord-core/LICENSE-APACHE\n?? crates/concord-core/LICENSE-MIT\n?? crates/concord-extras/LICENSE-APACHE\n?? crates/concord-extras/LICENSE-MIT\n?? crates/concord-macros/LICENSE-APACHE\n?? crates/concord-macros/LICENSE-MIT\n?? crates/concord/LICENSE-APACHE\n?? crates/concord/LICENSE-MIT\n?? crates/concord/tests/v3_user_exercises.rs\n?? dev_doc/reviews/2026_10_17_followup/\n",
+        "tracked_diff_sha256": "a665cf703984e0a5282bcf6ea8322feb58674295c7926081c682ad957df624af",
+        "untracked_files_sha256": {
+          "LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+          "crates/concord-core/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "crates/concord-core/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+          "crates/concord-extras/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "crates/concord-extras/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+          "crates/concord-macros/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "crates/concord-macros/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+          "crates/concord/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "crates/concord/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+          "crates/concord/tests/v3_user_exercises.rs": "e7f545a2d21169a6df3ca1f4d409b4bfe66c7b8668a1b7bcc5585de3f15630a2",
+          "dev_doc/reviews/2026_10_17_followup/runtime_review.md": "a60df97181c5ea465bb5eea75702669819e56ef2c47ed357caabf93e576bbe68"
+        }
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "dirty": true,
+        "git_status_porcelain": " M .gitattributes\n M Cargo.toml\n M README.md\n M crates/concord-core/Cargo.toml\n M crates/concord-core/src/redaction/headers.rs\n M crates/concord-examples/Cargo.toml\n M crates/concord-extras/Cargo.toml\n M crates/concord-extras/src/records/csv.rs\n M crates/concord-extras/tests/contracts/record_streams.rs\n M crates/concord-inspect/Cargo.toml\n M crates/concord-macros/Cargo.toml\n M crates/concord-macros/src/emit/docs.rs\n M crates/concord-test-support/Cargo.toml\n M crates/concord/Cargo.toml\n M dev_doc/adrs/0023-rate-window-sets-policy-identity-and-atomic-admission.md\n M dev_doc/history/concord_v2_1_second_release_readiness_audit.md\n M docs/auth.md\n M docs/evidence_and_release_gates.md\n M docs/extensions.md\n M docs/mental_model.md\n M docs/modeling_apis.md\n M docs/overview.md\n M docs/pagination.md\n M docs/planning_and_observation.md\n M docs/quick_start.md\n M docs/rate_limits.md\n M docs/request_bodies.md\n M docs/requests_and_values.md\n M docs/responses.md\n M docs/riot_walkthrough.md\n M docs/spec.md\n M docs/streams.md\n M fixtures/dependency/contract_mismatch/Cargo.toml\n M fixtures/dependency/contract_mismatch/incompatible_facade/Cargo.toml\n M fixtures/dependency/renamed_facade/Cargo.toml\n M fixtures/features/Cargo.toml\n M fixtures/msrv/core/Cargo.toml\n M fixtures/msrv/facade/Cargo.toml\n M scripts/verify_packaged_downstream.ps1\n M tests/downstream/concord-downstream-api/Cargo.toml\n M tests/downstream/concord-downstream-app/Cargo.toml\n M tools/perf/Cargo.toml\n M tools/xtask/Cargo.toml\n M tools/xtask/src/doc_audit.rs\n M tools/xtask/src/docs_check.rs\n M tools/xtask/src/policy.rs\n?? LICENSE-APACHE\n?? LICENSE-MIT\n?? crates/concord-core/LICENSE-APACHE\n?? crates/concord-core/LICENSE-MIT\n?? crates/concord-extras/LICENSE-APACHE\n?? crates/concord-extras/LICENSE-MIT\n?? crates/concord-macros/LICENSE-APACHE\n?? crates/concord-macros/LICENSE-MIT\n?? crates/concord/LICENSE-APACHE\n?? crates/concord/LICENSE-MIT\n?? crates/concord/tests/v3_user_exercises.rs\n?? dev_doc/reviews/2026_10_17_followup/\n",
+        "tracked_diff_sha256": "a665cf703984e0a5282bcf6ea8322feb58674295c7926081c682ad957df624af",
+        "untracked_files_sha256": {
+          "LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+          "crates/concord-core/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "crates/concord-core/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+          "crates/concord-extras/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "crates/concord-extras/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+          "crates/concord-macros/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "crates/concord-macros/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+          "crates/concord/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "crates/concord/LICENSE-MIT": "76d21bd06e41424b677f4fd75d962704c902b629c3a59f2f412d56926891c8f8",
+          "crates/concord/tests/v3_user_exercises.rs": "e7f545a2d21169a6df3ca1f4d409b4bfe66c7b8668a1b7bcc5585de3f15630a2",
+          "dev_doc/reviews/2026_10_17_followup/runtime_review.md": "a60df97181c5ea465bb5eea75702669819e56ef2c47ed357caabf93e576bbe68"
+        }
+      }
+    },
+    {
+      "label": "dx-contract-before",
+      "portable_command": [
+        "cargo",
+        "run",
+        "-p",
+        "concord-xtask",
+        "--features",
+        "examples",
+        "--",
+        "contract",
+        "export",
+        "--target",
+        "catalog",
+        "--output",
+        "catalog-before.json"
+      ],
+      "original_command_sha256": "9eb508f4706fcaff5b14a6e544bfe5f8f61983a36de2ccd55669477c11c6d24c",
+      "cwd_role": "isolated original-candidate checkout",
+      "started_at": "2026-10-17T11:34:06.751072+00:00",
+      "finished_at": "2026-10-17T11:34:36.130961+00:00",
+      "elapsed_seconds": 29.285,
+      "exit_code": 0,
+      "log_bytes": 2979,
+      "log_sha256": "715893fab5bc2b66da5c3c8d3799f0e44e46d15d205f66c01469fb2d582f936b",
+      "original_receipt_sha256": "47e3b39a4749cf5544d845a3ec37bde0c8f28158a7b7a992fd9a3cbd1f51ef6a",
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "dirty": false,
+        "git_status_porcelain": "",
+        "tracked_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untracked_files_sha256": {}
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "dirty": false,
+        "git_status_porcelain": "",
+        "tracked_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "untracked_files_sha256": {}
+      }
+    },
+    {
+      "label": "dx-contract-after",
+      "portable_command": [
+        "cargo",
+        "run",
+        "-p",
+        "concord-xtask",
+        "--features",
+        "examples",
+        "--",
+        "contract",
+        "export",
+        "--target",
+        "catalog",
+        "--output",
+        "catalog-after.json"
+      ],
+      "original_command_sha256": "ec1f4aa84ea9b50612eaad39a73953885578bad7ec7606740cc77971a8f81a4f",
+      "cwd_role": "isolated original-candidate checkout",
+      "started_at": "2026-10-17T11:35:43.059648+00:00",
+      "finished_at": "2026-10-17T11:36:16.115583+00:00",
+      "elapsed_seconds": 33.038,
+      "exit_code": 0,
+      "log_bytes": 687,
+      "log_sha256": "4d0087998e3c1ad352cc326772c005e042f111106779631bf0054caf435021dd",
+      "original_receipt_sha256": "1c17e4e107ea099640468427488fb3f2ec606ba778b4d5d9729f0f7ccf572ee0",
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "dirty": true,
+        "git_status_porcelain": " M crates/concord-examples/src/contracts/catalog_v3.rs\n",
+        "tracked_diff_sha256": "a688998664a6d875f58612ebe709f6593658d8a5feb54497fa6260689053a071",
+        "untracked_files_sha256": {}
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "dirty": true,
+        "git_status_porcelain": " M crates/concord-examples/src/contracts/catalog_v3.rs\n",
+        "tracked_diff_sha256": "a688998664a6d875f58612ebe709f6593658d8a5feb54497fa6260689053a071",
+        "untracked_files_sha256": {}
+      }
+    },
+    {
+      "label": "dx-contract-diff",
+      "portable_command": [
+        "cargo",
+        "run",
+        "-p",
+        "concord-xtask",
+        "--features",
+        "examples",
+        "--",
+        "contract",
+        "diff",
+        "catalog-before.json",
+        "catalog-after.json",
+        "--format",
+        "json"
+      ],
+      "original_command_sha256": "501baedc530a53179ce52fd9e7e9f78822b37179ea9d3b11a9a0e5e818c43956",
+      "cwd_role": "isolated original-candidate checkout",
+      "started_at": "2026-10-17T11:38:52.515016+00:00",
+      "finished_at": "2026-10-17T11:39:12.132381+00:00",
+      "elapsed_seconds": 19.599,
+      "exit_code": 0,
+      "log_bytes": 1193,
+      "log_sha256": "f00687790102ae026a0a8ea9c3c98f1a3e5bf5280f205b67c2db3452576db0e3",
+      "original_receipt_sha256": "546ad16fd8d327c41aaba0b49530a7ce7f1453fc4a57f3573765e1329ca679b6",
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "dirty": true,
+        "git_status_porcelain": " M crates/concord-examples/src/contracts/catalog_v3.rs\n",
+        "tracked_diff_sha256": "a688998664a6d875f58612ebe709f6593658d8a5feb54497fa6260689053a071",
+        "untracked_files_sha256": {}
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "dirty": true,
+        "git_status_porcelain": " M crates/concord-examples/src/contracts/catalog_v3.rs\n",
+        "tracked_diff_sha256": "a688998664a6d875f58612ebe709f6593658d8a5feb54497fa6260689053a071",
+        "untracked_files_sha256": {}
+      }
+    }
+  ]
+}

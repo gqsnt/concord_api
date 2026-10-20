@@ -1,8 +1,9 @@
+// AUTH-01 boundary: exactly 64 effective auth placements compile (first
+// excess: fail/authentication/generated_auth_first_excess.rs).
 use concord::{Empty, api};
 
 api! {
     client AuthPlacementBoundary {
-        timeout 30s;
         base "https://example.test";
         credentials {
             secret key_value;
@@ -75,8 +76,8 @@ api! {
             query "auth-63" = key;
         }
 
-
-    GET read() -> () via Empty;
-}}
+        GET read() -> () via Empty;
+    }
+}
 
 fn main() {}

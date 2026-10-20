@@ -1,0 +1,16 @@
+[package]
+name = "concord-downstream-api"
+description = "Downstream acceptance package: a separate crate declaring a Concord client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+concord = { version = "=3.0.0-beta.1", path = "../../../crates/concord", default-features = false, features = ["default-tls", "json"] }
+serde = { workspace = true, features = ["derive"] }
+
+[lints]
+workspace = true

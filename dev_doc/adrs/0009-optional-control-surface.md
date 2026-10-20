@@ -1,6 +1,6 @@
 # ADR 0009 — Exact optional setter, `with`, `omit`, and `reset`
 
-- **Status:** Superseded by ADR 0012 before release
+- **Status:** Superseded by ADR 0012 before release; that lineage is superseded for v3 by [ADR 0014](0014-exact-conditional-and-reset-value-controls.md).
 
 ## Decision
 

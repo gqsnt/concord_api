@@ -1,0 +1,13 @@
+diff --git a/crates/concord-examples/src/contracts/catalog_v3.rs b/crates/concord-examples/src/contracts/catalog_v3.rs
+index 0b0f26a..5637ea1 100644
+--- a/crates/concord-examples/src/contracts/catalog_v3.rs
++++ b/crates/concord-examples/src/contracts/catalog_v3.rs
+@@ -236,7 +236,7 @@ api! {
+             ) -> Item {
+                 id "catalog.item.update";
+                 path "items/{id}";
+-                effect idempotent;
++                effect non_idempotent;
+                 rate_limit {
+                     id "catalog.item.write";
+                     key [origin, endpoint, "client.tenant" = client.tenant];

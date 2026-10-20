@@ -1,6 +1,7 @@
 # ADR 0012 — Freeze the exact optional control surface
 
-- **Status:** Selected for the v2.1 integration candidate; human comprehension remains unknown for public freeze
+- **Status:** Superseded for v3 by [ADR 0014](0014-exact-conditional-and-reset-value-controls.md): v3 moves exact outer-slot replacement to `replace_x` and adds `set_x_if_some`.
+- **v2.1 status (historical):** Selected for the v2.1 integration candidate; human comprehension remains unknown for public freeze
 - **Supersedes:** ADR 0009
 
 ## Decision

@@ -1,0 +1,27 @@
+   Compiling concord-macros v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord-macros)
+   Compiling concord v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord)
+   Compiling concord-examples v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord-examples)
+   Compiling concord-xtask v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/tools/xtask)
+    Finished `dev` profile [unoptimized] target(s) in 19.03s
+     Running `/workspace/scratch/69ac10347cac/v3-followup/target/debug/concord-xtask doc-audit --locked`
+    Blocking waiting for file lock on build directory
+   Compiling ring v0.17.14
+    Checking memchr v2.8.3
+    Checking tower-http v0.6.11
+    Checking serde v1.0.228
+    Checking csv-core v0.1.13
+    Checking serde_json v1.0.150
+    Checking csv v1.4.0
+   Compiling rustls v0.23.46
+    Checking rustls-webpki v0.103.15
+    Checking tokio-rustls v0.26.4
+    Checking rustls-platform-verifier v0.7.0
+    Checking hyper-rustls v0.27.9
+    Checking reqwest v0.13.4
+    Checking concord-core v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord-core)
+    Checking concord-extras v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord-extras)
+    Checking concord v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord)
+ Documenting concord-examples v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord-examples)
+    Finished `dev` profile [unoptimized] target(s) in 1m 12s
+   Generated /workspace/scratch/69ac10347cac/v3-followup/target/doc/concord_examples/index.html
+doc-audit: rendered Rustdoc of the canonical Catalog and the deprecation fixture shows every required caller-contract fact

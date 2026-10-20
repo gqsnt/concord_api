@@ -1,0 +1,77 @@
+error: [C3-OWNER] this declaration is client-only and cannot appear in scope `ScopeBaseApi::s`; move it to the client preamble (scope inputs are scope parameters)
+  --> tests/ui/fail/syntax/forbidden_owner_clauses.rs:14:13
+   |
+14 |             base "https://other.example.test";
+   |             ^^^^
+
+error: [C3-OWNER] this declaration is client-only and cannot appear in scope `ScopeValuesApi::s`; move it to the client preamble (scope inputs are scope parameters)
+  --> tests/ui/fail/syntax/forbidden_owner_clauses.rs:25:13
+   |
+25 |             values { query tenant: String; }
+   |             ^^^^^^
+
+error: [C3-OWNER] this declaration is client-only and cannot appear in scope `ScopeCredentialsApi::s`; move it to the client preamble (scope inputs are scope parameters)
+  --> tests/ui/fail/syntax/forbidden_owner_clauses.rs:36:13
+   |
+36 |             credentials { secret key; }
+   |             ^^^^^^^^^^^
+
+error: [C3-OWNER] this declaration is client-only and cannot appear in scope `ScopeRateRegistryApi::accounts`; move it to the client preamble (scope inputs are scope parameters)
+  --> tests/ui/fail/syntax/forbidden_owner_clauses.rs:47:13
+   |
+47 |             rate_limits {
+   |             ^^^^^^^^^^^
+
+error: [C3-OWNER] `id`, `status`, `effect`, `absent on`, `paginate` and `expose` are endpoint-only clauses and cannot appear in scope `ScopeStatusApi::s`; move the clause into each endpoint that needs it
+  --> tests/ui/fail/syntax/forbidden_owner_clauses.rs:61:13
+   |
+61 |             status 204;
+   |             ^^^^^^
+
+error: [C3-OWNER] `id`, `status`, `effect`, `absent on`, `paginate` and `expose` are endpoint-only clauses and cannot appear in scope `ScopeIdApi::s`; move the clause into each endpoint that needs it
+  --> tests/ui/fail/syntax/forbidden_owner_clauses.rs:72:13
+   |
+72 |             id "owner.scope";
+   |             ^^
+
+error: [C3-OWNER] unsupported client entry in client `ClientEffectApi`; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause
+  --> tests/ui/fail/syntax/forbidden_owner_clauses.rs:81:9
+   |
+81 |         effect safe;
+   |         ^^^^^^
+
+error: [C3-OWNER] this declaration is client-only and cannot appear on endpoint `EndpointValuesApi::read`; move it to the client preamble (endpoint inputs are endpoint parameters)
+  --> tests/ui/fail/syntax/forbidden_owner_clauses.rs:91:13
+   |
+91 |             values { query tenant: String; }
+   |             ^^^^^^
+
+error: [C3-OWNER] endpoint `EndpointSubdomainApi::read` cannot own a subdomain clause; select DNS labels on a client or scope
+   --> tests/ui/fail/syntax/forbidden_owner_clauses.rs:102:13
+    |
+102 |             subdomain ["api"];
+    |             ^^^^^^^^^
+
+error: [C3-REP] representation exceptions of endpoint `EndpointResponseDefaultApi::read` are inline: write `body name: Input via RequestRepresentation` or `-> Output via ResponseRepresentation`
+   --> tests/ui/fail/syntax/forbidden_owner_clauses.rs:113:13
+    |
+113 |             response Text;
+    |             ^^^^^^^^
+
+error: [C3-REP] `explicit` representation fences are scope-only; client `ClientFenceApi` simply omits the `response` default
+   --> tests/ui/fail/syntax/forbidden_owner_clauses.rs:122:18
+    |
+122 |         response explicit;
+    |                  ^^^^^^^^
+
+error: [C3-OWNER] client `LatePreambleApi` preamble clauses must precede its child scopes and endpoints; move this clause above the first child
+   --> tests/ui/fail/syntax/forbidden_owner_clauses.rs:133:9
+    |
+133 |         headers { "X-Late" = "1"; }
+    |         ^^^^^^^
+
+error: note: the first child is declared here
+   --> tests/ui/fail/syntax/forbidden_owner_clauses.rs:131:13
+    |
+131 |         GET read() -> Bytes via Binary;
+    |             ^^^^

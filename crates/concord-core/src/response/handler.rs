@@ -7,18 +7,22 @@ use crate::error::{ApiError, DispatchKnowledge, ErrorCategory, FailureStage};
 use crate::http::application::ApplicationResponse;
 use crate::operation::OperationDeadline;
 
+use super::lease::StreamContext;
 use super::spec::ResponseSelection;
-use super::stream::StreamObservation;
 use super::{ByteStream, ResponseBodyErrorKind, ResponseHead, ResponseRepresentation};
 
 pub struct ResponseInput {
     pub(crate) response: ApplicationResponse,
     pub(crate) limit: NonZeroUsize,
+    /// Effective streaming byte ceiling (runtime limit narrowed by the call's
+    /// response-byte cap); used for the known-length preflight.
     pub(crate) stream_limit: NonZeroUsize,
     pub(crate) deadline: OperationDeadline,
     pub(crate) endpoint: EndpointId,
     pub(crate) method: http::Method,
-    pub(crate) stream_observation: Option<StreamObservation>,
+    /// Handoff context for a streaming acquisition. Continuation ownership
+    /// passes to the managed stream built from it.
+    pub(crate) stream: Option<StreamContext>,
 }
 
 pub(crate) async fn execute_response<R, DeclaredOutput, S>(
@@ -63,32 +67,41 @@ pub(crate) fn preflight_streaming(input: &ResponseInput) -> Result<(), ApiError>
 }
 
 pub(crate) fn preflight_discard(input: &ResponseInput) -> Result<(), ApiError> {
-    preflight_length(input, input.limit)
+    // The discard driver never polls the body, so no body limit applies; only
+    // the operation deadline is checked before the native body is dropped.
+    input
+        .deadline
+        .check()
+        .map_err(|_| timeout(&input.endpoint, &input.method))
 }
 
-pub(crate) async fn acquire_buffered(input: ResponseInput) -> Result<Bytes, ApiError> {
-    collect_bounded(input).await
-}
-
-pub(crate) async fn acquire_streaming(mut input: ResponseInput) -> Result<ByteStream, ApiError> {
+pub(crate) async fn acquire_streaming(input: ResponseInput) -> Result<ByteStream, ApiError> {
     input
         .deadline
         .check()
         .map_err(|_| timeout(&input.endpoint, &input.method))?;
-    let limit = u64::try_from(input.stream_limit.get()).unwrap_or(u64::MAX);
-    let body = input.response.into_byte_stream(limit);
-    input
-        .deadline
-        .check()
-        .map_err(|_| timeout(&input.endpoint, &input.method))?;
-    Ok(match input.stream_observation.take() {
-        Some(observation) => ByteStream::observed(body, observation),
-        None => ByteStream::new(body),
-    })
+    let Some(context) = input.stream else {
+        return Err(ApiError::classified(
+            input.endpoint.clone(),
+            input.method.clone(),
+            ErrorCategory::Internal,
+        )
+        .with_stage(
+            FailureStage::ResponseAcquisition,
+            DispatchKnowledge::ResponseObserved,
+        ));
+    };
+    // STREAM-01: acquisition hands the unpolled native body and the finite
+    // lease to the managed stream; nothing is read here and the operation
+    // deadline stops governing consumption (a whole-operation cap is carried
+    // into the lease instead).
+    Ok(ByteStream::open(input.response.into_byte_stream(), context))
 }
 
 pub(crate) async fn acquire_discard(input: ResponseInput) -> Result<(), ApiError> {
-    collect_bounded(input).await.map(drop)
+    // Drop the accepted native body without polling or draining it.
+    drop(input.response);
+    Ok(())
 }
 
 fn response_spec_error(
@@ -146,7 +159,7 @@ fn preflight_length(input: &ResponseInput, limit: NonZeroUsize) -> Result<(), Ap
     Ok(())
 }
 
-async fn collect_bounded(input: ResponseInput) -> Result<Bytes, ApiError> {
+pub(crate) async fn acquire_buffered(input: ResponseInput) -> Result<Bytes, ApiError> {
     let endpoint = input.endpoint;
     let timeout_endpoint = endpoint.clone();
     let method = input.method;
@@ -157,7 +170,14 @@ async fn collect_bounded(input: ResponseInput) -> Result<Bytes, ApiError> {
         .deadline
         .run(async move {
             let mut body = BytesMut::new();
-            while let Some(chunk) = response.chunk().await? {
+            // A chunk failure happens after the accepted head was observed;
+            // it must never be reported as a pre-dispatch failure.
+            while let Some(chunk) = response.chunk().await.map_err(|error| {
+                error.with_stage(
+                    FailureStage::ResponseAcquisition,
+                    DispatchKnowledge::ResponseObserved,
+                )
+            })? {
                 let Some(next_length) = body.len().checked_add(chunk.len()) else {
                     return Err(ApiError::classified(
                         endpoint.clone(),
@@ -225,7 +245,7 @@ mod tests {
                 .expect("disabled deadline"),
             endpoint,
             method,
-            stream_observation: None,
+            stream: None,
         }
     }
 

@@ -1,0 +1,37 @@
+error: [C3-NAME] `id` is not a value of endpoint `EndpointHoleApi::regional::item`; a bare name binds only the current owner's values — did you mean `regional.id`?
+  --> tests/ui/fail/names/bare_ancestor_reference.rs:15:22
+   |
+15 |                 path "items/{id}";
+   |                      ^^^^^^^^^^^^
+
+error: [C3-PATH] in path template hole at bytes 6..10 of endpoint `EndpointHoleApi::regional::item`
+  --> tests/ui/fail/names/bare_ancestor_reference.rs:15:22
+   |
+15 |                 path "items/{id}";
+   |                      ^^^^^^^^^^^^
+
+error: [C3-NAME] `tenant` is not a value of scope `ScopePreambleApi::regional`; a bare name binds only the current owner's values — did you mean `client.tenant`?
+  --> tests/ui/fail/names/bare_ancestor_reference.rs:28:36
+   |
+28 |             headers { "X-Tenant" = tenant; }
+   |                                    ^^^^^^
+
+error: [C3-NAME] `locale` is not a value of endpoint `AmbiguousSuggestionApi::regional::item`; a bare name binds only the current owner's values — did you mean `regional.locale` or `client.locale`?
+  --> tests/ui/fail/names/bare_ancestor_reference.rs:43:36
+   |
+43 |                 query { "locale" = locale; }
+   |                                    ^^^^^^
+
+error: [C3-NAME] `tenant` is not a value of endpoint `RateBindingApi::item`; a bare name binds only the current owner's values — did you mean `client.tenant`?
+  --> tests/ui/fail/names/bare_ancestor_reference.rs:63:44
+   |
+63 |             rate_limit per_tenant(tenant = tenant);
+   |                                            ^^^^^^
+
+warning: unused imports: `Binary` and `Bytes`
+ --> tests/ui/fail/names/bare_ancestor_reference.rs:4:15
+  |
+4 | use concord::{Binary, Bytes, api};
+  |               ^^^^^^  ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

@@ -1,9 +1,16 @@
 # Gate 10 anonymized documentation-review results
 
-- Exact candidate full SHA: `0f72e8653ee0fc08ea7de0e606f01c8d130b53c2`
+**Agent evaluation:** see the [17 October execution record](../reviews/2026_10_17_followup/rustdoc_review.md).
+This file records only human-study measurements and intentionally keeps the
+human participant count at zero. It does not mark the requested agent work
+unexecuted or blocked.
+
+**Status:** v3 human-results form, revised 2026-10-16. Still unexecuted.
+
+- Exact candidate full SHA: record the actual reviewed v3 commit when the human session starts.
 - Human reviewers completed: **0**
 - Qualifying minimum: **1 independent first-contact Rust reviewer**
-- Status: **Unknown/Blocked for public freeze — no independent human review has been run**
+- Status: **Unmeasured human-review metrics — independent agent review is recorded separately**
 
 | Reviewer | Rust background band | Task | Correct | Seconds | Confidence /5 | Public path/pages/types | Incorrect interpretation / correction | Implementation source used | Severity |
 |---|---|---:|---|---:|---:|---|---|---|---|
@@ -20,5 +27,5 @@
 
 ## Findings, fixes, and rereview
 
-No findings, fixes, or rereview evidence exist because reviewer count is zero.
+No human findings, fixes, or rereview evidence exist because reviewer count is zero.
 Append only actual anonymized observations and exact fix/rereview SHAs.

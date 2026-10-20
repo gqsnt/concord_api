@@ -1,12 +1,12 @@
 # binary|required message fragment;;additional fragment|primary source suffix
 pascal_source_name|endpoint source identifier `HTTPStatus` must be snake_case|crates/concord/tests/ui/fail/names/pascal_source_name.rs
-rate_limit_window_limit|an anonymous rate-limit attachment permits at most 16 windows|crates/concord/tests/ui/fail/rate_limits/rate_limit_window_limit.rs
-rate_limit_missing_named_binding|requires a binding for dimension `account`|crates/concord/tests/ui/fail/rate_limits/rate_limit_missing_named_binding.rs
+rate_limit_window_limit|declares 17 windows;;at most 16 are allowed|crates/concord/tests/ui/fail/rate_limits/rate_limit_window_limit.rs
+rate_limit_missing_named_binding|formal `account` is unbound;;bindings are named, exact and total|crates/concord/tests/ui/fail/rate_limits/rate_limit_missing_named_binding.rs
 non_paginated_no_paginate|no method named `paginate`|crates/concord/tests/ui/fail/pagination/non_paginated_no_paginate.rs
-wrong_endpoint_setter_absent|no method named `verbose`|crates/concord/tests/ui/fail/capabilities/wrong_endpoint_setter_absent.rs
+wrong_endpoint_setter_absent|no method named `set_verbose`;;SecondRequest|crates/concord/tests/ui/fail/capabilities/wrong_endpoint_setter_absent.rs
 bare_client_builder_value_setter_absent|no method named `label`;;set_label|crates/concord/tests/ui/fail/capabilities/bare_client_builder_value_setter_absent.rs
 bare_endpoint_value_setter_absent|no method named `label`|crates/concord/tests/ui/fail/capabilities/bare_endpoint_value_setter_absent.rs
 bare_scope_value_setter_absent|no method named `label`|crates/concord/tests/ui/fail/capabilities/bare_scope_value_setter_absent.rs
 bare_value_setter_absent|no method named `verbose`|crates/concord/tests/ui/fail/capabilities/bare_value_setter_absent.rs
 endpoint_id_into_unavailable|EndpointId: From<&str>;;is not satisfied|msrv/facade/src/bin/endpoint_id_into_unavailable.rs
-trait_default_requires_default|NoDefault: Default;;is not satisfied|crates/concord/tests/ui/fail/syntax/trait_default_requires_default.rs
+trait_default_requires_default|the trait bound `;;NoDefault: ;;Default` is not satisfied|crates/concord/tests/ui/fail/syntax/trait_default_requires_default.rs

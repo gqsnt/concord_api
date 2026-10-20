@@ -1,6 +1,7 @@
 # ADR 0006 — Prepare bodies once per direct/page request
 
-- **Status:** Selected
+- **Status:** Superseded for v3 by [ADR 0018](0018-single-prepared-body-authority.md); the once-per-direct-request-or-page preparation rule is carried forward unchanged.
+- **v2.1 status (historical):** Selected
 
 ## Decision
 

@@ -1,6 +1,7 @@
 # ADR 0001 — Inherited directional representations with inline exceptions
 
-- **Status:** Selected and mechanically supported on Windows/Linux; human comprehension remains unknown for public freeze
+- **Status:** Superseded for v3 by [ADR 0016](0016-directional-representation-selection-v3.md); its directional-ownership decision is carried forward unchanged.
+- **v2.1 status (historical):** Selected and mechanically supported on Windows/Linux; human comprehension remains unknown for public freeze. The evidence below is v2.1 evidence and was not re-run for v3.
 
 ## Decision
 

@@ -1,10 +1,20 @@
-use concord::api;
+// §3.1 / §3.5: `#[default]` is the explicit route for a payload's `Default`
+// implementation on client, scope and endpoint values (v2 `= default`). The
+// initialized values get `set_x`/`reset_x`; the initialized optional value also
+// gets `replace_x`/`omit_x` (VALUE-03). Every value is live (VALUE-06).
+use concord::{AtomError, Binary, BoundedAtomWriter, Bytes, RequestAtom, api};
 
 pub struct CustomDefault;
 
 impl Default for CustomDefault {
     fn default() -> Self {
         Self
+    }
+}
+
+impl RequestAtom for CustomDefault {
+    fn write_atom(&self, output: &mut BoundedAtomWriter<'_>) -> Result<(), AtomError> {
+        output.push_str("custom")
     }
 }
 
@@ -22,18 +32,25 @@ api! {
             #[default]
             custom: crate::CustomDefault;
         }
+        query {
+            "scalar" = scalar;
+            "optional" = optional;
+            "vector" = each vector;
+            "custom" = custom;
+        }
 
-
-    scope group(#[default] scope_value: crate::CustomDefault) {
-        GET read(#[default] endpoint_value: crate::CustomDefault) -> Bytes via Binary;
+        scope group(#[default] query scope_value: crate::CustomDefault) {
+            GET read(#[default] query endpoint_value: crate::CustomDefault) -> Bytes via Binary;
+        }
     }
-}}
+}
 
 fn main() {
     let client = DefaultShorthandApi::builder()
         .set_scalar(1)
         .reset_scalar()
-        .set_optional(Some("selected".to_owned()))
+        .set_optional("selected")
+        .replace_optional(Some("selected".to_owned()))
         .omit_optional()
         .reset_optional()
         .set_vector(vec!["selected".to_owned()])

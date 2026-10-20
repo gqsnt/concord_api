@@ -1,19 +1,33 @@
 use std::fmt;
 use std::io::{self, Write};
 
+use concord_core::body::BodyDescription;
 use concord_core::contracts::{
-    BodyError, BodyErrorKind, BodyKind, Buffered, Bytes, HeaderValue, LengthHint,
-    PageRequestRepresentation, PageResponseRepresentation, RequestBody, RequestBodyContext,
-    RequestBodyMetadata, RequestContentType, RequestRepresentation, ResponseBodyError,
-    ResponseBodyErrorKind, ResponseDriver, ResponseHead, ResponseRepresentation,
+    BodyError, BodyErrorKind, Buffered, Bytes, PageRequestRepresentation, PreparedBody,
+    RequestBodyContext, RequestRepresentation, ResponseBodyError, ResponseBodyErrorKind,
+    ResponseDriver, ResponseHead, ResponseRepresentation,
 };
 
 const INITIAL_JSON_CAPACITY: usize = 8 * 1024;
+const JSON_MEDIA_TYPE: &str = "application/json";
 
 /// Typed JSON request and response codec.
 ///
 /// Request serialization writes directly into a buffer capped by
-/// [`RequestBodyContext::body_limit`] and stops at the first encoded excess.
+/// [`RequestBodyContext::body_limit`] and stops at the first encoded excess
+/// (never serialize-then-truncate); the prepared body owns the one exact
+/// `application/json` media type.
+///
+/// Responses negotiate `Accept: application/json` and require, on the
+/// ordinary accepted branch, a syntactically valid `application/json` or
+/// structured-suffix `application/*+json` `Content-Type` (media tokens are
+/// case-insensitive; parameters must be syntactically valid). A missing,
+/// malformed or incompatible media type is
+/// [`ResponseBodyErrorKind::InvalidMediaType`] before any JSON conversion;
+/// invalid JSON is a [`ResponseBodyErrorKind::Decode`] conversion error. Json
+/// has no iterable-output requirement: a buffered envelope is pageable when a
+/// typed pagination controller extracts its items.
+///
 /// Parser-, serializer-, and application-authored text is discarded when
 /// errors cross the semantic codec boundary.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -23,20 +37,11 @@ impl<T> RequestRepresentation<T> for Json
 where
     T: serde::Serialize + Send + 'static,
 {
-    fn metadata(
-        _input: &T,
-        _context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        Ok(RequestBodyMetadata {
-            length: LengthHint::Unknown,
-            content_type: RequestContentType::Exact(HeaderValue::from_static("application/json")),
-            kind: BodyKind::Buffered,
-        })
-    }
+    const DESCRIPTION: BodyDescription = BodyDescription::buffered(Some(JSON_MEDIA_TYPE));
 
-    fn prepare(input: T, context: RequestBodyContext<'_>) -> Result<RequestBody, BodyError> {
-        RequestBody::bytes(encode_json(&input, context.body_limit.get())?)
-            .content_type("application/json")
+    fn prepare(input: T, context: RequestBodyContext<'_>) -> Result<PreparedBody, BodyError> {
+        PreparedBody::bytes(encode_json(&input, context.body_limit.get())?)
+            .content_type(JSON_MEDIA_TYPE)
     }
 }
 
@@ -48,9 +53,7 @@ where
 {
     type Driver = Buffered;
 
-    fn accept() -> Option<&'static str> {
-        Some("application/json")
-    }
+    const ACCEPT: Option<&'static str> = Some(JSON_MEDIA_TYPE);
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         let content_type = head
@@ -95,11 +98,6 @@ fn decode_json<T: serde::de::DeserializeOwned>(body: &Bytes) -> Result<T, Respon
         drop(error);
         ResponseBodyError::new(ResponseBodyErrorKind::Decode)
     })
-}
-
-impl<T> PageResponseRepresentation<T> for Json where
-    T: serde::de::DeserializeOwned + IntoIterator + Send + 'static
-{
 }
 
 struct BoundedVecWriter {

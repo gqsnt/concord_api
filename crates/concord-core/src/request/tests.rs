@@ -11,7 +11,7 @@ use super::*;
 use crate::__private::GeneratedCredential;
 use crate::atom::{AtomError, BoundedAtomWriter, RequestAtom};
 use crate::auth::{AccessToken, Auth};
-use crate::body::{EmptyBody, RequestBodyContext, RequestBodyMetadata, RequestRepresentation};
+use crate::body::EmptyBody;
 use crate::client::ClientCore;
 use crate::codec::Binary;
 use crate::endpoint::EndpointId;
@@ -88,13 +88,6 @@ impl EndpointSpec for BytesEndpoint {
         builder.finish()
     }
 
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, crate::body::BodyError> {
-        EmptyBody::metadata(&(), context)
-    }
-
     fn into_body(self) {}
 }
 
@@ -123,13 +116,6 @@ impl EndpointSpec for NoContentEndpoint {
         builder.finish()
     }
 
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, crate::body::BodyError> {
-        EmptyBody::metadata(&(), context)
-    }
-
     fn into_body(self) {}
 }
 
@@ -149,7 +135,10 @@ fn bytes_endpoint(value: &'static str, calls: Arc<AtomicUsize>) -> BytesEndpoint
     }
 }
 
-fn ready<E>(preparation: OperationPreparation<E>) -> PreparedOperation<E> {
+fn ready<E>(preparation: OperationPreparation<E>) -> PreparedOperation<E>
+where
+    E: EndpointSpec,
+{
     match preparation {
         OperationPreparation::Ready(prepared) => prepared,
         OperationPreparation::Failed(failure) => {
@@ -172,6 +161,7 @@ async fn request_creation_and_setters_are_side_effect_free_until_first_poll() {
         bytes_endpoint("team-alpha", Arc::clone(&display_calls)),
     )
     .timeout(Duration::from_secs(2))
+    .expect("valid timeout")
     .reset_timeout()
     .debug(DebugLevel::Headers);
     let future = prepare_operation(request);
@@ -206,8 +196,15 @@ async fn request_creation_and_setters_are_side_effect_free_until_first_poll() {
         prepared.head.public_headers().get(http::header::ACCEPT),
         Some(&http::HeaderValue::from_static("application/octet-stream"))
     );
-    assert_eq!(prepared.body_metadata.kind, crate::hooks::BodyKind::Empty);
-    assert_eq!(prepared.body_metadata.known_length(), Some(0));
+    // Body preparation is phase 3 of execution, not public preparation: no
+    // body facts, Content-Type or absence exist before the executor runs.
+    assert!(
+        !prepared
+            .head
+            .public_headers()
+            .contains_key(http::header::CONTENT_TYPE)
+    );
+    assert!(prepared.absence.is_none());
     prepared.endpoint.into_body();
 }
 
@@ -259,6 +256,7 @@ async fn request_options_are_local_and_core_clones_share_one_inner_owner() {
     let first = prepare_operation(
         Request::new(core.clone(), NoContentEndpoint)
             .timeout(Duration::from_secs(1))
+            .expect("valid timeout")
             .debug(DebugLevel::Basic),
     );
     let second = prepare_operation(Request::new(sibling, NoContentEndpoint));
@@ -272,6 +270,36 @@ async fn request_options_are_local_and_core_clones_share_one_inner_owner() {
     assert_ne!(first.operation_id, second.operation_id);
 }
 
+/// A hand-written specification applying a placement created by another
+/// client build. v3 runtime endpoints cannot carry placements themselves
+/// (RUNTIME-02), so the cross-build case is exercised both through a
+/// mismatched owner projection (rejected at bind and plan) and through the
+/// executor's own context check.
+struct ForeignContextEndpoint {
+    credential: crate::auth::CredentialRef<AccessToken>,
+}
+
+impl EndpointSpec for ForeignContextEndpoint {
+    type Input = ();
+    type Body = EmptyBody;
+    type Output = ();
+    type Response = Empty;
+
+    fn request_meta(&self) -> RequestMeta {
+        RequestMeta::new("runtime.context.execute", Method::GET, None)
+    }
+
+    fn prepare_head(
+        &self,
+        mut builder: HeadBuilder,
+    ) -> Result<PreparedHead, crate::error::ApiError> {
+        builder.push_auth(Auth::bearer(self.credential.clone()))?;
+        builder.finish()
+    }
+
+    fn into_body(self) {}
+}
+
 #[tokio::test]
 async fn runtime_auth_rejects_a_foreign_client_context_before_planning_or_execution() {
     let executor = DeterministicExecutor::new();
@@ -283,30 +311,38 @@ async fn runtime_auth_rejects_a_foreign_client_context_before_planning_or_execut
         &owner,
         AccessToken::try_new("client-context-secret").expect("bounded access token"),
     );
-
-    let planned =
-        RuntimeEndpoint::builder(EndpointId::from_static("runtime.context.plan"), Method::GET)
-            .auth(Auth::bearer(credential.credential()))
+    let endpoint = |id: &'static str| {
+        RuntimeEndpoint::builder(EndpointId::from_static(id), Method::GET)
+            .response::<Empty, ()>()
             .build()
-            .expect("runtime endpoint");
-    let planning_error =
-        crate::__private::plan_unbound_request(&foreign, planned.description(), None, |builder| {
-            planned.prepare_head(builder)
-        })
+            .expect("runtime endpoint")
+    };
+    // An owner projection whose placements belong to another client build.
+    let mismatched = test_owner::TestOwner::new(foreign.clone())
+        .auth(Auth::bearer(credential.credential()))
+        .into_projection();
+
+    let planning_error = test_owner::plan(&mismatched, &endpoint("runtime.context.plan"))
         .expect_err("foreign planning context must fail");
     assert_eq!(
         planning_error.configuration_kind(),
         Some(crate::error::ConfigurationErrorKind::InvalidAuthentication)
     );
+    let binding_error = test_owner::bind(&mismatched, endpoint("runtime.context.bind"))
+        .expect_err("foreign binding context must fail");
+    assert_eq!(
+        binding_error.configuration_kind(),
+        Some(crate::error::ConfigurationErrorKind::InvalidAuthentication)
+    );
 
-    let executed = RuntimeEndpoint::builder(
-        EndpointId::from_static("runtime.context.execute"),
-        Method::GET,
-    )
-    .auth(Auth::bearer(credential.credential()))
-    .build()
-    .expect("runtime endpoint");
-    let execution_error = match prepare_operation(Request::new(foreign.clone(), executed)).await {
+    let execution_error = match prepare_operation(Request::new(
+        foreign.clone(),
+        ForeignContextEndpoint {
+            credential: credential.credential(),
+        },
+    ))
+    .await
+    {
         Ok(OperationPreparation::Ready(_)) => panic!("foreign execution context must fail"),
         Ok(OperationPreparation::Failed(failure)) => failure.error,
         Err(error) => error,
@@ -319,24 +355,26 @@ async fn runtime_auth_rejects_a_foreign_client_context_before_planning_or_execut
     assert_eq!(foreign_hooks.calls.load(Ordering::SeqCst), 0);
     assert_eq!(executor.application().request_count().expect("count"), 0);
 
-    let accepted = RuntimeEndpoint::builder(
-        EndpointId::from_static("runtime.context.clone"),
-        Method::GET,
-    )
-    .auth(Auth::bearer(credential.credential()))
-    .build()
-    .expect("runtime endpoint");
+    // A clone of the owning client shares its context: the head a runtime
+    // binding composes (runtime metadata plus the inherited placement)
+    // validates against the clone. Binding this cleartext base is separately
+    // refused by the credentials-over-HTTPS rule
+    // (`runtime_endpoint::tests::protected::credentials_require_https_at_bind`).
     let owner_clone = owner.clone();
-    let accepted_head = accepted
-        .prepare_head(HeadBuilder::new(
-            owner_clone.base_url(),
-            accepted.request_meta(),
-            &RequestOptions::new(),
-            owner_clone.default_debug(),
-            owner_clone.default_runtime_endpoint_timeout(),
-        ))
-        .expect("prepared owner head");
+    let accepted = endpoint("runtime.context.clone");
+    let mut accepted_head = HeadBuilder::new(
+        owner_clone.base_url(),
+        RequestMeta::from_description(accepted.description()),
+        &RequestOptions::new(),
+        owner_clone.default_debug(),
+        owner_clone.default_runtime_endpoint_timeout(),
+    );
     accepted_head
+        .push_auth(Auth::bearer(credential.credential()))
+        .expect("inherited placement");
+    accepted_head
+        .finish()
+        .expect("prepared owner head")
         .validate_auth_context(owner_clone.credential_context())
         .expect("owner clone context");
     assert_eq!(executor.application().request_count().expect("count"), 0);
@@ -355,35 +393,75 @@ async fn runtime_endpoints_inherit_the_snapshot_timeout_with_finite_overrides() 
 
     let inherited =
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.inherited"), Method::GET)
+            .response::<Empty, ()>()
             .build()
             .expect("inherited runtime endpoint");
     let inherited = ready(
-        prepare_operation(Request::new(core.clone(), inherited))
+        prepare_operation(test_owner::root(&core, inherited).into_request())
             .await
             .expect("inherited preparation"),
     );
     assert_eq!(inherited.head.timeout(), Some(Duration::from_secs(13)));
 
+    // §20.4: at binding the owner's effective timeout applies when no
+    // runtime-local selection exists; the runtime default only fills an
+    // owner without a declared selection.
+    let owned = RuntimeEndpoint::builder(EndpointId::from_static("runtime.owned"), Method::GET)
+        .response::<Empty, ()>()
+        .build()
+        .expect("owner-timeout runtime endpoint");
+    let owned = ready(
+        prepare_operation(
+            test_owner::bind(
+                &test_owner::TestOwner::new(core.clone())
+                    .timeout(Duration::from_secs(11))
+                    .into_projection(),
+                owned,
+            )
+            .expect("owner-timeout binding")
+            .into_request(),
+        )
+        .await
+        .expect("owner-timeout preparation"),
+    );
+    assert_eq!(owned.head.timeout(), Some(Duration::from_secs(11)));
+
     let explicit =
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.explicit"), Method::GET)
             .timeout(Duration::from_secs(7))
+            .response::<Empty, ()>()
             .build()
             .expect("explicit runtime endpoint");
     let explicit = ready(
-        prepare_operation(Request::new(core.clone(), explicit))
-            .await
-            .expect("explicit preparation"),
+        prepare_operation(
+            test_owner::bind(
+                &test_owner::TestOwner::new(core.clone())
+                    .timeout(Duration::from_secs(11))
+                    .into_projection(),
+                explicit,
+            )
+            .expect("explicit binding")
+            .into_request(),
+        )
+        .await
+        .expect("explicit preparation"),
     );
     assert_eq!(explicit.head.timeout(), Some(Duration::from_secs(7)));
 
     let request_override =
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.request"), Method::GET)
+            .response::<Empty, ()>()
             .build()
             .expect("request override endpoint");
     let request_override = ready(
-        prepare_operation(Request::new(core, request_override).timeout(Duration::from_secs(3)))
-            .await
-            .expect("request override preparation"),
+        prepare_operation(
+            test_owner::root(&core, request_override)
+                .timeout(Duration::from_secs(3))
+                .expect("valid timeout")
+                .into_request(),
+        )
+        .await
+        .expect("request override preparation"),
     );
     assert_eq!(
         request_override.head.timeout(),
@@ -399,6 +477,7 @@ fn generated_private_endpoint_mapping_preserves_core_and_request_options() {
     let core = core(&executor, Arc::new(CountingHooks::new()));
     let request = Request::new(core.clone(), ValueEndpoint(1))
         .timeout(Duration::from_secs(7))
+        .expect("valid timeout")
         .debug(DebugLevel::Headers);
     let mapped =
         crate::__private::map_endpoint(request, |ValueEndpoint(value)| ValueEndpoint(value + 1));

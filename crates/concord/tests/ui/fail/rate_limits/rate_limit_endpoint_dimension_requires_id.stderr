@@ -1,0 +1,11 @@
+error: [C3-RATE] endpoint `Api::regional::derived` is covered by rate policy `concord.rate_limit_endpoint_dimension_requires_id.1` with an `endpoint` dimension, which consumes the operational endpoint ID; pin it with an explicit `id "...";`
+  --> tests/ui/fail/rate_limits/rate_limit_endpoint_dimension_requires_id.rs:20:17
+   |
+20 |             GET derived() -> Bytes via Binary;
+   |                 ^^^^^^^
+
+error: note: the attachment is here
+  --> tests/ui/fail/rate_limits/rate_limit_endpoint_dimension_requires_id.rs:13:13
+   |
+13 |             rate_limit {
+   |             ^^^^^^^^^^

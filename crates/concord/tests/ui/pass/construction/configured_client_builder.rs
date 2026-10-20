@@ -1,4 +1,8 @@
-use concord::{SecretString, api};
+// §4.3 / §20.4: a client with a required root value and a secret has no
+// `new()`; the builder takes `set_<value>` and the secret-named protected
+// setter. The required value is live through the client query program
+// (VALUE-06).
+use concord::{Empty, SecretString, api};
 
 api! {
     client ConfiguredApi {
@@ -11,12 +15,13 @@ api! {
             secret api_key;
             credential application = api_key(secret.api_key);
         }
+        query { "tenant" = tenant; }
 
-
-    GET read() -> () via Empty {
-        auth { header "X-Api-Key" = application; }
+        GET read() -> () via Empty {
+            auth { header "X-Api-Key" = application; }
+        }
     }
-}}
+}
 
 fn main() {
     let client = ConfiguredApi::builder()

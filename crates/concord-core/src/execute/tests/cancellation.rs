@@ -4,13 +4,16 @@ use super::*;
 async fn synchronous_attempt_observation_consumes_the_operation_deadline() {
     let _clock = crate::operation::TestClockGuard::reset();
     let executor = DeterministicExecutor::new();
+    // Leave scheduling margin before the observer. Its deterministic clock
+    // advance still exceeds the whole deadline by twenty times.
     let hooks = Arc::new(ProbeHooks {
-        attempt_clock_advance: Some(Duration::from_millis(20)),
+        attempt_clock_advance: Some(Duration::from_secs(20)),
         ..ProbeHooks::new()
     });
     let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
     let error = bytes_request(core)
-        .timeout(Duration::from_millis(1))
+        .timeout(Duration::from_secs(1))
+        .expect("valid timeout")
         .await
         .expect_err("observer time is inside the deadline");
 
@@ -23,7 +26,7 @@ async fn synchronous_attempt_observation_consumes_the_operation_deadline() {
     assert_eq!(completion_id, before_id);
     assert_eq!(outcome, CompletionOutcome::Timeout);
     assert_eq!(status, None);
-    assert!(elapsed >= Duration::from_millis(20));
+    assert!(elapsed >= Duration::from_secs(20));
 
     assert_eq!(error.category(), ErrorCategory::Timeout);
     assert_eq!(executor.application().request_count().expect("count"), 0);
@@ -50,6 +53,7 @@ async fn slow_synchronous_completion_observation_cannot_transform_fixed_success(
     assert_eq!(
         bytes_request(success_core)
             .timeout(Duration::from_secs(1))
+            .expect("valid timeout")
             .await
             .expect("fixed success"),
         b"fixed"[..]
@@ -83,6 +87,7 @@ async fn slow_synchronous_completion_observation_cannot_transform_fixed_status()
     );
     let error = bytes_request(status_core)
         .timeout(Duration::from_secs(1))
+        .expect("valid timeout")
         .await
         .expect_err("fixed status");
     assert_eq!(error.category(), ErrorCategory::HttpStatus);
@@ -148,6 +153,7 @@ async fn delayed_polling_consumes_no_budget_and_every_operation_has_a_deadline()
     let task = tokio::spawn(async move {
         bytes_request(finite_core)
             .timeout(Duration::from_secs(1))
+            .expect("valid timeout")
             .await
     });
     finite_gate.wait_until_reached().await;

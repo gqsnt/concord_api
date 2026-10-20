@@ -1,0 +1,35 @@
+error: [C3-AUTH] at most one effective auth placement of endpoint `TwoChallengeOwnersApi::protected` may attribute a challenge; keep `challenge ...` on one placement and write `challenge never` (or omit it) on the others
+  --> tests/ui/fail/authentication/authorization_challenge_ownership.rs:21:20
+   |
+21 |             auth { header "X-Key" = key challenge unauthorized_or_forbidden; }
+   |                    ^^^^^^
+
+error: note: the other challenge-attributing placement is here
+  --> tests/ui/fail/authentication/authorization_challenge_ownership.rs:18:16
+   |
+18 |         auth { bearer token challenge unauthorized; }
+   |                ^^^^^^
+
+error: [C3-AUTH] endpoint `AcceptedChallengeApi::protected` accepts status 401, which overlaps the effective auth challenge attributed by AcceptedChallengeApi; remove 401 from `status`/`absent on` or write `challenge never` on that placement
+  --> tests/ui/fail/authentication/authorization_challenge_ownership.rs:35:13
+   |
+35 |         GET protected() -> Bytes via Binary {
+   |             ^^^^^^^^^
+
+error: note: the challenge placement is here
+  --> tests/ui/fail/authentication/authorization_challenge_ownership.rs:33:16
+   |
+33 |         auth { bearer token challenge unauthorized; }
+   |                ^^^^^^
+
+error: [C3-AUTH] endpoint `AbsentChallengeApi::find` accepts status 403, which overlaps the effective auth challenge attributed by AbsentChallengeApi; remove 403 from `status`/`absent on` or write `challenge never` on that placement
+  --> tests/ui/fail/authentication/authorization_challenge_ownership.rs:50:13
+   |
+50 |         GET find() -> Option<String> via Text {
+   |             ^^^^
+
+error: note: the challenge placement is here
+  --> tests/ui/fail/authentication/authorization_challenge_ownership.rs:48:16
+   |
+48 |         auth { bearer token challenge unauthorized_or_forbidden; }
+   |                ^^^^^^

@@ -1,5 +1,8 @@
 # Documentation contract
 
+**Status:** Active documentation truth rules for `3.0.0-beta.1`. The
+vocabulary lists below include the forms v3 retired from v2.1.
+
 ## Truth rules
 
 1. Documentation describes implemented behavior in the branch where it lives.
@@ -49,6 +52,17 @@ Avoid old canonical vocabulary outside migration history:
 vars, ep, generic scope reference, host, fmt
 ResponseBodySpec, response_bytes, SafeRequestPlan
 timeout off, broad hook, repeatability never/idempotent as complete effect
+```
+
+Retired by v3 (use only in `docs/migration_v3.md`, negative fixtures and
+history):
+
+```text
+exact optional set_x(Option<T>) (now replace_x), endpoint.x qualification
+PageLimit, paginate(...), PaginatedRequest, PageResponseRepresentation
+fn accept() on response representations (now const ACCEPT)
+RequestBody metadata callback, try_bind, runtime auth(...)/replace_auth(...)
+path atom lists (now relative path templates), dynamic credential selection
 ```
 
 ## Generated Rustdoc order

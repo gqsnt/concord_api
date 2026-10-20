@@ -1,5 +1,11 @@
-error[E0599]: no method named `paginate` found for struct `RuntimeEndpointBuilder<R, Output>` in the current scope
- --> tests/ui/fail/capabilities/runtime_endpoint_builder_capabilities_absent.rs:9:21
-  |
-9 |     let _ = builder.paginate(concord::PageLimit::Prefix(1));
-  |                     ^^^^^^^^ method not found in `RuntimeEndpointBuilder`
+error[E0599]: no method named `paginate` found for struct `RuntimeEndpointBuilder<R, O>` in the current scope
+  --> tests/ui/fail/capabilities/runtime_endpoint_builder_capabilities_absent.rs:11:21
+   |
+11 |     let _ = builder.paginate(1);
+   |                     ^^^^^^^^ method not found in `RuntimeEndpointBuilder`
+
+error[E0599]: no method named `absent_on` found for struct `RuntimeEndpointBuilder<R, O>` in the current scope
+  --> tests/ui/fail/capabilities/runtime_endpoint_builder_capabilities_absent.rs:14:21
+   |
+14 |     let _ = builder.absent_on(404);
+   |                     ^^^^^^^^^ method not found in `RuntimeEndpointBuilder`

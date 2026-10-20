@@ -1,16 +1,20 @@
-use concord::api;
+// §12.3: optional slots cannot be custom dimensions.
+#![allow(unused_imports)]
+
+use concord::{Binary, Bytes, api};
 
 api! {
     client Api {
-        timeout 30s;
         base "https://example.test";
-        values {
-            tenant?: String;
+        values { query tenant?: String; }
+        rate_limit {
+            id "concord.rate_limit_optional_dimension.1";
+            key ["tenant" = tenant];
+            allow 1 per 1s;
         }
-        rate_limit { id "concord.rate_limit_optional_dimension.1"; cost 1;  key [client.tenant]; allow 1 per 1s; }
 
-
-    GET read() -> Bytes via Binary;
-}}
+        GET read() -> Bytes via Binary;
+    }
+}
 
 fn main() {}

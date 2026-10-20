@@ -15,14 +15,13 @@ use concord::codec::{
 };
 use concord::endpoint::{EndpointId, RuntimeEndpoint};
 use concord::http::{Method, SafeProxy, StatusCode};
-use concord::pagination::PaginatedRequest;
 use concord::rate_limit::NoopRateLimiter;
 use concord::records::{
     RecordDecoder, RecordError, decode_complete_records, validate_record_decoder,
 };
 use concord::response::{Buffered, ResponseBodyError, ResponseHead, ResponseRepresentation};
 use concord::retry::{RetryDecision, RetryFailure, RetryPolicy};
-use concord::{Bytes, PageLimit, SecretString};
+use concord::{Binary, Bytes, SecretString};
 use concord_perf::overhead_cli::{
     BUFFERED_RECORDS_CATEGORY, BenchmarkCommand, CategorySelection, MANAGED_RETRY_CATEGORY,
     help_text, list_text, parse_arguments,
@@ -97,9 +96,7 @@ pub struct BenchRecordRepresentation;
 impl ResponseRepresentation<Vec<Bytes>> for BenchRecordRepresentation {
     type Driver = Buffered;
 
-    fn accept() -> Option<&'static str> {
-        BenchRecords::accept()
-    }
+    const ACCEPT: Option<&'static str> = BenchRecords::ACCEPT;
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         validate_record_decoder::<BenchRecords>(head)
@@ -119,42 +116,54 @@ api! {
             credential application_key = bearer(secret.api_secret);
         }
 
+        scope records(collection: String) {
+            path "records/{collection}";
 
-    scope records(collection: String) {
-        path ["records", records.collection];
-        GET show(id: String) -> Bytes via Binary {
-            path [endpoint.id];
+            GET show(id: String) -> Bytes via Binary {
+                path "{id}";
+                auth off;
+            }
+        }
+
+        GET bounded() -> Bytes via Binary {
+            auth off;
+        }
+
+        GET protected() -> Bytes via Binary {
+            auth { bearer application_key; }
+        }
+
+        GET limited() -> Bytes via Binary {
+            auth off;
+            rate_limit {
+                id "concord.concord_overhead.1";
+                key [origin];
+                cost 1;
+                allow 1000000 per 1s;
+            }
+        }
+
+        GET pages(query offset: u64, query limit: std::num::NonZeroU32) -> Vec<u8> via crate::PageCodec {
+            auth off;
+            paginate via concord::pagination::OffsetPagination {
+                init concord::pagination::OffsetInit { offset: offset, page_size: limit };
+                cursor -> offset;
+            }
+        }
+
+        POST codec(body body: String via crate::BenchCodec) -> String via crate::BenchCodec {
+            auth off;
+        }
+
+        GET streamed() -> ::concord::response::ByteStream via Binary {
+            auth off;
+        }
+
+        GET buffered_records() -> Vec<Bytes> via crate::BenchRecordRepresentation {
             auth off;
         }
     }
-    GET bounded() -> Bytes via Binary {
-        auth off;
-    }
-    GET protected() -> Bytes via Binary {
-        auth { bearer application_key; }
-    }
-    GET limited() -> Bytes via Binary {
-        auth off;
-        rate_limit { id "concord.concord_overhead.1"; key [origin]; cost 1;  allow 1000000 per 1s; }
-    }
-    GET pages(offset: u64, limit: std::num::NonZeroU32) -> Vec<u8> via crate::PageCodec {
-        query { "offset" = endpoint.offset; "limit" = endpoint.limit; }
-        auth off;
-        paginate via concord::pagination::OffsetPagination {
-            offset -> endpoint.offset;
-            page_size -> endpoint.limit;
-        }
-    }
-    POST codec(body body: String via crate::BenchCodec) -> String via crate::BenchCodec {
-        auth off;
-    }
-    GET streamed() -> ::concord::response::ByteStream via Binary {
-        auth off;
-    }
-    GET buffered_records() -> Vec<Bytes> via crate::BenchRecordRepresentation {
-        auth off;
-    }
-}}
+}
 
 api! {
     client CredentialBenchApi {
@@ -165,11 +174,11 @@ api! {
             credential application_key = bearer(secret.api_secret);
         }
 
-
-    GET credential_ready() -> Bytes via Binary {
-        auth { bearer application_key; }
+        GET credential_ready() -> Bytes via Binary {
+            auth { bearer application_key; }
+        }
     }
-}}
+}
 
 const EXPECTED_CATEGORIES: [&str; 17] = [
     "core client construction",
@@ -255,13 +264,13 @@ fn report(audit: &mut CategoryAudit, name: &'static str, iterations: usize, star
     println!("{name}: {iterations} iteration(s) in {elapsed:?}");
 }
 
-fn configured_builder() -> BenchApiBuilder {
+fn configured_builder() -> bench_api::BenchApiBuilder {
     BenchApi::builder()
         .api_secret(SecretString::try_new("benchmark-only-key").expect("bounded benchmark key"))
         .configure_runtime(|runtime| runtime.rate_limiter(Arc::new(NoopRateLimiter::new())))
 }
 
-fn configured_credential_builder() -> CredentialBenchApiBuilder {
+fn configured_credential_builder() -> credential_bench_api::CredentialBenchApiBuilder {
     CredentialBenchApi::builder().api_secret(
         SecretString::try_new("benchmark-only-ready-credential")
             .expect("bounded benchmark credential"),
@@ -375,7 +384,7 @@ fn body_limit_polling(
         .configure_runtime(|runtime| {
             runtime
                 .rate_limiter(Arc::new(NoopRateLimiter::new()))
-                .response_body_limit(NonZeroUsize::new(64).expect("positive body limit"))
+                .response_body_limit(64)
         })
         .build()?;
     let started = Instant::now();
@@ -450,13 +459,14 @@ fn runtime_endpoint_execution_overhead(
                 Method::GET,
             )
             .path("runtime")
-            .accepted_bytes()
+            .response::<concord::Binary, concord::Bytes>()
             .build()
         })
         .collect::<Result<Vec<_>, _>>()?;
     let started = Instant::now();
     for endpoint in endpoints {
-        let request = endpoint.try_bind(&client)?;
+        // v3 binds a runtime endpoint at the owner projection (`owner.bind`).
+        let request = client.bind(endpoint)?;
         black_box(runtime.block_on(request.into_future())?);
     }
     report(
@@ -636,10 +646,10 @@ fn pagination_loop_overhead(
         .build()?;
     let started = Instant::now();
     for _ in 0..iterations {
-        let pages: PaginatedRequest<_> = client
-            .pages(0, std::num::NonZeroU32::MIN)
-            .paginate(PageLimit::Prefix(2));
-        black_box(runtime.block_on(pages.into_future())?);
+        // A bounded prefix is selected explicitly with the V3
+        // terminal: at most two pages, the same two sends per iteration.
+        let prefix = client.pages(0, std::num::NonZeroU32::MIN).collect_prefix(2);
+        black_box(runtime.block_on(prefix.into_future())?);
     }
     report(audit, "pagination loop overhead", iterations, started);
     Ok(())
@@ -662,7 +672,7 @@ fn generic_specification_selection(iterations: usize, audit: &mut CategoryAudit)
             EndpointId::new("bench_api.runtime").expect("valid benchmark endpoint ID"),
             Method::POST,
         )
-        .body_spec::<BenchCodec, _>("benchmark generic body".to_owned())
+        .body_repr::<BenchCodec, _>("benchmark generic body".to_owned())
         .response::<BenchCodec, String>()
         .build()
         .expect("generic benchmark endpoint");

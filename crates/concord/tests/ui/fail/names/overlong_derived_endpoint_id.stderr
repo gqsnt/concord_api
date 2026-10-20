@@ -1,0 +1,23 @@
+error: [C3-NAME] the navigation-derived endpoint ID `segment_ids.this_navigation_derived_segment_runs_to_sixty_four_bytes_in_full` of endpoint `SegmentIds::this_navigation_derived_segment_runs_to_sixty_four_bytes_in_full` is not a valid operational ID (lowercase dot-separated segments of at most 63 bytes, at most 128 bytes); declare an explicit `id "...";`
+  --> tests/ui/fail/names/overlong_derived_endpoint_id.rs:19:13
+   |
+19 |         GET this_navigation_derived_segment_runs_to_sixty_four_bytes_in_full() -> Bytes via Binary;
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: [C3-NAME] the navigation-derived endpoint ID `scope_ids.this_navigation_derived_scope_name_runs_to_sixty_four_bytes_full.read` of endpoint `ScopeIds::this_navigation_derived_scope_name_runs_to_sixty_four_bytes_full::read` is not a valid operational ID (lowercase dot-separated segments of at most 63 bytes, at most 128 bytes); declare an explicit `id "...";`
+  --> tests/ui/fail/names/overlong_derived_endpoint_id.rs:29:17
+   |
+29 |             GET read() -> Bytes via Binary;
+   |                 ^^^^
+
+error: [C3-NAME] the navigation-derived endpoint ID `total_ids.catalog_scope_whose_logical_name_spans_fifty_nine_bytes_now.get_item_endpoint_whose_logical_name_spans_fifty_nine_bytes` of endpoint `TotalIds::catalog_scope_whose_logical_name_spans_fifty_nine_bytes_now::get_item_endpoint_whose_logical_name_spans_fifty_nine_bytes` is not a valid operational ID (lowercase dot-separated segments of at most 63 bytes, at most 128 bytes); declare an explicit `id "...";`
+  --> tests/ui/fail/names/overlong_derived_endpoint_id.rs:40:17
+   |
+40 |             GET get_item_endpoint_whose_logical_name_spans_fifty_nine_bytes() -> Bytes via Binary;
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: [C3-NAME] the navigation-derived endpoint ID `unicode_ids.données` of endpoint `UnicodeIds::données` is not a valid operational ID (lowercase dot-separated segments of at most 63 bytes, at most 128 bytes); declare an explicit `id "...";`
+  --> tests/ui/fail/names/overlong_derived_endpoint_id.rs:51:13
+   |
+51 |         GET données() -> Bytes via Binary;
+   |             ^^^^^^^

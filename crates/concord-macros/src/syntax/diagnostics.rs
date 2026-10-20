@@ -1,88 +1,139 @@
-use std::collections::HashSet;
+//! Diagnostic construction and lexical validation shared by the parser and
+//! the semantic resolver. Every custom diagnostic carries a stable Concord
+//! code (§19.1) as a bracketed prefix, names its owning client, scope or
+//! endpoint with an owner label (for example ``endpoint `Api::regional::item` ``)
+//! and, where one exists, a correction valid in the v3 grammar. Messages are
+//! value-free: they never echo secret or initializer values.
 
 use http::HeaderName;
 use proc_macro2::Span;
 use syn::{Ident, LitInt, LitStr};
 use url::Url;
 
-use super::ast::{AuthOperation, Clause, ValueDecl};
+use super::ast::Clause;
 use crate::semantic::surface::{canonical_ident, to_snake_case};
 
-pub(super) fn insert_clause<T>(
+/// Stable diagnostic families (§19.1).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Code {
+    Name,
+    Place,
+    Override,
+    Atom,
+    Path,
+    Owner,
+    Rep,
+    Auth,
+    Rate,
+    Page,
+    Generated,
+    Migrate,
+}
+
+impl Code {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Name => "C3-NAME",
+            Self::Place => "C3-PLACE",
+            Self::Override => "C3-OVERRIDE",
+            Self::Atom => "C3-ATOM",
+            Self::Path => "C3-PATH",
+            Self::Owner => "C3-OWNER",
+            Self::Rep => "C3-REP",
+            Self::Auth => "C3-AUTH",
+            Self::Rate => "C3-RATE",
+            Self::Page => "C3-PAGE",
+            Self::Generated => "C3-GENERATED",
+            Self::Migrate => "C3-MIGRATE",
+        }
+    }
+}
+
+/// Owner label of a client: ``client `Api` ``.
+pub(crate) fn client_label(name: &str) -> String {
+    format!("client `{name}`")
+}
+
+/// Owner label of a scope: ``scope `Api::regional` ``.
+pub(crate) fn scope_label(path: &str) -> String {
+    format!("scope `{path}`")
+}
+
+/// Owner label of an endpoint: ``endpoint `Api::regional::item` ``.
+pub(crate) fn endpoint_label(path: &str) -> String {
+    format!("endpoint `{path}`")
+}
+
+/// Builds a coded diagnostic at `span`.
+pub(crate) fn coded(span: Span, code: Code, message: impl std::fmt::Display) -> syn::Error {
+    syn::Error::new(span, format!("[{}] {message}", code.as_str()))
+}
+
+/// Adds a secondary (related) span to an existing diagnostic.
+pub(crate) fn related(
+    mut error: syn::Error,
+    span: Span,
+    message: impl std::fmt::Display,
+) -> syn::Error {
+    error.combine(syn::Error::new(span, format!("note: {message}")));
+    error
+}
+
+pub(crate) fn insert_clause<T>(
     slot: &mut Option<Clause<T>>,
     clause: Clause<T>,
     name: &str,
     owner: &str,
 ) -> syn::Result<()> {
     if let Some(first) = slot {
-        let mut error = clause
-            .key_span
-            .error(format!("duplicate `{name}` clause for {owner}"));
-        error.combine(
-            first
-                .key_span
-                .error(format!("the first `{name}` clause is here")),
+        let error = coded(
+            clause.key_span,
+            Code::Owner,
+            format!(
+                "duplicate `{name}` clause for {owner}; singleton clauses are not last-writer-wins, so keep exactly one `{name}` clause"
+            ),
         );
-        return Err(error);
+        return Err(related(
+            error,
+            first.key_span,
+            format!("the first `{name}` clause is here"),
+        ));
     }
     *slot = Some(clause);
     Ok(())
 }
 
-pub(super) fn merge_auth(
-    slot: &mut Option<AuthOperation>,
-    operation: AuthOperation,
-    owner: &str,
-) -> syn::Result<()> {
-    let Some(existing) = slot else {
-        *slot = Some(operation);
-        return Ok(());
+/// `what` names the literal's role (`atom`, `initializer`); `owner` is the
+/// owning client/scope/endpoint label.
+pub(crate) fn validate_integer(literal: &LitInt, what: &str, owner: &str) -> syn::Result<()> {
+    let error = || {
+        coded(
+            literal.span(),
+            Code::Atom,
+            format!(
+                "{what} integer literals in {owner} must be unsuffixed base-10 values; write the number alone (`42`, not `42u32` or `0x2a`)"
+            ),
+        )
     };
-    let first_span = match existing {
-        AuthOperation::Modify { clause_spans, .. } => clause_spans[0],
-        AuthOperation::Off { key_span } => *key_span,
-    };
-    let incoming_span = match operation {
-        AuthOperation::Modify { clause_spans, .. } => clause_spans[0],
-        AuthOperation::Off { key_span } => key_span,
-    };
-    let mut error = incoming_span.error(format!(
-        "a {owner} accepts one grouped `auth` attachment; `auth off` is exclusive"
-    ));
-    error.combine(first_span.error("the first authentication attachment is here"));
-    Err(error)
-}
-
-pub(super) fn validate_duration_integer(literal: &LitInt, owner: &str) -> syn::Result<()> {
-    let text = literal.to_string().replace('_', "");
-    let digits = text.strip_suffix(literal.suffix()).unwrap_or(&text);
-    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
-        return Err(literal
-            .span()
-            .error(format!("{owner} integer literals must be base-10 values")));
-    }
-    Ok(())
-}
-
-pub(super) fn validate_integer(literal: &LitInt, owner: &str) -> syn::Result<()> {
     if !literal.suffix().is_empty() {
-        return Err(literal.span().error(format!(
-            "{owner} integer literals must be unsuffixed base-10 values"
-        )));
+        return Err(error());
     }
     let text = literal.to_string().replace('_', "");
     if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
-        return Err(literal.span().error(format!(
-            "{owner} integer literals must be unsuffixed base-10 values"
-        )));
+        return Err(error());
     }
     Ok(())
 }
 
-pub(super) fn validate_base(base: &LitStr) -> syn::Result<()> {
+pub(crate) fn validate_base(base: &LitStr, owner: &str) -> syn::Result<()> {
     let parsed = Url::parse(&base.value()).map_err(|_| {
-        base.span()
-            .error("the fixed base must be a valid absolute HTTP or HTTPS URL")
+        coded(
+            base.span(),
+            Code::Owner,
+            format!(
+                "the fixed base of {owner} must be a valid absolute HTTP or HTTPS URL; write `base \"https://api.example.com/\";`"
+            ),
+        )
     })?;
     if !matches!(parsed.scheme(), "http" | "https")
         || parsed.host_str().is_none()
@@ -91,27 +142,40 @@ pub(super) fn validate_base(base: &LitStr) -> syn::Result<()> {
         || parsed.query().is_some()
         || parsed.fragment().is_some()
     {
-        return Err(base.span().error(
-            "the fixed base must be absolute HTTP(S), contain a host, and contain no user information, query, or fragment",
+        return Err(coded(
+            base.span(),
+            Code::Owner,
+            format!(
+                "the fixed base of {owner} must be absolute HTTP(S), contain a host, and contain no user information, query, or fragment; declare credentials in `credentials {{ ... }}` and query pairs in `query {{ ... }}`"
+            ),
         ));
     }
     Ok(())
 }
 
-pub(super) fn validate_snake_source_identifier(name: &Ident, owner: &str) -> syn::Result<()> {
+/// `what` is `scope` or `endpoint`; `owner` labels the declaring parent.
+pub(crate) fn validate_snake_source_identifier(
+    name: &Ident,
+    what: &str,
+    owner: &str,
+) -> syn::Result<()> {
     let canonical = canonical_ident(name);
     let expected = to_snake_case(&canonical);
     if canonical != expected {
-        return Err(name.span().error(format!(
-            "{owner} source identifier `{canonical}` must be snake_case; use `{expected}`"
-        )));
+        return Err(coded(
+            name.span(),
+            Code::Generated,
+            format!(
+                "{what} source identifier `{canonical}` must be snake_case (declared in {owner}); write `{expected}`"
+            ),
+        ));
     }
     Ok(())
 }
 
-pub(super) fn validate_contract_id(id: &LitStr) -> syn::Result<()> {
-    let value = id.value();
-    let valid = (1..=128).contains(&value.len())
+/// Operational endpoint ID grammar (IDENTITY-01).
+pub(crate) fn is_valid_endpoint_id(value: &str) -> bool {
+    (1..=128).contains(&value.len())
         && value.is_ascii()
         && value.split('.').all(|segment| {
             let bytes = segment.as_bytes();
@@ -121,129 +185,189 @@ pub(super) fn validate_contract_id(id: &LitStr) -> syn::Result<()> {
                         || byte.is_ascii_digit()
                         || matches!(byte, b'_' | b'-')
                 })
-                && bytes.first().is_some_and(u8::is_ascii_alphanumeric)
-                && bytes.last().is_some_and(u8::is_ascii_alphanumeric)
-        });
-    if !valid {
-        return Err(id.span().error(
-            "an endpoint ID must be 1-128 ASCII bytes in dot-separated 1-63 byte segments; each segment begins and ends with a lowercase letter or digit and may also contain `_` or `-`",
+                && bytes
+                    .first()
+                    .is_some_and(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+                && bytes
+                    .last()
+                    .is_some_and(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        })
+}
+
+pub(crate) fn validate_endpoint_id(id: &LitStr, owner: &str) -> syn::Result<()> {
+    if !is_valid_endpoint_id(&id.value()) {
+        return Err(coded(
+            id.span(),
+            Code::Generated,
+            format!(
+                "the explicit ID of {owner} is invalid: an endpoint ID must be 1-128 ASCII bytes in dot-separated 1-63 byte segments; each segment begins and ends with a lowercase letter or digit and may also contain `_` or `-` (for example `id \"catalog.items.get\";`)"
+            ),
         ));
     }
     Ok(())
 }
 
-pub(super) fn validate_static_host_label(label: &LitStr) -> syn::Result<()> {
+/// One lowercase-normalized ASCII DNS label (ORIGIN-02).
+pub(crate) fn validate_static_host_label(label: &LitStr, owner: &str) -> syn::Result<()> {
     let value = label.value();
     let bytes = value.as_bytes();
     if !(1..=63).contains(&bytes.len())
         || !bytes.is_ascii()
         || !bytes
             .iter()
-            .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'-')
-        || !bytes.first().is_some_and(u8::is_ascii_alphanumeric)
-        || !bytes.last().is_some_and(u8::is_ascii_alphanumeric)
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
+        || bytes.first() == Some(&b'-')
+        || bytes.last() == Some(&b'-')
     {
-        return Err(label.span().error(
-            "a static host atom must be one 1-63 byte ASCII DNS label beginning and ending with an alphanumeric character",
+        return Err(coded(
+            label.span(),
+            Code::Atom,
+            format!(
+                "a subdomain literal of {owner} must be exactly one 1-63 byte lowercase ASCII DNS label (letters, digits, hyphens; no leading/trailing hyphen, no dots); write one list atom per label, such as `subdomain [\"eu\", \"api\"];`"
+            ),
         ));
     }
     Ok(())
 }
 
-pub(super) fn validate_static_segment(segment: &LitStr) -> syn::Result<()> {
-    let value = segment.value();
-    if value.is_empty()
-        || value == "."
-        || value == ".."
-        || value.contains('/')
-        || value.contains('\\')
-    {
-        return Err(segment.span().error(
-            "a static path atom must be one non-empty, non-dot segment without `/` or `\\`",
+/// Header names never available as generic public targets (HEAD-01).
+pub(crate) const RESERVED_PUBLIC_HEADERS: &[&str] = &[
+    "host",
+    "authorization",
+    "proxy-authorization",
+    "proxy-authenticate",
+    "accept",
+    "accept-encoding",
+    "content-type",
+    "content-encoding",
+    "content-length",
+    "transfer-encoding",
+    "connection",
+    "keep-alive",
+    "te",
+    "trailer",
+    "upgrade",
+    "proxy-connection",
+    "cookie",
+    "set-cookie",
+];
+
+/// Singleton request fields that cannot be repeated (HEAD-01).
+pub(crate) const SINGLETON_HEADERS: &[&str] = &[
+    "user-agent",
+    "referer",
+    "from",
+    "date",
+    "if-modified-since",
+    "if-unmodified-since",
+    "if-range",
+    "range",
+    "max-forwards",
+    "origin",
+    "access-control-request-method",
+    "access-control-request-headers",
+];
+
+pub(crate) fn validate_public_header_name(name: &LitStr, owner: &str) -> syn::Result<HeaderName> {
+    let value = name.value();
+    if value.len() > 256 {
+        return Err(coded(
+            name.span(),
+            Code::Place,
+            format!(
+                "a public header name of {owner} permits at most 256 bytes; write a shorter field name"
+            ),
+        ));
+    }
+    let parsed = HeaderName::from_bytes(value.as_bytes()).map_err(|_| {
+        coded(
+            name.span(),
+            Code::Place,
+            format!(
+                "public header name of {owner} is not a valid HTTP field-name token; write a token such as `\"X-Request-Id\"`"
+            ),
+        )
+    })?;
+    if RESERVED_PUBLIC_HEADERS.contains(&parsed.as_str()) {
+        return Err(coded(
+            name.span(),
+            Code::Place,
+            format!(
+                "`{value}` is not a generic public-header target of {owner}; it is owned by transport, authentication, representation negotiation, body media, cookies or proxy handling (place credentials with `auth {{ ... }}`; representations own media and negotiation)"
+            ),
+        ));
+    }
+    Ok(parsed)
+}
+
+pub(crate) fn validate_query_key(key: &LitStr, owner: &str) -> syn::Result<()> {
+    let value = key.value();
+    if value.is_empty() || value.len() > 256 {
+        return Err(coded(
+            key.span(),
+            Code::Place,
+            format!(
+                "a query key of {owner} must be a nonempty static string of at most 256 UTF-8 bytes; write a key such as `\"page\"`"
+            ),
         ));
     }
     Ok(())
 }
 
-pub(super) fn validate_public_header_name(name: &LitStr) -> syn::Result<()> {
-    let parsed = parse_header_name(name, "public")?;
-    if reserved_public_header(&parsed) {
-        return Err(name
-            .span()
-            .error("this public header name is reserved by transport, authentication, cookies, or proxy authentication"));
-    }
-    Ok(())
-}
-
-pub(super) fn validate_auth_header_name(name: &LitStr) -> syn::Result<()> {
-    let parsed = parse_header_name(name, "authentication")?;
-    if reserved_public_header(&parsed)
-        || matches!(parsed.as_str(), "accept" | "content-type" | "user-agent")
-    {
-        return Err(name.span().error(
-            "this authentication header name is owned by Concord request or transport processing",
+pub(crate) fn validate_auth_header_name(name: &LitStr, owner: &str) -> syn::Result<()> {
+    let parsed = HeaderName::from_bytes(name.value().as_bytes()).map_err(|_| {
+        coded(
+            name.span(),
+            Code::Auth,
+            format!(
+                "authentication header name of {owner} is not a valid HTTP header name; write a token such as `header \"X-Api-Key\" = key;`"
+            ),
+        )
+    })?;
+    if RESERVED_PUBLIC_HEADERS.contains(&parsed.as_str()) || parsed.as_str() == "user-agent" {
+        return Err(coded(
+            name.span(),
+            Code::Auth,
+            format!(
+                "this authentication header name of {owner} is owned by Concord request or transport processing; write `bearer`, `basic` or `authorization` for `Authorization`, or choose a custom header name"
+            ),
         ));
     }
-    validate_auth_placement_name_bytes(name, "header")
+    validate_auth_placement_name_bytes(name, "header", owner)
 }
 
-fn parse_header_name(name: &LitStr, owner: &str) -> syn::Result<HeaderName> {
-    HeaderName::from_bytes(name.value().as_bytes()).map_err(|_| {
-        name.span().error(format!(
-            "{owner} header name is not a valid HTTP header name"
-        ))
-    })
-}
-
-fn reserved_public_header(name: &HeaderName) -> bool {
-    matches!(
-        name.as_str(),
-        "host"
-            | "content-length"
-            | "transfer-encoding"
-            | "connection"
-            | "keep-alive"
-            | "te"
-            | "trailer"
-            | "upgrade"
-            | "authorization"
-            | "proxy-authorization"
-            | "cookie"
-            | "set-cookie"
-    )
-}
-
-pub(super) fn validate_auth_query_name(name: &LitStr) -> syn::Result<()> {
+pub(crate) fn validate_auth_query_name(name: &LitStr, owner: &str) -> syn::Result<()> {
     if name.value().is_empty() {
-        return Err(name
-            .span()
-            .error("an authentication query name cannot be empty"));
+        return Err(coded(
+            name.span(),
+            Code::Auth,
+            format!(
+                "an authentication query name of {owner} cannot be empty; write a key such as `query \"api_key\" = key;`"
+            ),
+        ));
     }
-    validate_auth_placement_name_bytes(name, "query")
+    validate_auth_placement_name_bytes(name, "query", owner)
 }
 
-pub(super) fn validate_authorization_scheme(scheme: &LitStr) -> syn::Result<()> {
+pub(crate) fn validate_authorization_scheme(scheme: &LitStr, owner: &str) -> syn::Result<()> {
     let value = scheme.value();
-    if value.is_empty() {
-        return Err(scheme
-            .span()
-            .error("an Authorization scheme cannot be empty"));
-    }
-    if value.len() > crate::MAX_AUTHORIZATION_SCHEME_BYTES {
-        return Err(scheme.span().error(format!(
-            "an Authorization scheme permits at most {} ASCII bytes",
-            crate::MAX_AUTHORIZATION_SCHEME_BYTES
-        )));
-    }
-    if !value.bytes().all(is_http_token_byte) {
-        return Err(scheme
-            .span()
-            .error("an Authorization scheme must contain only ASCII HTTP token characters"));
+    if value.is_empty()
+        || value.len() > crate::MAX_AUTHORIZATION_SCHEME_BYTES
+        || !value.bytes().all(is_http_token_byte)
+    {
+        return Err(coded(
+            scheme.span(),
+            Code::Auth,
+            format!(
+                "an Authorization scheme of {owner} must be a nonempty HTTP token of at most {} bytes; write a scheme such as `authorization \"Token\" = key;`",
+                crate::MAX_AUTHORIZATION_SCHEME_BYTES
+            ),
+        ));
     }
     Ok(())
 }
 
-fn is_http_token_byte(byte: u8) -> bool {
+pub(crate) fn is_http_token_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric()
         || matches!(
             byte,
@@ -264,98 +388,16 @@ fn is_http_token_byte(byte: u8) -> bool {
         )
 }
 
-fn validate_auth_placement_name_bytes(name: &LitStr, kind: &str) -> syn::Result<()> {
+fn validate_auth_placement_name_bytes(name: &LitStr, kind: &str, owner: &str) -> syn::Result<()> {
     if name.value().len() > crate::MAX_AUTH_PLACEMENT_NAME_BYTES {
-        return Err(name.span().error(format!(
-            "an authentication {kind} name permits at most {} UTF-8 bytes",
-            crate::MAX_AUTH_PLACEMENT_NAME_BYTES
-        )));
+        return Err(coded(
+            name.span(),
+            Code::Auth,
+            format!(
+                "an authentication {kind} name of {owner} permits at most {} UTF-8 bytes; write a shorter name",
+                crate::MAX_AUTH_PLACEMENT_NAME_BYTES
+            ),
+        ));
     }
     Ok(())
-}
-
-pub(super) fn insert_unique_value(
-    names: &mut HashSet<String>,
-    value: &ValueDecl,
-    owner: &str,
-) -> syn::Result<()> {
-    let name = canonical_ident(&value.name);
-    if !names.insert(name.clone()) {
-        return Err(value
-            .name
-            .span()
-            .error(format!("duplicate {owner} `{name}`")));
-    }
-    Ok(())
-}
-
-pub(super) trait SpanError {
-    fn error(self, message: impl std::fmt::Display) -> syn::Error;
-}
-
-impl SpanError for Span {
-    fn error(self, message: impl std::fmt::Display) -> syn::Error {
-        syn::Error::new(self, message)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use proc_macro2::Span;
-    use quote::quote;
-    use syn::LitStr;
-
-    use super::validate_auth_header_name;
-
-    #[test]
-    fn duplicate_clauses_retain_both_diagnostic_spans() {
-        let error = super::super::parse(quote! {
-            client DuplicateApi {
-                timeout 30s; base "https://example.test";
-            GET read() -> Bytes via Binary {
-                path ["first"];
-                path ["second"];
-            }
-        }})
-        .err()
-        .expect("duplicate clause");
-        let diagnostic = error.into_compile_error().to_string();
-
-        assert_eq!(diagnostic.matches("compile_error").count(), 2);
-        assert!(diagnostic.contains("duplicate `path` clause"));
-        assert!(diagnostic.contains("first `path` clause"));
-    }
-
-    #[test]
-    fn static_auth_header_policy_matches_the_complete_runtime_contract() {
-        for reserved in [
-            "host",
-            "content-length",
-            "transfer-encoding",
-            "connection",
-            "keep-alive",
-            "te",
-            "trailer",
-            "upgrade",
-            "proxy-authorization",
-            "authorization",
-            "cookie",
-            "set-cookie",
-            "accept",
-            "content-type",
-            "user-agent",
-        ] {
-            let literal = LitStr::new(reserved, Span::call_site());
-            let error = validate_auth_header_name(&literal)
-                .expect_err("request-owned authentication header must fail");
-            assert!(
-                error
-                    .to_string()
-                    .contains("owned by Concord request or transport processing")
-            );
-        }
-
-        validate_auth_header_name(&LitStr::new("X-API-Key", Span::call_site()))
-            .expect("ordinary custom authentication header");
-    }
 }

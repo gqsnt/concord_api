@@ -3,12 +3,15 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::task::{Context, Poll, ready};
 
+use bytes::Bytes;
 use futures_core::Stream;
 
-use crate::hooks::StreamOutcome;
-use crate::response::{ByteStream, ResponseBodyError, ResponseHead, StreamObservation};
+use crate::error::ApiError;
+use crate::response::{
+    ByteStream, ChunkEvent, ResponseBodyError, ResponseHead, StreamErrorKind, StreamSummary,
+};
 #[cfg(test)]
 use crate::response::{ResponseDriver, ResponseRepresentation, Streaming};
 
@@ -18,22 +21,25 @@ use super::{RecordDecoder, RecordError, RecordErrorKind};
 
 /// A streaming accepted-response specification decoded by `D`.
 ///
-/// It selects Concord's sealed streaming mode and returns a [`DecodedRecordStream`]
-/// without introducing another executor or acquisition mode.
+/// Test-only equivalent of the first-party NDJSON/CSV streaming
+/// representations: it selects Concord's sealed streaming mode and returns the
+/// production [`ItemStream`] through [`ItemStream::decode_with`].
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[cfg(test)]
 pub(crate) struct Records<D>(PhantomData<fn() -> D>);
 
+/// Test alias naming the item stream produced by [`Records`].
 #[cfg(test)]
-impl<D> ResponseRepresentation<DecodedRecordStream<D>> for Records<D>
+pub(crate) type RecordStream<D> = ItemStream<<D as RecordDecoder>::Record>;
+
+#[cfg(test)]
+impl<D> ResponseRepresentation<ItemStream<D::Record>> for Records<D>
 where
     D: RecordDecoder,
 {
     type Driver = Streaming;
 
-    fn accept() -> Option<&'static str> {
-        D::accept()
-    }
+    const ACCEPT: Option<&'static str> = D::ACCEPT;
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         D::validate(head).map_err(response_error)
@@ -42,140 +48,120 @@ where
     fn from_body(
         body: <Self::Driver as ResponseDriver>::Body,
         head: &ResponseHead<'_>,
-    ) -> Result<DecodedRecordStream<D>, ResponseBodyError> {
-        let decoder = D::start(head).map_err(response_error)?;
-        Ok(DecodedRecordStream::new(
-            body,
-            decoder,
-            D::max_buffered_bytes(),
-        ))
+    ) -> Result<ItemStream<D::Record>, ResponseBodyError> {
+        ItemStream::decode_with::<D>(body, head)
     }
 }
 
-/// A lazy stream of incrementally framed typed records.
-///
-/// Staging is bounded independently of the cumulative [`ByteStream`] limit.
-/// Large source chunks are retained separately and copied into decoder staging
-/// only as records make room. A logical record's first excess staging byte is
-/// rejected without being retained, and the oversized record is not yielded.
-/// Body and decode failures after opening are stream items. Dropping this value
-/// drops the underlying byte stream and cancels native body consumption.
-/// `Debug` omits the byte stream, decoder state, pending source bytes, and
-/// staged bytes and never formats records.
-pub(crate) struct DecodedRecordStream<D>
-where
-    D: RecordDecoder,
-{
-    body: Option<ByteStream>,
-    driver: RecordDriver<D>,
-}
-
-impl<D> DecodedRecordStream<D>
-where
-    D: RecordDecoder,
-{
-    pub(crate) fn new(body: ByteStream, decoder: D, max_buffered_bytes: NonZeroUsize) -> Self {
-        Self {
-            body: Some(body),
-            driver: RecordDriver::new(decoder, max_buffered_bytes),
-        }
-    }
-
-    /// Groups records into non-empty batches of at most `size` records.
-    #[must_use]
+/// Object-safe view of one started record driver, erasing the decoder type.
+trait ErasedRecords<T>: Send {
+    fn needs_input(&self) -> bool;
+    fn supply_input(&mut self, chunk: Bytes) -> Result<(), RecordError>;
+    fn finish_input(&mut self) -> Result<(), RecordError>;
+    fn advance(
+        &mut self,
+        interrupted: &mut dyn FnMut() -> bool,
+    ) -> Result<RecordStep<T>, RecordError>;
+    fn release(&mut self);
     #[cfg(test)]
-    pub(crate) fn batches(self, size: NonZeroUsize) -> RecordBatches<D> {
-        RecordBatches {
-            stream: self,
-            size: size.get(),
-            pending: Vec::new(),
-            done: false,
-        }
-    }
-
-    fn fail(&mut self, error: RecordError) -> Poll<Option<Result<D::Record, RecordError>>> {
-        self.body = None;
-        Poll::Ready(Some(Err(error)))
-    }
+    fn staging_is_empty(&self) -> bool;
 }
 
-impl<D> Unpin for DecodedRecordStream<D> where D: RecordDecoder {}
-
-impl<D> Stream for DecodedRecordStream<D>
+impl<D> ErasedRecords<D::Record> for RecordDriver<D>
 where
     D: RecordDecoder,
 {
-    type Item = Result<D::Record, RecordError>;
+    fn needs_input(&self) -> bool {
+        Self::needs_input(self)
+    }
 
-    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let this = self.get_mut();
+    fn supply_input(&mut self, chunk: Bytes) -> Result<(), RecordError> {
+        Self::supply_input(self, chunk)
+    }
 
-        loop {
-            if this.driver.needs_input() {
-                let Some(body) = this.body.as_mut() else {
-                    let error = this.driver.terminate(RecordErrorKind::Internal);
-                    return this.fail(error);
-                };
-                match Pin::new(body).poll_next(context) {
-                    Poll::Pending => return Poll::Pending,
-                    Poll::Ready(None) => {
-                        this.body = None;
-                        if let Err(error) = this.driver.finish_input() {
-                            return this.fail(error);
-                        }
-                    }
-                    Poll::Ready(Some(Err(error))) => {
-                        drop(error);
-                        let error = this.driver.terminate(RecordErrorKind::Body);
-                        return this.fail(error);
-                    }
-                    Poll::Ready(Some(Ok(chunk))) => {
-                        if let Err(error) = this.driver.supply_input(chunk) {
-                            return this.fail(error);
-                        }
-                    }
-                }
-                continue;
-            }
+    fn finish_input(&mut self) -> Result<(), RecordError> {
+        Self::finish_input(self)
+    }
 
-            match this.driver.advance() {
-                Ok(RecordStep::Record(record)) => return Poll::Ready(Some(Ok(record))),
-                Ok(RecordStep::NeedInput) => {}
-                Ok(RecordStep::Done) => {
-                    this.body = None;
-                    return Poll::Ready(None);
-                }
-                Err(error) => return this.fail(error),
-            }
-        }
+    fn advance(
+        &mut self,
+        interrupted: &mut dyn FnMut() -> bool,
+    ) -> Result<RecordStep<D::Record>, RecordError> {
+        Self::advance_checked(self, interrupted)
+    }
+
+    fn release(&mut self) {
+        Self::release(self);
+    }
+
+    #[cfg(test)]
+    fn staging_is_empty(&self) -> bool {
+        Self::staging_is_empty(self)
     }
 }
 
-impl<D> fmt::Debug for DecodedRecordStream<D>
-where
-    D: RecordDecoder,
-{
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("DecodedRecordStream")
-            .field("body_open", &self.body.is_some())
-            .field("driver", &self.driver)
-            .finish()
+/// Maps one decoder failure to the structural stream error kind.
+const fn stream_error_kind(kind: RecordErrorKind) -> StreamErrorKind {
+    match kind {
+        RecordErrorKind::InvalidFraming => StreamErrorKind::InvalidFraming,
+        RecordErrorKind::Decode | RecordErrorKind::InvalidMediaType => StreamErrorKind::Decode,
+        RecordErrorKind::IncompleteRecord => StreamErrorKind::IncompleteRecord,
+        RecordErrorKind::LimitExceeded => StreamErrorKind::FrameLimit,
+        RecordErrorKind::Body => StreamErrorKind::Body,
+        RecordErrorKind::Internal => StreamErrorKind::Internal,
     }
 }
 
-type ErasedItemStream<T> = Pin<Box<dyn Stream<Item = Result<T, RecordError>> + Send + 'static>>;
-
-/// A lazy stream of semantic items whose decoder and framing strategy are hidden.
+/// A managed, owned lazy stream of semantic records decoded incrementally.
 ///
-/// The stream owns a core-managed bounded [`ByteStream`]. Failures after the
-/// response is acquired are yielded as stream items and do not retroactively
-/// change the completed request result. Dropping the stream cancels remaining
-/// response-body consumption. `Debug` never formats decoded items or decoder
-/// state.
+/// `ItemStream<T>` owns a managed [`ByteStream`] and one request-local record
+/// decoder whose framing strategy is hidden. It shares every byte-level
+/// contract of `ByteStream`: acquisition is not end of body, the finite total
+/// lease and pending-read idle limit, consecutive empty-chunk guardrails, the
+/// decoded byte limit, external cancellation, and no retry or replay after
+/// handoff. It is not `Clone`.
+///
+/// # Records and framing
+///
+/// Each record's staged bytes are bounded by the smaller of the decoder's
+/// `max_buffered_bytes` and the runtime frame limit (1 MiB + 2 bytes by default,
+/// `RuntimeConfigBuilder::stream_frame_limit`); the first excess byte is
+/// rejected before it is retained and the oversized record is never yielded.
+/// At most the runtime record limit (100,000 by default,
+/// `stream_max_records`) is yielded; the next record is withheld with a
+/// correlated error. Transport chunks are never record boundaries. The
+/// decoder owns final-record policy at end of body (for example NDJSON parses
+/// a final nonempty line without a newline exactly once; CSV rejects an
+/// unterminated quote), and an incomplete tail is an error, never a silently
+/// dropped record. A partial stream never becomes a complete success.
+///
+/// # Lifecycle and cancellation
+///
+/// [`next`](Self::next) is cancel-safe exactly like `ByteStream::next`: the
+/// decoder buffer, poll state, counters and idle baseline live in this handle,
+/// so dropping a pending `next` future does not terminate the stream and a
+/// later call resumes it, unless the idle budget of that pending read ran out
+/// in the meantime: record data or an end of body (which could otherwise
+/// complete a staged final record) that becomes available only after the
+/// idle limit yields one `IdleTimeout` error. Record data or an end of body
+/// observed only at or after the end of the total lease likewise yields one
+/// `LeaseExpired` error and never completes a staged record. A body read
+/// failure, framing or
+/// decoding failure, record/frame/byte limit, lease or idle expiry, or
+/// external cancellation yields exactly one correlated [`ApiError`], then
+/// `None`. The
+/// [`summary`](Self::summary) counts full yielded records;
+/// [`finish`](Self::finish) never drains and preserves `Eof` after the final
+/// record. Dropping the stream before a terminal result records cancellation
+/// and synchronously drops the decoder, staged bytes and native body.
+///
+/// # Sensitivity
+///
+/// Records are application data owned by the caller. Errors, `Debug` and the
+/// summary never contain records, staged bytes, decoder state or parser text.
 pub struct ItemStream<T> {
-    inner: ErasedItemStream<T>,
-    observation: Option<StreamObservation>,
+    body: ByteStream,
+    records: Box<dyn ErasedRecords<T>>,
 }
 
 impl<T> ItemStream<T>
@@ -184,9 +170,11 @@ where
 {
     /// Builds a semantic item stream from one bounded core record decoder.
     ///
-    /// This is an advanced representation integration point. The decoder sees
-    /// only the managed byte stream and the sanitized semantic response head;
-    /// it receives no native response or client authority.
+    /// This is the generated-code and representation integration point used
+    /// by first-party record representations. The decoder sees only the
+    /// managed byte stream and the sanitized semantic response head; it
+    /// receives no native response or client authority. `D::start` runs once,
+    /// before the first body poll.
     #[doc(hidden)]
     pub fn decode_with<D>(
         mut body: ByteStream,
@@ -196,14 +184,11 @@ where
         D: RecordDecoder<Record = T>,
     {
         let decoder = D::start(head).map_err(response_error)?;
-        let observation = body.take_observation().map(StreamObservation::into_items);
+        body.core.set_item_kind();
+        let frame = D::max_buffered_bytes().min(body.core.limits().frame);
         Ok(Self {
-            inner: Box::pin(DecodedRecordStream::new(
-                body,
-                decoder,
-                D::max_buffered_bytes(),
-            )),
-            observation,
+            body,
+            records: Box::new(RecordDriver::new(decoder, frame)),
         })
     }
 
@@ -219,28 +204,140 @@ where
     }
 }
 
-impl<T> Stream for ItemStream<T> {
-    type Item = Result<T, RecordError>;
+impl<T> ItemStream<T> {
+    /// Returns the next complete record, `None` after the final record or
+    /// after the one terminal error.
+    ///
+    /// The returned future is cancel-safe: dropping it keeps the decoder
+    /// buffer, counters and idle baseline in this handle.
+    #[allow(
+        clippy::should_implement_trait,
+        reason = "STREAM-01 names the async inherent `next`; it is not an Iterator"
+    )]
+    pub fn next(&mut self) -> impl Future<Output = Option<Result<T, ApiError>>> {
+        std::future::poll_fn(move |context| self.poll_item(context))
+    }
 
-    fn poll_next(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let result = self.inner.as_mut().poll_next(context);
-        if let Some(observation) = self.observation.as_mut() {
-            match &result {
-                Poll::Ready(Some(Ok(_))) => observation.record_item(),
-                Poll::Ready(Some(Err(_))) => observation.finish(StreamOutcome::Failed),
-                Poll::Ready(None) => observation.finish(StreamOutcome::Completed),
-                Poll::Pending => {}
+    /// Returns an owned value-free snapshot of this stream's journal.
+    #[must_use]
+    pub fn summary(&self) -> StreamSummary {
+        self.body.summary()
+    }
+
+    /// Stops consumption without draining and returns the final summary.
+    ///
+    /// After the final record was observed the `Eof` state is preserved, as
+    /// is an earlier `Failed` or `Cancelled` state; otherwise the stream
+    /// records `Application`.
+    #[must_use]
+    pub fn finish(mut self) -> StreamSummary {
+        self.records.release();
+        let Self { body, records } = self;
+        drop(records);
+        body.finish()
+    }
+
+    fn fail(&mut self, error: RecordError) -> Poll<Option<Result<T, ApiError>>> {
+        let kind = stream_error_kind(error.kind());
+        drop(error);
+        self.records.release();
+        Poll::Ready(Some(Err(self.body.core.terminate(kind))))
+    }
+
+    fn poll_item(&mut self, context: &mut Context<'_>) -> Poll<Option<Result<T, ApiError>>> {
+        if !self.body.core.is_active() {
+            return Poll::Ready(None);
+        }
+        self.body.core.begin_turn();
+        // Lease and cancellation also bound delivery of already staged
+        // records, not only reads. An outstanding pending read whose idle
+        // budget ran out ends the stream here too, before the decoder is fed
+        // data or the end of body that arrived after the deadline (a pending
+        // read exists only while the decoder is waiting for input).
+        if let Err(error) = self.body.core.precheck() {
+            self.records.release();
+            return Poll::Ready(Some(Err(error)));
+        }
+        loop {
+            if self.records.needs_input() {
+                match ready!(self.body.core.poll_chunk(context)) {
+                    ChunkEvent::Data(chunk) => {
+                        if let Err(error) = self.records.supply_input(chunk) {
+                            return self.fail(error);
+                        }
+                    }
+                    ChunkEvent::End => {
+                        if let Err(error) = self.records.finish_input() {
+                            return self.fail(error);
+                        }
+                    }
+                    ChunkEvent::Error(error) => {
+                        self.records.release();
+                        return Poll::Ready(Some(Err(error)));
+                    }
+                    ChunkEvent::Closed => {
+                        self.records.release();
+                        return Poll::Ready(None);
+                    }
+                }
+                continue;
+            }
+
+            let mut boundary_error = None;
+            let step = self.records.advance(&mut || {
+                boundary_error = self.body.core.precheck().err();
+                boundary_error.is_some()
+            });
+            if let Some(error) = boundary_error {
+                drop(step);
+                self.records.release();
+                return Poll::Ready(Some(Err(error)));
+            }
+            match step {
+                Ok(RecordStep::Record(record)) => {
+                    let limit = self.body.core.limits().records.get();
+                    if self.body.core.delivered_records() >= limit {
+                        drop(record);
+                        self.records.release();
+                        return Poll::Ready(Some(Err(self
+                            .body
+                            .core
+                            .terminate(StreamErrorKind::RecordLimit))));
+                    }
+                    self.body.core.record_item_delivered();
+                    return Poll::Ready(Some(Ok(record)));
+                }
+                Ok(RecordStep::NeedInput) => {}
+                Ok(RecordStep::Done) => {
+                    self.body.core.complete_eof();
+                    return Poll::Ready(None);
+                }
+                Err(error) => return self.fail(error),
+                Ok(RecordStep::Interrupted) => {
+                    return self.fail(RecordError::new(RecordErrorKind::Internal));
+                }
             }
         }
-        result
+    }
+
+    #[cfg(test)]
+    pub(crate) fn staging_is_empty(&self) -> bool {
+        self.records.staging_is_empty()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn body_is_released(&self) -> bool {
+        self.body.core.source_is_released()
     }
 }
 
-impl<T> Drop for ItemStream<T> {
-    fn drop(&mut self) {
-        if let Some(observation) = self.observation.as_mut() {
-            observation.finish(StreamOutcome::Dropped);
-        }
+impl<T> Unpin for ItemStream<T> {}
+
+impl<T> Stream for ItemStream<T> {
+    type Item = Result<T, ApiError>;
+
+    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.get_mut().poll_item(context)
     }
 }
 
@@ -248,12 +345,19 @@ impl<T> fmt::Debug for ItemStream<T> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("ItemStream")
-            .field("state", &"<semantic stream omitted>")
+            .field("body", &self.body)
+            .field("records", &"<semantic stream omitted>")
             .finish()
     }
 }
 
 /// A consumer adapter yielding non-empty vectors from an [`ItemStream`].
+///
+/// It holds at most the requested positive batch size, yields a final
+/// partial batch only after the item stream's actual end, and discards a
+/// partial batch when the underlying stream fails; the one terminal error is
+/// yielded once, then `None`. Dropping the adapter drops the item stream with
+/// the same cancellation semantics. `Debug` never formats items.
 pub struct ItemBatches<T> {
     stream: ItemStream<T>,
     size: usize,
@@ -267,7 +371,7 @@ impl<T> Stream for ItemBatches<T>
 where
     T: Send + 'static,
 {
-    type Item = Result<Vec<T>, RecordError>;
+    type Item = Result<Vec<T>, ApiError>;
 
     fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
@@ -276,7 +380,7 @@ where
         }
 
         loop {
-            match Pin::new(&mut this.stream).poll_next(context) {
+            match this.stream.poll_item(context) {
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(Some(Ok(item))) => {
                     this.pending.push(item);
@@ -314,707 +418,5 @@ impl<T> fmt::Debug for ItemBatches<T> {
     }
 }
 
-/// A consumer adapter yielding non-empty vectors of decoded records.
-///
-/// One-record streaming remains the primitive. This adapter holds at most the
-/// requested positive batch size and discards a partial batch if the underlying
-/// stream fails. Its `Debug` implementation never formats records.
 #[cfg(test)]
-pub(crate) struct RecordBatches<D>
-where
-    D: RecordDecoder,
-{
-    stream: DecodedRecordStream<D>,
-    size: usize,
-    pending: Vec<D::Record>,
-    done: bool,
-}
-
-#[cfg(test)]
-impl<D> Unpin for RecordBatches<D> where D: RecordDecoder {}
-
-#[cfg(test)]
-impl<D> Stream for RecordBatches<D>
-where
-    D: RecordDecoder,
-{
-    type Item = Result<Vec<D::Record>, RecordError>;
-
-    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let this = self.get_mut();
-        if this.done {
-            return Poll::Ready(None);
-        }
-
-        loop {
-            match Pin::new(&mut this.stream).poll_next(context) {
-                Poll::Pending => return Poll::Pending,
-                Poll::Ready(Some(Ok(record))) => {
-                    this.pending.push(record);
-                    if this.pending.len() == this.size {
-                        return Poll::Ready(Some(Ok(std::mem::take(&mut this.pending))));
-                    }
-                }
-                Poll::Ready(Some(Err(error))) => {
-                    this.done = true;
-                    this.pending.clear();
-                    return Poll::Ready(Some(Err(error)));
-                }
-                Poll::Ready(None) => {
-                    this.done = true;
-                    return if this.pending.is_empty() {
-                        Poll::Ready(None)
-                    } else {
-                        Poll::Ready(Some(Ok(std::mem::take(&mut this.pending))))
-                    };
-                }
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-impl<D> fmt::Debug for RecordBatches<D>
-where
-    D: RecordDecoder,
-{
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("RecordBatches")
-            .field("stream", &self.stream)
-            .field("batch_size", &self.size)
-            .field("pending_records", &self.pending.len())
-            .field("done", &self.done)
-            .finish()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::VecDeque;
-    use std::future::poll_fn;
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-    use std::task::{Wake, Waker};
-
-    use bytes::{Bytes, BytesMut};
-
-    use super::*;
-    use crate::endpoint::EndpointId;
-    use crate::error::{ApiError, ErrorCategory};
-    use crate::http::application::{ApplicationByteStream, bounded_byte_stream};
-    use crate::limits::MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN;
-
-    struct LineDecoder;
-
-    impl RecordDecoder for LineDecoder {
-        type Record = Vec<u8>;
-
-        fn start(_head: &ResponseHead<'_>) -> Result<Self, RecordError> {
-            Ok(Self)
-        }
-
-        fn decode(&mut self, buffer: &mut BytesMut) -> Result<Option<Self::Record>, RecordError> {
-            let Some(end) = buffer.iter().position(|byte| *byte == b'\n') else {
-                return Ok(None);
-            };
-            let mut record = buffer.split_to(end + 1);
-            record.truncate(end);
-            Ok(Some(record.to_vec()))
-        }
-
-        fn decode_eof(
-            &mut self,
-            buffer: &mut BytesMut,
-        ) -> Result<Option<Self::Record>, RecordError> {
-            if buffer.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(buffer.split_to(buffer.len()).to_vec()))
-            }
-        }
-
-        fn max_buffered_bytes() -> NonZeroUsize {
-            NonZeroUsize::new(8).expect("positive test bound")
-        }
-    }
-
-    #[derive(Clone, Copy)]
-    enum DecoderBehavior {
-        SomeWithoutConsumption,
-        SomeFromEmpty,
-        Growth,
-        EofSomeWithoutConsumption,
-        EofGrowth,
-        ConsumeNoneThenYield,
-    }
-
-    struct ContractDecoder {
-        behavior: DecoderBehavior,
-        calls: Arc<AtomicUsize>,
-        consumed_without_record: bool,
-    }
-
-    impl ContractDecoder {
-        fn new(behavior: DecoderBehavior, calls: &Arc<AtomicUsize>) -> Self {
-            Self {
-                behavior,
-                calls: Arc::clone(calls),
-                consumed_without_record: false,
-            }
-        }
-    }
-
-    impl RecordDecoder for ContractDecoder {
-        type Record = Vec<u8>;
-
-        fn start(_head: &ResponseHead<'_>) -> Result<Self, RecordError> {
-            unreachable!("contract decoder is constructed directly")
-        }
-
-        fn decode(&mut self, buffer: &mut BytesMut) -> Result<Option<Self::Record>, RecordError> {
-            self.calls.fetch_add(1, Ordering::SeqCst);
-            match self.behavior {
-                DecoderBehavior::SomeWithoutConsumption if !buffer.is_empty() => {
-                    Ok(Some(buffer.to_vec()))
-                }
-                DecoderBehavior::SomeFromEmpty => {
-                    Ok(Some(b"unconsumed-record-sentinel-6f218d".to_vec()))
-                }
-                DecoderBehavior::Growth => {
-                    buffer.extend_from_slice(b"decoder-growth-sentinel-a18c4d");
-                    Ok(None)
-                }
-                DecoderBehavior::ConsumeNoneThenYield if !buffer.is_empty() => {
-                    if self.consumed_without_record {
-                        Ok(Some(buffer.split_to(1).to_vec()))
-                    } else {
-                        let consumed = buffer.split_to(1);
-                        drop(consumed);
-                        self.consumed_without_record = true;
-                        Ok(None)
-                    }
-                }
-                DecoderBehavior::SomeWithoutConsumption
-                | DecoderBehavior::EofSomeWithoutConsumption
-                | DecoderBehavior::EofGrowth
-                | DecoderBehavior::ConsumeNoneThenYield => Ok(None),
-            }
-        }
-
-        fn decode_eof(
-            &mut self,
-            buffer: &mut BytesMut,
-        ) -> Result<Option<Self::Record>, RecordError> {
-            self.calls.fetch_add(1, Ordering::SeqCst);
-            match self.behavior {
-                DecoderBehavior::EofSomeWithoutConsumption => Ok(Some(buffer.to_vec())),
-                DecoderBehavior::EofGrowth => {
-                    buffer.extend_from_slice(b"decoder-eof-growth-sentinel-0b63cc");
-                    Ok(None)
-                }
-                DecoderBehavior::SomeWithoutConsumption
-                | DecoderBehavior::SomeFromEmpty
-                | DecoderBehavior::Growth
-                | DecoderBehavior::ConsumeNoneThenYield => Ok(None),
-            }
-        }
-
-        fn max_buffered_bytes() -> NonZeroUsize {
-            NonZeroUsize::new(64).expect("positive contract-test bound")
-        }
-    }
-
-    struct ProbeBody {
-        chunks: VecDeque<Result<Bytes, ApiError>>,
-        polls: Arc<AtomicUsize>,
-        dropped: Arc<AtomicBool>,
-    }
-
-    impl Stream for ProbeBody {
-        type Item = Result<Bytes, ApiError>;
-
-        fn poll_next(
-            mut self: Pin<&mut Self>,
-            _context: &mut Context<'_>,
-        ) -> Poll<Option<Self::Item>> {
-            self.polls.fetch_add(1, Ordering::SeqCst);
-            Poll::Ready(self.chunks.pop_front())
-        }
-    }
-
-    impl Drop for ProbeBody {
-        fn drop(&mut self) {
-            self.dropped.store(true, Ordering::SeqCst);
-        }
-    }
-
-    #[derive(Default)]
-    struct WakeCounter {
-        wakes: AtomicUsize,
-    }
-
-    impl Wake for WakeCounter {
-        fn wake(self: Arc<Self>) {
-            self.wakes.fetch_add(1, Ordering::SeqCst);
-        }
-
-        fn wake_by_ref(self: &Arc<Self>) {
-            self.wakes.fetch_add(1, Ordering::SeqCst);
-        }
-    }
-
-    fn stream(
-        chunks: impl IntoIterator<Item = Result<Bytes, ApiError>>,
-        polls: &Arc<AtomicUsize>,
-        dropped: &Arc<AtomicBool>,
-        staging: usize,
-    ) -> DecodedRecordStream<LineDecoder> {
-        stream_with_decoder(LineDecoder, chunks, polls, dropped, staging)
-    }
-
-    fn stream_with_decoder<D>(
-        decoder: D,
-        chunks: impl IntoIterator<Item = Result<Bytes, ApiError>>,
-        polls: &Arc<AtomicUsize>,
-        dropped: &Arc<AtomicBool>,
-        staging: usize,
-    ) -> DecodedRecordStream<D>
-    where
-        D: RecordDecoder,
-    {
-        let body: ApplicationByteStream = Box::pin(ProbeBody {
-            chunks: chunks.into_iter().collect(),
-            polls: Arc::clone(polls),
-            dropped: Arc::clone(dropped),
-        });
-        let body = ByteStream::new(bounded_byte_stream(
-            body,
-            EndpointId::from_static("records.custom"),
-            http::Method::GET,
-            1024,
-        ));
-        DecodedRecordStream::new(
-            body,
-            decoder,
-            NonZeroUsize::new(staging).expect("positive test staging bound"),
-        )
-    }
-
-    async fn next<S>(stream: &mut S) -> Option<S::Item>
-    where
-        S: Stream + Unpin,
-    {
-        poll_fn(|context| Pin::new(&mut *stream).poll_next(context)).await
-    }
-
-    #[tokio::test]
-    async fn decoder_some_without_consumption_fails() {
-        let polls = Arc::new(AtomicUsize::new(0));
-        let dropped = Arc::new(AtomicBool::new(false));
-        let calls = Arc::new(AtomicUsize::new(0));
-        let mut records = stream_with_decoder(
-            ContractDecoder::new(DecoderBehavior::SomeWithoutConsumption, &calls),
-            [Ok(Bytes::from_static(b"record"))],
-            &polls,
-            &dropped,
-            64,
-        );
-
-        let error = next(&mut records)
-            .await
-            .expect("terminal error")
-            .expect_err("record without progress");
-        assert_eq!(error.kind(), RecordErrorKind::Internal);
-        assert_eq!(polls.load(Ordering::SeqCst), 1);
-        assert!(dropped.load(Ordering::SeqCst));
-    }
-
-    #[tokio::test]
-    async fn decoder_some_from_empty_buffer_fails() {
-        let polls = Arc::new(AtomicUsize::new(0));
-        let dropped = Arc::new(AtomicBool::new(false));
-        let calls = Arc::new(AtomicUsize::new(0));
-        let mut records = stream_with_decoder(
-            ContractDecoder::new(DecoderBehavior::SomeFromEmpty, &calls),
-            Vec::<Result<Bytes, ApiError>>::new(),
-            &polls,
-            &dropped,
-            64,
-        );
-
-        let error = next(&mut records)
-            .await
-            .expect("terminal error")
-            .expect_err("empty-buffer record");
-        assert_eq!(error.kind(), RecordErrorKind::Internal);
-        assert_eq!(polls.load(Ordering::SeqCst), 0);
-        assert!(dropped.load(Ordering::SeqCst));
-    }
-
-    #[tokio::test]
-    async fn decoder_growth_fails() {
-        let polls = Arc::new(AtomicUsize::new(0));
-        let dropped = Arc::new(AtomicBool::new(false));
-        let calls = Arc::new(AtomicUsize::new(0));
-        let mut records = stream_with_decoder(
-            ContractDecoder::new(DecoderBehavior::Growth, &calls),
-            Vec::<Result<Bytes, ApiError>>::new(),
-            &polls,
-            &dropped,
-            64,
-        );
-
-        let error = next(&mut records)
-            .await
-            .expect("terminal error")
-            .expect_err("decoder growth");
-        assert_eq!(error.kind(), RecordErrorKind::Internal);
-        assert_eq!(polls.load(Ordering::SeqCst), 0);
-        assert!(records.driver.staging_is_empty());
-    }
-
-    #[tokio::test]
-    async fn decode_eof_some_without_consumption_fails() {
-        let polls = Arc::new(AtomicUsize::new(0));
-        let dropped = Arc::new(AtomicBool::new(false));
-        let calls = Arc::new(AtomicUsize::new(0));
-        let mut records = stream_with_decoder(
-            ContractDecoder::new(DecoderBehavior::EofSomeWithoutConsumption, &calls),
-            [Ok(Bytes::from_static(b"unterminated"))],
-            &polls,
-            &dropped,
-            64,
-        );
-
-        let error = next(&mut records)
-            .await
-            .expect("terminal error")
-            .expect_err("EOF record without progress");
-        assert_eq!(error.kind(), RecordErrorKind::Internal);
-        assert_eq!(polls.load(Ordering::SeqCst), 2);
-        assert!(dropped.load(Ordering::SeqCst));
-    }
-
-    #[tokio::test]
-    async fn decode_eof_growth_fails() {
-        let polls = Arc::new(AtomicUsize::new(0));
-        let dropped = Arc::new(AtomicBool::new(false));
-        let calls = Arc::new(AtomicUsize::new(0));
-        let mut records = stream_with_decoder(
-            ContractDecoder::new(DecoderBehavior::EofGrowth, &calls),
-            Vec::<Result<Bytes, ApiError>>::new(),
-            &polls,
-            &dropped,
-            64,
-        );
-
-        let error = next(&mut records)
-            .await
-            .expect("terminal error")
-            .expect_err("EOF decoder growth");
-        assert_eq!(error.kind(), RecordErrorKind::Internal);
-        assert_eq!(polls.load(Ordering::SeqCst), 1);
-        assert!(records.driver.staging_is_empty());
-    }
-
-    #[tokio::test]
-    async fn decoder_none_with_consumption_is_retried() {
-        let polls = Arc::new(AtomicUsize::new(0));
-        let dropped = Arc::new(AtomicBool::new(false));
-        let calls = Arc::new(AtomicUsize::new(0));
-        let mut records = stream_with_decoder(
-            ContractDecoder::new(DecoderBehavior::ConsumeNoneThenYield, &calls),
-            [Ok(Bytes::from_static(b"xy"))],
-            &polls,
-            &dropped,
-            64,
-        );
-
-        assert_eq!(
-            next(&mut records).await.expect("record").expect("valid"),
-            b"y"
-        );
-        assert_eq!(polls.load(Ordering::SeqCst), 1);
-        assert_eq!(calls.load(Ordering::SeqCst), 4);
-        assert!(records.driver.staging_is_empty());
-    }
-
-    #[tokio::test]
-    async fn decoder_none_without_consumption_polls_body() {
-        let polls = Arc::new(AtomicUsize::new(0));
-        let dropped = Arc::new(AtomicBool::new(false));
-        let mut records = stream([Ok(Bytes::from_static(b"polled\n"))], &polls, &dropped, 64);
-
-        assert_eq!(
-            next(&mut records).await.expect("record").expect("valid"),
-            b"polled"
-        );
-        assert_eq!(polls.load(Ordering::SeqCst), 1);
-    }
-
-    #[test]
-    fn record_stream_does_not_spin_over_ready_empty_chunks() {
-        let polls = Arc::new(AtomicUsize::new(0));
-        let dropped = Arc::new(AtomicBool::new(false));
-        let mut chunks = std::iter::repeat_with(|| Ok(Bytes::new()))
-            .take(MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN + 1)
-            .collect::<Vec<_>>();
-        chunks.push(Ok(Bytes::from_static(b"record\n")));
-        let mut records = stream(chunks, &polls, &dropped, 64);
-        let wakes = Arc::new(WakeCounter::default());
-        let waker = Waker::from(Arc::clone(&wakes));
-        let mut context = Context::from_waker(&waker);
-
-        assert!(matches!(
-            Pin::new(&mut records).poll_next(&mut context),
-            Poll::Pending
-        ));
-        assert_eq!(
-            polls.load(Ordering::SeqCst),
-            MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN
-        );
-        assert_eq!(wakes.wakes.load(Ordering::SeqCst), 1);
-
-        let Poll::Ready(Some(Ok(record))) = Pin::new(&mut records).poll_next(&mut context) else {
-            panic!("the next bounded poll yields the staged record");
-        };
-        assert_eq!(record, b"record");
-        assert_eq!(
-            polls.load(Ordering::SeqCst),
-            MAX_EMPTY_RESPONSE_CHUNKS_PER_TURN + 2
-        );
-    }
-
-    #[tokio::test]
-    async fn valid_decoder_consumes_and_yields() {
-        let polls = Arc::new(AtomicUsize::new(0));
-        let dropped = Arc::new(AtomicBool::new(false));
-        let mut records = stream(
-            [Ok(Bytes::from_static(b"first\nsecond\n"))],
-            &polls,
-            &dropped,
-            64,
-        );
-
-        assert_eq!(
-            next(&mut records).await.expect("first").expect("valid"),
-            b"first"
-        );
-        assert_eq!(
-            next(&mut records).await.expect("second").expect("valid"),
-            b"second"
-        );
-        assert_eq!(polls.load(Ordering::SeqCst), 1);
-    }
-
-    #[tokio::test]
-    async fn one_source_chunk_larger_than_staging_yields_all_small_records() {
-        let polls = Arc::new(AtomicUsize::new(0));
-        let dropped = Arc::new(AtomicBool::new(false));
-        let mut records = stream(
-            [Ok(Bytes::from_static(b"a\nb\nc\nd\ne\nf\n"))],
-            &polls,
-            &dropped,
-            2,
-        );
-
-        for expected in [b"a", b"b", b"c", b"d", b"e", b"f"] {
-            assert_eq!(
-                next(&mut records).await.expect("record").expect("valid"),
-                expected
-            );
-        }
-        assert!(next(&mut records).await.is_none());
-        assert_eq!(polls.load(Ordering::SeqCst), 2);
-        assert!(dropped.load(Ordering::SeqCst));
-    }
-
-    #[tokio::test]
-    async fn buffered_and_streaming_delivery_have_one_byte_and_large_chunk_parity() {
-        const BODY: &[u8] = b"alpha\nb\ncharlie\nlast";
-        let buffered =
-            crate::records::buffered::collect_records(Bytes::from_static(BODY), LineDecoder)
-                .expect("buffered record collection");
-
-        let one_byte_chunks = BODY
-            .iter()
-            .copied()
-            .map(|byte| Ok(Bytes::copy_from_slice(&[byte])))
-            .collect::<Vec<_>>();
-        let one_byte_polls = Arc::new(AtomicUsize::new(0));
-        let one_byte_dropped = Arc::new(AtomicBool::new(false));
-        let mut one_byte_stream = stream(one_byte_chunks, &one_byte_polls, &one_byte_dropped, 8);
-        let mut one_byte = Vec::new();
-        while let Some(record) = next(&mut one_byte_stream).await {
-            one_byte.push(record.expect("one-byte streaming record"));
-        }
-
-        let large_polls = Arc::new(AtomicUsize::new(0));
-        let large_dropped = Arc::new(AtomicBool::new(false));
-        let mut large_stream = stream(
-            [Ok(Bytes::from_static(BODY))],
-            &large_polls,
-            &large_dropped,
-            8,
-        );
-        let mut large = Vec::new();
-        while let Some(record) = next(&mut large_stream).await {
-            large.push(record.expect("large-chunk streaming record"));
-        }
-
-        assert_eq!(one_byte, buffered);
-        assert_eq!(large, buffered);
-        assert!(one_byte_dropped.load(Ordering::SeqCst));
-        assert!(large_dropped.load(Ordering::SeqCst));
-    }
-
-    #[tokio::test]
-    async fn contract_failure_is_terminal() {
-        let polls = Arc::new(AtomicUsize::new(0));
-        let dropped = Arc::new(AtomicBool::new(false));
-        let calls = Arc::new(AtomicUsize::new(0));
-        let mut records = stream_with_decoder(
-            ContractDecoder::new(DecoderBehavior::SomeFromEmpty, &calls),
-            Vec::<Result<Bytes, ApiError>>::new(),
-            &polls,
-            &dropped,
-            64,
-        );
-
-        assert!(next(&mut records).await.expect("one error").is_err());
-        let calls_after_failure = calls.load(Ordering::SeqCst);
-        assert!(next(&mut records).await.is_none());
-        assert!(next(&mut records).await.is_none());
-        assert_eq!(calls.load(Ordering::SeqCst), calls_after_failure);
-    }
-
-    #[tokio::test]
-    async fn contract_failure_releases_body_and_staging() {
-        let polls = Arc::new(AtomicUsize::new(0));
-        let dropped = Arc::new(AtomicBool::new(false));
-        let calls = Arc::new(AtomicUsize::new(0));
-        let mut records = stream_with_decoder(
-            ContractDecoder::new(DecoderBehavior::SomeWithoutConsumption, &calls),
-            [Ok(Bytes::from_static(b"staged-release-sentinel-509ba2"))],
-            &polls,
-            &dropped,
-            64,
-        );
-
-        assert!(next(&mut records).await.expect("one error").is_err());
-        assert!(records.body.is_none());
-        assert!(records.driver.staging_is_empty());
-        assert!(dropped.load(Ordering::SeqCst));
-    }
-
-    #[tokio::test]
-    async fn contract_failure_error_is_redacted() {
-        const SENTINEL: &[u8] = b"record-and-buffer-secret-sentinel-fab784";
-        let polls = Arc::new(AtomicUsize::new(0));
-        let dropped = Arc::new(AtomicBool::new(false));
-        let calls = Arc::new(AtomicUsize::new(0));
-        let mut records = stream_with_decoder(
-            ContractDecoder::new(DecoderBehavior::SomeWithoutConsumption, &calls),
-            [Ok(Bytes::from_static(SENTINEL))],
-            &polls,
-            &dropped,
-            64,
-        );
-
-        let error = next(&mut records)
-            .await
-            .expect("terminal error")
-            .expect_err("contract error");
-        let rendered = format!("{error} {error:?}");
-        assert_eq!(error.kind(), RecordErrorKind::Internal);
-        assert!(!rendered.contains("record-and-buffer-secret-sentinel"));
-        assert!(!rendered.contains("ContractDecoder"));
-    }
-
-    #[tokio::test]
-    async fn record_boundaries_are_chunk_independent_and_buffered_records_precede_another_poll() {
-        let polls = Arc::new(AtomicUsize::new(0));
-        let dropped = Arc::new(AtomicBool::new(false));
-        let mut records = stream(
-            [
-                Ok(Bytes::from_static(b"ab")),
-                Ok(Bytes::from_static(b"c\nx\n")),
-            ],
-            &polls,
-            &dropped,
-            8,
-        );
-        assert_eq!(next(&mut records).await.unwrap().unwrap(), b"abc");
-        assert_eq!(polls.load(Ordering::SeqCst), 2);
-        assert_eq!(next(&mut records).await.unwrap().unwrap(), b"x");
-        assert_eq!(polls.load(Ordering::SeqCst), 2);
-        assert!(next(&mut records).await.is_none());
-        assert!(dropped.load(Ordering::SeqCst));
-    }
-
-    #[tokio::test]
-    async fn first_staging_excess_is_withheld_and_error_formatting_omits_bytes() {
-        let polls = Arc::new(AtomicUsize::new(0));
-        let dropped = Arc::new(AtomicBool::new(false));
-        let mut records = stream(
-            [Ok(Bytes::from_static(b"oversized-record-sentinel\n"))],
-            &polls,
-            &dropped,
-            4,
-        );
-        let error = next(&mut records)
-            .await
-            .unwrap()
-            .expect_err("staging excess");
-        assert_eq!(error.kind(), RecordErrorKind::LimitExceeded);
-        assert!(dropped.load(Ordering::SeqCst));
-        assert!(next(&mut records).await.is_none());
-        assert!(!format!("{error} {error:?}").contains("oversized-record-sentinel"));
-    }
-
-    #[tokio::test]
-    async fn body_failures_are_safe_stream_items_and_drop_cancels_the_byte_stream() {
-        let polls = Arc::new(AtomicUsize::new(0));
-        let dropped = Arc::new(AtomicBool::new(false));
-        let body_error = ApiError::classified(
-            EndpointId::from_static("records_api.custom"),
-            http::Method::GET,
-            ErrorCategory::ResponseBody,
-        );
-        let mut records = stream([Err(body_error)], &polls, &dropped, 8);
-        let error = next(&mut records)
-            .await
-            .unwrap()
-            .expect_err("body error item");
-        assert_eq!(error.kind(), RecordErrorKind::Body);
-        assert!(dropped.load(Ordering::SeqCst));
-
-        let drop_polls = Arc::new(AtomicUsize::new(0));
-        let drop_observed = Arc::new(AtomicBool::new(false));
-        let records = stream(
-            [Ok(Bytes::from_static(b"unpolled-record-sentinel\n"))],
-            &drop_polls,
-            &drop_observed,
-            32,
-        );
-        assert!(!format!("{records:?}").contains("unpolled-record-sentinel"));
-        drop(records);
-        assert!(drop_observed.load(Ordering::SeqCst));
-        assert_eq!(drop_polls.load(Ordering::SeqCst), 0);
-    }
-
-    #[tokio::test]
-    async fn batching_yields_full_then_final_partial_batches() {
-        let polls = Arc::new(AtomicUsize::new(0));
-        let dropped = Arc::new(AtomicBool::new(false));
-        let mut batches = stream([Ok(Bytes::from_static(b"a\nb\nc\n"))], &polls, &dropped, 8)
-            .batches(NonZeroUsize::new(2).expect("positive batch"));
-        assert_eq!(
-            next(&mut batches).await.unwrap().unwrap(),
-            [b"a".to_vec(), b"b".to_vec()]
-        );
-        assert_eq!(next(&mut batches).await.unwrap().unwrap(), [b"c".to_vec()]);
-        assert!(next(&mut batches).await.is_none());
-    }
-}
+mod tests;

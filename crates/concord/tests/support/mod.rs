@@ -1,20 +1,26 @@
+//! Shared v3 helpers for the generated-surface integration tests.
+//!
+//! Every helper is an ordinary downstream implementation of a public Concord
+//! extension contract; none of them uses private bridge items.
+
 #![allow(dead_code)]
 
 use std::num::{NonZeroU32, NonZeroU64};
 
 use concord::body::{
-    BodyError, BodyErrorKind, BodyKind, LengthHint, PageRequestRepresentation, RequestBody,
-    RequestBodyContext, RequestBodyMetadata, RequestContentType, RequestRepresentation,
+    BodyError, BodyErrorKind, PageRequestRepresentation, PreparedBody, RequestBodyContext,
+    RequestRepresentation,
 };
-use concord::http::HeaderValue;
+use concord::http::SafeProxy;
 use concord::pagination::{
     PageDecisionLimits, PageResponse, PageStep, PaginationController, PaginationDescription,
     PaginationError, PaginationErrorKind,
 };
 use concord::response::{
-    Buffered, PageResponseRepresentation, ResponseBodyError, ResponseBodyErrorKind, ResponseDriver,
-    ResponseHead, ResponseRepresentation,
+    Buffered, ResponseBodyError, ResponseBodyErrorKind, ResponseDriver, ResponseHead,
+    ResponseRepresentation,
 };
+use concord_test_support::server::ScriptedServer;
 
 /// Test-local codec deliberately named `Json` to prove spelling is not macro semantics.
 pub struct Json;
@@ -23,23 +29,12 @@ impl<T> RequestRepresentation<T> for Json
 where
     T: serde::Serialize + Send + 'static,
 {
-    fn metadata(
-        _input: &T,
-        _context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        Ok(RequestBodyMetadata {
-            length: LengthHint::Unknown,
-            content_type: RequestContentType::Exact(HeaderValue::from_static("application/json")),
-            kind: BodyKind::Buffered,
-        })
-    }
-
-    fn prepare(input: T, _context: RequestBodyContext<'_>) -> Result<RequestBody, BodyError> {
+    fn prepare(input: T, _context: RequestBodyContext<'_>) -> Result<PreparedBody, BodyError> {
         let bytes = serde_json::to_vec(&input).map_err(|error| {
             drop(error);
             BodyError::new(BodyErrorKind::Producer)
         })?;
-        RequestBody::bytes(bytes.into()).content_type("application/json")
+        PreparedBody::bytes(bytes.into()).content_type("application/json")
     }
 }
 
@@ -51,9 +46,7 @@ where
 {
     type Driver = Buffered;
 
-    fn accept() -> Option<&'static str> {
-        Some("application/json")
-    }
+    const ACCEPT: Option<&'static str> = Some("application/json");
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         if head
@@ -82,8 +75,10 @@ where
     }
 }
 
-impl<T> PageResponseRepresentation<T> for Json where T: serde::de::DeserializeOwned + Send + 'static {}
-
+/// Offset controller whose public fields are also its `init` data.
+///
+/// Declarations use `init OffsetController { offset: offset, page_size: limit };`
+/// and `cursor -> offset;`.
 pub struct OffsetController {
     pub offset: u64,
     pub page_size: NonZeroU32,
@@ -95,8 +90,18 @@ where
     Page::Item: Send + 'static,
 {
     type Item = Page::Item;
+    type Init = Self;
+    type Cursor = u64;
 
     const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
+
+    fn start(init: Self) -> Result<Self, PaginationError> {
+        Ok(init)
+    }
+
+    fn cursor(&self) -> u64 {
+        self.offset
+    }
 
     fn advance(
         self,
@@ -121,6 +126,10 @@ where
     }
 }
 
+/// Page-number controller whose public fields are also its `init` data.
+///
+/// Declarations use `init PageController { page: page, page_size: size };`
+/// and `cursor -> page;`.
 pub struct PageController {
     pub page: NonZeroU64,
     pub page_size: NonZeroU32,
@@ -132,8 +141,18 @@ where
     Page::Item: Send + 'static,
 {
     type Item = Page::Item;
+    type Init = Self;
+    type Cursor = NonZeroU64;
 
     const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
+
+    fn start(init: Self) -> Result<Self, PaginationError> {
+        Ok(init)
+    }
+
+    fn cursor(&self) -> NonZeroU64 {
+        self.page
+    }
 
     fn advance(
         self,
@@ -160,10 +179,15 @@ where
     }
 }
 
+/// A decoded page that names its continuation cursor.
 pub trait NextCursor<C> {
     fn next_cursor(&self) -> Option<&C>;
 }
 
+/// Cursor controller whose public field is also its `init` data.
+///
+/// Declarations use `init CursorController { cursor: after };` and
+/// `cursor -> after;` for an optional `after` slot.
 pub struct CursorController<C> {
     pub cursor: Option<C>,
 }
@@ -172,11 +196,21 @@ impl<Page, C> PaginationController<Page> for CursorController<C>
 where
     Page: NextCursor<C> + IntoIterator + Send + 'static,
     Page::Item: Send + 'static,
-    C: Clone + Send + 'static,
+    C: Clone + Send + Sync + 'static,
 {
     type Item = Page::Item;
+    type Init = Self;
+    type Cursor = Option<C>;
 
     const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
+
+    fn start(init: Self) -> Result<Self, PaginationError> {
+        Ok(init)
+    }
+
+    fn cursor(&self) -> Option<C> {
+        self.cursor.clone()
+    }
 
     fn advance(
         self,
@@ -211,4 +245,29 @@ where
         items.push(item);
     }
     Ok(items)
+}
+
+/// Routes a plain-HTTP generated client (no credentials) to a scripted
+/// loopback server through the explicit, validated proxy configuration.
+pub fn loopback_proxy(server: &ScriptedServer) -> SafeProxy {
+    SafeProxy::parse(server.url("")).expect("loopback proxy")
+}
+
+/// Compile-time negative trait assertion (the static-assertions technique):
+/// `<T as AmbiguousIfImpl<_>>::some_item` is ambiguous, and therefore fails to
+/// compile, exactly when `T` implements the probed trait. Used for VALUE-05
+/// (body-bearing requests are not `Clone`) and wrong-client binding.
+#[macro_export]
+macro_rules! assert_not_impl {
+    ($ty:ty: $($probe:tt)+) => {
+        const _: fn() = || {
+            trait AmbiguousIfImpl<A> {
+                fn some_item() {}
+            }
+            impl<T: ?Sized> AmbiguousIfImpl<()> for T {}
+            struct Invalid;
+            impl<T: ?Sized + $($probe)+> AmbiguousIfImpl<Invalid> for T {}
+            let _ = <$ty as AmbiguousIfImpl<_>>::some_item;
+        };
+    };
 }

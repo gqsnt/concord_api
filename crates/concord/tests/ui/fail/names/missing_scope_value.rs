@@ -1,35 +1,37 @@
-use concord::api;
-use std::fmt::{self, Display, Formatter};
+// Required uninitialized scope/endpoint parameters are positional, typed
+// arguments in declaration order (§4.3): an endpoint value cannot be passed
+// in the scope position, even when both types are valid path atoms.
+use concord::{AtomError, BoundedAtomWriter, Empty, RequestAtom, api};
 
-struct ScopeValue(&'static str);
+pub struct ScopeValue(&'static str);
 
-impl Display for ScopeValue {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.0)
+impl RequestAtom for ScopeValue {
+    fn write_atom(&self, out: &mut BoundedAtomWriter<'_>) -> Result<(), AtomError> {
+        out.push_str(self.0)
     }
 }
 
-struct EndpointValue(&'static str);
+pub struct EndpointValue(&'static str);
 
-impl Display for EndpointValue {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.0)
+impl RequestAtom for EndpointValue {
+    fn write_atom(&self, out: &mut BoundedAtomWriter<'_>) -> Result<(), AtomError> {
+        out.push_str(self.0)
     }
 }
 
 api! {
     client MissingScopeApi {
-        timeout 30s;
         base "https://missing-scope.example.test";
 
+        scope resources(scope_value: crate::ScopeValue) {
+            path "scopes/{scope_value}/resources";
 
-    scope resources(scope_value: crate::ScopeValue) {
-        path ["scopes", resources.scope_value, "resources"];
-        GET by_id(endpoint_value: crate::EndpointValue) -> () via Empty {
-            path [endpoint.endpoint_value];
+            GET by_id(endpoint_value: crate::EndpointValue) -> () via Empty {
+                path "{endpoint_value}";
+            }
         }
     }
-}}
+}
 
 fn main() {
     let _endpoint = MissingScopeApi::unbound()

@@ -9,11 +9,106 @@ use concord_core::rate_limit::{
     RateLimitPolicy, RateLimitWindow,
 };
 
+#[tokio::test(start_paused = true)]
+async fn r7_public_feedback_capacity_pressure_blocks_and_recovers_without_debit() {
+    let limiter = Arc::new(LocalRateLimiter::new().cooldown_capacity(1).unwrap());
+    let first = plan(vec![policy("r7", "A", 1, &[(1, Duration::from_secs(100))])]);
+    let second = Arc::new(plan(vec![policy(
+        "r7",
+        "B",
+        1,
+        &[(1, Duration::from_secs(100))],
+    )]));
+    observe(
+        &limiter,
+        &first,
+        None,
+        StatusCode::TOO_MANY_REQUESTS,
+        Duration::from_secs(60),
+    )
+    .await;
+    observe(
+        &limiter,
+        &second,
+        None,
+        StatusCode::TOO_MANY_REQUESTS,
+        Duration::from_secs(60),
+    )
+    .await;
+    let pending = spawn_acquire(limiter.clone(), second.clone(), None);
+    tokio::task::yield_now().await;
+    assert!(
+        !pending.is_finished(),
+        "lost B feedback must not admit B immediately"
+    );
+    assert_eq!(
+        limiter.test_quota_entry_count(),
+        0,
+        "cooldown wait never debits or registers quota"
+    );
+    pending.abort();
+    let _ = pending.await;
+    tokio::time::advance(Duration::from_secs(10)).await;
+    acquire(&limiter, &second, None).await;
+    assert_eq!(limiter.state.lock().unwrap().cooldowns.len(), 0);
+    assert!(!limiter.internal_failed.load(AtomicOrdering::Acquire));
+}
+
+#[tokio::test(start_paused = true)]
+async fn r7_public_multikey_feedback_extends_one_finite_barrier_without_partial_debit() {
+    let limiter = Arc::new(LocalRateLimiter::new().cooldown_capacity(1).unwrap());
+    let a = policy("a", "tenant", 1, &[(1, Duration::from_secs(100))]);
+    let b = policy("b", "tenant", 1, &[(1, Duration::from_secs(100))]);
+    let both = Arc::new(plan(vec![a.clone(), b]));
+    observe_feedback(
+        &limiter,
+        &plan(vec![a]),
+        None,
+        StatusCode::TOO_MANY_REQUESTS,
+        Some(Duration::from_secs(3)),
+        Duration::from_secs(10),
+    )
+    .await;
+    observe_feedback(
+        &limiter,
+        &both,
+        None,
+        StatusCode::TOO_MANY_REQUESTS,
+        Some(Duration::from_secs(5)),
+        Duration::from_secs(10),
+    )
+    .await;
+    tokio::time::advance(Duration::from_secs(2)).await;
+    observe_feedback(
+        &limiter,
+        &both,
+        None,
+        StatusCode::TOO_MANY_REQUESTS,
+        Some(Duration::from_secs(5)),
+        Duration::from_secs(10),
+    )
+    .await;
+    let first = spawn_acquire(limiter.clone(), both.clone(), None);
+    let second = spawn_acquire(limiter.clone(), both.clone(), None);
+    tokio::task::yield_now().await;
+    assert!(!first.is_finished() && !second.is_finished());
+    assert_eq!(limiter.test_quota_entry_count(), 0);
+    assert_eq!(limiter.state.lock().unwrap().cooldowns.len(), 1);
+    first.abort();
+    second.abort();
+    let _ = first.await;
+    let _ = second.await;
+    tokio::time::advance(Duration::from_secs(5)).await;
+    acquire(&limiter, &both, None).await;
+    assert_eq!(limiter.test_quota_entry_count(), 2);
+    assert!(!limiter.internal_failed.load(AtomicOrdering::Acquire));
+}
+
 fn policy(id: &str, key: &str, cost: u32, windows: &[(u32, Duration)]) -> RateLimitPolicy {
     RateLimitPolicy::new(
         RateLimitId::new(id).expect("ID"),
         if key.is_empty() {
-            RateLimitKey::global()
+            RateLimitKey::from_canonical_values([("scope", "global")]).expect("constant key")
         } else {
             RateLimitKey::from_canonical_values([("tenant", key)]).expect("key")
         },
@@ -58,12 +153,14 @@ async fn try_acquire(
 ) -> Result<RateLimitPermit, RateLimitError> {
     limiter
         .acquire(RateLimitRequest {
+            cooldown_origin: None,
             endpoint: "RateApi::get",
             method: &Method::GET,
             logical_origin,
             page_index: 0,
             attempt: initial_attempt(),
             plan,
+            capability: LocalRateLimiter::CAPABILITY,
         })
         .await
 }
@@ -76,12 +173,14 @@ fn spawn_acquire(
     tokio::spawn(async move {
         limiter
             .acquire(RateLimitRequest {
+                cooldown_origin: None,
                 endpoint: "RateApi::get",
                 method: &Method::GET,
                 logical_origin,
                 page_index: 0,
                 attempt: initial_attempt(),
                 plan: &plan,
+                capability: LocalRateLimiter::CAPABILITY,
             })
             .await
     })
@@ -97,12 +196,14 @@ async fn observe(
     let limiter_object: Arc<dyn RateLimiter> = limiter.clone();
     limiter_object.observe(RateLimitResponse {
         request: RateLimitRequest {
+            cooldown_origin: None,
             endpoint: "RateApi::get",
             method: &Method::GET,
             logical_origin,
             page_index: 0,
             attempt: initial_attempt(),
             plan,
+            capability: LocalRateLimiter::CAPABILITY,
         },
         status,
         server_delay: Some(Duration::from_secs(10)),
@@ -121,12 +222,14 @@ async fn observe_feedback(
     let limiter_object: Arc<dyn RateLimiter> = limiter.clone();
     limiter_object.observe(RateLimitResponse {
         request: RateLimitRequest {
+            cooldown_origin: None,
             endpoint: "RateApi::get",
             method: &Method::GET,
             logical_origin,
             page_index: 0,
             attempt: initial_attempt(),
             plan,
+            capability: LocalRateLimiter::CAPABILITY,
         },
         status,
         server_delay,
@@ -176,7 +279,7 @@ async fn local_limiter_accepts_maximum_valid_plan() {
         .map(|rule_index| {
             RateLimitPolicy::new(
                 RateLimitId::new(format!("maximum-policy-{rule_index}")).expect("bounded ID"),
-                RateLimitKey::global(),
+                RateLimitKey::from_canonical_values([("scope", "maximum")]).expect("key"),
                 NonZeroU32::MIN,
                 (0..MAX_RATE_LIMIT_WINDOWS_PER_POLICY).map(|window_index| {
                     RateLimitWindow::new(
@@ -190,9 +293,7 @@ async fn local_limiter_accepts_maximum_valid_plan() {
         })
         .collect();
     let plan = plan(rules);
-    let limiter = LocalRateLimiter::new()
-        .key_limit(0)
-        .expect("global keys fit a zero-byte preparation limit");
+    let limiter = LocalRateLimiter::new();
 
     acquire(&limiter, &plan, Some("example.test")).await;
 
@@ -476,61 +577,26 @@ async fn successful_reservation_is_not_refunded_after_later_cancellation() {
     let _ = later.await;
 }
 
-#[tokio::test(start_paused = true)]
-async fn duplicate_equivalent_contributions_cannot_undercount() {
-    let limiter = LocalRateLimiter::new();
-    let plan = plan(vec![policy(
-        "same",
-        "north",
-        1,
-        &[(2, Duration::from_secs(10)), (2, Duration::from_secs(10))],
-    )]);
-    acquire(&limiter, &plan, Some("example.test")).await;
-    let request = limiter.acquire(RateLimitRequest {
-        endpoint: "RateApi::get",
-        method: &Method::GET,
-        logical_origin: Some("https://example.test"),
-        page_index: 0,
-        attempt: initial_attempt(),
-        plan: &plan,
-    });
-    tokio::pin!(request);
-    assert!(
-        std::future::poll_fn(|context| std::task::Poll::Ready(
-            request.as_mut().poll(context).is_pending()
-        ))
-        .await
-    );
-}
-
-#[tokio::test]
-async fn equivalent_contributions_above_capacity_fail_before_state_insertion() {
-    let limiter = LocalRateLimiter::new();
-    let plan = plan(vec![policy(
-        "same",
-        "north",
-        1,
-        &[
-            (2, Duration::from_secs(10)),
-            (2, Duration::from_secs(10)),
-            (2, Duration::from_secs(10)),
-        ],
-    )]);
-    let error = rate_error(
-        limiter
-            .acquire(RateLimitRequest {
-                endpoint: "RateApi::get",
-                method: &Method::GET,
-                logical_origin: Some("https://example.test"),
-                page_index: 0,
-                attempt: initial_attempt(),
-                plan: &plan,
-            })
-            .await,
-        "over-capacity aggregate unexpectedly granted",
-    );
-    assert_eq!(error.kind(), RateLimitErrorKind::InvalidConfiguration);
-    assert!(limiter.state.lock().expect("state").quota.is_empty());
+#[test]
+fn repeated_window_durations_never_reach_the_limiter() {
+    for windows in [
+        &[(2, Duration::from_secs(10)), (2, Duration::from_secs(10))][..],
+        &[(2, Duration::from_secs(10)), (3, Duration::from_secs(10))][..],
+    ] {
+        let error = rate_error(
+            RateLimitPolicy::new(
+                RateLimitId::new("same").expect("ID"),
+                RateLimitKey::from_canonical_values([("tenant", "north")]).expect("key"),
+                NonZeroU32::MIN,
+                windows.iter().map(|(capacity, duration)| {
+                    RateLimitWindow::new(NonZeroU32::new(*capacity).expect("capacity"), *duration)
+                        .expect("window")
+                }),
+            ),
+            "repeated window duration unexpectedly accepted",
+        );
+        assert_eq!(error.kind(), RateLimitErrorKind::InvalidConfiguration);
+    }
 }
 
 #[tokio::test(start_paused = true)]
@@ -1054,13 +1120,27 @@ async fn active_cooldown_is_not_evicted() {
     let rejected = spawn_acquire(Arc::clone(&limiter), Arc::clone(&plan), Some("second.test"));
     tokio::task::yield_now().await;
     assert!(!retained.is_finished());
-    assert!(rejected.is_finished());
+    assert!(
+        !rejected.is_finished(),
+        "capacity pressure retains a finite conservative barrier"
+    );
+    assert!(
+        limiter
+            .state
+            .lock()
+            .unwrap()
+            .cooldowns
+            .contains_key(&CooldownKey::LogicalOrigin("first.test".to_owned()))
+    );
+    tokio::time::advance(Duration::from_secs(10)).await;
     rejected
         .await
         .expect("rejected host task")
-        .expect("capacity failure installed no cooldown");
-    retained.abort();
-    let _ = retained.await;
+        .expect("finite capacity barrier expired");
+    retained
+        .await
+        .expect("retained host task")
+        .expect("original cooldown expired naturally");
 }
 
 #[tokio::test(start_paused = true)]
@@ -1274,16 +1354,10 @@ async fn default_retry_after_cooldown_is_future_only_host_fallback_and_runtime_c
 }
 
 #[tokio::test]
-async fn zero_key_limit_accepts_global_and_rejects_nonempty_without_text() {
+async fn zero_key_limit_admits_no_policy_and_rejects_without_text() {
     const KEY_SENTINEL: &str = "local-limiter-key-private-ae7e93";
     let limiter = LocalRateLimiter::new().key_limit(0).expect("limit");
-    let global = plan(vec![policy(
-        "global",
-        "",
-        1,
-        &[(1, Duration::from_secs(1))],
-    )]);
-    acquire(&limiter, &global, None).await;
+    acquire(&limiter, &RateLimitPlan::empty(), None).await;
 
     let keyed = plan(vec![policy(
         "keyed",
@@ -1292,21 +1366,13 @@ async fn zero_key_limit_accepts_global_and_rejects_nonempty_without_text() {
         &[(1, Duration::from_secs(1))],
     )]);
     let error = rate_error(
-        limiter
-            .acquire(RateLimitRequest {
-                endpoint: "RateApi::get",
-                method: &Method::GET,
-                logical_origin: Some("https://example.test"),
-                page_index: 0,
-                attempt: initial_attempt(),
-                plan: &keyed,
-            })
-            .await,
+        try_acquire(&limiter, &keyed, Some("https://example.test")).await,
         "nonempty key unexpectedly fit zero limit",
     );
     assert_eq!(error.kind(), RateLimitErrorKind::InvalidKey);
     assert!(!error.to_string().contains(KEY_SENTINEL));
     assert!(!format!("{error:?}").contains(KEY_SENTINEL));
+    assert_eq!(limiter.test_quota_entry_count(), 0);
 }
 
 #[tokio::test]
@@ -1335,12 +1401,14 @@ async fn local_limiter_rejects_first_excess_without_sensitive_output() {
     let error = rate_error(
         limiter
             .acquire(RateLimitRequest {
+                cooldown_origin: None,
                 endpoint: "RateApi::get",
                 method: &Method::GET,
                 logical_origin: Some("https://example.test"),
                 page_index: 0,
                 attempt: initial_attempt(),
                 plan: &keyed,
+                capability: LocalRateLimiter::CAPABILITY,
             })
             .await,
         "oversized configured key unexpectedly granted",
@@ -1370,12 +1438,14 @@ fn poisoned_state_fails_future_acquisition_closed() {
     let empty = RateLimitPlan::empty();
     limiter.observe(RateLimitResponse {
         request: RateLimitRequest {
+            cooldown_origin: None,
             endpoint: "RateApi::get",
             method: &Method::GET,
             logical_origin: None,
             page_index: 0,
             attempt: initial_attempt(),
             plan: &empty,
+            capability: LocalRateLimiter::CAPABILITY,
         },
         status: StatusCode::TOO_MANY_REQUESTS,
         server_delay: Some(Duration::from_secs(1)),
@@ -1384,12 +1454,14 @@ fn poisoned_state_fails_future_acquisition_closed() {
     assert!(limiter.internal_failed.load(AtomicOrdering::Acquire));
     let error = rate_error(
         runtime.block_on(limiter.acquire(RateLimitRequest {
+            cooldown_origin: None,
             endpoint: "RateApi::get",
             method: &Method::GET,
             logical_origin: None,
             page_index: 0,
             attempt: initial_attempt(),
             plan: &empty,
+            capability: LocalRateLimiter::CAPABILITY,
         })),
         "poisoned state unexpectedly granted",
     );
@@ -1421,11 +1493,428 @@ fn boundary_helpers_are_checked() {
         u32::MAX,
         &[(u32::MAX, Duration::MAX)],
     )]);
-    let contributions = Contributions::from_plan(&maximum, 0).expect("maximum contribution");
+    let contributions = Contributions::from_plan(&maximum, DEFAULT_RATE_LIMIT_KEY_BYTES)
+        .expect("maximum contribution");
     let (key, cost) = contributions.0.first_key_value().expect("one bucket");
     assert_eq!(
         key.full_balance().expect("maximum full balance"),
         key.required_balance(*cost)
             .expect("maximum required balance")
+    );
+}
+
+fn labelled_policy(
+    id: &str,
+    label: &str,
+    value: &str,
+    cost: u32,
+    windows: &[(u32, Duration)],
+) -> RateLimitPolicy {
+    RateLimitPolicy::new(
+        RateLimitId::new(id).expect("ID"),
+        RateLimitKey::from_canonical_values([(label, value)]).expect("key"),
+        NonZeroU32::new(cost).expect("cost"),
+        windows.iter().map(|(capacity, duration)| {
+            RateLimitWindow::new(NonZeroU32::new(*capacity).expect("capacity"), *duration)
+                .expect("window")
+        }),
+    )
+    .expect("policy")
+}
+
+/// Returns whether one acquisition of `plan` is admitted immediately, without
+/// leaving a pending waiter behind.
+async fn admits_now(limiter: &Arc<LocalRateLimiter>, plan: &Arc<RateLimitPlan>) -> bool {
+    let task = spawn_acquire(Arc::clone(limiter), Arc::clone(plan), Some("example.test"));
+    tokio::task::yield_now().await;
+    if task.is_finished() {
+        task.await
+            .expect("admission task")
+            .expect("immediate admission");
+        true
+    } else {
+        task.abort();
+        let _ = task.await;
+        false
+    }
+}
+
+async fn drain(limiter: &Arc<LocalRateLimiter>, plan: &Arc<RateLimitPlan>) -> usize {
+    let mut admitted = 0;
+    while admits_now(limiter, plan).await {
+        admitted += 1;
+        assert!(admitted <= 1_000, "bounded test drain");
+    }
+    admitted
+}
+
+#[test]
+fn local_capability_is_explicitly_local_and_valid() {
+    let limiter = LocalRateLimiter::new();
+    let capability = limiter.capability();
+    assert_eq!(capability, LocalRateLimiter::CAPABILITY);
+    assert_eq!(capability.enforcement(), Enforcement::Local);
+    assert_eq!(capability.namespace(), "concord.local");
+    assert_eq!(capability.algorithm_version(), 1);
+    capability.validate().expect("valid local capability");
+}
+
+// ---- V3-R07: atomic conjunctive admission -------------------------------
+
+#[tokio::test(start_paused = true)]
+async fn multi_policy_state_capacity_failure_debits_no_prefix() {
+    let limiter = Arc::new(
+        LocalRateLimiter::new()
+            .quota_capacity(2)
+            .expect("quota capacity"),
+    );
+    let first = Arc::new(plan(vec![policy(
+        "first",
+        "one",
+        1,
+        &[(2, Duration::from_secs(100))],
+    )]));
+    acquire(&limiter, &first, Some("example.test")).await;
+
+    let combined = plan(vec![
+        policy("first", "one", 1, &[(2, Duration::from_secs(100))]),
+        policy("second", "two", 1, &[(1, Duration::from_secs(100))]),
+        policy("third", "three", 1, &[(1, Duration::from_secs(100))]),
+    ]);
+    let error = rate_error(
+        try_acquire(&limiter, &combined, Some("example.test")).await,
+        "a plan whose missing state exceeds capacity was admitted",
+    );
+    assert_eq!(error.kind(), RateLimitErrorKind::StateCapacity);
+    assert_eq!(
+        limiter.test_quota_entry_count(),
+        1,
+        "no new state is inserted for a rejected plan"
+    );
+    assert_eq!(
+        drain(&limiter, &first).await,
+        1,
+        "the already known first policy kept its remaining token"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn multi_policy_invalid_key_failure_debits_and_inserts_nothing() {
+    const KEY_SENTINEL: &str = "local-atomic-key-sentinel-5d20";
+    let valid = policy("valid", "one", 1, &[(1, Duration::from_secs(100))]);
+    let limit = valid.key().total_bytes();
+    let limiter = Arc::new(LocalRateLimiter::new().key_limit(limit).expect("key limit"));
+    let combined = plan(vec![
+        valid.clone(),
+        policy(
+            "oversized",
+            KEY_SENTINEL,
+            1,
+            &[(1, Duration::from_secs(100))],
+        ),
+    ]);
+    let error = rate_error(
+        try_acquire(&limiter, &combined, Some("example.test")).await,
+        "an oversized key was admitted",
+    );
+    assert_eq!(error.kind(), RateLimitErrorKind::InvalidKey);
+    assert!(!format!("{error:?}").contains(KEY_SENTINEL));
+    assert_eq!(limiter.test_quota_entry_count(), 0);
+    let valid_only = Arc::new(plan(vec![valid]));
+    assert_eq!(drain(&limiter, &valid_only).await, 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn multi_policy_wait_and_cancellation_debit_no_available_policy() {
+    let limiter = Arc::new(LocalRateLimiter::new());
+    let exhausted = Arc::new(plan(vec![policy(
+        "exhausted",
+        "north",
+        1,
+        &[(1, Duration::from_secs(60))],
+    )]));
+    acquire(&limiter, &exhausted, Some("example.test")).await;
+    let combined = Arc::new(plan(vec![
+        policy("available", "west", 1, &[(3, Duration::from_secs(60))]),
+        policy("exhausted", "north", 1, &[(1, Duration::from_secs(60))]),
+        policy("other", "east", 1, &[(3, Duration::from_secs(60))]),
+    ]));
+    // Several blocked attempts, each cancelled while waiting.
+    for _ in 0..5 {
+        assert!(!admits_now(&limiter, &combined).await);
+    }
+    let available = Arc::new(plan(vec![policy(
+        "available",
+        "west",
+        1,
+        &[(3, Duration::from_secs(60))],
+    )]));
+    let other = Arc::new(plan(vec![policy(
+        "other",
+        "east",
+        1,
+        &[(3, Duration::from_secs(60))],
+    )]));
+    assert_eq!(drain(&limiter, &available).await, 3);
+    assert_eq!(drain(&limiter, &other).await, 3);
+}
+
+#[tokio::test(start_paused = true)]
+async fn committed_multi_policy_admission_is_non_refundable_after_cancellation() {
+    let limiter = Arc::new(LocalRateLimiter::new());
+    let combined = Arc::new(plan(vec![
+        policy("first", "one", 1, &[(1, Duration::from_secs(60))]),
+        policy("second", "two", 2, &[(2, Duration::from_secs(60))]),
+    ]));
+    // A committed admission followed by cancelled request work (for example
+    // a cancelled operation or a credential-freshness restart) stays debited.
+    acquire(&limiter, &combined, Some("example.test")).await;
+    let restart = spawn_acquire(
+        Arc::clone(&limiter),
+        Arc::clone(&combined),
+        Some("example.test"),
+    );
+    tokio::task::yield_now().await;
+    assert!(!restart.is_finished(), "the restart needs a new admission");
+    restart.abort();
+    let _ = restart.await;
+    for single in [
+        policy("first", "one", 1, &[(1, Duration::from_secs(60))]),
+        policy("second", "two", 1, &[(2, Duration::from_secs(60))]),
+    ] {
+        assert!(
+            !admits_now(&limiter, &Arc::new(plan(vec![single]))).await,
+            "every policy of the committed plan remains debited"
+        );
+    }
+}
+
+// ---- V3-R08: local algorithm with an injected clock ---------------------
+
+#[tokio::test(start_paused = true)]
+async fn continuous_refill_is_capacity_per_duration_with_exact_boundaries() {
+    let limiter = Arc::new(LocalRateLimiter::new());
+    let plan = Arc::new(plan(vec![policy(
+        "refill",
+        "north",
+        1,
+        &[(10, Duration::from_secs(10))],
+    )]));
+    assert_eq!(drain(&limiter, &plan).await, 10, "initial full burst");
+
+    let waiting = spawn_acquire(
+        Arc::clone(&limiter),
+        Arc::clone(&plan),
+        Some("example.test"),
+    );
+    tokio::task::yield_now().await;
+    tokio::time::advance(Duration::from_millis(999)).await;
+    tokio::task::yield_now().await;
+    assert!(!waiting.is_finished(), "one token needs exactly one second");
+    tokio::time::advance(Duration::from_millis(1)).await;
+    waiting
+        .await
+        .expect("refill task")
+        .expect("admitted at the exact refill boundary");
+
+    tokio::time::advance(Duration::from_secs(3)).await;
+    assert_eq!(drain(&limiter, &plan).await, 3, "continuous partial refill");
+
+    tokio::time::advance(Duration::from_secs(1_000)).await;
+    assert_eq!(
+        drain(&limiter, &plan).await,
+        10,
+        "refill never overshoots the capacity"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn conjunctive_windows_bind_at_each_window_boundary() {
+    let limiter = Arc::new(LocalRateLimiter::new());
+    let plan = Arc::new(plan(vec![policy(
+        "windows",
+        "north",
+        1,
+        &[(2, Duration::from_secs(1)), (3, Duration::from_secs(30))],
+    )]));
+    assert_eq!(drain(&limiter, &plan).await, 2, "short window binds first");
+    tokio::time::advance(Duration::from_secs(1)).await;
+    assert_eq!(
+        drain(&limiter, &plan).await,
+        1,
+        "long window leaves 3 - 2 = 1 plus a 1/10-second refill"
+    );
+    tokio::time::advance(Duration::from_secs(9)).await;
+    assert_eq!(drain(&limiter, &plan).await, 1, "long window refill 3/30s");
+    tokio::time::advance(Duration::from_secs(30)).await;
+    assert_eq!(
+        drain(&limiter, &plan).await,
+        2,
+        "full refill of both windows"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn cooldown_waits_exactly_the_remaining_time() {
+    let limiter = Arc::new(LocalRateLimiter::new());
+    let plan = Arc::new(plan(vec![policy(
+        "cooldown",
+        "north",
+        1,
+        &[(100, Duration::from_secs(1))],
+    )]));
+    observe_feedback(
+        &limiter,
+        &plan,
+        Some("example.test"),
+        StatusCode::TOO_MANY_REQUESTS,
+        Some(Duration::from_secs(10)),
+        Duration::from_secs(60),
+    )
+    .await;
+    tokio::time::advance(Duration::from_secs(4)).await;
+    let waiting = spawn_acquire(
+        Arc::clone(&limiter),
+        Arc::clone(&plan),
+        Some("example.test"),
+    );
+    tokio::task::yield_now().await;
+    tokio::time::advance(Duration::from_millis(5_999)).await;
+    tokio::task::yield_now().await;
+    assert!(!waiting.is_finished(), "six seconds of cooldown remain");
+    tokio::time::advance(Duration::from_millis(1)).await;
+    waiting
+        .await
+        .expect("cooldown task")
+        .expect("admitted when the cooldown expires");
+}
+
+#[tokio::test(start_paused = true)]
+async fn replenished_but_recently_used_bucket_is_not_pruned_before_ttl() {
+    let limiter = LocalRateLimiter::new()
+        .quota_capacity(1)
+        .expect("quota capacity")
+        .idle_ttl(Duration::from_secs(60))
+        .expect("idle TTL");
+    let first = plan(vec![policy(
+        "first",
+        "one",
+        1,
+        &[(1, Duration::from_secs(1))],
+    )]);
+    let second = plan(vec![policy(
+        "second",
+        "two",
+        1,
+        &[(1, Duration::from_secs(1))],
+    )]);
+    acquire(&limiter, &first, Some("example.test")).await;
+    tokio::time::advance(Duration::from_secs(59)).await;
+    assert_eq!(
+        rate_error(
+            try_acquire(&limiter, &second, Some("example.test")).await,
+            "a replenished bucket was pruned before its idle TTL",
+        )
+        .kind(),
+        RateLimitErrorKind::StateCapacity
+    );
+    tokio::time::advance(Duration::from_secs(1)).await;
+    acquire(&limiter, &second, Some("example.test")).await;
+    assert_eq!(limiter.test_quota_entry_count(), 1);
+}
+
+// ---- V3-R03: bucket identity ---------------------------------------------
+
+#[tokio::test(start_paused = true)]
+async fn same_windows_under_different_ids_are_separate_buckets() {
+    let limiter = Arc::new(LocalRateLimiter::new());
+    let windows = [(2, Duration::from_secs(60)), (5, Duration::from_secs(600))];
+    let riot_21 = Arc::new(plan(vec![policy("concord.riot.21", "", 1, &windows)]));
+    let riot_22 = Arc::new(plan(vec![policy("concord.riot.22", "", 1, &windows)]));
+    assert_eq!(drain(&limiter, &riot_21).await, 2);
+    assert_eq!(
+        drain(&limiter, &riot_22).await,
+        2,
+        "numeric window reuse grants no shared identity"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn labels_are_part_of_bucket_identity_and_cost_is_not() {
+    let limiter = Arc::new(LocalRateLimiter::new());
+    let window = [(3, Duration::from_secs(60))];
+    let tenant = Arc::new(plan(vec![labelled_policy(
+        "catalog.tenant.read",
+        "tenant",
+        "tenant-a",
+        1,
+        &window,
+    )]));
+    let client_tenant = Arc::new(plan(vec![labelled_policy(
+        "catalog.tenant.read",
+        "client.tenant",
+        "tenant-a",
+        1,
+        &window,
+    )]));
+    assert_eq!(drain(&limiter, &tenant).await, 3);
+    assert_eq!(
+        drain(&limiter, &client_tenant).await,
+        3,
+        "a different label is a different bucket even for equal bytes"
+    );
+
+    let costly = Arc::new(plan(vec![labelled_policy(
+        "shared.cost",
+        "tenant",
+        "b",
+        2,
+        &window,
+    )]));
+    let cheap = Arc::new(plan(vec![labelled_policy(
+        "shared.cost",
+        "tenant",
+        "b",
+        1,
+        &window,
+    )]));
+    assert!(admits_now(&limiter, &costly).await);
+    assert!(admits_now(&limiter, &cheap).await, "one token remains");
+    assert!(
+        !admits_now(&limiter, &cheap).await,
+        "different per-attempt costs debit one shared bucket"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn same_id_key_and_limiter_share_across_plans_but_separate_limiters_do_not() {
+    let shared = Arc::new(LocalRateLimiter::new());
+    let separate = Arc::new(LocalRateLimiter::new());
+    let window = [(2, Duration::from_secs(60))];
+    let endpoint_a = Arc::new(plan(vec![
+        policy("catalog.tenant.read", "tenant-a", 1, &window),
+        policy(
+            "catalog.item.write",
+            "tenant-a",
+            1,
+            &[(9, Duration::from_secs(60))],
+        ),
+    ]));
+    let endpoint_b = Arc::new(plan(vec![policy(
+        "catalog.tenant.read",
+        "tenant-a",
+        1,
+        &window,
+    )]));
+    assert!(admits_now(&shared, &endpoint_a).await);
+    assert_eq!(
+        drain(&shared, &endpoint_b).await,
+        1,
+        "the second endpoint shares the policy bucket through one limiter"
+    );
+    assert_eq!(
+        drain(&separate, &endpoint_b).await,
+        2,
+        "a separately built limiter object has independent counters"
     );
 }

@@ -5,7 +5,15 @@ use concord_core::contracts::ErrorCategory;
 
 #[test]
 fn generated_contract_version_matches_generic_specification_capability() {
-    assert_eq!(GENERATED_CONTRACT_VERSION, 33);
+    assert_eq!(GENERATED_CONTRACT_VERSION, 35);
+}
+
+const _: () = concord_core::__private::assert_generated_contract(35);
+
+#[test]
+#[should_panic(expected = "concord macro/core contract mismatch")]
+fn prior_generated_build_contract_is_refused() {
+    concord_core::__private::assert_generated_contract(34);
 }
 
 #[test]
@@ -55,9 +63,11 @@ fn structured_head_builder_enforces_one_non_dot_segment_per_atom() {
         dynamic(r"backslash\value"),
         Err(ErrorCategory::Configuration)
     );
+    // PATH §5.3: percent signs are ordinary data, encoded exactly once; a
+    // user-provided `%2F` is neither decoded into a slash nor rejected.
     assert_eq!(
-        dynamic("already%2Fencoded"),
-        Err(ErrorCategory::Configuration)
+        dynamic("already%2Fencoded").expect("percent data remains ordinary data"),
+        "https://example.test/api/already%252Fencoded"
     );
     assert_eq!(
         dynamic("50%done").expect("a non-escape percent remains ordinary data"),

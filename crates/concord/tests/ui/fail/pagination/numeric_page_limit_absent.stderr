@@ -1,23 +1,33 @@
 error[E0308]: mismatched types
-  --> tests/ui/fail/pagination/numeric_page_limit_absent.rs:26:19
+  --> tests/ui/fail/pagination/numeric_page_limit_absent.rs:40:39
    |
-26 |         .paginate(10_u32);
-   |          -------- ^^^^^^ expected `PageLimit`, found `u32`
-   |          |
-   |          arguments to this method are incorrect
+40 |     let _ = client.read().collect_all(10_u32);
+   |                           ----------- ^^^^^^ expected `NonZero<u32>`, found `u32`
+   |                           |
+   |                           arguments to this method are incorrect
    |
+   = note: expected struct `NonZero<u32>`
+                found type `u32`
 note: method defined here
-  --> tests/ui/fail/pagination/numeric_page_limit_absent.rs:8:1
+  --> tests/ui/fail/pagination/numeric_page_limit_absent.rs:30:13
    |
- 8 | / api! {
- 9 | |     client ExplicitPageLimitApi {
-10 | |         timeout 30s;
-11 | |         base "https://example.test";
-...  |
-20 | | }
-   | |_^
+30 |             paginate via OffsetPagination {
+   |             ^^^^^^^^
    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-help: try wrapping the expression in `concord::PageLimit::Prefix`
+help: consider calling `NonZero::new`
    |
-26 |         .paginate(concord::PageLimit::Prefix(10_u32));
-   |                   +++++++++++++++++++++++++++      +
+40 |     let _ = client.read().collect_all(NonZero::new(10_u32).unwrap());
+   |                                       +++++++++++++      ++++++++++
+
+error[E0599]: no method named `paginate` found for struct `ReadRequest` in the current scope
+  --> tests/ui/fail/pagination/numeric_page_limit_absent.rs:41:27
+   |
+25 | / api! {
+26 | |     client ExplicitPageLimitApi {
+27 | |         base "https://example.test";
+...  |
+36 | | }
+   | |_- method `paginate` not found for this struct
+...
+41 |       let _ = client.read().paginate(10_u32);
+   |                             ^^^^^^^^ method not found in `ReadRequest`

@@ -1,6 +1,5 @@
 #![cfg(feature = "default-tls")]
 
-use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -16,12 +15,10 @@ use http::{HeaderValue, Method, StatusCode};
 use crate::auth::{
     AccessToken, ApiKey, Auth, AuthError, BasicCredential, ChallengePolicy, CredentialMaterial,
     CredentialProvider, CredentialReason, CredentialRef, CredentialRequest,
-    MAX_CREDENTIAL_SECRET_BYTES, RecoveryMode, SecretCredential, SecretString, SlotSelector,
+    MAX_CREDENTIAL_SECRET_BYTES, ProviderOrigin, RecoveryMode, SecretCredential, SecretString,
+    SlotSelector,
 };
-use crate::body::{
-    BodyError, BodyFactory, EmptyBody, RequestBody, RequestBodyContext, RequestBodyMetadata,
-    RequestRepresentation, RequestStream,
-};
+use crate::body::{BodyError, BodyFactory, EmptyBody, PreparedBody, RequestStream};
 #[cfg(feature = "multipart")]
 use crate::body::{MultipartBody, MultipartPart};
 use crate::client::ClientCore;
@@ -35,15 +32,17 @@ use crate::http::HttpConfigBuilder;
 use crate::http::provider::{ProviderBody, ProviderRequest};
 use crate::operation::OperationId;
 use crate::pagination::{
-    PageDecisionLimits, PageLimit, PageResponse, PageStep, PaginatedEndpoint, PaginatedRequest,
-    PaginationController, PaginationDescription, PaginationError,
+    ControllerCursor, ControllerInit, PageDecisionLimits, PageResponse, PageStep, PageableEndpoint,
+    PaginationController, PaginationDescription, PaginationError, collect_prefix_request,
 };
 use crate::rate_limit::{
-    RateLimitError, RateLimitId, RateLimitKey, RateLimitPermit, RateLimitPolicy, RateLimitRequest,
-    RateLimitResponse, RateLimitWindow, RateLimiter,
+    RateLimitDeclaration, RateLimitError, RateLimitPermit, RateLimitRequest, RateLimitResponse,
+    RateLimiter,
 };
+use crate::request::test_owner::{self, TestOwner};
 use crate::request::{
-    EndpointSpec, HeadBuilder, PreparedHead, Request, RequestMeta, RuntimeEndpoint,
+    BoundRuntimeRequest, EndpointSpec, HeadBuilder, PreparedHead, Request, RequestMeta,
+    RuntimeEndpoint,
 };
 use crate::response::{
     Buffered, ByteStream, ResponseBodyError, ResponseHead, ResponseRepresentation,
@@ -65,6 +64,27 @@ const AUTHENTICATION_RECOVERY_ATTEMPT: AttemptInfo = AttemptInfo {
     authentication_recovery: true,
 };
 
+/// v3 (RUNTIME-02, MIGRATE-04): a runtime endpoint cannot create an
+/// authentication placement; runtime auth additions move to declared owners.
+/// These executor tests therefore declare the exercised placements on the
+/// binding owner, which the runtime endpoint inherits exactly like a
+/// generated endpoint.
+fn bind_protected<R, O>(
+    core: &ClientCore,
+    auth: impl IntoIterator<Item = Auth>,
+    endpoint: RuntimeEndpoint<R, O>,
+) -> BoundRuntimeRequest<R, O>
+where
+    R: ResponseRepresentation<O>,
+    O: Send + 'static,
+{
+    let owner = auth
+        .into_iter()
+        .fold(TestOwner::new(core.clone()), TestOwner::auth)
+        .into_projection();
+    test_owner::bind(&owner, endpoint).expect("runtime endpoint binds at the protected owner")
+}
+
 fn secret_string(value: impl AsRef<str>) -> SecretString {
     SecretString::try_new(value).expect("bounded test protected string")
 }
@@ -84,7 +104,7 @@ fn basic_credential(username: impl AsRef<str>, password: impl AsRef<str>) -> Bas
 struct ProtectedEndpoint {
     credential: CredentialRef<AccessToken>,
     challenge: ChallengePolicy,
-    body: RequestBody,
+    body: PreparedBody,
     query: bool,
     rate_key: Option<String>,
 }
@@ -164,23 +184,15 @@ impl EndpointSpec for PaginatedProtectedEndpoint {
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
         builder.push_static("paginated-protected")?;
         builder.push_value(&self.page)?;
-        builder.push_rate_limit_policy(
-            "AuthenticationApi::rate_limit::pagination",
-            std::iter::empty::<(&str, &str)>(),
-            1,
-            [(1, Duration::from_secs(1))],
+        builder.push_rate_limit(
+            RateLimitDeclaration::new("AuthenticationApi::rate_limit::pagination")
+                .window(1, Duration::from_secs(1))
+                .part("scope", "global"),
         )?;
         builder.push_auth(
             Auth::bearer(self.credential.clone()).challenge(ChallengePolicy::Unauthorized),
         )?;
         builder.finish()
-    }
-
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        EmptyBody::metadata(&(), context)
     }
 
     fn into_body(self) {}
@@ -193,8 +205,18 @@ struct TwoAuthenticationPages {
 
 impl PaginationController<Vec<u8>> for TwoAuthenticationPages {
     type Item = u8;
+    type Init = ();
+    type Cursor = u8;
 
     const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
+
+    fn start((): ()) -> Result<Self, PaginationError> {
+        Ok(Self { page: 0 })
+    }
+
+    fn cursor(&self) -> u8 {
+        self.page
+    }
 
     fn advance(
         self,
@@ -213,20 +235,33 @@ impl PaginationController<Vec<u8>> for TwoAuthenticationPages {
     }
 }
 
-impl PaginatedEndpoint for PaginatedProtectedEndpoint {
+impl PageableEndpoint for PaginatedProtectedEndpoint {
     type Controller = TwoAuthenticationPages;
 
-    fn initial_controller(&self) -> Result<Self::Controller, PaginationError> {
-        Ok(TwoAuthenticationPages { page: 0 })
+    fn controller_init(&self) -> ControllerInit<Self> {}
+
+    fn apply_cursor(&mut self, cursor: ControllerCursor<Self>) {
+        self.page = cursor;
     }
 
-    fn bind_controller(
-        endpoint: &mut Self,
-        controller: &Self::Controller,
-    ) -> Result<(), PaginationError> {
-        endpoint.page = controller.page;
-        Ok(())
+    fn page_clone(&self) -> Self {
+        self.clone()
     }
+
+    fn page_body_present(&self) -> bool {
+        false
+    }
+}
+
+/// Collects an explicit prefix of `maximum_pages` authentication test pages.
+async fn collect_protected_pages(
+    core: ClientCore,
+    endpoint: PaginatedProtectedEndpoint,
+    maximum_pages: u32,
+) -> Result<Vec<u8>, ApiError> {
+    collect_prefix_request(Request::new(core, endpoint), maximum_pages)
+        .await
+        .map(crate::pagination::Prefix::into_items)
 }
 
 struct BasicEndpoint {
@@ -234,8 +269,8 @@ struct BasicEndpoint {
 }
 
 impl EndpointSpec for BasicEndpoint {
-    type Input = RequestBody;
-    type Body = RequestBody;
+    type Input = PreparedBody;
+    type Body = PreparedBody;
     type Output = Bytes;
     type Response = Binary;
 
@@ -249,16 +284,8 @@ impl EndpointSpec for BasicEndpoint {
         builder.finish()
     }
 
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        let body = RequestBody::bytes(Bytes::new());
-        RequestBody::metadata(&body, context)
-    }
-
     fn into_body(self) -> Self::Body {
-        RequestBody::bytes(Bytes::new())
+        PreparedBody::bytes(Bytes::new())
     }
 }
 
@@ -267,8 +294,8 @@ struct HeaderEndpoint {
 }
 
 impl EndpointSpec for HeaderEndpoint {
-    type Input = RequestBody;
-    type Body = RequestBody;
+    type Input = PreparedBody;
+    type Body = PreparedBody;
     type Output = Bytes;
     type Response = Binary;
 
@@ -288,21 +315,14 @@ impl EndpointSpec for HeaderEndpoint {
         builder.finish()
     }
 
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        RequestBody::metadata(&RequestBody::bytes(Bytes::new()), context)
-    }
-
     fn into_body(self) -> Self::Body {
-        RequestBody::bytes(Bytes::new())
+        PreparedBody::bytes(Bytes::new())
     }
 }
 
 impl EndpointSpec for ProtectedStreamEndpoint {
-    type Input = RequestBody;
-    type Body = RequestBody;
+    type Input = PreparedBody;
+    type Body = PreparedBody;
     type Output = ByteStream;
     type Response = Binary;
 
@@ -318,15 +338,8 @@ impl EndpointSpec for ProtectedStreamEndpoint {
         builder.finish()
     }
 
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        RequestBody::metadata(&RequestBody::bytes(Bytes::new()), context)
-    }
-
     fn into_body(self) -> Self::Body {
-        RequestBody::bytes(Bytes::new())
+        PreparedBody::bytes(Bytes::new())
     }
 }
 
@@ -338,8 +351,8 @@ struct MultiAuthEndpoint {
 }
 
 impl EndpointSpec for MultiAuthEndpoint {
-    type Input = RequestBody;
-    type Body = RequestBody;
+    type Input = PreparedBody;
+    type Body = PreparedBody;
     type Output = Bytes;
     type Response = Binary;
 
@@ -360,20 +373,8 @@ impl EndpointSpec for MultiAuthEndpoint {
         builder.finish()
     }
 
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        RequestBody::metadata(
-            &RequestBody::factory(ReplayFactory {
-                calls: Arc::clone(&self.body_calls),
-            }),
-            context,
-        )
-    }
-
     fn into_body(self) -> Self::Body {
-        RequestBody::factory(ReplayFactory {
+        PreparedBody::factory(ReplayFactory {
             calls: self.body_calls,
         })
     }
@@ -385,8 +386,8 @@ struct DynamicCollisionEndpoint {
 }
 
 impl EndpointSpec for DynamicCollisionEndpoint {
-    type Input = RequestBody;
-    type Body = RequestBody;
+    type Input = PreparedBody;
+    type Body = PreparedBody;
     type Output = Bytes;
     type Response = Binary;
 
@@ -402,20 +403,8 @@ impl EndpointSpec for DynamicCollisionEndpoint {
         builder.finish()
     }
 
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        RequestBody::metadata(
-            &RequestBody::factory(ReplayFactory {
-                calls: Arc::clone(&self.body_calls),
-            }),
-            context,
-        )
-    }
-
     fn into_body(self) -> Self::Body {
-        RequestBody::factory(ReplayFactory {
+        PreparedBody::factory(ReplayFactory {
             calls: self.body_calls,
         })
     }
@@ -509,8 +498,8 @@ struct LimiterWaitExpiryEndpoint {
 }
 
 impl EndpointSpec for LimiterWaitExpiryEndpoint {
-    type Input = RequestBody;
-    type Body = RequestBody;
+    type Input = PreparedBody;
+    type Body = PreparedBody;
     type Output = Bytes;
     type Response = Binary;
 
@@ -524,15 +513,8 @@ impl EndpointSpec for LimiterWaitExpiryEndpoint {
         builder.finish()
     }
 
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        RequestBody::metadata(&RequestBody::bytes(Bytes::new()), context)
-    }
-
     fn into_body(self) -> Self::Body {
-        RequestBody::bytes(Bytes::new())
+        PreparedBody::bytes(Bytes::new())
     }
 }
 
@@ -579,8 +561,8 @@ impl SecretCredential for CountedExposureToken {
 }
 
 impl EndpointSpec for ExposureEndpoint {
-    type Input = RequestBody;
-    type Body = RequestBody;
+    type Input = PreparedBody;
+    type Body = PreparedBody;
     type Output = Bytes;
     type Response = Binary;
 
@@ -594,21 +576,14 @@ impl EndpointSpec for ExposureEndpoint {
         builder.finish()
     }
 
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        RequestBody::metadata(&RequestBody::bytes(Bytes::new()), context)
-    }
-
     fn into_body(self) -> Self::Body {
-        RequestBody::bytes(Bytes::new())
+        PreparedBody::bytes(Bytes::new())
     }
 }
 
 impl EndpointSpec for FinalizationExpiryEndpoint {
-    type Input = RequestBody;
-    type Body = RequestBody;
+    type Input = PreparedBody;
+    type Body = PreparedBody;
     type Output = Bytes;
     type Response = Binary;
 
@@ -617,31 +592,23 @@ impl EndpointSpec for FinalizationExpiryEndpoint {
     }
 
     fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
-        builder.push_rate_limit_policy(
-            "AuthenticationApi::rate_limit::finalization",
-            std::iter::empty::<(&str, &str)>(),
-            1,
-            [(1, Duration::from_secs(10))],
+        builder.push_rate_limit(
+            RateLimitDeclaration::new("AuthenticationApi::rate_limit::finalization")
+                .window(1, Duration::from_secs(10))
+                .part("scope", "global"),
         )?;
         builder.push_auth(Auth::bearer(self.credential.clone()))?;
         builder.finish()
     }
 
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        RequestBody::metadata(&RequestBody::bytes(Bytes::new()), context)
-    }
-
     fn into_body(self) -> Self::Body {
-        RequestBody::bytes(Bytes::new())
+        PreparedBody::bytes(Bytes::new())
     }
 }
 
 impl EndpointSpec for ProtectedEndpoint {
-    type Input = RequestBody;
-    type Body = RequestBody;
+    type Input = PreparedBody;
+    type Body = PreparedBody;
     type Output = Bytes;
     type Response = Binary;
 
@@ -663,21 +630,13 @@ impl EndpointSpec for ProtectedEndpoint {
         };
         builder.push_auth(auth.challenge(self.challenge))?;
         if let Some(rate_key) = &self.rate_key {
-            builder.push_rate_limit_policy(
-                "AuthenticationApi::rate_limit::tenant",
-                [("client.tenant", rate_key.as_str())],
-                1,
-                [(1, Duration::from_secs(1))],
+            builder.push_rate_limit(
+                RateLimitDeclaration::new("AuthenticationApi::rate_limit::tenant")
+                    .window(1, Duration::from_secs(1))
+                    .part("client.tenant", rate_key.as_str()),
             )?;
         }
         builder.finish()
-    }
-
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        RequestBody::metadata(&self.body, context)
     }
 
     fn into_body(self) -> Self::Body {
@@ -895,8 +854,8 @@ struct OversizedMaterialEndpoint {
 }
 
 impl EndpointSpec for OversizedMaterialEndpoint {
-    type Input = RequestBody;
-    type Body = RequestBody;
+    type Input = PreparedBody;
+    type Body = PreparedBody;
     type Output = Bytes;
     type Response = Binary;
 
@@ -910,15 +869,8 @@ impl EndpointSpec for OversizedMaterialEndpoint {
         builder.finish()
     }
 
-    fn body_metadata(
-        &self,
-        context: RequestBodyContext<'_>,
-    ) -> Result<RequestBodyMetadata, BodyError> {
-        RequestBody::metadata(&RequestBody::bytes(Bytes::new()), context)
-    }
-
     fn into_body(self) -> Self::Body {
-        RequestBody::bytes(Bytes::new())
+        PreparedBody::bytes(Bytes::new())
     }
 }
 
@@ -1025,6 +977,14 @@ impl AuthRateLimiter {
 }
 
 impl RateLimiter for AuthRateLimiter {
+    fn capability(&self) -> crate::rate_limit::LimiterCapability {
+        crate::rate_limit::LimiterCapability::new(
+            crate::rate_limit::Enforcement::Local,
+            "test.auth-rate-limiter",
+            1,
+        )
+    }
+
     fn preparation_key_limit(&self) -> usize {
         self.key_limit
     }
@@ -1072,6 +1032,14 @@ struct RetainedReservationLimiter {
 }
 
 impl RateLimiter for RetainedReservationLimiter {
+    fn capability(&self) -> crate::rate_limit::LimiterCapability {
+        crate::rate_limit::LimiterCapability::new(
+            crate::rate_limit::Enforcement::Local,
+            "test.retained-reservation-limiter",
+            1,
+        )
+    }
+
     fn acquire<'a>(
         &'a self,
         _request: RateLimitRequest<'a>,
@@ -1086,11 +1054,36 @@ impl RateLimiter for RetainedReservationLimiter {
     }
 }
 
-struct IsolatedHttpProvider;
+struct IsolatedHttpProvider {
+    origins: [ProviderOrigin; 1],
+}
+
+impl IsolatedHttpProvider {
+    fn new() -> Self {
+        Self {
+            origins: [
+                ProviderOrigin::parse("https://isolated-provider.example.test")
+                    .expect("isolated provider origin"),
+            ],
+        }
+    }
+}
 
 struct LoopbackHttpProvider {
     url: url::Url,
+    origins: [ProviderOrigin; 1],
     calls: Arc<AtomicUsize>,
+}
+
+impl LoopbackHttpProvider {
+    fn new(url: url::Url, calls: &Arc<AtomicUsize>) -> Self {
+        let origins = [ProviderOrigin::from_url(&url).expect("loopback provider origin")];
+        Self {
+            url,
+            origins,
+            calls: Arc::clone(calls),
+        }
+    }
 }
 
 impl CredentialProvider for IsolatedHttpProvider {
@@ -1124,6 +1117,10 @@ impl CredentialProvider for IsolatedHttpProvider {
             Ok(access_token("application-token-e6cc09dfdf24"))
         })
     }
+
+    fn http_origins(&self) -> &[ProviderOrigin] {
+        &self.origins
+    }
 }
 
 impl CredentialProvider for LoopbackHttpProvider {
@@ -1147,6 +1144,10 @@ impl CredentialProvider for LoopbackHttpProvider {
             }
             Ok(access_token("real-provider-application-token"))
         })
+    }
+
+    fn http_origins(&self) -> &[ProviderOrigin] {
+        &self.origins
     }
 }
 
@@ -1232,7 +1233,7 @@ fn request(
     core: ClientCore,
     selector: &Arc<SlotSelector<AccessToken>>,
     challenge: ChallengePolicy,
-    body: RequestBody,
+    body: PreparedBody,
 ) -> Request<ProtectedEndpoint> {
     Request::new(
         core,
@@ -1255,25 +1256,17 @@ fn query_request(
         ProtectedEndpoint {
             credential: CredentialRef::new(Arc::clone(selector)),
             challenge: ChallengePolicy::Never,
-            body: RequestBody::bytes(Bytes::new()),
+            body: PreparedBody::bytes(Bytes::new()),
             query: true,
             rate_key: None,
         },
     )
 }
 
-fn prepared_rate_rule() -> RateLimitPolicy {
-    RateLimitPolicy::new(
-        RateLimitId::new("Prepared::rate_limit::recovery").expect("prepared rate ID"),
-        RateLimitKey::global(),
-        NonZeroU32::new(1).expect("prepared rate cost"),
-        [RateLimitWindow::new(
-            NonZeroU32::new(2).expect("prepared rate capacity"),
-            Duration::from_secs(1),
-        )
-        .expect("prepared rate window")],
-    )
-    .expect("prepared rate rule")
+fn prepared_rate_rule() -> RateLimitDeclaration {
+    RateLimitDeclaration::new("Prepared::rate_limit::recovery")
+        .window(2, Duration::from_secs(1))
+        .part("scope", "global")
 }
 
 fn api_error<T>(result: Result<T, ApiError>) -> ApiError {
@@ -1283,7 +1276,19 @@ fn api_error<T>(result: Result<T, ApiError>) -> ApiError {
     }
 }
 
+mod body_order;
+mod boundaries;
+mod freshness;
 mod materialization;
 mod preflight;
 mod provider;
+mod provider_journal;
+mod r7_short_lived;
 mod recovery;
+mod recovery_authority;
+mod source_recovery;
+mod store;
+
+mod auth_query_bounds;
+mod auth_recovery_admission;
+mod head_deadline;

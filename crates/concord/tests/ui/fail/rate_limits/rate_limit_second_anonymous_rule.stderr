@@ -1,11 +1,11 @@
-error: a client `Api` permits at most one anonymous `rate_limit { ... }` attachment; use a rate-limit profile for additional policies
- --> tests/ui/fail/rate_limits/rate_limit_second_anonymous_rule.rs:9:9
-  |
-9 |         rate_limit { id "concord.rate_limit_second_anonymous_rule.2"; key [origin]; cost 1;  allow 2 per 1s; }
-  |         ^^^^^^^^^^
+error: [C3-RATE] client `Api` would carry rate identity `concord.rate_limit_second_anonymous_rule.1` twice with different bindings, schema or cost (the other attachment is from Api); a conflicting repeated identity on one endpoint is an error, so give one policy a distinct ID or attach it identically
+  --> tests/ui/fail/rate_limits/rate_limit_second_anonymous_rule.rs:13:9
+   |
+13 |         rate_limit { id "concord.rate_limit_second_anonymous_rule.1"; key [origin]; allow 2 per 1s; }
+   |         ^^^^^^^^^^
 
-error: the first anonymous rate-limit attachment is here
- --> tests/ui/fail/rate_limits/rate_limit_second_anonymous_rule.rs:7:9
-  |
-7 |         rate_limit { id "concord.rate_limit_second_anonymous_rule.1"; key [origin]; cost 1;  allow 1 per 1s; }
-  |         ^^^^^^^^^^
+error: note: the other attachment is here
+  --> tests/ui/fail/rate_limits/rate_limit_second_anonymous_rule.rs:12:9
+   |
+12 |         rate_limit { id "concord.rate_limit_second_anonymous_rule.1"; key [origin]; allow 1 per 1s; }
+   |         ^^^^^^^^^^

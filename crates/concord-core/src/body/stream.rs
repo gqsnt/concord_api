@@ -28,6 +28,7 @@ pub struct RequestStream<T = Bytes> {
     source: BodyStream,
     source_length: Option<u64>,
     declared_length: Option<u64>,
+    declared_minimum: Option<u64>,
     marker: PhantomData<fn() -> T>,
 }
 
@@ -40,6 +41,7 @@ impl RequestStream<Bytes> {
             source: Box::pin(OneChunk { bytes: Some(bytes) }),
             source_length: Some(length),
             declared_length: None,
+            declared_minimum: None,
             marker: PhantomData,
         }
     }
@@ -62,6 +64,7 @@ impl RequestStream<Bytes> {
             }),
             source_length: None,
             declared_length: None,
+            declared_minimum: None,
             marker: PhantomData,
         }
     }
@@ -76,6 +79,7 @@ impl RequestStream<Bytes> {
             source: Box::pin(ReaderStream::new(reader)),
             source_length: None,
             declared_length: None,
+            declared_minimum: None,
             marker: PhantomData,
         }
     }
@@ -96,6 +100,7 @@ impl RequestStream<Bytes> {
             source: Box::pin(ReaderStream::new(file)),
             source_length: Some(length.len()),
             declared_length: None,
+            declared_minimum: None,
             marker: PhantomData,
         })
     }
@@ -110,12 +115,28 @@ impl RequestStream<Bytes> {
         self
     }
 
+    /// Declares a minimum number of nonempty bytes this stream must produce.
+    ///
+    /// The value becomes an [`LengthHint::AtLeast`](super::LengthHint::AtLeast)
+    /// hint on the prepared body. Core validates it against observed
+    /// production: ending the stream with fewer bytes is a dishonest length and
+    /// fails with [`BodyErrorKind::InvalidLength`]. A minimum above the
+    /// configured request-body limit fails before credentials or dispatch.
+    #[must_use]
+    pub fn at_least(mut self, bytes: u64) -> Self {
+        self.declared_minimum = Some(bytes);
+        self
+    }
+
     pub(crate) fn exact_length_value(&self) -> Option<u64> {
         self.declared_length.or(self.source_length)
     }
 
-    pub(crate) const fn lower_bound(&self) -> Option<u64> {
-        self.source_length
+    pub(crate) fn lower_bound(&self) -> Option<u64> {
+        match (self.source_length, self.declared_minimum) {
+            (Some(source), Some(minimum)) => Some(source.max(minimum)),
+            (source, minimum) => source.or(minimum),
+        }
     }
 
     pub(crate) fn validate_metadata(&self) -> Result<(), BodyError> {
@@ -126,7 +147,24 @@ impl RequestStream<Bytes> {
         {
             return Err(BodyError::new(BodyErrorKind::InvalidLength));
         }
+        if self
+            .exact_length_value()
+            .zip(self.declared_minimum)
+            .is_some_and(|(exact, minimum)| minimum > exact)
+        {
+            return Err(BodyError::new(BodyErrorKind::InvalidLength));
+        }
         Ok(())
+    }
+
+    /// Returns the trustworthy structural length hint without polling.
+    pub(crate) fn length_hint(&self) -> super::LengthHint {
+        match self.exact_length_value() {
+            Some(exact) => super::LengthHint::Exact(exact),
+            None => self
+                .lower_bound()
+                .map_or(super::LengthHint::Unknown, super::LengthHint::AtLeast),
+        }
     }
 
     pub(crate) fn into_source(self) -> BodyStream {
@@ -140,6 +178,7 @@ impl fmt::Debug for RequestStream<Bytes> {
             .debug_struct("RequestStream")
             .field("source_length", &self.source_length)
             .field("declared_length", &self.declared_length)
+            .field("declared_minimum", &self.declared_minimum)
             .field("source", &"<request stream omitted>")
             .finish()
     }

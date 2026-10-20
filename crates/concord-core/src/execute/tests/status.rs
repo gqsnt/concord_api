@@ -123,6 +123,14 @@ impl OperationObserver for AcceptanceOrderingHooks {
 struct AcceptanceOrderingLimiter;
 
 impl RateLimiter for AcceptanceOrderingLimiter {
+    fn capability(&self) -> crate::rate_limit::LimiterCapability {
+        crate::rate_limit::LimiterCapability::new(
+            crate::rate_limit::Enforcement::Local,
+            "test.acceptance-ordering-limiter",
+            1,
+        )
+    }
+
     fn acquire<'a>(
         &'a self,
         _request: RateLimitRequest<'a>,
@@ -141,8 +149,7 @@ async fn buffered_codec_direct_and_metadata_results_share_one_execution_path() {
     PROBE_VALIDATOR_CALLS.store(0, Ordering::SeqCst);
     let executor = DeterministicExecutor::new();
     let hooks = Arc::new(ProbeHooks::new());
-    let runtime = RuntimeConfigBuilder::new()
-        .request_body_limit(NonZeroUsize::new(5).expect("positive limit"));
+    let runtime = RuntimeConfigBuilder::new().request_body_limit(5);
     let core = development_core(&executor, Arc::clone(&hooks), runtime);
     let encoder_calls = Arc::new(AtomicUsize::new(0));
     executor
@@ -281,8 +288,8 @@ async fn accepted_and_rejected_404_use_their_distinct_body_limits() {
         &executor,
         Arc::new(ProbeHooks::new()),
         RuntimeConfigBuilder::new()
-            .response_body_limit(NonZeroUsize::new(4).expect("positive accepted limit"))
-            .status_body_limit(NonZeroUsize::new(8).expect("positive status limit")),
+            .response_body_limit(4)
+            .status_body_limit(8),
     );
 
     let accepted =
@@ -415,8 +422,7 @@ async fn encoding_failure_and_request_limit_prevent_native_execution_safely() {
     let limit_core = development_core(
         &limit_executor,
         Arc::clone(&limit_hooks),
-        RuntimeConfigBuilder::new()
-            .request_body_limit(NonZeroUsize::new(4).expect("positive limit")),
+        RuntimeConfigBuilder::new().request_body_limit(4),
     );
     limit_executor
         .application()
@@ -596,8 +602,7 @@ async fn buffered_decoder_never_observes_known_or_first_excess_accepted_bytes() 
     let core = real_core(
         &server,
         Arc::new(ProbeHooks::new()),
-        RuntimeConfigBuilder::new()
-            .response_body_limit(NonZeroUsize::new(4).expect("positive limit")),
+        RuntimeConfigBuilder::new().response_body_limit(4),
     );
     assert_eq!(
         codec_request::<Text, Text>(core.clone(), "four".to_owned())
@@ -662,14 +667,15 @@ async fn real_reqwest_stream_upload_transmits_exact_bytes_and_owned_media_type()
         &polls,
     ))
     .exact_length(18);
-    let body = RequestBody::stream(stream)
+    let body = PreparedBody::stream(stream)
         .content_type("application/x-concord-stream")
         .expect("valid stream content type");
     assert_eq!(
         body_request(core, body).await.expect("stream upload"),
         b"upload-ok"[..]
     );
-    assert_eq!(polls.load(Ordering::SeqCst), 3);
+    // Three data chunks plus EOF, required before releasing the final exact-length chunk.
+    assert_eq!(polls.load(Ordering::SeqCst), 4);
     server
         .wait_for_requests(1, Duration::from_secs(2))
         .expect("recorded stream request");
@@ -716,9 +722,12 @@ async fn real_reqwest_multipart_upload_owns_framing_and_supports_streams_and_fac
         )
         .expect("bytes part");
     assert_eq!(
-        body_request(core.clone(), RequestBody::multipart(buffered))
-            .await
-            .expect("buffered multipart upload"),
+        body_request(
+            core.clone(),
+            PreparedBody::multipart(buffered).expect("prepared multipart body"),
+        )
+        .await
+        .expect("buffered multipart upload"),
         b"buffered-ok"[..]
     );
 
@@ -741,9 +750,12 @@ async fn real_reqwest_multipart_upload_owns_framing_and_supports_streams_and_fac
         )
         .expect("stream part");
     assert_eq!(
-        body_request(core.clone(), RequestBody::multipart(streamed))
-            .await
-            .expect("streamed multipart upload"),
+        body_request(
+            core.clone(),
+            PreparedBody::multipart(streamed).expect("prepared multipart body"),
+        )
+        .await
+        .expect("streamed multipart upload"),
         b"streamed-ok"[..]
     );
 
@@ -751,10 +763,11 @@ async fn real_reqwest_multipart_upload_owns_framing_and_supports_streams_and_fac
     assert_eq!(
         body_request(
             core,
-            RequestBody::multipart_factory(ProbeMultipartFactory {
+            PreparedBody::multipart_factory(ProbeMultipartFactory {
                 create_calls: Arc::clone(&factory_calls),
                 fail: false,
-            }),
+            })
+            .expect("multipart factory body"),
         )
         .await
         .expect("factory multipart upload"),
@@ -831,7 +844,7 @@ async fn managed_producer_failure_precedes_reqwest_transport_failure() {
     .exact_length(1);
     let error = tokio::time::timeout(
         Duration::from_secs(3),
-        body_request(core, RequestBody::stream(body)),
+        body_request(core, PreparedBody::stream(body)),
     )
     .await
     .expect("managed producer failure should be prompt")
@@ -846,8 +859,9 @@ async fn managed_producer_failure_precedes_reqwest_transport_failure() {
 }
 
 #[tokio::test]
-async fn cancellation_drops_direct_and_factory_created_request_streams_without_completion() {
-    async fn cancel(body: RequestBody, reached: Arc<tokio::sync::Notify>) -> Arc<ProbeHooks> {
+async fn cancellation_drops_direct_and_factory_created_request_streams_with_one_cancelled_completion()
+ {
+    async fn cancel(body: PreparedBody, reached: Arc<tokio::sync::Notify>) -> Arc<ProbeHooks> {
         let executor = DeterministicExecutor::new();
         let hooks = Arc::new(ProbeHooks::new());
         let core = development_core(&executor, Arc::clone(&hooks), RuntimeConfigBuilder::new());
@@ -865,7 +879,7 @@ async fn cancellation_drops_direct_and_factory_created_request_streams_without_c
     let direct_polls = Arc::new(AtomicUsize::new(0));
     let direct_dropped = Arc::new(AtomicBool::new(false));
     let direct_reached = Arc::new(tokio::sync::Notify::new());
-    let direct_body = RequestBody::stream(RequestStream::from_stream(PendingBodyStream {
+    let direct_body = PreparedBody::stream(RequestStream::from_stream(PendingBodyStream {
         polls: Arc::clone(&direct_polls),
         dropped: Arc::clone(&direct_dropped),
         reached: Arc::clone(&direct_reached),
@@ -874,7 +888,12 @@ async fn cancellation_drops_direct_and_factory_created_request_streams_without_c
     let direct_polls_at_drop = direct_polls.load(Ordering::SeqCst);
     assert!(direct_polls_at_drop > 0);
     assert!(direct_dropped.load(Ordering::SeqCst));
-    assert_eq!(direct_hooks.completion_returned.load(Ordering::SeqCst), 0);
+    // CONTROL-03 drop guard: one synchronous `Cancelled` completion.
+    assert_eq!(direct_hooks.completion_returned.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        completion(&direct_hooks.records()).1,
+        CompletionOutcome::Cancelled
+    );
     tokio::task::yield_now().await;
     assert_eq!(direct_polls.load(Ordering::SeqCst), direct_polls_at_drop);
 
@@ -882,7 +901,7 @@ async fn cancellation_drops_direct_and_factory_created_request_streams_without_c
     let factory_polls = Arc::new(AtomicUsize::new(0));
     let factory_dropped = Arc::new(AtomicBool::new(false));
     let factory_reached = Arc::new(tokio::sync::Notify::new());
-    let factory_body = RequestBody::factory(PendingBodyFactory {
+    let factory_body = PreparedBody::factory(PendingBodyFactory {
         create_calls: Arc::clone(&factory_calls),
         polls: Arc::clone(&factory_polls),
         dropped: Arc::clone(&factory_dropped),
@@ -893,7 +912,12 @@ async fn cancellation_drops_direct_and_factory_created_request_streams_without_c
     assert_eq!(factory_calls.load(Ordering::SeqCst), 1);
     assert!(factory_polls_at_drop > 0);
     assert!(factory_dropped.load(Ordering::SeqCst));
-    assert_eq!(factory_hooks.completion_returned.load(Ordering::SeqCst), 0);
+    // CONTROL-03 drop guard: one synchronous `Cancelled` completion.
+    assert_eq!(factory_hooks.completion_returned.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        completion(&factory_hooks.records()).1,
+        CompletionOutcome::Cancelled
+    );
     tokio::task::yield_now().await;
     assert_eq!(factory_polls.load(Ordering::SeqCst), factory_polls_at_drop);
 
@@ -912,18 +936,18 @@ async fn cancellation_drops_direct_and_factory_created_request_streams_without_c
         Method::POST,
     )
     .path("prepared-cancellation")
-    .body(RequestBody::stream(RequestStream::from_stream(
+    .body_repr::<PreparedBody, _>(PreparedBody::stream(RequestStream::from_stream(
         PendingBodyStream {
             polls: Arc::clone(&prepared_polls),
             dropped: Arc::clone(&prepared_dropped),
             reached: Arc::clone(&prepared_reached),
         },
     )))
-    .accepted_bytes()
+    .response::<Binary, Bytes>()
     .build()
     .expect("prepared cancellation endpoint");
-    let prepared_task =
-        tokio::spawn(async move { Request::new(prepared_core, prepared_endpoint).await });
+    let prepared_request = test_owner::root(&prepared_core, prepared_endpoint);
+    let prepared_task = tokio::spawn(async move { prepared_request.await });
     prepared_reached.notified().await;
     assert_eq!(prepared_executor.application().request_count().unwrap(), 0);
     prepared_task.abort();
@@ -937,7 +961,12 @@ async fn cancellation_drops_direct_and_factory_created_request_streams_without_c
     let prepared_polls_at_drop = prepared_polls.load(Ordering::SeqCst);
     assert!(prepared_polls_at_drop > 0);
     assert!(prepared_dropped.load(Ordering::SeqCst));
-    assert_eq!(prepared_hooks.completion_returned.load(Ordering::SeqCst), 0);
+    // CONTROL-03 drop guard: one synchronous `Cancelled` completion.
+    assert_eq!(prepared_hooks.completion_returned.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        completion(&prepared_hooks.records()).1,
+        CompletionOutcome::Cancelled
+    );
     tokio::task::yield_now().await;
     assert_eq!(
         prepared_polls.load(Ordering::SeqCst),
@@ -954,18 +983,23 @@ async fn cancellation_drops_direct_and_factory_created_request_streams_without_c
             dropped: Arc::clone(&multipart_dropped),
             reached: Arc::clone(&multipart_reached),
         });
-        let multipart_body = RequestBody::multipart(
+        let multipart_body = PreparedBody::multipart(
             MultipartBody::new()
                 .part("stream", MultipartPart::stream(stream))
                 .expect("multipart pending stream"),
-        );
+        )
+        .expect("prepared multipart body");
         let multipart_hooks = cancel(multipart_body, Arc::clone(&multipart_reached)).await;
         let multipart_polls_at_drop = multipart_polls.load(Ordering::SeqCst);
         assert!(multipart_polls_at_drop > 0);
         assert!(multipart_dropped.load(Ordering::SeqCst));
         assert_eq!(
             multipart_hooks.completion_returned.load(Ordering::SeqCst),
-            0
+            1
+        );
+        assert_eq!(
+            completion(&multipart_hooks.records()).1,
+            CompletionOutcome::Cancelled
         );
         tokio::task::yield_now().await;
         assert_eq!(
@@ -997,7 +1031,7 @@ async fn real_reqwest_bytes_are_finite_complete_only_and_body_failures_are_safe(
         },
     ])
     .expect("bytes server");
-    let runtime = || RuntimeConfigBuilder::new().response_body_limit(NonZeroUsize::new(6).unwrap());
+    let runtime = || RuntimeConfigBuilder::new().response_body_limit(6);
     let core = real_core(&server, Arc::new(ProbeHooks::new()), runtime());
     assert_eq!(
         bytes_request(core.clone()).await.expect("within"),
@@ -1043,6 +1077,7 @@ async fn real_reqwest_bytes_collection_is_bounded_by_operation_deadline() {
     let core = real_core(&server, Arc::clone(&hooks), RuntimeConfigBuilder::new());
     let error = bytes_request(core)
         .timeout(Duration::from_millis(500))
+        .expect("valid timeout")
         .await
         .expect_err("body deadline");
     gate.release();
@@ -1120,7 +1155,7 @@ async fn all_non_2xx_statuses_use_complete_only_bounded_terminal_capture() {
     let core = real_core(
         &server,
         Arc::clone(&hooks),
-        RuntimeConfigBuilder::new().status_body_limit(NonZeroUsize::new(8).unwrap()),
+        RuntimeConfigBuilder::new().status_body_limit(8),
     );
 
     let redirect = bytes_request(core.clone()).await.expect_err("3xx terminal");
@@ -1166,6 +1201,7 @@ async fn all_non_2xx_statuses_use_complete_only_bounded_terminal_capture() {
     );
     let deadline = bytes_request(core)
         .timeout(Duration::from_millis(500))
+        .expect("valid timeout")
         .await
         .expect_err("status capture deadline");
     deadline_gate.release();

@@ -138,7 +138,7 @@ checksum = "6e8ccc4ea9f6acc32d102c0f6d471d11d913ad15f20c04de743374861fa1d414"
 
 [[package]]
 name = "concord"
-version = "2.1.0-beta.1"
+version = "3.0.0-beta.1"
 dependencies = [
  "concord-core",
  "concord-extras",
@@ -149,15 +149,16 @@ dependencies = [
 name = "concord"
 version = "99.0.0"
 dependencies = [
- "concord 2.1.0-beta.1",
+ "concord 3.0.0-beta.1",
 ]
 
 [[package]]
 name = "concord-core"
-version = "2.1.0-beta.1"
+version = "3.0.0-beta.1"
 dependencies = [
  "bytes",
  "futures-core",
+ "h2",
  "http",
  "http-body",
  "httpdate",
@@ -165,12 +166,14 @@ dependencies = [
  "reqwest",
  "rustls",
  "tokio",
+ "tower-http",
+ "tower-service",
  "url",
 ]
 
 [[package]]
 name = "concord-extras"
-version = "2.1.0-beta.1"
+version = "3.0.0-beta.1"
 dependencies = [
  "bytes",
  "concord-core",
@@ -194,7 +197,7 @@ dependencies = [
 name = "concord-fixture-features"
 version = "0.0.0"
 dependencies = [
- "concord 2.1.0-beta.1",
+ "concord 3.0.0-beta.1",
  "concord-test-support",
  "tokio",
 ]
@@ -203,12 +206,12 @@ dependencies = [
 name = "concord-fixture-renamed-facade"
 version = "0.0.0"
 dependencies = [
- "concord 2.1.0-beta.1",
+ "concord 3.0.0-beta.1",
 ]
 
 [[package]]
 name = "concord-macros"
-version = "2.1.0-beta.1"
+version = "3.0.0-beta.1"
 dependencies = [
  "http",
  "proc-macro2",
@@ -228,12 +231,12 @@ dependencies = [
 name = "concord-msrv-facade"
 version = "0.0.0"
 dependencies = [
- "concord 2.1.0-beta.1",
+ "concord 3.0.0-beta.1",
 ]
 
 [[package]]
 name = "concord-test-support"
-version = "2.1.0-beta.1"
+version = "3.0.0-beta.1"
 dependencies = [
  "base64 0.23.1",
  "rustls",
@@ -895,9 +898,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.43"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0283386ce02abc0151e1761d08802dfe86c173b0b494af5cbc086574e453da06"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "once_cell",
  "ring",

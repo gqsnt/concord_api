@@ -1,5 +1,6 @@
 use crate::error::{ClientBuildError, ClientBuildErrorKind};
 use crate::runtime::RuntimeConfig;
+use std::sync::Arc;
 
 use super::application::ApplicationHttp;
 use super::config::{HttpConfig, ProtocolMode, ProviderRetry};
@@ -76,13 +77,15 @@ impl ManagedHttp {
 
         let mut application = base_builder(&http, false)?;
         let mut provider = base_builder(&http, true)?;
-        if !http.protocol_recovery {
-            application = application.retry(reqwest::retry::never());
-        }
-        provider = match http.provider_retry {
-            ProviderRetry::ProtocolRecovery => provider,
-            ProviderRetry::Disabled => provider.retry(reqwest::retry::never()),
-        };
+        application = application.retry(if http.protocol_recovery {
+            protocol_recovery_policy()
+        } else {
+            reqwest::retry::never()
+        });
+        provider = provider.retry(match http.provider_retry {
+            ProviderRetry::ProtocolRecovery => protocol_recovery_policy(),
+            ProviderRetry::Disabled => reqwest::retry::never(),
+        });
 
         #[cfg(feature = "default-tls")]
         {
@@ -97,6 +100,7 @@ impl ManagedHttp {
 
         let application = build_native_client(application)?;
         let provider = build_native_client(provider)?;
+        let decoding = super::content_decoding::ContentDecoding::from_config(&http);
         Ok(Self {
             application: ApplicationHttp::new(
                 application,
@@ -104,13 +108,19 @@ impl ManagedHttp {
                 application_https_only,
                 runtime.status_body_limit,
                 runtime.rate_limit_cooldown_cap,
-            ),
+            )
+            .with_decoding(decoding),
             provider: ProviderHttpInner::new(
                 provider,
                 tls,
                 runtime.provider_request_limit,
                 runtime.provider_response_limit,
-            ),
+                runtime.provider_max_sends,
+                runtime.provider_timeout,
+                Arc::clone(&runtime.wall_clock),
+            )
+            .with_failure_cooldown_cap(runtime.auth_failure_cooldown_cap)
+            .with_decoding(decoding),
         })
     }
 
@@ -249,6 +259,72 @@ fn parse_tls_material(config: &HttpConfig) -> Result<TlsMaterial, ClientBuildErr
         certificates,
         identity,
     })
+}
+
+/// Transport-private recovery policy (§13.5, RETRY-02).
+///
+/// It stays inside one visible Concord attempt and allows **at most two
+/// physical tries in total** (one private retry), and only when the protocol
+/// proves the first try was not processed: an HTTP/2 `REFUSED_STREAM` reset or
+/// a graceful remote `GOAWAY(NO_ERROR)` for the stream. It never retries a
+/// received status, never repeats representation preparation, credentials,
+/// rate admission, attempt events or policy budget, and cannot resend a
+/// one-shot native body (the native body must be clonable). Without HTTP/2
+/// support no such proof is observable, so private recovery is disabled.
+///
+/// Known transport boundary: the native HTTP/1 connection pool may itself
+/// re-issue a request that was never written to a reused idle connection
+/// found closed; that happens below this policy and is also unprocessed by
+/// construction.
+fn protocol_recovery_policy() -> reqwest::retry::Builder {
+    #[cfg(feature = "http2")]
+    {
+        reqwest::retry::for_host(AnyHost)
+            .no_budget()
+            .max_retries_per_request(1)
+            .classify_fn(|attempt| {
+                let unprocessed = attempt.error().is_some_and(protocol_proves_unprocessed);
+                if unprocessed {
+                    attempt.retryable()
+                } else {
+                    attempt.success()
+                }
+            })
+    }
+    #[cfg(not(feature = "http2"))]
+    {
+        reqwest::retry::never()
+    }
+}
+
+/// A retry scope matching every host: the private policy is not origin
+/// specific.
+#[cfg(feature = "http2")]
+struct AnyHost;
+
+#[cfg(feature = "http2")]
+impl PartialEq<&str> for AnyHost {
+    fn eq(&self, _host: &&str) -> bool {
+        true
+    }
+}
+
+/// Whether a native failure carries HTTP/2 proof that the stream was not
+/// processed by the server.
+#[cfg(feature = "http2")]
+fn protocol_proves_unprocessed(error: &(dyn std::error::Error + 'static)) -> bool {
+    let mut current = Some(error);
+    while let Some(error) = current {
+        if let Some(h2) = error.downcast_ref::<h2::Error>() {
+            let refused =
+                h2.is_reset() && h2.is_remote() && h2.reason() == Some(h2::Reason::REFUSED_STREAM);
+            let graceful_goaway =
+                h2.is_go_away() && h2.is_remote() && h2.reason() == Some(h2::Reason::NO_ERROR);
+            return refused || graceful_goaway;
+        }
+        current = error.source();
+    }
+    false
 }
 
 #[cfg(test)]
@@ -574,6 +650,60 @@ mod tests {
         assert_eq!(provider_error, ErrorCategory::Configuration);
     }
 
+    // AUTH-02 / V3-E16: the provider helper never follows redirects and never
+    // stores or replays cookies, over a real TLS loopback.
+    #[cfg(feature = "default-tls")]
+    #[tokio::test]
+    async fn provider_helper_follows_no_redirects_and_replays_no_cookies() {
+        let server = TlsServer::start().expect("TLS provider server should start");
+        server
+            .queue_response_with_headers(302, &[("Location", "/redirected")], Vec::new())
+            .expect("redirect response");
+        server
+            .queue_response_with_headers(
+                200,
+                &[("Set-Cookie", "provider_cookie=sentinel; Path=/")],
+                b"set".to_vec(),
+            )
+            .expect("cookie response");
+        server
+            .queue_response(200, b"check".to_vec())
+            .expect("cookie probe response");
+        let managed = managed(
+            HttpConfigBuilder::new()
+                .http1_only()
+                .add_root_certificate_pem(server.certificate_pem()),
+        );
+        let url = |path: &str| {
+            url::Url::parse(&server.url("localhost", path)).expect("provider HTTPS URL")
+        };
+        let redirect = crate::http::provider::send_declared_for_test(
+            managed.provider_http(None),
+            ProviderRequest::new(Method::GET, url("/redirect")),
+        )
+        .await
+        .expect("a redirect stays a terminal provider response");
+        assert_eq!(redirect.status(), reqwest::StatusCode::FOUND);
+        for path in ["/set", "/check"] {
+            crate::http::provider::send_declared_for_test(
+                managed.provider_http(None),
+                ProviderRequest::new(Method::GET, url(path)),
+            )
+            .await
+            .expect("cookie probe");
+        }
+        server
+            .wait_for_requests(3, WAIT)
+            .expect("three provider requests");
+        let requests = server.requests();
+        let targets: Vec<_> = requests
+            .iter()
+            .map(|request| request.target().to_owned())
+            .collect();
+        assert_eq!(targets, ["/redirect", "/set", "/check"]);
+        assert_eq!(requests[2].header("cookie"), None);
+    }
+
     #[cfg(feature = "default-tls")]
     #[tokio::test]
     async fn additional_roots_apply_to_both_but_identity_is_application_only() {
@@ -618,11 +748,10 @@ mod tests {
             url::Url::parse(&trust_server.url("localhost", "/provider-root"))
                 .expect("provider HTTPS URL should parse"),
         );
-        let provider = managed
-            .provider_http(None)
-            .send(request)
-            .await
-            .expect("provider root should validate");
+        let provider =
+            crate::http::provider::send_declared_for_test(managed.provider_http(None), request)
+                .await
+                .expect("provider root should validate");
         assert_eq!(provider.status(), reqwest::StatusCode::OK);
         assert_eq!(provider.body().as_ref(), b"ok");
         trust_server
@@ -659,7 +788,12 @@ mod tests {
             url::Url::parse(&mtls_server.url("localhost", "/provider-without-identity"))
                 .expect("provider mTLS URL should parse"),
         );
-        let provider_error = match managed.provider_http(None).send(request).await {
+        let provider_error = match crate::http::provider::send_declared_for_test(
+            managed.provider_http(None),
+            request,
+        )
+        .await
+        {
             Ok(_) => panic!("provider client must not present the application identity"),
             Err(error) => error,
         };
@@ -784,6 +918,23 @@ mod tests {
         assert_eq!(response.status(), reqwest::StatusCode::OK);
         server.finish().await;
         assert_eq!(boundary_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    }
+
+    #[cfg(feature = "http2")]
+    #[tokio::test]
+    async fn protocol_recovery_is_bounded_to_two_physical_tries_per_visible_attempt() {
+        // The server refuses every stream: private recovery stops after the
+        // second physical try instead of the native library default of three.
+        let server = H2RefusedServer::start(3, 2).await;
+        let attempts = server.physical_attempts();
+        let managed = managed(HttpConfigBuilder::new().http2_prior_knowledge());
+        let result = managed
+            .application
+            .get("managed.retry", &server.url())
+            .await;
+        assert!(result.is_err());
+        server.finish().await;
         assert_eq!(attempts.load(Ordering::SeqCst), 2);
     }
 

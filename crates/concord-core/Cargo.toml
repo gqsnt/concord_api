@@ -4,28 +4,33 @@ description = "Semantic runtime kernel and extension contracts for Concord"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 publish = false
 
 [features]
 default = []
 default-tls = ["dep:rustls", "reqwest/rustls-no-provider"]
-http2 = ["reqwest/http2"]
+http2 = ["reqwest/http2", "dep:h2"]
 records = []
 multipart = ["reqwest/multipart"]
-gzip = ["reqwest/gzip"]
-brotli = ["reqwest/brotli"]
-deflate = ["reqwest/deflate"]
+gzip = ["reqwest/gzip", "dep:tower-http", "dep:tower-service", "tower-http/decompression-gzip"]
+brotli = ["reqwest/brotli", "dep:tower-http", "dep:tower-service", "tower-http/decompression-br"]
+deflate = ["reqwest/deflate", "dep:tower-http", "dep:tower-service", "tower-http/decompression-deflate"]
 
 [dependencies]
 bytes.workspace = true
 futures-core.workspace = true
 http.workspace = true
 http-body.workspace = true
+h2 = { workspace = true, optional = true }
 httpdate.workspace = true
 mime.workspace = true
 reqwest = { workspace = true, features = ["stream"] }
 rustls = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "sync", "time"] }
+tower-http = { workspace = true, optional = true }
+tower-service = { workspace = true, optional = true }
 url.workspace = true
 
 [dev-dependencies]
@@ -36,6 +41,7 @@ http-body.workspace = true
 reqwest = { workspace = true, features = ["http2", "rustls-no-provider", "system-proxy"] }
 rustls.workspace = true
 serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync", "test-util", "time"] }
 trybuild = "1.0.118"
 

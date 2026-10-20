@@ -8,52 +8,53 @@
 use concord::api;
 use concord::prelude::*;
 
+use crate::riot::domain::DDragonLocale;
+
 api! {
     client DDragonApi {
         base "https://ddragon.leagueoflegends.com/";
 
         values {
-            locale: crate::riot::domain::DDragonLocale = crate::riot::domain::DDragonLocale::EnUs;
+            locale: DDragonLocale = DDragonLocale::EnUs;
         }
 
         headers { "User-Agent" = "ConcordRiotExample/1.0"; }
         timeout 20s;
         response Json;
 
-
     GET versions() -> Vec<String> {
-        path ["api", "versions.json"];
+        path "api/versions.json";
     }
 
     GET realm(region: String) -> serde_json::Value {
-        path ["realms", concat [endpoint.region, ".json"]];
+        path "realms/{region}.json";
     }
 
     scope version(version: String) {
-        path ["cdn", version.version];
+        path "cdn/{version}";
 
         scope data() {
-            path ["data", client.locale];
+            path "data/{client.locale}";
 
             GET champions() -> serde_json::Value {
-                path ["champion.json"];
+                path "champion.json";
             }
 
             GET items() -> serde_json::Value {
-                path ["item.json"];
+                path "item.json";
             }
         }
 
         scope assets() {
-            path ["img"];
+            path "img";
             response Binary;
 
             GET champion_image(filename: String) -> Bytes {
-                path ["champion", endpoint.filename];
+                path "champion/{filename}";
             }
 
             GET item_image(filename: String) -> Bytes {
-                path ["item", endpoint.filename];
+                path "item/{filename}";
             }
         }
     }

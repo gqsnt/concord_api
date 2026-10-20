@@ -185,13 +185,16 @@ checksum = "cc14f565cf027a105f7a44ccf9e5b424348421a1d8952a8fc9d499d313107789"
 
 [[package]]
 name = "concord"
-version = "2.1.0-beta.1"
+version = "3.0.0-beta.1"
 dependencies = [
  "concord-core",
  "concord-extras",
+ "concord-inspect",
  "concord-macros",
  "concord-test-support",
  "futures-core",
+ "h2",
+ "http",
  "serde",
  "serde_json",
  "tokio",
@@ -200,7 +203,7 @@ dependencies = [
 
 [[package]]
 name = "concord-core"
-version = "2.1.0-beta.1"
+version = "3.0.0-beta.1"
 dependencies = [
  "bytes",
  "concord-test-support",
@@ -213,14 +216,35 @@ dependencies = [
  "reqwest",
  "rustls",
  "serde",
+ "serde_json",
  "tokio",
+ "tower-http",
+ "tower-service",
  "trybuild",
  "url",
 ]
 
 [[package]]
+name = "concord-downstream-api"
+version = "3.0.0-beta.1"
+dependencies = [
+ "concord",
+ "serde",
+]
+
+[[package]]
+name = "concord-downstream-app"
+version = "3.0.0-beta.1"
+dependencies = [
+ "concord",
+ "concord-downstream-api",
+ "concord-test-support",
+ "tokio",
+]
+
+[[package]]
 name = "concord-examples"
-version = "2.1.0-beta.1"
+version = "3.0.0-beta.1"
 dependencies = [
  "concord",
  "concord-test-support",
@@ -232,10 +256,11 @@ dependencies = [
 
 [[package]]
 name = "concord-extras"
-version = "2.1.0-beta.1"
+version = "3.0.0-beta.1"
 dependencies = [
  "bytes",
  "concord-core",
+ "concord-test-support",
  "csv",
  "http",
  "mime",
@@ -246,8 +271,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-inspect"
+version = "3.0.0-beta.1"
+dependencies = [
+ "concord",
+ "concord-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "concord-macros"
-version = "2.1.0-beta.1"
+version = "3.0.0-beta.1"
 dependencies = [
  "http",
  "proc-macro2",
@@ -258,7 +293,7 @@ dependencies = [
 
 [[package]]
 name = "concord-perf"
-version = "2.1.0-beta.1"
+version = "3.0.0-beta.1"
 dependencies = [
  "allocation-counter",
  "concord",
@@ -271,7 +306,7 @@ dependencies = [
 
 [[package]]
 name = "concord-test-support"
-version = "2.1.0-beta.1"
+version = "3.0.0-beta.1"
 dependencies = [
  "base64 0.23.0",
  "bytes",
@@ -282,13 +317,17 @@ dependencies = [
 
 [[package]]
 name = "concord-xtask"
-version = "2.1.0-beta.1"
+version = "3.0.0-beta.1"
 dependencies = [
  "cargo_metadata",
  "concord-core",
+ "concord-examples",
  "concord-extras",
+ "concord-inspect",
+ "proc-macro2",
  "regex",
  "serde_json",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -992,9 +1031,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.42"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c54fcab019b409d04215d3a17cb438fd7fbf192ee61461f20f4fe18704bc138"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "once_cell",
  "ring",
@@ -1054,9 +1093,9 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.13"
+version = "0.103.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e"
+checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
 dependencies = [
  "ring",
  "rustls-pki-types",

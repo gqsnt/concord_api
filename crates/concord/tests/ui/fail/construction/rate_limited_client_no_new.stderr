@@ -1,15 +1,15 @@
 error[E0599]: no associated function or constant named `new` found for struct `RateLimitedApi` in the current scope
-  --> tests/ui/fail/construction/rate_limited_client_no_new.rs:19:29
+  --> tests/ui/fail/construction/rate_limited_client_no_new.rs:26:29
    |
- 3 | / api! {
- 4 | |     client RateLimitedApi {
- 5 | |         base "https://rate.example.test";
- 6 | |         timeout 30s;
+ 7 | / api! {
+ 8 | |     client RateLimitedApi {
+ 9 | |         base "https://rate.example.test";
+10 | |         timeout 30s;
 ...  |
-16 | | }
+23 | | }
    | |_- associated function or constant `new` not found for this struct
 ...
-19 |       let _ = RateLimitedApi::new();
+26 |       let _ = RateLimitedApi::new();
    |                               ^^^ associated function or constant not found in `RateLimitedApi`
    |
    = help: items from traits can only be used if the trait is implemented and in scope

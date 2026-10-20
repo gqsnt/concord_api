@@ -1,11 +1,11 @@
-error: rate-limit ID `service.shared` is reused with incompatible ordered dimensions or windows
-  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_incompatible_windows.rs:20:16
+error: [C3-RATE] rate policy ID `service.shared` is defined with a different key schema or window set elsewhere in client `Api`; one ID has one schema, so give the policies distinct IDs or reuse one named policy
+  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_incompatible_windows.rs:24:13
    |
-20 |             id "service.shared";
-   |                ^^^^^^^^^^^^^^^^
+24 |             rate_limit {
+   |             ^^^^^^^^^^
 
-error: the first declaration via this policy ID is here
-  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_incompatible_windows.rs:11:16
+error: note: the other definition is here
+  --> tests/ui/fail/rate_limits/rate_limit_explicit_id_incompatible_windows.rs:14:13
    |
-11 |             id "service.shared";
-   |                ^^^^^^^^^^^^^^^^
+14 |             rate_limit {
+   |             ^^^^^^^^^^

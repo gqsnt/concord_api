@@ -1,0 +1,84 @@
+name: V3 performance attribution and CI archive
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_BUILD_JOBS: "2"
+  CARGO_INCREMENTAL: "0"
+  PYTHONDONTWRITEBYTECODE: "1"
+  RUSTUP_TOOLCHAIN: 1.97.1
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  attribution:
+    name: Targeted ${{ matrix.mode }} attribution
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [runtime, compiler]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify attribution parsers and safe evidence downloads
+        run: python3 -m unittest discover -s scripts -p 'test_qualification_attribution.py'
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: 1.97.1
+          components: rust-src
+      - name: Attribute the selected candidate without changing it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ATTRIBUTION_MODE: ${{ matrix.mode }}
+        run: |
+          python3 scripts/qualification_attribution.py "$ATTRIBUTION_MODE" \
+            --driver "$GITHUB_WORKSPACE" \
+            --work "$RUNNER_TEMP/attribution-work" \
+            --out "$RUNNER_TEMP/attribution-evidence"
+      - name: Preserve diagnostic inputs and native profiles
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: v3-attribution-${{ matrix.mode }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/attribution-evidence
+            !${{ runner.temp }}/attribution-evidence/binaries
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
+
+  ci-archive:
+    name: Preserve native CI history and terminal evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify attribution parsers and safe evidence downloads
+        run: python3 -m unittest discover -s scripts -p 'test_qualification_attribution.py'
+      - name: Download source-bound native CI logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/qualification_ci_logs.py --out "$RUNNER_TEMP/ci-evidence"
+      - name: Retain native results including previous failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: v3-ci-history-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-evidence
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9

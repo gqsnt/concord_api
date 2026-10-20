@@ -1,0 +1,64 @@
+{
+  "csv-before": {
+    "base_commit": "570eec460dee1d83828ae48e35396ae07652aabc",
+    "scoped_patch": {
+      "path": "source/csv-before.patch",
+      "bytes": 6348,
+      "sha256": "932b04c022bcb5e8e055a43d061c89eac36b352b688d7b379126618fdb97be07"
+    },
+    "files_sha256": {
+      "crates/concord-extras/src/records/csv.rs": "cce9ff010f76f53b2b20ef9c9b7de073ceb4663ab934dea81f509f59602d256e",
+      "crates/concord-extras/tests/contracts/record_streams.rs": "09c19a479ce99b297795a26abf4d3ea87d3e10bae1a997341b750c9bc2da7964"
+    },
+    "scope": "Only the listed implementation and regression files; complete historical worktree status is in each original receipt.",
+    "verification": "Reconstructed from the tests-only patch retained before the controls; production implementation remains the baseline."
+  },
+  "csv-after": {
+    "base_commit": "570eec460dee1d83828ae48e35396ae07652aabc",
+    "scoped_patch": {
+      "path": "source/csv-after.patch",
+      "bytes": 9379,
+      "sha256": "5b2136f074c6515016006d2df18882af16c32f75eb741146e4559f8f3aef4ac5"
+    },
+    "files_sha256": {
+      "crates/concord-extras/src/records/csv.rs": "c0942ffff88c35079bc0955b1e4b463aa31af2c11a006f1f6ed8ab4b22605adb",
+      "crates/concord-extras/tests/contracts/record_streams.rs": "213cfb8bd490289131c066f4cf99fe5b7afb0410e5eda60cacbb32d2ba54fb96"
+    },
+    "scope": "Only the listed implementation and regression files; complete historical worktree status is in each original receipt.",
+    "verification": "Matches the retained corrected CSV and retained regression patch after pinned rustfmt, and the final owned files."
+  },
+  "inspect-before": {
+    "base_commit": "570eec460dee1d83828ae48e35396ae07652aabc",
+    "scoped_patch": {
+      "path": "source/inspect-before.patch",
+      "bytes": 3976,
+      "sha256": "70fd0b33493dd4b690d27d360aff4b715130359561d540e0e1934ba5fb2dfb85"
+    },
+    "files_sha256": {
+      "crates/concord-inspect/src/diff.rs": "5aa09df62cf963b10e2e7e1adbad5287eacf24cba446fa3e4278f9525486e56f",
+      "crates/concord-inspect/tests/generated_contract.rs": "53032ad12369a2a9a456e0b178969daa98427ca6c91590dda56c659e1f1921e6"
+    },
+    "scope": "Only the listed implementation and regression files; complete historical worktree status is in each original receipt.",
+    "verification": "Both reconstructed files match the exact source snapshots captured before the native old-code control."
+  },
+  "inspect-after": {
+    "base_commit": "570eec460dee1d83828ae48e35396ae07652aabc",
+    "scoped_patch": {
+      "path": "source/inspect-after.patch",
+      "bytes": 5678,
+      "sha256": "f77a9c184d94215df8309843272819817623ce137538d0dd3e03c80db0346359"
+    },
+    "files_sha256": {
+      "crates/concord-inspect/src/diff.rs": "b86171d2e80d97402b7e317a0fba18907d9a5b88e525af8ab4a503490d4ef165",
+      "crates/concord-inspect/tests/generated_contract.rs": "2b68aafb6d8e0c9c885b2c34d88905094e2081496d34f2080e05aac8a976a59e"
+    },
+    "scope": "Only the listed implementation and regression files; complete historical worktree status is in each original receipt.",
+    "verification": "Both reconstructed files match the exact snapshots captured before the native corrected suite and the final owned files."
+  },
+  "catalog-original": {
+    "base_commit": "570eec460dee1d83828ae48e35396ae07652aabc",
+    "scoped_patch": "../rustdoc/catalog_scope_default.patch",
+    "inspector_implementation_sha256": "5aa09df62cf963b10e2e7e1adbad5287eacf24cba446fa3e4278f9525486e56f",
+    "verification": "Original independent exercise ran in a separate baseline checkout with only the Catalog scope-default source edit. See the original public CLI receipt and sibling Rustdoc input evidence."
+  }
+}

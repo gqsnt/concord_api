@@ -8,11 +8,45 @@ use crate::endpoint::EndpointId;
 use crate::redaction::SanitizedHeaderMap;
 
 use super::{
-    AuthErrorKind, ConfigurationErrorKind, DispatchKnowledge, ErrorCategory, FailureStage,
-    HttpResponseFailure, PaginationErrorKind, RateLimitErrorKind,
+    AttemptFacts, AuthErrorKind, ConfigurationErrorKind, DispatchKnowledge, ErrorCategory,
+    ErrorJournal, FailureStage, HttpResponseFailure, OperationCounts, PaginationErrorKind,
+    ProviderAcquisitionFacts, RateLimitErrorKind,
 };
 
 /// A structured safe failure from an endpoint operation.
+///
+/// **Journal contract (EXEC-01/EXEC-02).** Every error that escapes a managed
+/// operation (direct request, traversal page, traversal aggregate, or
+/// credential-storage execution) is contextualized by that operation's
+/// journal: its [`failure_stage`](Self::failure_stage), aggregate
+/// [`dispatch_knowledge`](Self::dispatch_knowledge), optional
+/// [`last_attempt`](Self::last_attempt), [`last_response_status`](Self::last_response_status),
+/// [`operation_id`](Self::operation_id) / [`parent_operation_id`](Self::parent_operation_id)
+/// and [`operation_counts`](Self::operation_counts) are settled facts, not
+/// defaults chosen by the code that first produced the failure. Low-level
+/// failures carry only a category and safe details; they never assert that a
+/// request was not dispatched. An error fixed before any operation identity
+/// existed (or during planning, which never dispatches) reports
+/// [`FailureStage::Preparation`], [`DispatchKnowledge::NotDispatched`] and no
+/// operation identity.
+///
+/// **Write reconciliation.** For a failed write, aggregate
+/// `ResponseObserved` or `PossiblyDispatched` means the application may need
+/// reconciliation with its durable command identifier. It does not by itself
+/// mean the operation is retryable, and even an observed success status
+/// followed by a body or decoder failure can have committed the write.
+///
+/// **Stream summaries.** Consumption failures of an already acquired managed
+/// stream are reported with [`FailureStage::StreamConsumption`]. A value-free
+/// per-stream summary accessor is an integration point owned by the stream
+/// subsystem; it attaches to this type through a crate-private constructor
+/// and is not part of this version's public surface.
+///
+/// **Formatting.** `Display` and `Debug` are value-free: they contain the
+/// endpoint ID, method, category, structured kinds, statuses and opaque
+/// identities, never URLs, headers, bodies, credentials, raw native causes or
+/// arbitrary user error text. [`Error::source`] exposes only Concord's own
+/// structured safe subsystem errors.
 pub struct ApiError {
     endpoint: EndpointId,
     method: Method,
@@ -22,11 +56,14 @@ pub struct ApiError {
     rate_limit_kind: Option<RateLimitErrorKind>,
     pagination_kind: Option<PaginationErrorKind>,
     detail: Option<Box<ApiErrorDetail>>,
-    stage: FailureStage,
-    dispatch_knowledge: DispatchKnowledge,
-    operation_id: Option<crate::operation::OperationId>,
-    attempt: Option<crate::hooks::AttemptInfo>,
-    page_index: Option<u32>,
+    /// Precise stage named by the code that fixed the failure, if any.
+    stage_hint: Option<FailureStage>,
+    /// Positive dispatch fact known where the failure was produced (for
+    /// example `ResponseObserved` for a failure after a received head). It
+    /// only ever raises knowledge; it is never a no-send claim.
+    knowledge_floor: DispatchKnowledge,
+    journal: Option<Box<ErrorJournal>>,
+    traversal: Option<Box<crate::pagination::TraversalSummary>>,
 }
 
 enum ApiErrorDetail {
@@ -34,6 +71,9 @@ enum ApiErrorDetail {
     Authentication(crate::auth::AuthError),
     RateLimit(crate::rate_limit::RateLimitError),
     Pagination(crate::pagination::PaginationError),
+    /// Value-free journal snapshot of a managed stream whose consumption
+    /// produced this error. Stream errors carry no other detail.
+    Stream(crate::response::StreamSummary),
 }
 
 impl ApiError {
@@ -56,23 +96,20 @@ impl ApiError {
     ) -> Self {
         let endpoint = response.endpoint_id().clone();
         let method = response.method().clone();
-        Self {
-            endpoint,
-            method,
-            category,
-            configuration_kind: None,
-            auth_kind,
-            rate_limit_kind: None,
-            pagination_kind: None,
-            detail: Some(Box::new(ApiErrorDetail::Response(response))),
-            stage: FailureStage::RejectedResponse,
-            dispatch_knowledge: DispatchKnowledge::ResponseObserved,
-            operation_id: None,
-            attempt: None,
-            page_index: None,
-        }
+        let mut error = Self::classified(endpoint, method, category);
+        error.auth_kind = auth_kind;
+        error.detail = Some(Box::new(ApiErrorDetail::Response(response)));
+        error.stage_hint = Some(FailureStage::RejectedResponse);
+        error.knowledge_floor = DispatchKnowledge::ResponseObserved;
+        error
     }
 
+    /// Reduces a native transport error to its safe category.
+    ///
+    /// The native error is dropped immediately. No dispatch fact is derived
+    /// from the category: in particular a `Connect` classification is not
+    /// proof that the application request was not submitted. The operation
+    /// journal settles dispatch knowledge at the handoff boundary.
     pub(crate) fn from_reqwest(
         endpoint: EndpointId,
         method: Method,
@@ -80,20 +117,14 @@ impl ApiError {
         managed_body_failed: bool,
     ) -> Self {
         let category = reqwest_category(error, managed_body_failed);
-        let (stage, dispatch_knowledge) = if category == ErrorCategory::Connect {
-            (
-                FailureStage::BeforeDispatch,
-                DispatchKnowledge::NotDispatched,
-            )
-        } else {
-            (
-                FailureStage::DuringDispatchOrUnknown,
-                DispatchKnowledge::PossiblyDispatched,
-            )
-        };
-        Self::classified(endpoint, method, category).with_stage(stage, dispatch_knowledge)
+        Self::classified(endpoint, method, category)
     }
 
+    /// Creates a low-level categorized failure with no stage or dispatch
+    /// claim. Until an operation journal (or the explicit pre-operation
+    /// context) settles it, its public stage is `DuringDispatchOrUnknown` and
+    /// its dispatch knowledge `PossiblyDispatched` — never a fabricated
+    /// no-send fact.
     pub(crate) fn classified(
         endpoint: EndpointId,
         method: Method,
@@ -108,11 +139,10 @@ impl ApiError {
             rate_limit_kind: None,
             pagination_kind: None,
             detail: None,
-            stage: FailureStage::Preparation,
-            dispatch_knowledge: DispatchKnowledge::NotDispatched,
-            operation_id: None,
-            attempt: None,
-            page_index: None,
+            stage_hint: None,
+            knowledge_floor: DispatchKnowledge::NotDispatched,
+            journal: None,
+            traversal: None,
         }
     }
 
@@ -213,13 +243,13 @@ impl ApiError {
         self.configuration_kind
     }
 
-    /// Returns the stable generated endpoint identity.
+    /// Returns the operational endpoint ID (an explicit `id` pin or navigation-derived).
     #[must_use]
     pub fn endpoint(&self) -> &str {
         self.endpoint.as_str()
     }
 
-    /// Returns the typed stable endpoint identity.
+    /// Returns the typed operational endpoint ID (an explicit `id` pin or navigation-derived).
     #[must_use]
     pub const fn endpoint_id(&self) -> &EndpointId {
         &self.endpoint
@@ -231,13 +261,15 @@ impl ApiError {
         &self.method
     }
 
-    /// Returns a final application HTTP status when a response head existed.
+    /// Returns a final application HTTP status when a terminal rejected
+    /// response wrapper exists.
     #[must_use]
     pub fn http_status(&self) -> Option<StatusCode> {
         self.http_response().map(HttpResponseFailure::status)
     }
 
-    /// Returns sanitized final response headers when a response head existed.
+    /// Returns sanitized final response headers when a terminal rejected
+    /// response wrapper exists.
     #[must_use]
     pub fn http_headers(&self) -> Option<&SanitizedHeaderMap> {
         self.http_response().map(HttpResponseFailure::headers)
@@ -282,55 +314,176 @@ impl ApiError {
         self.pagination_kind
     }
 
-    /// Returns the stable managed stage at which this outcome failed.
+    /// Returns the managed pipeline stage at which this outcome was fixed.
+    ///
+    /// For an error that escaped an operation this is the journal's settled
+    /// stage. A low-level failure that was never contextualized reports the
+    /// conservative `DuringDispatchOrUnknown`.
     #[must_use]
-    pub const fn stage(&self) -> FailureStage {
-        self.stage
+    pub fn failure_stage(&self) -> FailureStage {
+        match self.journal.as_deref() {
+            Some(journal) => journal.stage,
+            None => self
+                .stage_hint
+                .unwrap_or(FailureStage::DuringDispatchOrUnknown),
+        }
     }
 
-    /// Returns the strongest dispatch fact Concord can establish.
+    /// Returns the operation's aggregate dispatch knowledge: the monotone
+    /// join `NotDispatched < PossiblyDispatched < ResponseObserved` over every
+    /// attempt (and, for a traversal error, every page).
+    ///
+    /// A low-level failure that was never contextualized conservatively
+    /// reports at least `PossiblyDispatched`.
     #[must_use]
-    pub const fn dispatch_knowledge(&self) -> DispatchKnowledge {
-        self.dispatch_knowledge
+    pub fn dispatch_knowledge(&self) -> DispatchKnowledge {
+        match self.journal.as_deref() {
+            Some(journal) => journal.aggregate.join(self.knowledge_floor),
+            None => self
+                .knowledge_floor
+                .join(DispatchKnowledge::PossiblyDispatched),
+        }
     }
 
-    /// Returns the aggregate operation identity when execution allocated one.
+    /// Returns whether an application request of this operation may have
+    /// reached the server, i.e. aggregate knowledge is not
+    /// `NotDispatched`. This is not evidence of a business effect or success.
     #[must_use]
-    pub const fn operation_id(&self) -> Option<crate::operation::OperationId> {
-        self.operation_id
+    pub fn may_have_reached_server(&self) -> bool {
+        self.dispatch_knowledge().may_have_reached_server()
+    }
+
+    /// Returns the operation identity when execution allocated one.
+    ///
+    /// For a traversal page failure this is the page operation and
+    /// [`Self::parent_operation_id`] is the traversal; for a traversal
+    /// decision failure it is the traversal itself.
+    #[must_use]
+    pub fn operation_id(&self) -> Option<crate::operation::OperationId> {
+        self.journal
+            .as_deref()
+            .and_then(|journal| journal.operation_id)
+    }
+
+    /// Returns the parent aggregate (traversal) identity of a page operation.
+    #[must_use]
+    pub fn parent_operation_id(&self) -> Option<crate::operation::OperationId> {
+        self.journal
+            .as_deref()
+            .and_then(|journal| journal.parent_operation_id)
+    }
+
+    /// Returns the journal facts of the credential-provider acquisition this
+    /// failure is linked to (EXEC-01).
+    ///
+    /// For a provider-caused authentication failure these are the facts of
+    /// the acquisition that failed. Otherwise they belong to the latest
+    /// acquisition this operation led or joined before it failed. The
+    /// acquisition has its own identity,
+    /// [`ProviderAcquisitionFacts::operation_id`], which differs from
+    /// [`Self::operation_id`]. Its
+    /// [`parent_operation_id`](ProviderAcquisitionFacts::parent_operation_id)
+    /// names the operation that led it. For a follower that joined another
+    /// operation's acquisition, that parent is the leader, not this
+    /// operation. The provider's helper traffic is journaled separately, so
+    /// this error's own [`Self::dispatch_knowledge`] never includes provider
+    /// network activity. `None` when no provider acquisition was involved.
+    #[must_use]
+    pub fn provider_acquisition(&self) -> Option<ProviderAcquisitionFacts> {
+        let from_failure = match self.detail.as_deref() {
+            Some(ApiErrorDetail::Authentication(error)) => error.provider_acquisition(),
+            _ => None,
+        };
+        from_failure.or_else(|| self.journal.as_deref().and_then(|journal| journal.provider))
+    }
+
+    /// Returns facts about the last application-visible attempt, separate
+    /// from the aggregate knowledge.
+    #[must_use]
+    pub fn last_attempt(&self) -> Option<AttemptFacts> {
+        self.journal
+            .as_deref()
+            .and_then(|journal| journal.last_attempt)
     }
 
     /// Returns the visible managed attempt identity when applicable.
     #[must_use]
-    pub const fn attempt(&self) -> Option<crate::hooks::AttemptInfo> {
-        self.attempt
+    pub fn attempt(&self) -> Option<crate::hooks::AttemptInfo> {
+        self.last_attempt().map(|facts| facts.attempt())
     }
 
-    /// Returns the zero-based page index when this was a pagination page.
+    /// Returns the journal's zero-based page index, when recorded.
+    ///
+    /// Direct and credential-storage operations use zero. Pagination page
+    /// and traversal failures identify the current fetch or decision page.
+    /// Errors without recorded page correlation return `None`.
     #[must_use]
-    pub const fn page_index(&self) -> Option<u32> {
-        self.page_index
+    pub fn page_index(&self) -> Option<u32> {
+        self.journal
+            .as_deref()
+            .and_then(|journal| journal.page_index)
     }
 
-    pub(crate) const fn with_stage(
-        mut self,
-        stage: FailureStage,
-        dispatch_knowledge: DispatchKnowledge,
-    ) -> Self {
-        self.stage = stage;
-        self.dispatch_knowledge = dispatch_knowledge;
-        self
+    /// Returns the operation journal's value-free work counts, when the
+    /// failure escaped a started operation.
+    #[must_use]
+    pub fn operation_counts(&self) -> Option<OperationCounts> {
+        self.journal.as_deref().and_then(|journal| journal.counts)
     }
 
-    pub(crate) const fn with_execution_context(
-        mut self,
-        operation_id: crate::operation::OperationId,
-        attempt: Option<crate::hooks::AttemptInfo>,
-        page_index: u32,
-    ) -> Self {
-        self.operation_id = Some(operation_id);
-        self.attempt = attempt;
-        self.page_index = Some(page_index);
+    /// Returns the status of the last application response head observed
+    /// before this failure, if any.
+    ///
+    /// For a terminal rejected response this equals [`Self::http_status`].
+    /// For a failure after an accepted head (a truncated body, a decode
+    /// failure, a failed local credential installation) it retains the
+    /// received status even though no terminal response wrapper exists. A
+    /// later attempt's failure never clears it. A status is response
+    /// metadata, not proof of a business effect.
+    #[must_use]
+    pub fn last_response_status(&self) -> Option<StatusCode> {
+        self.journal
+            .as_deref()
+            .and_then(|journal| journal.last_status)
+            .or_else(|| self.http_status())
+    }
+
+    /// Returns the value-free traversal summary when this error escaped a
+    /// pagination traversal (`pages`, `collect_prefix` or `collect_all`).
+    ///
+    /// The summary is fixed at the moment the error was produced: it reports
+    /// the stop reason (for example `Failed`, `Cancelled`, or `PageBound` for a
+    /// `collect_all` completion-limit error), the pages received and delivered,
+    /// the aggregate attempt/byte accounting and aggregate dispatch knowledge.
+    #[must_use]
+    pub fn traversal_summary(&self) -> Option<&crate::pagination::TraversalSummary> {
+        self.traversal.as_deref()
+    }
+
+    /// Returns the value-free stream summary when this error was yielded by a
+    /// managed `ByteStream` or `ItemStream` after its accepted head was
+    /// handed to the caller.
+    ///
+    /// The summary is a snapshot fixed when the error was produced: it
+    /// reports the terminal state (`Failed` or `Cancelled`), the structural
+    /// error kind, the original operation, attempt and status, and the bytes
+    /// and records accounted so far.
+    #[must_use]
+    pub fn stream_summary(&self) -> Option<&crate::response::StreamSummary> {
+        match self.detail.as_deref() {
+            Some(ApiErrorDetail::Stream(summary)) => Some(summary),
+            _ => None,
+        }
+    }
+
+    /// Attaches the stream journal snapshot to a stream-consumption error.
+    ///
+    /// Only called on errors built by the managed stream itself, which carry
+    /// no other detail; an existing detail is never replaced.
+    pub(crate) fn with_stream_summary(mut self, summary: crate::response::StreamSummary) -> Self {
+        if self.detail.is_none() {
+            self.detail = Some(Box::new(ApiErrorDetail::Stream(summary)));
+        }
         self
     }
 
@@ -339,6 +492,64 @@ impl ApiError {
     pub fn retry_after(&self) -> Option<Duration> {
         self.http_response()
             .and_then(HttpResponseFailure::retry_after)
+    }
+
+    /// Records the precise stage named by the code fixing this failure and a
+    /// positive dispatch fact it knows (`ResponseObserved` after a received
+    /// head). `NotDispatched` adds nothing: knowledge only ever rises. When a
+    /// journal is already attached, its stage is replaced and its aggregate
+    /// joined.
+    pub(crate) fn with_stage(mut self, stage: FailureStage, known: DispatchKnowledge) -> Self {
+        self.stage_hint = Some(stage);
+        self.knowledge_floor = self.knowledge_floor.join(known);
+        if let Some(journal) = self.journal.as_deref_mut() {
+            journal.stage = stage;
+            journal.aggregate = journal.aggregate.join(known);
+        }
+        self
+    }
+
+    /// Returns the precise stage hint recorded by the code that fixed this
+    /// failure, if any.
+    pub(crate) const fn stage_hint(&self) -> Option<FailureStage> {
+        self.stage_hint
+    }
+
+    /// Settles journal context. A precise stage hint recorded by the failing
+    /// code wins over the journal's coarser current phase; the error's known
+    /// positive dispatch fact is joined into the aggregate.
+    pub(crate) fn with_journal(mut self, mut journal: ErrorJournal) -> Self {
+        if let Some(stage) = self.stage_hint {
+            journal.stage = stage;
+        }
+        journal.aggregate = journal.aggregate.join(self.knowledge_floor);
+        self.journal = Some(Box::new(journal));
+        self
+    }
+
+    /// Settles the context of a failure fixed before any operation identity
+    /// existed, or during planning (which never dispatches).
+    pub(crate) fn before_operation(self) -> Self {
+        let stage = self.stage_hint.unwrap_or(FailureStage::Preparation);
+        self.with_journal(ErrorJournal::before_operation(stage))
+    }
+
+    /// Returns whether journal context was already settled.
+    pub(crate) const fn is_contextualized(&self) -> bool {
+        self.journal.is_some()
+    }
+
+    pub(crate) fn with_traversal_summary(
+        mut self,
+        summary: crate::pagination::TraversalSummary,
+    ) -> Self {
+        let aggregate = summary.dispatch_knowledge();
+        self.knowledge_floor = self.knowledge_floor.join(aggregate);
+        if let Some(journal) = self.journal.as_deref_mut() {
+            journal.aggregate = journal.aggregate.join(aggregate);
+        }
+        self.traversal = Some(Box::new(summary));
+        self
     }
 }
 
@@ -372,7 +583,7 @@ impl fmt::Display for ApiError {
             Some(ApiErrorDetail::Authentication(error)) => error.safe_message(),
             Some(ApiErrorDetail::RateLimit(error)) => error.safe_message(),
             Some(ApiErrorDetail::Pagination(error)) => error.safe_message(),
-            Some(ApiErrorDetail::Response(_)) | None => None,
+            Some(ApiErrorDetail::Response(_) | ApiErrorDetail::Stream(_)) | None => None,
         };
         if let Some(message) = safe_message {
             write!(formatter, ": {message}")?;
@@ -392,7 +603,15 @@ impl fmt::Debug for ApiError {
             .field("auth_kind", &self.auth_kind)
             .field("rate_limit_kind", &self.rate_limit_kind)
             .field("pagination_kind", &self.pagination_kind)
+            .field("failure_stage", &self.failure_stage())
+            .field("dispatch_knowledge", &self.dispatch_knowledge())
+            .field("operation_id", &self.operation_id())
+            .field("parent_operation_id", &self.parent_operation_id())
+            .field("provider_acquisition", &self.provider_acquisition())
+            .field("last_attempt", &self.last_attempt())
+            .field("operation_counts", &self.operation_counts())
             .field("http_status", &self.http_status())
+            .field("last_response_status", &self.last_response_status())
             .field(
                 "authentication_error",
                 &match self.detail.as_deref() {
@@ -414,6 +633,8 @@ impl fmt::Debug for ApiError {
                     _ => None,
                 },
             )
+            .field("traversal", &self.traversal)
+            .field("stream", &self.stream_summary())
             .finish()
     }
 }
@@ -424,7 +645,7 @@ impl Error for ApiError {
             Some(ApiErrorDetail::Authentication(error)) => Some(error),
             Some(ApiErrorDetail::RateLimit(error)) => Some(error),
             Some(ApiErrorDetail::Pagination(error)) => Some(error),
-            Some(ApiErrorDetail::Response(_)) | None => None,
+            Some(ApiErrorDetail::Response(_) | ApiErrorDetail::Stream(_)) | None => None,
         }
     }
 }
@@ -562,7 +783,7 @@ mod tests {
     #[test]
     fn pagination_ceiling_kinds_keep_structural_category_and_safe_formatting() {
         for kind in [
-            PaginationErrorKind::PageCeilingExceeded,
+            PaginationErrorKind::CompletionLimitExceeded,
             PaginationErrorKind::AttemptCeilingExceeded,
             PaginationErrorKind::CollectedItemCeilingExceeded,
             PaginationErrorKind::CollectedResponseByteCeilingExceeded,
@@ -618,6 +839,11 @@ mod tests {
             reduced.category(),
             ErrorCategory::Connect | ErrorCategory::Transport
         ));
+        // A native connect classification is not proof of no submission.
+        assert_ne!(
+            reduced.dispatch_knowledge(),
+            DispatchKnowledge::NotDispatched
+        );
         assert_recursive_sources_are_safe(&reduced, &[URL_SENTINEL]);
     }
 
@@ -686,5 +912,150 @@ mod tests {
         );
         assert_eq!(reduced.category(), ErrorCategory::RequestBody);
         assert_recursive_sources_are_safe(&reduced, &[BODY_SENTINEL]);
+    }
+
+    fn widget_error(category: ErrorCategory) -> ApiError {
+        ApiError::classified(
+            EndpointId::from_static("widgets.write"),
+            Method::POST,
+            category,
+        )
+    }
+
+    #[test]
+    fn exec_02_low_level_errors_never_claim_no_dispatch_before_contextualization() {
+        for category in [
+            ErrorCategory::Connect,
+            ErrorCategory::Transport,
+            ErrorCategory::Timeout,
+            ErrorCategory::Internal,
+        ] {
+            let error = widget_error(category);
+            assert!(!error.is_contextualized());
+            assert_eq!(
+                error.dispatch_knowledge(),
+                DispatchKnowledge::PossiblyDispatched
+            );
+            assert!(error.may_have_reached_server());
+            assert_eq!(error.failure_stage(), FailureStage::DuringDispatchOrUnknown);
+            assert_eq!(error.operation_id(), None);
+            assert_eq!(error.last_attempt(), None);
+        }
+        // A rejected response wrapper carries its positive observed fact.
+        let rejected = response_error();
+        assert_eq!(
+            rejected.dispatch_knowledge(),
+            DispatchKnowledge::ResponseObserved
+        );
+        assert_eq!(rejected.failure_stage(), FailureStage::RejectedResponse);
+    }
+
+    #[test]
+    fn exec_01_journal_context_is_settled_and_precise_stage_hints_win() {
+        let operation_id = crate::operation::OperationId::allocate().expect("operation");
+        let parent = crate::operation::OperationId::allocate().expect("parent");
+        let attempt = AttemptFacts::new(crate::hooks::AttemptInfo {
+            index: 1,
+            policy_retry_index: 1,
+            authentication_recovery: false,
+        });
+        let journal = ErrorJournal {
+            operation_id: Some(operation_id),
+            parent_operation_id: Some(parent),
+            page_index: Some(3),
+            stage: FailureStage::DuringDispatchOrUnknown,
+            aggregate: DispatchKnowledge::ResponseObserved,
+            last_attempt: Some(attempt),
+            last_status: Some(StatusCode::SERVICE_UNAVAILABLE),
+            counts: Some(OperationCounts {
+                attempts_started: 2,
+                application_handoffs: 2,
+                quota_admissions: 2,
+                policy_retries: 1,
+                authentication_recoveries: 0,
+                freshness_restarts: 0,
+            }),
+            provider: None,
+        };
+        let error = widget_error(ErrorCategory::Connect).with_journal(journal);
+        assert!(error.is_contextualized());
+        assert_eq!(error.operation_id(), Some(operation_id));
+        assert_eq!(error.parent_operation_id(), Some(parent));
+        assert_eq!(error.page_index(), Some(3));
+        assert_eq!(
+            error.dispatch_knowledge(),
+            DispatchKnowledge::ResponseObserved
+        );
+        assert_eq!(
+            error.last_attempt().map(|facts| facts.dispatch_knowledge()),
+            Some(DispatchKnowledge::NotDispatched)
+        );
+        assert_eq!(
+            error.last_response_status(),
+            Some(StatusCode::SERVICE_UNAVAILABLE)
+        );
+        assert_eq!(
+            error.operation_counts().map(|c| c.automatic_replays()),
+            Some(1)
+        );
+
+        // A precise hint from the failing code wins over the journal phase,
+        // and its positive knowledge is joined into the aggregate.
+        let converted = widget_error(ErrorCategory::ResponseDecoding)
+            .with_stage(
+                FailureStage::ResponseConversion,
+                DispatchKnowledge::ResponseObserved,
+            )
+            .with_journal(ErrorJournal {
+                stage: FailureStage::ResponseAcquisition,
+                aggregate: DispatchKnowledge::PossiblyDispatched,
+                ..journal
+            });
+        assert_eq!(converted.failure_stage(), FailureStage::ResponseConversion);
+        assert_eq!(
+            converted.dispatch_knowledge(),
+            DispatchKnowledge::ResponseObserved
+        );
+
+        // Formatting remains value-free and shows opaque identities only.
+        let rendered = format!("{error:?}");
+        assert!(rendered.contains("OperationId(<opaque>)"));
+        assert!(rendered.contains("ResponseObserved"));
+    }
+
+    #[test]
+    fn pre_operation_context_is_preparation_not_dispatched_without_identity() {
+        let error = widget_error(ErrorCategory::Configuration).before_operation();
+        assert_eq!(error.failure_stage(), FailureStage::Preparation);
+        assert_eq!(error.dispatch_knowledge(), DispatchKnowledge::NotDispatched);
+        assert!(!error.may_have_reached_server());
+        assert_eq!(error.operation_id(), None);
+        assert_eq!(error.operation_counts(), None);
+
+        let cancelled = widget_error(ErrorCategory::Cancelled)
+            .with_stage(
+                FailureStage::BeforeDispatch,
+                DispatchKnowledge::NotDispatched,
+            )
+            .before_operation();
+        assert_eq!(cancelled.failure_stage(), FailureStage::BeforeDispatch);
+        assert_eq!(
+            cancelled.dispatch_knowledge(),
+            DispatchKnowledge::NotDispatched
+        );
+    }
+
+    #[test]
+    fn dispatch_knowledge_join_is_monotone() {
+        use DispatchKnowledge::{NotDispatched, PossiblyDispatched, ResponseObserved};
+        let all = [NotDispatched, PossiblyDispatched, ResponseObserved];
+        for (left_rank, left) in all.iter().enumerate() {
+            for (right_rank, right) in all.iter().enumerate() {
+                assert_eq!(left.join(*right), all[left_rank.max(right_rank)]);
+            }
+        }
+        assert!(!NotDispatched.may_have_reached_server());
+        assert!(PossiblyDispatched.may_have_reached_server());
+        assert!(ResponseObserved.may_have_reached_server());
     }
 }

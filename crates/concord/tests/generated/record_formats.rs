@@ -1,21 +1,28 @@
 use std::num::NonZeroU32;
 use std::pin::Pin;
 
+use concord::ApiError;
 use concord::api;
 use concord::endpoint::{EndpointId, RuntimeEndpoint};
+use concord::error::DispatchKnowledge;
 use concord::error::ErrorCategory;
-use concord::http::{Method, SafeProxy};
+use concord::http::Method;
+use concord::http::StatusCode;
+use concord::pagination::StopReason;
 #[cfg(feature = "csv")]
 use concord::records::Csv;
+use concord::records::ItemStream;
 #[cfg(feature = "ndjson")]
 use concord::records::NdJson;
-use concord::records::{ItemStream, RecordError, RecordErrorKind};
-use concord::response::{Buffered, PageResponseRepresentation, ResponseRepresentation};
+use concord::response::{Buffered, ResponseRepresentation};
+use concord::response::{StreamErrorKind, StreamState};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 use futures_core::Stream;
 use serde::Deserialize;
 
-async fn collect<T>(mut stream: ItemStream<T>) -> Result<Vec<T>, RecordError>
+use crate::support::{OffsetController, loopback_proxy};
+
+async fn collect<T>(mut stream: ItemStream<T>) -> Result<Vec<T>, ApiError>
 where
     T: Send + 'static,
 {
@@ -28,7 +35,9 @@ where
     Ok(records)
 }
 
-async fn stream_error<T>(mut stream: ItemStream<T>) -> RecordError
+/// Returns the one terminal stream error. V3-P09: a later decoder/framing
+/// error keeps the original accepted response and contact evidence.
+async fn stream_error<T>(mut stream: ItemStream<T>) -> ApiError
 where
     T: Send + 'static,
 {
@@ -36,10 +45,27 @@ where
         std::future::poll_fn(|context| Pin::new(&mut stream).poll_next(context)).await
     {
         if let Err(error) = record {
+            let summary = error.stream_summary().expect("stream failure summary");
+            assert_eq!(summary.state(), StreamState::Failed);
+            assert_eq!(summary.status(), StatusCode::OK);
+            assert_eq!(
+                summary.dispatch_knowledge(),
+                DispatchKnowledge::ResponseObserved
+            );
+            assert_eq!(
+                error.dispatch_knowledge(),
+                DispatchKnowledge::ResponseObserved
+            );
             return error;
         }
     }
     panic!("record stream completed without the expected error");
+}
+
+fn stream_kind(error: &ApiError) -> Option<StreamErrorKind> {
+    error
+        .stream_summary()
+        .and_then(|summary| summary.error_kind())
 }
 
 fn chunked(content_type: &str, chunks: Vec<Vec<u8>>) -> ResponseScript {
@@ -64,29 +90,29 @@ pub struct Row {
 #[cfg(feature = "csv")]
 api! {
     client CsvResponseApi {
-        timeout 30s;
         base "http://csv-response.example.test/v1/";
+        timeout 30s;
 
+        GET csv_rows() -> Vec<Row> via Csv { expose accepted_bytes; }
+        GET csv_stream() -> ItemStream<Row> via Csv;
 
-    GET csv_rows() -> Vec<Row> via Csv { expose accepted_bytes; }
-    GET csv_stream() -> ItemStream<Row> via Csv;
-
-    GET csv_pages(offset: u64, limit: std::num::NonZeroU32) -> Vec<Row> via Csv {
-        path ["pages"];
-        query {
-            "offset" = endpoint.offset;
-            "limit" = endpoint.limit;
-        }
-        paginate via crate::support::OffsetController {
-            offset -> endpoint.offset;
-            page_size -> endpoint.limit;
+        GET csv_pages(offset: u64, limit: NonZeroU32) -> Vec<Row> via Csv {
+            path "pages";
+            query {
+                "offset" = offset;
+                "limit" = limit;
+            }
+            paginate via OffsetController {
+                init OffsetController { offset: offset, page_size: limit };
+                cursor -> offset;
+            }
         }
     }
-}}
+}
 
 #[cfg(feature = "csv")]
 fn csv_client(server: &ScriptedServer) -> CsvResponseApi {
-    let proxy = SafeProxy::parse(server.url("")).expect("CSV loopback proxy");
+    let proxy = loopback_proxy(server);
     CsvResponseApi::builder()
         .configure_http(move |http| http.proxy(proxy))
         .build()
@@ -98,16 +124,35 @@ fn csv_client(server: &ScriptedServer) -> CsvResponseApi {
 fn csv_supports_complete_pages_and_lazy_semantic_items() {
     fn assert_complete<S>()
     where
-        S: ResponseRepresentation<Vec<Row>, Driver = Buffered>
-            + PageResponseRepresentation<Vec<Row>>,
+        S: ResponseRepresentation<Vec<Row>, Driver = Buffered>,
     {
     }
     fn assert_stream<S: ResponseRepresentation<ItemStream<Row>>>() {}
 
     assert_complete::<Csv>();
     assert_stream::<Csv>();
+    // REP-02: the buffered pair is pageable through its controller; the
+    // streaming pair is not.
+    let contract = CsvResponseApi::contract();
+    assert!(
+        contract
+            .endpoint("csv_response_api.csv_pages")
+            .expect("pages")
+            .terminals()
+            .pagination()
+    );
+    assert_eq!(
+        contract
+            .endpoint("csv_response_api.csv_stream")
+            .expect("stream")
+            .result()
+            .driver(),
+        concord::endpoint::ResponseAcquisition::Streaming
+    );
 }
 
+/// V3-P11 (CSV part): a final record without a trailing LF and a quoted
+/// record split across one-byte chunks decode once through every terminal.
 #[cfg(feature = "csv")]
 #[tokio::test]
 async fn direct_streamed_runtime_raw_and_paginated_csv_have_one_engine_semantics() {
@@ -188,8 +233,8 @@ async fn direct_streamed_runtime_raw_and_paginated_csv_have_one_engine_semantics
     .build()
     .expect("runtime CSV response");
     assert_eq!(
-        runtime
-            .try_bind(&client)
+        client
+            .bind(runtime)
             .expect("runtime CSV binding")
             .await
             .expect("runtime CSV"),
@@ -206,13 +251,14 @@ async fn direct_streamed_runtime_raw_and_paginated_csv_have_one_engine_semantics
         .expect("CSV response bytes bypass");
     assert_eq!(raw.value(), b"raw-csv-decoder-bypass".as_slice());
 
-    let pages = client
+    let prefix = client
         .csv_pages(0, NonZeroU32::new(2).expect("positive CSV page size"))
-        .paginate(concord::PageLimit::Prefix(4))
+        .collect_prefix(4)
         .await
         .expect("paginated CSV");
+    assert_eq!(prefix.summary().stop_reason(), StopReason::Exhausted);
     assert_eq!(
-        pages,
+        prefix.into_items(),
         [
             Row {
                 name: "page-a".to_owned(),
@@ -284,13 +330,16 @@ async fn direct_and_streamed_csv_failures_match_categories_and_redaction() {
     assert_eq!(direct_framing.category(), ErrorCategory::ResponseDecoding);
     let streamed_framing =
         stream_error(client.csv_stream().await.expect("framing stream opens")).await;
-    assert_eq!(streamed_framing.kind(), RecordErrorKind::InvalidFraming);
+    assert_eq!(
+        stream_kind(&streamed_framing),
+        Some(StreamErrorKind::InvalidFraming)
+    );
 
     let direct_decode = client.csv_rows().await.expect_err("direct CSV decode");
     assert_eq!(direct_decode.category(), ErrorCategory::ResponseDecoding);
     let streamed_decode =
         stream_error(client.csv_stream().await.expect("decode stream opens")).await;
-    assert_eq!(streamed_decode.kind(), RecordErrorKind::Decode);
+    assert_eq!(stream_kind(&streamed_decode), Some(StreamErrorKind::Decode));
 
     let direct_incomplete = client.csv_rows().await.expect_err("direct CSV incomplete");
     assert_eq!(
@@ -300,14 +349,17 @@ async fn direct_and_streamed_csv_failures_match_categories_and_redaction() {
     let streamed_incomplete =
         stream_error(client.csv_stream().await.expect("incomplete stream opens")).await;
     assert_eq!(
-        streamed_incomplete.kind(),
-        RecordErrorKind::IncompleteRecord
+        stream_kind(&streamed_incomplete),
+        Some(StreamErrorKind::IncompleteRecord)
     );
 
     let direct_limit = client.csv_rows().await.expect_err("direct CSV staging");
     assert_eq!(direct_limit.category(), ErrorCategory::ResponseDecoding);
     let streamed_limit = stream_error(client.csv_stream().await.expect("limit stream opens")).await;
-    assert_eq!(streamed_limit.kind(), RecordErrorKind::LimitExceeded);
+    assert_eq!(
+        stream_kind(&streamed_limit),
+        Some(StreamErrorKind::FrameLimit)
+    );
 
     let automatic = format!(
         "{direct_framing:?} {direct_decode:?} {direct_incomplete:?} {direct_limit:?} \
@@ -332,29 +384,29 @@ pub struct Event {
 #[cfg(feature = "ndjson")]
 api! {
     client NdJsonResponseApi {
-        timeout 30s;
         base "http://ndjson-response.example.test/v1/";
+        timeout 30s;
 
+        GET ndjson_events() -> Vec<Event> via NdJson { expose accepted_bytes; }
+        GET ndjson_stream() -> ItemStream<Event> via NdJson;
 
-    GET ndjson_events() -> Vec<Event> via NdJson { expose accepted_bytes; }
-    GET ndjson_stream() -> ItemStream<Event> via NdJson;
-
-    GET ndjson_pages(offset: u64, limit: std::num::NonZeroU32) -> Vec<Event> via NdJson {
-        path ["pages"];
-        query {
-            "offset" = endpoint.offset;
-            "limit" = endpoint.limit;
-        }
-        paginate via crate::support::OffsetController {
-            offset -> endpoint.offset;
-            page_size -> endpoint.limit;
+        GET ndjson_pages(offset: u64, limit: NonZeroU32) -> Vec<Event> via NdJson {
+            path "pages";
+            query {
+                "offset" = offset;
+                "limit" = limit;
+            }
+            paginate via OffsetController {
+                init OffsetController { offset: offset, page_size: limit };
+                cursor -> offset;
+            }
         }
     }
-}}
+}
 
 #[cfg(feature = "ndjson")]
 fn ndjson_client(server: &ScriptedServer) -> NdJsonResponseApi {
-    let proxy = SafeProxy::parse(server.url("")).expect("NDJSON loopback proxy");
+    let proxy = loopback_proxy(server);
     NdJsonResponseApi::builder()
         .configure_http(move |http| http.proxy(proxy))
         .build()
@@ -366,16 +418,33 @@ fn ndjson_client(server: &ScriptedServer) -> NdJsonResponseApi {
 fn ndjson_supports_complete_pages_and_lazy_semantic_items() {
     fn assert_complete<S>()
     where
-        S: ResponseRepresentation<Vec<Event>, Driver = Buffered>
-            + PageResponseRepresentation<Vec<Event>>,
+        S: ResponseRepresentation<Vec<Event>, Driver = Buffered>,
     {
     }
     fn assert_stream<S: ResponseRepresentation<ItemStream<Event>>>() {}
 
     assert_complete::<NdJson>();
     assert_stream::<NdJson>();
+    let contract = NdJsonResponseApi::contract();
+    assert!(
+        contract
+            .endpoint("nd_json_response_api.ndjson_pages")
+            .expect("pages")
+            .terminals()
+            .pagination()
+    );
+    assert_eq!(
+        contract
+            .endpoint("nd_json_response_api.ndjson_stream")
+            .expect("stream")
+            .result()
+            .driver(),
+        concord::endpoint::ResponseAcquisition::Streaming
+    );
 }
 
+/// V3-P11 (NDJSON part): blank/whitespace lines are ignored and a final
+/// nonempty record without LF is parsed exactly once through every terminal.
 #[cfg(feature = "ndjson")]
 #[tokio::test]
 async fn direct_streamed_runtime_raw_and_paginated_ndjson_have_one_engine_semantics() {
@@ -452,8 +521,8 @@ async fn direct_streamed_runtime_raw_and_paginated_ndjson_have_one_engine_semant
     .build()
     .expect("runtime NDJSON response");
     assert_eq!(
-        runtime
-            .try_bind(&client)
+        client
+            .bind(runtime)
             .expect("runtime NDJSON binding")
             .await
             .expect("runtime NDJSON"),
@@ -467,13 +536,14 @@ async fn direct_streamed_runtime_raw_and_paginated_ndjson_have_one_engine_semant
         .expect("NDJSON response bytes bypass");
     assert_eq!(raw.value(), b"raw-ndjson-decoder-bypass".as_slice());
 
-    let pages = client
+    let prefix = client
         .ndjson_pages(0, NonZeroU32::new(2).expect("positive NDJSON page size"))
-        .paginate(concord::PageLimit::Prefix(4))
+        .collect_prefix(4)
         .await
         .expect("paginated NDJSON");
+    assert_eq!(prefix.summary().stop_reason(), StopReason::Exhausted);
     assert_eq!(
-        pages,
+        prefix.into_items(),
         [Event { id: 10 }, Event { id: 11 }, Event { id: 12 }]
     );
 
@@ -533,7 +603,7 @@ async fn direct_and_streamed_ndjson_failures_match_categories_and_redaction() {
     assert_eq!(direct_decode.category(), ErrorCategory::ResponseDecoding);
     let streamed_decode =
         stream_error(client.ndjson_stream().await.expect("decode stream opens")).await;
-    assert_eq!(streamed_decode.kind(), RecordErrorKind::Decode);
+    assert_eq!(stream_kind(&streamed_decode), Some(StreamErrorKind::Decode));
 
     let direct_incomplete = client
         .ndjson_events()
@@ -551,8 +621,8 @@ async fn direct_and_streamed_ndjson_failures_match_categories_and_redaction() {
     )
     .await;
     assert_eq!(
-        streamed_incomplete.kind(),
-        RecordErrorKind::IncompleteRecord
+        stream_kind(&streamed_incomplete),
+        Some(StreamErrorKind::IncompleteRecord)
     );
 
     let direct_limit = client
@@ -562,7 +632,10 @@ async fn direct_and_streamed_ndjson_failures_match_categories_and_redaction() {
     assert_eq!(direct_limit.category(), ErrorCategory::ResponseDecoding);
     let streamed_limit =
         stream_error(client.ndjson_stream().await.expect("limit stream opens")).await;
-    assert_eq!(streamed_limit.kind(), RecordErrorKind::LimitExceeded);
+    assert_eq!(
+        stream_kind(&streamed_limit),
+        Some(StreamErrorKind::FrameLimit)
+    );
 
     let automatic = format!(
         "{direct_decode:?} {direct_incomplete:?} {direct_limit:?} \
@@ -571,4 +644,88 @@ async fn direct_and_streamed_ndjson_failures_match_categories_and_redaction() {
     for forbidden in ["broken-ndjson-secret", &"x".repeat(64)] {
         assert!(!automatic.contains(forbidden));
     }
+}
+
+#[cfg(feature = "ndjson")]
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct Upload {
+    id: u32,
+    note: String,
+}
+
+#[cfg(feature = "ndjson")]
+api! {
+    client NdJsonRequestApi {
+        base "http://ndjson-request.example.test/v1/";
+        timeout 30s;
+
+        POST upload_events(body events: Vec<Upload> via NdJson) -> Vec<Event> via NdJson {
+            path "events";
+        }
+    }
+}
+
+/// §9.5 NDJSON request records: typed records are framed one compact JSON
+/// value per LF, in order, under the one exact prepared media type; the
+/// aggregate request-body limit applies before anything is sent.
+#[cfg(feature = "ndjson")]
+#[tokio::test]
+async fn ndjson_request_records_are_framed_with_the_exact_media_type() {
+    let server = ScriptedServer::start([chunked(
+        "application/x-ndjson",
+        vec![b"{\"id\":7}\n".to_vec()],
+    )])
+    .expect("NDJSON request server");
+    let proxy = loopback_proxy(&server);
+    let client = NdJsonRequestApi::builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .build()
+        .expect("NDJSON request client");
+    let events = client
+        .upload_events(vec![
+            Upload {
+                id: 1,
+                note: "a\nb".into(),
+            },
+            Upload {
+                id: 2,
+                note: "c".into(),
+            },
+        ])
+        .await
+        .expect("NDJSON records round trip");
+    assert_eq!(events, [Event { id: 7 }]);
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1);
+    let request = &requests[0];
+    assert_eq!(request.method(), "POST");
+    assert_eq!(
+        request.target(),
+        "http://ndjson-request.example.test/v1/events"
+    );
+    assert_eq!(request.header("content-type"), Some("application/x-ndjson"));
+    assert_eq!(request.header("accept"), Some("application/x-ndjson"));
+    assert_eq!(
+        request.body(),
+        b"{\"id\":1,\"note\":\"a\\nb\"}\n{\"id\":2,\"note\":\"c\"}\n"
+    );
+
+    // The aggregate request-body limit bounds the framed records; nothing is
+    // sent when the encoding would exceed it.
+    let limited_server = ScriptedServer::start([]).expect("unused server");
+    let proxy = loopback_proxy(&limited_server);
+    let limited = NdJsonRequestApi::builder()
+        .configure_http(move |http| http.proxy(proxy))
+        .configure_runtime(|runtime| runtime.request_body_limit(8))
+        .build()
+        .expect("limited NDJSON request client");
+    let error = limited
+        .upload_events(vec![Upload {
+            id: 1,
+            note: "too long for eight bytes".into(),
+        }])
+        .await
+        .expect_err("records exceed the request-body limit");
+    assert_eq!(error.dispatch_knowledge(), DispatchKnowledge::NotDispatched);
+    assert_eq!(limited_server.request_count(), 0);
 }

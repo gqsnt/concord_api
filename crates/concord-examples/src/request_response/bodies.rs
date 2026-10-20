@@ -4,48 +4,49 @@
 //! deterministic local execution. Documentation owners:
 //! `docs/request_bodies.md`, `docs/responses.md`, and `docs/extensions.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
-
-use std::pin::Pin;
+//!
+//! Every body representation prepares one managed body that owns its exact
+//! `Content-Type`; a multipart boundary is generated once during preparation,
+//! never by planning.
 
 use concord::api;
 use concord::body::{Multipart, MultipartBody, MultipartPart, RequestStream};
-use concord::{Binary, Bytes, Empty, Json, Text};
-use futures_core::Stream as _;
+use concord::{Binary, ByteStream, Bytes, Empty, Json, Text};
+
+use super::specifications::ExampleCodec;
 
 // ANCHOR: body_contract
 api! {
     client BodyApi {
-        timeout 30s;
         base "http://body.example.test/";
+        timeout 30s;
 
+        // ANCHOR: buffered_endpoints
+        POST json_round_trip(body body: Vec<u32> via Json) -> Vec<u32> via Json;
+        POST text_round_trip(body body: String via Text) -> String via Text;
+        // ANCHOR: custom_codec_endpoint
+        POST custom_round_trip(body body: String via ExampleCodec) -> String via ExampleCodec;
+        // ANCHOR_END: custom_codec_endpoint
+        // ANCHOR_END: buffered_endpoints
 
-    // ANCHOR: buffered_endpoints
-    POST json_round_trip(body body: Vec<u32> via Json) -> Vec<u32> via Json;
-    POST text_round_trip(body body: String via Text) -> String via Text;
-    // ANCHOR: custom_codec_endpoint
-    POST custom_round_trip(
-        body body: String via crate::request_response::specifications::ExampleCodec
-    ) -> String via crate::request_response::specifications::ExampleCodec;
-    // ANCHOR_END: custom_codec_endpoint
-    // ANCHOR_END: buffered_endpoints
+        // ANCHOR: streaming_endpoints
+        POST upload(body body: RequestStream via Binary) -> Bytes via Binary;
+        GET download() -> ByteStream via Binary;
+        POST exact_upload(body body: RequestStream via Binary) -> Bytes via Binary;
+        GET exact_download() -> ByteStream via Binary;
+        // ANCHOR_END: streaming_endpoints
 
-    // ANCHOR: streaming_endpoints
-    POST upload(body body: concord::body::RequestStream via Binary) -> Bytes via Binary;
-    GET download() -> concord::response::ByteStream via Binary;
-    POST exact_upload(body body: concord::body::RequestStream via Binary) -> Bytes via Binary;
-    GET exact_download() -> concord::response::ByteStream via Binary;
-    // ANCHOR_END: streaming_endpoints
-
-    // ANCHOR: multipart_endpoint
-    POST multipart_upload(body body: concord::body::MultipartBody via Multipart) -> () via Empty;
-    // ANCHOR_END: multipart_endpoint
-}}
+        // ANCHOR: multipart_endpoint
+        POST multipart_upload(body body: MultipartBody via Multipart) -> () via Empty;
+        // ANCHOR_END: multipart_endpoint
+    }
+}
 // ANCHOR_END: body_contract
 
 /// Constructs every request-body shape without executing transport work.
 // ANCHOR: body_requests
 pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
-    let client = BodyApi::builder().build()?;
+    let client = BodyApi::new()?;
     // ANCHOR: buffered_requests
     let _: body_api::JsonRoundTripRequest = client.json_round_trip(vec![1, 2, 3]);
     let _: body_api::TextRoundTripRequest = client.text_round_trip("bounded text".to_owned());
@@ -76,14 +77,13 @@ pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
 }
 // ANCHOR_END: body_requests
 
-/// Opens and consumes a bounded response stream without buffering it as one value.
+/// Opens and consumes a bounded response stream without buffering it as one
+/// value. Awaiting the request returns after acquisition, not after EOF.
 // ANCHOR: consume_byte_stream
 pub async fn download_size(client: &BodyApi) -> Result<u64, concord::ApiError> {
     let mut stream = client.download().await?;
     let mut received = 0_u64;
-    while let Some(chunk) =
-        std::future::poll_fn(|context| Pin::new(&mut stream).poll_next(context)).await
-    {
+    while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
         received = received.saturating_add(u64::try_from(chunk.len()).unwrap_or(u64::MAX));
     }

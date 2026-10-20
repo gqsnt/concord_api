@@ -394,18 +394,10 @@ async fn original_deadline_cancels_limiter_wait_without_native_send() {
 
 #[tokio::test]
 async fn prepared_plans_use_selected_limiter_metadata_and_configured_key_limit() {
-    fn rule(id: &str, key: RateLimitKey) -> RateLimitPolicy {
-        RateLimitPolicy::new(
-            RateLimitId::new(id).expect("prepared limiter policy ID"),
-            key,
-            NonZeroU32::new(1).expect("prepared limiter cost"),
-            [RateLimitWindow::new(
-                NonZeroU32::new(10).expect("prepared limiter capacity"),
-                Duration::from_secs(1),
-            )
-            .expect("prepared limiter window")],
-        )
-        .expect("prepared limiter rule")
+    fn rule(id: &str, key: &str) -> RateLimitDeclaration {
+        RateLimitDeclaration::new(id)
+            .window(10, Duration::from_secs(1))
+            .part("tenant", key)
     }
 
     let executor = DeterministicExecutor::new();
@@ -423,12 +415,12 @@ async fn prepared_plans_use_selected_limiter_metadata_and_configured_key_limit()
     let endpoint =
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.governed"), Method::GET)
             .path("governed")
-            .rate_limit(rule("Prepared::governed", RateLimitKey::global()))
-            .accepted_bytes()
+            .rate_limit(rule("Prepared::governed", "governed"))
+            .response::<Binary, Bytes>()
             .build()
             .expect("prepared governed endpoint");
     assert_eq!(
-        Request::new(core, endpoint)
+        test_owner::root(&core, endpoint)
             .await
             .expect("prepared limiter execution"),
         Bytes::from_static(b"governed")
@@ -448,17 +440,11 @@ async fn prepared_plans_use_selected_limiter_metadata_and_configured_key_limit()
     );
     let rejected =
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.key_limit"), Method::GET)
-            .rate_limit(rule(
-                "Prepared::key_limit",
-                RateLimitKey::from_parts([
-                    RateLimitKeyPart::new("tenant", "sensitive-key").expect("tenant key part")
-                ])
-                .expect("prepared oversized key"),
-            ))
-            .accepted_bytes()
+            .rate_limit(rule("Prepared::key_limit", "sensitive-key"))
+            .response::<Binary, Bytes>()
             .build()
             .expect("prepared oversized-plan endpoint");
-    let error = Request::new(rejected_core, rejected)
+    let error = test_owner::root(&rejected_core, rejected)
         .await
         .expect_err("prepared key limit must fail during preparation");
     assert_eq!(error.category(), ErrorCategory::Configuration);
@@ -502,8 +488,7 @@ async fn observer_panic_has_no_authority_while_body_and_key_failures_precede_lim
     );
     let error = body_request(
         core,
-        RequestBody::factory(ProbeBodyFactory {
-            content_type_calls: Arc::new(AtomicUsize::new(0)),
+        PreparedBody::factory(ProbeBodyFactory {
             create_calls: Arc::new(AtomicUsize::new(0)),
             polls: Arc::new(AtomicUsize::new(0)),
             fail: true,
@@ -626,10 +611,6 @@ async fn configured_key_limit_enforces_lower_zero_and_increased_boundaries() {
     );
 
     let zero_executor = DeterministicExecutor::new();
-    zero_executor
-        .application()
-        .queue_response(ScriptedResponse::success(Bytes::from_static(b"global")))
-        .expect("global response");
     let zero = Arc::new(ProbeRateLimiter {
         key_limit: 0,
         ..ProbeRateLimiter::new()
@@ -640,20 +621,20 @@ async fn configured_key_limit_enforces_lower_zero_and_increased_boundaries() {
         Arc::new(ProbeHooks::new()),
         RuntimeConfigBuilder::new().rate_limiter(zero_object),
     );
-    assert_eq!(
-        Request::new(zero_core.clone(), GlobalRateLimitedBytesEndpoint)
-            .await
-            .expect("global key under zero limit"),
-        Bytes::from_static(b"global")
-    );
+    // Every v3 key has at least one dimension, so a zero preparation limit
+    // admits no policy; both requests fail before limiter or transport work.
+    let error = Request::new(zero_core.clone(), GlobalRateLimitedBytesEndpoint)
+        .await
+        .expect_err("a constant one-dimension key exceeds a zero limit");
+    assert_eq!(error.category(), ErrorCategory::Configuration);
     let error = rate_limited_bytes_request(zero_core, Some(Duration::from_secs(30)), String::new())
         .await
         .expect_err("nonempty key structure exceeds zero even with an empty value");
     assert_eq!(error.category(), ErrorCategory::Configuration);
-    assert_eq!(zero.acquisitions.load(Ordering::SeqCst), 1);
+    assert_eq!(zero.acquisitions.load(Ordering::SeqCst), 0);
     assert_eq!(
         zero_executor.application().request_count().expect("count"),
-        1
+        0
     );
 
     let increased_executor = DeterministicExecutor::new();
@@ -796,30 +777,27 @@ async fn private_fallback_rejects_a_nonempty_runtime_plan_before_send() {
     );
     assert_eq!(executor.application().request_count().expect("count"), 0);
 
-    let rule = RateLimitPolicy::new(
-        RateLimitId::new("Prepared::fallback").expect("prepared fallback ID"),
-        RateLimitKey::global(),
-        NonZeroU32::new(1).expect("prepared fallback cost"),
-        [RateLimitWindow::new(
-            NonZeroU32::new(1).expect("prepared fallback capacity"),
-            Duration::from_secs(1),
-        )
-        .expect("prepared fallback window")],
-    )
-    .expect("prepared fallback rule");
+    let rule = RateLimitDeclaration::new("Prepared::fallback")
+        .window(1, Duration::from_secs(1))
+        .part("scope", "global");
     let endpoint =
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.fallback"), Method::GET)
             .rate_limit(rule)
-            .accepted_bytes()
+            .response::<Binary, Bytes>()
             .build()
             .expect("prepared fallback endpoint");
-    let error = Request::new(core, endpoint)
-        .await
-        .expect_err("fallback must reject a prepared nonempty plan");
-    assert_eq!(error.category(), ErrorCategory::RateLimit);
+    // V3-R11: a runtime policy on a client built without a limiter selection
+    // cannot bypass the requirement; binding fails before any operation (the
+    // fail-closed fallback above remains the execution-time backstop).
+    let error = test_owner::bind(
+        &test_owner::TestOwner::new(core).into_projection(),
+        endpoint,
+    )
+    .expect_err("binding must reject a runtime plan without a selected limiter");
+    assert_eq!(error.category(), ErrorCategory::Configuration);
     assert_eq!(
-        error.rate_limit_kind(),
-        Some(crate::error::RateLimitErrorKind::InvalidConfiguration)
+        error.configuration_kind(),
+        Some(crate::error::ConfigurationErrorKind::InvalidRateLimit)
     );
     assert_eq!(executor.application().request_count().expect("count"), 0);
 }
@@ -885,11 +863,11 @@ async fn private_protocol_recovery_does_not_reenter_custom_limiter_or_lifecycle(
     .expect("prepared real HTTP/2 core");
     let endpoint =
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.hidden_retry"), Method::GET)
-            .accepted_bytes()
+            .response::<Binary, Bytes>()
             .build()
             .expect("prepared protocol-recovery endpoint");
     assert_eq!(
-        Request::new(prepared_core, endpoint)
+        test_owner::root(&prepared_core, endpoint)
             .await
             .expect("prepared private protocol recovery"),
         Bytes::new()

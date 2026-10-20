@@ -1,13 +1,16 @@
-use concord::api;
+// AUTH-01: an exact `authorization = credential` placement requires a
+// `SecretCredential`; a custom provider's non-secret material is rejected by
+// the placement's typed obligation.
 use concord::auth::{
     AuthError, BoxFuture, CredentialMaterial, CredentialProvider, CredentialRequest,
 };
+use concord::{Binary, Bytes, api};
 
-struct NonSecretMaterial;
+pub struct NonSecretMaterial;
 
 impl CredentialMaterial for NonSecretMaterial {}
 
-struct NonSecretProvider;
+pub struct NonSecretProvider;
 
 impl CredentialProvider for NonSecretProvider {
     type Material = NonSecretMaterial;
@@ -22,16 +25,15 @@ impl CredentialProvider for NonSecretProvider {
 
 api! {
     client Api {
-        timeout 30s;
         base "https://example.test";
         credentials {
             credential session = custom crate::NonSecretProvider;
         }
 
-
-    GET protected() -> Bytes via Binary {
-        auth { authorization = session; }
+        GET protected() -> Bytes via Binary {
+            auth { authorization = session; }
+        }
     }
-}}
+}
 
 fn main() {}

@@ -2,8 +2,8 @@ use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 
 use concord_core::contracts::{
-    Buffered, Bytes, BytesMut, ItemStream, PageResponseRepresentation, ResponseBodyError,
-    ResponseBodyErrorKind, ResponseDriver, ResponseHead, ResponseRepresentation, Streaming,
+    Buffered, Bytes, BytesMut, ItemStream, ResponseBodyError, ResponseBodyErrorKind,
+    ResponseDriver, ResponseHead, ResponseRepresentation, Streaming,
 };
 use concord_core::records::{
     RecordDecoder, RecordError, RecordErrorKind, decode_complete_records, validate_record_decoder,
@@ -18,9 +18,24 @@ mod private {
 
 /// A sealed type-level policy selecting whether a CSV stream has a header row.
 ///
-/// Concord provides [`HasHeader`] and [`NoHeader`]. Downstream implementations
-/// are intentionally unsupported; custom record formats can implement
-/// [`RecordDecoder`] instead.
+/// Concord provides [`HasHeader`] and [`NoHeader`].
+///
+/// # Extension contract
+///
+/// * **Ownership.** A zero-sized marker selected at the type level; it holds
+///   no data and Concord never constructs a value of it.
+/// * **Concurrency.** Stateless; any number of decoders may use the same
+///   policy concurrently.
+/// * **Cancellation.** No callbacks; the CSV decoder that reads the policy
+///   follows the [`RecordDecoder`] cancellation rules.
+/// * **Input sensitivity.** None: the policy reads no response data.
+/// * **Errors.** None of its own; header-row and record failures are reported
+///   by the CSV decoder as record errors.
+/// * **Resource obligations.** None; the decoder's staging and record limits
+///   apply.
+/// * **Negative capabilities.** Downstream implementations are intentionally
+///   unsupported; custom record formats can implement [`RecordDecoder`]
+///   instead.
 pub trait CsvHeaderMode: private::Sealed + Send + Sync + 'static {
     #[doc(hidden)]
     const HAS_HEADER: bool;
@@ -29,8 +44,24 @@ pub trait CsvHeaderMode: private::Sealed + Send + Sync + 'static {
 /// A sealed type-level policy selecting a built-in CSV delimiter.
 ///
 /// Concord provides [`CommaDelimiter`], [`SemicolonDelimiter`], and
-/// [`TabDelimiter`]. Downstream implementations are intentionally unsupported;
-/// custom record formats can implement [`RecordDecoder`] instead.
+/// [`TabDelimiter`].
+///
+/// # Extension contract
+///
+/// * **Ownership.** A zero-sized marker selected at the type level; it holds
+///   no data and Concord never constructs a value of it.
+/// * **Concurrency.** Stateless; any number of decoders may use the same
+///   policy concurrently.
+/// * **Cancellation.** No callbacks; the CSV decoder that reads the policy
+///   follows the [`RecordDecoder`] cancellation rules.
+/// * **Input sensitivity.** None: the policy reads no response data.
+/// * **Errors.** None of its own; malformed records are reported by the CSV
+///   decoder as record errors.
+/// * **Resource obligations.** None; the decoder's staging and record limits
+///   apply.
+/// * **Negative capabilities.** Downstream implementations are intentionally
+///   unsupported; custom record formats can implement [`RecordDecoder`]
+///   instead.
 pub trait CsvDelimiter: private::Sealed + Send + Sync + 'static {
     #[doc(hidden)]
     const BYTE: u8;
@@ -85,8 +116,13 @@ impl CsvDelimiter for TabDelimiter {
 /// Typed CSV responses with type-level header and delimiter policies.
 ///
 /// With `Vec<T>`, `Csv<H, D>` completely acquires the bounded body. With
-/// [`ItemStream<T>`], it returns a lazy semantic stream. Both forms use the
+/// [`ItemStream<T>`], it returns a managed lazy semantic stream that inherits
+/// the core stream lease, idle, byte and record limits and yields exactly one
+/// correlated `ApiError` on a framing or decoding failure. Both forms use the
 /// same internal [`RecordDecoder`] implementation and sealed core drivers.
+/// Invalid quoting fails, an unterminated quote at end of body is an
+/// incomplete record, and a record never grows past the staging ceiling (the
+/// smaller of 1 MiB and the runtime stream frame limit).
 ///
 /// Header mode `H` and delimiter `D` are representation policies. Plain `Csv`
 /// means `Csv<HasHeader, CommaDelimiter>`; the output type supplies `T`.
@@ -105,6 +141,8 @@ impl CsvDelimiter for TabDelimiter {
 /// endings, quoted embedded newlines, ignored empty physical lines, an optional
 /// final newline, and a one-MiB staged-record limit. Parser text, headers,
 /// fields, and record values are absent from errors.
+/// One optional UTF-8 byte order mark is consumed at the actual body start,
+/// including when split across chunks; later U+FEFF characters remain field data.
 ///
 /// Every configuration accepts and validates `text/csv`, including valid media
 /// type parameters. In particular, [`TabDelimiter`] changes parsing only and
@@ -147,6 +185,7 @@ pub struct Csv<H = HasHeader, D = CommaDelimiter>(PhantomData<fn() -> (H, D)>);
 struct CsvDecoder<T, H, D> {
     headers: Option<csv::StringRecord>,
     scan: CsvScan,
+    at_document_start: bool,
     #[allow(
         clippy::type_complexity,
         reason = "one marker must carry the record type and both policies without storing instances"
@@ -188,6 +227,16 @@ where
         buffer: &mut BytesMut,
         eof: bool,
     ) -> Result<Option<BytesMut>, RecordError> {
+        if self.at_document_start {
+            const BOM: &[u8] = b"\xef\xbb\xbf";
+            if !eof && buffer.len() < BOM.len() && BOM.starts_with(buffer) {
+                return Ok(None);
+            }
+            self.at_document_start = false;
+            if buffer.starts_with(BOM) {
+                drop(buffer.split_to(BOM.len()));
+            }
+        }
         while self.scan.index < buffer.len() {
             let index = self.scan.index;
             let byte = buffer[index];
@@ -281,11 +330,20 @@ where
     }
 
     fn parse_record(bytes: &[u8]) -> Result<csv::StringRecord, RecordError> {
+        // Each framed row gets a fresh parser. Prevent that parser's file-start
+        // BOM handling from deleting a U+FEFF that belongs to this row's first
+        // field. An ignored empty line advances its file-start state without
+        // changing the framed record or allocating another copy of its bytes.
+        let prefix: &[u8] = if bytes.starts_with(b"\xef\xbb\xbf") {
+            b"\n"
+        } else {
+            b""
+        };
         let mut reader = csv::ReaderBuilder::new()
             .has_headers(false)
             .flexible(false)
             .delimiter(D::BYTE)
-            .from_reader(bytes);
+            .from_reader(std::io::Read::chain(prefix, bytes));
         let mut record = csv::StringRecord::new();
         let present = reader.read_record(&mut record).map_err(|error| {
             drop(error);
@@ -357,9 +415,7 @@ where
 {
     type Record = T;
 
-    fn accept() -> Option<&'static str> {
-        Some("text/csv")
-    }
+    const ACCEPT: Option<&'static str> = Some("text/csv");
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), RecordError> {
         let valid = head
@@ -378,6 +434,7 @@ where
         Ok(Self {
             headers: None,
             scan: CsvScan::new(),
+            at_document_start: true,
             marker: PhantomData,
         })
     }
@@ -404,9 +461,7 @@ where
 {
     type Driver = Buffered;
 
-    fn accept() -> Option<&'static str> {
-        CsvDecoder::<T, H, D>::accept()
-    }
+    const ACCEPT: Option<&'static str> = CsvDecoder::<T, H, D>::ACCEPT;
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         validate_record_decoder::<CsvDecoder<T, H, D>>(head)
@@ -417,14 +472,6 @@ where
     }
 }
 
-impl<T, H, D> PageResponseRepresentation<Vec<T>> for Csv<H, D>
-where
-    T: DeserializeOwned + Send + 'static,
-    H: CsvHeaderMode,
-    D: CsvDelimiter,
-{
-}
-
 impl<T, H, D> ResponseRepresentation<ItemStream<T>> for Csv<H, D>
 where
     T: DeserializeOwned + Send + 'static,
@@ -433,9 +480,7 @@ where
 {
     type Driver = Streaming;
 
-    fn accept() -> Option<&'static str> {
-        CsvDecoder::<T, H, D>::accept()
-    }
+    const ACCEPT: Option<&'static str> = CsvDecoder::<T, H, D>::ACCEPT;
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         CsvDecoder::<T, H, D>::validate(head)
@@ -492,6 +537,7 @@ mod tests {
         CsvDecoder {
             headers: None,
             scan: CsvScan::new(),
+            at_document_start: true,
             marker: PhantomData,
         }
     }
@@ -543,6 +589,98 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn csv_preserves_bom_characters_after_document_start() {
+        fn assert_delimiter<D>(delimiter: char)
+        where
+            D: CsvDelimiter,
+        {
+            let input = format!(
+                "plain{delimiter}one{delimiter}1\n\u{feff}second{delimiter}two{delimiter}2"
+            )
+            .into_bytes();
+            let expected = [
+                PositionalRow("plain".into(), "one".into(), 1),
+                PositionalRow("\u{feff}second".into(), "two".into(), 2),
+            ];
+            for split in 0..=input.len() {
+                let rows = feed(
+                    decoder::<PositionalRow, NoHeader, D>(),
+                    [input[..split].to_vec(), input[split..].to_vec()],
+                )
+                .expect("a later U+FEFF is field data");
+                assert_eq!(rows, expected, "source split {split}");
+            }
+        }
+
+        assert_delimiter::<CommaDelimiter>(',');
+        assert_delimiter::<SemicolonDelimiter>(';');
+        assert_delimiter::<TabDelimiter>('\t');
+    }
+
+    #[test]
+    fn csv_accepts_one_split_document_bom_before_quoted_headers_and_values() {
+        fn assert_delimiter<D>(delimiter: char)
+        where
+            D: CsvDelimiter,
+        {
+            let input = format!(
+                "\u{feff}\"name\"{delimiter}note{delimiter}count\r\n\
+                 \u{feff}alpha{delimiter}plain{delimiter}7"
+            )
+            .into_bytes();
+            let expected = [Row {
+                name: "\u{feff}alpha".into(),
+                note: "plain".into(),
+                count: 7,
+            }];
+            for split in 0..=input.len() {
+                let rows = feed(
+                    decoder::<Row, HasHeader, D>(),
+                    [input[..split].to_vec(), input[split..].to_vec()],
+                )
+                .expect("one document BOM precedes the quoted header");
+                assert_eq!(rows, expected, "source split {split}");
+            }
+            let rows = feed(
+                decoder::<PositionalRow, NoHeader, D>(),
+                format!("\u{feff}\"alpha\"{delimiter}plain{delimiter}7")
+                    .bytes()
+                    .map(|byte| vec![byte]),
+            )
+            .expect("one-byte chunks preserve a BOM before a quoted first value");
+            assert_eq!(rows, [PositionalRow("alpha".into(), "plain".into(), 7)]);
+        }
+
+        assert_delimiter::<CommaDelimiter>(',');
+        assert_delimiter::<SemicolonDelimiter>(';');
+        assert_delimiter::<TabDelimiter>('\t');
+    }
+
+    #[test]
+    fn csv_strips_a_bom_only_once_and_only_at_the_actual_document_start() {
+        for prefix in ["\n", "\u{feff}"] {
+            let input = format!("{prefix}\u{feff}alpha,plain,7");
+            let rows = feed(
+                decoder::<PositionalRow, NoHeader, CommaDelimiter>(),
+                input.bytes().map(|byte| vec![byte]),
+            )
+            .expect("the second marker belongs to the first field");
+            assert_eq!(
+                rows,
+                [PositionalRow("\u{feff}alpha".into(), "plain".into(), 7)]
+            );
+        }
+        for partial in [&b"\xef"[..], &b"\xef\xbb"[..]] {
+            let error = feed(
+                decoder::<PositionalRow, NoHeader, CommaDelimiter>(),
+                partial.iter().map(|byte| vec![*byte]),
+            )
+            .expect_err("a truncated UTF-8 marker is not an empty document");
+            assert_eq!(error.kind(), RecordErrorKind::InvalidFraming);
+        }
     }
 
     #[test]
@@ -768,7 +906,7 @@ mod tests {
         assert!(!is_csv_media_type("text/csv; broken=\"unterminated"));
 
         assert_eq!(
-            <CsvDecoder<Row, HasHeader, CommaDelimiter> as RecordDecoder>::accept(),
+            <CsvDecoder<Row, HasHeader, CommaDelimiter> as RecordDecoder>::ACCEPT,
             Some("text/csv")
         );
         assert_eq!(
@@ -776,7 +914,7 @@ mod tests {
             1024 * 1024
         );
         assert_eq!(
-            <CsvDecoder<Row, NoHeader, SemicolonDelimiter> as RecordDecoder>::accept(),
+            <CsvDecoder<Row, NoHeader, SemicolonDelimiter> as RecordDecoder>::ACCEPT,
             Some("text/csv")
         );
         assert_eq!(
@@ -786,13 +924,12 @@ mod tests {
 
         fn complete_page_spec<S>()
         where
-            S: ResponseRepresentation<Vec<Row>, Driver = Buffered>
-                + PageResponseRepresentation<Vec<Row>>,
+            S: ResponseRepresentation<Vec<Row>, Driver = Buffered>,
         {
         }
         complete_page_spec::<Csv>();
         assert_eq!(
-            <Csv as ResponseRepresentation<Vec<Row>>>::accept(),
+            <Csv as ResponseRepresentation<Vec<Row>>>::ACCEPT,
             Some("text/csv")
         );
     }

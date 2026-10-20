@@ -1,89 +1,113 @@
-error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:37:40
+error: [C3-AUTH] this authentication header name of client `ReservedAuthHeaderApi` is owned by Concord request or transport processing; write `bearer`, `basic` or `authorization` for `Authorization`, or choose a custom header name
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:44:40
    |
-37 | reserved_auth_header_case!(user_agent, "User-Agent");
+44 | reserved_auth_header_case!(user_agent, "User-Agent");
    |                                        ^^^^^^^^^^^^
 
-error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:36:42
+error: [C3-AUTH] this authentication header name of client `ReservedAuthHeaderApi` is owned by Concord request or transport processing; write `bearer`, `basic` or `authorization` for `Authorization`, or choose a custom header name
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:43:46
    |
-36 | reserved_auth_header_case!(content_type, "Content-Type");
+43 | reserved_auth_header_case!(content_encoding, "Content-Encoding");
+   |                                              ^^^^^^^^^^^^^^^^^^
+
+error: [C3-AUTH] this authentication header name of client `ReservedAuthHeaderApi` is owned by Concord request or transport processing; write `bearer`, `basic` or `authorization` for `Authorization`, or choose a custom header name
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:42:42
+   |
+42 | reserved_auth_header_case!(content_type, "Content-Type");
    |                                          ^^^^^^^^^^^^^^
 
-error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:35:36
+error: [C3-AUTH] this authentication header name of client `ReservedAuthHeaderApi` is owned by Concord request or transport processing; write `bearer`, `basic` or `authorization` for `Authorization`, or choose a custom header name
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:41:45
    |
-35 | reserved_auth_header_case!(accept, "Accept");
+41 | reserved_auth_header_case!(accept_encoding, "accept-encoding");
+   |                                             ^^^^^^^^^^^^^^^^^
+
+error: [C3-AUTH] this authentication header name of client `ReservedAuthHeaderApi` is owned by Concord request or transport processing; write `bearer`, `basic` or `authorization` for `Authorization`, or choose a custom header name
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:40:36
+   |
+40 | reserved_auth_header_case!(accept, "Accept");
    |                                    ^^^^^^^^
 
-error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:34:40
+error: [C3-AUTH] this authentication header name of client `ReservedAuthHeaderApi` is owned by Concord request or transport processing; write `bearer`, `basic` or `authorization` for `Authorization`, or choose a custom header name
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:39:40
    |
-34 | reserved_auth_header_case!(set_cookie, "Set-Cookie");
+39 | reserved_auth_header_case!(set_cookie, "Set-Cookie");
    |                                        ^^^^^^^^^^^^
 
-error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:33:36
+error: [C3-AUTH] this authentication header name of client `ReservedAuthHeaderApi` is owned by Concord request or transport processing; write `bearer`, `basic` or `authorization` for `Authorization`, or choose a custom header name
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:38:36
    |
-33 | reserved_auth_header_case!(cookie, "Cookie");
+38 | reserved_auth_header_case!(cookie, "Cookie");
    |                                    ^^^^^^^^
 
-error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:32:43
+error: [C3-AUTH] this authentication header name of client `ReservedAuthHeaderApi` is owned by Concord request or transport processing; write `bearer`, `basic` or `authorization` for `Authorization`, or choose a custom header name
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:37:43
    |
-32 | reserved_auth_header_case!(authorization, "Authorization");
+37 | reserved_auth_header_case!(authorization, "Authorization");
    |                                           ^^^^^^^^^^^^^^^
 
-error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:31:49
+error: [C3-AUTH] this authentication header name of client `ReservedAuthHeaderApi` is owned by Concord request or transport processing; write `bearer`, `basic` or `authorization` for `Authorization`, or choose a custom header name
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:36:46
    |
-31 | reserved_auth_header_case!(proxy_authorization, "Proxy-Authorization");
+36 | reserved_auth_header_case!(proxy_connection, "Proxy-Connection");
+   |                                              ^^^^^^^^^^^^^^^^^^
+
+error: [C3-AUTH] this authentication header name of client `ReservedAuthHeaderApi` is owned by Concord request or transport processing; write `bearer`, `basic` or `authorization` for `Authorization`, or choose a custom header name
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:35:48
+   |
+35 | reserved_auth_header_case!(proxy_authenticate, "Proxy-Authenticate");
+   |                                                ^^^^^^^^^^^^^^^^^^^^
+
+error: [C3-AUTH] this authentication header name of client `ReservedAuthHeaderApi` is owned by Concord request or transport processing; write `bearer`, `basic` or `authorization` for `Authorization`, or choose a custom header name
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:34:49
+   |
+34 | reserved_auth_header_case!(proxy_authorization, "Proxy-Authorization");
    |                                                 ^^^^^^^^^^^^^^^^^^^^^
 
-error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:30:37
+error: [C3-AUTH] this authentication header name of client `ReservedAuthHeaderApi` is owned by Concord request or transport processing; write `bearer`, `basic` or `authorization` for `Authorization`, or choose a custom header name
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:33:37
    |
-30 | reserved_auth_header_case!(upgrade, "Upgrade");
+33 | reserved_auth_header_case!(upgrade, "Upgrade");
    |                                     ^^^^^^^^^
 
-error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:29:37
+error: [C3-AUTH] this authentication header name of client `ReservedAuthHeaderApi` is owned by Concord request or transport processing; write `bearer`, `basic` or `authorization` for `Authorization`, or choose a custom header name
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:32:37
    |
-29 | reserved_auth_header_case!(trailer, "Trailer");
+32 | reserved_auth_header_case!(trailer, "Trailer");
    |                                     ^^^^^^^^^
 
-error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:28:32
+error: [C3-AUTH] this authentication header name of client `ReservedAuthHeaderApi` is owned by Concord request or transport processing; write `bearer`, `basic` or `authorization` for `Authorization`, or choose a custom header name
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:31:32
    |
-28 | reserved_auth_header_case!(te, "TE");
+31 | reserved_auth_header_case!(te, "TE");
    |                                ^^^^
 
-error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:27:40
+error: [C3-AUTH] this authentication header name of client `ReservedAuthHeaderApi` is owned by Concord request or transport processing; write `bearer`, `basic` or `authorization` for `Authorization`, or choose a custom header name
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:30:40
    |
-27 | reserved_auth_header_case!(keep_alive, "Keep-Alive");
+30 | reserved_auth_header_case!(keep_alive, "Keep-Alive");
    |                                        ^^^^^^^^^^^^
 
-error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:26:40
+error: [C3-AUTH] this authentication header name of client `ReservedAuthHeaderApi` is owned by Concord request or transport processing; write `bearer`, `basic` or `authorization` for `Authorization`, or choose a custom header name
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:29:40
    |
-26 | reserved_auth_header_case!(connection, "Connection");
+29 | reserved_auth_header_case!(connection, "Connection");
    |                                        ^^^^^^^^^^^^
 
-error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:25:47
+error: [C3-AUTH] this authentication header name of client `ReservedAuthHeaderApi` is owned by Concord request or transport processing; write `bearer`, `basic` or `authorization` for `Authorization`, or choose a custom header name
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:28:47
    |
-25 | reserved_auth_header_case!(transfer_encoding, "Transfer-Encoding");
+28 | reserved_auth_header_case!(transfer_encoding, "Transfer-Encoding");
    |                                               ^^^^^^^^^^^^^^^^^^^
 
-error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:24:44
+error: [C3-AUTH] this authentication header name of client `ReservedAuthHeaderApi` is owned by Concord request or transport processing; write `bearer`, `basic` or `authorization` for `Authorization`, or choose a custom header name
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:27:44
    |
-24 | reserved_auth_header_case!(content_length, "Content-Length");
+27 | reserved_auth_header_case!(content_length, "Content-Length");
    |                                            ^^^^^^^^^^^^^^^^
 
-error: this authentication header name is owned by Concord request or transport processing
-  --> tests/ui/fail/authentication/reserved_auth_headers.rs:23:34
+error: [C3-AUTH] this authentication header name of client `ReservedAuthHeaderApi` is owned by Concord request or transport processing; write `bearer`, `basic` or `authorization` for `Authorization`, or choose a custom header name
+  --> tests/ui/fail/authentication/reserved_auth_headers.rs:26:34
    |
-23 | reserved_auth_header_case!(host, "Host");
+26 | reserved_auth_header_case!(host, "Host");
    |                                  ^^^^^^

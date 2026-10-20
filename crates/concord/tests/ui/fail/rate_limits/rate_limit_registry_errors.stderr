@@ -1,0 +1,65 @@
+error: [C3-RATE] unknown window set `missing`; declare `windows missing { allow N per DURATION; }` in the `rate_limits` registry of client `UnknownWindowSetApi`
+ --> tests/ui/fail/rate_limits/rate_limit_registry_errors.rs:9:58
+  |
+9 |         rate_limit "registry.unknown" key [origin] using missing;
+  |                                                          ^^^^^^^
+
+error: [C3-RATE] window set `contradictory` of client `RepeatedDurationApi` repeats a window duration; contradictory capacities under one duration are rejected, so keep one capacity per duration
+  --> tests/ui/fail/rate_limits/rate_limit_registry_errors.rs:17:21
+   |
+17 |             windows contradictory { allow 10 per 1s; allow 20 per 1s; }
+   |                     ^^^^^^^^^^^^^
+
+error: [C3-RATE] policy `mixed` of client `MixedWindowSourceApi` uses either one named window set or inline windows, not a mixture; keep `using SET;` or the `allow` lines
+  --> tests/ui/fail/rate_limits/rate_limit_registry_errors.rs:32:17
+   |
+32 |                 allow 5 per 1m;
+   |                 ^^^^^
+
+error: [C3-RATE] duplicate window set `standard` in the `rate_limits` registry of client `DuplicateWindowSetApi`; rename or remove one
+  --> tests/ui/fail/rate_limits/rate_limit_registry_errors.rs:43:21
+   |
+43 |             windows standard { allow 20 per 1s; }
+   |                     ^^^^^^^^
+
+error: note: the first window set is here
+  --> tests/ui/fail/rate_limits/rate_limit_registry_errors.rs:42:21
+   |
+42 |             windows standard { allow 10 per 1s; }
+   |                     ^^^^^^^^
+
+error: [C3-RATE] duplicate policy `reads` in the `rate_limits` registry of client `DuplicatePolicyNameApi`; rename or remove one
+  --> tests/ui/fail/rate_limits/rate_limit_registry_errors.rs:53:20
+   |
+53 |             policy reads() { id "registry.reads.b"; key [origin]; allow 1 per 1s; }
+   |                    ^^^^^
+
+error: note: the first policy is here
+  --> tests/ui/fail/rate_limits/rate_limit_registry_errors.rs:52:20
+   |
+52 |             policy reads() { id "registry.reads.a"; key [origin]; allow 1 per 1s; }
+   |                    ^^^^^
+
+error: [C3-RATE] policy ID `registry.shared` is declared by two policies of client `DuplicatePolicyIdApi`; reference one named policy for intentional reuse
+  --> tests/ui/fail/rate_limits/rate_limit_registry_errors.rs:63:34
+   |
+63 |             policy second() { id "registry.shared"; key [origin]; allow 1 per 1s; }
+   |                                  ^^^^^^^^^^^^^^^^^
+
+error: note: the first policy with this ID is here
+  --> tests/ui/fail/rate_limits/rate_limit_registry_errors.rs:62:33
+   |
+62 |             policy first() { id "registry.shared"; key [origin]; allow 1 per 1s; }
+   |                                 ^^^^^^^^^^^^^^^^^
+
+error: [C3-RATE] window capacity must be positive in the inline rate policy of client `ZeroCapacityApi`; write a value of at least 1
+  --> tests/ui/fail/rate_limits/rate_limit_registry_errors.rs:71:62
+   |
+71 |         rate_limit { id "registry.zero"; key [origin]; allow 0 per 1s; }
+   |                                                              ^
+
+error: [C3-MIGRATE] rate-limit definitions are `policy NAME(formals) { ... }` or `windows NAME { ... }` (in the `rate_limits` registry of client `LegacyProfileApi`)
+  --> tests/ui/fail/rate_limits/rate_limit_registry_errors.rs:79:13
+   |
+79 |             reads(account) { key [origin]; allow 1 per 1s; }
+   |             ^^^^^

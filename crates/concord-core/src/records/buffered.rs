@@ -4,9 +4,7 @@ use std::marker::PhantomData;
 use bytes::Bytes;
 
 #[cfg(test)]
-use crate::response::{
-    Buffered, PageResponseRepresentation, ResponseDriver, ResponseRepresentation,
-};
+use crate::response::{Buffered, ResponseDriver, ResponseRepresentation};
 use crate::response::{ResponseBodyError, ResponseHead};
 
 use super::driver::{RecordDriver, RecordStep};
@@ -31,9 +29,7 @@ where
 {
     type Driver = Buffered;
 
-    fn accept() -> Option<&'static str> {
-        D::accept()
-    }
+    const ACCEPT: Option<&'static str> = D::ACCEPT;
 
     fn validate(head: &ResponseHead<'_>) -> Result<(), ResponseBodyError> {
         validate_record_decoder::<D>(head)
@@ -46,9 +42,6 @@ where
         decode_complete_records::<D>(body, head)
     }
 }
-
-#[cfg(test)]
-impl<D> PageResponseRepresentation<Vec<D::Record>> for BufferedRecords<D> where D: RecordDecoder {}
 
 /// Validates one bounded record decoder without exposing native response authority.
 #[doc(hidden)]
@@ -91,6 +84,7 @@ where
                 }
             }
             RecordStep::Done => return Ok(records),
+            RecordStep::Interrupted => unreachable!("buffered driver has no stream boundary"),
         }
     }
 }

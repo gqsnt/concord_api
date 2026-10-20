@@ -7,9 +7,9 @@ use std::time::Duration;
 
 use concord_core::contracts::{BoxFuture, RateLimitErrorKind};
 use concord_core::rate_limit::{
-    DEFAULT_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_BYTES, RateLimitError, RateLimitPermit,
-    RateLimitPlan, RateLimitPolicy, RateLimitRequest, RateLimitResponse, RateLimitWindow,
-    RateLimiter,
+    CooldownOrigin, DEFAULT_RATE_LIMIT_KEY_BYTES, Enforcement, LimiterCapability,
+    MAX_RATE_LIMIT_KEY_BYTES, RateLimitError, RateLimitPermit, RateLimitPlan, RateLimitPolicy,
+    RateLimitRequest, RateLimitResponse, RateLimitWindow, RateLimiter,
 };
 use http::StatusCode;
 
@@ -32,18 +32,43 @@ struct Cooldown {
 
 /// A bounded process-local, limiter-object-local token-bucket limiter.
 ///
-/// New local limiters hold at most 4,096 quota entries and 4,096 cooldown entries,
-/// prune fully replenished quota entries after 15 idle minutes, and accept
-/// resolved keys up to 1,024 bytes. Builder methods can replace each bound.
+/// **Enforcement.** Its capability is [`Enforcement::Local`]
+/// ([`LocalRateLimiter::CAPABILITY`]): state belongs to this object in this
+/// process and resets on restart. One bucket is identified by
+/// `(policy ID, ordered (label, canonical value bytes), capacity, duration)`
+/// (RATE-03); cost is charged against every window and is not part of bucket
+/// identity. Clients share state only when explicitly given the same limiter
+/// object; separately built limiters are independent even for identical IDs.
 ///
-/// Capacity pressure fails with [`RateLimitErrorKind::StateCapacity`] rather
-/// than evicting active quota or cooldown history. Use an application-supplied
-/// custom limiter when distributed or exact remote-policy enforcement is
-/// required.
+/// **Algorithm.** Each window refills continuously at `capacity / duration`
+/// with checked fixed-point integer accounting (nanosecond resolution) and
+/// never overshoots its capacity. All windows of all policies are conjunctive.
 ///
-/// Each successful acquisition reserves the complete conjunctive plan
-/// atomically. A plan that must wait or fails validation/capacity consumes no
-/// partial quota reservation, and the state lock is released before waiting.
+/// **Bounds.** New local limiters hold at most 4,096 quota entries and 4,096
+/// cooldown entries, prune fully replenished quota entries after 15 idle
+/// minutes, and accept resolved keys up to 1,024 bytes. Builder methods can
+/// replace each bound. Capacity pressure fails with
+/// [`RateLimitErrorKind::StateCapacity`] rather than evicting active quota debt
+/// or an unexpired cooldown; a complete admission's missing state is checked
+/// against capacity before any insertion or debit. Overflow, lock poison or an
+/// internal inconsistency makes the limiter fail closed. Use an
+/// application-supplied adapter when distributed or exact remote-policy
+/// enforcement is required.
+///
+/// **Atomic conjunctive admission (RATE-04).** Each successful acquisition
+/// debits the complete conjunctive plan atomically under one lock. A plan that
+/// must wait, fails validation, or hits state capacity debits nothing. A
+/// blocked plan releases the lock before sleeping, re-evaluates the whole plan
+/// on wake, and stays cancellable by dropping the future; a cancelled wait
+/// leaves no debit. A committed admission is non-refundable. There is no strict
+/// FIFO fairness promise: concurrent waiters re-evaluate independently and may
+/// compete under the scheduler, and no hidden waiter queue exists.
+///
+/// **Feedback.** A final `429` with a positive server delay records a
+/// cooldown (clamped by core's cooldown cap) for the current buckets, or the
+/// logical origin for an empty plan, affecting future admission only.
+/// If keyed feedback cannot fit, a single finite object-wide barrier retains
+/// its expiration without evicting existing cooldowns or poisoning the limiter.
 ///
 /// Internal quota and cooldown state is not exposed:
 ///
@@ -73,6 +98,10 @@ struct LocalLimiterConfig {
     reason = "the normative contract specifies an explicit constructor without a Default contract"
 )]
 impl LocalRateLimiter {
+    /// Structural capability of every local limiter.
+    pub const CAPABILITY: LimiterCapability =
+        LimiterCapability::new(Enforcement::Local, "concord.local", 1);
+
     /// Creates an independent local limiter with the normative finite defaults.
     ///
     /// Share the same `Arc<dyn RateLimiter>` explicitly when independently
@@ -132,8 +161,9 @@ impl LocalRateLimiter {
 
     /// Sets the maximum aggregate byte length of one resolved key.
     ///
-    /// Zero permits only a global key. Values above
-    /// [`MAX_RATE_LIMIT_KEY_BYTES`] are rejected.
+    /// Every key has at least one dimension, so zero admits no policy and a
+    /// generated client that declares policies refuses to build with it.
+    /// Values above [`MAX_RATE_LIMIT_KEY_BYTES`] are rejected.
     pub fn key_limit(mut self, bytes: usize) -> Result<Self, RateLimitError> {
         if bytes > MAX_RATE_LIMIT_KEY_BYTES {
             return Err(invalid_configuration());
@@ -173,6 +203,7 @@ impl LocalRateLimiter {
                             state.evaluate(
                                 now,
                                 request.logical_origin,
+                                request.cooldown_origin,
                                 &rule_keys,
                                 &contributions,
                                 self.config.quota_capacity,
@@ -210,6 +241,7 @@ impl LocalRateLimiter {
         } = response;
         let RateLimitRequest {
             logical_origin,
+            cooldown_origin,
             plan,
             ..
         } = request;
@@ -225,12 +257,30 @@ impl LocalRateLimiter {
             CooldownScope::CurrentBuckets
         };
         let cooldown = Cooldown { duration, scope };
-        self.apply_cooldown(logical_origin, plan, cooldown, cooldown_cap)
+        self.apply_cooldown_with_origin(
+            logical_origin,
+            cooldown_origin,
+            plan,
+            cooldown,
+            cooldown_cap,
+        )
     }
 
+    #[cfg(test)]
     fn apply_cooldown(
         &self,
         logical_origin: Option<&str>,
+        plan: &RateLimitPlan,
+        cooldown: Cooldown,
+        cap: Duration,
+    ) -> Result<(), RateLimitError> {
+        self.apply_cooldown_with_origin(logical_origin, None, plan, cooldown, cap)
+    }
+
+    fn apply_cooldown_with_origin(
+        &self,
+        logical_origin: Option<&str>,
+        cooldown_origin: Option<&CooldownOrigin>,
         plan: &RateLimitPlan,
         cooldown: Cooldown,
         cap: Duration,
@@ -259,14 +309,14 @@ impl LocalRateLimiter {
                 Ok(())
             }
             CooldownScope::LogicalOrigin => state.extend_cooldowns(
-                logical_origin.map(|origin| CooldownKey::LogicalOrigin(origin.to_owned())),
+                origin_key(logical_origin, cooldown_origin),
                 expiration,
                 self.config.cooldown_capacity,
             ),
             CooldownScope::CurrentBuckets => {
                 if plan.is_empty() {
                     state.extend_cooldowns(
-                        logical_origin.map(|origin| CooldownKey::LogicalOrigin(origin.to_owned())),
+                        origin_key(logical_origin, cooldown_origin),
                         expiration,
                         self.config.cooldown_capacity,
                     )
@@ -280,6 +330,15 @@ impl LocalRateLimiter {
                 }
             }
         };
+        if result
+            .as_ref()
+            .is_err_and(|error| error.kind() == RateLimitErrorKind::StateCapacity)
+        {
+            // Retain one finite object-wide barrier when keyed feedback
+            // cannot fit. It is conservative, bounded and recoverable; no
+            // active key is evicted and no quota is debited while it waits.
+            state.extend_client_cooldown(expiration);
+        }
         result.map_err(|error| self.record_failure(error))
     }
 
@@ -296,6 +355,10 @@ impl LocalRateLimiter {
 }
 
 impl RateLimiter for LocalRateLimiter {
+    fn capability(&self) -> LimiterCapability {
+        Self::CAPABILITY
+    }
+
     fn preparation_key_limit(&self) -> usize {
         self.config.key_limit
     }
@@ -311,7 +374,8 @@ impl RateLimiter for LocalRateLimiter {
 
     fn observe(&self, response: RateLimitResponse<'_>) {
         // Observation never changes the current endpoint result. Any failure is
-        // retained by `observe_response` and reported by a future acquisition.
+        // retained as permanent fail-closed state for internal failures, or
+        // one finite object-wide barrier for cooldown capacity pressure.
         let _ = self.observe_response(response);
     }
 }
@@ -420,6 +484,7 @@ impl BucketKey {
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
 enum CooldownKey {
     LogicalOrigin(String),
+    OpaqueOrigin(CooldownOrigin),
     Bucket(PolicyKey),
 }
 
@@ -476,11 +541,12 @@ impl LocalLimiterState {
         &mut self,
         now: tokio::time::Instant,
         logical_origin: Option<&str>,
+        cooldown_origin: Option<&CooldownOrigin>,
         rule_keys: &PolicyKeys,
         contributions: &Contributions,
         quota_capacity: usize,
     ) -> Result<Evaluation, RateLimitError> {
-        let cooldown_wait = self.cooldown_wait(now, logical_origin, rule_keys);
+        let cooldown_wait = self.cooldown_wait(now, logical_origin, cooldown_origin, rule_keys);
         if !cooldown_wait.is_zero() {
             return Ok(Evaluation::Wait(cooldown_wait));
         }
@@ -525,13 +591,13 @@ impl LocalLimiterState {
         &self,
         now: tokio::time::Instant,
         logical_origin: Option<&str>,
+        cooldown_origin: Option<&CooldownOrigin>,
         rule_keys: &PolicyKeys,
     ) -> Duration {
         let mut wait = self.client_cooldown.map_or(Duration::ZERO, |expiration| {
             expiration.saturating_duration_since(now)
         });
-        if let Some(logical_origin) = logical_origin {
-            let key = CooldownKey::LogicalOrigin(logical_origin.to_owned());
+        if let Some(key) = origin_key(logical_origin, cooldown_origin) {
             wait = wait.max(self.cooldown_duration(now, &key));
         }
         for rule_key in &rule_keys.0 {
@@ -585,7 +651,6 @@ impl LocalLimiterState {
         Ok(())
     }
 
-    #[cfg(test)]
     fn extend_client_cooldown(&mut self, expiration: tokio::time::Instant) {
         self.client_cooldown = Some(
             self.client_cooldown
@@ -685,6 +750,15 @@ fn state_capacity() -> RateLimitError {
 
 fn internal_error() -> RateLimitError {
     RateLimitError::new(RateLimitErrorKind::Internal)
+}
+
+fn origin_key(
+    logical_origin: Option<&str>,
+    cooldown_origin: Option<&CooldownOrigin>,
+) -> Option<CooldownKey> {
+    cooldown_origin
+        .map(|origin| CooldownKey::OpaqueOrigin(*origin))
+        .or_else(|| logical_origin.map(|origin| CooldownKey::LogicalOrigin(origin.to_owned())))
 }
 
 #[cfg(test)]

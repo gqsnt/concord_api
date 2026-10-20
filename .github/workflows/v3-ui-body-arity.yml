@@ -1,0 +1,59 @@
+name: V3 required body UI capture
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: Full product candidate SHA (empty selects the measured V3 candidate)
+        type: string
+        required: false
+  push:
+    branches: [concord-v3]
+    paths:
+      - .github/workflows/v3-ui-body-arity.yml
+      - scripts/qualification_ui_body_arity.py
+      - scripts/ui_body_arity/required_body_argument_*.rs
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      RUSTUP_TOOLCHAIN: 1.97.1
+      QUALIFICATION_SOURCE: ${{ inputs.candidate || '579e8eac9a436a57ebc5ea3fcc2e7da3cf330c31' }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: 1.97.1
+      - name: Verify the native evidence parsers
+        run: python3 -m unittest discover -s scripts -p 'test_qualification_attribution.py'
+      - name: Capture native arity diagnostics and verify them without overwrite
+        run: |
+          python3 scripts/qualification_ui_body_arity.py \
+            --repository "$GITHUB_WORKSPACE" \
+            --candidate "$QUALIFICATION_SOURCE" \
+            --out "$RUNNER_TEMP/ui-body-arity-evidence"
+      - name: Read selected fields from the already measured native layouts
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/qualification_layout_excerpt.py --out "$RUNNER_TEMP/ui-body-arity-evidence/layout-excerpt"
+      - name: Upload snapshots and native source-bound receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: v3-required-body-ui-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ui-body-arity-evidence
+          if-no-files-found: error
+          retention-days: 90

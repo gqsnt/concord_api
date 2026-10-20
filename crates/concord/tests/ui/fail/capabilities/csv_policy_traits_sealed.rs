@@ -1,3 +1,5 @@
+// §9.5: first-party CSV header/delimiter policies are closed library-owned
+// markers; downstream crates cannot add policy implementations.
 use concord::records::{CsvDelimiter, CsvHeaderMode};
 
 struct CustomHeader;

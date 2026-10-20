@@ -1,0 +1,53 @@
+error: use of deprecated struct `RetiredApi`: use LegacyApi
+  --> tests/ui/fail/deprecation/deprecated_generated_items.rs:79:13
+   |
+79 |     let _ = RetiredApi::new();
+   |             ^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> tests/ui/fail/deprecation/deprecated_generated_items.rs:9:9
+   |
+ 9 | #![deny(deprecated)]
+   |         ^^^^^^^^^^
+
+error: use of deprecated method `legacy_api::<impl LegacyApi>::export`: use the paged feed instead
+  --> tests/ui/fail/deprecation/deprecated_generated_items.rs:66:20
+   |
+66 |     let _ = client.export();
+   |                    ^^^^^^
+
+error: use of deprecated method `legacy_api::Unbound::export`: use the paged feed instead
+  --> tests/ui/fail/deprecation/deprecated_generated_items.rs:67:34
+   |
+67 |     let _ = LegacyApi::unbound().export();
+   |                                  ^^^^^^
+
+error: use of deprecated method `legacy_api::LegacyApiBuilder::set_legacy_filter`: the provider ignores this filter
+  --> tests/ui/fail/deprecation/deprecated_generated_items.rs:70:34
+   |
+70 |     let _ = LegacyApi::builder().set_legacy_filter("x");
+   |                                  ^^^^^^^^^^^^^^^^^
+
+error: use of deprecated method `legacy_api::LegacyApiBuilder::omit_legacy_filter`: the provider ignores this filter
+  --> tests/ui/fail/deprecation/deprecated_generated_items.rs:71:34
+   |
+71 |     let _ = LegacyApi::builder().omit_legacy_filter();
+   |                                  ^^^^^^^^^^^^^^^^^^
+
+error: use of deprecated method `legacy_api::FeedRequest::replace_page_size`: page size is fixed by the provider
+  --> tests/ui/fail/deprecation/deprecated_generated_items.rs:72:27
+   |
+72 |     let _ = client.feed().replace_page_size(Some(10));
+   |                           ^^^^^^^^^^^^^^^^^
+
+error: use of deprecated method `legacy_api::regional::<impl LegacyApi>::regional`: regions are resolved by the provider
+  --> tests/ui/fail/deprecation/deprecated_generated_items.rs:75:20
+   |
+75 |     let _ = client.regional("eu");
+   |                    ^^^^^^^^
+
+error: use of deprecated method `legacy_api::regional::<impl legacy_api::Unbound>::regional`: regions are resolved by the provider
+  --> tests/ui/fail/deprecation/deprecated_generated_items.rs:76:34
+   |
+76 |     let _ = LegacyApi::unbound().regional("eu");
+   |                                  ^^^^^^^^

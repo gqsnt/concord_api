@@ -13,11 +13,6 @@ struct Factory {
     calls: Arc<AtomicUsize>,
 }
 
-struct MetadataFactory {
-    content_type_calls: Arc<AtomicUsize>,
-    create_calls: Arc<AtomicUsize>,
-}
-
 struct EmptyChunkFactory {
     polls: Arc<AtomicUsize>,
 }
@@ -57,24 +52,8 @@ struct MultipartFactoryProbe {
 }
 
 impl BodyFactory for Factory {
-    fn content_type(&self) -> Option<HeaderValue> {
-        Some(HeaderValue::from_static("application/x-factory"))
-    }
-
     fn create(&self) -> Result<RequestStream, BodyError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        Ok(RequestStream::from_bytes(Bytes::from_static(b"factory")))
-    }
-}
-
-impl BodyFactory for MetadataFactory {
-    fn content_type(&self) -> Option<HeaderValue> {
-        self.content_type_calls.fetch_add(1, Ordering::SeqCst);
-        Some(HeaderValue::from_static("application/x-captured"))
-    }
-
-    fn create(&self) -> Result<RequestStream, BodyError> {
-        self.create_calls.fetch_add(1, Ordering::SeqCst);
         Ok(RequestStream::from_bytes(Bytes::from_static(b"factory")))
     }
 }
@@ -90,108 +69,168 @@ impl MultipartFactory for MultipartFactoryProbe {
     }
 }
 
-fn metadata(body: &RequestBody) -> RequestBodyMetadata {
-    body.structural_metadata().expect("body metadata")
+fn limit(bytes: usize) -> NonZeroUsize {
+    NonZeroUsize::new(bytes).expect("positive limit")
 }
 
 #[test]
-fn request_body_kinds_and_replayability_are_inferred() {
-    let empty = RequestBody::empty();
+fn prepared_body_kinds_lengths_and_replayability_are_core_facts() {
+    let empty = PreparedBody::empty();
     assert_eq!(empty.kind(), BodyKind::Empty);
-    assert_eq!(metadata(&empty).length, LengthHint::Exact(0));
+    assert_eq!(empty.length_hint(), LengthHint::Exact(0));
+    assert_eq!(empty.media_type(), None);
+    assert!(empty.is_replayable());
     assert_eq!(
-        empty
-            .into_prepared(NonZeroUsize::new(64).unwrap())
-            .unwrap()
-            .replayability(),
+        empty.into_managed(limit(64)).unwrap().replayability(),
         Replayability::Reusable
     );
 
-    let bytes = RequestBody::bytes(Bytes::from_static(b"bytes"));
+    let bytes = PreparedBody::bytes(Bytes::from_static(b"bytes"));
     assert_eq!(bytes.kind(), BodyKind::Buffered);
-    assert_eq!(metadata(&bytes).known_length(), Some(5));
+    assert_eq!(bytes.length_hint(), LengthHint::Exact(5));
+    assert!(bytes.is_replayable());
     assert_eq!(
-        bytes
-            .into_prepared(NonZeroUsize::new(64).unwrap())
-            .unwrap()
-            .replayability(),
+        bytes.into_managed(limit(64)).unwrap().replayability(),
         Replayability::Reusable
     );
 
-    let stream = RequestBody::stream(RequestStream::from_bytes(Bytes::from_static(b"bytes")));
+    let stream = PreparedBody::stream(RequestStream::from_bytes(Bytes::from_static(b"bytes")));
     assert_eq!(stream.kind(), BodyKind::Stream);
+    assert_eq!(stream.length_hint(), LengthHint::Exact(5));
+    assert!(!stream.is_replayable());
     assert_eq!(
-        stream
-            .into_prepared(NonZeroUsize::new(64).unwrap())
-            .unwrap()
-            .replayability(),
+        stream.into_managed(limit(64)).unwrap().replayability(),
         Replayability::OneShot
     );
 
-    let calls = Arc::new(AtomicUsize::new(0));
-    let factory = RequestBody::factory(Factory {
-        calls: Arc::clone(&calls),
-    });
-    assert_eq!(calls.load(Ordering::SeqCst), 0);
-    assert_eq!(
-        metadata(&factory).content_type,
-        RequestContentType::Exact(HeaderValue::from_static("application/x-factory"))
+    let minimum = PreparedBody::stream(
+        RequestStream::from_stream(FrameStream {
+            frames: VecDeque::new(),
+            polls: Arc::new(AtomicUsize::new(0)),
+        })
+        .at_least(3),
     );
+    assert_eq!(minimum.length_hint(), LengthHint::AtLeast(3));
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let factory = PreparedBody::factory(Factory {
+        calls: Arc::clone(&calls),
+    })
+    .content_type("application/x-factory")
+    .expect("factory media type");
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(factory.length_hint(), LengthHint::Unknown);
+    assert_eq!(factory.media_type(), Some("application/x-factory"));
+    assert!(factory.is_replayable());
+    let managed = factory.into_managed(limit(64)).unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(managed.replayability(), Replayability::Reconstructible);
     assert_eq!(
-        factory
-            .into_prepared(NonZeroUsize::new(64).unwrap())
-            .unwrap()
-            .replayability(),
-        Replayability::Reconstructible
+        managed.content_type(),
+        Some(&HeaderValue::from_static("application/x-factory"))
     );
 }
 
 #[test]
-fn content_type_is_validated_and_factory_default_can_be_overridden() {
-    let calls = Arc::new(AtomicUsize::new(0));
-    let body = RequestBody::factory(Factory { calls })
+fn content_type_is_validated_once_and_never_overwritten() {
+    let body = PreparedBody::bytes(Bytes::from_static(b"x"))
         .content_type("application/x-override; version=1")
         .expect("valid media type");
-    assert_eq!(
-        metadata(&body).content_type,
-        RequestContentType::Exact(HeaderValue::from_static(
-            "application/x-override; version=1"
-        ))
+    assert_eq!(body.media_type(), Some("application/x-override; version=1"));
+    let body = body
+        .content_type("application/x-override; version=1")
+        .expect("identical repeat is harmless");
+    let error = body
+        .content_type("application/x-other")
+        .expect_err("conflicting overwrite");
+    assert_eq!(error.kind(), BodyErrorKind::InvalidContentType);
+
+    for invalid in [
+        "not a media type",
+        "*/*",
+        "application/*",
+        "text/plain\r\nx-injected: yes",
+        "",
+    ] {
+        assert_eq!(
+            PreparedBody::empty()
+                .content_type(invalid)
+                .expect_err("invalid media")
+                .kind(),
+            BodyErrorKind::InvalidContentType
+        );
+    }
+    let exact = format!(
+        "application/{}",
+        "a".repeat(MAX_REQUEST_CONTENT_TYPE_BYTES - "application/".len())
     );
+    PreparedBody::empty()
+        .content_type(&exact)
+        .expect("exact content-type limit");
+    let excessive = format!("{exact}a");
     assert_eq!(
-        RequestBody::empty()
-            .content_type("not a media type")
-            .expect_err("invalid media")
+        PreparedBody::empty()
+            .content_type(&excessive)
+            .expect_err("content-type first excess")
             .kind(),
         BodyErrorKind::InvalidContentType
     );
 }
 
 #[test]
-fn factory_content_type_is_captured_before_metadata_without_materialization() {
-    let content_type_calls = Arc::new(AtomicUsize::new(0));
-    let create_calls = Arc::new(AtomicUsize::new(0));
-    let body = RequestBody::factory(MetadataFactory {
-        content_type_calls: Arc::clone(&content_type_calls),
-        create_calls: Arc::clone(&create_calls),
-    });
-    assert_eq!(content_type_calls.load(Ordering::SeqCst), 1);
-    assert_eq!(create_calls.load(Ordering::SeqCst), 0);
+fn known_lengths_are_checked_against_the_limit_before_materialization() {
+    let error = PreparedBody::bytes(Bytes::from_static(b"12345"))
+        .into_managed(limit(4))
+        .err()
+        .expect("exact length over limit");
+    assert_eq!(error.kind(), BodyErrorKind::LimitExceeded);
 
-    for _ in 0..2 {
-        assert_eq!(
-            metadata(&body).content_type,
-            RequestContentType::Exact(HeaderValue::from_static("application/x-captured"))
-        );
-    }
-    assert_eq!(content_type_calls.load(Ordering::SeqCst), 1);
-    assert_eq!(create_calls.load(Ordering::SeqCst), 0);
+    let polls = Arc::new(AtomicUsize::new(0));
+    let error = PreparedBody::stream(
+        RequestStream::from_stream(FrameStream {
+            frames: VecDeque::new(),
+            polls: Arc::clone(&polls),
+        })
+        .at_least(10),
+    )
+    .into_managed(limit(4))
+    .err()
+    .expect("minimum over limit");
+    assert_eq!(error.kind(), BodyErrorKind::LimitExceeded);
+    assert_eq!(polls.load(Ordering::SeqCst), 0, "no producer polling");
+
+    let error = PreparedBody::stream(
+        RequestStream::from_bytes(Bytes::from_static(b"four")).exact_length(3),
+    )
+    .into_managed(limit(64))
+    .err()
+    .expect("conflicting exact length");
+    assert_eq!(error.kind(), BodyErrorKind::InvalidLength);
+
+    let error =
+        PreparedBody::stream(RequestStream::from_bytes(Bytes::from_static(b"four")).at_least(5))
+            .into_managed(limit(64))
+            .err()
+            .expect("minimum above exact length");
+    assert_eq!(error.kind(), BodyErrorKind::InvalidLength);
+}
+
+#[test]
+fn debug_is_structural_and_omits_body_values() {
+    let body = PreparedBody::bytes(Bytes::from_static(b"prepared-body-secret-3c1f"))
+        .content_type("application/x-secret-media")
+        .expect("media type");
+    let debug = format!("{body:?}");
+    assert!(!debug.contains("prepared-body-secret-3c1f"));
+    assert!(!debug.contains("application/x-secret-media"));
+    assert!(debug.contains("Buffered"));
 }
 
 #[cfg(feature = "multipart")]
 #[test]
-fn multipart_replayability_and_factory_freshness_are_internal() {
-    let reusable = RequestBody::multipart(
+fn multipart_boundary_is_generated_once_and_replays_are_mechanical() {
+    let before = crate::body::generated_boundaries_on_this_thread();
+    let reusable = PreparedBody::multipart(
         MultipartBody::new()
             .part(
                 "text",
@@ -205,40 +244,51 @@ fn multipart_replayability_and_factory_freshness_are_internal() {
                     .expect("bounded multipart bytes"),
             )
             .expect("bytes part"),
+    )
+    .expect("prepared multipart");
+    assert_eq!(
+        crate::body::generated_boundaries_on_this_thread(),
+        before + 1
     );
     assert_eq!(reusable.kind(), BodyKind::Multipart);
+    assert!(reusable.is_replayable());
+    let media = reusable
+        .media_type()
+        .expect("generated media type")
+        .to_owned();
+    assert!(media.starts_with("multipart/form-data; boundary=concord-"));
+    assert!(matches!(reusable.length_hint(), LengthHint::Exact(_)));
+    assert!(!format!("{reusable:?}").contains("multipart-secret-text"));
+    let reusable = reusable
+        .content_type(&media)
+        .expect("identical generated media type is harmless");
+    let error = PreparedBody::multipart(MultipartBody::new())
+        .expect("empty multipart")
+        .content_type("multipart/form-data; boundary=application-owned")
+        .expect_err("conflicting multipart media type");
+    assert_eq!(error.kind(), BodyErrorKind::InvalidContentType);
+
+    let generated = crate::body::generated_boundaries_on_this_thread();
+    let mut managed = reusable
+        .into_managed(limit(4096))
+        .expect("reusable multipart materialization");
+    assert_eq!(managed.replayability(), Replayability::Reusable);
     assert_eq!(
-        metadata(&reusable).content_type,
-        RequestContentType::Generated
+        managed.content_type().and_then(|value| value.to_str().ok()),
+        Some(media.as_str())
     );
-    assert!(
-        reusable
-            .content_type("multipart/form-data; boundary=application-owned")
-            .is_err()
-    );
-
-    let mut reusable_prepared = RequestBody::multipart(
-        MultipartBody::new()
-            .part(
-                "text",
-                crate::body::MultipartPart::text("fresh recipe").expect("bounded multipart text"),
-            )
-            .expect("text part"),
-    )
-    .into_prepared(NonZeroUsize::new(4096).expect("positive limit"))
-    .expect("reusable multipart materialization");
-    assert_eq!(reusable_prepared.replayability(), Replayability::Reusable);
-    let _ = reusable_prepared
-        .prepare_native(NonZeroUsize::new(4096).expect("positive limit"))
-        .expect("first reusable native recipe");
-    reusable_prepared
-        .reconstruct_for_next_attempt(NonZeroUsize::new(4096).expect("positive limit"))
+    let _ = managed.prepare_native(limit(4096)).expect("first attempt");
+    managed
+        .reconstruct_for_next_attempt(limit(4096))
         .expect("reusable next attempt");
-    let _ = reusable_prepared
-        .prepare_native(NonZeroUsize::new(4096).expect("positive limit"))
-        .expect("second reusable native recipe");
+    let _ = managed.prepare_native(limit(4096)).expect("second attempt");
+    assert_eq!(
+        crate::body::generated_boundaries_on_this_thread(),
+        generated,
+        "replays reuse the retained boundary"
+    );
 
-    let one_shot = RequestBody::multipart(
+    let one_shot = PreparedBody::multipart(
         MultipartBody::new()
             .part(
                 "stream",
@@ -247,123 +297,119 @@ fn multipart_replayability_and_factory_freshness_are_internal() {
                 ))),
             )
             .expect("stream part"),
-    );
+    )
+    .expect("prepared one-shot multipart");
+    assert!(!one_shot.is_replayable());
     let mut one_shot = one_shot
-        .into_prepared(NonZeroUsize::new(4096).expect("positive limit"))
+        .into_managed(limit(4096))
         .expect("one-shot multipart materialization");
-    assert!(
-        one_shot
-            .reconstruct_for_next_attempt(NonZeroUsize::new(4096).expect("positive limit"))
-            .is_err()
-    );
+    assert_eq!(one_shot.replayability(), Replayability::OneShot);
+    assert!(one_shot.reconstruct_for_next_attempt(limit(4096)).is_err());
 
     let calls = Arc::new(AtomicUsize::new(0));
-    let factory = RequestBody::multipart_factory(MultipartFactoryProbe {
+    let factory = PreparedBody::multipart_factory(MultipartFactoryProbe {
         calls: Arc::clone(&calls),
-    });
+    })
+    .expect("multipart factory");
+    let factory_media = factory.media_type().expect("factory media").to_owned();
     assert_eq!(calls.load(Ordering::SeqCst), 0);
     let mut prepared = factory
-        .into_prepared(NonZeroUsize::new(4096).expect("positive limit"))
+        .into_managed(limit(4096))
         .expect("multipart factory materialization");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert_eq!(prepared.replayability(), Replayability::Reconstructible);
     let _ = prepared
-        .prepare_native(NonZeroUsize::new(4096).expect("positive limit"))
+        .prepare_native(limit(4096))
         .expect("current multipart attempt");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     prepared
-        .reconstruct_for_next_attempt(NonZeroUsize::new(4096).expect("positive limit"))
+        .reconstruct_for_next_attempt(limit(4096))
         .expect("next multipart attempt");
     assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        prepared
+            .content_type()
+            .and_then(|value| value.to_str().ok()),
+        Some(factory_media.as_str())
+    );
 }
 
 #[cfg(feature = "multipart")]
 #[tokio::test]
-async fn reqwest_multipart_serialization_uses_the_managed_aggregate_counter() {
-    let first_polls = Arc::new(AtomicUsize::new(0));
-    let form = MultipartBody::new()
-        .part(
-            "field",
-            crate::body::MultipartPart::stream(stream([Ok(&b"x"[..])], &first_polls)),
-        )
-        .expect("multipart recipe")
-        .into_form(NonZeroUsize::new(4096).expect("positive limit"))
-        .expect("native multipart recipe");
-    let mut serialized = Box::pin(form.into_stream());
-    let mut serialized_frames = Vec::new();
-    loop {
-        match poll_fn(|context| serialized.as_mut().poll_next(context)).await {
-            Some(Ok(bytes)) => serialized_frames.push(bytes),
-            Some(Err(error)) => {
-                drop(error);
-                panic!("reference serialization failed")
-            }
-            None => break,
-        }
-    }
-    assert!(serialized_frames.len() >= 2);
-    let crossing_limit = serialized_frames[0]
-        .len()
-        .checked_add(serialized_frames[1].len())
-        .and_then(|length| length.checked_sub(1))
-        .expect("multipart frame lengths");
-    let limit = NonZeroUsize::new(crossing_limit).expect("positive crossing limit");
-
-    let second_polls = Arc::new(AtomicUsize::new(0));
-    let form = MultipartBody::new()
-        .part(
-            "field",
-            crate::body::MultipartPart::stream(stream([Ok(&b"x"[..])], &second_polls)),
-        )
-        .expect("multipart recipe")
-        .into_form(limit)
-        .expect("native multipart recipe");
-    let serialized = reqwest::Body::wrap_stream(form.into_stream());
-    let (mut managed, failure) = wrap_multipart_native_body(serialized, None, limit);
-    let mut accepted = Vec::new();
-    let native_error = loop {
-        match poll_fn(|context| Pin::new(&mut managed).poll_frame(context)).await {
-            Some(Ok(frame)) => {
-                if let Ok(bytes) = frame.into_data() {
-                    accepted.extend_from_slice(&bytes);
-                }
-            }
-            Some(Err(error)) => {
-                drop(error);
-                break true;
-            }
-            None => break false,
-        }
+async fn multipart_serialization_uses_the_managed_aggregate_counter() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let body = PreparedBody::multipart(
+        MultipartBody::new()
+            .part(
+                "field",
+                crate::body::MultipartPart::stream(stream([Ok(&b"x"[..])], &polls)),
+            )
+            .expect("multipart recipe"),
+    )
+    .expect("prepared multipart");
+    let LengthHint::AtLeast(minimum) = body.length_hint() else {
+        panic!("a streaming part has an unknown exact length")
     };
-    assert!(
-        native_error,
-        "multipart framing must exceed the small limit"
-    );
-    assert_eq!(accepted.len(), serialized_frames[0].len());
-    assert!(accepted.len() < limit.get());
-    assert_eq!(failure.kind(), Some(BodyErrorKind::LimitExceeded));
-    assert!(1 < limit.get(), "the one-byte payload itself fits");
+    // The one-byte payload fits, but the framing crosses a limit just below
+    // the framed minimum; the managed stream fails at the first excess.
+    let small = limit(usize::try_from(minimum).expect("minimum") - 1);
+    let mut managed = PreparedBody::multipart(
+        MultipartBody::new()
+            .part(
+                "field",
+                crate::body::MultipartPart::stream(stream([Ok(&b"x"[..])], &polls)),
+            )
+            .expect("multipart recipe"),
+    )
+    .expect("prepared multipart")
+    .into_managed(limit(4096))
+    .expect("materialized multipart");
+    let NativeBody::Stream { body, failure, .. } = managed
+        .prepare_native(small)
+        .expect("native multipart body")
+    else {
+        panic!("multipart serializes as a managed stream");
+    };
+    let (accepted, kind) = consume_native_stream(body, failure).await;
+    let accepted_len: usize = accepted.iter().map(Bytes::len).sum();
+    assert!(accepted_len < small.get());
+    assert_eq!(kind, Some(BodyErrorKind::LimitExceeded));
 }
 
 #[test]
 fn factory_materialization_and_explicit_reconstruction_are_attempt_scoped() {
     let calls = Arc::new(AtomicUsize::new(0));
-    let body = RequestBody::factory(Factory {
+    let body = PreparedBody::factory(Factory {
         calls: Arc::clone(&calls),
     });
-    let mut prepared = body
-        .into_prepared(NonZeroUsize::new(64).unwrap())
-        .expect("initial factory body");
+    let mut prepared = body.into_managed(limit(64)).expect("initial factory body");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert_eq!(prepared.replayability(), Replayability::Reconstructible);
     let _ = prepared
-        .prepare_native(NonZeroUsize::new(64).unwrap())
+        .prepare_native(limit(64))
         .expect("first native body");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     prepared
-        .reconstruct_for_next_attempt(NonZeroUsize::new(64).unwrap())
+        .reconstruct_for_next_attempt(limit(64))
         .expect("next Concord-attempt body");
     assert_eq!(calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn dishonest_minimum_is_detected_against_observed_production() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let mut managed = PreparedBody::stream(stream([Ok(&b"ab"[..])], &polls).at_least(3))
+        .into_managed(limit(64))
+        .expect("minimum below limit");
+    assert_eq!(managed.length_hint(), LengthHint::AtLeast(3));
+    let NativeBody::Stream { body, failure, .. } =
+        managed.prepare_native(limit(64)).expect("native body")
+    else {
+        panic!("stream native body expected");
+    };
+    let (accepted, kind) = consume_native_stream(body, failure).await;
+    assert_eq!(accepted, [Bytes::from_static(b"ab")]);
+    assert_eq!(kind, Some(BodyErrorKind::InvalidLength));
 }
 
 struct FrameStream {
@@ -497,6 +543,118 @@ async fn managed_stream_withholds_exact_and_limit_excess_frames() {
     assert_eq!(accepted.concat(), b"abc");
     assert_eq!(failure, Some(BodyErrorKind::LimitExceeded));
     assert_eq!(limit_polls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn exact_final_chunk_is_withheld_when_later_production_disproves_completion() {
+    for (tail, expected) in [
+        (
+            Ok(Bytes::from_static(b"extra")),
+            BodyErrorKind::InvalidLength,
+        ),
+        (
+            Err(io::Error::other("trailing-producer-secret")),
+            BodyErrorKind::Producer,
+        ),
+    ] {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let (accepted, failure) = consume(
+            stream_bytes(
+                [
+                    Ok(Bytes::from_static(b"ab")),
+                    Ok(Bytes::from_static(b"cd")),
+                    tail,
+                ],
+                &polls,
+            ),
+            Some(4),
+            64,
+        )
+        .await;
+        assert_eq!(accepted, [Bytes::from_static(b"ab")]);
+        assert_eq!(failure, Some(expected));
+        assert_eq!(polls.load(Ordering::SeqCst), 3);
+    }
+}
+
+#[tokio::test]
+async fn exact_final_chunk_keeps_the_total_empty_chunk_limit() {
+    for count in [MAX_EMPTY_REQUEST_CHUNKS, MAX_EMPTY_REQUEST_CHUNKS + 1] {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let mut chunks = vec![Ok(Bytes::from_static(b"data"))];
+        chunks.extend(empty_request_chunks(count));
+        let (accepted, failure) = consume(stream_bytes(chunks, &polls), Some(4), 64).await;
+        if count == MAX_EMPTY_REQUEST_CHUNKS {
+            assert_eq!(accepted, [Bytes::from_static(b"data")]);
+            assert_eq!(failure, None);
+            assert_eq!(polls.load(Ordering::SeqCst), count + 2);
+        } else {
+            assert!(accepted.is_empty());
+            assert_eq!(failure, Some(BodyErrorKind::LimitExceeded));
+            assert_eq!(polls.load(Ordering::SeqCst), count + 1);
+        }
+    }
+}
+
+struct DeferredEofStream {
+    chunk: Option<Bytes>,
+    complete: Arc<AtomicBool>,
+    dropped: Arc<AtomicBool>,
+}
+
+impl Stream for DeferredEofStream {
+    type Item = Result<Bytes, io::Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if let Some(bytes) = self.chunk.take() {
+            Poll::Ready(Some(Ok(bytes)))
+        } else if self.complete.load(Ordering::SeqCst) {
+            Poll::Ready(None)
+        } else {
+            // This unit test controls subsequent polls directly.
+            Poll::Pending
+        }
+    }
+}
+
+impl Drop for DeferredEofStream {
+    fn drop(&mut self) {
+        self.dropped.store(true, Ordering::SeqCst);
+    }
+}
+
+#[test]
+fn exact_final_chunk_waits_for_eof_and_drop_releases_the_source() {
+    for cancel in [false, true] {
+        let complete = Arc::new(AtomicBool::new(false));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let body = RequestStream::from_stream(DeferredEofStream {
+            chunk: Some(Bytes::from_static(b"data")),
+            complete: Arc::clone(&complete),
+            dropped: Arc::clone(&dropped),
+        });
+        let (mut managed, failure) = direct_managed(body, Some(4), 64);
+        let wakes = Arc::new(WakeCounter::default());
+        let waker = Waker::from(wakes);
+        let mut context = Context::from_waker(&waker);
+        assert!(Pin::new(&mut managed).poll_next(&mut context).is_pending());
+        assert!(!dropped.load(Ordering::SeqCst));
+        assert!(!failure.failed());
+        if !cancel {
+            complete.store(true, Ordering::SeqCst);
+            let Poll::Ready(Some(Ok(bytes))) = Pin::new(&mut managed).poll_next(&mut context)
+            else {
+                panic!("source EOF releases the final native chunk");
+            };
+            assert_eq!(bytes, b"data"[..]);
+            assert!(matches!(
+                Pin::new(&mut managed).poll_next(&mut context),
+                Poll::Ready(None)
+            ));
+        }
+        drop(managed);
+        assert!(dropped.load(Ordering::SeqCst));
+    }
 }
 
 #[tokio::test]
@@ -824,10 +982,10 @@ async fn request_source_is_dropped_after_first_excess() {
 async fn body_factory_stream_uses_same_empty_chunk_contract() {
     let polls = Arc::new(AtomicUsize::new(0));
     let limit = NonZeroUsize::new(64).expect("positive limit");
-    let mut prepared = RequestBody::factory(EmptyChunkFactory {
+    let mut prepared = PreparedBody::factory(EmptyChunkFactory {
         polls: Arc::clone(&polls),
     })
-    .into_prepared(limit)
+    .into_managed(limit)
     .expect("factory body");
     let NativeBody::Stream { body, failure, .. } = prepared
         .prepare_native(limit)
@@ -844,9 +1002,9 @@ async fn body_factory_stream_uses_same_empty_chunk_contract() {
 
 #[cfg(feature = "multipart")]
 #[tokio::test]
-async fn multipart_or_native_managed_stream_uses_same_contract() {
+async fn multipart_serialized_stream_uses_same_empty_chunk_contract() {
     let polls = Arc::new(AtomicUsize::new(0));
-    let source = FrameStream {
+    let part = RequestStream::from_stream(FrameStream {
         frames: [
             Ok(Bytes::new()),
             Ok(Bytes::from_static(b"native")),
@@ -855,17 +1013,35 @@ async fn multipart_or_native_managed_stream_uses_same_contract() {
         .into_iter()
         .collect(),
         polls: Arc::clone(&polls),
+    })
+    .exact_length(6);
+    let mut managed = PreparedBody::multipart(
+        MultipartBody::new()
+            .part("field", crate::body::MultipartPart::stream(part))
+            .expect("multipart recipe"),
+    )
+    .expect("prepared multipart")
+    .into_managed(NonZeroUsize::new(4096).expect("positive limit"))
+    .expect("materialized multipart");
+    let exact = managed.known_length().expect("exact framed length");
+    let NativeBody::Stream {
+        body,
+        failure,
+        known_length,
+    } = managed
+        .prepare_native(NonZeroUsize::new(4096).expect("positive limit"))
+        .expect("native multipart")
+    else {
+        panic!("multipart serializes as a managed stream");
     };
-    let native = reqwest::Body::wrap_stream(source);
-    let (managed, failure) = wrap_multipart_native_body(
-        native,
-        Some(6),
-        NonZeroUsize::new(64).expect("positive limit"),
-    );
+    assert_eq!(known_length, Some(exact));
 
-    let (accepted, kind) = consume_native_stream(managed, failure).await;
-    assert_eq!(accepted, [Bytes::from_static(b"native")]);
+    let (accepted, kind) = consume_native_stream(body, failure).await;
     assert_eq!(kind, None);
+    let joined = accepted.concat();
+    assert_eq!(joined.len() as u64, exact);
+    assert!(accepted.iter().all(|chunk| !chunk.is_empty()));
+    assert!(joined.windows(6).any(|window| window == b"native"));
     assert_eq!(polls.load(Ordering::SeqCst), 4);
 }
 

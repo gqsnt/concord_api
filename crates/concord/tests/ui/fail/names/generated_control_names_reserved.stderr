@@ -1,17 +1,43 @@
-error: generated client method `plan` collides with a reserved Concord method
- --> tests/ui/fail/names/generated_control_names_reserved.rs:7:13
+error: [C3-GENERATED] generated name `plan` for endpoint `plan` on handle of PlanApi collides with the generated core method `plan`; rename one declaration (generated names are never suffixed or truncated)
+ --> tests/ui/fail/names/generated_control_names_reserved.rs:8:13
   |
-7 |         GET plan() -> Bytes via Binary;
+8 |         GET plan() -> Bytes via Binary;
   |             ^^^^
 
-error: generated client method `contract` collides with a reserved Concord method
+error: [C3-GENERATED] generated name `contract` for endpoint `contract` on handle of ContractApi collides with the generated core method `contract`; rename one declaration (generated names are never suffixed or truncated)
   --> tests/ui/fail/names/generated_control_names_reserved.rs:15:13
    |
 15 |         GET contract() -> Bytes via Binary;
    |             ^^^^^^^^
 
-error: generated client method `unbound` collides with a reserved Concord method
+error: [C3-GENERATED] generated name `unbound` for scope `unbound` on handle of UnboundApi collides with the generated core method `unbound`; rename one declaration (generated names are never suffixed or truncated)
   --> tests/ui/fail/names/generated_control_names_reserved.rs:23:15
    |
 23 |         scope unbound() {
    |               ^^^^^^^
+
+error: [C3-GENERATED] generated name `credentials` for endpoint `credentials` on handle of CredentialsApi collides with the generated core method `credentials`; rename one declaration (generated names are never suffixed or truncated)
+  --> tests/ui/fail/names/generated_control_names_reserved.rs:32:13
+   |
+32 |         GET credentials() -> Bytes via Binary;
+   |             ^^^^^^^^^^^
+
+error: [C3-GENERATED] generated name `build` for secret `build` on builder `BuilderSecretApiBuilder` collides with the generated core method `build`; rename one declaration (generated names are never suffixed or truncated)
+  --> tests/ui/fail/names/generated_control_names_reserved.rs:41:20
+   |
+41 |             secret build;
+   |                    ^^^^^
+
+error: [C3-GENERATED] generated name `bind` for endpoint `bind` on handle of ScopeBindApi::regional collides with the generated core method `bind`; rename one declaration (generated names are never suffixed or truncated)
+  --> tests/ui/fail/names/generated_control_names_reserved.rs:57:17
+   |
+57 |             GET bind() -> Bytes via Binary;
+   |                 ^^^^
+
+warning: unused imports: `Binary` and `Bytes`
+ --> tests/ui/fail/names/generated_control_names_reserved.rs:3:15
+  |
+3 | use concord::{Binary, Bytes, api};
+  |               ^^^^^^  ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

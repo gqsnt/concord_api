@@ -10,15 +10,20 @@ use bytes::Bytes;
 use futures_core::Stream;
 use http::HeaderValue;
 
-use super::spec::{LengthHint, RequestBodyMetadata, RequestContentType};
+#[cfg(feature = "multipart")]
+use super::multipart::{MultipartBoundary, MultipartFraming};
+use super::spec::LengthHint;
 use super::{BodyError, BodyErrorKind, RequestStream};
 #[cfg(feature = "multipart")]
 use super::{MultipartBody, MultipartFactory};
 use crate::limits::{MAX_EMPTY_REQUEST_CHUNKS, MAX_EMPTY_REQUEST_CHUNKS_PER_POLL};
 
+/// Maximum byte length of one validated request `Content-Type` value.
+pub const MAX_REQUEST_CONTENT_TYPE_BYTES: usize = 1_024;
+
 /// Structural category of a request body visible to lifecycle observers.
 #[non_exhaustive]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum BodyKind {
     /// No request body.
     Empty,
@@ -37,510 +42,615 @@ pub(crate) enum Replayability {
     Reconstructible,
 }
 
-/// Creates a fresh complete stream for one Concord attempt.
+/// Creates a fresh complete stream for one Concord application attempt.
 ///
-/// `content_type` is captured once when [`RequestBody::factory`] constructs the
-/// managed value and must be deterministic and side-effect-light. Metadata
-/// computation does not call the factory. `create` is called only after
-/// the visible-attempt observation has run. Reqwest-internal retries cannot call
-/// this trait. Calls for
-/// independent operations may overlap. Bodies and factory state may be
-/// sensitive; implementations own their logging and storage and must bound CPU,
-/// memory, retries, maps, queues, spawned tasks, metric cardinality, and external
-/// I/O. Both callbacks are synchronous and cannot be preempted by Concord; the
-/// operation deadline is checked after return, cancellation prevents later work
-/// only, and Concord does not automatically bound custom factory state.
-/// Every returned stream subsequently crosses the same core-owned empty-chunk,
-/// byte-limit, and exact-length boundary as a direct [`RequestStream`].
+/// A factory is the core-supported replayable stream source: the prepared body
+/// is mechanically reconstructible because every attempt obtains a new finite
+/// stream from `create`. The first stream is created while the body is
+/// prepared, before credential acquisition; later streams are created only
+/// when core has already admitted another application attempt (policy retry
+/// or authentication recovery). Transport-private retries never call this
+/// trait.
+///
+/// # Extension contract
+///
+/// * **Ownership.** The factory is moved into the prepared body and shared by
+///   its attempts; each returned stream is owned by core for one attempt.
+/// * **Concurrency.** Calls for independent operations may overlap.
+/// * **Cancellation.** `create` is synchronous and cannot be preempted; the
+///   operation deadline is checked after it returns and cancellation only
+///   prevents later Concord work.
+/// * **Input sensitivity.** Bodies and factory state may be sensitive;
+///   implementations own logging and storage.
+/// * **Errors.** Return a [`BodyError`]; core reduces it to
+///   [`BodyErrorKind::Factory`] and never copies it into diagnostics.
+/// * **Resource obligations.** Implementations must bound CPU, memory,
+///   retries, spawned tasks, metric cardinality and external I/O. Every
+///   returned stream crosses the same core-owned empty-chunk, byte-limit and
+///   length-hint boundary as a direct [`RequestStream`].
+/// * **Negative capabilities.** A factory cannot choose the request
+///   `Content-Type` (use [`PreparedBody::content_type`]), cannot observe
+///   credentials, headers or the native request, and cannot grant an extra
+///   attempt or a safe effect.
 pub trait BodyFactory: Send + Sync + 'static {
-    /// Returns the stable content type for every body produced by this factory.
-    fn content_type(&self) -> Option<HeaderValue> {
-        None
-    }
-
     /// Creates one fresh request stream for the current Concord attempt.
     fn create(&self) -> Result<RequestStream, BodyError>;
 }
 
-/// Opaque explicit request body used by the shared body architecture.
+/// The one core-owned managed request body.
 ///
-/// Stream, factory, and multipart-backed variants converge on one final
-/// managed stream. Empty chunks are suppressed before native transport and
-/// bounded independently of the nonempty byte and exact-length accounting.
-pub struct RequestBody {
-    value: RequestBodyValue,
+/// `PreparedBody` is the sole authority for a request body's source, its exact
+/// `Content-Type` (if any), its trustworthy length information and its
+/// mechanical replay capability. A
+/// [`RequestRepresentation`](super::RequestRepresentation) returns exactly one
+/// value from `prepare`; there is no second metadata callback that could
+/// disagree with it.
+///
+/// * [`PreparedBody::empty`] and [`PreparedBody::bytes`] are mechanically
+///   replayable.
+/// * [`PreparedBody::stream`] is one-shot: it is never automatically replayed.
+/// * [`PreparedBody::factory`] is reconstructible through a
+///   [`BodyFactory`].
+/// * Multipart bodies (feature `multipart`) generate and validate their
+///   boundary once, during preparation, and retain it for every replay.
+///
+/// Mechanical replayability never makes a POST safe or idempotent; effect and
+/// dispatch gates are evaluated separately by the executor. Length hints
+/// ([`LengthHint`]) are validated against observed production: an excess,
+/// truncated or otherwise dishonest body fails with a [`BodyError`] and the
+/// operation error records truthful dispatch knowledge. Known lengths are
+/// checked against the configured request-body limit before credentials,
+/// rate admission or dispatch.
+///
+/// Automatic `Debug` output is structural and never prints body bytes, stream
+/// state, filenames or part values.
+pub struct PreparedBody {
+    source: BodySource,
     content_type: Option<HeaderValue>,
 }
 
-enum RequestBodyValue {
+enum BodySource {
     Empty,
     Bytes(Bytes),
     Stream(Mutex<Option<RequestStream>>),
-    Factory {
-        factory: Arc<dyn BodyFactory>,
-        default_content_type: Result<Option<HeaderValue>, BodyErrorKind>,
+    Factory(Arc<dyn BodyFactory>),
+    #[cfg(feature = "multipart")]
+    Multipart {
+        recipe: Mutex<Option<MultipartBody>>,
+        boundary: MultipartBoundary,
+        framing: MultipartFraming,
     },
     #[cfg(feature = "multipart")]
-    Multipart(Mutex<Option<MultipartBody>>),
-    #[cfg(feature = "multipart")]
-    MultipartFactory(Arc<dyn MultipartFactory>),
+    MultipartFactory {
+        factory: Arc<dyn MultipartFactory>,
+        boundary: MultipartBoundary,
+    },
 }
 
-impl RequestBody {
-    /// Creates a reusable empty body.
+impl PreparedBody {
+    /// Creates an explicitly empty, mechanically replayable body.
+    ///
+    /// An empty prepared body produces zero bytes and owns no `Content-Type`
+    /// unless [`PreparedBody::content_type`] adds one.
     #[must_use]
     pub const fn empty() -> Self {
         Self {
-            value: RequestBodyValue::Empty,
+            source: BodySource::Empty,
             content_type: None,
         }
     }
 
-    /// Creates a reusable body from complete bytes.
+    /// Creates a mechanically replayable body from complete bytes.
     #[must_use]
-    pub fn bytes(value: Bytes) -> Self {
+    pub fn bytes(bytes: Bytes) -> Self {
         Self {
-            value: RequestBodyValue::Bytes(value),
+            source: BodySource::Bytes(bytes),
             content_type: None,
         }
     }
 
     /// Creates a one-shot body from a lazy, empty-chunk-bounded stream.
+    ///
+    /// The stream is not polled until native transport begins. It is never
+    /// replayed automatically: policy retries and authentication recovery are
+    /// refused for a one-shot body.
     #[must_use]
-    pub fn stream(value: RequestStream) -> Self {
+    pub fn stream(input: RequestStream<Bytes>) -> Self {
         Self {
-            value: RequestBodyValue::Stream(Mutex::new(Some(value))),
+            source: BodySource::Stream(Mutex::new(Some(input))),
             content_type: None,
         }
     }
 
-    /// Creates a reconstructible body and captures its structural content type.
+    /// Creates a reconstructible stream body from a core-supported factory.
     ///
-    /// Each factory result uses the same final empty-chunk contract as a
-    /// directly supplied stream.
+    /// The factory is not called by this constructor. Core calls it once while
+    /// materializing the prepared body for the first attempt and once more for
+    /// each later admitted application attempt.
     #[must_use]
     pub fn factory<F>(factory: F) -> Self
     where
         F: BodyFactory,
     {
-        let default_content_type = factory
-            .content_type()
-            .map(validate_header_content_type)
-            .transpose()
-            .map_err(|error| error.kind());
         Self {
-            value: RequestBodyValue::Factory {
-                factory: Arc::new(factory),
-                default_content_type,
-            },
+            source: BodySource::Factory(Arc::new(factory)),
             content_type: None,
         }
     }
 
-    /// Creates a multipart body whose replayability follows its parts.
+    /// Creates a multipart body and generates its boundary exactly once.
+    ///
+    /// The recipe is structurally validated, a fresh boundary is generated
+    /// and validated against the retained buffered parts, and the exact
+    /// `multipart/form-data; boundary=...` media type is recorded. The same
+    /// boundary is used for the header and for every serialized byte of every
+    /// replay. A recipe containing a streaming part is one-shot; a recipe of
+    /// text/bytes parts is mechanically replayable.
     #[cfg(feature = "multipart")]
-    #[must_use]
-    pub fn multipart(value: MultipartBody) -> Self {
-        Self {
-            value: RequestBodyValue::Multipart(Mutex::new(Some(value))),
-            content_type: None,
-        }
+    pub fn multipart(input: MultipartBody) -> Result<Self, BodyError> {
+        let boundary = MultipartBoundary::generate_for(&input)?;
+        let framing = input.framing(&boundary)?;
+        let content_type = boundary.content_type()?;
+        Ok(Self {
+            source: BodySource::Multipart {
+                recipe: Mutex::new(Some(input)),
+                boundary,
+                framing,
+            },
+            content_type: Some(content_type),
+        })
     }
 
     /// Creates a reconstructible multipart body from a downstream factory.
+    ///
+    /// The boundary and exact media type are generated once by this
+    /// constructor and retained for every recipe the factory later creates.
+    /// The factory itself is first called while the body is materialized.
     #[cfg(feature = "multipart")]
-    #[must_use]
-    pub fn multipart_factory<F>(factory: F) -> Self
+    pub fn multipart_factory<F>(factory: F) -> Result<Self, BodyError>
     where
         F: MultipartFactory,
     {
-        Self {
-            value: RequestBodyValue::MultipartFactory(Arc::new(factory)),
-            content_type: None,
-        }
+        let boundary = MultipartBoundary::generate();
+        let content_type = boundary.content_type()?;
+        Ok(Self {
+            source: BodySource::MultipartFactory {
+                factory: Arc::new(factory),
+                boundary,
+            },
+            content_type: Some(content_type),
+        })
     }
 
-    /// Sets a validated top-level media type for a non-multipart body.
-    pub fn content_type(mut self, media_type: impl AsRef<str>) -> Result<Self, BodyError> {
-        #[cfg(feature = "multipart")]
-        if matches!(
-            &self.value,
-            RequestBodyValue::Multipart(_) | RequestBodyValue::MultipartFactory(_)
-        ) {
-            return Err(BodyError::new(BodyErrorKind::InvalidContentType));
+    /// Declares the body's exact `Content-Type` once.
+    ///
+    /// The value must be a concrete, syntactically valid media type (no `*`
+    /// wildcards, no control characters) of at most
+    /// [`MAX_REQUEST_CONTENT_TYPE_BYTES`] bytes. Repeating an identical value
+    /// is harmless; a conflicting value — including any value other than the
+    /// generated one on a multipart body — fails with
+    /// [`BodyErrorKind::InvalidContentType`] and never overwrites the
+    /// existing declaration.
+    pub fn content_type(mut self, value: &str) -> Result<Self, BodyError> {
+        let validated = validated_content_type(value)?;
+        match &self.content_type {
+            Some(existing) if *existing == validated => Ok(self),
+            Some(_) => Err(BodyError::new(BodyErrorKind::InvalidContentType)),
+            None => {
+                self.content_type = Some(validated);
+                Ok(self)
+            }
         }
-        self.content_type = Some(validated_content_type(media_type.as_ref())?);
-        Ok(self)
     }
 
     /// Returns the structural body kind without materializing the body.
     #[must_use]
     pub fn kind(&self) -> BodyKind {
-        match &self.value {
-            RequestBodyValue::Empty => BodyKind::Empty,
-            RequestBodyValue::Bytes(_) => BodyKind::Buffered,
-            RequestBodyValue::Stream(_) | RequestBodyValue::Factory { .. } => BodyKind::Stream,
+        match &self.source {
+            BodySource::Empty => BodyKind::Empty,
+            BodySource::Bytes(_) => BodyKind::Buffered,
+            BodySource::Stream(_) | BodySource::Factory(_) => BodyKind::Stream,
             #[cfg(feature = "multipart")]
-            RequestBodyValue::Multipart(_) | RequestBodyValue::MultipartFactory(_) => {
+            BodySource::Multipart { .. } | BodySource::MultipartFactory { .. } => {
                 BodyKind::Multipart
             }
         }
     }
+
+    /// Returns the exact validated `Content-Type` this body owns, if any.
+    #[must_use]
+    pub fn media_type(&self) -> Option<&str> {
+        self.content_type
+            .as_ref()
+            .and_then(|value| value.to_str().ok())
+    }
+
+    /// Returns trustworthy length information without polling or creating
+    /// any stream.
+    #[must_use]
+    pub fn length_hint(&self) -> LengthHint {
+        match &self.source {
+            BodySource::Empty => LengthHint::Exact(0),
+            BodySource::Bytes(bytes) => LengthHint::Exact(saturating_u64(bytes.len())),
+            BodySource::Stream(stream) => stream
+                .lock()
+                .ok()
+                .and_then(|stream| stream.as_ref().map(RequestStream::length_hint))
+                .unwrap_or(LengthHint::Unknown),
+            BodySource::Factory(_) => LengthHint::Unknown,
+            #[cfg(feature = "multipart")]
+            BodySource::Multipart { framing, .. } => framing.length_hint(),
+            #[cfg(feature = "multipart")]
+            BodySource::MultipartFactory { .. } => LengthHint::Unknown,
+        }
+    }
+
+    /// Returns whether core can mechanically replay or reconstruct this body
+    /// for another admitted application attempt.
+    ///
+    /// This is a mechanical capability only; it never grants a retry, a safe
+    /// effect or an additional attempt by itself.
+    #[must_use]
+    pub fn is_replayable(&self) -> bool {
+        match &self.source {
+            BodySource::Empty | BodySource::Bytes(_) | BodySource::Factory(_) => true,
+            BodySource::Stream(_) => false,
+            #[cfg(feature = "multipart")]
+            BodySource::Multipart { framing, .. } => framing.reusable(),
+            #[cfg(feature = "multipart")]
+            BodySource::MultipartFactory { .. } => true,
+        }
+    }
+
+    /// Materializes the one managed body for this operation or page.
+    ///
+    /// Known length information is checked against the configured positive
+    /// request-body limit here, before credentials, rate admission or
+    /// dispatch. The first factory stream or recipe is created here.
+    pub(crate) fn into_managed(self, limit: NonZeroUsize) -> Result<ManagedBody, BodyError> {
+        let hint = self.length_hint();
+        validate_hint_limit(hint, limit)?;
+        let content_type = self.content_type;
+        let source = match self.source {
+            BodySource::Empty => ManagedSource::Empty,
+            BodySource::Bytes(bytes) => ManagedSource::Bytes(bytes),
+            BodySource::Stream(stream) => {
+                let stream = stream
+                    .into_inner()
+                    .map_err(|_| BodyError::new(BodyErrorKind::Internal))?
+                    .ok_or_else(|| BodyError::new(BodyErrorKind::Internal))?;
+                let length = StreamLength::validated(&stream, limit)?;
+                ManagedSource::OneShotStream {
+                    body: Some(stream),
+                    length,
+                }
+            }
+            BodySource::Factory(factory) => {
+                let stream = create_factory_stream(factory.as_ref())?;
+                let length = StreamLength::validated(&stream, limit)?;
+                ManagedSource::StreamFactory {
+                    factory,
+                    current: Some(stream),
+                    length,
+                }
+            }
+            #[cfg(feature = "multipart")]
+            BodySource::Multipart {
+                recipe,
+                boundary,
+                framing,
+            } => {
+                let recipe = recipe
+                    .into_inner()
+                    .map_err(|_| BodyError::new(BodyErrorKind::Internal))?
+                    .ok_or_else(|| BodyError::new(BodyErrorKind::Internal))?;
+                if framing.reusable() {
+                    ManagedSource::ReplayableMultipart {
+                        recipe,
+                        boundary,
+                        framing,
+                    }
+                } else {
+                    ManagedSource::OneShotMultipart {
+                        body: Some(recipe),
+                        boundary,
+                        framing,
+                    }
+                }
+            }
+            #[cfg(feature = "multipart")]
+            BodySource::MultipartFactory { factory, boundary } => {
+                let (recipe, framing) = create_factory_recipe(factory.as_ref(), &boundary, limit)?;
+                ManagedSource::MultipartFactory {
+                    factory,
+                    current: Some(recipe),
+                    boundary,
+                    framing,
+                }
+            }
+        };
+        Ok(ManagedBody {
+            source,
+            content_type,
+        })
+    }
 }
 
-impl fmt::Debug for RequestBody {
+impl fmt::Debug for PreparedBody {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("RequestBody")
+            .debug_struct("PreparedBody")
             .field("kind", &self.kind())
-            .field(
-                "content_type",
-                &self.content_type.as_ref().map(|_| "<validated>"),
-            )
+            .field("has_content_type", &self.content_type.is_some())
+            .field("length_hint", &self.length_hint())
+            .field("replayable", &self.is_replayable())
             .field("value", &"<request body omitted>")
             .finish()
     }
 }
 
-impl RequestBody {
-    pub(crate) fn structural_metadata(&self) -> Result<RequestBodyMetadata, BodyError> {
-        #[cfg(feature = "multipart")]
-        if matches!(
-            &self.value,
-            RequestBodyValue::Multipart(_) | RequestBodyValue::MultipartFactory(_)
-        ) {
-            let length = match &self.value {
-                RequestBodyValue::Multipart(body) => {
-                    let body = body
-                        .lock()
-                        .map_err(|_| BodyError::new(BodyErrorKind::Internal))?;
-                    let body = body
-                        .as_ref()
-                        .ok_or_else(|| BodyError::new(BodyErrorKind::Internal))?;
-                    LengthHint::AtLeast(body.metadata()?.lower_bound)
-                }
-                RequestBodyValue::MultipartFactory(_) => LengthHint::Unknown,
-                _ => unreachable!("multipart branch checked above"),
-            };
-            return Ok(RequestBodyMetadata {
-                length,
-                content_type: RequestContentType::Generated,
-                kind: BodyKind::Multipart,
-            });
+fn validate_hint_limit(hint: LengthHint, limit: NonZeroUsize) -> Result<(), BodyError> {
+    let limit = saturating_u64(limit.get());
+    match hint {
+        LengthHint::Exact(length) | LengthHint::AtLeast(length) if length > limit => {
+            Err(BodyError::new(BodyErrorKind::LimitExceeded))
         }
+        _ => Ok(()),
+    }
+}
 
-        let content_type = match &self.content_type {
-            Some(value) => Some(value.clone()),
-            None => match &self.value {
-                RequestBodyValue::Factory {
-                    default_content_type,
-                    ..
-                } => default_content_type.clone().map_err(BodyError::new)?,
-                _ => None,
-            },
-        }
-        .map_or(RequestContentType::None, RequestContentType::Exact);
+fn create_factory_stream(factory: &dyn BodyFactory) -> Result<RequestStream, BodyError> {
+    factory.create().map_err(|error| {
+        drop(error);
+        BodyError::new(BodyErrorKind::Factory)
+    })
+}
 
-        let (kind, length) = match &self.value {
-            RequestBodyValue::Empty => (BodyKind::Empty, LengthHint::Exact(0)),
-            RequestBodyValue::Bytes(bytes) => (
-                BodyKind::Buffered,
-                LengthHint::Exact(u64::try_from(bytes.len()).unwrap_or(u64::MAX)),
-            ),
-            RequestBodyValue::Stream(body) => {
-                let body = body
-                    .lock()
-                    .map_err(|_| BodyError::new(BodyErrorKind::Internal))?;
-                let body = body
-                    .as_ref()
-                    .ok_or_else(|| BodyError::new(BodyErrorKind::Internal))?;
-                body.validate_metadata()?;
-                let length = match body.exact_length_value() {
-                    Some(length) => LengthHint::Exact(length),
-                    None => body
-                        .lower_bound()
-                        .map_or(LengthHint::Unknown, LengthHint::AtLeast),
-                };
-                (BodyKind::Stream, length)
-            }
-            RequestBodyValue::Factory { .. } => (BodyKind::Stream, LengthHint::Unknown),
-            #[cfg(feature = "multipart")]
-            RequestBodyValue::Multipart(_) | RequestBodyValue::MultipartFactory(_) => {
-                unreachable!("multipart branch returned above")
-            }
-        };
-        Ok(RequestBodyMetadata {
-            length,
-            content_type,
-            kind,
+#[cfg(feature = "multipart")]
+fn create_factory_recipe(
+    factory: &dyn MultipartFactory,
+    boundary: &MultipartBoundary,
+    limit: NonZeroUsize,
+) -> Result<(MultipartBody, MultipartFraming), BodyError> {
+    let recipe = factory.create().map_err(|error| {
+        drop(error);
+        BodyError::new(BodyErrorKind::Factory)
+    })?;
+    let framing = recipe.framing(boundary)?;
+    if recipe.contains_delimiter(boundary) {
+        return Err(BodyError::new(BodyErrorKind::Multipart));
+    }
+    validate_hint_limit(framing.length_hint(), limit)?;
+    Ok((recipe, framing))
+}
+
+/// Validated exact and minimum length facts of one stream source.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct StreamLength {
+    exact: Option<u64>,
+    minimum: Option<u64>,
+}
+
+impl StreamLength {
+    fn validated(stream: &RequestStream, limit: NonZeroUsize) -> Result<Self, BodyError> {
+        stream.validate_metadata()?;
+        validate_hint_limit(stream.length_hint(), limit)?;
+        Ok(Self {
+            exact: stream.exact_length_value(),
+            minimum: stream.lower_bound(),
         })
     }
 
-    pub(crate) fn into_prepared(self, limit: NonZeroUsize) -> Result<PreparedBody, BodyError> {
-        match self.value {
-            RequestBodyValue::Empty => Ok(PreparedBody::Empty),
-            RequestBodyValue::Bytes(bytes) => {
-                if bytes.len() > limit.get() {
-                    return Err(BodyError::new(BodyErrorKind::LimitExceeded));
-                }
-                Ok(PreparedBody::ReusableBytes(bytes))
-            }
-            RequestBodyValue::Stream(body) => {
-                let body = body
-                    .into_inner()
-                    .map_err(|_| BodyError::new(BodyErrorKind::Internal))?
-                    .ok_or_else(|| BodyError::new(BodyErrorKind::Internal))?;
-                let exact_length = validate_stream_limit(&body, limit)?;
-                Ok(PreparedBody::OneShotStream {
-                    body: Some(body),
-                    exact_length,
-                })
-            }
-            RequestBodyValue::Factory { factory, .. } => {
-                let body = factory.create().map_err(|error| {
-                    drop(error);
-                    BodyError::new(BodyErrorKind::Factory)
-                })?;
-                let exact_length = validate_stream_limit(&body, limit)?;
-                Ok(PreparedBody::StreamFactory {
-                    factory,
-                    current: Some(body),
-                    exact_length,
-                })
-            }
-            #[cfg(feature = "multipart")]
-            RequestBodyValue::Multipart(body) => {
-                let body = body
-                    .into_inner()
-                    .map_err(|_| BodyError::new(BodyErrorKind::Internal))?
-                    .ok_or_else(|| BodyError::new(BodyErrorKind::Internal))?;
-                materialize_multipart(body, limit)
-            }
-            #[cfg(feature = "multipart")]
-            RequestBodyValue::MultipartFactory(factory) => {
-                let body = factory.create().map_err(|error| {
-                    drop(error);
-                    BodyError::new(BodyErrorKind::Factory)
-                })?;
-                validate_multipart_limit(&body, limit)?;
-                Ok(PreparedBody::MultipartFactory {
-                    factory,
-                    current: Some(body),
-                })
-            }
+    fn hint(self) -> LengthHint {
+        match (self.exact, self.minimum) {
+            (Some(exact), _) => LengthHint::Exact(exact),
+            (None, Some(minimum)) => LengthHint::AtLeast(minimum),
+            (None, None) => LengthHint::Unknown,
         }
     }
 }
 
-fn validate_stream_limit(
-    body: &RequestStream,
-    limit: NonZeroUsize,
-) -> Result<Option<u64>, BodyError> {
-    body.validate_metadata()?;
-    let limit = u64::try_from(limit.get()).unwrap_or(u64::MAX);
-    if body
-        .exact_length_value()
-        .is_some_and(|length| length > limit)
-        || body.lower_bound().is_some_and(|length| length > limit)
-    {
-        return Err(BodyError::new(BodyErrorKind::LimitExceeded));
-    }
-    Ok(body.exact_length_value())
+/// The one private materialized application body of an operation or page.
+pub(crate) struct ManagedBody {
+    source: ManagedSource,
+    content_type: Option<HeaderValue>,
 }
 
-#[cfg(feature = "multipart")]
-fn multipart_body_metadata(body: &MultipartBody) -> Result<(Replayability, u64), BodyError> {
-    let metadata = body.metadata()?;
-    Ok((
-        if metadata.reusable {
-            Replayability::Reusable
-        } else {
-            Replayability::OneShot
-        },
-        metadata.lower_bound,
-    ))
-}
-
-#[cfg(feature = "multipart")]
-fn materialize_multipart(
-    body: MultipartBody,
-    limit: NonZeroUsize,
-) -> Result<PreparedBody, BodyError> {
-    let (replayability, _) = validate_multipart_limit(&body, limit)?;
-    if replayability == Replayability::Reusable {
-        Ok(PreparedBody::ReplayableMultipart { recipe: body })
-    } else {
-        Ok(PreparedBody::OneShotMultipart { body: Some(body) })
-    }
-}
-
-#[cfg(feature = "multipart")]
-fn validate_multipart_limit(
-    body: &MultipartBody,
-    limit: NonZeroUsize,
-) -> Result<(Replayability, u64), BodyError> {
-    let metadata = multipart_body_metadata(body)?;
-    if metadata.1 > u64::try_from(limit.get()).unwrap_or(u64::MAX) {
-        return Err(BodyError::new(BodyErrorKind::LimitExceeded));
-    }
-    Ok(metadata)
-}
-
-/// The one private materialized application-body representation.
-#[doc(hidden)]
-pub(crate) enum PreparedBody {
+enum ManagedSource {
     Empty,
-    ReusableBytes(Bytes),
+    Bytes(Bytes),
     OneShotStream {
         body: Option<RequestStream>,
-        exact_length: Option<u64>,
+        length: StreamLength,
     },
     StreamFactory {
         factory: Arc<dyn BodyFactory>,
         current: Option<RequestStream>,
-        exact_length: Option<u64>,
+        length: StreamLength,
     },
     #[cfg(feature = "multipart")]
     ReplayableMultipart {
         recipe: MultipartBody,
+        boundary: MultipartBoundary,
+        framing: MultipartFraming,
     },
     #[cfg(feature = "multipart")]
     OneShotMultipart {
         body: Option<MultipartBody>,
+        boundary: MultipartBoundary,
+        framing: MultipartFraming,
     },
     #[cfg(feature = "multipart")]
     MultipartFactory {
         factory: Arc<dyn MultipartFactory>,
         current: Option<MultipartBody>,
+        boundary: MultipartBoundary,
+        framing: MultipartFraming,
     },
 }
 
-impl PreparedBody {
+impl ManagedBody {
     pub(crate) const fn kind(&self) -> BodyKind {
-        match self {
-            Self::Empty => BodyKind::Empty,
-            Self::ReusableBytes(_) => BodyKind::Buffered,
-            Self::OneShotStream { .. } | Self::StreamFactory { .. } => BodyKind::Stream,
+        match &self.source {
+            ManagedSource::Empty => BodyKind::Empty,
+            ManagedSource::Bytes(_) => BodyKind::Buffered,
+            ManagedSource::OneShotStream { .. } | ManagedSource::StreamFactory { .. } => {
+                BodyKind::Stream
+            }
             #[cfg(feature = "multipart")]
-            Self::ReplayableMultipart { .. }
-            | Self::OneShotMultipart { .. }
-            | Self::MultipartFactory { .. } => BodyKind::Multipart,
+            ManagedSource::ReplayableMultipart { .. }
+            | ManagedSource::OneShotMultipart { .. }
+            | ManagedSource::MultipartFactory { .. } => BodyKind::Multipart,
         }
     }
 
+    /// Returns the exact body-owned `Content-Type`, if any.
+    pub(crate) const fn content_type(&self) -> Option<&HeaderValue> {
+        self.content_type.as_ref()
+    }
+
     pub(crate) const fn replayability(&self) -> Replayability {
-        match self {
-            Self::Empty | Self::ReusableBytes(_) => Replayability::Reusable,
-            Self::OneShotStream { .. } => Replayability::OneShot,
-            Self::StreamFactory { .. } => Replayability::Reconstructible,
+        match &self.source {
+            ManagedSource::Empty | ManagedSource::Bytes(_) => Replayability::Reusable,
+            ManagedSource::OneShotStream { .. } => Replayability::OneShot,
+            ManagedSource::StreamFactory { .. } => Replayability::Reconstructible,
             #[cfg(feature = "multipart")]
-            Self::ReplayableMultipart { .. } => Replayability::Reusable,
+            ManagedSource::ReplayableMultipart { .. } => Replayability::Reusable,
             #[cfg(feature = "multipart")]
-            Self::OneShotMultipart { .. } => Replayability::OneShot,
+            ManagedSource::OneShotMultipart { .. } => Replayability::OneShot,
             #[cfg(feature = "multipart")]
-            Self::MultipartFactory { .. } => Replayability::Reconstructible,
+            ManagedSource::MultipartFactory { .. } => Replayability::Reconstructible,
+        }
+    }
+
+    /// Returns the length facts of the body the next attempt will send.
+    ///
+    /// A reconstructible body whose current stream or recipe was already
+    /// consumed reports `Unknown` until the factory creates the next one, so
+    /// observers never see a previous attempt's length as a promise.
+    pub(crate) fn length_hint(&self) -> LengthHint {
+        match &self.source {
+            ManagedSource::Empty => LengthHint::Exact(0),
+            ManagedSource::Bytes(bytes) => LengthHint::Exact(saturating_u64(bytes.len())),
+            ManagedSource::OneShotStream { length, .. } => length.hint(),
+            ManagedSource::StreamFactory {
+                current: Some(_),
+                length,
+                ..
+            } => length.hint(),
+            ManagedSource::StreamFactory { current: None, .. } => LengthHint::Unknown,
+            #[cfg(feature = "multipart")]
+            ManagedSource::ReplayableMultipart { framing, .. }
+            | ManagedSource::OneShotMultipart { framing, .. }
+            | ManagedSource::MultipartFactory {
+                current: Some(_),
+                framing,
+                ..
+            } => framing.length_hint(),
+            #[cfg(feature = "multipart")]
+            ManagedSource::MultipartFactory { current: None, .. } => LengthHint::Unknown,
         }
     }
 
     pub(crate) fn known_length(&self) -> Option<u64> {
-        match self {
-            Self::Empty => Some(0),
-            Self::ReusableBytes(bytes) => Some(u64::try_from(bytes.len()).unwrap_or(u64::MAX)),
-            Self::OneShotStream { exact_length, .. } | Self::StreamFactory { exact_length, .. } => {
-                *exact_length
-            }
-            #[cfg(feature = "multipart")]
-            Self::ReplayableMultipart { .. }
-            | Self::OneShotMultipart { .. }
-            | Self::MultipartFactory { .. } => None,
+        match self.length_hint() {
+            LengthHint::Exact(length) => Some(length),
+            LengthHint::AtLeast(_) | LengthHint::Unknown => None,
         }
     }
 
     pub(crate) fn prepare_native(&mut self, limit: NonZeroUsize) -> Result<NativeBody, BodyError> {
-        match self {
-            Self::Empty => Ok(NativeBody::Empty),
-            Self::ReusableBytes(bytes) => Ok(NativeBody::Bytes(bytes.clone())),
-            Self::OneShotStream { body, exact_length } => {
+        match &mut self.source {
+            ManagedSource::Empty => Ok(NativeBody::Empty),
+            ManagedSource::Bytes(bytes) => Ok(NativeBody::Bytes(bytes.clone())),
+            ManagedSource::OneShotStream { body, length } => {
                 let body = body
                     .take()
                     .ok_or_else(|| BodyError::new(BodyErrorKind::InvalidLength))?;
-                Ok(stream_native(body, *exact_length, limit))
+                Ok(stream_native_with_length(body, *length, limit))
             }
-            Self::StreamFactory {
+            ManagedSource::StreamFactory {
+                current, length, ..
+            } => {
+                let body = current
+                    .take()
+                    .ok_or_else(|| BodyError::new(BodyErrorKind::Factory))?;
+                Ok(stream_native_with_length(body, *length, limit))
+            }
+            #[cfg(feature = "multipart")]
+            ManagedSource::ReplayableMultipart {
+                recipe,
+                boundary,
+                framing,
+            } => {
+                let body = recipe
+                    .clone_reusable()?
+                    .ok_or_else(|| BodyError::new(BodyErrorKind::Multipart))?;
+                multipart_native(body, boundary, *framing, limit)
+            }
+            #[cfg(feature = "multipart")]
+            ManagedSource::OneShotMultipart {
+                body,
+                boundary,
+                framing,
+            } => {
+                let body = body
+                    .take()
+                    .ok_or_else(|| BodyError::new(BodyErrorKind::Multipart))?;
+                multipart_native(body, boundary, *framing, limit)
+            }
+            #[cfg(feature = "multipart")]
+            ManagedSource::MultipartFactory {
                 current,
-                exact_length,
+                boundary,
+                framing,
                 ..
             } => {
                 let body = current
                     .take()
                     .ok_or_else(|| BodyError::new(BodyErrorKind::Factory))?;
-                Ok(stream_native(body, *exact_length, limit))
-            }
-            #[cfg(feature = "multipart")]
-            Self::ReplayableMultipart { recipe } => {
-                let body = recipe
-                    .clone_reusable()?
-                    .ok_or_else(|| BodyError::new(BodyErrorKind::Multipart))?;
-                Ok(NativeBody::Multipart {
-                    form: body.into_form(limit)?,
-                    limit,
-                })
-            }
-            #[cfg(feature = "multipart")]
-            Self::OneShotMultipart { body } => {
-                let body = body
-                    .take()
-                    .ok_or_else(|| BodyError::new(BodyErrorKind::Multipart))?;
-                Ok(NativeBody::Multipart {
-                    form: body.into_form(limit)?,
-                    limit,
-                })
-            }
-            #[cfg(feature = "multipart")]
-            Self::MultipartFactory { current, .. } => {
-                let body = current
-                    .take()
-                    .ok_or_else(|| BodyError::new(BodyErrorKind::Factory))?;
-                Ok(NativeBody::Multipart {
-                    form: body.into_form(limit)?,
-                    limit,
-                })
+                multipart_native(body, boundary, *framing, limit)
             }
         }
     }
 
+    /// Reconstructs the body for another admitted application attempt
+    /// through its mechanical replay capability. The request representation
+    /// is never called again.
     pub(crate) fn reconstruct_for_next_attempt(
         &mut self,
         limit: NonZeroUsize,
     ) -> Result<(), BodyError> {
-        match self {
-            Self::Empty | Self::ReusableBytes(_) => Ok(()),
-            Self::OneShotStream { .. } => Err(BodyError::new(BodyErrorKind::InvalidLength)),
-            Self::StreamFactory {
+        match &mut self.source {
+            ManagedSource::Empty | ManagedSource::Bytes(_) => Ok(()),
+            ManagedSource::OneShotStream { .. } => {
+                Err(BodyError::new(BodyErrorKind::InvalidLength))
+            }
+            ManagedSource::StreamFactory {
                 factory,
                 current,
-                exact_length,
+                length,
             } => {
-                let body = factory.create().map_err(|error| {
-                    drop(error);
-                    BodyError::new(BodyErrorKind::Factory)
-                })?;
-                *exact_length = validate_stream_limit(&body, limit)?;
+                let body = create_factory_stream(factory.as_ref())?;
+                *length = StreamLength::validated(&body, limit)?;
                 *current = Some(body);
                 Ok(())
             }
             #[cfg(feature = "multipart")]
-            Self::ReplayableMultipart { .. } => Ok(()),
+            ManagedSource::ReplayableMultipart { .. } => Ok(()),
             #[cfg(feature = "multipart")]
-            Self::OneShotMultipart { .. } => Err(BodyError::new(BodyErrorKind::Multipart)),
+            ManagedSource::OneShotMultipart { .. } => Err(BodyError::new(BodyErrorKind::Multipart)),
             #[cfg(feature = "multipart")]
-            Self::MultipartFactory { factory, current } => {
-                let body = factory.create().map_err(|error| {
-                    drop(error);
-                    BodyError::new(BodyErrorKind::Factory)
-                })?;
-                validate_multipart_limit(&body, limit)?;
-                *current = Some(body);
+            ManagedSource::MultipartFactory {
+                factory,
+                current,
+                boundary,
+                framing,
+            } => {
+                let (recipe, next_framing) =
+                    create_factory_recipe(factory.as_ref(), boundary, limit)?;
+                *framing = next_framing;
+                *current = Some(recipe);
                 Ok(())
             }
         }
@@ -554,11 +664,6 @@ pub(crate) enum NativeBody {
         body: reqwest::Body,
         known_length: Option<u64>,
         failure: BodyFailureState,
-    },
-    #[cfg(feature = "multipart")]
-    Multipart {
-        form: reqwest::multipart::Form,
-        limit: NonZeroUsize,
     },
 }
 
@@ -587,99 +692,114 @@ impl BodyFailureState {
     }
 }
 
-pub(super) fn stream_native(
+/// Wraps one request stream in the managed native body with an explicit exact
+/// length; the stream's own declared minimum is also enforced.
+#[cfg(test)]
+fn stream_native(
     body: RequestStream,
     exact_length: Option<u64>,
     limit: NonZeroUsize,
 ) -> NativeBody {
+    let minimum = body.lower_bound();
+    stream_native_with_length(
+        body,
+        StreamLength {
+            exact: exact_length,
+            minimum,
+        },
+        limit,
+    )
+}
+
+fn stream_native_with_length(
+    body: RequestStream,
+    length: StreamLength,
+    limit: NonZeroUsize,
+) -> NativeBody {
+    native_from_source(body.into_source(), length, limit)
+}
+
+fn native_from_source(
+    source: super::stream::BodyStream,
+    length: StreamLength,
+    limit: NonZeroUsize,
+) -> NativeBody {
     let failure = BodyFailureState::default();
-    let stream = managed_request_stream(body.into_source(), exact_length, limit, failure.clone());
+    let stream = managed_request_stream_with_minimum(
+        source,
+        length.exact,
+        length.minimum,
+        limit,
+        failure.clone(),
+    );
     NativeBody::Stream {
         body: reqwest::Body::wrap_stream(stream),
-        known_length: exact_length,
+        known_length: length.exact,
         failure,
     }
 }
 
 #[cfg(feature = "multipart")]
-pub(crate) fn wrap_multipart_native_body(
-    body: reqwest::Body,
-    exact_length: Option<u64>,
+fn multipart_native(
+    body: MultipartBody,
+    boundary: &MultipartBoundary,
+    framing: MultipartFraming,
     limit: NonZeroUsize,
-) -> (reqwest::Body, BodyFailureState) {
-    let failure = BodyFailureState::default();
-    let source = Box::pin(NativeMultipartStream {
-        source: Box::pin(body),
-        finished: false,
-    });
-    let stream = managed_request_stream(source, exact_length, limit, failure.clone());
-    (reqwest::Body::wrap_stream(stream), failure)
+) -> Result<NativeBody, BodyError> {
+    let source = body.into_stream(boundary)?;
+    let (exact, minimum) = framing.bounds();
+    Ok(native_from_source(
+        source,
+        StreamLength {
+            exact,
+            minimum: Some(minimum),
+        },
+        limit,
+    ))
 }
 
+#[cfg(test)]
 fn managed_request_stream(
     source: super::stream::BodyStream,
     exact_length: Option<u64>,
     limit: NonZeroUsize,
     failure: BodyFailureState,
 ) -> ManagedRequestStream {
+    managed_request_stream_with_minimum(source, exact_length, None, limit, failure)
+}
+
+fn managed_request_stream_with_minimum(
+    source: super::stream::BodyStream,
+    exact_length: Option<u64>,
+    minimum_length: Option<u64>,
+    limit: NonZeroUsize,
+    failure: BodyFailureState,
+) -> ManagedRequestStream {
     ManagedRequestStream {
         source: Some(source),
         exact_length,
-        limit: u64::try_from(limit.get()).unwrap_or(u64::MAX),
+        minimum_length,
+        limit: saturating_u64(limit.get()),
         observed: 0,
         empty_chunks_seen: 0,
+        final_chunk: None,
         finished: false,
         failure,
-    }
-}
-
-#[cfg(feature = "multipart")]
-struct NativeMultipartStream {
-    source: std::pin::Pin<Box<reqwest::Body>>,
-    finished: bool,
-}
-
-#[cfg(feature = "multipart")]
-impl Stream for NativeMultipartStream {
-    type Item = Result<Bytes, BodyError>;
-
-    fn poll_next(
-        self: std::pin::Pin<&mut Self>,
-        context: &mut Context<'_>,
-    ) -> Poll<Option<Self::Item>> {
-        use http_body::Body as _;
-
-        let this = self.get_mut();
-        if this.finished {
-            return Poll::Ready(None);
-        }
-        loop {
-            match this.source.as_mut().poll_frame(context) {
-                Poll::Pending => return Poll::Pending,
-                Poll::Ready(Some(Ok(frame))) => match frame.into_data() {
-                    Ok(bytes) => return Poll::Ready(Some(Ok(bytes))),
-                    Err(_non_data_frame) => continue,
-                },
-                Poll::Ready(Some(Err(error))) => {
-                    drop(error);
-                    this.finished = true;
-                    return Poll::Ready(Some(Err(BodyError::new(BodyErrorKind::Multipart))));
-                }
-                Poll::Ready(None) => {
-                    this.finished = true;
-                    return Poll::Ready(None);
-                }
-            }
-        }
     }
 }
 
 struct ManagedRequestStream {
     source: Option<super::stream::BodyStream>,
     exact_length: Option<u64>,
+    minimum_length: Option<u64>,
     limit: u64,
     observed: u64,
     empty_chunks_seen: usize,
+    // Native Content-Length framing may stop polling after the declared
+    // bytes. Retain at most the chunk reaching that boundary until source EOF
+    // proves the exact length; no extra buffer or eager source polling is
+    // needed. Empty-chunk and operation limits still govern that final read.
+    final_chunk: Option<Bytes>,
     finished: bool,
     failure: BodyFailureState,
 }
@@ -688,6 +808,7 @@ impl ManagedRequestStream {
     fn fail(&mut self, kind: BodyErrorKind) -> Poll<Option<Result<Bytes, BodyError>>> {
         self.finished = true;
         self.source = None;
+        self.final_chunk = None;
         self.failure.record(kind);
         Poll::Ready(Some(Err(BodyError::new(kind))))
     }
@@ -735,10 +856,7 @@ impl Stream for ManagedRequestStream {
                     }
                 }
                 Poll::Ready(Some(Ok(bytes))) => {
-                    let Some(next) = this
-                        .observed
-                        .checked_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX))
-                    else {
+                    let Some(next) = this.observed.checked_add(saturating_u64(bytes.len())) else {
                         return this.fail(BodyErrorKind::LimitExceeded);
                     };
                     if this.exact_length.is_some_and(|exact| next > exact) {
@@ -748,25 +866,36 @@ impl Stream for ManagedRequestStream {
                         return this.fail(BodyErrorKind::LimitExceeded);
                     }
                     this.observed = next;
+                    if this.exact_length == Some(next) {
+                        this.final_chunk = Some(bytes);
+                        continue;
+                    }
                     return Poll::Ready(Some(Ok(bytes)));
                 }
                 Poll::Ready(None) => {
                     if this
                         .exact_length
                         .is_some_and(|exact| this.observed != exact)
+                        || this
+                            .minimum_length
+                            .is_some_and(|minimum| this.observed < minimum)
                     {
                         return this.fail(BodyErrorKind::InvalidLength);
                     }
                     this.finished = true;
                     this.source = None;
-                    return Poll::Ready(None);
+                    return Poll::Ready(this.final_chunk.take().map(Ok));
                 }
             }
         }
     }
 }
 
+/// Validates one concrete request media type and returns its header value.
 pub(crate) fn validated_content_type(value: &str) -> Result<HeaderValue, BodyError> {
+    if value.is_empty() || value.len() > MAX_REQUEST_CONTENT_TYPE_BYTES {
+        return Err(BodyError::new(BodyErrorKind::InvalidContentType));
+    }
     let parsed = mime::Mime::from_str(value)
         .map_err(|_| BodyError::new(BodyErrorKind::InvalidContentType))?;
     if parsed.type_() == mime::STAR || parsed.subtype() == mime::STAR {
@@ -775,12 +904,8 @@ pub(crate) fn validated_content_type(value: &str) -> Result<HeaderValue, BodyErr
     HeaderValue::from_str(value).map_err(|_| BodyError::new(BodyErrorKind::InvalidContentType))
 }
 
-fn validate_header_content_type(value: HeaderValue) -> Result<HeaderValue, BodyError> {
-    let text = value
-        .to_str()
-        .map_err(|_| BodyError::new(BodyErrorKind::InvalidContentType))?;
-    validated_content_type(text)?;
-    Ok(value)
+fn saturating_u64(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 const fn body_error_code(kind: BodyErrorKind) -> u8 {

@@ -1,163 +1,136 @@
 use super::*;
 
-#[tokio::test]
-async fn selected_limiter_receives_explicit_page_origins_while_observers_stay_value_free() {
-    const INITIAL: &str = "page-host-initial-sentinel-73190584";
-    const SECOND: &str = "page-host-second-sentinel-10827319";
-    const THIRD: &str = "page-host-third-sentinel-46205731";
-
-    let executor = DeterministicExecutor::new();
-    for (host, cursor, response) in [
-        (
-            INITIAL,
-            INITIAL,
-            format!("first-item-sentinel-a38f|{SECOND}"),
-        ),
-        (SECOND, SECOND, format!("second-item-sentinel-b49e|{THIRD}")),
-    ] {
-        executor
-            .application()
-            .queue_expected_response(
-                ExpectedRequest::new()
-                    .native_url(format!(
-                        "http://{host}.pagination-runtime.example.test/v1/host-rate-items?stable=public&cursor={cursor}"
-                    ))
-                    .header(
-                        http::HeaderName::from_static("x-page-cursor"),
-                        http::HeaderValue::from_str(cursor).expect("cursor header"),
-                    ),
-                ScriptedResponse::success(Bytes::from(response)),
-            )
-            .expect("host page response");
-    }
-
-    let hooks = Arc::new(PaginationProbe::default());
-    let limiter = Arc::new(HostLimiterProbe::default());
-    let configured_limiter: Arc<dyn RateLimiter> = limiter.clone();
-    let debug = Arc::new(Mutex::new(Vec::new()));
-    let core = ClientCore::build_with_development(
-        "http://pagination-runtime.example.test/v1/",
+fn forbidden_destination_core(
+    executor: &DeterministicExecutor,
+    hooks: Arc<PaginationProbe>,
+    limiter: Arc<LimiterProbe>,
+    debug: Arc<Mutex<Vec<String>>>,
+) -> ClientCore {
+    let limiter: Arc<dyn RateLimiter> = limiter;
+    ClientCore::build_with_development(
+        BASE,
         HttpConfigBuilder::new().http1_only(),
         RuntimeConfigBuilder::new()
             .operation_observer(hooks.clone())
             .operation_observer(hooks.clone())
-            .operation_observer(hooks.clone())
-            .rate_limiter(configured_limiter)
+            .operation_observer(hooks)
+            .rate_limiter(limiter)
             .debug(DebugLevel::Headers),
-        &executor,
+        executor,
     )
-    .expect("host pagination core")
-    .with_debug_output(Arc::clone(&debug));
+    .expect("forbidden-destination core")
+    .with_debug_output(debug)
+}
 
-    let error = pagination_error(
-        paginate_with(
-            Request::new(
-                core,
-                HostRateEndpoint {
-                    host: INITIAL.to_owned(),
-                },
-            ),
-            PageLimit::CompleteWithin(NonZeroU32::new(2).expect("completion limit")),
-        )
-        .await,
-    );
-    assert_eq!(
-        error.pagination_kind(),
-        Some(PaginationErrorKind::CompletionLimitExceeded)
-    );
+/// A continuation may not move the logical origin or a rate-limit dimension:
+/// the page that proposed it is withheld and the forbidden request is never
+/// prepared for dispatch. Observers, errors and debug output stay value-free.
+#[tokio::test]
+async fn continuations_cannot_change_origin_or_rate_dimensions() {
+    const INITIAL: &str = "page-host-initial-sentinel-73190584";
+    const SECOND: &str = "page-host-second-sentinel-10827319";
 
-    let acquisitions = limiter
-        .acquisitions
-        .lock()
-        .expect("host limiter acquisitions");
-    let observations = limiter
-        .observations
-        .lock()
-        .expect("host limiter observations");
-    assert_eq!(observations.as_slice(), acquisitions.as_slice());
-    assert_eq!(
-        acquisitions
-            .iter()
-            .map(|context| context.0)
-            .collect::<Vec<_>>(),
-        [0, 1]
-    );
-    let initial_host = format!("{INITIAL}.pagination-runtime.example.test");
-    let second_host = format!("{SECOND}.pagination-runtime.example.test");
-    let initial_origin = format!("http://{initial_host}:80");
-    let second_origin = format!("http://{second_host}:80");
-    let canonical = |value: &str| {
-        crate::rate_limit::encode_canonical(
-            &value.to_owned(),
-            crate::rate_limit::MAX_RATE_LIMIT_KEY_BYTES,
-        )
-        .expect("canonical test value")
-        .into_vec()
-    };
-    assert_eq!(acquisitions[0].1.as_deref(), Some(initial_origin.as_str()));
-    assert_eq!(acquisitions[1].1.as_deref(), Some(second_origin.as_str()));
-    assert_ne!(acquisitions[0].1, acquisitions[1].1);
-    assert_eq!(
-        acquisitions[0].2,
-        [
-            ("origin".to_owned(), canonical(&initial_origin)),
-            ("endpoint.host".to_owned(), canonical(INITIAL)),
-        ]
-    );
-    assert_eq!(
-        acquisitions[1].2,
-        [
-            ("origin".to_owned(), canonical(&second_origin)),
-            ("endpoint.host".to_owned(), canonical(SECOND)),
-        ]
-    );
-
-    let mut automatic = Vec::new();
-    automatic.extend(
-        hooks
-            .before
-            .lock()
-            .expect("before")
-            .iter()
-            .map(|record| record.safe.clone()),
-    );
-    automatic.extend(
-        hooks
-            .response
-            .lock()
-            .expect("response")
-            .iter()
-            .map(|record| record.5.clone()),
-    );
-    automatic.extend(
-        hooks
-            .completion
-            .lock()
-            .expect("completion")
-            .iter()
-            .map(|record| record.safe.clone()),
-    );
-    automatic.push(debug.lock().expect("debug").join("\n"));
-    automatic.push(format!("{error} {error:?}"));
-    automatic.extend(
+    for (move_host, expected) in [
+        (true, PaginationErrorKind::CrossOriginContinuation),
+        (false, PaginationErrorKind::ForbiddenContinuationChange),
+    ] {
+        let executor = DeterministicExecutor::new();
         executor
             .application()
-            .captures()
-            .expect("captures")
-            .into_iter()
-            .map(|capture| format!("{capture:?}")),
-    );
-    let automatic = automatic.join("\n");
-    for sentinel in [INITIAL, SECOND, THIRD] {
-        assert!(!automatic.contains(sentinel));
-    }
-    let mut source: Option<&(dyn std::error::Error + 'static)> = error.source();
-    while let Some(current) = source {
-        for sentinel in [INITIAL, SECOND, THIRD] {
-            assert!(!current.to_string().contains(sentinel));
-            assert!(!format!("{current:?}").contains(sentinel));
+            .queue_expected_response(
+                ExpectedRequest::new().native_url(format!(
+                    "http://{INITIAL}.pagination-runtime.example.test/v1/host-rate-items?stable=public&cursor={INITIAL}"
+                )),
+                ScriptedResponse::success(Bytes::from(format!(
+                    "first-item-sentinel-a38f|{SECOND}"
+                ))),
+            )
+            .expect("host page response");
+        let hooks = Arc::new(PaginationProbe::default());
+        let limiter = Arc::new(LimiterProbe::default());
+        let debug = Arc::new(Mutex::new(Vec::new()));
+        let core = forbidden_destination_core(
+            &executor,
+            Arc::clone(&hooks),
+            Arc::clone(&limiter),
+            Arc::clone(&debug),
+        );
+        let endpoint = ForbiddenDestinationEndpoint {
+            host: INITIAL.to_owned(),
+            rate_dimension: INITIAL.to_owned(),
+            move_host,
+            calls: Calls::default(),
+        };
+        let mut pages: Pages<String> = pages_request(Request::new(core, endpoint), 5);
+        let error = pages.next_page().await.expect_err("forbidden continuation");
+        assert_eq!(error.pagination_kind(), Some(expected));
+        assert_eq!(
+            error.failure_stage(),
+            crate::error::FailureStage::PaginationDecision
+        );
+        assert!(pages.next_page().await.expect("terminal").is_none());
+        let summary = pages.finish();
+        assert_eq!(summary.stop_reason(), StopReason::Failed);
+        assert_eq!(summary.pages_received(), 1);
+        assert_eq!(summary.pages_delivered(), 0);
+        assert_eq!(executor.application().request_count().expect("count"), 1);
+        assert_eq!(limiter.acquisition_pages(), [0]);
+        let origin = limiter.acquisitions.lock().expect("acquisitions")[0]
+            .1
+            .clone();
+        assert_eq!(
+            origin.as_deref(),
+            Some(format!("http://{INITIAL}.pagination-runtime.example.test:80").as_str()),
+            "the limiter receives the actual protected origin"
+        );
+
+        let mut automatic = Vec::new();
+        automatic.extend(
+            hooks
+                .before
+                .lock()
+                .expect("before")
+                .iter()
+                .map(|record| record.safe.clone()),
+        );
+        automatic.extend(
+            hooks
+                .response
+                .lock()
+                .expect("response")
+                .iter()
+                .map(|record| record.5.clone()),
+        );
+        automatic.extend(
+            hooks
+                .completion
+                .lock()
+                .expect("completion")
+                .iter()
+                .map(|record| record.safe.clone()),
+        );
+        automatic.push(debug.lock().expect("debug").join("\n"));
+        automatic.push(format!("{error} {error:?} {summary:?}"));
+        automatic.extend(
+            executor
+                .application()
+                .captures()
+                .expect("captures")
+                .into_iter()
+                .map(|capture| format!("{capture:?}")),
+        );
+        let automatic = automatic.join("\n");
+        for sentinel in [INITIAL, SECOND] {
+            assert!(!automatic.contains(sentinel));
         }
-        source = current.source();
+        let mut source: Option<&(dyn std::error::Error + 'static)> = error.source();
+        while let Some(current) = source {
+            for sentinel in [INITIAL, SECOND] {
+                assert!(!current.to_string().contains(sentinel));
+                assert!(!format!("{current:?}").contains(sentinel));
+            }
+            source = current.source();
+        }
     }
 }
 
@@ -189,19 +162,25 @@ fn collect_rate_key(
     core: ClientCore,
     key: String,
     credential: CredentialRef<AccessToken>,
-) -> BoxFuture<'static, Result<Vec<String>, ApiError>> {
-    paginate_with(
-        Request::new(
-            core,
-            RateKeyEndpoint {
-                key: key.clone(),
-                credential,
-            },
-        ),
-        PageLimit::Prefix(1),
+) -> BoxFuture<'static, Result<Prefix<String>, ApiError>> {
+    Box::pin(
+        collect_prefix_request(
+            Request::new(
+                core,
+                RateKeyEndpoint {
+                    key,
+                    credential,
+                    calls: Calls::default(),
+                },
+            ),
+            1,
+        )
+        .into_future(),
     )
 }
 
+/// Public preparation (including the initial-cursor comparison) enforces the
+/// actual rate-key limit before any credential, limiter or transport work.
 #[tokio::test]
 #[cfg(feature = "default-tls")]
 async fn pagination_rate_key_limit_uses_actual_value_and_cuts_off_protected_work() {
@@ -244,14 +223,14 @@ async fn pagination_rate_key_limit_uses_actual_value_and_cuts_off_protected_work
         Arc::clone(&accepted_limiter),
         Arc::clone(&accepted_debug),
     );
-    let items = collect_rate_key(
+    let prefix = collect_rate_key(
         accepted_core,
         BOUNDARY.to_owned(),
         CredentialRef::new(accepted_selector),
     )
     .await
     .expect("actual key at configured boundary");
-    assert!(items.is_empty());
+    assert!(prefix.items().is_empty());
     assert_eq!(accepted_provider_calls.load(Ordering::SeqCst), 1);
     assert_eq!(accepted_limiter.acquisitions.load(Ordering::SeqCst), 1);
     assert_eq!(
@@ -261,45 +240,20 @@ async fn pagination_rate_key_limit_uses_actual_value_and_cuts_off_protected_work
             .expect("accepted request count"),
         1
     );
-    assert_eq!(accepted_hooks.before.lock().expect("before").len(), 1);
+    assert_eq!(accepted_hooks.before_count(), 1);
     assert_eq!(accepted_hooks.response.lock().expect("response").len(), 1);
     assert_eq!(
         accepted_hooks.completion.lock().expect("completion").len(),
         1
     );
-    let accepted_hook_safe = {
-        let before = accepted_hooks.before.lock().expect("accepted before");
-        let response = accepted_hooks.response.lock().expect("accepted response");
-        let completion = accepted_hooks
-            .completion
-            .lock()
-            .expect("accepted completion");
-        format!(
-            "{}\n{}\n{}",
-            before
-                .iter()
-                .map(|record| record.safe.as_str())
-                .collect::<Vec<_>>()
-                .join("\n"),
-            response
-                .iter()
-                .map(|record| record.5.as_str())
-                .collect::<Vec<_>>()
-                .join("\n"),
-            completion
-                .iter()
-                .map(|record| record.safe.as_str())
-                .collect::<Vec<_>>()
-                .join("\n"),
-        )
-    };
     let accepted_automatic = format!(
-        "{:?}\n{}\n{accepted_hook_safe}",
+        "{:?}\n{}\n{:?}",
         accepted_executor
             .application()
             .captures()
             .expect("accepted captures"),
-        accepted_debug.lock().expect("accepted debug").join("\n")
+        accepted_debug.lock().expect("accepted debug").join("\n"),
+        prefix.summary(),
     );
     assert!(!accepted_automatic.contains(BOUNDARY));
 
@@ -345,7 +299,7 @@ async fn pagination_rate_key_limit_uses_actual_value_and_cuts_off_protected_work
             .expect("excess request count"),
         0
     );
-    assert!(excess_hooks.before.lock().expect("before").is_empty());
+    assert_eq!(excess_hooks.before_count(), 0);
     assert!(excess_hooks.response.lock().expect("response").is_empty());
     assert!(
         excess_hooks
@@ -354,12 +308,11 @@ async fn pagination_rate_key_limit_uses_actual_value_and_cuts_off_protected_work
             .expect("completion")
             .is_empty()
     );
-    let aggregate = excess_hooks.aggregate.lock().expect("aggregate");
+    let aggregate = excess_hooks.aggregate();
     assert_eq!(aggregate.len(), 1);
     assert_eq!(aggregate[0].pages_completed, 0);
     assert_eq!(aggregate[0].items_collected, 0);
     assert_eq!(aggregate[0].final_status, None);
-    drop(aggregate);
 
     let mut source: Option<&(dyn std::error::Error + 'static)> = Some(&error);
     while let Some(current) = source {

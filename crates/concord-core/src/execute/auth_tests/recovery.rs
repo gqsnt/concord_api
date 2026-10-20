@@ -13,6 +13,45 @@ impl ResponseRepresentation<Bytes> for ChallengePrecedenceAcceptance {
 
 struct NeverChallengeAcceptance;
 
+/// A hand-written core specification whose accepted statuses overlap its own
+/// challenge. v3 rejects that overlap at compile time for generated
+/// endpoints and at bind for runtime endpoints (§10.1, V3-R11); this
+/// specification bypasses both to keep the executor's defense-in-depth
+/// precedence rule under test.
+struct OverlappingChallengeEndpoint {
+    credential: CredentialRef<AccessToken>,
+}
+
+impl EndpointSpec for OverlappingChallengeEndpoint {
+    type Input = PreparedBody;
+    type Body = PreparedBody;
+    type Output = Bytes;
+    type Response = ChallengePrecedenceAcceptance;
+
+    fn request_meta(&self) -> RequestMeta {
+        RequestMeta::new_with_contract(
+            "runtime.challenge_precedence",
+            Method::GET,
+            Some(Duration::from_secs(30)),
+            crate::endpoint::AcceptedStatus::codes([StatusCode::UNAUTHORIZED])
+                .expect("explicit accepted status"),
+            crate::endpoint::Effect::Safe,
+        )
+    }
+
+    fn prepare_head(&self, mut builder: HeadBuilder) -> Result<PreparedHead, ApiError> {
+        builder.push_static("challenge-precedence")?;
+        builder.push_auth(
+            Auth::bearer(self.credential.clone()).challenge(ChallengePolicy::Unauthorized),
+        )?;
+        builder.finish()
+    }
+
+    fn into_body(self) -> Self::Body {
+        PreparedBody::bytes(Bytes::new())
+    }
+}
+
 impl ResponseRepresentation<Bytes> for NeverChallengeAcceptance {
     type Driver = Buffered;
 
@@ -33,23 +72,40 @@ async fn attributable_challenge_precedes_declared_status_acceptance() {
         .expect("attributable challenge response");
     let selector = SlotSelector::static_value(access_token(INITIAL), Duration::ZERO);
     let (core, _) = core(&executor, Arc::new(AuthHooks::default()));
-    let endpoint = RuntimeEndpoint::builder(
+
+    // V3-R11: a runtime endpoint cannot even bind an accepted set that
+    // overlaps the inherited challenge.
+    let runtime = RuntimeEndpoint::builder(
         EndpointId::from_static("runtime.challenge_precedence"),
         Method::GET,
     )
     .path("challenge-precedence")
-    .auth(
-        Auth::bearer(CredentialRef::new(Arc::clone(&selector)))
-            .challenge(ChallengePolicy::Unauthorized),
-    )
     .status_codes([StatusCode::UNAUTHORIZED])
     .response::<ChallengePrecedenceAcceptance, Bytes>()
     .build()
     .expect("challenge precedence endpoint");
+    let owner = TestOwner::new(core.clone())
+        .auth(
+            Auth::bearer(CredentialRef::new(Arc::clone(&selector)))
+                .challenge(ChallengePolicy::Unauthorized),
+        )
+        .into_projection();
+    let overlap = test_owner::bind(&owner, runtime)
+        .expect_err("accepted/challenge overlap is rejected at bind");
+    assert_eq!(
+        overlap.configuration_kind(),
+        Some(crate::error::ConfigurationErrorKind::InvalidAuthentication)
+    );
+    assert_eq!(executor.application().request_count().expect("count"), 0);
 
-    let error = Request::new(core, endpoint)
-        .await
-        .expect_err("attributable challenge remains authoritative");
+    let error = Request::new(
+        core,
+        OverlappingChallengeEndpoint {
+            credential: CredentialRef::new(Arc::clone(&selector)),
+        },
+    )
+    .await
+    .expect_err("attributable challenge remains authoritative");
     assert_eq!(error.category(), ErrorCategory::AuthenticationRejected);
     assert!(!selector.is_set());
 }
@@ -71,13 +127,18 @@ async fn challenge_never_allows_the_response_specification_to_accept_401() {
         Method::GET,
     )
     .path("challenge-never-acceptance")
-    .auth(Auth::bearer(CredentialRef::new(Arc::clone(&selector))).challenge(ChallengePolicy::Never))
     .status_codes([StatusCode::UNAUTHORIZED])
     .response::<NeverChallengeAcceptance, Bytes>()
     .build()
     .expect("challenge-never acceptance endpoint");
 
-    let response = Request::new(core, endpoint)
+    let response =
+        bind_protected(
+            &core,
+            [Auth::bearer(CredentialRef::new(Arc::clone(&selector)))
+                .challenge(ChallengePolicy::Never)],
+            endpoint,
+        )
         .response()
         .await
         .expect("declared accepted 401");
@@ -127,19 +188,22 @@ async fn custom_authorization_recovery_rechecks_exact_current_and_rerenders_sche
         Method::GET,
     )
     .path("custom-authorization-recovery")
-    .auth(
-        Auth::authorization_with_scheme("tOkEn", CredentialRef::new(selector))
-            .expect("valid static Authorization scheme")
-            .challenge(ChallengePolicy::Unauthorized),
-    )
-    .accepted_bytes()
+    .response::<Binary, Bytes>()
     .build()
     .expect("custom Authorization recovery endpoint");
 
-    let response = Request::new(core, endpoint)
-        .response()
-        .await
-        .expect("custom Authorization recovery");
+    let response = bind_protected(
+        &core,
+        [
+            Auth::authorization_with_scheme("tOkEn", CredentialRef::new(selector))
+                .expect("valid static Authorization scheme")
+                .challenge(ChallengePolicy::Unauthorized),
+        ],
+        endpoint,
+    )
+    .response()
+    .await
+    .expect("custom Authorization recovery");
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.metadata().attempts_started(), 2);
     assert!(response.metadata().recovered_authentication());
@@ -189,18 +253,21 @@ async fn custom_authorization_is_absent_from_retry_classifier_and_safe_diagnosti
         Method::GET,
     )
     .path("custom-authorization-retry")
-    .auth(
-        Auth::authorization_with_scheme("Token", CredentialRef::new(selector))
-            .expect("valid static Authorization scheme"),
-    )
-    .accepted_bytes()
+    .response::<Binary, Bytes>()
     .build()
     .expect("custom Authorization retry endpoint");
 
-    let response = Request::new(core, endpoint)
-        .response()
-        .await
-        .expect("custom Authorization policy retry");
+    let response = bind_protected(
+        &core,
+        [
+            Auth::authorization_with_scheme("Token", CredentialRef::new(selector))
+                .expect("valid static Authorization scheme"),
+        ],
+        endpoint,
+    )
+    .response()
+    .await
+    .expect("custom Authorization policy retry");
     assert_eq!(response.metadata().attempts_started(), 2);
     assert_eq!(response.metadata().policy_retries(), 1);
     assert!(
@@ -283,7 +350,7 @@ async fn authentication_recovery_after_policy_retry_has_independent_attempt_iden
         core,
         &selector,
         ChallengePolicy::Unauthorized,
-        RequestBody::bytes(Bytes::new()),
+        PreparedBody::bytes(Bytes::new()),
     )
     .response()
     .await
@@ -359,7 +426,7 @@ async fn policy_retry_after_authentication_recovery_reuses_current_material() {
         core,
         &selector,
         ChallengePolicy::Unauthorized,
-        RequestBody::bytes(Bytes::new()),
+        PreparedBody::bytes(Bytes::new()),
     )
     .response()
     .await
@@ -429,7 +496,7 @@ async fn authentication_recovery_is_globally_limited_across_policy_retries() {
         core,
         &selector,
         ChallengePolicy::Unauthorized,
-        RequestBody::bytes(Bytes::new()),
+        PreparedBody::bytes(Bytes::new()),
     )
     .await
     .expect_err("a second attributable challenge is terminal");
@@ -454,7 +521,7 @@ async fn authentication_preflight_failure_after_retry_reservation_is_final() {
         .expect("retry status");
     let selector = SlotSelector::endpoint(Duration::ZERO);
     selector
-        .set(access_token(INITIAL))
+        .replace(access_token(INITIAL))
         .expect("initial endpoint credential");
     let selector_for_policy = Arc::clone(&selector);
     let policy = RetryPolicy::builder()
@@ -478,7 +545,7 @@ async fn authentication_preflight_failure_after_retry_reservation_is_final() {
         core,
         &selector,
         ChallengePolicy::Never,
-        RequestBody::bytes(Bytes::new()),
+        PreparedBody::bytes(Bytes::new()),
     )
     .await
     .expect_err("retry current-material preflight fails");
@@ -560,7 +627,7 @@ async fn cancellation_during_retry_authentication_preflight_prevents_later_attem
                 core,
                 &selector,
                 ChallengePolicy::Never,
-                RequestBody::bytes(Bytes::new()),
+                PreparedBody::bytes(Bytes::new()),
             )
             .await
         }
@@ -573,13 +640,10 @@ async fn cancellation_during_retry_authentication_preflight_prevents_later_attem
     tokio::task::yield_now().await;
     assert_eq!(calls.load(Ordering::SeqCst), 2);
     assert_eq!(executor.application().request_count().expect("count"), 1);
-    assert!(
-        hooks
-            .completion
-            .lock()
-            .expect("completion records")
-            .is_empty()
-    );
+    // CONTROL-03 drop guard: one synchronous `Cancelled` completion.
+    let completions = hooks.completion.lock().expect("completion records");
+    assert_eq!(completions.len(), 1);
+    assert_eq!(completions[0].5, CompletionOutcome::Cancelled);
 }
 
 #[tokio::test]
@@ -618,7 +682,7 @@ async fn real_tls_authentication_recovery_performs_two_visible_limiter_acquisiti
         core,
         &selector,
         ChallengePolicy::Unauthorized,
-        RequestBody::bytes(Bytes::new()),
+        PreparedBody::bytes(Bytes::new()),
     )
     .await
     .expect("real loopback recovery");
@@ -683,15 +747,13 @@ async fn paginated_tls_recovery_reuses_lexical_plan_across_recovery_and_later_pa
     )
     .expect("managed TLS pagination core");
 
-    let items = PaginatedRequest::new(
-        Request::new(
-            core,
-            PaginatedProtectedEndpoint {
-                credential: CredentialRef::new(Arc::clone(&selector)),
-                page: 0,
-            },
-        ),
-        PageLimit::Prefix(2),
+    let items = collect_protected_pages(
+        core,
+        PaginatedProtectedEndpoint {
+            credential: CredentialRef::new(Arc::clone(&selector)),
+            page: 0,
+        },
+        2,
     )
     .await
     .expect("paginated authentication recovery");
@@ -742,7 +804,15 @@ async fn paginated_tls_recovery_reuses_lexical_plan_across_recovery_and_later_pa
     for plan in captured_plans.iter() {
         assert_eq!(plan.rules.len(), 1);
         assert_eq!(plan.rules[0].0, "AuthenticationApi::rate_limit::pagination");
-        assert!(plan.rules[0].1.is_empty());
+        assert_eq!(
+            plan.rules[0].1,
+            [(
+                "scope".to_owned(),
+                crate::rate_limit::encode_canonical("global", 64)
+                    .expect("constant key")
+                    .into_vec(),
+            )]
+        );
         assert_eq!(plan.rules[0].2, 1);
         assert_eq!(plan.rules[0].3, [(1, Duration::from_secs(1))]);
     }
@@ -814,15 +884,13 @@ async fn paginated_authentication_failure_keeps_its_ordinary_category_and_correl
     let selector = SlotSelector::provider(FailingProvider, Duration::ZERO);
 
     let error = api_error(
-        PaginatedRequest::new(
-            Request::new(
-                core,
-                PaginatedProtectedEndpoint {
-                    credential: CredentialRef::new(Arc::clone(&selector)),
-                    page: 0,
-                },
-            ),
-            PageLimit::Prefix(1),
+        collect_protected_pages(
+            core,
+            PaginatedProtectedEndpoint {
+                credential: CredentialRef::new(Arc::clone(&selector)),
+                page: 0,
+            },
+            1,
         )
         .await,
     );
@@ -919,7 +987,7 @@ async fn challenge_recovery_still_observes_each_received_response_once() {
         core.clone(),
         &selector,
         ChallengePolicy::Unauthorized,
-        RequestBody::bytes(Bytes::from_static(b"buffered")),
+        PreparedBody::bytes(Bytes::from_static(b"buffered")),
     )
     .response()
     .await
@@ -1059,7 +1127,7 @@ async fn accepted_bytes_preserves_authentication_recovery_and_logical_native_url
         core.clone(),
         &selector,
         ChallengePolicy::Unauthorized,
-        RequestBody::bytes(Bytes::from_static(b"raw-auth-body")),
+        PreparedBody::bytes(Bytes::from_static(b"raw-auth-body")),
     )
     .accepted_bytes()
     .await
@@ -1209,30 +1277,33 @@ async fn prepared_codec_recovery_reuses_encoding_and_reenters_the_ordinary_limit
         RuntimeConfigBuilder::new().rate_limiter(limiter),
     );
     let encode_calls = Arc::new(AtomicUsize::new(0));
+    // v3 (RETRY-02): an authentication recovery replay after a received
+    // response requires a safe or idempotent effect, so this recovery test
+    // declares the POST idempotent explicitly instead of relying on the
+    // v2.1 challenge-is-proof rule.
     let endpoint =
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.protected"), Method::POST)
+            .effect(crate::endpoint::Effect::Idempotent)
             .path("prepared")
             .query("session_token", PUBLIC_QUERY)
-            .header(
-                http::HeaderName::from_static("x-sensitive-token"),
-                PUBLIC_HEADER,
-            )
-            .body_codec::<PreparedRecoveryCodec>(PreparedRecoveryInput {
+            .header("x-sensitive-token", PUBLIC_HEADER)
+            .body_repr::<PreparedRecoveryCodec, _>(PreparedRecoveryInput {
                 calls: Arc::clone(&encode_calls),
             })
-            .auth(
-                Auth::bearer(CredentialRef::new(Arc::clone(&selector)))
-                    .challenge(ChallengePolicy::Unauthorized),
-            )
             .rate_limit(prepared_rate_rule())
-            .accepted_bytes()
+            .response::<Binary, Bytes>()
             .build()
             .expect("prepared protected endpoint");
 
-    let response = Request::new(core.clone(), endpoint)
-        .response()
-        .await
-        .expect("prepared bounded recovery");
+    let response = bind_protected(
+        &core,
+        [Auth::bearer(CredentialRef::new(Arc::clone(&selector)))
+            .challenge(ChallengePolicy::Unauthorized)],
+        endpoint,
+    )
+    .response()
+    .await
+    .expect("prepared bounded recovery");
     assert_eq!(response.value(), &Bytes::from_static(b"ok"));
     assert!(response.metadata().recovered_authentication());
     assert_eq!(response.metadata().attempts_started(), 2);
@@ -1308,17 +1379,21 @@ async fn prepared_one_shot_body_does_not_perform_an_unsafe_recovery_resend() {
     let (core, _) = core(&executor, Arc::new(AuthHooks::default()));
     let endpoint =
         RuntimeEndpoint::builder(EndpointId::from_static("runtime.one_shot"), Method::POST)
-            .body(RequestBody::stream(RequestStream::from_bytes(
+            .body_repr::<PreparedBody, _>(PreparedBody::stream(RequestStream::from_bytes(
                 Bytes::from_static(b"prepared-one-shot"),
             )))
-            .auth(
-                Auth::bearer(CredentialRef::new(selector)).challenge(ChallengePolicy::Unauthorized),
-            )
-            .accepted_bytes()
+            .response::<Binary, Bytes>()
             .build()
             .expect("prepared one-shot endpoint");
 
-    let error = api_error(Request::new(core, endpoint).await);
+    let error = api_error(
+        bind_protected(
+            &core,
+            [Auth::bearer(CredentialRef::new(selector)).challenge(ChallengePolicy::Unauthorized)],
+            endpoint,
+        )
+        .await,
+    );
     assert_eq!(error.category(), ErrorCategory::AuthenticationRejected);
     assert_eq!(refreshes.load(Ordering::SeqCst), 0);
     assert_eq!(executor.application().request_count().expect("count"), 1);
@@ -1357,13 +1432,21 @@ async fn prepared_one_shot_multipart_does_not_perform_an_unsafe_recovery_resend(
         EndpointId::from_static("runtime.multipart_one_shot"),
         Method::POST,
     )
-    .body(RequestBody::multipart(multipart))
-    .auth(Auth::bearer(CredentialRef::new(selector)).challenge(ChallengePolicy::Unauthorized))
-    .accepted_bytes()
+    .body_repr::<PreparedBody, _>(
+        PreparedBody::multipart(multipart).expect("prepared multipart body"),
+    )
+    .response::<Binary, Bytes>()
     .build()
     .expect("prepared one-shot multipart endpoint");
 
-    let error = api_error(Request::new(core, endpoint).await);
+    let error = api_error(
+        bind_protected(
+            &core,
+            [Auth::bearer(CredentialRef::new(selector)).challenge(ChallengePolicy::Unauthorized)],
+            endpoint,
+        )
+        .await,
+    );
     assert_eq!(error.category(), ErrorCategory::AuthenticationRejected);
     assert_eq!(refreshes.load(Ordering::SeqCst), 0);
     assert_eq!(executor.application().request_count().expect("count"), 1);
@@ -1452,7 +1535,7 @@ async fn reconstructible_factory_runs_once_per_concord_attempt_and_no_third_atte
             core,
             &selector,
             ChallengePolicy::Unauthorized,
-            RequestBody::factory(ReplayFactory {
+            PreparedBody::factory(ReplayFactory {
                 calls: Arc::clone(&factory_calls),
             }),
         )
@@ -1500,7 +1583,7 @@ async fn recovery_reconstruction_failure_is_primary_and_invalidates_challenged_m
             core.clone(),
             &selector,
             ChallengePolicy::Unauthorized,
-            RequestBody::factory(FailOnSecondFactory {
+            PreparedBody::factory(FailOnSecondFactory {
                 calls: Arc::clone(&calls),
             }),
         )
@@ -1544,7 +1627,7 @@ async fn one_shot_body_prevents_recovery_and_provider_refresh() {
             core,
             &selector,
             ChallengePolicy::Unauthorized,
-            RequestBody::stream(stream),
+            PreparedBody::stream(stream),
         )
         .await,
     );
@@ -1585,7 +1668,7 @@ async fn one_shot_multipart_prevents_recovery_and_provider_refresh() {
             core,
             &selector,
             ChallengePolicy::Unauthorized,
-            RequestBody::multipart(multipart),
+            PreparedBody::multipart(multipart).expect("prepared multipart body"),
         )
         .await,
     );
@@ -1611,7 +1694,7 @@ async fn static_and_endpoint_challenges_mutate_only_exact_attributed_source_with
             core.clone(),
             &static_slot,
             ChallengePolicy::Unauthorized,
-            RequestBody::bytes(Bytes::new()),
+            PreparedBody::bytes(Bytes::new()),
         )
         .await,
     );
@@ -1622,15 +1705,15 @@ async fn static_and_endpoint_challenges_mutate_only_exact_attributed_source_with
             core.clone(),
             &static_slot,
             ChallengePolicy::Unauthorized,
-            RequestBody::bytes(Bytes::new()),
+            PreparedBody::bytes(Bytes::new()),
         )
         .await,
     );
     assert_eq!(second.auth_kind(), Some(AuthErrorKind::Rejected));
     assert_eq!(executor.application().request_count().expect("count"), 1);
     static_slot
-        .replace_static(access_token(REFRESHED))
-        .expect("complete static replacement");
+        .replace(access_token(REFRESHED))
+        .expect("manual static replacement");
     executor
         .application()
         .queue_response(ScriptedResponse::success(Bytes::from_static(b"replaced")))
@@ -1640,7 +1723,7 @@ async fn static_and_endpoint_challenges_mutate_only_exact_attributed_source_with
             core.clone(),
             &static_slot,
             ChallengePolicy::Unauthorized,
-            RequestBody::bytes(Bytes::new()),
+            PreparedBody::bytes(Bytes::new()),
         )
         .await
         .expect("replacement clears rejection"),
@@ -1649,7 +1732,7 @@ async fn static_and_endpoint_challenges_mutate_only_exact_attributed_source_with
 
     let endpoint_slot = SlotSelector::endpoint(Duration::ZERO);
     endpoint_slot
-        .set(access_token(INITIAL))
+        .replace(access_token(INITIAL))
         .expect("endpoint material");
     executor
         .application()
@@ -1663,7 +1746,7 @@ async fn static_and_endpoint_challenges_mutate_only_exact_attributed_source_with
             core,
             &endpoint_slot,
             ChallengePolicy::Unauthorized,
-            RequestBody::bytes(Bytes::new()),
+            PreparedBody::bytes(Bytes::new()),
         )
         .await,
     );
@@ -1762,7 +1845,7 @@ async fn default_never_preserves_static_material_and_query_auth_exists_only_in_n
             core.clone(),
             &selector,
             ChallengePolicy::Never,
-            RequestBody::bytes(Bytes::new()),
+            PreparedBody::bytes(Bytes::new()),
         )
         .await,
     );

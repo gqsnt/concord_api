@@ -1,5 +1,5 @@
-error: unknown rate-limit profile `missing`
- --> tests/ui/fail/rate_limits/rate_limit_undefined_attachment.rs:7:20
+error: [C3-RATE] unknown rate policy `missing` attached by client `Api`; declare `policy missing(...) { ... }` in the client `rate_limits` registry
+ --> tests/ui/fail/rate_limits/rate_limit_undefined_attachment.rs:9:20
   |
-7 |         rate_limit missing();
+9 |         rate_limit missing();
   |                    ^^^^^^^

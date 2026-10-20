@@ -5,13 +5,34 @@
 *.toml text eol=lf
 *.md text eol=lf
 *.csv text eol=lf
+*.json text eol=lf
+*.txt text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
 *.stderr text eol=lf
 *.rules text eol=lf
 *.ps1 text eol=lf
 Cargo.lock text eol=lf
+LICENSE-* text eol=lf
 justfile text eol=lf
+
+# Captured follow-up evidence keeps its original bytes on every platform.
+dev_doc/reviews/2026_10_17_followup/evidence/**/*.log -text
+dev_doc/reviews/2026_10_17_followup/evidence/**/*.patch -text
+
+# These native logs end with the test runner's original blank line.
+dev_doc/reviews/2026_10_17_followup/evidence/runtime/native/csv-after.log whitespace=-blank-at-eof
+dev_doc/reviews/2026_10_17_followup/evidence/runtime/native/inspect-sites-after.log whitespace=-blank-at-eof
+dev_doc/reviews/2026_10_17_followup/evidence/validation/macro-docs-tests.log whitespace=-blank-at-eof
+dev_doc/reviews/2026_10_17_followup/evidence/validation/user-exercises-feature-gate.log whitespace=-blank-at-eof
+dev_doc/reviews/2026_10_17_followup/evidence/validation/user-exercises.log whitespace=-blank-at-eof
+dev_doc/reviews/2026_10_17_followup/evidence/validation/xtask-followup-tests.log whitespace=-blank-at-eof
+
+# Empty unified-diff context lines contain one required space.
+dev_doc/reviews/2026_10_17_followup/evidence/runtime/source/csv-after.patch whitespace=-blank-at-eol
+dev_doc/reviews/2026_10_17_followup/evidence/runtime/source/csv-before.patch whitespace=-blank-at-eol
+dev_doc/reviews/2026_10_17_followup/evidence/runtime/source/inspect-after.patch whitespace=-blank-at-eol
+dev_doc/reviews/2026_10_17_followup/evidence/runtime/source/inspect-before.patch whitespace=-blank-at-eol
 
 # Retired external process kits remain in Git history but not source handoffs.
 dev_doc/history/CONCORD_V2_1_RELEASE_READINESS_REMEDIATION_PLAN.md export-ignore

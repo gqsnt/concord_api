@@ -1,0 +1,179 @@
+error[E0277]: [C3-ATOM] `Vec<std::string::String>` is not a scalar request atom
+  --> tests/ui/fail/capabilities/atom_role_obligations.rs:19:36
+   |
+19 |             headers { "X-Values" = values; }
+   |                                    ^^^^^^ this placement writes exactly one scalar atom
+   |
+   = help: the trait `RequestAtom` is not implemented for `Vec<std::string::String>`
+   = note: `RequestAtom` owns one scalar path, DNS, query or header value; a sequence is never repeated implicitly
+   = note: for one query/header occurrence per item write `"key" = each value;`; for one scalar write `value via Encoder` with an `AtomEncoder<Vec<std::string::String>>`, or implement `RequestAtom` for a domain type
+   = help: the following other types implement trait `RequestAtom`:
+             &T
+             NonZero<i128>
+             NonZero<i16>
+             NonZero<i32>
+             NonZero<i64>
+             NonZero<i8>
+             NonZero<isize>
+             NonZero<u128>
+           and $N others
+note: required by a bound in `concord::__private::OccurrenceSink::<'_>::value`
+  --> $WORKSPACE/crates/concord-core/src/request/program.rs
+   |
+   |     pub fn value<T>(&mut self, value: &T) -> Result<(), AtomError>
+   |            ----- required by a bound in this associated function
+   |     where
+   |         T: crate::atom::RequestAtom + ?Sized,
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `OccurrenceSink::<'_>::value`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [C3-ATOM] `Vec<std::string::String>` is not a scalar request atom
+  --> tests/ui/fail/capabilities/atom_role_obligations.rs:22:26
+   |
+22 |         GET direct(query tags: Vec<String>) -> Bytes via Binary;
+   |                          ^^^^ this placement writes exactly one scalar atom
+   |
+   = help: the trait `RequestAtom` is not implemented for `Vec<std::string::String>`
+   = note: `RequestAtom` owns one scalar path, DNS, query or header value; a sequence is never repeated implicitly
+   = note: for one query/header occurrence per item write `"key" = each value;`; for one scalar write `value via Encoder` with an `AtomEncoder<Vec<std::string::String>>`, or implement `RequestAtom` for a domain type
+   = help: the following other types implement trait `RequestAtom`:
+             &T
+             NonZero<i128>
+             NonZero<i16>
+             NonZero<i32>
+             NonZero<i64>
+             NonZero<i8>
+             NonZero<isize>
+             NonZero<u128>
+           and $N others
+note: required by a bound in `concord::__private::OccurrenceSink::<'_>::value`
+  --> $WORKSPACE/crates/concord-core/src/request/program.rs
+   |
+   |     pub fn value<T>(&mut self, value: &T) -> Result<(), AtomError>
+   |            ----- required by a bound in this associated function
+   |     where
+   |         T: crate::atom::RequestAtom + ?Sized,
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `OccurrenceSink::<'_>::value`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [C3-ATOM] `Vec<u32>` is not a scalar request atom
+  --> tests/ui/fail/capabilities/atom_role_obligations.rs:25:18
+   |
+25 |             path "items/{ids}";
+   |                  ^^^^^^^^^^^^^ this placement writes exactly one scalar atom
+   |
+   = help: the trait `RequestAtom` is not implemented for `Vec<u32>`
+   = note: `RequestAtom` owns one scalar path, DNS, query or header value; a sequence is never repeated implicitly
+   = note: for one query/header occurrence per item write `"key" = each value;`; for one scalar write `value via Encoder` with an `AtomEncoder<Vec<u32>>`, or implement `RequestAtom` for a domain type
+   = help: the following other types implement trait `RequestAtom`:
+             &T
+             NonZero<i128>
+             NonZero<i16>
+             NonZero<i32>
+             NonZero<i64>
+             NonZero<i8>
+             NonZero<isize>
+             NonZero<u128>
+           and $N others
+note: required by a bound in `BoundedAtomWriter::<'a>::write`
+  --> $WORKSPACE/crates/concord-core/src/atom.rs
+   |
+   |     pub fn write<T>(&mut self, value: &T) -> Result<(), AtomError>
+   |            ----- required by a bound in this associated function
+   |     where
+   |         T: RequestAtom + ?Sized,
+   |            ^^^^^^^^^^^ required by this bound in `BoundedAtomWriter::<'a>::write`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [C3-ATOM] `NotAnEncoder` is not an atom encoder for `u32`
+  --> tests/ui/fail/capabilities/atom_role_obligations.rs:29:35
+   |
+29 |             query { "id" = id via crate::NotAnEncoder; }
+   |                            --     ^^^^^^^^^^^^^^^^^^^ `via` selects `NotAnEncoder` as the atom adapter of a `u32` value
+   |                            |
+   |                            required by a bound introduced by this call
+   |
+help: the trait `AtomEncoder<u32>` is not implemented for `NotAnEncoder`
+  --> tests/ui/fail/capabilities/atom_role_obligations.rs:12:1
+   |
+12 | pub struct NotAnEncoder;
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: an atom adapter implements `AtomEncoder<u32>`; it is not a body representation, rate-key encoder or `Display` bridge
+   = note: implement `AtomEncoder<u32>` for the adapter, or remove `via` when `u32` itself implements `RequestAtom`
+help: the trait `AtomEncoder<T>` is implemented for `DisplayAtom`
+  --> $WORKSPACE/crates/concord-extras/src/atom.rs
+   |
+   | / impl<T> AtomEncoder<T> for DisplayAtom
+   | | where
+   | |     T: fmt::Display + ?Sized,
+   | |_____________________________^
+note: required by a bound in `concord::__private::OccurrenceSink::<'_>::value_with`
+  --> $WORKSPACE/crates/concord-core/src/request/program.rs
+   |
+   |     pub fn value_with<A, T>(&mut self, value: &T) -> Result<(), AtomError>
+   |            ---------- required by a bound in this associated function
+   |     where
+   |         A: crate::atom::AtomEncoder<T>,
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `OccurrenceSink::<'_>::value_with`
+
+error[E0277]: [C3-ATOM] `std::collections::HashSet<std::string::String>` is not a stable ordered sequence for `each`
+  --> tests/ui/fail/capabilities/atom_role_obligations.rs:33:34
+   |
+33 |             query { "tag" = each tags; }
+   |                                  ^^^^ `each` iterates this source by reference in a stable order
+   |
+   = help: the trait `OrderedValues` is not implemented for `std::collections::HashSet<std::string::String>`
+   = note: `each` requires `OrderedValues` (slices, arrays, `Vec` and other ordered collections); an unordered collection needs a deterministic ordered collection or adapter
+   = note: to emit one scalar occurrence instead, remove `each` and place the value directly (with `via Encoder` when it needs an adapter)
+help: the following other types implement trait `OrderedValues`
+  --> $WORKSPACE/crates/concord-core/src/atom.rs
+   |
+   | impl<T> OrderedValues for Vec<T> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Vec<T>`
+...
+   | impl<T, const N: usize> OrderedValues for [T; N] {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `[T; N]`
+...
+   | impl<T> OrderedValues for [T] {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `[T]`
+...
+   | impl<T> OrderedValues for Box<[T]> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Box<[T]>`
+note: required by a bound in `concord::__private::OccurrenceSink::<'_>::each`
+  --> $WORKSPACE/crates/concord-core/src/request/program.rs
+   |
+   |     pub fn each<V>(&mut self, values: &V) -> Result<(), AtomError>
+   |            ---- required by a bound in this associated function
+   |     where
+   |         V: crate::atom::OrderedValues + ?Sized,
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `OccurrenceSink::<'_>::each`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [C3-ATOM] `Vec<std::string::String>` is not a scalar request atom
+  --> tests/ui/fail/capabilities/atom_role_obligations.rs:43:24
+   |
+43 |             subdomain [labels];
+   |                        ^^^^^^ this placement writes exactly one scalar atom
+   |
+   = help: the trait `RequestAtom` is not implemented for `Vec<std::string::String>`
+   = note: `RequestAtom` owns one scalar path, DNS, query or header value; a sequence is never repeated implicitly
+   = note: for one query/header occurrence per item write `"key" = each value;`; for one scalar write `value via Encoder` with an `AtomEncoder<Vec<std::string::String>>`, or implement `RequestAtom` for a domain type
+   = help: the following other types implement trait `RequestAtom`:
+             &T
+             NonZero<i128>
+             NonZero<i16>
+             NonZero<i32>
+             NonZero<i64>
+             NonZero<i8>
+             NonZero<isize>
+             NonZero<u128>
+           and $N others
+note: required by a bound in `BoundedAtomWriter::<'a>::write`
+  --> $WORKSPACE/crates/concord-core/src/atom.rs
+   |
+   |     pub fn write<T>(&mut self, value: &T) -> Result<(), AtomError>
+   |            ----- required by a bound in this associated function
+   |     where
+   |         T: RequestAtom + ?Sized,
+   |            ^^^^^^^^^^^ required by this bound in `BoundedAtomWriter::<'a>::write`
+   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

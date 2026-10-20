@@ -5,11 +5,16 @@
 //! construction or local-runtime usage, documentation pointer, and acceptance
 //! test pointer. The targets under `examples/` only call these modules.
 //!
-//! Generated examples keep constructor/navigation names and use the public
-//! `set_*`, absence-capable `omit_*`, and declaration-default `reset_*`
-//! value-control model. The capabilities are independent: the full DSL
-//! example exercises all three controls on defaulted `Option` values and the
-//! ordinary-value `#[default]` declarations.
+//! Generated examples keep constructor/navigation names and use the v3
+//! value-control matrix: `set_*` sets a payload, `replace_*` takes an exact
+//! `Option` (so `None` means absence), `set_*_if_some` expresses "no new
+//! opinion" for `None`, `omit_*` removes an optional value and `reset_*`
+//! restores a retained declaration initializer. Required uninitialized scope
+//! and endpoint inputs are positional constructor arguments.
+//!
+//! [`contracts::catalog_v3`] is the canonical extended Catalog of the v3
+//! specification (§22) and [`application`] holds the §23 application
+//! integration examples built on it.
 //!
 //! Transport compression features are intentionally not separate examples:
 //! gzip, Brotli, and deflate do not alter a declaration or generated request
@@ -36,6 +41,9 @@ pub mod pagination;
 
 #[cfg(feature = "rate-limit")]
 pub mod rate_limiting;
+
+#[cfg(all(feature = "json", feature = "rate-limit"))]
+pub mod application;
 
 #[cfg(all(feature = "json", feature = "rate-limit"))]
 pub mod riot;

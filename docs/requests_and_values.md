@@ -1,205 +1,255 @@
-# Requests, values, atoms, and public shaping
+# Requests, values, atoms and public shaping
 
-## Exact value law
+This page explains how declared values become the public request head: the
+URL (origin, DNS labels, path), the query string and public headers. The
+normative rules are [DSL specification §6-§8](spec.md#6-values); this page is
+the task view.
 
-`?` adds exactly one Concord-owned outer presence layer. The written Rust type is otherwise opaque.
+## Values and presence
 
-| Declaration | Effective slot type | Meaning |
-|---|---|---|
-| `x: T` | `T` | required exact payload unless initialized |
-| `x?: T` | `Option<T>` | optional slot around exact payload |
-| `x: Option<T>` | `Option<T>` | required domain decision |
-| `x?: Option<T>` | `Option<Option<T>>` | outer absence plus exact optional payload |
-| `x: Vec<T>` | `Vec<T>` | one exact collection value |
-| `x?: Vec<T>` | `Option<Vec<T>>` | optional exact collection value |
+A value's Rust type is its domain meaning; the DSL markers are its Concord
+semantics:
 
-Aliases and qualification do not change behavior.
+| Declaration | Slot | Starts as | Caller sees |
+|---|---|---|---|
+| `x: T` | `T` | supplied by the caller | positional argument (scope/endpoint) or required builder setter (root) |
+| `x?: T` | `Option<T>` | absent | `set_x`, `replace_x`, `set_x_if_some`, `omit_x` |
+| `x: T = V` / `#[default] x: T` | `T` | retained initializer | `set_x`, `set_x_if_some`, `reset_x` |
+| `x?: T = V` / `#[default] x?: T` | `Option<T>` | present retained initializer | all five controls |
 
-## Initializers and defaults
+An absent optional omits every keyed emission it feeds. A present empty `each`
+sequence emits zero occurrences, which is different from an absent optional
+sequence. An initialized value is re-selected by `reset_x()` without evaluating
+the initializer again; defaults are evaluated once per owner boundary (builder
+creation, scope selection, request construction).
 
-```concord-pseudocode
-#[default]
-page_size: PageSize;
+Payload setters accept `impl IntoValue<T>`: identity, `&str -> String` and
+`&String -> String`, nothing else. So `set_count(50)` works for `u32` through
+integer inference, `set_category("hardware")` works for `String`, and a
+validated domain newtype must be constructed explicitly.
 
-page_size: PageSize = DEFAULT_PAGE_SIZE;
+## Where values go
 
-#[default]
-page_size?: PageSize;
-```
+A value reaches the wire in one of these ways:
 
-`#[default]` and `= ...` are mutually exclusive. Stable explicit values are bounded literals or simple const/static paths. No calls, methods, closures, blocks, macros, or arbitrary expressions.
+- **Direct placement** on the declaration: `query tenant: String` (key
+  `tenant`), `query("tag") each tags: Vec<String>` (key `tag`, one occurrence
+  per item), `header("Accept-Language") language?: String`. An optional
+  `via Adapter` after the type belongs to that placement.
+- **Explicit block uses**: `query { "locale" = locale; }`,
+  `headers { "X-Region" = regions.region; }`. The same value can be placed
+  directly and used again in blocks; setting it sets every use.
+- **Route components**: path template holes (`path "items/{id}"`) and DNS
+  labels (`subdomain [region]`).
+- **Rate dimensions** and **pagination mappings**, which are semantic uses
+  without a wire key of their own.
 
-Evaluation occurs once at the narrowest owner snapshot:
+A value with no semantic use is rejected (VALUE-06).
 
-- client build;
-- scope construction;
-- endpoint intent construction.
+## References
 
-`reset_x()` restores the retained value; it never reevaluates `Default` or the initializer.
+In an owner's clause, a bare name is that owner's value. Reach an ancestor by
+qualifying it with the owner: `client.tenant` or `regional.region`. A missing
+bare name is an error even if an ancestor has the same name, and the
+diagnostic suggests the qualified spelling rather than guessing.
 
-## Sensitivity
+## Atoms
 
-```concord-pseudocode
-#[sensitive]
-tenant: TenantId;
-```
-
-The value remains public protocol data and participates in the real request and internal correctness identity. Derived atoms are redacted in automatic plans, errors, observers, docs, and debug output.
-
-Body and credential data already have stronger separate information classes; `#[sensitive]` is for ordinary public values only.
-
-## Owner-qualified references
-
-```concord-pseudocode
-client.tenant
-regional.region
-endpoint.item_id
-```
-
-A named scope reference points to that exact visible owner. No generic `scope.*`, `parent`, `self`, `vars`, or `ep` search/rebinding exists.
-
-## `RequestAtom`
+An atom is one scalar wire value. Types implement `RequestAtom` to own their
+canonical protocol spelling:
 
 ```text
-pub trait RequestAtom {
-    fn write_atom(
-        &self,
-        output: &mut BoundedAtomWriter<'_>,
-    ) -> Result<(), AtomError>;
+impl RequestAtom for ApiVersion {
+    fn write_atom(&self, out: &mut BoundedAtomWriter<'_>) -> Result<(), AtomError> {
+        out.push_str(self.0)
+    }
 }
 ```
 
-Contract:
+An explicit `AtomEncoder<T>` adapter chooses another spelling for one use, with
+`via`:
 
-- one bounded logical scalar atom;
-- deterministic for an unchanged semantic value;
-- prompt, finite, side-effect-free, and no external I/O;
-- core owns output bounds;
-- context-specific DNS/path/query/header code validates/encodes afterward;
-- stable error code/category without value leakage.
-
-Provide built-ins for strings, chars, booleans, integer/nonzero integer types, and references. Do not blanket-implement for `Display`, `Option`, collections, maps/sets, or floating point.
-
-## Explicit atom adapters
-
-```concord-pseudocode
-path [endpoint.id via Base32Id];
-query { "at" = endpoint.timestamp via Rfc3339; }
-headers { "If-Modified-Since" = endpoint.timestamp via HttpDate; }
+<!-- concord-dsl -->
+```rust
+header("X-Label") label: Option<&'static str> via LabelOrNone = crate::DEFAULT_LABEL;
 ```
 
-An adapter changes one scalar representation at one placement without changing the caller type. `DisplayAtom` may exist in extras as an explicit compatibility adapter.
+The writer is bounded (65,536 bytes per formatted public value) and checks each
+append before retaining it. An atom encoder cannot choose presence, repetition,
+a native URL, a body, a retry or a credential. `concat [a, b]` builds one scalar
+from total components; `each` repeats; neither can appear inside the other, and
+`each` never appears in a path, DNS label or rate dimension.
 
-## `concat`
+## Origin, DNS labels and paths
 
-```concord-pseudocode
-concat ["item-", endpoint.id via Base32Id]
+The base fixes the scheme, host suffix, effective port and base path. DNS labels
+and path segments are generated relative to it:
+
+<!-- concord-dsl -->
+```rust
+client RouteApi {
+    base "https://route.example.test/root";
+    values {
+        api_version: String = "v2";
+    }
+    subdomain ["api"];
+    path "{api_version}";
+
+    scope regional(region: String) {
+        subdomain [region];
+        path "regions/{region}";
+
+        GET item(id: String) -> () via Empty {
+            path "items/{id}";
+        }
+        GET details(id: String) -> () via Empty {
+            path "resource-{id}/details";
+        }
+        GET report(date: Day) -> () via Empty {
+            path "reports/{date via IsoDate}";
+        }
+        GET legacy() -> () via Empty {
+            path replace "legacy/{client.api_version}";
+        }
+        GET origin_root() -> () via Empty {
+            path off;
+        }
+        GET braces() -> () via Empty {
+            path "literal-{{braces}}";
+        }
+    }
+
+    scope global() {
+        subdomain replace ["global"];
+        GET status() -> () via Empty;
+    }
+
+    scope apex() {
+        subdomain off;
+        GET ping() -> () via Empty;
+    }
+}
 ```
 
-Creates one atom. It never creates several labels, segments, query values, or headers. Optional sources and `each` are illegal inside `concat`. Sensitivity of any dependency propagates to the complete atom.
+| Endpoint | Generated URL |
+|---|---|
+| `regional("eu").item("7")` | `https://eu.api.route.example.test/root/v2/regions/eu/items/7` |
+| `regional("eu").details("7")` | `.../root/v2/regions/eu/resource-7/details` |
+| `regional("eu").legacy()` | `https://eu.api.route.example.test/root/legacy/v2` |
+| `regional("eu").origin_root()` | `https://eu.api.route.example.test/root/` |
+| `regional("eu").braces()` | `.../root/v2/regions/eu/literal-%7Bbraces%7D` |
+| `global().status()` | `https://global.route.example.test/root/v2` |
+| `apex().ping()` | `https://route.example.test/root/v2` |
 
-## Fixed base and subdomains
+Each path segment is percent-encoded exactly once; user `%2F` is data, never a
+separator. A segment may not be empty, `.` or `..`, or contain `/`, a backslash
+or a literal `?`/`#`. Each DNS label is one lowercase ASCII label of 1-63
+bytes; a region value such as `eu.west` or `EU_WEST` is rejected at planning
+and execution, not split or repaired.
 
-Each client declares one static absolute HTTP(S) base. Reject missing host, userinfo, query, fragment, and unsupported scheme.
+## Query and header programs
 
-```concord-pseudocode
-subdomain ["api"];
-subdomain [regional.region];
-subdomain replace ["special"];
-subdomain off;
+Every owner contributes to one ordered, symbolic program per family. At each
+owner, Concord starts from the inherited program (or clears it for
+`query replace { ... }`), adds direct placements in declaration order, then
+applies block statements in source order. Nothing is encoded until the complete
+program has decided which occurrences survive.
+
+<!-- concord-dsl -->
+```rust
+client PatchApi {
+    base "https://patch.example.test/";
+    values {
+        locale: String = "fr";
+    }
+    query {
+        "a" = "1";
+        "locale" = locale;
+        "z" = "9";
+    }
+
+    GET conditional(override_locale?: String) -> () via Empty {
+        query { when_present "locale" = override_locale; }
+    }
+    GET exact(override_locale?: String) -> () via Empty {
+        query { replace "locale" = override_locale; }
+    }
+    GET appended(extra_locale?: String) -> () via Empty {
+        query { append "locale" = extra_locale; }
+    }
+    GET removed() -> () via Empty {
+        query { remove "locale"; }
+    }
+    GET fresh(query page?: u32) -> () via Empty {
+        query replace { "only" = "this"; }
+    }
+    GET bare() -> () via Empty {
+        query off;
+    }
+}
 ```
 
-- ordinary form prepends local labels to inherited generated labels;
-- `replace` drops inherited generated labels but retains the fixed base host;
-- `off` uses the fixed base host;
-- one atom is one ASCII DNS label;
-- generated labels are rejected for IP-literal bases.
+| Request | Query |
+|---|---|
+| `conditional()` | `a=1&locale=fr&z=9` |
+| `conditional().set_override_locale("de")` | `a=1&z=9&locale=de` |
+| `exact()` | `a=1&z=9` |
+| `exact().set_override_locale("de")` | `a=1&z=9&locale=de` |
+| `appended().set_extra_locale("de")` | `a=1&locale=fr&z=9&locale=de` |
+| `removed()` | `a=1&z=9` |
+| `fresh().set_page(2)` | `page=2&only=this` |
+| `bare()` | (none) |
 
-A proxy may change routing but not logical origin, auth trust, rate identity, or planning.
+A plain `"k" = e` over a key that an ancestor or earlier statement could emit
+is a compile error naming both writers; choose `replace`, `when_present`,
+`append` or `remove`. `replace`, `when_present` and `remove` themselves require
+an earlier writer, which catches misspelled override targets. Query keys are
+case-sensitive; header names compare case-insensitively (`x-region` and
+`X-Region` are one key).
 
-## Path
+Because nothing is encoded before selection, a suppressed ancestor contribution
+never runs its adapter: a failing adapter on a replaced key cannot fail the
+request. A surviving scalar is encoded once per preparation, and each surviving
+`each` item once, in order. Planning and execution are separate preparations and
+may encode again, so adapters must be deterministic and side-effect-free.
 
-```concord-pseudocode
-path ["v2", "items", endpoint.id];
-path replace ["special", endpoint.id];
-path off;
-```
+## Sensitive values
 
-- ordinary form appends generated segments;
-- `replace` drops inherited generated segments;
-- `off` retains only the fixed base path;
-- one atom is one segment;
-- reject empty, `.`, `..`, slash, and backslash before percent encoding.
-
-Optional/spread path segments, raw/pre-encoded paths, templates, wildcards, and trailing-slash language are outside v2.1.
-
-## Ordered repeated values
-
-`each` requires a semantic `OrderedValues` capability. It expands a present ordered sequence only in query/header emission positions.
+`#[sensitive]` marks a public value that must reach the server but never
+automatic output:
 
 ```text
-pub trait OrderedValues {
-    type Item;
-    type Iter<'a>: Iterator<Item = &'a Self::Item>
-    where
-        Self: 'a,
-        Self::Item: 'a;
-
-    fn ordered_values(&self) -> Self::Iter<'_>;
+values {
+    #[sensitive] query tenant: TenantId;
 }
 ```
 
-Provide ordered implementations such as `Vec<T>`, arrays, boxed slices, and deliberate domain sequence types. Do not blanket every `IntoIterator` or unordered set/map.
+The real request carries the value. Plans, error displays, retry classifiers,
+observers, response metadata debug and generated request debug show the key but
+not the value. A sensitive path segment is replaced as a whole; a sensitive DNS
+label withholds the full host from automatic observers. Sensitivity of a
+query/header key is sticky along the root-to-owner chain: a later public
+`replace`, a removal or a family fence does not declassify it. Keys whose
+normalized names contain `authorization`, `cookie`, `token`, `secret`,
+`password`, `passwd`, `credential`, `session`, `api-key`, `apikey` or
+`client-secret` are always redacted as well. None of this makes a value a
+credential: credentials come only from `credentials` and `auth`.
 
-## Query patch language
+## Header ownership
 
-```concord-pseudocode
-query {
-    "category" = endpoint.category;
-    when_present "locale" = endpoint.locale_override;
-    "tag" = each endpoint.tags;
-    append "tag" = each endpoint.additional_tags via TagSlug;
-    "fields" = endpoint.fields via CommaSeparated;
-    remove "legacy";
-}
+Transport, media, negotiation and authentication headers are not public
+targets: `Host`, `Authorization`, `Proxy-Authorization`, `Proxy-Authenticate`,
+`Accept`, `Accept-Encoding`, `Content-Type`, `Content-Encoding`,
+`Content-Length`, `Transfer-Encoding`, `Connection`, `Keep-Alive`, `TE`,
+`Trailer`, `Upgrade`, `Proxy-Connection`, `Cookie` and `Set-Cookie`, plus any
+name claimed by an effective auth placement. Collisions are rejected at compile
+time (or at runtime-endpoint bind) even when the optional source is absent.
+Singleton request fields such as `User-Agent`, `Range` and `Origin` cannot be
+repeated with `each` or `append`.
 
-query replace { /* local program from empty */ }
-query off;
-```
+## Limits
 
-### Assignment
-
-`"K" = emission;` removes all current generated occurrences of `K`, then emits the local scalar or sequence at this statement position. An absent optional therefore clears inherited values.
-
-### Conditional override
-
-`when_present "K" = optional_emission;` preserves current occurrences when the outer Concord slot is absent. When present, it replaces them. A present empty sequence explicitly clears.
-
-### Append
-
-`append "K" = emission;` preserves current occurrences and adds zero, one, or many local occurrences. Optional absence is a no-op.
-
-### Remove, replace, off
-
-- `remove` deletes every generated occurrence for the key;
-- `query replace` starts from an empty generated query;
-- `query off` emits no generated public query but does not disable private auth query placement.
-
-Keys are static validated strings. Final pair order is deterministic.
-
-## Public headers
-
-Headers use the same words under case-insensitive identity:
-
-```concord-pseudocode
-headers {
-    "X-Tenant" = client.tenant;
-    when_present "X-Locale" = endpoint.locale_override;
-    append "X-Tag" = each endpoint.tags;
-    remove "X-Legacy";
-}
-```
-
-Explicit repeated occurrences are allowed only for fields whose semantics permit them. Use a scalar list adapter when one combined value is required.
-
-Generic public headers cannot own transport/hop-by-hop/framing fields, proxy fields, auth targets, `Accept`, `Accept-Encoding`, request `Content-Type`/`Content-Encoding`, or cookies. Conflicts are errors, never precedence.
+The public head is bounded: 256 components, 256 headers, 65,536 aggregate header
+bytes, 131,072 bytes for the logical URL and for its sanitized form, and 256
+bytes for a static query/header name. Reaching a limit is a structured
+preparation error; nothing is truncated.

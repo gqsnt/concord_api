@@ -1,35 +1,53 @@
-error: defaults accept a Rust const/static path, not a call, method, macro, block, or collection expression
- --> tests/ui/fail/syntax/default_expression_restrictions.rs:8:40
-  |
-8 |             value: String = String::new();
-  |                                        ^
-
-error: defaults accept a Rust const/static path, not a call, method, macro, block, or collection expression
-  --> tests/ui/fail/syntax/default_expression_restrictions.rs:18:40
+error: [C3-OWNER] stable initializers accept a literal or a Rust constant path, not a call, method, macro, block, index or collection (in client `CallDefault`); name a supporting Rust constant instead
+  --> tests/ui/fail/syntax/default_expression_restrictions.rs:12:46
    |
-18 |             value: String = crate::TEXT.to_owned();
-   |                                        ^
-
-error: defaults accept a Rust const/static path, not a call, method, macro, block, or collection expression
-  --> tests/ui/fail/syntax/default_expression_restrictions.rs:28:33
-   |
-28 |             value: Vec<u8> = vec![];
-   |                                 ^
-
-error: defaults accept only string, char, boolean, signed numeric literals, or a Rust const/static path
-  --> tests/ui/fail/syntax/default_expression_restrictions.rs:38:25
-   |
-38 |             value: u8 = { 0 };
-   |                         ^
-
-error: defaults accept only string, char, boolean, signed numeric literals, or a Rust const/static path
-  --> tests/ui/fail/syntax/default_expression_restrictions.rs:48:30
-   |
-48 |             value: Vec<u8> = [0];
-   |                              ^
-
-error: a request body parameter cannot have a default
-  --> tests/ui/fail/syntax/default_expression_restrictions.rs:59:46
-   |
-59 |     POST send(body payload: Bytes via Binary = default) -> Bytes via Binary;
+12 |             query value: String = String::new();
    |                                              ^
+
+error: [C3-OWNER] stable initializers accept a literal or a Rust constant path, not a call, method, macro, block, index or collection (in client `MethodDefault`); name a supporting Rust constant instead
+  --> tests/ui/fail/syntax/default_expression_restrictions.rs:21:46
+   |
+21 |             query value: String = crate::TEXT.to_owned();
+   |                                              ^
+
+error: [C3-OWNER] stable initializers accept a literal or a Rust constant path, not a call, method, macro, block, index or collection (in client `MacroDefault`); name a supporting Rust constant instead
+  --> tests/ui/fail/syntax/default_expression_restrictions.rs:30:39
+   |
+30 |             query value: Vec<u8> = vec![];
+   |                                       ^
+
+error: [C3-OWNER] stable initializers accept only string, char, boolean or numeric literals, or a Rust constant path (in client `BlockDefault`); write a literal such as `= "en"` or name a constant
+  --> tests/ui/fail/syntax/default_expression_restrictions.rs:39:31
+   |
+39 |             query value: u8 = { 0 };
+   |                               ^
+
+error: [C3-OWNER] stable initializers accept only string, char, boolean or numeric literals, or a Rust constant path (in client `CollectionDefault`); write a literal such as `= "en"` or name a constant
+  --> tests/ui/fail/syntax/default_expression_restrictions.rs:48:36
+   |
+48 |             query value: Vec<u8> = [0];
+   |                                    ^
+
+error: [C3-MIGRATE] `= default` was removed; place `#[default]` on the value declaration (`value` of client `RetiredDefaultKeyword`)
+  --> tests/ui/fail/syntax/default_expression_restrictions.rs:57:35
+   |
+57 |             query value: String = default;
+   |                                   ^^^^^^^
+
+error: [C3-OWNER] `#[default]` and an explicit `= VALUE` initializer are mutually exclusive on value `value` of client `DefaultPlusInitializer`; keep one
+  --> tests/ui/fail/syntax/default_expression_restrictions.rs:66:30
+   |
+66 |             #[default] query value: String = "x";
+   |                              ^^^^^
+
+error: [C3-OWNER] a request body of endpoint `BodyInitializer::send` cannot have an initializer; body defaults are not supported, so remove `= ...` (use `body payload?: T` for an optional body)
+  --> tests/ui/fail/syntax/default_expression_restrictions.rs:75:50
+   |
+75 |         POST send(body payload: Bytes via Binary = crate::EMPTY) -> Bytes via Binary;
+   |                                                  ^
+
+error: [C3-OWNER] `#[default]` applies only to ordinary values; a request body of endpoint `BodyTraitDefault::send` is protected or initialized by its role, so remove the attribute
+  --> tests/ui/fail/syntax/default_expression_restrictions.rs:83:19
+   |
+83 |         POST send(#[default] body payload: Bytes via Binary) -> Bytes via Binary;
+   |                   ^

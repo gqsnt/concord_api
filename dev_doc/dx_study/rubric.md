@@ -1,5 +1,7 @@
 # Gate 3 scoring and decision rubric
 
+**Status:** v3 scoring protocol; thresholds apply only to actual qualifying humans.
+
 ## Per-task score
 
 - `2`: correct result and correct ownership/reasoning without coaching;
@@ -23,7 +25,7 @@ Record one row per participant and task with:
 | recovery | none, docs, compiler, or abandoned |
 | severity | Critical, Major, Minor, or none |
 
-Suggested misconception codes: `presence-option`, `set-omit-reset`,
+Suggested misconception codes: `presence-option`, `set-replace-conditional-reset`,
 `collection-cardinality`, `patch-operation`, `representation-provenance`,
 `directionality`, `explicit-fence`, `effect-retry`,
 `pagination-completeness`, `stream-lifecycle`, `generated-error`,

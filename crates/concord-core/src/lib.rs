@@ -14,16 +14,17 @@ pub mod records;
 
 mod atom;
 mod auth;
-mod body;
+pub mod body;
 mod client;
 pub mod codec;
 mod construction;
-mod contract;
+mod controls;
 mod endpoint;
 mod error;
 mod generated_contract;
 mod hooks;
 mod http;
+pub mod inspection;
 mod limits;
 mod operation;
 pub mod pagination;
@@ -33,11 +34,13 @@ mod request;
 mod response;
 pub mod retry;
 mod runtime;
+mod value;
 
-pub use pagination::{PageLimit, PaginatedRequest};
 pub use request::{AcceptedBytesRequest, Request, ResponseRequest};
 
 mod execute;
+
+pub use execute::StoreRequest;
 
 #[doc(hidden)]
 pub mod __private;

@@ -1,0 +1,520 @@
+{
+  "format": "concord.v3.runtime-review-evidence/1",
+  "review_date": "2026-10-17",
+  "base_commit": "570eec460dee1d83828ae48e35396ae07652aabc",
+  "provenance": "Logs and receipts are byte-for-byte originals. Absolute paths inside them describe the historical execution; portable_argv and relative artifact paths provide portable navigation and replay commands.",
+  "source_limit": "Development worktrees included concurrent public V3 changes. The original receipts retain full status and tracked-diff hashes. Scoped patches identify the reviewed source files, not a claim that the entire historical checkout was pristine or that these are final clean-commit qualification runs.",
+  "environment": {
+    "rustup_toolchain": "1.97.1",
+    "cargo_build_jobs": "4",
+    "cargo_profile_dev_debug": "0",
+    "cargo_profile_test_debug": "0",
+    "cargo_incremental": "0",
+    "cargo_term_color": "never",
+    "dependencies": "Cargo.lock with --locked; isolated corrected Catalog replay also used --offline.",
+    "network": "CSV integration controls require local loopback listeners. No provider or production endpoints were used."
+  },
+  "source_states": {
+    "path": "source_states.json",
+    "bytes": 3699,
+    "sha256": "fa77a24d1469435dd2bfcc3871155117c903ee663dcdef2989207b59a0716543"
+  },
+  "runs": [
+    {
+      "label": "csv-before",
+      "role": "defect_control",
+      "product_defect_evidence": true,
+      "source_state": "csv-before",
+      "portable_cwd": "repository root",
+      "portable_argv": [
+        "cargo",
+        "test",
+        "-p",
+        "concord-extras",
+        "--all-features",
+        "--locked",
+        "csv_"
+      ],
+      "exit_code": 101,
+      "outcome": "Three new unit regressions fail for missing U+FEFF or rejected BOM framing; three existing selected unit tests pass.",
+      "log": {
+        "path": "native/csv-before.log",
+        "bytes": 5341,
+        "sha256": "381f942f30f268a12daf8ae9c278a781ecbc9ff3872ff24e6ccf73c6c0bd2bfd"
+      },
+      "receipt": {
+        "path": "native/csv-before.json",
+        "bytes": 5661,
+        "sha256": "973b196f41d05c1038a02c2ba06c8f764ded8074774c22b2b20b77116d797222"
+      },
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "86d3fef99b7ade3b6246e7c210ded25b9fb37940b69badaa8f89c7dd7bd856bb"
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "86d3fef99b7ade3b6246e7c210ded25b9fb37940b69badaa8f89c7dd7bd856bb"
+      }
+    },
+    {
+      "label": "csv-before-streams-native",
+      "role": "defect_control",
+      "product_defect_evidence": true,
+      "source_state": "csv-before",
+      "portable_cwd": "repository root",
+      "portable_argv": [
+        "cargo",
+        "test",
+        "-p",
+        "concord-extras",
+        "--all-features",
+        "--locked",
+        "--test",
+        "contracts",
+        "contracts::record_streams::csv::csv_"
+      ],
+      "exit_code": 101,
+      "outcome": "Both new managed-loopback regressions fail for the expected decoding behavior, after listeners start successfully.",
+      "log": {
+        "path": "native/csv-before-streams-native.log",
+        "bytes": 2729,
+        "sha256": "6477eb2c9202ef5eb3294e284eb89fe2680b5db1f43c40a69223e70f245e35e6"
+      },
+      "receipt": {
+        "path": "native/csv-before-streams-native.json",
+        "bytes": 5753,
+        "sha256": "8f6dcd5f778173342ca3a4fe3269db96052c140b16cec0b09a8f2bceaa6aec14"
+      },
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "86d3fef99b7ade3b6246e7c210ded25b9fb37940b69badaa8f89c7dd7bd856bb"
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "86d3fef99b7ade3b6246e7c210ded25b9fb37940b69badaa8f89c7dd7bd856bb"
+      }
+    },
+    {
+      "label": "csv-format",
+      "role": "formatting",
+      "product_defect_evidence": false,
+      "source_state": "csv-after",
+      "portable_cwd": "repository root",
+      "portable_argv": [
+        "rustfmt",
+        "--edition",
+        "2024",
+        "crates/concord-extras/src/records/csv.rs",
+        "crates/concord-extras/tests/contracts/record_streams.rs"
+      ],
+      "exit_code": 0,
+      "outcome": "Pinned rustfmt produces the corrected CSV source state; no test result is claimed.",
+      "log": {
+        "path": "native/csv-format.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "receipt": {
+        "path": "native/csv-format.json",
+        "bytes": 6802,
+        "sha256": "a42b939560be2da2b711fb7aed6314258deace57775ac94e1b3adcbe9c0889fd"
+      },
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "76cd50d8ff22f4ac7f82b61e10ceba4767387c2aa7aae42038af6ea09d04c9fc"
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "bfde98332ec01fc0530d359a76994878f223a408ce46712f980204a9d3f49ed5"
+      }
+    },
+    {
+      "label": "csv-after",
+      "role": "corrected_verification",
+      "product_defect_evidence": false,
+      "source_state": "csv-after",
+      "portable_cwd": "repository root",
+      "portable_argv": [
+        "cargo",
+        "test",
+        "-p",
+        "concord-extras",
+        "--all-features",
+        "--locked",
+        "csv_"
+      ],
+      "exit_code": 0,
+      "outcome": "Six selected CSV unit tests and eight integration contracts pass.",
+      "log": {
+        "path": "native/csv-after.log",
+        "bytes": 2044,
+        "sha256": "03daa806b5791b01dc7b8f5704a499165b76c708cdec4a9d5a5b07db01c00888"
+      },
+      "receipt": {
+        "path": "native/csv-after.json",
+        "bytes": 6755,
+        "sha256": "04877255bb249c0495692608e3a4cf113e686cd13199f16ccaafd4282b71e783"
+      },
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "bfde98332ec01fc0530d359a76994878f223a408ce46712f980204a9d3f49ed5"
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "bfde98332ec01fc0530d359a76994878f223a408ce46712f980204a9d3f49ed5"
+      }
+    },
+    {
+      "label": "inspect-sites-before",
+      "role": "defect_control",
+      "product_defect_evidence": true,
+      "source_state": "inspect-before",
+      "portable_cwd": "repository root",
+      "portable_argv": [
+        "cargo",
+        "test",
+        "-p",
+        "concord-inspect",
+        "--locked",
+        "--test",
+        "generated_contract",
+        "generated_dependency_sites"
+      ],
+      "exit_code": 101,
+      "outcome": "Both generated-contract regressions fail because all five endpoints are attributed instead of two or three.",
+      "log": {
+        "path": "native/inspect-sites-before.log",
+        "bytes": 5759,
+        "sha256": "1dd8695d38a9ef494ab0e50686ca8c6067230d36c39511a49d081200f1f1adfc"
+      },
+      "receipt": {
+        "path": "native/inspect-sites-before.json",
+        "bytes": 14007,
+        "sha256": "e382dc6c1f177d5eb93f99e5eb2a93cd4895b344cdf738cbd5a6cdf107457d79"
+      },
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "3edc3d3e8350a9e20a266c3aaf242eac3712b63b088dcb9e249619f1e395dd43"
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "3edc3d3e8350a9e20a266c3aaf242eac3712b63b088dcb9e249619f1e395dd43"
+      }
+    },
+    {
+      "label": "inspect-sites-format",
+      "role": "formatting",
+      "product_defect_evidence": false,
+      "source_state": "inspect-after",
+      "portable_cwd": "repository root",
+      "portable_argv": [
+        "rustfmt",
+        "--edition",
+        "2024",
+        "crates/concord-inspect/src/diff.rs",
+        "crates/concord-inspect/tests/generated_contract.rs"
+      ],
+      "exit_code": 0,
+      "outcome": "Pinned rustfmt produces the corrected inspector source state; no test result is claimed.",
+      "log": {
+        "path": "native/inspect-sites-format.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "receipt": {
+        "path": "native/inspect-sites-format.json",
+        "bytes": 14336,
+        "sha256": "535ede05b0f859dbf2cb935cfb89bb1f66927068d30c2579b87c1c419cc19bff"
+      },
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "d1766fab8971a05cf167a924714d400a2b59aea6e10fbf637a105075e2ba1607"
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "b3aae1021fa3b489a232b2b21d78c33187077b9788f1fe92a5923226b29c6e5b"
+      }
+    },
+    {
+      "label": "inspect-sites-after",
+      "role": "corrected_verification",
+      "product_defect_evidence": false,
+      "source_state": "inspect-after",
+      "portable_cwd": "repository root",
+      "portable_argv": [
+        "cargo",
+        "test",
+        "-p",
+        "concord-inspect",
+        "--all-features",
+        "--locked"
+      ],
+      "exit_code": 0,
+      "outcome": "All 19 unit and 18 integration inspector tests pass, including both new regressions in both directions.",
+      "log": {
+        "path": "native/inspect-sites-after.log",
+        "bytes": 4280,
+        "sha256": "5082f3a021b7d44adacb1f4490ebea3f0ec7ebbd67ea414e6190ec9037fb35f5"
+      },
+      "receipt": {
+        "path": "native/inspect-sites-after.json",
+        "bytes": 14290,
+        "sha256": "c536ee7cbc2e83d4319bd6e1800d0a15ebaf3db0b5cbba4ba3d391c375214b31"
+      },
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "b3aae1021fa3b489a232b2b21d78c33187077b9788f1fe92a5923226b29c6e5b"
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "b3aae1021fa3b489a232b2b21d78c33187077b9788f1fe92a5923226b29c6e5b"
+      }
+    },
+    {
+      "label": "rustdoc-contract-diff",
+      "role": "original_public_cli",
+      "product_defect_evidence": true,
+      "source_state": "catalog-original",
+      "portable_cwd": "repository root",
+      "portable_argv": [
+        "cargo",
+        "run",
+        "--locked",
+        "-p",
+        "concord-xtask",
+        "--features",
+        "examples",
+        "--",
+        "contract",
+        "diff",
+        "dev_doc/reviews/2026_10_17_followup/evidence/rustdoc/catalog_before.contract.json",
+        "dev_doc/reviews/2026_10_17_followup/evidence/rustdoc/catalog_after.contract.json",
+        "--format",
+        "json"
+      ],
+      "exit_code": 0,
+      "outcome": "Original Catalog diff has ten Provenance changes and incorrectly attributes all eight endpoints.",
+      "log": {
+        "path": "native/rustdoc-contract-diff.log",
+        "bytes": 8386,
+        "sha256": "7631dda48734b86d826e07a5f9ec58419b3adcfbb586229051bb5acd6139bcf9"
+      },
+      "receipt": {
+        "path": "native/rustdoc-contract-diff.json",
+        "bytes": 1411,
+        "sha256": "2fd7c1414427dc1c90ea4516461da2644f4092c82c9542a510767f0c181c9e91"
+      },
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "d13d75cd434d3e4406db0f8c4ce0801d93e113ae4b0f44e10bee84bb01ec697b"
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "d13d75cd434d3e4406db0f8c4ce0801d93e113ae4b0f44e10bee84bb01ec697b"
+      }
+    },
+    {
+      "label": "inspect-sites-catalog-isolated",
+      "role": "corrected_public_cli",
+      "product_defect_evidence": false,
+      "source_state": "inspect-after",
+      "portable_cwd": "repository root",
+      "portable_argv": [
+        "env",
+        "CARGO_TARGET_DIR=target/runtime-evidence",
+        "cargo",
+        "run",
+        "--locked",
+        "--offline",
+        "-p",
+        "concord-xtask",
+        "--features",
+        "examples",
+        "--",
+        "contract",
+        "diff",
+        "dev_doc/reviews/2026_10_17_followup/evidence/rustdoc/catalog_before.contract.json",
+        "dev_doc/reviews/2026_10_17_followup/evidence/rustdoc/catalog_after.contract.json",
+        "--format",
+        "json"
+      ],
+      "exit_code": 0,
+      "outcome": "Same Catalog inputs produce ten Provenance changes and exactly seven regional endpoints in a fresh target.",
+      "log": {
+        "path": "native/inspect-sites-catalog-isolated.log",
+        "bytes": 12477,
+        "sha256": "9e435076ae4ad8b39ad9bca8a7dec1a5c268afa5bddd0880c829de7c4e840d32"
+      },
+      "receipt": {
+        "path": "native/inspect-sites-catalog-isolated.json",
+        "bytes": 14965,
+        "sha256": "e6ca1314e2524ac6c029be52d0b5256fdf3b3ff9a205351e3027da96c39b10f2"
+      },
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "b3aae1021fa3b489a232b2b21d78c33187077b9788f1fe92a5923226b29c6e5b"
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "b3aae1021fa3b489a232b2b21d78c33187077b9788f1fe92a5923226b29c6e5b"
+      }
+    },
+    {
+      "label": "csv-before-streams",
+      "role": "environment_only",
+      "product_defect_evidence": false,
+      "source_state": "csv-before",
+      "portable_cwd": "repository root",
+      "portable_argv": [
+        "cargo",
+        "test",
+        "-p",
+        "concord-extras",
+        "--all-features",
+        "--locked",
+        "--test",
+        "contracts",
+        "csv_"
+      ],
+      "exit_code": 101,
+      "outcome": "Local listener creation is denied by the sandbox. Excluded from product-defect evidence.",
+      "log": {
+        "path": "environment-only/csv-before-streams.log",
+        "bytes": 4771,
+        "sha256": "b98f8e78dbb0968a0f27311b37fafd142a4f12bee8149ed45c6aed9bbf6db1aa"
+      },
+      "receipt": {
+        "path": "environment-only/csv-before-streams.json",
+        "bytes": 5708,
+        "sha256": "ac91d0656810185c0dce7d3837d7b6f918087de30ee38de2451bebf82c9d56de"
+      },
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "86d3fef99b7ade3b6246e7c210ded25b9fb37940b69badaa8f89c7dd7bd856bb"
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "86d3fef99b7ade3b6246e7c210ded25b9fb37940b69badaa8f89c7dd7bd856bb"
+      }
+    },
+    {
+      "label": "inspect-sites-catalog-after",
+      "role": "environment_only",
+      "product_defect_evidence": false,
+      "source_state": "inspect-after",
+      "portable_cwd": "repository root",
+      "portable_argv": [
+        "cargo",
+        "run",
+        "--locked",
+        "-p",
+        "concord-xtask",
+        "--features",
+        "examples",
+        "--",
+        "contract",
+        "diff",
+        "dev_doc/reviews/2026_10_17_followup/evidence/rustdoc/catalog_before.contract.json",
+        "dev_doc/reviews/2026_10_17_followup/evidence/rustdoc/catalog_after.contract.json",
+        "--format",
+        "json"
+      ],
+      "exit_code": 101,
+      "outcome": "Reused-target CLI build fails with E0463 before producing a diff; not a diff result or defect control.",
+      "log": {
+        "path": "environment-only/inspect-sites-catalog-after.log",
+        "bytes": 1095,
+        "sha256": "06f027fdca6ec28f14d1a45ba69d3a8481405bcd767579850d985cfad715eb35"
+      },
+      "receipt": {
+        "path": "environment-only/inspect-sites-catalog-after.json",
+        "bytes": 14843,
+        "sha256": "3f5d86a9e023292f73c851ac3401395deb788e438385480ad5cf8887dabb5ebb"
+      },
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "b3aae1021fa3b489a232b2b21d78c33187077b9788f1fe92a5923226b29c6e5b"
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "b3aae1021fa3b489a232b2b21d78c33187077b9788f1fe92a5923226b29c6e5b"
+      }
+    },
+    {
+      "label": "inspect-sites-catalog-retry",
+      "role": "environment_only",
+      "product_defect_evidence": false,
+      "source_state": "inspect-after",
+      "portable_cwd": "repository root",
+      "portable_argv": [
+        "cargo",
+        "run",
+        "--locked",
+        "-p",
+        "concord-xtask",
+        "--features",
+        "examples",
+        "--",
+        "contract",
+        "diff",
+        "dev_doc/reviews/2026_10_17_followup/evidence/rustdoc/catalog_before.contract.json",
+        "dev_doc/reviews/2026_10_17_followup/evidence/rustdoc/catalog_after.contract.json",
+        "--format",
+        "json"
+      ],
+      "exit_code": 101,
+      "outcome": "Immediate reused-target retry also fails with E0463; not a diff result or defect control.",
+      "log": {
+        "path": "environment-only/inspect-sites-catalog-retry.log",
+        "bytes": 498,
+        "sha256": "9a236a376cb8ac6588d12c6a8f7ee5f4bddc89fc2fbb3ffac5d44681de0c8709"
+      },
+      "receipt": {
+        "path": "environment-only/inspect-sites-catalog-retry.json",
+        "bytes": 14841,
+        "sha256": "0b4abf17de88ef07f7f061b3c7d12bb98f11d967ebb4ba82e6ecf7a0cb27c4d2"
+      },
+      "source_before": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "b3aae1021fa3b489a232b2b21d78c33187077b9788f1fe92a5923226b29c6e5b"
+      },
+      "source_after": {
+        "head": "570eec460dee1d83828ae48e35396ae07652aabc",
+        "tracked_diff_sha256": "b3aae1021fa3b489a232b2b21d78c33187077b9788f1fe92a5923226b29c6e5b"
+      }
+    }
+  ],
+  "related_public_inputs": [
+    {
+      "path": "../rustdoc/catalog_before.contract.json",
+      "bytes": 129849,
+      "sha256": "6565846a07e8490e44ca2989f4b54ffaf5db3e98dbdc76563e137ceb43e00b33"
+    },
+    {
+      "path": "../rustdoc/catalog_after.contract.json",
+      "bytes": 130036,
+      "sha256": "34f211cbf19049a74a59c7740d27fafa277484cabb2a79bb3bddd03ce3e580dd"
+    },
+    {
+      "path": "../rustdoc/catalog_scope_default.original.diff.json",
+      "bytes": 8037,
+      "sha256": "b17d5335d46e5216a74e4d7c68061fc81862123039faceecc764c7de6d88e59d"
+    },
+    {
+      "path": "../rustdoc/catalog_scope_default.corrected.diff.json",
+      "bytes": 7845,
+      "sha256": "fabc3c0a22715d0e8ea127b23c2541b3057fdfcf01ffbab2cdddfe596db07e85"
+    },
+    {
+      "path": "../rustdoc/catalog_scope_default.patch",
+      "bytes": 562,
+      "sha256": "d13d75cd434d3e4406db0f8c4ce0801d93e113ae4b0f44e10bee84bb01ec697b"
+    }
+  ],
+  "catalog_comparison": {
+    "path": "catalog_comparison.json",
+    "bytes": 666,
+    "sha256": "15cf597d6ac251192705c5310e96c9b3b0a494c99a7dd66456d483a23d65b0af"
+  },
+  "exclusions": "All environment_only runs are explicitly excluded from product-defect evidence and successful diff results."
+}

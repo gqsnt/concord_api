@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -30,13 +29,11 @@ fn identity(
 }
 
 #[test]
-fn page_limits_and_safe_errors_have_exact_stable_structure() {
-    assert_eq!(PageLimit::Prefix(0), PageLimit::Prefix(0));
-    assert_eq!(PageLimit::Prefix(7), PageLimit::Prefix(7));
-    assert_eq!(
-        PageLimit::CompleteWithin(NonZeroU32::new(3).expect("nonzero")),
-        PageLimit::CompleteWithin(NonZeroU32::new(3).expect("nonzero"))
-    );
+fn traversal_limits_and_safe_errors_have_exact_stable_structure() {
+    assert_eq!(DEFAULT_TRAVERSAL_MAX_HANDOFFS, 2_000);
+    assert_eq!(MAX_PAGE_ATTEMPTS, 18);
+    assert_eq!(MAX_PAGINATION_HEADER_INTERESTS, 16);
+    assert_eq!(MAX_PAGINATION_HEADER_BYTES, 64 * 1024);
 
     let error = PaginationError::with_safe_message(
         PaginationErrorKind::Controller,

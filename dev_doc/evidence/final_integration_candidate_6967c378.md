@@ -1,8 +1,11 @@
 # Exact final-integration implementation evidence — `6967c378`
 
-**Status:** Current implementation-candidate evidence; the evidence-seal commit
-that contains this record must repeat the complete matrix before branch
-movement.
+**Status:** Historical v2.1 evidence, superseded by the v3 lifecycle in
+[`../release_gate_status.md`](../release_gate_status.md). It was recorded in
+the v2.1 repository for the v2.1 candidate below and is not evidence for the
+v3 tree. (Original v2.1 status: current implementation-candidate evidence; the
+evidence-seal commit that contains this record must repeat the complete matrix
+before branch movement.)
 
 **Evidence date:** 2026-09-04
 

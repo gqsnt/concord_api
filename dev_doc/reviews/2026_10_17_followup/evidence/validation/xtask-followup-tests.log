@@ -1,0 +1,89 @@
+   Compiling concord-xtask v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/tools/xtask)
+    Finished `test` profile [unoptimized] target(s) in 1.75s
+     Running unittests src/main.rs (/workspace/scratch/69ac10347cac/v3-followup/target/debug/deps/concord_xtask-e1c03a631c0a229c)
+
+running 63 tests
+test command::tests::diagnostic_sanitization_removes_forbidden_tokens ... ok
+test command::tests::compiler_json_matching_requires_message_and_primary_source_span ... ok
+test command::tests::bounded_diagnostics_do_not_reproduce_unbounded_output ... ok
+test contract::tests::command_lines_are_parsed_exactly ... ok
+test doc_audit::tests::catalog_operation_checks_cover_each_endpoint_once ... ok
+test doc_audit::tests::entities_decode_named_and_numeric_forms_only ... ok
+test doc_audit::tests::cargo_messages_yield_package_diagnostics_and_concord_metadata ... ok
+test doc_audit::tests::html_to_text_strips_tags_decodes_entities_and_normalizes_punctuation ... ok
+test doc_audit::tests::method_and_item_sections_are_scoped_to_one_item ... ok
+test doc_audit::tests::evaluation_names_every_missing_fragment_forbidden_word_and_link ... ok
+test doc_audit::tests::hrefs_resolve_against_the_page ... ok
+test doc_rules::tests::a_complete_contract_section_has_no_problems ... ok
+test doc_rules::tests::limits_section_statements_are_required ... ok
+test doc_rules::tests::hidden_private_module_and_restricted_traits_are_not_public_api ... ok
+test doc_audit::tests::catalog_operation_lines_match_the_contract_url_templates ... ok
+test contract::tests::registry_resolves_the_fixture_target_without_network ... ok
+test docs_check::s5_doc_trust_probes::s5_self_fragment_negative_is_checked ... ok
+test docs_check::s5_docs_token_neighbors::token_trivia_and_literal_controls ... ok
+test docs_check::s5_literal_comparison_regressions::literal_bytes_and_token_boundaries_survive_comparison ... ok
+test doc_rules::tests::sandbox_tracker_and_scheduler_modules_are_ruled_out ... ok
+test docs_check::tests::current_dsl_first_lines_are_classified ... ok
+test doc_rules::tests::missing_empty_and_misordered_topics_are_reported ... ok
+test docs_check::tests::dsl_classification_markers_are_scoped_to_one_fence ... ok
+test docs_check::tests::feature_matrix_matches_the_manifest ... ok
+test docs_check::tests::markdown_link_scanner_excludes_code_contexts ... ok
+test docs_check::tests::parser_fallbacks_name_every_grammar_clause ... ok
+test docs_check::tests::reserved_generated_methods_are_parsed_from_the_macro ... ok
+test docs_check::tests::grammar_keywords_agree_with_the_parser_and_the_spec_grammar ... ok
+test docs_check::tests::retired_language_allowlist_is_explicit_and_path_bounded ... ok
+test docs_check::s5_doc_trust_probes::s5_source_anchor_literal_whitespace_is_not_erased ... ok
+test docs_check::tests::retired_implementation_symbols_distinguish_v3_byte_caps ... ok
+test docs_check::tests::stale_versions_are_reported_outside_migration_context ... ok
+test docs_check::tests::tutorial_must_await_before_internals ... ok
+test docs_check::tests::user_documentation_scope_is_readme_and_docs ... ok
+test docs_check::tests::credential_clear_is_current_and_value_clear_is_retired ... ok
+test doc_rules::tests::doc_blocks_join_lines_and_keep_the_first_line_number ... ok
+test docs_check::tests::v3_dsl_fences_reject_retired_forms_but_not_string_data ... ok
+test docs_check::tests::version_banners_follow_the_workspace_major ... ok
+test contract::tests::check_status_is_nonzero_on_structural_difference ... ok
+test limit_drift::tests::drifted_inline_copies_are_reported ... ok
+test limit_drift::tests::function_numbers_read_code_ranges_and_message_text ... ok
+test limit_drift::tests::named_copies_must_exist_and_equal_the_core_owner ... ok
+test docs_check::tests::v3_markdown_dsl_spans_and_fence_lines_are_checked ... ok
+test limit_drift::tests::source_constants_evaluate_literals_and_products_outside_tests ... ok
+test limit_drift::tests::text_numbers_skip_digits_inside_words ... ok
+test policy::tests::justfile_recipes_are_parsed_with_dependencies_and_commands ... ok
+test policy::tests::pre_release_workspace_must_be_unpublishable_and_share_one_version ... ok
+test policy::tests::repository_justfile_verify_closure_is_locked ... ok
+test policy::tests::verify_implementation_cargo_commands_must_be_locked ... ok
+test release_audit::tests::manifest_assignment_parser_is_exact ... ok
+test release_audit::tests::stable_v3_requires_every_decision_closed ... ok
+test release_audit::tests::v3_beta_lifecycle_requires_the_exact_version_and_named_blockers ... ok
+test source_export::tests::export_path_filter_has_positive_and_negative_space ... ok
+test source_export::tests::external_tool_paths_are_workspace_relative ... ok
+test tests::fixed_command_options_are_bounded ... ok
+test tests::usage_lists_the_rendered_documentation_audit ... ok
+test doc_rules::tests::stable_identity_wording_is_rejected_and_precise_wording_is_not ... ok
+test docs_check::tests::rust_highlighting_keeps_dsl_classification_and_source_evidence ... ok
+test docs_check::tests::v3_surface_retirements_respect_migration_context ... ok
+test docs_check::tests::retired_language_detection_has_positive_and_negative_space ... ok
+test docs_check::tests::window_source_using_is_current_and_representation_using_is_retired ... ok
+test limit_drift::tests::repository_macro_limit_copies_match_core ... ok
+test doc_rules::tests::repository_sources_satisfy_ext01_identity01_and_limit02 ... ok
+
+test result: ok. 63 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.80s
+
+     Running tests/contract_cli.rs (/workspace/scratch/69ac10347cac/v3-followup/target/debug/deps/contract_cli-6e6ed725795a27d5)
+
+running 5 tests
+test unknown_targets_and_invalid_snapshots_exit_with_usage_status ... ok
+test r7_contract_check_rejects_duplicate_snapshot_records_with_value_safe_diagnostics ... ok
+test unused_subcommand_options_are_rejected_before_execution ... ok
+test export_check_and_diff_round_trip_through_the_binary ... ok
+test example_registry_targets_export_and_check_through_the_binary ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+
+     Running tests/v3_cli.rs (/workspace/scratch/69ac10347cac/v3-followup/target/debug/deps/v3_cli-f96e45f5b5b3d2b0)
+
+running 1 test
+test retired_migration_command_is_rejected_and_absent_from_usage ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

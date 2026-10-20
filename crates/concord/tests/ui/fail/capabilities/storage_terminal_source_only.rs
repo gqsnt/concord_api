@@ -1,3 +1,5 @@
+// CALL-03 / §11.4: `store_as_<credential>()` is generated only on the
+// credential's source endpoint; any other request lacks it.
 use concord::auth::CredentialMaterial;
 use concord::codec::{CodecError, DecodeBody, DecodeContext};
 use concord::{Bytes, Text, api};
@@ -27,12 +29,13 @@ api! {
             credential session = endpoint source;
         }
 
-
-    GET source() -> crate::SessionToken via crate::SessionCodec;
-    GET other() -> String via Text;
-}}
+        GET source() -> crate::SessionToken via crate::SessionCodec;
+        GET other() -> String via Text;
+    }
+}
 
 fn main() {
     let client = StorageApi::new().unwrap();
+    let _ = client.source().store_as_session();
     let _ = client.other().store_as_session();
 }

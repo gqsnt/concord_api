@@ -71,10 +71,12 @@ pub(super) fn boundary_request_with_sensitive(
 }
 
 pub(super) fn scripted_response(response: ScriptedResponse) -> reqwest::Response {
+    let gate = response.__body_gate();
     let (status, headers, body, polls, drops, failure) = response.__into_parts();
-    let body = if polls.is_some() || drops.is_some() || failure.is_some() {
+    let body = if gate.is_some() || polls.is_some() || drops.is_some() || failure.is_some() {
         reqwest::Body::wrap_stream(ObservedBody {
             body: Some(body),
+            gate: gate.map(|gate| -> GateWait { Box::pin(async move { gate.wait().await }) }),
             polls,
             drops,
             failure,
@@ -88,8 +90,13 @@ pub(super) fn scripted_response(response: ScriptedResponse) -> reqwest::Response
     response.into()
 }
 
+/// A pending wait on a scripted body gate.
+type GateWait = Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
+
 struct ObservedBody {
     body: Option<Bytes>,
+    /// While present, body polls stay pending until the scripted gate opens.
+    gate: Option<GateWait>,
     polls: Option<Arc<AtomicUsize>>,
     drops: Option<Arc<AtomicUsize>>,
     failure: Option<&'static str>,
@@ -98,9 +105,15 @@ struct ObservedBody {
 impl Stream for ObservedBody {
     type Item = Result<Bytes, std::io::Error>;
 
-    fn poll_next(mut self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if let Some(polls) = &self.polls {
             polls.fetch_add(1, Ordering::SeqCst);
+        }
+        if let Some(gate) = self.gate.as_mut() {
+            if gate.as_mut().poll(context).is_pending() {
+                return Poll::Pending;
+            }
+            self.gate = None;
         }
         if let Some(message) = self.failure.take() {
             self.body = None;
@@ -131,10 +144,22 @@ pub(super) fn minimal_boundary_request(endpoint: &str, method: Method) -> Bounda
     )
 }
 
+/// Whether a deterministic failure carries positive proof that no application
+/// request was submitted. Only the explicit scripted `NotSubmitted` class
+/// does; a `Connect` category alone never proves it.
+pub(super) fn failure_proves_no_submission(kind: ExecutionFailureKind) -> bool {
+    matches!(
+        kind,
+        ExecutionFailureKind::Scripted(TransportFailure::NotSubmitted)
+    )
+}
+
 pub(super) fn failure_category(kind: ExecutionFailureKind) -> ErrorCategory {
     match kind {
         ExecutionFailureKind::Scripted(TransportFailure::Timeout) => ErrorCategory::Timeout,
-        ExecutionFailureKind::Scripted(TransportFailure::Connect) => ErrorCategory::Connect,
+        ExecutionFailureKind::Scripted(
+            TransportFailure::Connect | TransportFailure::NotSubmitted,
+        ) => ErrorCategory::Connect,
         ExecutionFailureKind::Scripted(TransportFailure::RequestBody) => ErrorCategory::RequestBody,
         ExecutionFailureKind::Scripted(TransportFailure::Transport) => ErrorCategory::Transport,
         ExecutionFailureKind::EmptyQueue

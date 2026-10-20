@@ -1,0 +1,59 @@
+error: [C3-PLACE] `Content-Type` is not a generic public-header target of scope `PlaceOwnerApi::tenants::users`; it is owned by transport, authentication, representation negotiation, body media, cookies or proxy handling (place credentials with `auth { ... }`; representations own media and negotiation)
+  --> tests/ui/fail/syntax/coded_diagnostics_name_owner.rs:16:27
+   |
+16 |                 headers { "Content-Type" = "text/plain"; }
+   |                           ^^^^^^^^^^^^^^
+
+error: [C3-ATOM] atom integer literals in endpoint `AtomOwnerApi::catalog::items` must be unsuffixed base-10 values; write the number alone (`42`, not `42u32` or `0x2a`)
+  --> tests/ui/fail/syntax/coded_diagnostics_name_owner.rs:31:35
+   |
+31 |                 query { "limit" = 10u32; }
+   |                                   ^^^^^
+
+error: [C3-AUTH] at most one effective auth placement of endpoint `AuthOwnerApi::admin::audit` may attribute a challenge; keep `challenge ...` on one placement and write `challenge never` (or omit it) on the others
+  --> tests/ui/fail/syntax/coded_diagnostics_name_owner.rs:52:21
+   |
+52 |                     header "X-Second" = second challenge unauthorized;
+   |                     ^^^^^^
+
+error: note: the other challenge-attributing placement is here
+  --> tests/ui/fail/syntax/coded_diagnostics_name_owner.rs:51:21
+   |
+51 |                     header "X-First" = first challenge unauthorized;
+   |                     ^^^^^^
+
+error: [C3-RATE] cost must be positive in the inline rate policy of scope `RateOwnerApi::reports`; write a value of at least 1
+  --> tests/ui/fail/syntax/coded_diagnostics_name_owner.rs:65:65
+   |
+65 |             rate_limit { id "owner.reports"; key [origin]; cost 0; allow 10 per 1s; }
+   |                                                                 ^
+
+error: [C3-PAGE] duplicate Init field `offset` in the pagination of endpoint `PageOwnerApi::feeds::list`; assign each field once
+  --> tests/ui/fail/syntax/coded_diagnostics_name_owner.rs:80:55
+   |
+80 |                     init OffsetInit { offset: offset, offset: offset };
+   |                                                       ^^^^^^
+
+error: note: first assignment here
+  --> tests/ui/fail/syntax/coded_diagnostics_name_owner.rs:80:39
+   |
+80 |                     init OffsetInit { offset: offset, offset: offset };
+   |                                       ^^^^^^
+
+error: [C3-NAME] `item_id` is not a value of endpoint `NameOwnerApi::regional::item`; declare `item_id` as a value of this owner, or qualify an ancestor value as `client.item_id` or `<scope>.item_id`
+  --> tests/ui/fail/syntax/coded_diagnostics_name_owner.rs:97:22
+   |
+97 |                 path "items/{item_id}";
+   |                      ^^^^^^^^^^^^^^^^^
+
+error: [C3-PATH] in path template hole at bytes 6..15 of endpoint `NameOwnerApi::regional::item`
+  --> tests/ui/fail/syntax/coded_diagnostics_name_owner.rs:97:22
+   |
+97 |                 path "items/{item_id}";
+   |                      ^^^^^^^^^^^^^^^^^
+
+error: [C3-REP] request body `input` of endpoint `RepOwnerApi::uploads::create` has no request representation (`request explicit` in RepOwnerApi::uploads blocks inherited defaults); declare `request R;` on an owner or write `body input: T via R`
+   --> tests/ui/fail/syntax/coded_diagnostics_name_owner.rs:112:30
+    |
+112 |             POST create(body input: Bytes) -> Bytes via Binary;
+    |                              ^^^^^

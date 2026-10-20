@@ -1,261 +1,182 @@
-error: unknown endpoint value `missing`
-  --> tests/ui/fail/pagination/pagination_types.rs:44:32
-   |
-44 |             offset -> endpoint.missing;
-   |                                ^^^^^^^
-
-error[E0277]: the trait bound `Vec<u8>: NextCursor<std::string::String>` is not satisfied
-  --> tests/ui/fail/pagination/pagination_types.rs:64:1
-   |
-64 | / api! {
-65 | |     client WrongCursorType {
-66 | |         timeout 30s;
-67 | |         base "https://example.test";
-...  |
-75 | | }}
-   | |__^ the trait `NextCursor<std::string::String>` is not implemented for `Vec<u8>`
-   |
-help: this trait has no implementations, consider adding one
-  --> tests/ui/fail/pagination/../../../support/mod.rs
-   |
-   | pub trait NextCursor<C> {
-   | ^^^^^^^^^^^^^^^^^^^^^^^
-note: required for `CursorController<std::string::String>` to implement `PaginationController<Vec<u8>>`
-  --> tests/ui/fail/pagination/../../../support/mod.rs
-   |
-   | impl<Page, C> PaginationController<Page> for CursorController<C>
-   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^     ^^^^^^^^^^^^^^^^^^^
-   | where
-   |     Page: NextCursor<C> + IntoIterator + Send + 'static,
-   |           ------------- unsatisfied trait bound introduced here
-   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `NotController: PaginationController<Vec<u8>>` is not satisfied
-   --> tests/ui/fail/pagination/pagination_types.rs:105:1
+error[E0277]: [C3-PAGE] `NotController` is not a pagination controller for page type `Rows`
+   --> tests/ui/fail/pagination/pagination_types.rs:185:26
     |
-105 | / api! {
-106 | |     client NonControllerType {
-107 | |         timeout 30s;
-108 | |         base "https://example.test";
-...   |
-116 | | }}
-    | |__^ unsatisfied trait bound
+185 |             paginate via crate::NotController {
+    |                          ^^^^^^^^^^^^^^^^^^^^ selected by `paginate via` for a `Rows` page
     |
-help: the trait `PaginationController<Vec<u8>>` is not implemented for `NotController`
-   --> tests/ui/fail/pagination/pagination_types.rs:8:1
+help: the trait `concord::pagination::PaginationController<Rows>` is not implemented for `NotController`
+   --> tests/ui/fail/pagination/pagination_types.rs:77:1
     |
-  8 | pub struct NotController {
+ 77 | pub struct NotController;
     | ^^^^^^^^^^^^^^^^^^^^^^^^
-help: the trait `PaginationController<Vec<u8>>` is implemented for `private_controller::Controller`
-   --> tests/ui/fail/pagination/pagination_types.rs:17:5
+    = note: the controller must implement `PaginationController<Rows>`, where `Rows` is the endpoint's declared result (one decoded page)
+    = note: select a controller for this page type with `paginate via Controller { ... }`, or declare the page type the controller accepts as the endpoint result
+help: the trait `concord::pagination::PaginationController<Rows>` is implemented for `TuplePages`
+   --> tests/ui/fail/pagination/pagination_types.rs:57:1
     |
- 17 |     impl concord::pagination::PaginationController<Vec<u8>> for Controller {
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 57 | impl PaginationController<Rows> for TuplePages {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `concord::__private::PageableEndpoint::Controller`
+   --> $WORKSPACE/crates/concord-core/src/pagination/bridge.rs
+    |
+    |     type Controller: PaginationController<Self::Output>;
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `PageableEndpoint::Controller`
+
+error[E0277]: [C3-PAGE] `NotController` is not a pagination controller for page type `Rows`
+   --> tests/ui/fail/pagination/pagination_types.rs:185:13
+    |
+185 |             paginate via crate::NotController {
+    |             ^^^^^^^^ selected by `paginate via` for a `Rows` page
+    |
+help: the trait `concord::pagination::PaginationController<Rows>` is not implemented for `NotController`
+   --> tests/ui/fail/pagination/pagination_types.rs:77:1
+    |
+ 77 | pub struct NotController;
+    | ^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: the controller must implement `PaginationController<Rows>`, where `Rows` is the endpoint's declared result (one decoded page)
+    = note: select a controller for this page type with `paginate via Controller { ... }`, or declare the page type the controller accepts as the endpoint result
+help: the trait `concord::pagination::PaginationController<Rows>` is implemented for `TuplePages`
+   --> tests/ui/fail/pagination/pagination_types.rs:57:1
+    |
+ 57 | impl PaginationController<Rows> for TuplePages {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [C3-PAGE] `NotController` is not a pagination controller for page type `Rows`
+   --> tests/ui/fail/pagination/pagination_types.rs:185:13
+    |
+185 |             paginate via crate::NotController {
+    |             ^^^^^^^^ selected by `paginate via` for a `Rows` page
+    |
+help: the trait `concord::pagination::PaginationController<Rows>` is not implemented for `NotController`
+   --> tests/ui/fail/pagination/pagination_types.rs:77:1
+    |
+ 77 | pub struct NotController;
+    | ^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: the controller must implement `PaginationController<Rows>`, where `Rows` is the endpoint's declared result (one decoded page)
+    = note: select a controller for this page type with `paginate via Controller { ... }`, or declare the page type the controller accepts as the endpoint result
+help: the trait `concord::pagination::PaginationController<Rows>` is implemented for `TuplePages`
+   --> tests/ui/fail/pagination/pagination_types.rs:57:1
+    |
+ 57 | impl PaginationController<Rows> for TuplePages {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0560]: struct `concord::pagination::OffsetInit` has no field named `limit`
+  --> tests/ui/fail/pagination/pagination_types.rs:88:80
+   |
+88 |                 init OffsetInit { offset: offset, page_size: crate::PAGE_SIZE, limit: 10 };
+   |                                                                                ^^^^^ `concord::pagination::OffsetInit` does not have this field
+   |
+   = note: all struct fields are already assigned
+
+error[E0063]: missing field `page_size` in initializer of `concord::pagination::OffsetInit`
+   --> tests/ui/fail/pagination/pagination_types.rs:102:22
+    |
+102 |                 init OffsetInit { offset: offset };
+    |                      ^^^^^^^^^^ missing `page_size`
+
+error[E0308]: mismatched types
+   --> tests/ui/fail/pagination/pagination_types.rs:110:1
+    |
+110 | / api! {
+111 | |     client WrongInitFieldType {
+112 | |         base "https://example.test";
+...   |
+121 | | }
+    | | ^
+    | | |
+    | |_expected `&u64`, found `&String`
+    |   arguments to this function are incorrect
+    |
+    = note: expected reference `&u64`
+               found reference `&std::string::String`
+note: method defined here
+   --> $RUST/core/src/clone.rs
+    |
+    |     fn clone(&self) -> Self;
+    |        ^^^^^
     = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0308]: mismatched types
-  --> tests/ui/fail/pagination/pagination_types.rs:50:1
-   |
-50 | / api! {
-51 | |     client WrongOffsetType {
-52 | |         timeout 30s;
-53 | |         base "https://example.test";
-...  |
-62 | | }}
-   | |  ^
-   | |  |
-   | |  expected `&u64`, found `&String`
-   | |__arguments to this function are incorrect
-   |    this return type influences the call expression's return type
-   |
-   = note: expected reference `&u64`
-              found reference `&std::string::String`
-note: method defined here
-  --> $RUST/core/src/clone.rs
-   |
-   |     fn clone(&self) -> Self;
-   |        ^^^^^
-   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0308]: mismatched types
-  --> tests/ui/fail/pagination/pagination_types.rs:50:1
-   |
-50 | / api! {
-51 | |     client WrongOffsetType {
-52 | |         timeout 30s;
-53 | |         base "https://example.test";
-...  |
-62 | | }}
-   | |  ^
-   | |  |
-   | |  expected `&String`, found `&u64`
-   | |__arguments to this function are incorrect
-   |    this return type influences the call expression's return type
-   |
-   = note: expected reference `&std::string::String`
-              found reference `&u64`
-note: method defined here
-  --> $RUST/core/src/clone.rs
-   |
-   |     fn clone(&self) -> Self;
-   |        ^^^^^
-   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0308]: mismatched types
-  --> tests/ui/fail/pagination/pagination_types.rs:64:1
-   |
-64 | / api! {
-65 | |     client WrongCursorType {
-66 | |         timeout 30s;
-67 | |         base "https://example.test";
-...  |
-75 | | }}
-   | |  ^
-   | |  |
-   | |  expected `&Option<String>`, found `&String`
-   | |__arguments to this function are incorrect
-   |    this return type influences the call expression's return type
-   |
-   = note: expected reference `&std::option::Option<std::string::String>`
-              found reference `&std::string::String`
-note: method defined here
-  --> $RUST/core/src/clone.rs
-   |
-   |     fn clone(&self) -> Self;
-   |        ^^^^^
-   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0308]: mismatched types
-  --> tests/ui/fail/pagination/pagination_types.rs:64:1
-   |
-64 | / api! {
-65 | |     client WrongCursorType {
-66 | |         timeout 30s;
-67 | |         base "https://example.test";
-...  |
-75 | | }}
-   | |  ^
-   | |  |
-   | |  expected `&String`, found `&Option<String>`
-   | |__arguments to this function are incorrect
-   |    this return type influences the call expression's return type
-   |
-   = note: expected reference `&std::string::String`
-              found reference `&std::option::Option<std::string::String>`
-note: method defined here
-  --> $RUST/core/src/clone.rs
-   |
-   |     fn clone(&self) -> Self;
-   |        ^^^^^
-   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `Vec<u8>: NextCursor<std::string::String>` is not satisfied
-  --> tests/ui/fail/pagination/pagination_types.rs:64:1
-   |
-64 | / api! {
-65 | |     client WrongCursorType {
-66 | |         timeout 30s;
-67 | |         base "https://example.test";
-...  |
-75 | | }}
-   | |__^ the trait `NextCursor<std::string::String>` is not implemented for `Vec<u8>`
-   |
-help: this trait has no implementations, consider adding one
-  --> tests/ui/fail/pagination/../../../support/mod.rs
-   |
-   | pub trait NextCursor<C> {
-   | ^^^^^^^^^^^^^^^^^^^^^^^
-note: required for `CursorController<std::string::String>` to implement `PaginationController<Vec<u8>>`
-  --> tests/ui/fail/pagination/../../../support/mod.rs
-   |
-   | impl<Page, C> PaginationController<Page> for CursorController<C>
-   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^     ^^^^^^^^^^^^^^^^^^^
-   | where
-   |     Page: NextCursor<C> + IntoIterator + Send + 'static,
-   |           ------------- unsatisfied trait bound introduced here
-note: required for `wrong_cursor_type::Read` to implement `concord::__private::EndpointSpec`
-  --> tests/ui/fail/pagination/pagination_types.rs:64:1
-   |
-64 | / api! {
-65 | |     client WrongCursorType {
-66 | |         timeout 30s;
-67 | |         base "https://example.test";
-...  |
-70 | |     GET read(cursor: String) -> Vec<u8> via crate::support::Json {
-   | |         ^^^^
-...  |
-75 | | }}
-   | |__^ unsatisfied trait bound introduced here
-note: required by a bound in `concord::__private::request_plan`
-  --> $WORKSPACE/crates/concord-core/src/__private.rs
-   |
-   | pub fn request_plan<E>(
-   |        ------------ required by a bound in this function
+   --> tests/ui/fail/pagination/pagination_types.rs:117:17
+    |
+114 |         GET read(query offset: String = "0") -> crate::Rows via crate::RowsCodec {
+    |                                ------ expected due to this
 ...
-   |     E: EndpointSpec,
-   |        ^^^^^^^^^^^^ required by this bound in `request_plan`
-   = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+117 |                 cursor -> offset;
+    |                 ^^^^^^ expected `String`, found `u64`
+    |
+    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: try using a conversion method
+    |
+117 |                 cursor.to_string() -> offset;
+    |                       ++++++++++++
 
-error[E0063]: missing field `page_size` in initializer of `OffsetController`
-  --> tests/ui/fail/pagination/pagination_types.rs:84:22
-   |
-84 |         paginate via crate::support::OffsetController {
-   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `page_size`
+error[E0308]: mismatched types
+   --> tests/ui/fail/pagination/pagination_types.rs:129:13
+    |
+124 | /  api! {
+125 | |      client WrongInitType {
+126 | |          base "https://example.test";
+...   |
+129 | |/             paginate via OffsetPagination {
+130 | ||                 init CursorInit { cursor: cursor };
+    | ||_______________________________^ expected `OffsetInit`, found `CursorInit<String>`
+...   |
+135 | |  }
+    | |__- expected due to this
+    |
+    = note: expected struct `concord::pagination::OffsetInit`
+               found struct `concord::pagination::CursorInit<std::string::String>`
 
-error[E0560]: struct `OffsetController` has no field named `unknown`
-   --> tests/ui/fail/pagination/pagination_types.rs:100:13
+error[E0308]: mismatched types
+   --> tests/ui/fail/pagination/pagination_types.rs:146:17
     |
-100 |             unknown = 0;
-    |             ^^^^^^^ `OffsetController` does not have this field
-    |
-    = note: all struct fields are already assigned
-
-error[E0277]: the trait bound `NotController: PaginationController<Vec<u8>>` is not satisfied
-   --> tests/ui/fail/pagination/pagination_types.rs:105:1
-    |
-105 | / api! {
-106 | |     client NonControllerType {
-107 | |         timeout 30s;
-108 | |         base "https://example.test";
-...   |
-116 | | }}
-    | |__^ unsatisfied trait bound
-    |
-help: the trait `PaginationController<Vec<u8>>` is not implemented for `NotController`
-   --> tests/ui/fail/pagination/pagination_types.rs:8:1
-    |
-  8 | pub struct NotController {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^
-help: the trait `PaginationController<Vec<u8>>` is implemented for `private_controller::Controller`
-   --> tests/ui/fail/pagination/pagination_types.rs:17:5
-    |
- 17 |     impl concord::pagination::PaginationController<Vec<u8>> for Controller {
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-note: required for `non_controller_type::Read` to implement `concord::__private::EndpointSpec`
-   --> tests/ui/fail/pagination/pagination_types.rs:105:1
-    |
-105 | / api! {
-106 | |     client NonControllerType {
-107 | |         timeout 30s;
-108 | |         base "https://example.test";
-...   |
-111 | |     GET read(value: u64) -> Vec<u8> via crate::support::Json {
-    | |         ^^^^
-...   |
-116 | | }}
-    | |__^ unsatisfied trait bound introduced here
-note: required by a bound in `concord::__private::request_plan`
-   --> $WORKSPACE/crates/concord-core/src/__private.rs
-    |
-    | pub fn request_plan<E>(
-    |        ------------ required by a bound in this function
+143 |         GET read(query after: String = "") -> crate::Rows via crate::RowsCodec {
+    |                               ------ expected due to this
 ...
-    |     E: EndpointSpec,
-    |        ^^^^^^^^^^^^ required by this bound in `request_plan`
+146 |                 cursor -> after;
+    |                 ^^^^^^ expected `String`, found `Option<String>`
+    |
+    = note: expected struct `std::string::String`
+                 found enum `Option<std::string::String>`
+    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: consider using `Option::expect` to unwrap the `Option<std::string::String>` value, panicking if the value is an `Option::None`
+    |
+150 | }.expect("REASON")
+    |  +++++++++++++++++
+
+error[E0308]: mismatched types
+   --> tests/ui/fail/pagination/pagination_types.rs:160:17
+    |
+153 | / api! {
+154 | |     client WrongTupleCursor {
+155 | |         base "https://example.test";
+...   |
+160 | |                 cursor -> (page, token);
+    | |                 ^^^^^^ expected `(u32, Option<u64>)`, found `(u32, Option<String>)`
+...   |
+164 | | }
+    | |_- expected due to this
+    |
+    = note: expected tuple `(u32, Option<u64>)`
+               found tuple `(u32, Option<std::string::String>)`
     = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0616]: field `state` of struct `private_controller::Controller` is private
-   --> tests/ui/fail/pagination/pagination_types.rs:126:13
+error[E0308]: mismatched types
+   --> tests/ui/fail/pagination/pagination_types.rs:173:17
     |
-126 |             state -> endpoint.state;
-    |             ^^^^^ private field
+166 | / api! {
+167 | |     client TupleForScalarCursor {
+168 | |         base "https://example.test";
+...   |
+173 | |                 cursor -> (offset, other);
+    | |                 ^^^^^^ expected `(u64, u64)`, found `u64`
+...   |
+177 | | }
+    | |_- expected due to this
+    |
+    = note: expected tuple `(u64, u64)`
+                found type `u64`
+    = note: this error originates in the macro `$crate::__concord_api` which comes from the expansion of the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

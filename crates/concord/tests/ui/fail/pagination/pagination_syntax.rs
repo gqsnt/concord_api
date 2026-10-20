@@ -1,215 +1,180 @@
-use concord::api;
+// §14.1 pagination grammar: `paginate via Controller { init InitType { field:
+// value, ... }; cursor -> slot; }`. Init values are stable values or direct
+// references; no calls, closures, blocks, `..Default::default()` or v2 field
+// bindings.
+#![allow(unused_imports)]
 
-#[path = "../../../support/mod.rs"]
-mod support;
-#[allow(unused_imports)]
-use support::Json;
-
-api! {
-    client MissingBlock {
-        timeout 30s;
-        base "https://example.test";
-
-
-    GET read(offset: u64) -> Vec<u8> via crate::support::Json {
-        paginate crate::Controller
-    }
-}}
+use concord::pagination::{OffsetInit, OffsetPagination};
+use concord::{Binary, Bytes, api};
 
 api! {
-    client OldAssignment {
-        timeout 30s;
+    client MissingVia {
         base "https://example.test";
 
-
-    GET read(offset: u64) -> Vec<u8> via crate::support::Json {
-        paginate via crate::Controller { state = endpoint.offset }
-    }
-}}
-
-api! {
-    client OldCustomFactory {
-        timeout 30s;
-        base "https://example.test";
-
-
-    GET read() -> Vec<u8> via crate::support::Json {
-        paginate custom crate::factory();
-    }
-}}
-
-api! {
-    client DuplicateField {
-        timeout 30s;
-        base "https://example.test";
-
-
-    GET read(offset: u64, other: u64) -> Vec<u8> via crate::support::Json {
-        paginate via crate::Controller {
-            state -> endpoint.offset;
-            state -> endpoint.other;
+        GET read(query offset: u64 = 0) -> Bytes via Binary {
+            paginate OffsetPagination { init OffsetInit { offset: offset }; cursor -> offset; }
         }
     }
-}}
+}
 
 api! {
-    client DuplicateBindingDestination {
-        timeout 30s;
+    client LegacyFieldBinding {
         base "https://example.test";
 
-
-    GET read(offset: u64) -> Vec<u8> via crate::support::Json {
-        paginate via crate::Controller {
-            state -> endpoint.offset;
-            other -> endpoint.offset;
+        GET read(query offset: u64 = 0) -> Bytes via Binary {
+            paginate via OffsetPagination { offset -> offset; }
         }
     }
-}}
+}
 
 api! {
-    client InvalidBindingNamespaces {
-        timeout 30s;
+    client LegacyStableAssignment {
         base "https://example.test";
-        values {
-            offset: u64;
+
+        GET read(query offset: u64 = 0) -> Bytes via Binary {
+            paginate via OffsetPagination { page_size = 10; }
         }
-
-
-    GET read(offset: u64) -> Vec<u8> via crate::support::Json {
-        paginate via crate::Controller { state -> client.offset; }
     }
-}}
+}
 
 api! {
-    client SecretBinding {
-        timeout 30s;
+    client MissingInit {
         base "https://example.test";
 
-
-    GET read(offset: u64) -> Vec<u8> via crate::support::Json {
-        paginate via crate::Controller { state -> secret.offset; }
+        GET read(query offset: u64 = 0) -> Bytes via Binary {
+            paginate via OffsetPagination { cursor -> offset; }
+        }
     }
-}}
-
-api! {
-    client CredentialBinding {
-        timeout 30s;
-        base "https://example.test";
-
-
-    GET read(offset: u64) -> Vec<u8> via crate::support::Json {
-        paginate via crate::Controller { state -> credential.offset; }
-    }
-}}
-
-api! {
-    client IndirectBinding {
-        timeout 30s;
-        base "https://example.test";
-
-
-    GET read(offset: u64) -> Vec<u8> via crate::support::Json {
-        paginate via crate::Controller { state -> endpoint.offset.value; }
-    }
-}}
-
-api! {
-    client ShorthandField {
-        timeout 30s;
-        base "https://example.test";
-
-
-    GET read() -> Vec<u8> via crate::support::Json {
-        paginate via crate::Controller { state }
-    }
-}}
+}
 
 api! {
     client RestConstruction {
-        timeout 30s;
         base "https://example.test";
 
-
-    GET read() -> Vec<u8> via crate::support::Json {
-        paginate via crate::Controller { .. }
+        GET read(query offset: u64 = 0) -> Bytes via Binary {
+            paginate via OffsetPagination { init OffsetInit { ..Default::default() }; cursor -> offset; }
+        }
     }
-}}
+}
+
+api! {
+    client DuplicateInitField {
+        base "https://example.test";
+
+        GET read(query offset: u64 = 0) -> Bytes via Binary {
+            paginate via OffsetPagination { init OffsetInit { offset: offset, offset: 0 }; cursor -> offset; }
+        }
+    }
+}
+
+api! {
+    client MissingCursor {
+        base "https://example.test";
+
+        GET read(query offset: u64 = 0) -> Bytes via Binary {
+            paginate via OffsetPagination { init OffsetInit { offset: offset }; }
+        }
+    }
+}
+
+api! {
+    client QualifiedCursor {
+        base "https://example.test";
+
+        GET read(query offset: u64 = 0) -> Bytes via Binary {
+            paginate via OffsetPagination { init OffsetInit { offset: offset }; cursor -> endpoint.offset; }
+        }
+    }
+}
+
+api! {
+    client SingleTupleCursor {
+        base "https://example.test";
+
+        GET read(query offset: u64 = 0) -> Bytes via Binary {
+            paginate via OffsetPagination { init OffsetInit { offset: offset }; cursor -> (offset); }
+        }
+    }
+}
+
+api! {
+    client TrailingTokens {
+        base "https://example.test";
+
+        GET read(query offset: u64 = 0) -> Bytes via Binary {
+            paginate via OffsetPagination { init OffsetInit { offset: offset }; cursor -> offset; extra; }
+        }
+    }
+}
 
 api! {
     client CallInitializer {
-        timeout 30s;
         base "https://example.test";
 
-
-    GET read() -> Vec<u8> via crate::support::Json {
-        paginate via crate::Controller { state = crate::make(); }
+        GET read(query offset: u64 = 0) -> Bytes via Binary {
+            paginate via OffsetPagination { init OffsetInit { offset: crate::make() }; cursor -> offset; }
+        }
     }
-}}
+}
 
 api! {
     client MethodInitializer {
-        timeout 30s;
         base "https://example.test";
 
-
-    GET read(value: String) -> Vec<u8> via crate::support::Json {
-        paginate via crate::Controller { state = endpoint.value.clone(); }
+        GET read(query offset: u64 = 0) -> Bytes via Binary {
+            paginate via OffsetPagination { init OffsetInit { offset: offset.clone() }; cursor -> offset; }
+        }
     }
-}}
+}
 
 api! {
     client ClosureInitializer {
-        timeout 30s;
         base "https://example.test";
 
-
-    GET read() -> Vec<u8> via crate::support::Json {
-        paginate via crate::Controller { state = || 1; }
+        GET read(query offset: u64 = 0) -> Bytes via Binary {
+            paginate via OffsetPagination { init OffsetInit { offset: || 1 }; cursor -> offset; }
+        }
     }
-}}
-
-api! {
-    client AsyncInitializer {
-        timeout 30s;
-        base "https://example.test";
-
-
-    GET read() -> Vec<u8> via crate::support::Json {
-        paginate via crate::Controller { state = async { 1 }; }
-    }
-}}
+}
 
 api! {
     client BlockInitializer {
-        timeout 30s;
         base "https://example.test";
 
-
-    GET read() -> Vec<u8> via crate::support::Json {
-        paginate via crate::Controller { state = { 1 }; }
+        GET read(query offset: u64 = 0) -> Bytes via Binary {
+            paginate via OffsetPagination { init OffsetInit { offset: { 1 } }; cursor -> offset; }
+        }
     }
-}}
+}
 
 api! {
-    client FormatInitializer {
-        timeout 30s;
+    client MacroInitializer {
         base "https://example.test";
 
-
-    GET read() -> Vec<u8> via crate::support::Json {
-        paginate via crate::Controller { state = format_args!("value"); }
+        GET read(query offset: u64 = 0) -> Bytes via Binary {
+            paginate via OffsetPagination { init OffsetInit { offset: format_args!("1") }; cursor -> offset; }
+        }
     }
-}}
+}
 
 api! {
-    client TraitDefaultInitializer {
-        timeout 30s;
+    client DefaultKeywordInitializer {
         base "https://example.test";
 
-
-    GET read() -> Vec<u8> via crate::support::Json {
-        paginate via crate::Controller { state = default; }
+        GET read(query offset: u64 = 0) -> Bytes via Binary {
+            paginate via OffsetPagination { init OffsetInit { offset: default }; cursor -> offset; }
+        }
     }
-}}
+}
+
+api! {
+    client SecretInitializer {
+        base "https://example.test";
+
+        GET read(query offset: u64 = 0) -> Bytes via Binary {
+            paginate via OffsetPagination { init OffsetInit { offset: secret.offset }; cursor -> offset; }
+        }
+    }
+}
 
 fn main() {}

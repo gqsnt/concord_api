@@ -37,7 +37,7 @@ async fn configured_key_limit_failure_cuts_off_every_protected_side_effect_and_r
             ProtectedEndpoint {
                 credential: CredentialRef::new(selector),
                 challenge: ChallengePolicy::Never,
-                body: RequestBody::factory(ReplayFactory {
+                body: PreparedBody::factory(ReplayFactory {
                     calls: Arc::clone(&body_calls),
                 }),
                 query: false,
@@ -99,7 +99,7 @@ async fn body_failure_prevents_provider_debug_and_native_send() {
             core,
             &selector,
             ChallengePolicy::Never,
-            RequestBody::factory(FailingFactory),
+            PreparedBody::factory(FailingFactory),
         )
         .await,
     );
@@ -176,7 +176,7 @@ async fn limiter_failure_is_typed_and_prevents_finalization_debug_and_send() {
             core,
             &selector,
             ChallengePolicy::Never,
-            RequestBody::bytes(Bytes::new()),
+            PreparedBody::bytes(Bytes::new()),
         )
         .await,
     );
@@ -224,17 +224,20 @@ async fn limiter_rejection_precedes_custom_authorization_materialization() {
         EndpointId::from_static("runtime.authorization_limiter_order"),
         Method::GET,
     )
-    .auth(
-        Auth::authorization_with_scheme("Token", CredentialRef::new(selector))
-            .expect("valid static Authorization scheme"),
-    )
-    .accepted_bytes()
+    .response::<Binary, Bytes>()
     .build()
     .expect("custom Authorization endpoint");
 
-    let error = Request::new(core, endpoint)
-        .await
-        .expect_err("limiter rejection");
+    let error = bind_protected(
+        &core,
+        [
+            Auth::authorization_with_scheme("Token", CredentialRef::new(selector))
+                .expect("valid static Authorization scheme"),
+        ],
+        endpoint,
+    )
+    .await
+    .expect_err("limiter rejection");
     assert_eq!(error.category(), ErrorCategory::RateLimit);
     assert_eq!(limiter_acquires.load(Ordering::SeqCst), 1);
     assert_eq!(exposures.load(Ordering::SeqCst), 0);
@@ -268,7 +271,7 @@ async fn clear_during_limiter_wait_prevents_stale_credential_send() {
             core,
             &pending_selector,
             ChallengePolicy::Never,
-            RequestBody::bytes(Bytes::new()),
+            PreparedBody::bytes(Bytes::new()),
         )
         .await
     });
@@ -282,7 +285,7 @@ async fn clear_during_limiter_wait_prevents_stale_credential_send() {
 }
 
 #[tokio::test]
-async fn complete_source_replacement_during_wait_uses_only_the_new_slot() {
+async fn manual_replacement_during_wait_sends_only_the_newer_version() {
     let executor = DeterministicExecutor::new();
     executor
         .application()
@@ -311,20 +314,23 @@ async fn complete_source_replacement_during_wait_uses_only_the_new_slot() {
             core,
             &pending_selector,
             ChallengePolicy::Never,
-            RequestBody::bytes(Bytes::new()),
+            PreparedBody::bytes(Bytes::new()),
         )
         .await
     });
     gate.wait_until_reached().await;
     selector
-        .replace_static(access_token(NEWER))
-        .expect("complete source replacement");
+        .replace(access_token(NEWER))
+        .expect("manual replacement");
     gate.open();
     assert_eq!(
         task.await.expect("request task").expect("new-slot send"),
         Bytes::from_static(b"new slot")
     );
-    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 1);
+    // The replacement is detected by the phase-6 freshness check, which
+    // restarts admission once for the newer version (two committed
+    // admissions, one handoff).
+    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 2);
     assert_eq!(executor.application().request_count().expect("count"), 1);
 }
 
@@ -578,7 +584,10 @@ async fn expiry_during_limiter_wait_refreshes_at_current_finalization() {
     );
     assert_eq!(acquires.load(Ordering::SeqCst), 1);
     assert_eq!(refreshes.load(Ordering::SeqCst), 1);
-    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 1);
+    // Phase 6 found the admitted credential changed and restarted admission
+    // once: the first committed admission stays consumed, the refreshed
+    // material is sent under a second admission, and there is one handoff.
+    assert_eq!(limiter_acquires.load(Ordering::SeqCst), 2);
     assert_eq!(executor.application().request_count().expect("count"), 1);
 }
 
@@ -593,7 +602,7 @@ async fn invalid_native_auth_value_fails_after_safe_debug_and_before_execution()
             core,
             &selector,
             ChallengePolicy::Never,
-            RequestBody::bytes(Bytes::new()),
+            PreparedBody::bytes(Bytes::new()),
         )
         .await,
     );
@@ -664,7 +673,7 @@ async fn authenticated_cleartext_fails_before_observer_body_or_provider() {
             core,
             &selector,
             ChallengePolicy::Never,
-            RequestBody::factory(ReplayFactory {
+            PreparedBody::factory(ReplayFactory {
                 calls: Arc::clone(&body_calls),
             }),
         )

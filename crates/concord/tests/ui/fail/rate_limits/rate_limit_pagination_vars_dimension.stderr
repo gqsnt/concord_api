@@ -1,5 +1,5 @@
-error: a live pagination binding may update only an endpoint-owned slot (`field -> endpoint.name`)
-  --> tests/ui/fail/rate_limits/rate_limit_pagination_vars_dimension.rs:13:23
+error: [C3-PAGE] cursor destinations of endpoint `Api::list` are bare endpoint-owned slots, never `endpoint.x`, client or scope values; declare `cursor` as an endpoint parameter and write `cursor -> cursor;`
+  --> tests/ui/fail/rate_limits/rate_limit_pagination_vars_dimension.rs:22:27
    |
-13 |             cursor -> client.cursor;
-   |                       ^^^^^^
+22 |                 cursor -> client.cursor;
+   |                           ^^^^^^

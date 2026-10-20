@@ -1,0 +1,18 @@
+    Checking tokio v1.53.1
+    Checking ring v0.17.14
+    Checking rustls-webpki v0.103.15
+    Checking rustls v0.23.46
+    Checking tokio-util v0.7.18
+    Checking async-compression v0.4.42
+    Checking tower v0.5.3
+    Checking h2 v0.4.16
+    Checking tower-http v0.6.11
+    Checking tokio-rustls v0.26.4
+    Checking rustls-platform-verifier v0.7.0
+    Checking hyper v1.10.1
+    Checking hyper-util v0.1.20
+    Checking hyper-rustls v0.27.9
+    Checking reqwest v0.13.4
+ Documenting concord-core v3.0.0-beta.1 (/workspace/scratch/69ac10347cac/concord-v3-review/crates/concord-core)
+    Finished `dev` profile [unoptimized] target(s) in 8.47s
+   Generated /workspace/scratch/69ac10347cac/v3-followup/target/doc/concord_core/index.html

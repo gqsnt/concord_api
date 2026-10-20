@@ -41,6 +41,13 @@ impl OperationDeadline {
         Ok(Self { started, expires })
     }
 
+    /// The instant of the first poll at which this budget began (operation
+    /// clock). A whole-operation timeout cap is measured from this instant,
+    /// including when it later restricts a managed stream's lease.
+    pub(crate) const fn started(self) -> tokio::time::Instant {
+        self.started
+    }
+
     pub(crate) const fn expires_at(self) -> Option<tokio::time::Instant> {
         self.expires
     }
@@ -50,6 +57,7 @@ impl OperationDeadline {
             .map(|expires| expires.saturating_duration_since(Self::now()))
     }
 
+    #[cfg(test)]
     pub(crate) fn elapsed_at(self, fixed_at: tokio::time::Instant) -> Duration {
         fixed_at.saturating_duration_since(self.started)
     }
@@ -97,6 +105,29 @@ impl TestClockGuard {
             );
         });
     }
+
+    /// Advances the operation clock until "now" is at most `margin` before
+    /// the largest instant the monotonic clock can represent. After this, any
+    /// timeout longer than `margin` measured from a first poll has no
+    /// absolute monotonic deadline (CONTROL-02).
+    pub(crate) fn advance_to_representable_limit(margin: Duration) {
+        let now = OperationDeadline::now();
+        let (mut low, mut high) = (0_u64, u64::MAX);
+        while low < high {
+            let middle = low + (high - low).div_ceil(2);
+            if now.checked_add(Duration::from_secs(middle)).is_some() {
+                low = middle;
+            } else {
+                high = middle - 1;
+            }
+        }
+        let headroom = Duration::from_secs(low);
+        Self::advance(
+            headroom
+                .checked_sub(margin)
+                .expect("margin within the representable headroom"),
+        );
+    }
 }
 
 #[cfg(test)]
@@ -122,6 +153,19 @@ mod tests {
         assert_eq!(deadline.run(async { 7 }).await.ok(), Some(7));
         let fixed = started + Duration::from_millis(8);
         assert_eq!(deadline.elapsed_at(fixed), Duration::from_millis(8));
+    }
+
+    /// CONTROL-02: a timeout whose absolute deadline lies beyond the largest
+    /// representable monotonic instant is an overflow, not a wrapped or
+    /// saturated deadline.
+    #[tokio::test]
+    async fn deadline_beyond_the_representable_clock_is_an_overflow() {
+        let _clock = TestClockGuard::reset();
+        TestClockGuard::advance_to_representable_limit(Duration::from_secs(60));
+        let started = OperationDeadline::now();
+        assert!(OperationDeadline::new(started, None).is_ok());
+        assert!(OperationDeadline::new(started, Some(Duration::from_secs(30))).is_ok());
+        assert!(OperationDeadline::new(started, Some(Duration::from_secs(120))).is_err());
     }
 
     #[tokio::test]

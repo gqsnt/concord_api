@@ -3,13 +3,19 @@
 //! This implementation crate supports `concord::api!`. Applications should
 //! depend on and import from `concord`. This package parses and validates
 //! façade declarations and emits against the façade's versioned generated-code
-//! bridge. Its resolved surface model owns the exact `set_*`, optional
-//! `omit_*`, and defaulted `reset_*` value-control names.
+//! bridge. Its resolved surface model owns the exact `set_*`,
+//! `set_*_if_some`, optional `replace_*`/`omit_*` and initialized `reset_*`
+//! value-control names.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
+// Parsed and resolved declaration models are short-lived compile-time data;
+// boxing large variants would only add indirection to the expansion.
+#![allow(clippy::large_enum_variant)]
 
 mod emit;
+#[cfg(test)]
+mod generated_surface;
 mod semantic;
 mod syntax;
 
@@ -23,10 +29,6 @@ use syn::{Token, parenthesized};
 const MAX_AUTH_PLACEMENTS: usize = 64;
 const MAX_AUTH_PLACEMENT_NAME_BYTES: usize = 256;
 const MAX_AUTHORIZATION_SCHEME_BYTES: usize = 256;
-const MAX_REQUEST_HEAD_COMPONENTS: usize = 256;
-const MAX_REQUEST_URL_BYTES: usize = 131_072;
-const MAX_REQUEST_HEADER_COUNT: usize = 256;
-const MAX_REQUEST_HEADER_BYTES: usize = 65_536;
 const MAX_RATE_LIMIT_ID_BYTES: usize = 256;
 const MAX_RATE_LIMIT_KEY_PART_NAME_BYTES: usize = 128;
 const MAX_RATE_LIMIT_KEY_PARTS: usize = 32;

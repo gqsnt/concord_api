@@ -152,7 +152,7 @@ mod tests {
 
     fn managed_with_limit(limit: Option<NonZeroUsize>) -> ManagedHttp {
         let runtime = match limit {
-            Some(limit) => RuntimeConfigBuilder::new().status_body_limit(limit),
+            Some(limit) => RuntimeConfigBuilder::new().status_body_limit(limit.get()),
             None => RuntimeConfigBuilder::new().disable_status_body_capture(),
         };
         let runtime = runtime.resolve();

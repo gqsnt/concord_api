@@ -1,5 +1,5 @@
-error: a v2.1 rate policy requires a non-empty canonical `key [...]` schema
- --> tests/ui/fail/rate_limits/rate_limit_empty_by.rs:7:67
+error: [C3-RATE] a rate key has 1..=32 dimensions (inline policy `concord.rate_limit_empty_by.1` of client `Api` has 0); write `key [origin];` at minimum
+ --> tests/ui/fail/rate_limits/rate_limit_empty_by.rs:9:9
   |
-7 |         rate_limit { id "concord.rate_limit_empty_by.1"; cost 1;  key []; allow 1 per 1s; }
-  |                                                                   ^^^
+9 |         rate_limit { id "concord.rate_limit_empty_by.1"; key []; allow 1 per 1s; }
+  |         ^^^^^^^^^^

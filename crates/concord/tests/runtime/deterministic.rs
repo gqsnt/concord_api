@@ -1,3 +1,8 @@
+//! Direct, unbound-then-bound and runtime-bound requests share one managed
+//! lifecycle: inert construction, one body preparation per operation,
+//! identical observation and identical policy-retry behavior; retry budgets
+//! are shared by policy clones only (RETRY-01, PRODUCT-03).
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -7,7 +12,7 @@ use concord::endpoint::{EndpointId, RuntimeEndpoint};
 use concord::http::{Method, SafeProxy};
 use concord::observation::{AttemptInfo, OperationEvent, OperationObserver};
 use concord::retry::{RetryDecision, RetryFailure, RetryPolicy};
-use concord::{Bytes, api};
+use concord::{Binary, Bytes, api};
 use concord_test_support::server::{ResponseScript, ScriptedServer};
 
 pub struct BodyInput {
@@ -15,6 +20,7 @@ pub struct BodyInput {
     encodes: Arc<AtomicUsize>,
 }
 
+/// Buffered codec counting every preparation of its input.
 pub struct CountingBody;
 
 impl EncodeBody for CountingBody {
@@ -33,23 +39,22 @@ api! {
         timeout 30s;
         base "http://runtime.example.test/";
 
+        scope resources(scope_value: String) {
+            path "resources/{scope_value}";
 
-    scope resources(scope_value: String) {
-        path ["resources", resources.scope_value];
-        POST submit(
-            id: String,
-            verbose?: bool,
-            limit: u32 = 25,
-            body body: crate::runtime::deterministic::BodyInput via crate::CountingBody,
-        ) -> Bytes via Binary {
-            id "runtime.resources.submit";
-            path [endpoint.id];
-            query { "verbose" = endpoint.verbose; }
-            headers { "X-Limit" = endpoint.limit; }
-            effect idempotent;
+            POST submit(
+                id: String,
+                query verbose?: bool,
+                header("X-Limit") limit: u32 = 25,
+                body body: BodyInput via CountingBody,
+            ) -> Bytes via Binary {
+                id "runtime.resources.submit";
+                path "{id}";
+                effect idempotent;
+            }
         }
     }
-}}
+}
 
 #[derive(Default)]
 struct LifecycleCounts {
@@ -89,7 +94,6 @@ impl OperationObserver for LifecycleCounts {
                         context.recovered_authentication,
                     ));
             }
-            OperationEvent::PaginationFinished(_) => {}
             _ => {}
         }
     }
@@ -121,38 +125,49 @@ async fn direct_and_explicit_named_wrappers_preserve_inertness_and_lifecycle_equ
         .expect("runtime client");
     let encodes = Arc::new(AtomicUsize::new(0));
 
+    // v2 `set_verbose(Some(true))` is the exact outer-slot replacement
+    // `replace_verbose(Some(true))` in v3 (§25.2).
     let direct = client
-        .resources(SCOPE_SENTINEL.to_owned())
+        .resources(SCOPE_SENTINEL)
         .submit(
-            ID_SENTINEL.to_owned(),
+            ID_SENTINEL,
             BodyInput {
                 value: BODY_SENTINEL.to_owned(),
                 encodes: Arc::clone(&encodes),
             },
         )
-        .set_verbose(Some(true))
+        .replace_verbose(Some(true))
         .set_limit(50)
-        .timeout(Duration::from_secs(5));
+        .timeout(Duration::from_secs(5))
+        .expect("finite timeout");
     let endpoint = RuntimeApi::unbound()
-        .resources(SCOPE_SENTINEL.to_owned())
+        .resources(SCOPE_SENTINEL)
         .submit(
-            ID_SENTINEL.to_owned(),
+            ID_SENTINEL,
             BodyInput {
                 value: BODY_SENTINEL.to_owned(),
                 encodes: Arc::clone(&encodes),
             },
         )
-        .set_verbose(Some(true))
+        .replace_verbose(Some(true))
         .set_limit(50);
-    let explicit = client.request(endpoint).timeout(Duration::from_secs(5));
+    let explicit = client
+        .request(endpoint)
+        .timeout(Duration::from_secs(5))
+        .expect("finite timeout");
 
     assert_eq!(server.request_count(), 0);
     assert_eq!(encodes.load(Ordering::SeqCst), 0);
     assert_eq!(hooks.before.load(Ordering::SeqCst), 0);
     assert_eq!(hooks.response.load(Ordering::SeqCst), 0);
     assert_eq!(hooks.complete.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        direct.control_summary().selected_timeout(),
+        explicit.control_summary().selected_timeout()
+    );
     for debug in [format!("{direct:?}"), format!("{explicit:?}")] {
-        assert_eq!(debug, "SubmitRequest { .. }");
+        assert!(debug.starts_with("SubmitRequest {"), "{debug}");
+        assert!(debug.contains("runtime.resources.submit"), "{debug}");
         assert!(!debug.contains(SCOPE_SENTINEL));
         assert!(!debug.contains(ID_SENTINEL));
         assert!(!debug.contains(BODY_SENTINEL));
@@ -179,8 +194,18 @@ async fn direct_and_explicit_named_wrappers_preserve_inertness_and_lifecycle_equ
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[0].method(), requests[1].method());
     assert_eq!(requests[0].target(), requests[1].target());
+    assert_eq!(
+        requests[0].target(),
+        format!(
+            "http://runtime.example.test/resources/{SCOPE_SENTINEL}/{ID_SENTINEL}?verbose=true"
+        )
+    );
     assert_eq!(requests[0].header("X-Limit"), Some("50"));
     assert_eq!(requests[0].header("X-Limit"), requests[1].header("X-Limit"));
+    assert_eq!(
+        requests[0].header("content-type"),
+        Some("application/x-concord-phase6")
+    );
     assert_eq!(requests[0].body(), BODY_SENTINEL.as_bytes());
     assert_eq!(requests[0].body(), requests[1].body());
 }
@@ -231,9 +256,9 @@ async fn generated_retry_method_has_direct_explicit_and_runtime_endpoint_parity(
     let encodes = Arc::new(AtomicUsize::new(0));
 
     let direct = client
-        .resources("retry-scope".to_owned())
+        .resources("retry-scope")
         .submit(
-            "retry-id".to_owned(),
+            "retry-id",
             BodyInput {
                 value: "encoded-once".to_owned(),
                 encodes: Arc::clone(&encodes),
@@ -243,17 +268,13 @@ async fn generated_retry_method_has_direct_explicit_and_runtime_endpoint_parity(
         .await
         .expect("managed retry succeeds");
     let explicit = client
-        .request(
-            RuntimeApi::unbound()
-                .resources("retry-scope".to_owned())
-                .submit(
-                    "retry-id".to_owned(),
-                    BodyInput {
-                        value: "encoded-once".to_owned(),
-                        encodes: Arc::clone(&encodes),
-                    },
-                ),
-        )
+        .request(RuntimeApi::unbound().resources("retry-scope").submit(
+            "retry-id",
+            BodyInput {
+                value: "encoded-once".to_owned(),
+                encodes: Arc::clone(&encodes),
+            },
+        ))
         .response()
         .await
         .expect("explicit managed retry succeeds");
@@ -262,11 +283,11 @@ async fn generated_retry_method_has_direct_explicit_and_runtime_endpoint_parity(
         Method::GET,
     )
     .path("runtime-retry")
-    .response::<concord::Binary, Bytes>()
+    .response::<Binary, Bytes>()
     .build()
     .expect("runtime retry endpoint");
-    let runtime = runtime_endpoint
-        .try_bind(&client)
+    let runtime = client
+        .bind(runtime_endpoint)
         .expect("runtime endpoint binds to client")
         .response()
         .await
@@ -281,45 +302,28 @@ async fn generated_retry_method_has_direct_explicit_and_runtime_endpoint_parity(
         assert!(!response.metadata().recovered_authentication());
     }
     assert_eq!(server.request_count(), 6);
+    // One preparation per operation: the retry reused the prepared bytes.
     assert_eq!(encodes.load(Ordering::SeqCst), 2);
+    let requests = server.requests();
+    assert_eq!(requests[0].body(), b"encoded-once");
+    assert_eq!(requests[1].body(), b"encoded-once");
     assert_eq!(classifications.load(Ordering::SeqCst), 3);
     assert_eq!(hooks.before.load(Ordering::SeqCst), 6);
     assert_eq!(hooks.response.load(Ordering::SeqCst), 6);
     assert_eq!(hooks.complete.load(Ordering::SeqCst), 3);
+    let initial = AttemptInfo {
+        index: 0,
+        policy_retry_index: 0,
+        authentication_recovery: false,
+    };
+    let retried = AttemptInfo {
+        index: 1,
+        policy_retry_index: 1,
+        authentication_recovery: false,
+    };
     assert_eq!(
         hooks.attempts.lock().expect("attempt capture").as_slice(),
-        [
-            AttemptInfo {
-                index: 0,
-                policy_retry_index: 0,
-                authentication_recovery: false,
-            },
-            AttemptInfo {
-                index: 1,
-                policy_retry_index: 1,
-                authentication_recovery: false,
-            },
-            AttemptInfo {
-                index: 0,
-                policy_retry_index: 0,
-                authentication_recovery: false,
-            },
-            AttemptInfo {
-                index: 1,
-                policy_retry_index: 1,
-                authentication_recovery: false,
-            },
-            AttemptInfo {
-                index: 0,
-                policy_retry_index: 0,
-                authentication_recovery: false,
-            },
-            AttemptInfo {
-                index: 1,
-                policy_retry_index: 1,
-                authentication_recovery: false,
-            },
-        ]
+        [initial, retried, initial, retried, initial, retried]
     );
     assert_eq!(
         hooks
@@ -355,14 +359,11 @@ fn retry_client(server: &ScriptedServer, policy: RetryPolicy) -> RuntimeApi {
         .expect("retry client")
 }
 
-async fn execute_retry_probe(
-    client: &RuntimeApi,
-    label: &str,
-) -> Result<Bytes, concord::error::ApiError> {
+async fn execute_retry_probe(client: &RuntimeApi, label: &str) -> Result<Bytes, concord::ApiError> {
     client
-        .resources("sharing".to_owned())
+        .resources("sharing")
         .submit(
-            label.to_owned(),
+            label,
             BodyInput {
                 value: label.to_owned(),
                 encodes: Arc::new(AtomicUsize::new(0)),

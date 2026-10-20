@@ -4,6 +4,8 @@ description = "First-party implementations of Concord semantic extension contrac
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 publish = false
 
 [features]
@@ -12,11 +14,12 @@ json = ["dep:mime", "dep:serde", "dep:serde_json"]
 csv = ["concord_core/records", "dep:csv", "dep:mime", "dep:serde"]
 ndjson = ["concord_core/records", "dep:mime", "dep:serde", "dep:serde_json"]
 rate-limit = ["dep:http", "dep:tokio"]
+rate-limit-conformance = ["rate-limit"]
 oauth2-client = ["dep:bytes", "dep:http", "dep:serde_json", "dep:url"]
 
 [dependencies]
 bytes = { workspace = true, optional = true }
-concord_core = { package = "concord-core", version = "=2.1.0-beta.1", path = "../concord-core", default-features = false }
+concord_core = { package = "concord-core", version = "=3.0.0-beta.1", path = "../concord-core", default-features = false }
 csv = { workspace = true, optional = true }
 http = { workspace = true, optional = true }
 mime = { workspace = true, optional = true }
@@ -26,6 +29,7 @@ tokio = { workspace = true, optional = true, features = ["time"] }
 url = { workspace = true, optional = true }
 
 [dev-dependencies]
+concord_test_support = { package = "concord-test-support", path = "../concord-test-support", default-features = false }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util", "time"] }

@@ -8,26 +8,45 @@
 //! value acquired by core and passed to `ResponseRepresentation::from_body`, never a
 //! native response. Every core-owned mode that polls a response body suppresses
 //! empty transport chunks and accepts at most
-//! [`MAX_EMPTY_RESPONSE_CHUNKS`] for one response.
+//! [`MAX_EMPTY_RESPONSE_CHUNKS`] empty chunks (consecutive ones for a managed
+//! stream).
+//!
+//! Streaming acquisition is distinct from consumption: an endpoint await that
+//! returns a [`ByteStream`] (or an item stream) has opened a managed stream
+//! with a finite lease, and the stream's [`StreamSummary`] reports how its
+//! consumption ends.
 
+mod absence;
 mod error;
 mod handler;
+mod lease;
 mod metadata;
 mod spec;
 mod stream;
+mod summary;
 
 pub use crate::limits::MAX_EMPTY_RESPONSE_CHUNKS;
+pub use absence::OptionalOutcome;
 pub use error::{ResponseBodyError, ResponseBodyErrorKind};
-pub use metadata::{ApiResponse, ExecutionMeta};
+pub use metadata::{ApiResponse, BodyDisposition, ExecutionMeta};
 pub use spec::{
-    AcceptedBytesDriver, Buffered, Discard, DiscardDriver, Empty, PageResponseRepresentation,
-    ResponseDriver, ResponseHead, ResponseRepresentation, Streaming,
+    AcceptedBytesDriver, Buffered, Discard, DiscardDriver, Empty, MAX_ACCEPT_BYTES, ResponseDriver,
+    ResponseHead, ResponseRepresentation, Streaming,
 };
 pub use stream::ByteStream;
+pub use summary::{StreamErrorKind, StreamState, StreamSummary};
 
+#[doc(hidden)]
+pub use absence::{ExpectedAbsence, HeadAbsence};
+
+pub(crate) use absence::{absent_outcome, present_outcome};
 pub(crate) use handler::{ResponseInput, execute_response};
+pub(crate) use lease::{StreamContext, StreamLimits};
 pub(crate) use spec::{
-    AcceptedBytesSelection, DeclaredResponse, ResponseSelection, completion_outcome,
-    validate_accept,
+    AcceptedBytesSelection, DeclaredResponse, ResponseSelection, accept_is_valid, body_disposition,
+    completion_outcome, validate_accept,
 };
-pub(crate) use stream::StreamObservation;
+#[cfg(feature = "records")]
+pub(crate) use stream::ChunkEvent;
+#[cfg(all(test, feature = "records"))]
+pub(crate) use stream::test_support as stream_test_support;

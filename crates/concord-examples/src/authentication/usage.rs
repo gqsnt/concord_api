@@ -3,9 +3,12 @@
 //! Required features: `oauth2-client` and `default-tls`. Mode:
 //! construction-only. Documentation owner: `docs/auth.md`.
 //! Proving test: `tests/construction.rs`.
+//!
+//! Secret setters are named after the secret; custom provider setters are
+//! named after the credential and take the declared provider type.
 
 use concord::SecretString;
-use concord::auth::OAuth2ClientCredentials;
+use concord::auth::{OAuth2ClientCredentials, StoreRequest};
 
 use super::api::{AuthenticationApi, authentication_api};
 use super::extensions::ExampleProvider;
@@ -27,8 +30,8 @@ pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
         .bearer_token(SecretString::try_new("example-bearer")?)
         .username(SecretString::try_new("example-user")?)
         .password(SecretString::try_new("example-password")?)
-        .oauth_provider(oauth)
-        .custom_provider(ExampleProvider)
+        .oauth(oauth)
+        .custom(ExampleProvider)
         .build()?;
     // ANCHOR_END: authentication_client
 
@@ -40,7 +43,7 @@ pub fn construct() -> Result<(), Box<dyn std::error::Error>> {
     let _: authentication_api::OAuthRequest = client.o_auth();
     let _: authentication_api::EndpointBackedRequest = client.endpoint_backed();
     let _: authentication_api::ProviderBackedRequest = client.provider_backed();
-    let _acquisition = client.login().store_as_acquired();
+    let _acquisition: StoreRequest = client.login().store_as_acquired();
     // ANCHOR_END: authenticated_requests
     Ok(())
 }

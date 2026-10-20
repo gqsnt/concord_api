@@ -1,5 +1,11 @@
-error: unsupported client entry; expected a child scope, HTTP endpoint, or `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout`, or `rate_limit` clause
- --> tests/ui/fail/syntax/second_client.rs:9:5
-  |
-9 |     client SecondApi {
-  |     ^^^^^^
+error: [C3-OWNER] unsupported client entry in client `FirstApi`; expected a child scope or endpoint, or a `base`, `values`, `credentials`, `rate_limits`, `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause
+  --> tests/ui/fail/syntax/second_client.rs:11:9
+   |
+11 |         client SecondApi {
+   |         ^^^^^^
+
+error: [C3-OWNER] an `api!` invocation accepts exactly one closed `client` (client `ThirdApi` is already declared); move scopes and endpoints inside it, or declare another client in a separate invocation
+  --> tests/ui/fail/syntax/second_client.rs:21:5
+   |
+21 |     client FourthApi {
+   |     ^^^^^^

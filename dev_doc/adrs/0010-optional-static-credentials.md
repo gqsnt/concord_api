@@ -1,6 +1,7 @@
 # ADR 0010 — Defer optional initial static secrets
 
-- **Status:** Deferred for v2.1
+- **Status:** Superseded for v3 by [ADR 0020](0020-optional-static-secrets-remain-rejected.md): the rejection becomes a selected v3 contract rather than a pending deferral; the invariant below is carried forward.
+- **v2.1 status (historical):** Deferred for v2.1
 
 ## Decision
 

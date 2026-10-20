@@ -289,6 +289,7 @@ pub struct ScriptedResponse {
     headers: HeaderMap,
     body: Bytes,
     delivery_gate: Option<Gate>,
+    body_gate: Option<Gate>,
     body_polls: Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
     body_drops: Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
     body_read_failure: Option<&'static str>,
@@ -317,6 +318,7 @@ impl ScriptedResponse {
             headers: HeaderMap::new(),
             body: body.into(),
             delivery_gate: None,
+            body_gate: None,
             body_polls: None,
             body_drops: None,
             body_read_failure: None,
@@ -333,6 +335,23 @@ impl ScriptedResponse {
     pub fn delivery_gate(mut self, gate: Gate) -> Self {
         self.delivery_gate = Some(gate);
         self
+    }
+
+    /// Delivers the head immediately but withholds the body: every body poll
+    /// stays pending (a stalled read) until `gate` opens. Used for idle and
+    /// lease evidence under paused time.
+    #[must_use]
+    pub fn body_gate(mut self, gate: Gate) -> Self {
+        self.body_gate = Some(gate);
+        self
+    }
+
+    /// Returns the gate withholding the body, if any. Transport-adapter use
+    /// only.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __body_gate(&self) -> Option<Gate> {
+        self.body_gate.clone()
     }
 
     /// Observes native response-body polling without retaining response bytes
@@ -402,6 +421,7 @@ impl fmt::Debug for ScriptedResponse {
             .field("header_values", &self.headers.len())
             .field("body_len", &self.body.len())
             .field("delivery_gate", &self.delivery_gate.is_some())
+            .field("body_gate", &self.body_gate.is_some())
             .field("body_poll_counter", &self.body_polls.is_some())
             .field("body_drop_counter", &self.body_drops.is_some())
             .field("body_read_failure", &self.body_read_failure.is_some())
@@ -417,6 +437,12 @@ pub enum TransportFailure {
     Connect,
     RequestBody,
     Transport,
+    /// A connection-establishment failure delivered together with positive,
+    /// transport-native proof that the application request was never
+    /// submitted (for example a refusal before any request byte was written).
+    /// Models the only kind of evidence Concord accepts for settling a handed
+    /// off attempt as not dispatched.
+    NotSubmitted,
 }
 
 /// Safe deterministic execution failure kinds.

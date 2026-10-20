@@ -1,5 +1,7 @@
+// §9.1: representation roles are selected by direction; a response-only
+// representation cannot encode a request body.
 use concord::response::{DiscardDriver, ResponseBodyError, ResponseRepresentation, ResponseHead};
-use concord::{Bytes, api};
+use concord::{Binary, Bytes, api};
 
 pub struct ResponseOnly;
 
@@ -16,8 +18,8 @@ api! {
         timeout 30s;
         base "http://invalid-response-only.example.test/";
 
-
-    POST invalid(body body: Bytes via crate::ResponseOnly) -> Bytes via Binary;
-}}
+        POST invalid(body body: Bytes via crate::ResponseOnly) -> Bytes via Binary;
+    }
+}
 
 fn main() {}

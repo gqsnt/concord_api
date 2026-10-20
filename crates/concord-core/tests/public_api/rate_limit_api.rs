@@ -4,33 +4,56 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use concord_core::contracts::{
-    BoxFuture, DEFAULT_RATE_LIMIT_KEY_BYTES, NoopRateLimiter, RateLimitError, RateLimitErrorKind,
+    BoxFuture, DEFAULT_RATE_LIMIT_KEY_BYTES, Enforcement, LimiterCapability, NoopRateLimiter,
+    RateKeyEncoder, RateKeyPart, RateLimitDeclaration, RateLimitError, RateLimitErrorKind,
     RateLimitId, RateLimitKey, RateLimitPermit, RateLimitPlan, RateLimitPolicy, RateLimitRequest,
     RateLimitResponse, RateLimitWindow, RateLimiter, RuntimeConfigBuilder,
+};
+use concord_core::rate_limit::{
+    CanonicalKeyWriter, DEFAULT_RATE_SCHEMA_REGISTRATIONS, ENDPOINT_LABEL, ORIGIN_LABEL,
+    RATE_KEY_FRAMING_VERSION, RateDimensionKind, RatePlanSummary, RatePolicySchema,
+    UTF8_ENCODING_ID, encode_canonical, encode_canonical_with, is_valid_encoding_id,
 };
 
 struct CustomLimiter;
 
 impl RateLimiter for CustomLimiter {
+    fn capability(&self) -> LimiterCapability {
+        LimiterCapability::new(Enforcement::SharedPersistent, "com.example.limiter", 3)
+    }
+
     fn acquire<'a>(
         &'a self,
         request: RateLimitRequest<'a>,
     ) -> BoxFuture<'a, Result<RateLimitPermit, RateLimitError>> {
         for rule in request.plan.policies() {
+            let schema: &RatePolicySchema = rule.schema();
             let _ = (
                 rule.id().as_str(),
-                rule.key().is_global(),
                 rule.key().total_bytes(),
                 rule.key()
                     .parts()
                     .iter()
-                    .map(|part| (part.name(), part.value()))
+                    .map(|part| (part.name(), part.kind(), part.encoding_id(), part.value()))
                     .collect::<Vec<_>>(),
                 rule.cost(),
                 rule.windows()
                     .iter()
                     .map(|window| (window.capacity(), window.duration()))
                     .collect::<Vec<_>>(),
+                schema.id().as_str(),
+                schema
+                    .dimensions()
+                    .iter()
+                    .map(|dimension| (dimension.label(), dimension.kind(), dimension.encoding_id()))
+                    .collect::<Vec<_>>(),
+                schema
+                    .windows()
+                    .iter()
+                    .map(|window| (window.duration(), window.capacity()))
+                    .collect::<Vec<_>>(),
+                schema.framing_version(),
+                schema.uses_origin(),
             );
         }
         let _ = (
@@ -43,6 +66,10 @@ impl RateLimiter for CustomLimiter {
             request.attempt.authentication_recovery,
             request.plan.policies(),
             request.plan.is_empty(),
+            request.plan.uses_origin(),
+            request.capability.enforcement(),
+            request.capability.namespace(),
+            request.capability.algorithm_version(),
         );
         Box::pin(async { Ok(RateLimitPermit::granted()) })
     }
@@ -55,6 +82,7 @@ impl RateLimiter for CustomLimiter {
             response.request.page_index,
             response.request.attempt,
             response.request.plan.policies(),
+            response.request.capability,
             response.status,
             response.server_delay,
             response.cooldown_cap,
@@ -73,6 +101,28 @@ fn observe_without_replacement(limiter: &dyn RateLimiter, response: RateLimitRes
     limiter.observe(response)
 }
 
+/// A downstream canonical key contract.
+struct TenantId(u64);
+
+impl RateKeyPart for TenantId {
+    const ENCODING_ID: &'static str = "com.example.tenant/1";
+
+    fn write_canonical(&self, out: &mut CanonicalKeyWriter) -> Result<(), RateLimitError> {
+        out.write_tagged_bytes("com.example.tenant", &self.0.to_be_bytes())
+    }
+}
+
+/// A downstream `via` encoder over a foreign type.
+struct Lowercase;
+
+impl RateKeyEncoder<str> for Lowercase {
+    const ENCODING_ID: &'static str = "com.example.lowercase/1";
+
+    fn write_canonical(value: &str, out: &mut CanonicalKeyWriter) -> Result<(), RateLimitError> {
+        value.to_ascii_lowercase().write_canonical(out)
+    }
+}
+
 #[test]
 fn custom_observation_contract_returns_safe_completion() {
     let _: for<'a> fn(&'a dyn RateLimiter, RateLimitResponse<'a>) = observe_without_replacement;
@@ -87,6 +137,7 @@ fn extensions_construct_opaque_permits_and_typed_key_safe_errors() {
         RateLimitErrorKind::StateCapacity,
         RateLimitErrorKind::Acquire,
         RateLimitErrorKind::Internal,
+        RateLimitErrorKind::SchemaConflict,
     ] {
         let error = RateLimitError::new(kind);
         assert_eq!(error.kind(), kind);
@@ -107,6 +158,15 @@ fn custom_extensions_compile_with_body_free_plan_inspection() {
         limiter.preparation_key_limit(),
         DEFAULT_RATE_LIMIT_KEY_BYTES
     );
+    assert_eq!(
+        limiter.capability().enforcement(),
+        Enforcement::SharedPersistent
+    );
+    limiter.capability().validate().expect("valid capability");
+    assert_eq!(
+        NoopRateLimiter::new().capability().enforcement(),
+        Enforcement::Unenforced
+    );
 }
 
 #[test]
@@ -118,13 +178,38 @@ fn exact_rate_limit_contract_constructors_accessors_and_traits_compile() {
         ("client.tenant", "north"),
     ])
     .expect("ordered canonical key");
-    assert!(!key.is_global());
     assert_eq!(key.parts()[0].name(), "host");
+    assert_eq!(key.parts()[0].kind(), RateDimensionKind::Custom);
+    assert_eq!(key.parts()[0].encoding_id(), UTF8_ENCODING_ID);
     assert_ne!(key.parts()[0].value(), b"api.example.test");
     assert!(key.total_bytes() > "host".len() + "api.example.test".len());
-    let global = RateLimitKey::global();
-    assert!(global.is_global());
-    assert_eq!(global.total_bytes(), 0);
+    assert!(RateLimitKey::from_canonical_values([(ORIGIN_LABEL, "x")]).is_err());
+    assert!(RateLimitKey::from_canonical_values([(ENDPOINT_LABEL, "x")]).is_err());
+
+    let heterogeneous = RateLimitKey::from_encoded_parts([
+        (
+            "tenant",
+            encode_canonical(&TenantId(7), 64).expect("tenant"),
+        ),
+        (
+            "region",
+            encode_canonical_with::<Lowercase, str>("EU", 64).expect("region"),
+        ),
+    ])
+    .expect("heterogeneous key");
+    assert_eq!(
+        heterogeneous.parts()[0].encoding_id(),
+        "com.example.tenant/1"
+    );
+    assert_eq!(
+        heterogeneous.parts()[1].encoding_id(),
+        "com.example.lowercase/1"
+    );
+    assert_eq!(
+        heterogeneous.parts()[1].value(),
+        encode_canonical("eu", 64).expect("eu").as_bytes()
+    );
+    assert!(is_valid_encoding_id(TenantId::ENCODING_ID));
 
     let window = RateLimitWindow::new(
         NonZeroU32::new(100).expect("capacity"),
@@ -139,8 +224,25 @@ fn exact_rate_limit_contract_constructors_accessors_and_traits_compile() {
     assert_eq!(rule.key().parts().len(), 2);
     assert_eq!(rule.cost().get(), 2);
     assert_eq!(rule.windows().len(), 1);
+    assert_eq!(rule.schema().framing_version(), RATE_KEY_FRAMING_VERSION);
     let plan = RateLimitPlan::try_from_policies([rule]).expect("bounded plan");
     assert_eq!(plan.policies().len(), 1);
+
+    let declaration = RateLimitDeclaration::new("catalog.tenant.read")
+        .cost(1)
+        .window(120, Duration::from_secs(60))
+        .window(5_000, Duration::from_secs(3_600))
+        .origin()
+        .endpoint()
+        .part("tenant", "tenant-a")
+        .part_with::<Lowercase, str>("region", "EU");
+    declaration.validate().expect("valid declaration");
+    assert_eq!(
+        declaration.id().map(RateLimitId::as_str),
+        Some("catalog.tenant.read")
+    );
+    let _: fn(&RatePlanSummary) -> &'static str = RatePlanSummary::enforcement_label;
+    assert_eq!(DEFAULT_RATE_SCHEMA_REGISTRATIONS, 4_096);
 
     let safe = RateLimitError::with_safe_message(
         RateLimitErrorKind::Acquire,

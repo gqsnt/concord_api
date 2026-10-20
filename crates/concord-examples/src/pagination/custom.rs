@@ -3,15 +3,18 @@
 //! Required feature: `json`. Mode: construction and deterministic local execution.
 //! Documentation owner: `docs/extensions.md`.
 //! Proving tests: `tests/construction.rs` and `tests/local_runtime.rs`.
+//!
+//! The controller has a public initialization type ([`ExampleStart`]) and
+//! private state ([`ExampleController`]); the declaration maps its whole
+//! `Option<String>` cursor onto the endpoint's `cursor?: String` slot.
 
 // ANCHOR: pagination_controller_extension
+use concord::Bytes;
 use concord::codec::{CodecError, CodecErrorKind, DecodeBody, DecodeContext};
-use concord::pagination::PaginatedRequest;
 use concord::pagination::{
-    HasNextCursor, PageDecisionLimits, PageResponse, PageStep, PaginationController,
+    CollectPrefix, HasNextCursor, PageDecisionLimits, PageResponse, PageStep, PaginationController,
     PaginationDescription, PaginationError, PaginationErrorKind,
 };
-use concord::{Bytes, PageLimit};
 
 use super::PaginationApi;
 
@@ -66,16 +69,33 @@ impl DecodeBody for ExamplePageCodec {
     }
 }
 
-/// Custom cursor state bound to the generated endpoint snapshot.
-pub struct ExampleController {
-    /// Current optional cursor.
+/// Public initialization built by `init ExampleStart { cursor: cursor }`.
+pub struct ExampleStart {
+    /// Cursor of the first request; `None` requests the first page.
     pub cursor: Option<String>,
+}
+
+/// Private cursor state; `Cursor = Option<String>`.
+pub struct ExampleController {
+    cursor: Option<String>,
 }
 
 impl PaginationController<ExamplePage> for ExampleController {
     type Item = u32;
+    type Init = ExampleStart;
+    type Cursor = Option<String>;
 
     const DESCRIPTION: PaginationDescription = PaginationDescription::NONE;
+
+    fn start(init: Self::Init) -> Result<Self, PaginationError> {
+        Ok(Self {
+            cursor: init.cursor,
+        })
+    }
+
+    fn cursor(&self) -> Self::Cursor {
+        self.cursor.clone()
+    }
 
     fn advance(
         self,
@@ -98,8 +118,8 @@ impl PaginationController<ExamplePage> for ExampleController {
     }
 }
 
-/// Constructs a bounded request via the downstream controller.
+/// Constructs a bounded prefix request via the downstream controller.
 pub fn construct(client: &PaginationApi) {
-    let _: PaginatedRequest<_> = client.custom().paginate(PageLimit::Prefix(2));
+    let _: CollectPrefix<u32> = client.custom().collect_prefix(2);
 }
 // ANCHOR_END: pagination_controller_extension

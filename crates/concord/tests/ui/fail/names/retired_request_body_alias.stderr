@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `concord::body::RequestBody`
+ --> tests/ui/fail/names/retired_request_body_alias.rs:1:5
+  |
+1 | use concord::body::RequestBody;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ no `RequestBody` in `body`

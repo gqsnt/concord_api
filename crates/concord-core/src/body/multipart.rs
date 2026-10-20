@@ -1,9 +1,18 @@
+use std::collections::VecDeque;
+use std::collections::hash_map::RandomState;
 use std::fmt;
-use std::num::NonZeroUsize;
+use std::hash::{BuildHasher, Hasher};
+use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::task::{Context, Poll};
 
 use bytes::Bytes;
+use futures_core::Stream;
+use http::HeaderValue;
 
-use super::prepared::{NativeBody, stream_native};
+use super::spec::LengthHint;
+use super::stream::BodyStream;
 use super::{BodyError, BodyErrorKind, RequestStream};
 
 /// Maximum number of parts retained by one multipart recipe.
@@ -19,18 +28,42 @@ pub const MAX_MULTIPART_METADATA_BYTES: usize = 65_536;
 /// Maximum byte length of one inline multipart text value.
 pub const MAX_MULTIPART_INLINE_TEXT_BYTES: usize = 16_777_216;
 
+/// Attempts made to find a boundary absent from every buffered part.
+const BOUNDARY_ATTEMPTS: usize = 4;
+/// RFC 2046 maximum boundary length.
+const MAX_BOUNDARY_BYTES: usize = 70;
+
 /// Creates a fresh complete multipart recipe for one Concord attempt.
 ///
-/// `create` is called once for each visible managed attempt. A factory
-/// implementation must return a new complete recipe on every call.
+/// `create` is called once when the prepared body is materialized (before
+/// credential acquisition) and once for each later admitted application
+/// attempt. A factory implementation must return a new complete recipe on
+/// every call. The multipart boundary is generated once by
+/// [`PreparedBody::multipart_factory`](super::PreparedBody::multipart_factory)
+/// and reused for every recipe, so the request `Content-Type` never changes
+/// between attempts.
 ///
-/// Calls for independent operations may overlap and occur only after the
-/// before-send hook approves an attempt. Multipart values and factory state may
-/// be sensitive; implementations own logging and storage and must bound CPU,
-/// memory, retries, maps, queues, spawned tasks, metric cardinality, and external
-/// I/O. The synchronous callback cannot be preempted by Concord; the operation
-/// deadline is checked after return, cancellation prevents later work only, and
-/// Concord does not automatically bound custom factory state.
+/// # Extension contract
+///
+/// * **Ownership.** The factory is moved into the prepared body and shared by
+///   its attempts; each returned recipe is owned by core for one attempt.
+/// * **Concurrency.** Calls for independent operations may overlap.
+/// * **Cancellation.** The synchronous callback cannot be preempted; the
+///   operation deadline is checked after it returns and cancellation prevents
+///   later work only.
+/// * **Input sensitivity.** Multipart values and factory state may be
+///   sensitive; implementations own logging and storage. Diagnostics never
+///   print part values, names or filenames.
+/// * **Errors.** Return a [`BodyError`]; core reduces it to
+///   [`BodyErrorKind::Factory`] and fails the operation without sending that
+///   attempt.
+/// * **Resource obligations.** Implementations must bound CPU, memory,
+///   retries, maps, queues, spawned tasks, metric cardinality and external
+///   I/O; every recipe is revalidated structurally and against the body
+///   limit.
+/// * **Negative capabilities.** A factory cannot choose the boundary or the
+///   top-level media type, cannot observe credentials or the native request,
+///   and cannot grant an extra attempt.
 pub trait MultipartFactory: Send + Sync + 'static {
     /// Creates one fresh multipart recipe suitable for a single Concord attempt.
     fn create(&self) -> Result<MultipartBody, BodyError>;
@@ -38,8 +71,11 @@ pub trait MultipartFactory: Send + Sync + 'static {
 
 /// An owned request-side multipart recipe.
 ///
-/// Serialization and boundary generation are deferred until native request
-/// construction and are owned by the private HTTP implementation.
+/// Serialization is owned by core: once the recipe becomes a
+/// [`PreparedBody`](super::PreparedBody), core generates one boundary,
+/// validates it and serializes every attempt with that same boundary and the
+/// exact `multipart/form-data; boundary=...` media type. Diagnostics never
+/// print part values, names or filenames.
 pub struct MultipartBody {
     parts: Vec<(String, MultipartPart)>,
     metadata_bytes: usize,
@@ -47,6 +83,9 @@ pub struct MultipartBody {
 
 impl MultipartBody {
     /// Creates an empty multipart recipe.
+    ///
+    /// A recipe with no parts still serializes the closing boundary. Its
+    /// complete framed length counts against the request-body limit.
     #[must_use]
     pub const fn new() -> Self {
         Self {
@@ -102,19 +141,66 @@ impl MultipartBody {
         Ok(())
     }
 
-    pub(crate) fn metadata(&self) -> Result<MultipartMetadata, BodyError> {
+    /// Computes the exact framed length (when every part length is known), the
+    /// framed minimum and the replay capability for one boundary.
+    pub(crate) fn framing(
+        &self,
+        boundary: &MultipartBoundary,
+    ) -> Result<MultipartFraming, BodyError> {
         self.validate_structure()?;
-        let mut lower_bound = 0_u64;
+        let boundary_len = saturating_u64(boundary.as_str().len());
+        let mut exact = Some(0_u64);
+        let mut minimum = 0_u64;
         let mut reusable = true;
-        for (_, part) in &self.parts {
+        for (name, part) in &self.parts {
+            let header = part_header(name, part);
+            // "--" boundary CRLF header CRLF CRLF value CRLF
+            let framing = 2_u64
+                .checked_add(boundary_len)
+                .and_then(|length| length.checked_add(2))
+                .and_then(|length| length.checked_add(saturating_u64(header.len())))
+                .and_then(|length| length.checked_add(4))
+                .and_then(|length| length.checked_add(2))
+                .ok_or_else(limit_exceeded)?;
+            let (value_exact, value_minimum) = part.value_length()?;
             reusable &= part.is_reusable();
-            lower_bound = lower_bound
-                .checked_add(part.lower_bound()?)
-                .ok_or_else(|| BodyError::new(BodyErrorKind::LimitExceeded))?;
+            minimum = minimum
+                .checked_add(framing)
+                .and_then(|length| length.checked_add(value_minimum))
+                .ok_or_else(limit_exceeded)?;
+            exact = match (exact, value_exact) {
+                (Some(total), Some(value)) => Some(
+                    total
+                        .checked_add(framing)
+                        .and_then(|length| length.checked_add(value))
+                        .ok_or_else(limit_exceeded)?,
+                ),
+                _ => None,
+            };
         }
-        Ok(MultipartMetadata {
+        // "--" boundary "--" CRLF, including a recipe with no parts.
+        let closing = 2_u64
+            .checked_add(boundary_len)
+            .and_then(|length| length.checked_add(4))
+            .ok_or_else(limit_exceeded)?;
+        minimum = minimum.checked_add(closing).ok_or_else(limit_exceeded)?;
+        exact = exact
+            .map(|total| total.checked_add(closing).ok_or_else(limit_exceeded))
+            .transpose()?;
+        Ok(MultipartFraming {
+            exact,
+            minimum,
             reusable,
-            lower_bound,
+        })
+    }
+
+    /// Returns whether any retained buffered part contains the delimiter.
+    pub(crate) fn contains_delimiter(&self, boundary: &MultipartBoundary) -> bool {
+        let delimiter = format!("--{}", boundary.as_str());
+        self.parts.iter().any(|(_, part)| match &part.value {
+            MultipartPartValue::Text(value) => contains(value.as_bytes(), delimiter.as_bytes()),
+            MultipartPartValue::Bytes(value) => contains(value, delimiter.as_bytes()),
+            MultipartPartValue::Stream(_) => false,
         })
     }
 
@@ -131,16 +217,51 @@ impl MultipartBody {
             }))
     }
 
-    pub(crate) fn into_form(
-        self,
-        limit: NonZeroUsize,
-    ) -> Result<reqwest::multipart::Form, BodyError> {
+    /// Serializes this recipe with the retained boundary as one lazy stream.
+    ///
+    /// Streaming parts are not polled until native transport polls the
+    /// returned stream. Every streaming part's own exact length or declared
+    /// minimum is enforced at its part boundary.
+    pub(crate) fn into_stream(self, boundary: &MultipartBoundary) -> Result<BodyStream, BodyError> {
         self.validate_structure()?;
-        let mut form = reqwest::multipart::Form::new();
+        let mut segments = VecDeque::with_capacity(self.parts.len().saturating_mul(3) + 1);
         for (name, part) in self.parts {
-            form = form.part(name, part.into_native(limit)?);
+            let header = part_header(&name, &part);
+            let mut prefix = Vec::with_capacity(boundary.as_str().len() + header.len() + 8);
+            prefix.extend_from_slice(b"--");
+            prefix.extend_from_slice(boundary.as_str().as_bytes());
+            prefix.extend_from_slice(b"\r\n");
+            prefix.extend_from_slice(&header);
+            prefix.extend_from_slice(b"\r\n\r\n");
+            segments.push_back(Segment::Static(Bytes::from(prefix)));
+            match part.value {
+                MultipartPartValue::Text(value) => {
+                    segments.push_back(Segment::Static(Bytes::from(value)));
+                }
+                MultipartPartValue::Bytes(value) => segments.push_back(Segment::Static(value)),
+                MultipartPartValue::Stream(value) => {
+                    value.validate_metadata()?;
+                    let exact = value.exact_length_value();
+                    let minimum = value.lower_bound();
+                    segments.push_back(Segment::Stream(PartStream {
+                        source: value.into_source(),
+                        exact,
+                        minimum,
+                        observed: 0,
+                    }));
+                }
+            }
+            segments.push_back(Segment::Static(Bytes::from_static(b"\r\n")));
         }
-        Ok(form)
+        let mut closing = Vec::with_capacity(boundary.as_str().len() + 6);
+        closing.extend_from_slice(b"--");
+        closing.extend_from_slice(boundary.as_str().as_bytes());
+        closing.extend_from_slice(b"--\r\n");
+        segments.push_back(Segment::Static(Bytes::from(closing)));
+        Ok(Box::pin(MultipartStream {
+            segments,
+            finished: false,
+        }))
     }
 }
 
@@ -158,6 +279,121 @@ impl fmt::Debug for MultipartBody {
             .field("parts", &"<multipart values omitted>")
             .finish()
     }
+}
+
+/// Framed length and replay facts of one multipart recipe and boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct MultipartFraming {
+    exact: Option<u64>,
+    minimum: u64,
+    reusable: bool,
+}
+
+impl MultipartFraming {
+    pub(crate) const fn length_hint(self) -> LengthHint {
+        match self.exact {
+            Some(exact) => LengthHint::Exact(exact),
+            None => LengthHint::AtLeast(self.minimum),
+        }
+    }
+
+    pub(crate) const fn bounds(self) -> (Option<u64>, u64) {
+        (self.exact, self.minimum)
+    }
+
+    pub(crate) const fn reusable(self) -> bool {
+        self.reusable
+    }
+}
+
+/// One validated multipart boundary generated during preparation.
+#[derive(Clone)]
+pub(crate) struct MultipartBoundary(Arc<str>);
+
+impl MultipartBoundary {
+    /// Generates one fresh random boundary.
+    pub(crate) fn generate() -> Self {
+        #[cfg(test)]
+        GENERATED_BOUNDARIES.with(|count| count.set(count.get() + 1));
+        let value = format!("concord-{:016x}{:016x}", random_u64(), random_u64());
+        debug_assert!(valid_boundary(&value));
+        Self(Arc::from(value))
+    }
+
+    /// Generates a boundary absent from every retained buffered part.
+    pub(crate) fn generate_for(body: &MultipartBody) -> Result<Self, BodyError> {
+        body.validate_structure()?;
+        for _ in 0..BOUNDARY_ATTEMPTS {
+            let boundary = Self::generate();
+            if !body.contains_delimiter(&boundary) {
+                return Ok(boundary);
+            }
+        }
+        Err(BodyError::new(BodyErrorKind::Multipart))
+    }
+
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Returns the exact generated top-level media type.
+    pub(crate) fn content_type(&self) -> Result<HeaderValue, BodyError> {
+        if !valid_boundary(self.as_str()) {
+            return Err(BodyError::new(BodyErrorKind::Multipart));
+        }
+        HeaderValue::from_str(&format!("multipart/form-data; boundary={}", self.as_str()))
+            .map_err(|_| BodyError::new(BodyErrorKind::Multipart))
+    }
+}
+
+impl fmt::Debug for MultipartBoundary {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("MultipartBoundary(<generated>)")
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static GENERATED_BOUNDARIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Returns how many boundaries the current test thread generated.
+#[cfg(test)]
+pub(crate) fn generated_boundaries_on_this_thread() -> usize {
+    GENERATED_BOUNDARIES.with(std::cell::Cell::get)
+}
+
+fn random_u64() -> u64 {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let sequence = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let mut hasher = RandomState::new().build_hasher();
+    hasher.write_u64(sequence);
+    hasher.finish()
+}
+
+fn valid_boundary(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_BOUNDARY_BYTES
+        && !value.ends_with(' ')
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(
+                    byte,
+                    b'\''
+                        | b'('
+                        | b')'
+                        | b'+'
+                        | b'_'
+                        | b','
+                        | b'-'
+                        | b'.'
+                        | b'/'
+                        | b':'
+                        | b'='
+                        | b'?'
+                        | b' '
+                )
+        })
 }
 
 /// One opaque part in a request-side multipart recipe.
@@ -201,6 +437,8 @@ impl MultipartPart {
     }
 
     /// Creates a one-shot streaming part.
+    ///
+    /// A recipe containing a streaming part is never automatically replayed.
     #[must_use]
     pub const fn stream(value: RequestStream) -> Self {
         Self {
@@ -240,6 +478,9 @@ impl MultipartPart {
                 return Err(limit_exceeded());
             }
         }
+        if let MultipartPartValue::Stream(value) = &self.value {
+            value.validate_metadata()?;
+        }
         if let Some(filename) = &self.filename {
             validate_metadata_value(filename, MAX_MULTIPART_FILENAME_BYTES)?;
         }
@@ -256,15 +497,27 @@ impl MultipartPart {
         !matches!(self.value, MultipartPartValue::Stream(_))
     }
 
-    fn lower_bound(&self) -> Result<u64, BodyError> {
+    /// Returns the exact value length, when known, and the value minimum.
+    fn value_length(&self) -> Result<(Option<u64>, u64), BodyError> {
         match &self.value {
-            MultipartPartValue::Text(value) => Ok(u64::try_from(value.len()).unwrap_or(u64::MAX)),
-            MultipartPartValue::Bytes(value) => Ok(u64::try_from(value.len()).unwrap_or(u64::MAX)),
+            MultipartPartValue::Text(value) => {
+                let length = saturating_u64(value.len());
+                Ok((Some(length), length))
+            }
+            MultipartPartValue::Bytes(value) => {
+                let length = saturating_u64(value.len());
+                Ok((Some(length), length))
+            }
             MultipartPartValue::Stream(value) => {
                 value.validate_metadata()?;
-                Ok(value.lower_bound().unwrap_or(0))
+                Ok((value.exact_length_value(), value.lower_bound().unwrap_or(0)))
             }
         }
+    }
+
+    #[cfg(test)]
+    fn lower_bound(&self) -> Result<u64, BodyError> {
+        self.value_length().map(|(_, minimum)| minimum)
     }
 
     fn clone_reusable(&self) -> Option<Self> {
@@ -278,40 +531,6 @@ impl MultipartPart {
             filename: self.filename.clone(),
             content_type: self.content_type.clone(),
         })
-    }
-
-    fn into_native(self, limit: NonZeroUsize) -> Result<reqwest::multipart::Part, BodyError> {
-        let mut part = match self.value {
-            MultipartPartValue::Text(value) => reqwest::multipart::Part::text(value),
-            MultipartPartValue::Bytes(value) => {
-                let length = u64::try_from(value.len()).unwrap_or(u64::MAX);
-                reqwest::multipart::Part::stream_with_length(reqwest::Body::from(value), length)
-            }
-            MultipartPartValue::Stream(value) => {
-                value.validate_metadata()?;
-                let exact_length = value.exact_length_value();
-                let NativeBody::Stream {
-                    body, known_length, ..
-                } = stream_native(value, exact_length, limit)
-                else {
-                    unreachable!("stream materialization always creates a native stream")
-                };
-                match known_length {
-                    Some(length) => reqwest::multipart::Part::stream_with_length(body, length),
-                    None => reqwest::multipart::Part::stream(body),
-                }
-            }
-        };
-        if let Some(filename) = self.filename {
-            part = part.file_name(filename);
-        }
-        if let Some(content_type) = self.content_type {
-            part = part.mime_str(&content_type).map_err(|error| {
-                drop(error);
-                BodyError::new(BodyErrorKind::InvalidContentType)
-            })?;
-        }
-        Ok(part)
     }
 }
 
@@ -332,9 +551,128 @@ impl fmt::Debug for MultipartPart {
     }
 }
 
-pub(crate) struct MultipartMetadata {
-    pub(crate) reusable: bool,
-    pub(crate) lower_bound: u64,
+/// Encodes one part's header lines (without the terminating blank line).
+///
+/// Field names and filenames use quoted parameters with escaped backslash
+/// and quote characters. Non-ASCII text is UTF-8, as allowed for form-data by
+/// RFC 7578 section 5.1. RFC 8187's extended parameter encoding does not apply
+/// to multipart/form-data and path-segment escaping cannot preserve names.
+/// Metadata was validated to exclude CR, LF, NUL and other controls.
+fn part_header(name: &str, part: &MultipartPart) -> Vec<u8> {
+    let mut header = Vec::with_capacity(64 + name.len());
+    header.extend_from_slice(b"Content-Disposition: form-data; name=");
+    quoted_parameter(&mut header, name);
+    if let Some(filename) = &part.filename {
+        header.extend_from_slice(b"; filename=");
+        quoted_parameter(&mut header, filename);
+    }
+    if let Some(content_type) = &part.content_type {
+        header.extend_from_slice(b"\r\nContent-Type: ");
+        header.extend_from_slice(content_type.as_bytes());
+    }
+    header
+}
+
+fn quoted_parameter(output: &mut Vec<u8>, value: &str) {
+    output.push(b'"');
+    for byte in value.bytes() {
+        if matches!(byte, b'\\' | b'"') {
+            output.push(b'\\');
+        }
+        output.push(byte);
+    }
+    output.push(b'"');
+}
+
+enum Segment {
+    Static(Bytes),
+    Stream(PartStream),
+}
+
+struct PartStream {
+    source: BodyStream,
+    exact: Option<u64>,
+    minimum: Option<u64>,
+    observed: u64,
+}
+
+/// Lazy core-owned multipart serialization with one retained boundary.
+struct MultipartStream {
+    segments: VecDeque<Segment>,
+    finished: bool,
+}
+
+impl MultipartStream {
+    fn fail(&mut self, kind: BodyErrorKind) -> Poll<Option<Result<Bytes, BodyError>>> {
+        self.finished = true;
+        self.segments.clear();
+        Poll::Ready(Some(Err(BodyError::new(kind))))
+    }
+}
+
+impl Stream for MultipartStream {
+    type Item = Result<Bytes, BodyError>;
+
+    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        if this.finished {
+            return Poll::Ready(None);
+        }
+        loop {
+            match this.segments.front_mut() {
+                None => {
+                    this.finished = true;
+                    return Poll::Ready(None);
+                }
+                Some(Segment::Static(_)) => {
+                    let Some(Segment::Static(bytes)) = this.segments.pop_front() else {
+                        unreachable!("the front segment was checked as static");
+                    };
+                    if !bytes.is_empty() {
+                        return Poll::Ready(Some(Ok(bytes)));
+                    }
+                }
+                Some(Segment::Stream(part)) => match part.source.as_mut().poll_next(context) {
+                    Poll::Pending => return Poll::Pending,
+                    Poll::Ready(Some(Ok(bytes))) => {
+                        let Some(next) = part.observed.checked_add(saturating_u64(bytes.len()))
+                        else {
+                            return this.fail(BodyErrorKind::LimitExceeded);
+                        };
+                        if part.exact.is_some_and(|exact| next > exact) {
+                            return this.fail(BodyErrorKind::InvalidLength);
+                        }
+                        part.observed = next;
+                        // Empty chunks pass through to the outer managed stream,
+                        // which suppresses and bounds them.
+                        return Poll::Ready(Some(Ok(bytes)));
+                    }
+                    Poll::Ready(Some(Err(error))) => {
+                        let kind = error.kind();
+                        drop(error);
+                        return this.fail(kind);
+                    }
+                    Poll::Ready(None) => {
+                        let observed = part.observed;
+                        if part.exact.is_some_and(|exact| observed != exact)
+                            || part.minimum.is_some_and(|minimum| observed < minimum)
+                        {
+                            return this.fail(BodyErrorKind::InvalidLength);
+                        }
+                        this.segments.pop_front();
+                    }
+                },
+            }
+        }
+    }
+}
+
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty()
+        && haystack.len() >= needle.len()
+        && haystack
+            .windows(needle.len())
+            .any(|window| window == needle)
 }
 
 fn validate_metadata_value(value: &str, limit: usize) -> Result<(), BodyError> {
@@ -351,214 +689,13 @@ fn validate_metadata_value(value: &str, limit: usize) -> Result<(), BodyError> {
     Ok(())
 }
 
+fn saturating_u64(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
 fn limit_exceeded() -> BodyError {
     BodyError::new(BodyErrorKind::LimitExceeded)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct InvalidMultipartFactory;
-
-    impl MultipartFactory for InvalidMultipartFactory {
-        fn create(&self) -> Result<MultipartBody, BodyError> {
-            let name = format!(
-                "{}factory-name-sentinel",
-                "n".repeat(MAX_MULTIPART_NAME_BYTES)
-            );
-            Ok(MultipartBody {
-                metadata_bytes: name.len(),
-                parts: vec![(
-                    name,
-                    MultipartPart::text("factory-value").expect("bounded factory text"),
-                )],
-            })
-        }
-    }
-
-    fn text(value: &str) -> MultipartPart {
-        MultipartPart::text(value).expect("bounded multipart text")
-    }
-
-    #[test]
-    fn validation_and_debug_are_structural_and_redacted() {
-        let secret = "multipart-value-sentinel";
-        let filename = "filename-sentinel.txt";
-        let part = MultipartPart::text(secret)
-            .expect("bounded text")
-            .file_name(filename)
-            .expect("valid filename")
-            .content_type("text/plain; charset=utf-8")
-            .expect("valid media type");
-        let part_debug = format!("{part:?}");
-        assert!(!part_debug.contains(secret));
-        assert!(!part_debug.contains(filename));
-
-        let body = MultipartBody::new()
-            .part("field", part)
-            .expect("valid part");
-        let body_debug = format!("{body:?}");
-        assert!(!body_debug.contains(secret));
-        assert!(!body_debug.contains(filename));
-
-        assert!(MultipartBody::new().part("bad\r\nname", text("x")).is_err());
-        assert!(
-            MultipartPart::bytes(Bytes::new())
-                .expect("bounded bytes")
-                .file_name("bad\nfile")
-                .is_err()
-        );
-        assert!(
-            MultipartPart::bytes(Bytes::new())
-                .expect("bounded bytes")
-                .content_type("*/json")
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn exact_part_count_and_first_excess_part_is_not_retained() {
-        let mut body = MultipartBody::new();
-        for _ in 0..MAX_MULTIPART_PARTS {
-            body.push_part("p", text("x")).expect("part-count limit");
-        }
-        assert_eq!(body.parts.len(), MAX_MULTIPART_PARTS);
-
-        let error = body
-            .push_part("first-excess-part-sentinel", text("not-retained"))
-            .expect_err("first excess part");
-        assert_eq!(error.kind(), BodyErrorKind::LimitExceeded);
-        assert_eq!(body.parts.len(), MAX_MULTIPART_PARTS);
-        assert!(!format!("{error:?}").contains("first-excess-part-sentinel"));
-    }
-
-    #[test]
-    fn name_filename_and_content_type_have_exact_borrowed_limits() {
-        let exact_name = "n".repeat(MAX_MULTIPART_NAME_BYTES);
-        MultipartBody::new()
-            .part(exact_name.as_str(), text("x"))
-            .expect("exact name limit");
-        let excessive_name = format!("{exact_name}name-sentinel");
-        let error = MultipartBody::new()
-            .part(excessive_name.as_str(), text("x"))
-            .expect_err("name first excess");
-        assert_eq!(error.kind(), BodyErrorKind::LimitExceeded);
-        assert!(!format!("{error:?}").contains("name-sentinel"));
-
-        let exact_filename = "f".repeat(MAX_MULTIPART_FILENAME_BYTES);
-        text("x")
-            .file_name(exact_filename.as_str())
-            .expect("exact filename limit");
-        let excessive_filename = format!("{exact_filename}filename-sentinel");
-        let error = text("x")
-            .file_name(excessive_filename.as_str())
-            .expect_err("filename first excess");
-        assert_eq!(error.kind(), BodyErrorKind::LimitExceeded);
-        assert!(!format!("{error:?}").contains("filename-sentinel"));
-
-        let exact_content_type = format!(
-            "application/{}",
-            "a".repeat(MAX_MULTIPART_CONTENT_TYPE_BYTES - "application/".len())
-        );
-        assert_eq!(exact_content_type.len(), MAX_MULTIPART_CONTENT_TYPE_BYTES);
-        text("x")
-            .content_type(exact_content_type.as_str())
-            .expect("exact content-type limit");
-        let excessive_content_type = format!("{exact_content_type}a");
-        let error = text("x")
-            .content_type(excessive_content_type.as_str())
-            .expect_err("content-type first excess");
-        assert_eq!(error.kind(), BodyErrorKind::LimitExceeded);
-    }
-
-    #[test]
-    fn aggregate_metadata_exact_limit_and_first_excess_are_incremental() {
-        let name = "n".repeat(MAX_MULTIPART_NAME_BYTES);
-        let filename = "f".repeat(MAX_MULTIPART_FILENAME_BYTES);
-        let mut body = MultipartBody::new();
-        for _ in 0..51 {
-            body.push_part(
-                name.as_str(),
-                text("").file_name(filename.as_str()).expect("filename"),
-            )
-            .expect("aggregate metadata below limit");
-        }
-        body.push_part(name.as_str(), text(""))
-            .expect("exact aggregate metadata limit");
-        assert_eq!(body.metadata_bytes, MAX_MULTIPART_METADATA_BYTES);
-        let part_count = body.parts.len();
-
-        let error = body
-            .push_part("x", text("first-excess-metadata-sentinel"))
-            .expect_err("aggregate metadata first excess");
-        assert_eq!(error.kind(), BodyErrorKind::LimitExceeded);
-        assert_eq!(body.metadata_bytes, MAX_MULTIPART_METADATA_BYTES);
-        assert_eq!(body.parts.len(), part_count);
-        assert!(!format!("{error:?}").contains("first-excess-metadata-sentinel"));
-    }
-
-    #[test]
-    fn inline_text_exact_limit_and_first_excess_are_redacted() {
-        let exact = "x".repeat(MAX_MULTIPART_INLINE_TEXT_BYTES);
-        let part = MultipartPart::text(exact.as_str()).expect("exact inline-text limit");
-        assert_eq!(
-            part.lower_bound().expect("text lower bound"),
-            MAX_MULTIPART_INLINE_TEXT_BYTES as u64
-        );
-        drop(part);
-        drop(exact);
-
-        let excessive = "x".repeat(MAX_MULTIPART_INLINE_TEXT_BYTES + 1);
-        let error = MultipartPart::text(excessive.as_str()).expect_err("inline-text first excess");
-        assert_eq!(error.kind(), BodyErrorKind::LimitExceeded);
-        assert!(!format!("{error:?}").contains("xxxx"));
-    }
-
-    #[test]
-    fn factory_output_is_revalidated_before_native_construction() {
-        let error = super::super::RequestBody::multipart_factory(InvalidMultipartFactory)
-            .into_prepared(NonZeroUsize::new(1_024).expect("positive limit"))
-            .err()
-            .expect("invalid factory recipe");
-        assert_eq!(error.kind(), BodyErrorKind::LimitExceeded);
-        assert!(!format!("{error:?}").contains("factory-name-sentinel"));
-    }
-
-    #[test]
-    fn replayability_and_payload_lower_bound_follow_parts() {
-        let buffered = MultipartBody::new()
-            .part("text", text("four"))
-            .expect("part")
-            .part(
-                "bytes",
-                MultipartPart::bytes(Bytes::from_static(b"three")).expect("bounded bytes"),
-            )
-            .expect("part");
-        let metadata = buffered.metadata().expect("metadata");
-        assert!(metadata.reusable);
-        assert_eq!(metadata.lower_bound, 9);
-        assert!(
-            buffered
-                .clone_reusable()
-                .expect("valid reusable recipe")
-                .is_some()
-        );
-
-        let streamed = MultipartBody::new()
-            .part(
-                "stream",
-                MultipartPart::stream(RequestStream::from_bytes(Bytes::from_static(b"data"))),
-            )
-            .expect("part");
-        let metadata = streamed.metadata().expect("metadata");
-        assert!(!metadata.reusable);
-        assert_eq!(metadata.lower_bound, 4);
-        assert!(
-            streamed
-                .clone_reusable()
-                .expect("valid streaming recipe")
-                .is_none()
-        );
-    }
-}
+mod tests;

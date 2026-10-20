@@ -1,10 +1,14 @@
-use concord::prelude::*;
+// §20.1: at most 16 windows per policy.
+#![allow(unused_imports)]
+
+use concord::api;
 
 api! {
     client RateWindowLimitApi {
-        timeout 30s;
         base "https://example.test";
-        rate_limit { id "concord.rate_limit_window_limit.1"; key [origin]; cost 1;
+        rate_limit {
+            id "concord.rate_limit_window_limit.1";
+            key [origin];
             allow 1 per 1s;
             allow 1 per 2s;
             allow 1 per 3s;

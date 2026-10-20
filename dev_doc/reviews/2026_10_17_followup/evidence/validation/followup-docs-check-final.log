@@ -1,0 +1,10 @@
+validated 20 DSL fences against crates/concord-examples/src/docs_spec.rs
+validated 7 explicitly classified DSL pseudocode fences
+validated 84 source anchors under crates/concord-examples/src, crates/concord-examples/tests, crates/concord/tests
+validated 343 local Markdown links and 41 heading fragments
+validated canonical docs/README.md inventory coverage
+validated 11 machine-owned canonical source anchors and the tutorial order
+validated retired public language across 121 active files with explicit context allowlists
+validated one release-status owner and parser/spec/generated-name agreement
+validated facade root exports, the Cargo feature matrix and contract tool agreement
+validated the EXT-01 extension contract of 29 public traits, IDENTITY-01 endpoint-ID wording across 229 product source files and the LIMIT-02 runtime limits section

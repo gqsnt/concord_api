@@ -1,4 +1,6 @@
-use concord::api;
+// AUTH-01: an API-key credential placed in a custom header; the credential
+// name may equal the secret name (separate source namespace, §3.4).
+use concord::{Empty, api};
 
 api! {
     client CustomAuthHeaderApi {
@@ -10,8 +12,8 @@ api! {
         }
         auth { header "X-API-Key" = key; }
 
-
-    GET read() -> () via Empty;
-}}
+        GET read() -> () via Empty;
+    }
+}
 
 fn main() {}

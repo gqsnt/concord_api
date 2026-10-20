@@ -1,0 +1,28 @@
+[package]
+name = "concord-inspect"
+description = "Versioned concord.contract/3 export, check and semantic diff for Concord contract descriptions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[features]
+default = []
+# Hand-built Catalog-like contract fixtures and their mutation corpus, used by
+# this crate's tests and by the repository `concord-xtask` contract registry.
+fixtures = []
+
+[dependencies]
+concord_core = { package = "concord-core", version = "=3.0.0-beta.1", path = "../concord-core", default-features = false }
+serde_json.workspace = true
+
+[dev-dependencies]
+# `tests/generated_contract.rs` exports, checks and diffs descriptions produced
+# by the real `concord::api!` macro (V3-O02, V3-O03).
+concord = { version = "=3.0.0-beta.1", path = "../concord", features = ["json"] }
+serde = { workspace = true, features = ["derive"] }
+
+[lints]
+workspace = true

@@ -6,11 +6,10 @@ async fn real_tls_provider_http_remains_outside_application_limiter_lifecycle() 
     let application_server = TlsServer::start().expect("TLS application loopback server");
     let provider_calls = Arc::new(AtomicUsize::new(0));
     let selector = SlotSelector::provider(
-        LoopbackHttpProvider {
-            url: url::Url::parse(&provider_server.url("localhost", "/token"))
-                .expect("provider URL"),
-            calls: Arc::clone(&provider_calls),
-        },
+        LoopbackHttpProvider::new(
+            url::Url::parse(&provider_server.url("localhost", "/token")).expect("provider URL"),
+            &provider_calls,
+        ),
         Duration::ZERO,
     );
     let hooks = Arc::new(AuthHooks::default());
@@ -38,7 +37,7 @@ async fn real_tls_provider_http_remains_outside_application_limiter_lifecycle() 
             core,
             &selector,
             ChallengePolicy::Never,
-            RequestBody::bytes(Bytes::new()),
+            PreparedBody::bytes(Bytes::new()),
         )
         .await
         .expect("provider-backed real application request"),
@@ -74,11 +73,10 @@ async fn paginated_provider_http_never_enters_page_lifecycle_or_limiter_work() {
     let application_server = TlsServer::start().expect("TLS pagination application server");
     let provider_calls = Arc::new(AtomicUsize::new(0));
     let selector = SlotSelector::provider(
-        LoopbackHttpProvider {
-            url: url::Url::parse(&provider_server.url("localhost", "/token"))
-                .expect("provider URL"),
-            calls: Arc::clone(&provider_calls),
-        },
+        LoopbackHttpProvider::new(
+            url::Url::parse(&provider_server.url("localhost", "/token")).expect("provider URL"),
+            &provider_calls,
+        ),
         Duration::ZERO,
     );
     let hooks = Arc::new(AuthHooks::default());
@@ -101,15 +99,13 @@ async fn paginated_provider_http_never_enters_page_lifecycle_or_limiter_work() {
     )
     .expect("managed pagination application/provider core");
 
-    let items = PaginatedRequest::new(
-        Request::new(
-            core,
-            PaginatedProtectedEndpoint {
-                credential: CredentialRef::new(Arc::clone(&selector)),
-                page: 0,
-            },
-        ),
-        PageLimit::Prefix(1),
+    let items = collect_protected_pages(
+        core,
+        PaginatedProtectedEndpoint {
+            credential: CredentialRef::new(Arc::clone(&selector)),
+            page: 0,
+        },
+        1,
     )
     .await
     .expect("provider-backed pagination");
@@ -163,7 +159,7 @@ async fn provider_http_data_stays_outside_application_hooks_debug_and_channel() 
             ScriptedResponse::success(Bytes::from_static(b"application")),
         )
         .expect("application response");
-    let selector = SlotSelector::provider(IsolatedHttpProvider, Duration::ZERO);
+    let selector = SlotSelector::provider(IsolatedHttpProvider::new(), Duration::ZERO);
     let hooks = Arc::new(AuthHooks::default());
     let limiter_acquires = Arc::new(AtomicUsize::new(0));
     let limiter_observations = Arc::new(AtomicUsize::new(0));
@@ -179,7 +175,7 @@ async fn provider_http_data_stays_outside_application_hooks_debug_and_channel() 
         core,
         &selector,
         ChallengePolicy::Never,
-        RequestBody::bytes(Bytes::new()),
+        PreparedBody::bytes(Bytes::new()),
     )
     .await
     .expect("provider-backed application request");

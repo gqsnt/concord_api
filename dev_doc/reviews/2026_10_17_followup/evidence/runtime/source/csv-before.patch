@@ -1,0 +1,153 @@
+diff --git a/crates/concord-extras/src/records/csv.rs b/crates/concord-extras/src/records/csv.rs
+index dd73f72..265109a 100644
+--- a/crates/concord-extras/src/records/csv.rs
++++ b/crates/concord-extras/src/records/csv.rs
+@@ -567,6 +567,98 @@ mod tests {
+         );
+     }
+ 
++    #[test]
++    fn csv_preserves_bom_characters_after_document_start() {
++        fn assert_delimiter<D>(delimiter: char)
++        where
++            D: CsvDelimiter,
++        {
++            let input = format!(
++                "plain{delimiter}one{delimiter}1\n\u{feff}second{delimiter}two{delimiter}2"
++            )
++            .into_bytes();
++            let expected = [
++                PositionalRow("plain".into(), "one".into(), 1),
++                PositionalRow("\u{feff}second".into(), "two".into(), 2),
++            ];
++            for split in 0..=input.len() {
++                let rows = feed(
++                    decoder::<PositionalRow, NoHeader, D>(),
++                    [input[..split].to_vec(), input[split..].to_vec()],
++                )
++                .expect("a later U+FEFF is field data");
++                assert_eq!(rows, expected, "source split {split}");
++            }
++        }
++
++        assert_delimiter::<CommaDelimiter>(',');
++        assert_delimiter::<SemicolonDelimiter>(';');
++        assert_delimiter::<TabDelimiter>('\t');
++    }
++
++    #[test]
++    fn csv_accepts_one_split_document_bom_before_quoted_headers_and_values() {
++        fn assert_delimiter<D>(delimiter: char)
++        where
++            D: CsvDelimiter,
++        {
++            let input = format!(
++                "\u{feff}\"name\"{delimiter}note{delimiter}count\r\n\
++                 \u{feff}alpha{delimiter}plain{delimiter}7"
++            )
++            .into_bytes();
++            let expected = [Row {
++                name: "\u{feff}alpha".into(),
++                note: "plain".into(),
++                count: 7,
++            }];
++            for split in 0..=input.len() {
++                let rows = feed(
++                    decoder::<Row, HasHeader, D>(),
++                    [input[..split].to_vec(), input[split..].to_vec()],
++                )
++                .expect("one document BOM precedes the quoted header");
++                assert_eq!(rows, expected, "source split {split}");
++            }
++            let rows = feed(
++                decoder::<PositionalRow, NoHeader, D>(),
++                format!("\u{feff}\"alpha\"{delimiter}plain{delimiter}7")
++                    .bytes()
++                    .map(|byte| vec![byte]),
++            )
++            .expect("one-byte chunks preserve a BOM before a quoted first value");
++            assert_eq!(rows, [PositionalRow("alpha".into(), "plain".into(), 7)]);
++        }
++
++        assert_delimiter::<CommaDelimiter>(',');
++        assert_delimiter::<SemicolonDelimiter>(';');
++        assert_delimiter::<TabDelimiter>('\t');
++    }
++
++    #[test]
++    fn csv_strips_a_bom_only_once_and_only_at_the_actual_document_start() {
++        for prefix in ["\n", "\u{feff}"] {
++            let input = format!("{prefix}\u{feff}alpha,plain,7");
++            let rows = feed(
++                decoder::<PositionalRow, NoHeader, CommaDelimiter>(),
++                input.bytes().map(|byte| vec![byte]),
++            )
++            .expect("the second marker belongs to the first field");
++            assert_eq!(
++                rows,
++                [PositionalRow("\u{feff}alpha".into(), "plain".into(), 7)]
++            );
++        }
++        for partial in [&b"\xef"[..], &b"\xef\xbb"[..]] {
++            let error = feed(
++                decoder::<PositionalRow, NoHeader, CommaDelimiter>(),
++                partial.iter().map(|byte| vec![*byte]),
++            )
++            .expect_err("a truncated UTF-8 marker is not an empty document");
++            assert_eq!(error.kind(), RecordErrorKind::InvalidFraming);
++        }
++    }
++
+     #[test]
+     fn header_mode_decodes_named_structs_by_column_name_for_each_delimiter() {
+         fn assert_delimiter<D>(delimiter: char)
+diff --git a/crates/concord-extras/tests/contracts/record_streams.rs b/crates/concord-extras/tests/contracts/record_streams.rs
+index ee7ca51..6ae8df6 100644
+--- a/crates/concord-extras/tests/contracts/record_streams.rs
++++ b/crates/concord-extras/tests/contracts/record_streams.rs
+@@ -347,6 +347,45 @@ mod csv {
+ 
+     use super::*;
+ 
++    #[tokio::test]
++    async fn csv_split_document_bom_precedes_a_quoted_header_in_a_managed_stream() {
++        let server = ScriptedServer::start([chunked(
++            "text/csv",
++            &[b"\xef", b"\xbb", b"\xbf", b"\"id\"\r\n", b"1\n2"],
++        )])
++        .expect("loopback server");
++        let core = core(&server, default_runtime_config());
++        let mut stream = open::<Csv>(&core).await;
++        assert_eq!(stream.next().await.unwrap().unwrap(), Row { id: 1 });
++        assert_eq!(stream.next().await.unwrap().unwrap(), Row { id: 2 });
++        assert!(stream.next().await.is_none());
++        assert_eq!(stream.summary().state(), StreamState::Eof);
++        assert_eq!(stream.summary().delivered_records(), 2);
++        assert_eq!(server.request_count(), 1);
++    }
++
++    #[tokio::test]
++    async fn csv_later_bom_cannot_be_removed_to_turn_an_invalid_integer_into_valid_data() {
++        let server = ScriptedServer::start([chunked(
++            "text/csv",
++            &[b"id\n1\n", b"\xef", b"\xbb\xbf2\n3\n"],
++        )])
++        .expect("loopback server");
++        let core = core(&server, default_runtime_config());
++        let mut stream = open::<Csv>(&core).await;
++        assert_eq!(stream.next().await.unwrap().unwrap(), Row { id: 1 });
++        let error = stream
++            .next()
++            .await
++            .unwrap()
++            .expect_err("U+FEFF is data, so this field is not a u32");
++        assert_stream_error(&error, StreamErrorKind::Decode, ErrorCategory::ResponseDecoding);
++        assert!(stream.next().await.is_none());
++        assert_eq!(stream.summary().state(), StreamState::Failed);
++        assert_eq!(stream.summary().delivered_records(), 1);
++        assert_eq!(server.request_count(), 1);
++    }
++
+     #[tokio::test]
+     async fn v3_p11_csv_final_record_without_newline_is_decoded() {
+         let server = ScriptedServer::start([chunked("text/csv", &[b"id\r\n1\r\n", b"\r\n2\n3"])])

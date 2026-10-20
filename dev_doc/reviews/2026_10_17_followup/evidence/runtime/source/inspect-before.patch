@@ -1,0 +1,116 @@
+diff --git a/crates/concord-inspect/tests/generated_contract.rs b/crates/concord-inspect/tests/generated_contract.rs
+index cbce2af..5ed4f64 100644
+--- a/crates/concord-inspect/tests/generated_contract.rs
++++ b/crates/concord-inspect/tests/generated_contract.rs
+@@ -202,6 +202,55 @@ shop!(baseline);
+ // A second, independently expanded copy of the baseline.
+ shop!(baseline_copy);
+ 
++// Repeating the same representation default at a scope changes provenance
++// for that scope, while the client's other Json uses stay unchanged.
++shop!(
++    scope_json_default,
++    admin = {
++        response Json;
++        rate_limit reads(tenant = client.tenant);
++
++        GET stats() -> Stats {
++            id "shop.admin.stats";
++            path "stats";
++        }
++
++        GET audit() -> Stats {
++            id "shop.admin.audit";
++            path "audit";
++        }
++    }
++);
++
++// Selecting the same representation inline adds one dependency site, so a
++// diff from scope_json_default replaces a site without changing its count.
++shop!(
++    inline_json_default,
++    endpoints = {
++        GET item(id: String) -> Label via VendorJson {
++            id "shop.item";
++            path "items/{id}";
++        }
++
++        PUT update(id: String, body input: Update) -> Stats via Json {
++            id "shop.update";
++            path "items/{id}";
++            auth replace { header "X-Key" = partner; }
++            effect idempotent;
++            rate_limit {
++                id "shop.write";
++                key [origin, endpoint, "tenant" = client.tenant];
++                cost 2;
++                allow 5 per 1s;
++            }
++        }
++
++        GET ping() -> Stats via Json {
++            path "ping";
++        }
++    }
++);
++
+ // Credential selection: the client placement names another credential at the
+ // same header.
+ shop!(switch_credential, auth = { header "X-Key" = partner; });
+@@ -590,6 +639,55 @@ fn located(report: &DiffReport, axis: Axis) -> Vec<String> {
+ 
+ // ----- tests --------------------------------------------------------------------
+ 
++fn assert_dependency_sites_endpoints(
++    before: &ContractDescription,
++    after: &ContractDescription,
++    expected: &[&str],
++) {
++    let expected = expected.iter().map(|id| (*id).to_owned()).collect::<BTreeSet<_>>();
++    for (before, after) in [(before, after), (after, before)] {
++        let report = diff(before, after);
++        assert_eq!(report.axes(), BTreeSet::from([Axis::Provenance]));
++        assert_eq!(endpoint_ids(&report), expected, "{}", report.to_text());
++        let changes = report
++            .changes()
++            .iter()
++            .filter(|change| change.collection() == "dependencies")
++            .collect::<Vec<_>>();
++        assert!(!changes.is_empty(), "the dependency's sites changed");
++        for change in changes {
++            assert!(change.field().starts_with("sites"));
++            assert_eq!(
++                change
++                    .endpoints()
++                    .iter()
++                    .map(|endpoint| endpoint.id().to_owned())
++                    .collect::<BTreeSet<_>>(),
++                expected,
++                "unchanged sites must not broaden the affected endpoints"
++            );
++        }
++    }
++}
++
++#[test]
++fn generated_dependency_sites_add_remove_names_only_scope_endpoints() {
++    assert_dependency_sites_endpoints(
++        baseline::Shop::contract(),
++        scope_json_default::Shop::contract(),
++        &["shop.admin.audit", "shop.admin.stats"],
++    );
++}
++
++#[test]
++fn generated_dependency_sites_replace_names_only_changed_consumers() {
++    assert_dependency_sites_endpoints(
++        scope_json_default::Shop::contract(),
++        inline_json_default::Shop::contract(),
++        &["shop.admin.audit", "shop.admin.stats", "shop.ping"],
++    );
++}
++
+ /// The xtask registry stores providers as `fn() -> &'static
+ /// ContractDescription`; generated `contract` has exactly that shape.
+ #[test]

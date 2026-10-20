@@ -6,8 +6,8 @@ use std::time::{Duration, Instant};
 use bytes::Bytes;
 use concord_core::contracts::{
     AccessToken, AuthError, AuthErrorKind, BoxFuture, CredentialProvider, CredentialRequest,
-    HeaderValue, Method, ProviderBody, ProviderRequest, RecoveryMode, SecretString, StatusCode,
-    Url,
+    HeaderValue, Method, ProviderBody, ProviderOrigin, ProviderRequest, RecoveryMode, SecretString,
+    StatusCode, Url,
 };
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 
@@ -35,8 +35,18 @@ pub const MAX_OAUTH2_AUTHORIZATION_HEADER_BYTES: usize = 32_768;
 /// bounds configuration strings, encoded headers, request and response bodies,
 /// and the enclosing credential operation. Encoding lengths are checked before
 /// final output allocation.
+///
+/// The provider declares exactly one helper origin — the validated origin of
+/// its token URL — through [`CredentialProvider::http_origins`], so Concord's
+/// provider HTTP helper refuses every other destination.
+///
+/// Successful token responses must declare a string `token_type` equal to
+/// `bearer` ignoring ASCII case. Unknown fields are ignored; `expires_in` is
+/// optional. When present, its lifetime is measured conservatively from helper
+/// send start, so acquisition and parsing time consume rather than extend it.
 pub struct OAuth2ClientCredentials {
     token_url: Url,
+    token_origin: [ProviderOrigin; 1],
     client_id: SecretString,
     client_secret: SecretString,
     scope: Option<Box<str>>,
@@ -61,8 +71,19 @@ impl OAuth2ClientCredentials {
                 HeaderValue::from_static("application/x-www-form-urlencoded"),
             )
             .body(ProviderBody::Bytes(parts.body));
+        // expires_in is relative to response generation (RFC 6749 §5.1).
+        // Send start is a conservative base in CredentialMaterial's std clock
+        // domain: helper acquisition and parsing can only consume the TTL.
+        let started_at = Instant::now();
         let response = context.http.send(request).await?;
-        decode_token_response(response.status(), response.body())
+        decode_token_response(response.status(), response.body(), started_at).map_err(|error| {
+            if !response.status().is_success() {
+                if let Some(delay) = response.retry_after().filter(|delay| !delay.is_zero()) {
+                    return error.with_retry_after(delay);
+                }
+            }
+            error
+        })
     }
 
     fn exchange_parts(&self, request_body_limit: NonZeroUsize) -> Result<ExchangeParts, AuthError> {
@@ -108,6 +129,10 @@ impl CredentialProvider for OAuth2ClientCredentials {
 
     fn recovery_mode(&self) -> RecoveryMode {
         RecoveryMode::Refresh
+    }
+
+    fn http_origins(&self) -> &[ProviderOrigin] {
+        &self.token_origin
     }
 }
 
@@ -244,6 +269,11 @@ impl OAuth2ClientCredentialsBuilder {
                 OAuth2ClientCredentialsBuildErrorKind::InvalidTokenUrl,
             )
         })?;
+        let token_origin = ProviderOrigin::from_url(&token_url).map_err(|_| {
+            OAuth2ClientCredentialsBuildError::new(
+                OAuth2ClientCredentialsBuildErrorKind::InvalidTokenUrl,
+            )
+        })?;
         let client_id = self.client_id.ok_or_else(|| {
             OAuth2ClientCredentialsBuildError::new(
                 OAuth2ClientCredentialsBuildErrorKind::MissingClientId,
@@ -256,6 +286,7 @@ impl OAuth2ClientCredentialsBuilder {
         })?;
         Ok(OAuth2ClientCredentials {
             token_url,
+            token_origin: [token_origin],
             client_id,
             client_secret,
             scope: self.scope,
@@ -414,7 +445,11 @@ fn valid_token_url(url: &Url) -> bool {
         && url.fragment().is_none()
 }
 
-fn decode_token_response(status: StatusCode, body: &Bytes) -> Result<AccessToken, AuthError> {
+fn decode_token_response(
+    status: StatusCode,
+    body: &Bytes,
+    started_at: Instant,
+) -> Result<AccessToken, AuthError> {
     if !status.is_success() {
         return Err(AuthError::new(AuthErrorKind::Acquisition));
     }
@@ -430,11 +465,11 @@ fn decode_token_response(status: StatusCode, body: &Bytes) -> Result<AccessToken
         .and_then(serde_json::Value::as_str)
         .filter(|token| !token.is_empty())
         .ok_or_else(|| AuthError::new(AuthErrorKind::Acquisition))?;
-    if object.get("token_type").is_some_and(|value| {
-        value
-            .as_str()
-            .is_none_or(|token_type| !token_type.eq_ignore_ascii_case("bearer"))
-    }) {
+    if !object
+        .get("token_type")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|token_type| token_type.eq_ignore_ascii_case("bearer"))
+    {
         return Err(AuthError::new(AuthErrorKind::Acquisition));
     }
     let expiration = object
@@ -443,7 +478,7 @@ fn decode_token_response(status: StatusCode, body: &Bytes) -> Result<AccessToken
             let seconds = value
                 .as_u64()
                 .ok_or_else(|| AuthError::new(AuthErrorKind::Acquisition))?;
-            Instant::now()
+            started_at
                 .checked_add(Duration::from_secs(seconds))
                 .ok_or_else(|| AuthError::new(AuthErrorKind::Acquisition))
         })
@@ -865,6 +900,7 @@ mod tests {
             &Bytes::from_static(
                 br#"{"access_token":"oauth-result-token-41e79c","token_type":"BeArEr","expires_in":3600}"#,
             ),
+            before,
         )
         .expect("token response");
         assert_eq!(token.expose_secret(), TOKEN);
@@ -872,6 +908,30 @@ mod tests {
             expires >= before + Duration::from_secs(3_599)
                 && expires <= Instant::now() + Duration::from_secs(3_600)
         }));
+    }
+
+    #[test]
+    fn oauth_declares_exactly_its_validated_token_origin() {
+        let provider = provider(None);
+        let declared = provider.http_origins();
+        assert_eq!(declared.len(), 1);
+        assert_eq!(declared[0].as_str(), "https://auth.example.test");
+        assert!(declared[0].matches(
+            &Url::parse("https://auth.example.test/oauth/token?tenant=protected").expect("URL")
+        ));
+        assert!(
+            !declared[0].matches(&Url::parse("https://other.example.test/token").expect("URL"))
+        );
+
+        let explicit_port = OAuth2ClientCredentials::builder("https://Auth.Example.TEST:8443/t")
+            .client_id(CLIENT_ID)
+            .client_secret(CLIENT_SECRET)
+            .build()
+            .expect("OAuth provider with explicit port");
+        assert_eq!(
+            explicit_port.http_origins()[0].as_str(),
+            "https://auth.example.test:8443"
+        );
     }
 
     #[test]
@@ -913,22 +973,59 @@ mod tests {
             (StatusCode::OK, br#"{"#.as_slice()),
             (
                 StatusCode::OK,
-                br#"{"access_token":"x","expires_in":-1}"#.as_slice(),
+                br#"{"access_token":"x","token_type":"bearer","expires_in":-1}"#.as_slice(),
             ),
             (
                 StatusCode::OK,
-                br#"{"access_token":"x","expires_in":18446744073709551616}"#.as_slice(),
+                br#"{"access_token":"x","token_type":"bearer","expires_in":18446744073709551616}"#
+                    .as_slice(),
             ),
             (StatusCode::BAD_REQUEST, SENTINEL.as_bytes()),
         ];
         for (status, body) in cases {
-            let error = auth_error(decode_token_response(status, &Bytes::copy_from_slice(body)));
+            let error = auth_error(decode_token_response(
+                status,
+                &Bytes::copy_from_slice(body),
+                Instant::now(),
+            ));
             assert_eq!(error.kind(), AuthErrorKind::Acquisition);
             for rendered in [error.to_string(), format!("{error:?}")] {
                 assert!(!rendered.contains(SENTINEL));
             }
             assert!(Error::source(&error).is_none());
         }
+    }
+
+    #[test]
+    fn r8_ttl_uses_send_start_with_checked_arithmetic_and_optional_expiration() {
+        use concord_core::contracts::CredentialMaterial;
+        let now = Instant::now();
+        let started = now - Duration::from_secs(2);
+        for seconds in [0, 1, 120] {
+            let body = Bytes::from(format!(
+                r#"{{"access_token":"x","token_type":"bearer","expires_in":{seconds}}}"#
+            ));
+            let token = decode_token_response(StatusCode::OK, &body, started).unwrap();
+            assert_eq!(
+                token.expires_at(),
+                started.checked_add(Duration::from_secs(seconds))
+            );
+        }
+        let error = auth_error(decode_token_response(
+            StatusCode::OK,
+            &Bytes::from_static(
+                br#"{"access_token":"x","token_type":"bearer","expires_in":18446744073709551615}"#,
+            ),
+            now,
+        ));
+        assert_eq!(error.kind(), AuthErrorKind::Acquisition);
+        let token = decode_token_response(
+            StatusCode::OK,
+            &Bytes::from_static(br#"{"access_token":"x","token_type":"bearer"}"#),
+            started,
+        )
+        .unwrap();
+        assert_eq!(token.expires_at(), None);
     }
 
     #[test]
