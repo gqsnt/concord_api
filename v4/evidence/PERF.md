@@ -71,9 +71,30 @@ Release profile (`cargo build --release`, incremental after touching the source,
 | 1,000 | 17.026 s ± 0.082 | 21.9 MB |
 
 Release builds cost ≈ 17 ms per endpoint for the crate that declares the API, because every
-generated (non-generic) method is compiled in that crate whether or not it is called. Marking
-generated methods `#[inline]` would defer code generation to call sites; this was **not** tried or
-measured (open item in `STATUS.md`).
+generated (non-generic) method was compiled in that crate whether or not it is called (table above:
+before `#[inline]`).
+
+### `#[inline]` on generated methods (`3ba81c5`)
+
+Every generated method is now `#[inline]`, so code generation happens at call sites. Same machine,
+same session, `target/measure/` (`use1000` is a binary calling 5 of the 1,000 endpoints of
+`scale1000`), `hyperfine -N --warmup 1 --runs 3`. "Without" was measured by restoring the previous
+`emit.rs` in the working tree.
+
+| Measurement | Without | With `#[inline]` |
+|---|---|---|
+| Release: edit the API crate (rebuild `scale1000` + `use1000`) | 16.692 s ± 0.052 | **5.885 s ± 0.024** |
+| Release: edit the binary only | 207.8 ms ± 4.3 | 286.5 ms ± 9.2 |
+| `cargo check` of the API crate | 1.349 s ± 0.040 | 1.347 s ± 0.015 |
+| Dev: edit the API crate | 1.592 s ± 0.040 | 1.555 s ± 0.018 |
+| Dev: edit the binary only | 162.1 ms ± 4.0 | 154.9 ms ± 4.5 |
+| Release binary size | 1,822,496 B | 1,616,416 B |
+| Build S3 search request (runtime, median of 9) | 752 ns | 747 ns |
+| Build S2 product request (runtime, median of 9) | 765 ns | 760 ns |
+
+The cost moves to the crates that call endpoints, in proportion to the endpoints they use
+(+79 ms for 5 endpoints here). The remaining 5.9 s for the API crate is type checking and MIR
+generation for 1,000 endpoints.
 
 ### Sensitivity propagation (Codex C4-R-011)
 

@@ -13,7 +13,7 @@ V3 preserved at tag `concord-v3-preserved`, `origin/main`, `origin/concord-v3` a
 | 2 Vertical slice | `2639b39` | `slice.rs` 7/7 | Codex Gate 2 (7 findings, all fixed) | yes |
 | 3 Values and composition | `24717e8` → `caf7cb3` | values, composition, hygiene, ui | Claude adversarial (10 fixed, 1 documented); Codex Gates 3/4 and final (all findings fixed or resolved by correcting the spec); Claude matrix audit (gaps closed); focused Codex re-review: resolved | yes, on Linux |
 | 4 Bodies, responses, sensitivity | `24717e8` → `caf7cb3` | bodies, representations, sensitivity, tls, heap check | as above | yes, on Linux |
-| 5 Hardening | docs, examples, perf, CI file, MSRV, locked verification (`8ae19ec`) | `scripts/verify.sh --msrv` all PASS at `8ae19ec` | Codex final review on `33a88d9`; focused re-review on `8d6ee22`: no blocker or high finding; last residual (documentation/script) fixed in `8ae19ec`, not re-reviewed | yes, on Linux; Windows and macOS unverified |
+| 5 Hardening | docs, examples, perf, CI file, MSRV, locked verification; `#[inline]` on generated methods (`3ba81c5`) | `scripts/verify.sh --msrv` all PASS at `3ba81c5` | Codex final review on `33a88d9`; focused re-review on `8d6ee22`: no blocker or high finding; last residual (documentation/script) fixed in `8ae19ec` and the `#[inline]` change (`3ba81c5`, attributes only) not independently re-reviewed | yes, on Linux; Windows and macOS unverified |
 
 **Acceptance statement.** V4 is accepted for Linux x86_64 (rustc 1.97.1, MSRV 1.85.1): every
 high-severity finding from the independent Codex and Claude reviews was reproduced, fixed and
@@ -33,10 +33,11 @@ Final-gate details, SHAs and exact results: `evidence/GATES.md`. Review triage:
 
 ## Open risks
 
-1. Per-endpoint code generation is ≈ 143 expanded lines per endpoint (linear). Incremental
-   `cargo check` is 1.36 s at 1,000 endpoints, but a release build of that crate takes 17.0 s
-   (≈ 17 ms per endpoint) because all generated methods are compiled eagerly. Next experiment:
-   `#[inline]` on generated methods.
+1. Per-endpoint code generation is ≈ 143 expanded lines per endpoint (linear). At 1,000
+   endpoints, incremental `cargo check` takes 1.35 s and a release rebuild of the declaring crate
+   5.9 s (was 16.7 s before generated methods became `#[inline]`, `3ba81c5`); crates that call
+   endpoints now compile the ones they use. Release builds of binaries using hundreds of endpoints
+   are unmeasured.
 2. Request construction is 110–250 ns slower than a hand-written builder (owned `String`s per value,
    handle clones); execution cost is indistinguishable over loopback.
 3. Same-typed positional required values can be swapped silently (newtypes are the mitigation).

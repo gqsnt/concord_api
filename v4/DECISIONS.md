@@ -25,7 +25,9 @@ Codex independently preferred A (blind review §1–2) with B as the alternative
 algorithm model (Q1) shows every outcome of the chosen operations is statically decidable except
 "is this optional source present", which is a plain `if let` in generated code. **Choice: A.**
 Failure condition to watch (Codex): expansion/compile cost at scale — measured in Gate 5
-(`evidence/PERF.md`). Two crates only: `concord` (runtime + re-export) and `concord-macros`.
+(`evidence/PERF.md`): linear, ≈ 143 expanded lines and ≈ 1.2 ms of `cargo check` per endpoint.
+Release builds were the expensive part (16.7 s at 1,000 endpoints) until generated methods became
+`#[inline]` (5.9 s; code generation moves to call sites). Two crates only: `concord` (runtime + re-export) and `concord-macros`.
 
 ## D2 — reqwest boundary: Concord materializes a native `reqwest::Request` (accepted)
 

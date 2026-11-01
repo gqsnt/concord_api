@@ -30,9 +30,10 @@ re-run on the same snapshot).
 
 ## Gate 5 — hardening
 
-Final run on `8ae19ec` (clean tree, `Cargo.lock` committed and unchanged by the run; code identical
-to `caf7cb3`, which the focused Codex re-review covered — later commits change only `v4/`, the
-verification script and CI), 2026-11-01,
+Final run on `3ba81c5` (clean tree, `Cargo.lock` committed and unchanged by the run). Code is
+`caf7cb3`, which the focused Codex re-review covered, plus `#[inline]` attributes on generated
+methods (`3ba81c5`, not independently re-reviewed); other later commits change only `v4/`, the
+verification script and CI. Same results were recorded at `8ae19ec`. 2026-11-01,
 Linux x86_64, rustc 1.97.1; MSRV with rustc 1.85.1. Command: `scripts/verify.sh --msrv`
 (every cargo invocation uses `--locked`; the script fails if tracked files change).
 
