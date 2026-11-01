@@ -8,8 +8,11 @@ single session: treat differences of a few percent as noise.
 The comparison baseline is `benches/baselines`: idiomatic hand-written reqwest wrappers for the same
 three API shapes (S1 simple, S2 regional subdomain + nested scopes + shared headers, S3 nine optional
 query parameters + JSON POST + DELETE), written during research independently of the Concord code
-(`evidence/research/claude_ergonomics.md`). Concord renderings: `examples/shapes`. Both produce the
-same requests (wire tests in each crate).
+(`evidence/research/claude_ergonomics.md`). Concord renderings: `examples/shapes`, wire-tested in
+`examples/shapes/tests/wire.rs`. The baselines' own wire tests were written in the research scratch
+crate and are **not** part of this repository; equivalence of the two is asserted by those tests
+and by review, not re-run here. The baselines also do less (no sensitivity handling, no response
+preservation on errors, no label/segment validation).
 
 ## 1. Runtime
 
@@ -116,6 +119,18 @@ Shape sources (effective lines, including DTOs and enum spellings on both sides)
 | S1 | 18 | 49 |
 | S2 | 52 | 130 |
 | S3 | 58 | 182 |
+
+## 4. Memory: `()` drains (C4-R-010)
+
+`cargo test -p concord-heap-check -- --nocapture` (`checks/heap/tests/drain.rs`): a counting global
+allocator records peak heap growth during one request for a 64 MiB response body served from a
+static buffer.
+
+| Endpoint output | Peak heap growth |
+|---|---|
+| `()` (drained chunk by chunk) | 754,709 bytes |
+| `Binary` (buffers by design) | 137,344,090 bytes |
+| `()` with `DISCARD = false` (mutation, not committed) | 136,425,918 bytes → test fails |
 
 ## Not measured
 

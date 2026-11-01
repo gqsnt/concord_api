@@ -11,9 +11,9 @@ V3 preserved at tag `concord-v3-preserved`, `origin/main`, `origin/concord-v3` a
 | 0 Preservation and baseline | yes (`evidence/BASELINE.md`) | V3 build/test baseline recorded | — | yes |
 | 1 Research and blind design challenge | `DECISIONS.md`, research reports | — | blind Codex review before design; 4 independent Claude tracks | yes |
 | 2 Vertical slice | `2639b39` | `slice.rs` 7/7 | Codex Gate 2 (7 findings, all fixed) | yes |
-| 3 Values and composition | `24717e8` → `33a88d9` | values, composition, hygiene, ui | Claude adversarial (10 fixed, 1 documented); Codex Gate 3/4 (6 new findings: 5 fixed, 1 resolved by amending the contract); Claude matrix audit (gaps closed) | pending final Codex re-review |
-| 4 Bodies, responses, sensitivity | `24717e8` → `33a88d9` | bodies, representations, sensitivity, tls | as above | pending final Codex re-review |
-| 5 Hardening | docs, examples, perf, CI file, MSRV | `scripts/verify.sh --msrv` all PASS at `33a88d9` | final Codex re-review running | pending |
+| 3 Values and composition | `24717e8` → `caf7cb3` | values, composition, hygiene, ui | Claude adversarial (10 fixed, 1 documented); Codex Gates 3/4 and final (all findings fixed or resolved by correcting the spec); Claude matrix audit (gaps closed) | see focused re-review below |
+| 4 Bodies, responses, sensitivity | `24717e8` → `caf7cb3` | bodies, representations, sensitivity, tls, heap check | as above | see focused re-review below |
+| 5 Hardening | docs, examples, perf, CI file, MSRV, locked verification | `scripts/verify.sh --msrv` all PASS at `caf7cb3` | Codex final review on `33a88d9`; focused re-review of its residuals on `caf7cb3` | see below |
 
 Final-gate details, SHAs and exact results: `evidence/GATES.md`. Review triage:
 `evidence/reviews/TRIAGE.md`.
@@ -21,8 +21,8 @@ Final-gate details, SHAs and exact results: `evidence/GATES.md`. Review triage:
 ## Platform coverage
 
 - Linux x86_64, rustc 1.97.1: all gates run.
-- Linux x86_64, rustc 1.85.1 (declared MSRV): runtime and example suites run; UI expectations are
-  pinned to 1.97.1 (5 of 37 cases differ only in rustc's wording on 1.85).
+- Linux x86_64, rustc 1.85.1 (declared MSRV): all runtime and downstream suites run; UI
+  expectations are pinned to 1.97.1 (6 of 41 cases differ only in rustc's wording on 1.85).
 - **Windows: NOT_RUN** (no Windows environment). A CI workflow with a Windows job exists but has
   not been executed. **macOS: NOT_RUN.**
 

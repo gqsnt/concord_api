@@ -51,7 +51,7 @@ how to do it instead), **deferred**. Status is from the runs recorded in `eviden
 | C11 | required | omitted optional vs required optional payload differ on the wire | `values.rs::v05_*`, `values.rs::v04_*` | PASS |
 | C12 | required | no shared state between clients built on one reqwest client | `values.rs::c12_no_shared_state_between_clients` | PASS |
 | C13 | required | base with port/path/trailing slash (unchanged without generated segments); invalid runtime bases (incl. port 0, bad punycode) rejected without echo; invalid static bases are compile errors | `composition.rs::c13_*`, `c4_r_004_strict_base_subset_constructs`, `base_path_without_generated_segments_is_unchanged`, `runtime_base_with_invalid_punycode_is_an_error`, `ui/base_errors.rs`, `ui/base_invalid_port.rs` | PASS |
-| — | required | build checks in documented order (body, host, path, query, headers) | `composition.rs::c4_r_013_build_error_precedence` | PASS |
+| — | required | build checks in documented order (body incl. content type, host, path, query, headers) | `composition.rs::c4_r_013_build_error_precedence`, `representations.rs::content_type_error_precedes_path_error` | PASS |
 | — | required | query keys case-sensitive; form encoding; no `?` when empty | `composition.rs::query_keys_are_case_sensitive`, `query_values_are_form_encoded`, `no_query_string_when_nothing_survives` | PASS |
 | — | required | escaped braces identical with and without holes | `composition.rs::c4_r_002_escaped_braces` | PASS |
 | — | required | declaration order is wire order | `values.rs::query_order_follows_declaration_order` | PASS |
@@ -65,7 +65,7 @@ how to do it instead), **deferred**. Status is from the runs recorded in `eviden
 | S02 | required | sensitive query sent; raw and encoded forms absent from `Prepared` Debug | `sensitivity.rs::s02_query_on_wire_redacted_in_debug` | PASS |
 | S03 | required | sensitive path segment and host label redacted | `sensitivity.rs::s03_path_and_host_redacted` | PASS |
 | S04 | required | sticky key sensitivity across a public override; safety names without marking, normalized (`Client_Secret`), exact (`page_token`, `secret_id` stay visible); effective sensitivity reaches every placement | `sensitivity.rs::s04_sensitivity_is_sticky`, `s02_*`, `s03_*`, `c4_r_001_debug_uses_effective_sensitivity`, `adv_2_effective_sensitivity_reaches_every_placement`, `safety_list_normalization_is_exact` | PASS |
-| S05 | required | build and transport errors (Display, Debug, full source chain) never show the secret — including nested reqwest errors carrying URLs (refused HTTPS→HTTP redirect) and host names; native baselines do show them | `sensitivity.rs::s05_build_error_does_not_leak`, `s05_transport_error_does_not_leak`, `adv_1_sensitive_host_hides_transport_source`, `build_errors_have_no_source`, `tls.rs::c4_r_008_redirect_error_chain_does_not_leak`, `bodies.rs::r03_malformed_json_is_a_decode_error`, `r05_status_error_keeps_the_response` | PASS |
+| S05 | required | build and transport errors (Display, Debug, full source chain) never show the secret — including nested reqwest errors carrying URLs (refused HTTPS→HTTP redirect) and host names; native baselines do show them | `sensitivity.rs::s05_build_error_does_not_leak`, `s05_transport_error_does_not_leak`, `adv_1_sensitive_host_hides_transport_source`, `build_errors_have_no_source`, `tls.rs::c4_r_008_redirect_error_chain_does_not_leak`, `tls.rs::c4_r_008_header_reflected_into_redirect_does_not_leak`, `bodies.rs::r03_malformed_json_is_a_decode_error`, `r05_status_error_keeps_the_response` (`Error` has no `source()` chain) | PASS |
 | S06 | required (documented limit) | native request Debug prints the URL (outside the guarantee); sensitive headers flagged | `sensitivity.rs::s06_native_request_debug_is_outside_the_guarantee`; `SEMANTICS.md` §9; crate docs | PASS |
 | — | required | generated client/scope/endpoint Debug withholds effective-sensitive values | `sensitivity.rs::generated_debug_redacts`, `c4_r_001_debug_uses_effective_sensitivity` | PASS |
 
@@ -76,7 +76,7 @@ how to do it instead), **deferred**. Status is from the runs recorded in `eviden
 | R01 | required | POST JSON with `application/json`; typed output | `bodies.rs::r01_post_json` | PASS |
 | R02 | required | no body / zero-length / JSON `null` distinct (hyper omits `Content-Length: 0`) | `bodies.rs::r02_no_body_vs_empty_vs_null`, `optional_body_controls` | PASS |
 | R03 | required | malformed JSON → `Decode` without body echo; `Content-Type` not consulted | `bodies.rs::r03_*` | PASS |
-| R04 | required | `()` accepts 204 and any 2xx body, drained to the end without buffering (DISCARD; truncated body → transport error); JSON on 204 → decode error | `bodies.rs::r04_empty_responses`, `representations.rs::r04_unit_accepts_any_2xx_body`, `unit_and_discard_representations_drain`, `unit_drain_detects_truncated_body` (memory itself not measured) | PASS |
+| R04 | required | `()` accepts 204 and any 2xx body, drained to the end without buffering (DISCARD; truncated body → transport error); JSON on 204 → decode error | `bodies.rs::r04_empty_responses`, `representations.rs::r04_unit_accepts_any_2xx_body`, `unit_and_discard_representations_drain`, `unit_drain_detects_truncated_body`, `checks/heap/tests/drain.rs` (peak heap: `()` 0.75 MB vs `Binary` 137 MB for a 64 MiB body) | PASS |
 | R05 | required | non-2xx → `Status`; no body in Display/Debug; unread response available; same through `Decoder::decode` | `bodies.rs::r05_status_error_keeps_the_response`, `representations.rs::decoder_applies_status_handling` | PASS |
 | R06 | required | `Option<T>` output: 404 is an error; `null` is `None` | `bodies.rs::r06_option_output_has_no_status_magic` | PASS |
 | R07 | required | text/binary bodies and responses preserved; invalid UTF-8 → decode error (runs without the `json` feature) | `representations.rs::r07_*` | PASS |
@@ -94,6 +94,7 @@ how to do it instead), **deferred**. Status is from the runs recorded in `eviden
 | L04 | required | fmt, clippy (`-D warnings`, all targets), tests, rustdoc on the recorded SHA | `scripts/verify.sh`; `evidence/GATES.md` (`33a88d9`) | PASS |
 | L05 | required | feature combinations, package-isolated; JSON and TLS suites declare `required-features` and are reported as skipped, not passed | `evidence/GATES.md` feature rows | PASS |
 | L06 | required | no auth/rate/retry/pagination concepts in source | `evidence/GATES.md` scope scan; independent confirmation in all three Codex reviews and the adversarial review | PASS |
-| L07 | required | declared MSRV 1.85 builds and passes all runtime suites | `evidence/GATES.md` (91 + 4 tests on 1.85.1) | PASS (UI wording differs, see GATES) |
+| L07 | required | declared MSRV 1.85 builds and passes all runtime suites | `evidence/GATES.md` (92 + 5 tests on 1.85.1) | PASS (6 of 41 UI cases differ only in rustc wording, see GATES) |
+| L08 | required | verification is reproducible: `--locked`, tracked files unchanged | `scripts/verify.sh` | PASS |
 
 Windows and macOS: **NOT_RUN** (no such environment was available).

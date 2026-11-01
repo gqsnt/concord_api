@@ -105,3 +105,17 @@ are rejected (documented in SEMANTICS §1 via the hole grammar).
 | R04 | "not buffered" not discriminated | see C4-R-010 |
 | S05 | build errors' `source()` unasserted | `sensitivity.rs::build_errors_have_no_source` |
 | gaps | `each` over `Option` under `override`; `Decoder` status handling; reserved headers; header value policy; closed conversions; name normalization | `composition.rs::each_over_option_under_override`, `representations.rs::decoder_applies_status_handling`, `ui/reserved_headers_all.rs`, `composition.rs::header_value_policy`, `ui/conversions_are_closed.rs`, `values.rs::v12_borrowed_string_and_literals`, `sensitivity.rs::safety_list_normalization_is_exact` |
+
+## Codex final review — `codex/gate5_20261101T173328Z_33a88d9.md` (GPT-6.1 Sol XHigh, read-only, SHA 33a88d9)
+
+Re-review of earlier findings: C4-R-004 residual, C4-R-009, C4-R-011, C4-R-013 resolved;
+C4-R-008, C4-R-010, C4-R-012 partially. No blocker; one high-severity residual.
+
+| ID | Sev | Disposition | Evidence / fix | Regression test |
+|---|---|---|---|---|
+| C4-R-008 residual | high | CONFIRMED (reproduced) | The metadata-based rule (hide the chain only when the URL has sensitive parts) missed a sensitive *header* reflected by the server into the redirect target, which the nested reqwest error keeps. Fix: `Error::source()` is always `None`; `transport()` / `body_source()` are the explicit, documented-unredacted accessors. The new test fails on the reviewed `error.rs` and passes after. | `tls.rs::c4_r_008_header_reflected_into_redirect_does_not_leak` |
+| C4-R-014 | medium | CONFIRMED | Lockfile lacked the TLS test dev-dependencies (committed in `12e25c9`, after the snapshot). `scripts/verify.sh` and CI now pass `--locked` and fail if tracked files change during verification. | `GATES.md` locked run |
+| C4-R-012 residual | medium | CONFIRMED | GATES table was filled after the snapshot (`f51c66a`); MSRV now covers `representations` and `tls`; MSRV UI recounted (35/41 identical); PERF's claim that both comparison crates have wire tests corrected (the baselines' own tests stayed in the research scratch crate); STATUS's source-chain sentence updated. | `GATES.md`, `PERF.md`, `STATUS.md` |
+| C4-R-010 residual | medium | CONFIRMED | Earlier tests could not reject "read everything, then discard". `checks/heap` (own crate: a counting global allocator needs `unsafe`, which the workspace forbids) measures peak heap: 64 MiB body → `()` 0.75 MB, `Binary` 137 MB; making `()` buffer (DISCARD = false) fails the test (136 MB). | `checks/heap/tests/drain.rs` |
+| C4-R-015 | low | CONFIRMED | The representation's content type was validated in `finish`, after host/path/query/headers. Now validated in `encode_body` (body stage). | `representations.rs::content_type_error_precedes_path_error` |
+| C4-R-016 | low | CONFIRMED → spec corrected | `Clone` is required for client/scope values and for values of body-less endpoints (which derive `Clone`), not for endpoints with a body. SEMANTICS §3 now states exactly that. | — |
