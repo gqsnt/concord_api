@@ -34,5 +34,6 @@ jobs:
       # UI (trybuild) expectations are pinned to the toolchain in rust-toolchain.toml.
       - run: >
           cargo +1.85 test -p concord --lib
-          --test slice --test values --test composition --test bodies --test sensitivity --test hygiene
+          --test slice --test values --test composition --test bodies --test representations
+          --test sensitivity --test hygiene --test tls
       - run: cargo +1.85 test -p concord-example-shapes -p concord-example-renamed

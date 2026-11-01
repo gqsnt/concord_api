@@ -29,7 +29,8 @@ step doc env RUSTDOCFLAGS="-D warnings" cargo doc -p concord --no-deps
 
 if [[ "${1:-}" == "--msrv" ]]; then
   step msrv-concord cargo +1.85 test -p concord --lib \
-    --test slice --test values --test composition --test bodies --test sensitivity --test hygiene
+    --test slice --test values --test composition --test bodies --test representations \
+    --test sensitivity --test hygiene --test tls
   step msrv-examples cargo +1.85 test -p concord-example-shapes -p concord-example-renamed
 fi
 

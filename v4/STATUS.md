@@ -11,9 +11,9 @@ V3 preserved at tag `concord-v3-preserved`, `origin/main`, `origin/concord-v3` a
 | 0 Preservation and baseline | yes (`evidence/BASELINE.md`) | V3 build/test baseline recorded | — | yes |
 | 1 Research and blind design challenge | `DECISIONS.md`, research reports | — | blind Codex review before design; 4 independent Claude tracks | yes |
 | 2 Vertical slice | `2639b39` | `slice.rs` 7/7 | Codex Gate 2 (7 findings, all fixed) | yes |
-| 3 Values and composition | `24717e8`… | values, composition, ui | Codex Gate 3/4 (see below), Claude adversarial (10 findings fixed, 1 documented) | see below |
-| 4 Bodies, responses, sensitivity | `24717e8`… | bodies, sensitivity | as above | see below |
-| 5 Hardening | docs, examples, perf, CI file, MSRV | `scripts/verify.sh --msrv` | final Codex re-review | see below |
+| 3 Values and composition | `24717e8` → `33a88d9` | values, composition, hygiene, ui | Claude adversarial (10 fixed, 1 documented); Codex Gate 3/4 (6 new findings: 5 fixed, 1 resolved by amending the contract); Claude matrix audit (gaps closed) | pending final Codex re-review |
+| 4 Bodies, responses, sensitivity | `24717e8` → `33a88d9` | bodies, representations, sensitivity, tls | as above | pending final Codex re-review |
+| 5 Hardening | docs, examples, perf, CI file, MSRV | `scripts/verify.sh --msrv` all PASS at `33a88d9` | final Codex re-review running | pending |
 
 Final-gate details, SHAs and exact results: `evidence/GATES.md`. Review triage:
 `evidence/reviews/TRIAGE.md`.
