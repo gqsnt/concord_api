@@ -117,13 +117,33 @@ pub fn display_into<T: Display + ?Sized>(out: &mut String, value: &T) {
 }
 
 /// Encodes a body with its declared representation.
+/// Encodes a body with its declared representation and validates the representation's content
+/// type, so both failures belong to the body stage (before any URL part is formatted).
 pub fn encode_body<E: Encode>(
     value: E::Value,
     meta: &'static EndpointMeta,
-) -> Result<(reqwest::Body, Option<&'static str>), Error> {
-    E::encode(value)
-        .map(|body| (body, E::CONTENT_TYPE))
-        .map_err(|e| Error::from_encode(meta, e))
+) -> Result<(reqwest::Body, Option<HeaderValue>), Error> {
+    let content_type = match E::CONTENT_TYPE {
+        None => None,
+        Some(text) => {
+            let visible = text
+                .bytes()
+                .all(|b| b == b'\t' || (0x20..0x7f).contains(&b));
+            let value = HeaderValue::from_str(text)
+                .ok()
+                .filter(|_| visible)
+                .ok_or_else(|| {
+                    Error::build(
+                        Some(meta),
+                        "content-type",
+                        "from the body representation is not a valid header value",
+                    )
+                })?;
+            Some(value)
+        }
+    };
+    let body = E::encode(value).map_err(|e| Error::from_encode(meta, e))?;
+    Ok((body, content_type))
 }
 
 /// The request being composed by one endpoint's generated code.
@@ -286,7 +306,7 @@ impl<'a> Parts<'a> {
         self,
         method: Method,
         client: &reqwest::Client,
-        body: Option<(reqwest::Body, Option<&'static str>)>,
+        body: Option<(reqwest::Body, Option<HeaderValue>)>,
     ) -> Result<Prepared<R>, Error> {
         let mut url = self.url;
         if !self.segments.is_empty() || self.trailing_slash {
@@ -311,20 +331,7 @@ impl<'a> Parts<'a> {
         if let Some((body, content_type)) = body {
             if let Some(content_type) = content_type {
                 if !headers.contains_key(CONTENT_TYPE) {
-                    let visible = content_type
-                        .bytes()
-                        .all(|b| b == b'\t' || (0x20..0x7f).contains(&b));
-                    let value = HeaderValue::from_str(content_type)
-                        .ok()
-                        .filter(|_| visible)
-                        .ok_or_else(|| {
-                            Error::build(
-                                Some(self.meta),
-                                "content-type",
-                                "from the body representation is not a valid header value",
-                            )
-                        })?;
-                    headers.insert(CONTENT_TYPE, value);
+                    headers.insert(CONTENT_TYPE, content_type);
                 }
             }
             *request.body_mut() = Some(body);

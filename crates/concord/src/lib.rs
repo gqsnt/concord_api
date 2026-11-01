@@ -137,8 +137,9 @@
 //!
 //! `#[sensitive]` marks a value. It is sent as is, but Concord withholds it — and every key, path
 //! segment or host label it feeds — from the output **Concord itself produces**: generated `Debug`
-//! of clients, scopes and endpoints, [`Prepared`]'s `Debug`, and [`Error`]'s `Display`, `Debug`
-//! and `source()` chain. Keys named `authorization`, `cookie`, `x-api-key`, `token`, `password`
+//! of clients, scopes and endpoints, [`Prepared`]'s `Debug`, and [`Error`]'s `Display` and
+//! `Debug`. `Error` has no `source()` chain: the underlying reqwest or decoder error is reachable
+//! only through [`Error::transport`] and [`Error::body_source`], which are not redacted. Keys named `authorization`, `cookie`, `x-api-key`, `token`, `password`
 //! and a few more are treated as sensitive even without the marker.
 //!
 //! **Not covered:** the native `reqwest::Request`, `Url` and `Response` `Debug` output (it prints

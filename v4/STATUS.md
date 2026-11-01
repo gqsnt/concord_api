@@ -35,8 +35,9 @@ Final-gate details, SHAs and exact results: `evidence/GATES.md`. Review triage:
 2. Request construction is 110–250 ns slower than a hand-written builder (owned `String`s per value,
    handle clones); execution cost is indistinguishable over loopback.
 3. Same-typed positional required values can be swapped silently (newtypes are the mitigation).
-4. Lower transport layers' error text is outside Concord's control; only sensitive host labels
-   trigger hiding the `source()` chain. Secrets in a runtime base URL are not redacted.
+4. Lower transport layers' error text is outside Concord's control, so `Error` has no `source()`
+   chain (explicit `transport()` / `body_source()` only); applications that print those accessors
+   must handle redaction themselves. Secrets in a runtime base URL are not redacted.
 5. Two rustc trait errors point at the whole `api!` invocation (cost of the `$crate` wrapper).
 6. UI tests depend on the exact rustc version.
 7. Streaming request bodies are only reachable natively (`into_parts`), and untested here.

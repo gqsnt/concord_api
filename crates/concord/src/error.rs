@@ -114,10 +114,10 @@ impl Error {
 
     /// The underlying reqwest error (with its URL removed), for [`ErrorKind::Transport`].
     ///
-    /// **Not redacted below the top level:** its `source()` chain comes from reqwest, hyper, TLS
-    /// and DNS layers that Concord does not control; it can contain URLs (a redirect error's
-    /// source holds the redirect target, query included) and host names (a certificate
-    /// mismatch), including sensitive values.
+    /// **Not redacted below the top level**, which is why it is not this error's `source()`: its
+    /// own chain comes from reqwest, hyper, TLS and DNS layers that Concord does not control and
+    /// can contain URLs (a redirect error's source holds the redirect target, query included) and
+    /// host names (a certificate mismatch), including sensitive values.
     pub fn transport(&self) -> Option<&reqwest::Error> {
         match &self.inner.repr {
             Repr::Transport(error) => Some(error),
@@ -189,23 +189,9 @@ impl fmt::Debug for Error {
     }
 }
 
-impl StdError for Error {
-    /// For transport errors, the reqwest error with its top-level URL removed — but only for
-    /// endpoints whose URL contains no sensitive placement. reqwest nests further errors that
-    /// can carry a URL (a redirect error's source holds the redirect target) and lower layers
-    /// print host names (a TLS name mismatch), so for an endpoint with a sensitive query key,
-    /// path segment or host label the chain is withheld; [`Error::transport`] still returns it.
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        match &self.inner.repr {
-            Repr::Transport(error) => {
-                let url_has_secrets = self.inner.endpoint.is_some_and(|m| {
-                    !m.sensitive_labels.is_empty()
-                        || !m.sensitive_segments.is_empty()
-                        || !m.sensitive_query.is_empty()
-                });
-                if url_has_secrets { None } else { Some(error) }
-            }
-            _ => None,
-        }
-    }
-}
+/// Concord errors expose no `source()` chain. Underlying errors are reachable only through the
+/// explicit accessors [`Error::transport`] and [`Error::body_source`], because their text is not
+/// under Concord's control: reqwest nests errors that keep URLs (a refused redirect keeps its
+/// target, which a server may build from any request value, headers included), TLS errors print
+/// host names and decoders quote response bodies.
+impl StdError for Error {}

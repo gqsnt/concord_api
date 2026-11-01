@@ -76,7 +76,9 @@ reference  := name | owner "." name       (owner = `client` or an enclosing scop
 - No `reset`: to return to an initializer, use the original handle or a fresh entry call.
 - `x?: Option<U>` has three states: absent (`maybe_x(None)`), present `None` (`set_x(None)`),
   present `Some(u)`.
-- All non-body value types must be `Clone`.
+- Client and scope value types must be `Clone` (handles are copy-on-write snapshots). An endpoint
+  without a body is `Clone`, so its value types must be too; an endpoint with a body is not
+  `Clone`, and its value types need not be.
 
 ## 4. URL composition
 
@@ -186,18 +188,16 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
 - `Display` is `METHOD Client.scope.endpoint: <stage message>` and contains only static text: the
   failing placement's template (e.g. ``path segment `{id}` ``), the header name, the status code and
   its canonical reason, a decoder's content-free description (JSON category and line/column).
-- `source()` is the reqwest error with its top-level URL removed (`reqwest::Error::without_url`)
-  for transport errors — but `None` for an endpoint whose URL has any sensitive part (query key,
-  path segment or host label), because reqwest nests errors that carry URLs (a refused redirect
-  keeps its target) and lower layers print host names (TLS name mismatch). `transport()` always
-  returns the reqwest error and is documented as unredacted below the top level. `source()` is
-  `None` for every other kind. Encoder/decoder errors, which may quote body text, are reachable
-  only through `body_source()`.
+- `source()` is always `None`. Underlying errors are reachable only through explicit accessors:
+  `transport()` (the reqwest error with its top-level URL removed) and `body_source()`. They are
+  documented as unredacted: reqwest nests errors that keep URLs (a refused redirect keeps its
+  target, which a server can build from any request value, headers included), TLS errors print
+  host names, and decoders quote bodies.
 
 ## 9. Sensitivity
 
 Scope: output **produced by Concord** — generated `Debug` of clients, scopes and endpoints;
-`Prepared`'s `Debug`; `Error`'s `Display`, `Debug` and `source()` chain. Sensitive values are always
+`Prepared`'s `Debug`; `Error`'s `Display` and `Debug` (it has no `source()` chain). Sensitive values are always
 sent on the wire.
 
 - A value is marked with `#[sensitive]`.

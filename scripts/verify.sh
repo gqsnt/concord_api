@@ -21,17 +21,17 @@ echo "rustc: $(rustc --version)"
 
 step fmt cargo fmt --all -- --check
 step clippy cargo clippy --workspace --all-targets -- -D warnings
-step test cargo test --workspace
-step test-no-default cargo test -p concord --no-default-features
-step test-json-only cargo test -p concord --no-default-features --features json
-step test-reqwest-defaults-only cargo test -p concord --no-default-features --features reqwest-defaults
+step test cargo test --workspace --locked
+step test-no-default cargo test --locked -p concord --no-default-features
+step test-json-only cargo test --locked -p concord --no-default-features --features json
+step test-reqwest-defaults-only cargo test --locked -p concord --no-default-features --features reqwest-defaults
 step doc env RUSTDOCFLAGS="-D warnings" cargo doc -p concord --no-deps
 
 if [[ "${1:-}" == "--msrv" ]]; then
-  step msrv-concord cargo +1.85 test -p concord --lib \
+  step msrv-concord cargo +1.85 test --locked -p concord --lib \
     --test slice --test values --test composition --test bodies --test representations \
     --test sensitivity --test hygiene --test tls
-  step msrv-examples cargo +1.85 test -p concord-example-shapes -p concord-example-renamed
+  step msrv-examples cargo +1.85 test --locked -p concord-example-shapes -p concord-example-renamed -p concord-heap-check
 fi
 
 for log in target/verify-test*.log target/verify-msrv*.log; do
@@ -40,4 +40,8 @@ for log in target/verify-test*.log target/verify-msrv*.log; do
   failed=$(grep -o '[0-9]* failed' "$log" | awk '{s+=$1} END {print s+0}')
   echo "      $(basename "$log" .log): ${passed} passed, ${failed} failed"
 done
+if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+  echo "FAIL  tracked files changed during verification (e.g. Cargo.lock)"
+  status=1
+fi
 exit $status

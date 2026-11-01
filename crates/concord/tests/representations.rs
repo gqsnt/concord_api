@@ -237,3 +237,22 @@ fn invalid_content_type_is_a_build_error() {
     assert_eq!(error.kind(), ErrorKind::Build);
     assert!(error.to_string().contains("content-type"), "{error}");
 }
+
+concord::api! {
+    /// C4-R-015 fixture: a bad representation content type competing with a bad path value.
+    pub client Precede {
+        base "http://precede.invalid";
+        POST bad(id: String, body value: BadType) { path "items/{id}"; }
+    }
+}
+
+/// C4-R-015: the representation's content type is checked in the body stage, so it is reported
+/// before a later path error.
+#[test]
+fn content_type_error_precedes_path_error() {
+    let error = Precede::new(reqwest::Client::new())
+        .bad("..", "x".to_owned())
+        .prepare()
+        .unwrap_err();
+    assert!(error.to_string().contains("content-type"), "{error}");
+}

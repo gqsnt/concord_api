@@ -1,0 +1,14 @@
+[package]
+name = "concord-heap-check"
+description = "Peak-heap check that `()` responses are drained, not buffered (needs a counting global allocator, hence its own crate)."
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord", default-features = false }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "net", "io-util"] }

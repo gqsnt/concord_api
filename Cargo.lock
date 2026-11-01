@@ -153,6 +153,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-heap-check"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "tokio",
+]
+
+[[package]]
 name = "concord-macros"
 version = "4.0.0-alpha.1"
 dependencies = [

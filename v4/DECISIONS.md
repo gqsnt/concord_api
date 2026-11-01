@@ -188,10 +188,13 @@ Threat model: output **produced by Concord** — `Debug` of generated handles/en
 - Sensitive header values get `HeaderValue::set_sensitive(true)` (reqwest/`http` Debug prints
   `Sensitive`; h2 never-indexes) — a courtesy, not a guarantee.
 - `concord::Error` never contains URLs, header values, request values or response bodies in its
-  `Display`; transport errors keep `reqwest::Error::without_url()` as `source()` (composition:
-  reqwest's own `Display` prints the full URL including query secrets) — unless the endpoint's
-  URL has a sensitive part, in which case `source()` is `None`: nested reqwest errors keep URLs
-  (Codex C4-R-008, reproduced in `tests/tls.rs`) and TLS errors print host names (ADV-1).
+  `Display`. It has **no `source()` chain**: the reqwest error (top-level URL removed) and the
+  decoder error are reachable only through `transport()` / `body_source()`, documented as
+  unredacted. History: first `source()` returned the URL-less reqwest error; ADV-1 (TLS errors
+  print sensitive host labels), C4-R-008 (nested redirect errors keep the target URL, query
+  included) and its residual (a server can reflect a sensitive *header* into that URL) showed that
+  no metadata-based condition is safe, so the chain was removed (all reproduced in `tests/tls.rs`
+  and `tests/sensitivity.rs`).
 - Explicitly outside the guarantee (S06): the native `reqwest::Request`/`Response`/`Url` Debug,
   reqwest errors from user-driven execution, redirects forwarding custom headers and `Referer`
   with query, tracing, middleware and server logs.
