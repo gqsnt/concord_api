@@ -1,0 +1,11 @@
+error: duplicate value `a` in `Api.list`
+ --> tests/ui/duplicate_value.rs:4:26
+  |
+4 |         GET list(a: u32, a: u32) { query { "a" = a; } }
+  |                          ^
+
+error: first declared here
+ --> tests/ui/duplicate_value.rs:4:18
+  |
+4 |         GET list(a: u32, a: u32) { query { "a" = a; } }
+  |                  ^

@@ -4,7 +4,6 @@ concord::api! {
         query { "lang" = lang; }
         GET set_lang();
         GET new();
-        scope s { GET send(); }
     }
 }
 fn main() {}

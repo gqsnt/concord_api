@@ -76,7 +76,9 @@ inputs.
 - **Two control verbs, not five.** `set_` and `maybe_` prefixes are injective, so value controls
   can never collide with each other or with built-ins (semantics exp4: bare names and `_opt`
   suffixes collide). V3's `replace_x` = `maybe_x`; `omit_x()` = `maybe_x(None)`;
-  `set_x_if_some` is ordinary Rust (`if let`).
+  `set_x_if_some` is ordinary Rust (`if let`). `maybe_x` takes exactly `Option<T>` (Codex
+  C4-R-009 found the spec claiming conversions there): `Option<impl IntoValue<T>>` would make a
+  bare `None` ambiguous, so the contract was amended rather than the signature.
 - **No `reset_x` (provisional).** Handles are immutable values, so "back to the default" is the
   original handle or a fresh entry call. Dropping reset removes retained-initializer storage.
   Codex and semantics kept it; none of the ergonomics shapes needs it (semantics T-RESET).
@@ -187,7 +189,9 @@ Threat model: output **produced by Concord** — `Debug` of generated handles/en
   `Sensitive`; h2 never-indexes) — a courtesy, not a guarantee.
 - `concord::Error` never contains URLs, header values, request values or response bodies in its
   `Display`; transport errors keep `reqwest::Error::without_url()` as `source()` (composition:
-  reqwest's own `Display` prints the full URL including query secrets).
+  reqwest's own `Display` prints the full URL including query secrets) — unless the endpoint's
+  URL has a sensitive part, in which case `source()` is `None`: nested reqwest errors keep URLs
+  (Codex C4-R-008, reproduced in `tests/tls.rs`) and TLS errors print host names (ADV-1).
 - Explicitly outside the guarantee (S06): the native `reqwest::Request`/`Response`/`Url` Debug,
   reqwest errors from user-driven execution, redirects forwarding custom headers and `Referer`
   with query, tracing, middleware and server logs.

@@ -14,7 +14,7 @@ coordinator against source and, where marked, reproduced by a new test.
 | C4-R-001 | high | CONFIRMED | Handle/endpoint `Debug` redacted only `#[sensitive]` values; a value placed under a safety-list name (`Authorization`) or into a key made sensitive by an ancestor was printed. Fix: the macro computes *effective* sensitivity per value — marked, or contributing to any slot that is sensitive on any chain — and all generated `Debug` uses it. | `sensitivity.rs::c4_r_001_debug_uses_effective_sensitivity` |
 | C4-R-002 | medium | CONFIRMED | Hole-free quoted values were emitted with format-string escaping (`{{ok}}` sent literally). Fix: hole-free templates emit the decoded literal. | `composition.rs::c4_r_002_escaped_braces` |
 | C4-R-003 | medium | CONFIRMED | A qualifier equal to the *current* endpoint's name was rejected before ancestors were searched (`scope repo { GET repo() { path "{repo.x}"; } }`). Fix: ancestors are searched first; the "current owner" diagnostic applies only when no ancestor matches. | `composition.rs::c4_r_003_endpoint_named_like_scope` |
-| C4-R-004 | medium | CONFIRMED | The macro's base validation was a partial second parser; an invalid port reached a panicking `Base::from_static`. Fix: the macro accepts only a strict, explicitly specified subset (scheme, LDH/IPv4/bracketed-IPv6 host, numeric port ≤ 65535, `pchar` path) that `url` always accepts; anything else is a declaration error. | `tests/ui/base_invalid_port.rs`, `base_errors.rs`, `base_forms` unit test |
+| C4-R-004 | medium | CONFIRMED | The macro's base validation was a partial second parser; an invalid port reached a panicking `Base::from_static`. Fix: the macro accepts only a strict, explicitly specified subset (scheme, LDH/IPv4/bracketed-IPv6 host, numeric port ≤ 65535, `pchar` path) that `url` always accepts; anything else is a declaration error. | `tests/ui/base_invalid_port.rs`, `tests/ui/base_errors.rs`, `composition.rs::c4_r_004_strict_base_subset_constructs` |
 | C4-R-005 | medium | CONFIRMED | `()` buffered the whole body before discarding it. Fix: `Decode::DISCARD` (default `false`); `()` sets it and the decoder drains chunk by chunk. | `bodies.rs::c4_r_005_unit_drains_large_body` |
 | C4-R-006 | medium | CONFIRMED | `--no-default-features` could not build the test suite (`Json` used unconditionally). Fix: JSON fixtures declare `required-features = ["json"]`; all other suites run in every feature combination. | feature matrix in `evidence/GATES.md` |
 | C4-R-007 | medium | CONFIRMED | Let chains (Rust 1.88) under a declared `rust-version = "1.85"`. Fix: let chains removed; the declared minimum is built and tested with an installed 1.85 toolchain (see `evidence/GATES.md`). | MSRV run |
@@ -48,10 +48,10 @@ reproductions in the reviewer's scratch crate.
 | ADV-1 | medium | CONFIRMED | A TLS name-mismatch error deep in reqwest's `source()` chain contained a `#[sensitive]` host label (reproduced by the reviewer with `openssl s_server`). Fix: for endpoints with a sensitive label, `Error::source()` returns `None`; `Error::transport()` stays as an explicit, documented-unredacted accessor. | `sensitivity.rs::adv_1_sensitive_host_hides_transport_source` |
 | ADV-2 | medium | CONFIRMED | Safety-list sensitivity reached generated `Debug` but not path segments, labels or other keys using the same value (`path "keys/{client.token}"` printed the token). Fix: sensitivity is computed to a fixpoint — a value withheld anywhere makes every segment, label and key that reads it sensitive. | `sensitivity.rs::adv_2_effective_sensitivity_reaches_every_placement` |
 | ADV-3 | medium-low | CONFIRMED | Generated locals (`__p`, `__v`, `__c`) carried user-token spans, so `api!` forwarded through `macro_rules!` failed with hygiene errors. Fix: only the user value expression is respanned. | `tests/hygiene.rs` |
-| ADV-4 | low-medium | CONFIRMED | Expansions hard-coded `::concord::`, breaking a renamed dependency (needed for V3/V4 side by side). Fix: `concord::api!` is a `macro_rules!` forwarding `$crate` to the proc macro. | `examples/shapes` renames nothing; `tests/renamed` downstream crate |
+| ADV-4 | low-medium | CONFIRMED | Expansions hard-coded `::concord::`, breaking a renamed dependency (needed for V3/V4 side by side). Fix: `concord::api!` is a `macro_rules!` forwarding `$crate` to the proc macro. | `examples/renamed` (depends on `concord` as `concord4`) |
 | ADV-5 | low | CONFIRMED | `base "http://api.0x10"` passed the macro's subset check but `url` parses a hex last label as IPv4 → constructor panic. Fix: a last label that is numeric or `0x`-hex is rejected unless the whole host is a dotted-quad IPv4. | `ui/base_invalid_port.rs` |
-| ADV-6 | low-medium | CONFIRMED | `Decode::DISCARD` was never read (see correction above). | `bodies.rs::adv_6_discard_decoders_receive_no_bytes` |
-| ADV-7 | low | CONFIRMED | An invalid `Encode::CONTENT_TYPE` panicked in `HeaderValue::from_static`. Fix: validated, invalid → `ErrorKind::Build`. | `bodies.rs::adv_7_invalid_content_type_is_a_build_error` |
+| ADV-6 | low-medium | CONFIRMED | `Decode::DISCARD` was never read (see correction above). | `representations.rs::unit_and_discard_representations_drain` (moved from `bodies.rs`) |
+| ADV-7 | low | CONFIRMED | An invalid `Encode::CONTENT_TYPE` panicked in `HeaderValue::from_static`. Fix: validated, invalid → `ErrorKind::Build`. | `representations.rs::invalid_content_type_is_a_build_error` (moved from `bodies.rs`) |
 | ADV-8 | low | CONFIRMED | A literal header value that can never be valid compiled and failed on every call. Fix: header template literals must be visible ASCII, space or tab at compile time. | `ui/header_literal_value.rs` |
 | ADV-9 | low | CONFIRMED | `{r#self}` (and `r#super`, `r#crate`, `r#Self`, `r#_`) panicked the macro. Fix: rejected with a spanned error. | `ui/template_raw_keyword.rs` |
 | ADV-10 | low | DESIGN_TRADEOFF (documented) | `each` iterates any `IntoIterator`; on `Option<T>` that means 0 or 1 occurrences, and `override "k" = each opt` with `None` clears `k`. Explicit by the use of `each`; rejecting it would need type-name inspection. Documented in SEMANTICS §5. | — |
@@ -66,3 +66,42 @@ wrapper, two rustc trait errors (a scalar placement of an `Option<T>`/`Vec<T>` v
 `Display`) are reported at the `api!` invocation instead of at the declared type; the message still
 names the type (`ui/option_has_no_wire_spelling.stderr`, `ui/vec_needs_each.stderr`). All
 Concord-generated diagnostics keep their exact spans.
+
+## Codex Gates 3–4 — `codex/gate4_20261101T171356Z_bfb4870.md` (GPT-6.1 Sol XHigh, read-only, SHA bfb4870)
+
+The first attempt (`codex_gate4_attempt1_quota.log`, not kept in the repository) died when the
+session's `/tmp` volume ran out of quota while the coordinator was measuring; it was re-run
+unchanged on the same snapshot. Again the reviewer could not build or bind sockets; it used cached
+artifacts and MIR probes. It re-reviewed its Gate 2 findings: C4-R-001/002/003/005/006/007 resolved
+in source; C4-R-004 partially (invalid punycode labels — fixed in `2fd2e6a`, after the snapshot).
+
+| ID | Sev | Disposition | Evidence / fix | Regression test |
+|---|---|---|---|---|
+| C4-R-008 | high | CONFIRMED (reproduced) | An `https_only` client refusing a downgrade redirect produces a reqwest error whose *nested* source keeps the redirect target URL, query included; `without_url()` strips only the outer one, so a sensitive query leaked through `Error::source()`. Fix: `source()` is `None` for endpoints with any sensitive URL part; `transport()` remains the explicit, documented-unredacted accessor. The test fails on the pre-fix `error.rs` and passes after. | `tls.rs::c4_r_008_redirect_error_chain_does_not_leak` (loopback HTTPS with a test CA), `tls.rs::non_sensitive_endpoint_keeps_its_source_chain` |
+| C4-R-004 (residual) | medium | CONFIRMED, fixed in `2fd2e6a` | `http://xn--55555577.example` accepted by the macro, rejected by IDNA in `url` → constructor panic. Declared bases reject `xn--` labels; a runtime base or label that fails IDNA is a build error. | `ui/base_invalid_port.rs` (`Puny`), `composition.rs::runtime_base_with_invalid_punycode_is_an_error` |
+| C4-R-009 | medium | CONFIRMED → contract amended | `maybe_*` takes exactly `Option<T>`; SEMANTICS claimed `IntoValue` conversions. Generalizing the signature makes `None` ambiguous, so SEMANTICS §3 and D3 now state the exact contract. | `ui/conversions_are_closed.rs` (`maybe_cursor(Some("x"))` and `maybe_cursor("x")` are type errors), `values.rs::v07_maybe_is_exact` |
+| C4-R-010 | medium | CONFIRMED | No test distinguished draining from buffering for `()`. Added: a compile-time assertion that `()` is `DISCARD`, the DISCARD path receiving 0 of 1,000,000 bytes, and a truncated body (announced 1000, sent 10) failing as a transport error under `()` — proving the body is read to its end. Memory use itself is not measured. | `representations.rs::unit_and_discard_representations_drain`, `unit_drain_detects_truncated_body` |
+| C4-R-011 | medium | CONFIRMED, measured | Sensitivity fixpoint re-composed every chain per newly withheld value (cubic). Replaced by one composition pass recording slot memberships plus a worklist; slot lookup by map. Same-machine `cargo check` (incremental, 3 runs) for an N-value chain ending in `authorization`: before 0.32 s / 1.73 s / 9.74 s, after 0.12 s / 0.17 s / 0.35 s for N = 400 / 800 / 1600. | `PERF.md` §2; behaviour unchanged (`sensitivity.rs` all pass) |
+| C4-R-012 | medium | CONFIRMED | `GATES.md`/`PERF.md` were not in the reviewed snapshot (added later); triage cited a non-existent `base_forms` test (corrected above); non-JSON representation tests lived in the JSON-gated `bodies` target (moved to `representations.rs`, which runs in every feature combination). Feature runs are package-isolated (`-p concord`) in `scripts/verify.sh`. | `GATES.md` final run |
+| C4-R-013 | low | CONFIRMED | Host validation (IP base, length) ran in `finish`, after path/query/headers, contradicting SEMANTICS §6. `Parts::host()` now runs right after the labels. | `composition.rs::c4_r_013_build_error_precedence` |
+
+Other remarks adopted: `duplicate_names.rs` hid the duplicate-value check behind earlier errors
+(split into `ui/duplicate_value.rs`); `no_query_string_when_nothing_survives` had no query
+contributions (now uses fixtures whose contributions are absent or removed); Unicode hole names
+are rejected (documented in SEMANTICS §1 via the hole grammar).
+
+## Claude test-matrix audit — `claude/matrix_audit_1039f13.md` (Opus 5.5 medium subagent, SHA 1039f13)
+
+43 of 55 PASS rows were clean. Problems and dispositions:
+
+| Row | Finding | Disposition |
+|---|---|---|
+| L01 / V05 | UI suite failed in the auditor's run: two rustc-generated diagnostics (`option_has_no_wire_spelling`, `vec_needs_each`) showed different `help:` wording; matrix said "34 cases" | Not reproduced by the coordinator on rustc 1.97.1 in a fresh target directory (`-p concord --test ui` and `--workspace`). These two cases assert rustc's own wording and are recorded as toolchain-sensitive (as on 1.85). Count corrected. |
+| V11 | `duplicate_names.rs` masked the duplicate-value error; `scope s { GET send(); }` asserted nothing; built-in collisions untested | split (`ui/duplicate_value.rs`), line removed, added `ui/builtin_collisions.rs`, `ui/reserved_value_names.rs` |
+| V09 / V03 | clone retention, declaration order, "evaluated even if overridden", `send` not re-evaluating were untested | `values.rs::v03_v09_initializer_order_and_clone_retention` |
+| M05 | transport half could not detect a retry | `representations.rs::m05_transport_failure_is_one_attempt` (server counts exactly one connection) |
+| C04 | 63-byte accept and 253-byte host limit untested | `composition.rs::dns_length_limits` |
+| C13 | base trailing slash without generated segments; runtime port 0 accepted | spec clarified (SEMANTICS §4), port 0 rejected at runtime; `composition.rs::base_path_without_generated_segments_is_unchanged` |
+| R04 | "not buffered" not discriminated | see C4-R-010 |
+| S05 | build errors' `source()` unasserted | `sensitivity.rs::build_errors_have_no_source` |
+| gaps | `each` over `Option` under `override`; `Decoder` status handling; reserved headers; header value policy; closed conversions; name normalization | `composition.rs::each_over_option_under_override`, `representations.rs::decoder_applies_status_handling`, `ui/reserved_headers_all.rs`, `composition.rs::header_value_policy`, `ui/conversions_are_closed.rs`, `values.rs::v12_borrowed_string_and_literals`, `sensitivity.rs::safety_list_normalization_is_exact` |

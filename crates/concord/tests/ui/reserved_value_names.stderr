@@ -1,0 +1,11 @@
+error: `http` is reserved on the client: it is the `reqwest::Client` argument of `new`
+ --> tests/ui/reserved_value_names.rs:2:20
+  |
+2 |     pub client Api(http: String, __x: String) {
+  |                    ^^^^
+
+error: names starting with `__` are reserved for generated code
+ --> tests/ui/reserved_value_names.rs:2:34
+  |
+2 |     pub client Api(http: String, __x: String) {
+  |                                  ^^^

@@ -304,3 +304,57 @@ fn query_order_follows_declaration_order() {
         ]
     );
 }
+
+static ORDER_LOG: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
+
+fn logged(tag: &'static str, value: u32) -> u32 {
+    ORDER_LOG.lock().unwrap().push(tag);
+    value
+}
+
+concord::api! {
+    /// Initializer order and clone retention (own counters, so no other test interferes).
+    pub client Ordered(query("a") a: u32 = logged("a", 1), query("b") b: u32 = logged("b", 2)) {
+        base "http://ordered.invalid";
+        scope inner(query("s") s: u32 = logged("s", 3)) {
+            GET leaf(query("e") e: u32 = logged("e", 4));
+        }
+    }
+}
+
+/// V03: initializers run in declaration order, even when immediately overridden, and `send` does
+/// not run them. V09: a cloned scope keeps the values set before cloning.
+#[tokio::test]
+async fn v03_v09_initializer_order_and_clone_retention() {
+    let api = Ordered::new(reqwest::Client::new()).set_a(10);
+    assert_eq!(
+        *ORDER_LOG.lock().unwrap(),
+        ["a", "b"],
+        "both run, in order, despite set_a"
+    );
+    let inner = api.inner().set_s(30);
+    let cloned = inner.clone();
+    let leaf = cloned.leaf();
+    assert_eq!(*ORDER_LOG.lock().unwrap(), ["a", "b", "s", "e"]);
+    let p = leaf.clone().prepare().unwrap();
+    assert_eq!(query(&p), "a=10&b=2&s=30&e=4");
+    // `send` evaluates nothing either (it fails: the host does not resolve).
+    let _ = leaf.send().await;
+    assert_eq!(ORDER_LOG.lock().unwrap().len(), 4);
+}
+
+/// V12: `&String` converts to `String`; literals infer their exact types.
+#[test]
+fn v12_borrowed_string_and_literals() {
+    let owned = String::from("from-ref");
+    let p = api()
+        .region(&owned)
+        .items(Nullable(None))
+        .set_cursor(&owned)
+        .set_limit(5)
+        .prepare()
+        .unwrap();
+    assert_eq!(p.request().url().path(), "/from-ref/items");
+    assert_eq!(get(&pairs(&query(&p)), "cursor"), vec!["from-ref"]);
+    assert_eq!(get(&pairs(&query(&p)), "limit"), vec!["5"]);
+}

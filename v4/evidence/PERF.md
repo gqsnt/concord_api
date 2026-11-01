@@ -62,6 +62,19 @@ endpoint. This is the cost Codex's blind review predicted for per-endpoint speci
 linear, and modest at these sizes; no superlinear behaviour was observed up to 1,000 endpoints.
 Release-profile builds of large declarations were not measured.
 
+### Sensitivity propagation (Codex C4-R-011)
+
+A declaration whose N+1 values are chained through templated query keys
+(`"k{i}" = "{v_i}-{v_i+1}"`) and end in `"authorization" = v_N`, so every value becomes
+withheld one hop at a time. Incremental `cargo check`, `hyperfine -N --warmup 1 --runs 3`,
+`target/measure/sens/`:
+
+| N | before (`1b37a1e`, re-composition fixpoint) | after (`1bf83f0`, worklist) |
+|---|---|---|
+| 400 | 0.320 s ± 0.007 | 0.120 s ± 0.006 |
+| 800 | 1.729 s ± 0.016 | 0.175 s ± 0.002 |
+| 1,600 | 9.740 s ± 0.061 | 0.350 s ± 0.004 |
+
 ### Clean builds
 
 Fresh target directory each time, dev profile, one run each (`target/measure/clean.txt`):

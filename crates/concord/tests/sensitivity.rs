@@ -281,3 +281,40 @@ fn adv_2_effective_sensitivity_reaches_every_placement() {
         "{shown}"
     );
 }
+
+concord::api! {
+    /// Safety-list normalization: lowercase, `_` read as `-`, exact names only.
+    pub client Names(header("X-API-KEY") key: String) {
+        base "http://names.invalid";
+        GET e(a: String, b: String) { query { "Client_Secret" = a; "secret_id" = b; } }
+    }
+}
+
+/// SEMANTICS §9: names are compared after lowercasing and mapping `_` to `-`, and must match
+/// exactly (`secret_id` is not `secret`).
+#[test]
+fn safety_list_normalization_is_exact() {
+    let p = Names::new(reqwest::Client::new(), "k-123")
+        .e("A-VALUE", "B-VALUE")
+        .prepare()
+        .unwrap();
+    let shown = format!("{p:?}");
+    assert!(shown.contains("Client_Secret=<redacted>"), "{shown}");
+    assert!(shown.contains("secret_id=B-VALUE"), "{shown}");
+    assert!(shown.contains("x-api-key: <redacted>"), "{shown}");
+    assert!(
+        !shown.contains("A-VALUE") && !shown.contains("k-123"),
+        "{shown}"
+    );
+}
+
+/// S05: build errors have no `source()`.
+#[test]
+fn build_errors_have_no_source() {
+    let error = vault("http://v.test")
+        .tenant(SECRET)
+        .doc("x")
+        .prepare()
+        .unwrap_err();
+    assert!(error.source().is_none());
+}

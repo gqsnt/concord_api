@@ -7,7 +7,7 @@ error: `Api` already has a child named `list`
 error: first declared here
  --> tests/ui/duplicate_names.rs:4:13
   |
-4 |         GET list(a: u32, a: u32) { query { "a" = a; } }
+4 |         GET list(a: u32) { query { "a" = a; } }
   |             ^^^^
 
 error: scope `s` has the same name as an enclosing scope; qualified references would be ambiguous

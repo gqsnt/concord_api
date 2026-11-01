@@ -1,7 +1,7 @@
 concord::api! {
     pub client Api {
         base "http://x.test";
-        GET list(a: u32, a: u32) { query { "a" = a; } }
+        GET list(a: u32) { query { "a" = a; } }
         GET list();
         scope s { scope s { GET deep(); } }
     }

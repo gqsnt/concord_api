@@ -385,12 +385,14 @@ fn query_values_are_form_encoded() {
     assert_eq!(q(&p), "k=a&z=9&tag=a+b&tag=x%26y%3Dz%2B%25&tag=last");
 }
 
-/// No `?` is produced when nothing survives.
+/// No `?` is produced when nothing survives: every contribution is absent or removed.
 #[test]
 fn no_query_string_when_nothing_survives() {
-    let p = Paths::new(http()).one("x").here().prepare().unwrap();
+    let p = Q::new(http()).rm().exact().prepare().unwrap();
+    assert_eq!(q(&p), "z=9", "fixture sanity: only z survives");
+    let p = Lazy::new(http()).removed().prepare().unwrap();
     assert_eq!(p.request().url().query(), None);
-    assert!(!url(&p).contains('?'));
+    assert!(!url(&p).contains('?'), "{}", url(&p));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -696,4 +698,113 @@ fn c4_r_013_build_error_precedence() {
         .prepare()
         .unwrap_err();
     assert!(e.to_string().contains("x-id"), "{e}");
+}
+
+// ---------------------------------------------------------------------------------------------
+// Gaps found by the test-matrix audit
+
+concord::api! {
+    /// `each` over a required `Option` under `override`.
+    pub client Each(query("p") p: u32 = 1) {
+        base "http://each.invalid";
+        query { "b" = "blk"; "k" = "a"; }
+        GET clr(o: Option<String>) { query { override "k" = each o; } }
+    }
+}
+
+/// SEMANTICS §5: `each` iterates any `IntoIterator`; a required `Option` that is `None` yields no
+/// occurrence and, under `override`, clears the inherited key.
+#[test]
+fn each_over_option_under_override() {
+    assert_eq!(
+        q(&Each::new(http()).clr(None).prepare().unwrap()),
+        "p=1&b=blk"
+    );
+    assert_eq!(
+        q(&Each::new(http())
+            .clr(Some("z".to_owned()))
+            .prepare()
+            .unwrap()),
+        "p=1&b=blk&k=z"
+    );
+}
+
+concord::api! {
+    /// No owner has a path.
+    pub client Bare {
+        base "http://bare.invalid";
+        GET root();
+    }
+}
+
+/// SEMANTICS §4: with no generated segments the base path is used exactly as given; with
+/// segments, one trailing slash of the base is dropped before joining.
+#[test]
+fn base_path_without_generated_segments_is_unchanged() {
+    let url_of = |base: &str| {
+        url(&Bare::new(http())
+            .with_base_url(base)
+            .unwrap()
+            .root()
+            .prepare()
+            .unwrap())
+    };
+    assert_eq!(url_of("http://h.test"), "http://h.test/");
+    assert_eq!(url_of("http://h.test/root"), "http://h.test/root");
+    assert_eq!(url_of("http://h.test/root/"), "http://h.test/root/");
+    assert_eq!(url_of("http://h.test/root//"), "http://h.test/root//");
+    let joined = |base: &str| {
+        url(&Paths::new(http())
+            .with_base_url(base)
+            .unwrap()
+            .one("x")
+            .here()
+            .prepare()
+            .unwrap())
+    };
+    assert_eq!(joined("http://h.test/root//"), "http://h.test/root//a/b/x");
+    let error = Bare::new(http())
+        .with_base_url("http://h.test:0")
+        .unwrap_err();
+    assert_eq!(error.kind(), concord::ErrorKind::Build);
+}
+
+/// SEMANTICS §4: a 63-byte label is accepted; a host longer than 253 bytes is a build error.
+#[test]
+fn dns_length_limits() {
+    let label63 = "a".repeat(63);
+    let p = Hosts::new(http())
+        .region(&label63)
+        .status()
+        .prepare()
+        .unwrap();
+    assert!(url(&p).starts_with(&format!("https://{label63}.api.example.test")));
+    let long_base = format!("https://{}.example.test", vec!["b".repeat(60); 3].join("."));
+    let api = Hosts::new(http()).with_base_url(long_base).unwrap();
+    let error = api.region(&label63).status().prepare().unwrap_err();
+    assert_eq!(error.kind(), concord::ErrorKind::Build);
+    assert!(
+        error.to_string().contains("host is longer than 253 bytes"),
+        "{error}"
+    );
+}
+
+concord::api! {
+    /// Header value policy.
+    pub client Hv(header("x-note") note: String) {
+        base "http://hv.invalid";
+        GET e();
+    }
+}
+
+/// SEMANTICS §5: header values are visible ASCII, space or tab; anything else is a build error
+/// naming the header but not the value.
+#[test]
+fn header_value_policy() {
+    let p = Hv::new(http(), "a\tb c").e().prepare().unwrap();
+    assert_eq!(p.request().headers()["x-note"].as_bytes(), b"a\tb c");
+    let error = Hv::new(http(), "café").e().prepare().unwrap_err();
+    assert_eq!(error.kind(), concord::ErrorKind::Build);
+    let text = error.to_string();
+    assert!(text.contains("x-note") && !text.contains("caf"), "{text}");
 }

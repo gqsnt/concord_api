@@ -52,6 +52,9 @@ impl Base {
         if url.host().is_none() {
             return Err(fail("must have a host"));
         }
+        if url.port() == Some(0) {
+            return Err(fail("must not use port 0"));
+        }
         if !url.username().is_empty() || url.password().is_some() {
             return Err(fail("must not contain user information"));
         }

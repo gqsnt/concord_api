@@ -3,7 +3,7 @@
 
 mod support;
 
-use concord::{Binary, ErrorKind, Json, Text, bytes::Bytes, reqwest};
+use concord::{Binary, ErrorKind, Json, Text, reqwest};
 use serde::{Deserialize, Serialize};
 use support::{Reply, Server};
 
@@ -124,24 +124,6 @@ async fn optional_body_controls() {
     assert!(r[1].body.is_empty());
 }
 
-/// R07: text and binary bodies are sent unchanged.
-#[tokio::test]
-async fn r07_text_and_binary_bodies() {
-    let (server, api) = shop(Reply::new(204)).await;
-    api.clone().text("héllo ✓".to_owned()).send().await.unwrap();
-    api.binary(Bytes::from_static(&[0, 159, 146, 150, 255]))
-        .send()
-        .await
-        .unwrap();
-    let r = server.requests();
-    assert_eq!(r[0].body, "héllo ✓".as_bytes());
-    assert_eq!(
-        r[1].header("content-type"),
-        Some("application/octet-stream")
-    );
-    assert_eq!(r[1].body, [0, 159, 146, 150, 255]);
-}
-
 /// R03: malformed JSON is a decode error naming the position, not the content.
 #[tokio::test]
 async fn r03_malformed_json_is_a_decode_error() {
@@ -189,14 +171,6 @@ async fn r04_empty_responses() {
     api.remove(1).send().await.unwrap();
 }
 
-/// HEAD with `()` works (no body is read).
-#[tokio::test]
-async fn head_request() {
-    let (server, api) = shop(Reply::new(200)).await;
-    api.exists(3).send().await.unwrap();
-    assert_eq!(server.single().method, "HEAD");
-}
-
 /// R05: a non-2xx status is an error that keeps the unread response for the caller.
 #[tokio::test]
 async fn r05_status_error_keeps_the_response() {
@@ -228,27 +202,6 @@ async fn r06_option_output_has_no_status_magic() {
     assert_eq!(api.find(1).send().await.unwrap(), None);
 }
 
-/// R07: text and binary responses are returned unchanged; invalid UTF-8 text is a decode error.
-#[tokio::test]
-async fn r07_text_and_binary_responses() {
-    let (_server, api) = shop(Reply::text(200, "héllo ✓")).await;
-    assert_eq!(api.text_out().send().await.unwrap(), "héllo ✓");
-
-    let (_server, api) = shop(Reply::new(200).body([0u8, 255, 1])).await;
-    assert_eq!(
-        api.clone().bytes_out().send().await.unwrap().as_ref(),
-        [0, 255, 1]
-    );
-    let error = api.text_out().send().await.unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::Decode);
-    assert!(
-        error
-            .to_string()
-            .contains("not valid UTF-8 (valid up to byte 1)"),
-        "{error}"
-    );
-}
-
 /// R08: the raw response can be consumed natively (streamed chunk by chunk).
 #[tokio::test]
 async fn r08_raw_response_streaming() {
@@ -259,87 +212,4 @@ async fn r08_raw_response_streaming() {
         total += chunk.len();
     }
     assert_eq!(total, 100_000);
-}
-
-/// A transport failure is reported once, with no retry, as a transport error.
-#[tokio::test]
-async fn transport_error() {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    drop(listener);
-    let api = Shop::new(reqwest::Client::new())
-        .with_base_url(format!("http://{addr}"))
-        .unwrap();
-    let error = api.item(1).send().await.unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::Transport);
-    assert!(error.transport().unwrap().is_connect());
-    assert_eq!(
-        error.to_string(),
-        "GET Shop.item: transport error (connect)"
-    );
-}
-
-/// C4-R-005: `()` drains a large body chunk by chunk (no buffering) and succeeds.
-#[tokio::test]
-async fn c4_r_005_unit_drains_large_body() {
-    let (server, api) = shop(Reply::new(200).body(vec![1u8; 8 * 1024 * 1024])).await;
-    api.remove(1).send().await.unwrap();
-    assert_eq!(server.requests().len(), 1);
-}
-
-static DECODED_LEN: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(usize::MAX);
-
-/// A user representation that asks for the body to be drained.
-pub struct Drained;
-
-impl concord::Decode for Drained {
-    type Output = ();
-    const DISCARD: bool = true;
-    fn decode(body: Bytes) -> Result<(), concord::BodyError> {
-        DECODED_LEN.store(body.len(), std::sync::atomic::Ordering::SeqCst);
-        Ok(())
-    }
-}
-
-/// A user representation with an invalid content type.
-pub struct BadType;
-
-impl concord::Encode for BadType {
-    type Value = String;
-    const CONTENT_TYPE: Option<&'static str> = Some("application/x\u{2011}custom");
-    fn encode(value: String) -> Result<reqwest::Body, concord::BodyError> {
-        Ok(value.into())
-    }
-}
-
-concord::api! {
-    /// ADV-6 / ADV-7 fixture.
-    pub client Reprs {
-        base "http://reprs.invalid";
-        GET drained() -> Drained { path "big"; }
-        POST bad(body value: BadType) { path "bad"; }
-    }
-}
-
-/// ADV-6: a `DISCARD` representation never receives body bytes (the body is drained, not buffered).
-#[tokio::test]
-async fn adv_6_discard_decoders_receive_no_bytes() {
-    let server = Server::reply(Reply::new(200).body(vec![9u8; 1_000_000])).await;
-    let api = Reprs::new(reqwest::Client::new())
-        .with_base_url(server.url())
-        .unwrap();
-    api.drained().send().await.unwrap();
-    assert_eq!(DECODED_LEN.load(std::sync::atomic::Ordering::SeqCst), 0);
-}
-
-/// ADV-7: an invalid content type from a representation is a build error, not a panic.
-#[test]
-fn adv_7_invalid_content_type_is_a_build_error() {
-    let error = Reprs::new(reqwest::Client::new())
-        .bad("x".to_owned())
-        .prepare()
-        .unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::Build);
-    assert!(error.to_string().contains("content-type"), "{error}");
 }

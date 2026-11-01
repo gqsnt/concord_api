@@ -59,9 +59,11 @@ reference  := name | owner "." name       (owner = `client` or an enclosing scop
 - Entry calls: `Client::new(http: reqwest::Client, ...)`, `parent.scope(...)`,
   `parent.endpoint(...)`. Positional arguments are the required values and a required body, **in
   declaration order**.
-- Arguments, setters, `maybe_*` payloads and initializers accept `impl IntoValue<T>`: exactly `T`,
-  or `&str`/`&String` for `String`. Nothing else converts (no `Into`, no numeric widening, no
-  wrapping into `Option`).
+- Positional arguments, `set_*` and initializers accept `impl IntoValue<T>`: exactly `T`, or
+  `&str`/`&String` for `String`. Nothing else converts (no `Into`, no numeric widening, no
+  wrapping into `Option`). `maybe_*` takes exactly `Option<T>`, so that `None` needs no type
+  annotation (`maybe_x(Some("a"))` for a `String` value is a type error; write
+  `set_x("a")`).
 - **Initializers.** `E` is any Rust expression, evaluated exactly once each time its owner is
   constructed (`new`, each scope entry, each endpoint call), in declaration order, even when it is
   immediately overridden. Cloning, setters, `prepare` and `send` never evaluate it. `E` is compiled
@@ -82,8 +84,12 @@ reference  := name | owner "." name       (owner = `client` or an enclosing scop
 `http`/`https` URL with a host, optional port and path, and no user information, query or fragment.
 The declared base must additionally fall within a strict subset (ASCII DNS name, dotted IPv4 or
 bracketed IPv6 host; decimal port 1–65535; `pchar` path without `%`) checked at compile time, so the
-generated constructor cannot fail. The base path is the canonical path produced by URL parsing,
-with at most one trailing `/` removed; it is a prefix and is never resolved relative to anything.
+generated constructor cannot fail. Port 0 is rejected in both forms, and a declared base may not contain `xn--`
+(punycode) labels, which URL parsing validates further (use `with_base_url`, which returns an
+error instead). The base path is the canonical path produced by URL parsing. When generated
+segments follow, at most one trailing `/` is removed before joining (`/root/` + `a` →
+`/root/a`, `/root//` + `a` → `/root//a`); without generated segments the base path is used
+exactly as given. It is never resolved relative to anything.
 
 **Path.** Each owner's `path` template is split on literal `/` into segments; segments of all owners
 are appended root first after the base path. Templates are relative: no leading `/`, no empty
@@ -150,8 +156,9 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
 - Concord performs no retries, no authentication, no rate limiting, no pagination and has no
   transport settings. One `send` is one `Client::execute` call; redirects, proxies, timeouts,
   compression and default headers are whatever the reqwest client does.
-- Order of build checks: body encoding, then subdomain labels, path segments, query and headers;
-  the first failure is returned.
+- Order of build checks: body encoding (including the representation's content type), then
+  subdomain labels and the assembled host (IP base, 253-byte limit), path segments, query and
+  headers; the first failure is returned and later values are not formatted.
 
 ## 7. Bodies and responses
 
@@ -179,10 +186,12 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
 - `Display` is `METHOD Client.scope.endpoint: <stage message>` and contains only static text: the
   failing placement's template (e.g. ``path segment `{id}` ``), the header name, the status code and
   its canonical reason, a decoder's content-free description (JSON category and line/column).
-- `source()` is the reqwest error with its URL removed (`reqwest::Error::without_url`) for transport
-  errors — except for endpoints whose host contains a sensitive label, where it is `None`, because
-  lower layers (hyper, TLS, DNS) may print the host name. `transport()` always returns the reqwest
-  error and is documented as unredacted below the top level. `source()` is nothing for other kinds. Encoder/decoder errors, which may quote body text, are reachable
+- `source()` is the reqwest error with its top-level URL removed (`reqwest::Error::without_url`)
+  for transport errors — but `None` for an endpoint whose URL has any sensitive part (query key,
+  path segment or host label), because reqwest nests errors that carry URLs (a refused redirect
+  keeps its target) and lower layers print host names (TLS name mismatch). `transport()` always
+  returns the reqwest error and is documented as unredacted below the top level. `source()` is
+  `None` for every other kind. Encoder/decoder errors, which may quote body text, are reachable
   only through `body_source()`.
 
 ## 9. Sensitivity
