@@ -1,0 +1,35 @@
+[package]
+name = "concord"
+description = "A small typed, declarative layer over reqwest for modeling HTTP APIs."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+default = ["json", "reqwest-defaults"]
+## JSON request bodies and responses (`Json<T>`), via serde/serde_json.
+json = ["dep:serde", "dep:serde_json"]
+## Enables reqwest's own default features (TLS, HTTP/2, charset, system proxy).
+## Disable it to choose reqwest features yourself in your own Cargo.toml.
+reqwest-defaults = ["reqwest/default"]
+
+[dependencies]
+bytes.workspace = true
+concord-macros = { path = "../concord-macros", version = "=4.0.0-alpha.1" }
+percent-encoding.workspace = true
+reqwest.workspace = true
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+url.workspace = true
+
+[dev-dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "net", "io-util", "time", "sync"] }
+trybuild.workspace = true
+
+[lints]
+workspace = true

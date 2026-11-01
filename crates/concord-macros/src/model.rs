@@ -1,0 +1,1130 @@
+//! Name resolution, validation and per-endpoint composition.
+//!
+//! Everything that decides *which* contributions reach an endpoint's request happens here, at
+//! compile time. Generated code only decides, with plain `if let`s, whether an optional value is
+//! present.
+
+use std::collections::BTreeMap;
+
+use proc_macro2::Span;
+use quote::format_ident;
+use syn::{Attribute, Expr, Ident, LitStr, Type, Visibility};
+
+use crate::syntax::{self, Family, Op, OwnerKind, Rhs};
+use crate::template::{self, RawPiece};
+
+pub struct Model {
+    pub owners: Vec<Owner>,
+}
+
+pub enum Kind {
+    Client {
+        vis: Visibility,
+        base: LitStr,
+    },
+    Scope,
+    Endpoint {
+        method: Ident,
+        output: Option<Type>,
+        body: Option<Body>,
+    },
+}
+
+pub struct Body {
+    pub docs: Vec<Attribute>,
+    pub name: Ident,
+    pub optional: bool,
+    pub ty: Type,
+}
+
+pub struct Owner {
+    pub kind: Kind,
+    pub docs: Vec<Attribute>,
+    pub name: Ident,
+    pub type_name: Ident,
+    pub state_name: Ident,
+    pub dotted: String,
+    pub parent: Option<usize>,
+    pub children: Vec<usize>,
+    pub values: Vec<Value>,
+    pub labels: Vec<Component>,
+    pub segments: Vec<Component>,
+    pub trailing_slash: bool,
+    pub query: Vec<Contrib>,
+    pub headers: Vec<Contrib>,
+    pub composed: Option<Composed>,
+}
+
+impl Owner {
+    pub fn is_endpoint(&self) -> bool {
+        matches!(self.kind, Kind::Endpoint { .. })
+    }
+
+    pub fn body(&self) -> Option<&Body> {
+        match &self.kind {
+            Kind::Endpoint { body, .. } => body.as_ref(),
+            _ => None,
+        }
+    }
+}
+
+pub struct Value {
+    pub docs: Vec<Attribute>,
+    pub name: Ident,
+    pub ty: Type,
+    pub optional: bool,
+    pub default: Option<Expr>,
+    pub sensitive: bool,
+    pub usage: Option<Usage>,
+    /// Direct placement: family, explicit key, span, `each`.
+    pub placement: Option<(Family, Option<String>, Span, bool)>,
+}
+
+impl Value {
+    /// Required and uninitialized: a positional argument.
+    pub fn is_positional(&self) -> bool {
+        !self.optional && self.default.is_none()
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Usage {
+    Scalar,
+    Each,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct ValueRef {
+    pub owner: usize,
+    pub index: usize,
+}
+
+pub enum Piece {
+    Lit(String),
+    Hole(ValueRef),
+}
+
+/// One path segment or host label.
+pub struct Component {
+    pub pieces: Vec<Piece>,
+    pub text: String,
+    pub sensitive: bool,
+}
+
+pub enum Source {
+    Template { pieces: Vec<Piece> },
+    Ref { value: ValueRef, each: bool },
+}
+
+pub struct Contrib {
+    pub op: Op,
+    pub key: String,
+    pub span: Span,
+    pub source: Option<Source>,
+    pub sensitive: bool,
+    /// Every value it reads is always present.
+    pub total: bool,
+}
+
+#[derive(Clone, Copy)]
+pub struct ContribId {
+    pub owner: usize,
+    pub family: Family,
+    pub index: usize,
+}
+
+pub enum Item {
+    Emit(ContribId),
+    /// `override` with an optional source: emit `src` if present, otherwise `fallback`.
+    Override {
+        src: ContribId,
+        fallback: Vec<Item>,
+    },
+}
+
+pub struct Slot {
+    pub key: String,
+    pub sensitive: bool,
+    pub items: Vec<Item>,
+}
+
+pub struct Composed {
+    /// Leftmost label first: (owner, label index).
+    pub labels: Vec<(usize, usize)>,
+    /// Root first: (owner, segment index).
+    pub segments: Vec<(usize, usize)>,
+    pub trailing_slash: bool,
+    pub query: Vec<Slot>,
+    pub headers: Vec<Slot>,
+}
+
+/// Header fields owned by HTTP framing; reqwest/hyper manage them.
+const RESERVED_HEADERS: &[&str] = &[
+    "host",
+    "content-length",
+    "transfer-encoding",
+    "connection",
+    "te",
+    "trailer",
+    "upgrade",
+    "keep-alive",
+];
+
+/// Query/header names whose values are withheld from Concord output even when not marked
+/// `#[sensitive]` (compared after lowercasing and mapping `_` to `-`).
+const SENSITIVE_NAMES: &[&str] = &[
+    "authorization",
+    "proxy-authorization",
+    "cookie",
+    "set-cookie",
+    "x-api-key",
+    "api-key",
+    "apikey",
+    "x-auth-token",
+    "auth-token",
+    "access-token",
+    "refresh-token",
+    "id-token",
+    "token",
+    "client-secret",
+    "secret",
+    "password",
+    "signature",
+    "session",
+];
+
+fn sensitive_name(key: &str) -> bool {
+    let normalized = key.to_ascii_lowercase().replace('_', "-");
+    SENSITIVE_NAMES.contains(&normalized.as_str())
+}
+
+#[derive(Default)]
+struct Errors(Option<syn::Error>);
+
+impl Errors {
+    fn push(&mut self, e: syn::Error) {
+        match &mut self.0 {
+            Some(all) => all.combine(e),
+            None => self.0 = Some(e),
+        }
+    }
+
+    fn check(&mut self) -> syn::Result<()> {
+        match self.0.take() {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
+}
+
+fn plain(ident: &Ident) -> String {
+    let s = ident.to_string();
+    s.strip_prefix("r#").map(str::to_owned).unwrap_or(s)
+}
+
+fn pascal(ident: &Ident) -> String {
+    plain(ident)
+        .split('_')
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            let mut c = s.chars();
+            c.next()
+                .map(|f| f.to_ascii_uppercase().to_string() + c.as_str())
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+impl Model {
+    pub fn build(api: syntax::Api) -> syn::Result<Model> {
+        let mut errors = Errors::default();
+        let mut owners = Vec::new();
+        let mut stmts = Vec::new();
+        flatten(api.client, None, &mut owners, &mut stmts, &mut errors);
+        errors.check()?;
+        let mut model = Model { owners };
+
+        // Value-level checks.
+        for owner in &model.owners {
+            let mut seen: BTreeMap<String, &Ident> = BTreeMap::new();
+            for value in &owner.values {
+                let name = plain(&value.name);
+                if name.starts_with("__") {
+                    errors.push(syn::Error::new(
+                        value.name.span(),
+                        "names starting with `__` are reserved for generated code",
+                    ));
+                }
+                if matches!(owner.kind, Kind::Client { .. }) && name == "http" {
+                    errors.push(syn::Error::new(value.name.span(), "`http` is reserved on the client: it is the `reqwest::Client` argument of `new`"));
+                }
+                if let Some(first) = seen.insert(name.clone(), &value.name) {
+                    let mut e = syn::Error::new(
+                        value.name.span(),
+                        format!("duplicate value `{name}` in `{}`", owner.dotted),
+                    );
+                    e.combine(syn::Error::new(first.span(), "first declared here"));
+                    errors.push(e);
+                }
+            }
+            if let Some(body) = owner.body() {
+                if seen.contains_key(&plain(&body.name)) {
+                    errors.push(syn::Error::new(
+                        body.name.span(),
+                        "the body has the same name as a value",
+                    ));
+                }
+                if plain(&body.name).starts_with("__") {
+                    errors.push(syn::Error::new(
+                        body.name.span(),
+                        "names starting with `__` are reserved for generated code",
+                    ));
+                }
+            }
+        }
+        errors.check()?;
+
+        // Statements and direct placements.
+        for (index, stmts) in stmts.into_iter().enumerate() {
+            model.resolve_owner(index, stmts, &mut errors);
+        }
+        errors.check()?;
+
+        // Composition along every chain; errors are reported for each owner's own statements.
+        for index in 0..model.owners.len() {
+            let composed = model.compose(index, &mut errors);
+            if model.owners[index].is_endpoint() {
+                model.owners[index].composed = Some(composed);
+            }
+        }
+
+        // Liveness.
+        for owner in &model.owners {
+            for value in &owner.values {
+                if value.usage.is_none() {
+                    errors.push(syn::Error::new(
+                        value.name.span(),
+                        format!(
+                            "value `{}` is never used; place it (`query`, `header(\"..\")`) or reference it from `path`, `subdomain`, `query` or `headers`",
+                            plain(&value.name)
+                        ),
+                    ));
+                }
+            }
+        }
+        model.check_names(&mut errors);
+        errors.check()?;
+        Ok(model)
+    }
+
+    /// The owners from the client down to `index`.
+    pub fn chain(&self, index: usize) -> Vec<usize> {
+        let mut chain = vec![index];
+        let mut cur = index;
+        while let Some(parent) = self.owners[cur].parent {
+            chain.push(parent);
+            cur = parent;
+        }
+        chain.reverse();
+        chain
+    }
+
+    pub fn value(&self, r: ValueRef) -> &Value {
+        &self.owners[r.owner].values[r.index]
+    }
+
+    pub fn contrib(&self, id: ContribId) -> &Contrib {
+        let owner = &self.owners[id.owner];
+        match id.family {
+            Family::Query => &owner.query[id.index],
+            Family::Header => &owner.headers[id.index],
+        }
+    }
+
+    fn resolve_ref(&self, at: usize, r: &syntax::Ref) -> syn::Result<ValueRef> {
+        let name = plain(&r.name);
+        let find = |owner: usize| {
+            self.owners[owner]
+                .values
+                .iter()
+                .position(|v| plain(&v.name) == name)
+        };
+        match &r.owner {
+            None => match find(at) {
+                Some(index) => Ok(ValueRef { owner: at, index }),
+                None => {
+                    let mut msg =
+                        format!("`{name}` is not a value of `{}`", self.owners[at].dotted);
+                    let mut cur = self.owners[at].parent;
+                    while let Some(p) = cur {
+                        if find(p).is_some() {
+                            msg.push_str(&format!(
+                                "; to use the value of an enclosing owner, write `{}.{name}`",
+                                self.qualifier(p)
+                            ));
+                            break;
+                        }
+                        cur = self.owners[p].parent;
+                    }
+                    Err(syn::Error::new(r.name.span(), msg))
+                }
+            },
+            Some(qualifier) => {
+                let q = plain(qualifier);
+                let mut cur = self.owners[at].parent;
+                let own = self.qualifier(at);
+                if q == own {
+                    return Err(syn::Error::new(
+                        qualifier.span(),
+                        format!("`{q}` is the current owner; write the bare name `{name}`"),
+                    ));
+                }
+                while let Some(p) = cur {
+                    if self.qualifier(p) == q {
+                        return match find(p) {
+                            Some(index) => Ok(ValueRef { owner: p, index }),
+                            None => Err(syn::Error::new(
+                                r.name.span(),
+                                format!("`{}` has no value `{name}`", self.owners[p].dotted),
+                            )),
+                        };
+                    }
+                    cur = self.owners[p].parent;
+                }
+                Err(syn::Error::new(
+                    qualifier.span(),
+                    format!(
+                        "`{q}` is not an enclosing owner of `{}`; qualify with `client` or the name of an enclosing scope",
+                        self.owners[at].dotted
+                    ),
+                ))
+            }
+        }
+    }
+
+    fn qualifier(&self, owner: usize) -> String {
+        match self.owners[owner].kind {
+            Kind::Client { .. } => "client".to_owned(),
+            _ => plain(&self.owners[owner].name),
+        }
+    }
+
+    fn mark(&mut self, r: ValueRef, usage: Usage, span: Span, errors: &mut Errors) {
+        let value = &mut self.owners[r.owner].values[r.index];
+        match value.usage {
+            Some(existing) if existing != usage => errors.push(syn::Error::new(
+                span,
+                format!(
+                    "`{}` is used both with and without `each`",
+                    plain(&value.name)
+                ),
+            )),
+            _ => value.usage = Some(usage),
+        }
+    }
+
+    fn pieces(
+        &mut self,
+        at: usize,
+        raw: Vec<RawPiece>,
+        usage_span: Span,
+        errors: &mut Errors,
+    ) -> Option<Vec<Piece>> {
+        let mut out = Vec::new();
+        for piece in raw {
+            match piece {
+                RawPiece::Lit(s) => out.push(Piece::Lit(s)),
+                RawPiece::Hole(r) => match self.resolve_ref(at, &r) {
+                    Ok(value) => {
+                        self.mark(value, Usage::Scalar, usage_span, errors);
+                        out.push(Piece::Hole(value));
+                    }
+                    Err(e) => {
+                        errors.push(e);
+                        return None;
+                    }
+                },
+            }
+        }
+        Some(out)
+    }
+
+    fn structural(
+        &mut self,
+        at: usize,
+        pieces: Vec<RawPiece>,
+        span: Span,
+        what: &str,
+        errors: &mut Errors,
+    ) -> Option<Component> {
+        let text = template::render(&pieces);
+        let pieces = self.pieces(at, pieces, span, errors)?;
+        let mut sensitive = false;
+        for piece in &pieces {
+            if let Piece::Hole(r) = piece {
+                let value = self.value(*r);
+                if value.optional {
+                    errors.push(syn::Error::new(
+                        span,
+                        format!("`{}` is optional (`?`) and cannot be part of a {what}; there is no optional URL structure", plain(&value.name)),
+                    ));
+                }
+                sensitive |= value.sensitive;
+            }
+        }
+        Some(Component {
+            pieces,
+            text,
+            sensitive,
+        })
+    }
+
+    fn resolve_owner(&mut self, at: usize, stmts: syntax::Stmts, errors: &mut Errors) {
+        let is_endpoint = self.owners[at].is_endpoint();
+
+        if let Some(lit) = stmts.path {
+            match template::parse(&lit) {
+                Err(e) => errors.push(e),
+                Ok(raw) => {
+                    let parts = template::split(raw, '/');
+                    let count = parts.len();
+                    for (i, part) in parts.into_iter().enumerate() {
+                        if part.is_empty() {
+                            if i == count - 1 && i > 0 && is_endpoint {
+                                self.owners[at].trailing_slash = true;
+                                continue;
+                            }
+                            let msg = if i == 0 {
+                                "path templates are relative: no leading `/`, and no empty template"
+                                    .to_owned()
+                            } else if i == count - 1 {
+                                "a trailing `/` is only allowed on an endpoint's own path"
+                                    .to_owned()
+                            } else {
+                                "empty path segment (`//`)".to_owned()
+                            };
+                            errors.push(syn::Error::new(lit.span(), msg));
+                            continue;
+                        }
+                        let mut ok = true;
+                        let mut literal_only = String::new();
+                        let mut all_literal = true;
+                        for piece in &part {
+                            match piece {
+                                RawPiece::Lit(s) => {
+                                    literal_only.push_str(s);
+                                    if let Some(bad) = s.chars().find(|c| !is_pchar(*c)) {
+                                        errors.push(syn::Error::new(
+                                            lit.span(),
+                                            format!("{bad:?} is not allowed literally in a path template; literal path text must be RFC 3986 `pchar` without `%` (values in `{{..}}` are percent-encoded)"),
+                                        ));
+                                        ok = false;
+                                    }
+                                }
+                                RawPiece::Hole(_) => all_literal = false,
+                            }
+                        }
+                        if all_literal && (literal_only == "." || literal_only == "..") {
+                            errors.push(syn::Error::new(
+                                lit.span(),
+                                "`.` and `..` path segments are not allowed",
+                            ));
+                            ok = false;
+                        }
+                        if ok && let Some(c) = self.structural(at, part, lit.span(), "path", errors)
+                        {
+                            self.owners[at].segments.push(c);
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(lit) = stmts.subdomain {
+            match template::parse(&lit) {
+                Err(e) => errors.push(e),
+                Ok(raw) => {
+                    for part in template::split(raw, '.') {
+                        if part.is_empty() {
+                            errors.push(syn::Error::new(lit.span(), "empty subdomain label"));
+                            continue;
+                        }
+                        let mut ok = true;
+                        let mut all_literal = true;
+                        let mut literal = String::new();
+                        for piece in &part {
+                            match piece {
+                                RawPiece::Lit(s) => {
+                                    literal.push_str(s);
+                                    if !s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+                                        errors.push(syn::Error::new(lit.span(), format!("{s:?} is not valid in a DNS label (ASCII letters, digits, `-`)")));
+                                        ok = false;
+                                    }
+                                }
+                                RawPiece::Hole(_) => all_literal = false,
+                            }
+                        }
+                        if ok
+                            && all_literal
+                            && (literal.len() > 63
+                                || literal.starts_with('-')
+                                || literal.ends_with('-'))
+                        {
+                            errors.push(syn::Error::new(
+                                lit.span(),
+                                format!(
+                                    "{literal:?} is not a DNS label (1-63 bytes, no edge hyphen)"
+                                ),
+                            ));
+                            ok = false;
+                        }
+                        if ok
+                            && let Some(c) =
+                                self.structural(at, part, lit.span(), "subdomain", errors)
+                        {
+                            self.owners[at].labels.push(c);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Direct placements, in declaration order, come before block statements.
+        let direct: Vec<(usize, Family, String, Span, bool)> = self.owners[at]
+            .values
+            .iter()
+            .enumerate()
+            .filter_map(|(index, value)| {
+                let (family, key, span, each) = value.placement.clone()?;
+                Some((
+                    index,
+                    family,
+                    key.unwrap_or_else(|| plain(&value.name)),
+                    span,
+                    each,
+                ))
+            })
+            .collect();
+        for (index, family, key_lit, key_span, each) in direct {
+            let value = ValueRef { owner: at, index };
+            self.mark(
+                value,
+                if each { Usage::Each } else { Usage::Scalar },
+                key_span,
+                errors,
+            );
+            if let Some(key) = self.key(family, &key_lit, key_span, errors) {
+                let v = self.value(value);
+                let contrib = Contrib {
+                    op: Op::Introduce,
+                    key,
+                    span: key_span,
+                    sensitive: v.sensitive,
+                    total: !v.optional,
+                    source: Some(Source::Ref { value, each }),
+                };
+                self.push_contrib(at, family, contrib);
+            }
+        }
+
+        for (family, entries) in [
+            (Family::Query, stmts.query),
+            (Family::Header, stmts.headers),
+        ] {
+            for entry in entries.into_iter().flatten() {
+                let Some(key) = self.key(family, &entry.key.value(), entry.key.span(), errors)
+                else {
+                    continue;
+                };
+                let span = entry.key.span();
+                let (source, sensitive, total) = match entry.value {
+                    None => (None, false, true),
+                    Some(Rhs::Ref { each, reference }) => match self.resolve_ref(at, &reference) {
+                        Err(e) => {
+                            errors.push(e);
+                            continue;
+                        }
+                        Ok(value) => {
+                            self.mark(
+                                value,
+                                if each { Usage::Each } else { Usage::Scalar },
+                                reference.span(),
+                                errors,
+                            );
+                            let v = self.value(value);
+                            (Some(Source::Ref { value, each }), v.sensitive, !v.optional)
+                        }
+                    },
+                    Some(Rhs::Template(lit)) => {
+                        let raw = match template::parse(&lit) {
+                            Ok(raw) => raw,
+                            Err(e) => {
+                                errors.push(e);
+                                continue;
+                            }
+                        };
+                        let Some(pieces) = self.pieces(at, raw, lit.span(), errors) else {
+                            continue;
+                        };
+                        let mut sensitive = false;
+                        let mut total = true;
+                        for piece in &pieces {
+                            if let Piece::Hole(r) = piece {
+                                let v = self.value(*r);
+                                sensitive |= v.sensitive;
+                                total &= !v.optional;
+                            }
+                        }
+                        (Some(Source::Template { pieces }), sensitive, total)
+                    }
+                };
+                let op_span = if entry.op == Op::Introduce {
+                    span
+                } else {
+                    entry.op_span
+                };
+                let contrib = Contrib {
+                    op: entry.op,
+                    key,
+                    span: op_span,
+                    source,
+                    sensitive,
+                    total,
+                };
+                self.push_contrib(at, family, contrib);
+            }
+        }
+    }
+
+    fn push_contrib(&mut self, at: usize, family: Family, contrib: Contrib) {
+        match family {
+            Family::Query => self.owners[at].query.push(contrib),
+            Family::Header => self.owners[at].headers.push(contrib),
+        }
+    }
+
+    fn key(&self, family: Family, key: &str, span: Span, errors: &mut Errors) -> Option<String> {
+        match family {
+            Family::Query => {
+                if key.is_empty() {
+                    errors.push(syn::Error::new(span, "query keys cannot be empty"));
+                    return None;
+                }
+                Some(key.to_owned())
+            }
+            Family::Header => {
+                let lower = key.to_ascii_lowercase();
+                let token = !lower.is_empty()
+                    && lower
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b));
+                if !token {
+                    errors.push(syn::Error::new(
+                        span,
+                        format!("{key:?} is not a valid header field name"),
+                    ));
+                    return None;
+                }
+                if RESERVED_HEADERS.contains(&lower.as_str()) {
+                    errors.push(syn::Error::new(
+                        span,
+                        format!("`{lower}` is managed by the HTTP transport (reqwest/hyper) and cannot be declared"),
+                    ));
+                    return None;
+                }
+                Some(lower)
+            }
+        }
+    }
+
+    fn compose(&self, at: usize, errors: &mut Errors) -> Composed {
+        let chain = self.chain(at);
+        let mut labels = Vec::new();
+        for &owner in chain.iter().rev() {
+            for i in 0..self.owners[owner].labels.len() {
+                labels.push((owner, i));
+            }
+        }
+        let mut segments = Vec::new();
+        for &owner in &chain {
+            for i in 0..self.owners[owner].segments.len() {
+                segments.push((owner, i));
+            }
+        }
+        let query = self.compose_family(&chain, Family::Query, errors);
+        let headers = self.compose_family(&chain, Family::Header, errors);
+        Composed {
+            labels,
+            segments,
+            trailing_slash: self.owners[at].trailing_slash,
+            query,
+            headers,
+        }
+    }
+
+    fn compose_family(&self, chain: &[usize], family: Family, errors: &mut Errors) -> Vec<Slot> {
+        struct State {
+            slot: Slot,
+            live: bool,
+            last_writer: String,
+        }
+        let last = *chain.last().unwrap();
+        let mut states: Vec<State> = Vec::new();
+        let noun = match family {
+            Family::Query => "query key",
+            Family::Header => "header",
+        };
+        for &owner in chain {
+            let contribs = match family {
+                Family::Query => &self.owners[owner].query,
+                Family::Header => &self.owners[owner].headers,
+            };
+            for (index, c) in contribs.iter().enumerate() {
+                let id = ContribId {
+                    owner,
+                    family,
+                    index,
+                };
+                let report = owner == last;
+                let pos = states.iter().position(|s| s.slot.key == c.key);
+                let writer = self.owners[owner].dotted.clone();
+                match (c.op, pos) {
+                    (Op::Introduce, Some(p)) if states[p].live => {
+                        if report {
+                            errors.push(syn::Error::new(
+                                c.span,
+                                format!(
+                                    "{noun} `{}` is already set by `{}`; use `override`, `append` or `remove` to change an inherited {noun}",
+                                    c.key, states[p].last_writer
+                                ),
+                            ));
+                        }
+                    }
+                    (Op::Introduce | Op::Append, Some(p)) => {
+                        let s = &mut states[p];
+                        if c.op == Op::Introduce {
+                            s.slot.items.clear();
+                        }
+                        s.slot.items.push(Item::Emit(id));
+                        s.slot.sensitive |= c.sensitive;
+                        s.live = true;
+                        s.last_writer = writer;
+                    }
+                    (Op::Introduce | Op::Append, None) => states.push(State {
+                        slot: Slot {
+                            key: c.key.clone(),
+                            sensitive: c.sensitive || sensitive_name(&c.key),
+                            items: vec![Item::Emit(id)],
+                        },
+                        live: true,
+                        last_writer: writer,
+                    }),
+                    (Op::Override | Op::Remove, Some(p)) if states[p].live => {
+                        let s = &mut states[p];
+                        s.slot.sensitive |= c.sensitive;
+                        s.last_writer = writer;
+                        if c.op == Op::Remove {
+                            s.slot.items.clear();
+                            s.live = false;
+                        } else if c.total {
+                            s.slot.items = vec![Item::Emit(id)];
+                        } else {
+                            let fallback = std::mem::take(&mut s.slot.items);
+                            s.slot.items = vec![Item::Override { src: id, fallback }];
+                        }
+                    }
+                    (Op::Override | Op::Remove, _) => {
+                        if report {
+                            let verb = if c.op == Op::Remove {
+                                "remove"
+                            } else {
+                                "override"
+                            };
+                            errors.push(syn::Error::new(
+                                c.span,
+                                format!(
+                                    "cannot {verb} {noun} `{}`: no enclosing owner sets it",
+                                    c.key
+                                ),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        states.into_iter().map(|s| s.slot).collect()
+    }
+
+    fn check_names(&self, errors: &mut Errors) {
+        // Generated type names.
+        let mut types: BTreeMap<String, &Ident> = BTreeMap::new();
+        for owner in &self.owners {
+            if let Some(first) = types.insert(owner.type_name.to_string(), &owner.name) {
+                let mut e = syn::Error::new(
+                    owner.name.span(),
+                    format!("generated type name `{}` is used twice", owner.type_name),
+                );
+                e.combine(syn::Error::new(first.span(), "also generated here"));
+                errors.push(e);
+            }
+        }
+        // Methods per generated type.
+        for owner in &self.owners {
+            let mut methods: BTreeMap<String, (Span, String)> = BTreeMap::new();
+            let mut add = |name: String, span: Span, origin: String, errors: &mut Errors| {
+                if let Some((first_span, first_origin)) = methods.get(&name) {
+                    let mut e = syn::Error::new(
+                        span,
+                        format!(
+                            "`{}` would have two methods named `{name}`: {origin} and {first_origin}",
+                            owner.type_name
+                        ),
+                    );
+                    e.combine(syn::Error::new(
+                        *first_span,
+                        format!("{first_origin} is declared here"),
+                    ));
+                    errors.push(e);
+                } else {
+                    methods.insert(name, (span, origin));
+                }
+            };
+            let builtin = Span::call_site();
+            add("clone".into(), builtin, "`Clone::clone`".into(), errors);
+            match owner.kind {
+                Kind::Client { .. } => {
+                    add("new".into(), builtin, "the constructor".into(), errors);
+                    add(
+                        "with_base_url".into(),
+                        builtin,
+                        "the built-in `with_base_url`".into(),
+                        errors,
+                    );
+                }
+                Kind::Endpoint { .. } => {
+                    add("send".into(), builtin, "the built-in `send`".into(), errors);
+                    add(
+                        "prepare".into(),
+                        builtin,
+                        "the built-in `prepare`".into(),
+                        errors,
+                    );
+                }
+                Kind::Scope => {}
+            }
+            for value in owner.values.iter().filter(|v| !v.is_positional()) {
+                let name = plain(&value.name);
+                add(
+                    format!("set_{name}"),
+                    value.name.span(),
+                    format!("the control for value `{name}`"),
+                    errors,
+                );
+                if value.optional {
+                    add(
+                        format!("maybe_{name}"),
+                        value.name.span(),
+                        format!("the control for value `{name}`"),
+                        errors,
+                    );
+                }
+            }
+            if let Some(body) = owner.body().filter(|b| b.optional) {
+                let name = plain(&body.name);
+                add(
+                    format!("set_{name}"),
+                    body.name.span(),
+                    format!("the control for body `{name}`"),
+                    errors,
+                );
+                add(
+                    format!("maybe_{name}"),
+                    body.name.span(),
+                    format!("the control for body `{name}`"),
+                    errors,
+                );
+            }
+            for &child in &owner.children {
+                let c = &self.owners[child];
+                add(
+                    plain(&c.name),
+                    c.name.span(),
+                    format!("the navigation method for `{}`", c.dotted),
+                    errors,
+                );
+            }
+        }
+    }
+}
+
+fn is_pchar(c: char) -> bool {
+    c.is_ascii_alphanumeric() || "-._~!$&'()*+,;=:@".contains(c)
+}
+
+fn validate_base(lit: &LitStr) -> syn::Result<()> {
+    let text = lit.value();
+    let err = |msg: &str| {
+        Err(syn::Error::new(
+            lit.span(),
+            format!("invalid base URL {text:?}: {msg}"),
+        ))
+    };
+    let rest = if let Some(rest) = text.strip_prefix("https://") {
+        rest
+    } else if let Some(rest) = text.strip_prefix("http://") {
+        rest
+    } else {
+        return err("it must start with `http://` or `https://`");
+    };
+    if text.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return err("it contains whitespace or control characters");
+    }
+    if text.contains('?') {
+        return err("it must not contain a query; declare query parameters with `query`");
+    }
+    if text.contains('#') {
+        return err("it must not contain a fragment");
+    }
+    let authority = rest.split('/').next().unwrap_or("");
+    if authority.is_empty() {
+        return err("it has no host");
+    }
+    if authority.contains('@') {
+        return err("it must not contain user information");
+    }
+    Ok(())
+}
+
+fn flatten(
+    owner: syntax::Owner,
+    parent: Option<(usize, &str, &str)>,
+    out: &mut Vec<Owner>,
+    stmts: &mut Vec<syntax::Stmts>,
+    errors: &mut Errors,
+) -> usize {
+    let index = out.len();
+    let (type_name, dotted) = match parent {
+        None => (plain(&owner.name), plain(&owner.name)),
+        Some((_, parent_type, parent_dotted)) => (
+            format!("{parent_type}{}", pascal(&owner.name)),
+            format!("{parent_dotted}.{}", plain(&owner.name)),
+        ),
+    };
+    let span = owner.name.span();
+    let kind = match owner.kind {
+        OwnerKind::Client { vis, base } => match base {
+            Some(base) => {
+                if let Err(e) = validate_base(&base) {
+                    errors.push(e);
+                }
+                Kind::Client { vis, base }
+            }
+            None => {
+                errors.push(syn::Error::new(
+                    span,
+                    "the client must declare `base \"https://...\";`",
+                ));
+                Kind::Client {
+                    vis,
+                    base: LitStr::new("http://invalid", span),
+                }
+            }
+        },
+        OwnerKind::Scope => Kind::Scope,
+        OwnerKind::Endpoint {
+            method,
+            output,
+            body,
+        } => Kind::Endpoint {
+            method,
+            output,
+            body: body.map(|b| Body {
+                docs: b.docs,
+                name: b.name,
+                optional: b.optional,
+                ty: b.ty,
+            }),
+        },
+    };
+    if parent.is_some() && plain(&owner.name) == "client" {
+        errors.push(syn::Error::new(
+            span,
+            "`client` is reserved: it qualifies references to client values",
+        ));
+    }
+    let mut values = Vec::new();
+    for p in owner.params {
+        let placement = p.placement.map(|pl| {
+            (
+                pl.family,
+                pl.key.as_ref().map(LitStr::value),
+                pl.span,
+                pl.each,
+            )
+        });
+        values.push(Value {
+            placement,
+            docs: p.docs,
+            name: p.name,
+            ty: p.ty,
+            optional: p.optional,
+            default: p.default,
+            sensitive: p.sensitive,
+            usage: None,
+        });
+    }
+    out.push(Owner {
+        kind,
+        docs: owner.docs,
+        type_name: Ident::new(&type_name, span),
+        state_name: format_ident!("__Concord{}State", type_name, span = span),
+        name: owner.name,
+        dotted: dotted.clone(),
+        parent: parent.map(|p| p.0),
+        children: Vec::new(),
+        values,
+        labels: Vec::new(),
+        segments: Vec::new(),
+        trailing_slash: false,
+        query: Vec::new(),
+        headers: Vec::new(),
+        composed: None,
+    });
+    stmts.push(owner.stmts);
+
+    // Scope names must be unique along a chain so that qualified references are unambiguous.
+    let mut seen_children: BTreeMap<String, Span> = BTreeMap::new();
+    for child in owner.children {
+        let child_name = plain(&child.name);
+        if let Some(first) = seen_children.insert(child_name.clone(), child.name.span()) {
+            let mut e = syn::Error::new(
+                child.name.span(),
+                format!("`{dotted}` already has a child named `{child_name}`"),
+            );
+            e.combine(syn::Error::new(first, "first declared here"));
+            errors.push(e);
+        }
+        if matches!(child.kind, OwnerKind::Scope) {
+            let mut cur = Some(index);
+            while let Some(a) = cur {
+                if !matches!(out[a].kind, Kind::Client { .. }) && plain(&out[a].name) == child_name
+                {
+                    errors.push(syn::Error::new(
+                        child.name.span(),
+                        format!("scope `{child_name}` has the same name as an enclosing scope; qualified references would be ambiguous"),
+                    ));
+                }
+                cur = out[a].parent;
+            }
+        }
+        let child_index = flatten(
+            child,
+            Some((index, &type_name, &dotted)),
+            out,
+            stmts,
+            errors,
+        );
+        out[index].children.push(child_index);
+    }
+    index
+}

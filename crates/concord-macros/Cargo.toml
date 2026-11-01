@@ -1,0 +1,20 @@
+[package]
+name = "concord-macros"
+description = "Procedural macro for Concord: the `api!` declaration compiler."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2.workspace = true
+quote.workspace = true
+syn = { workspace = true, features = ["full", "parsing", "printing", "proc-macro", "clone-impls"] }
+
+[lints]
+workspace = true
