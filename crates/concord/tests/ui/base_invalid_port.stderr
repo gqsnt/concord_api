@@ -27,3 +27,9 @@ error: invalid base URL "http://api.0x10": the last label of a host name cannot 
    |
 28 |         base "http://api.0x10";
    |              ^^^^^^^^^^^^^^^^^
+
+error: invalid base URL "http://a.b.c.xn--pokxncvks": `xn--` (punycode) labels are not accepted in a declared base; pass such a host to `with_base_url` at runtime
+  --> tests/ui/base_invalid_port.rs:34:14
+   |
+34 |         base "http://a.b.c.xn--pokxncvks";
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^

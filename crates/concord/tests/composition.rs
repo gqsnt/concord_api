@@ -633,3 +633,20 @@ fn c4_r_004_strict_base_subset_constructs() {
     let p = V6::new(http()).ping().prepare().unwrap();
     assert_eq!(url(&p), "http://[::1]:8080/v1/api-x_y~z!$&'()*+,;=:@");
 }
+
+/// An invalid punycode host given at runtime is an error, not a panic.
+#[test]
+fn runtime_base_with_invalid_punycode_is_an_error() {
+    let error = Paths::new(http())
+        .with_base_url("http://a.b.c.xn--pokxncvks")
+        .unwrap_err();
+    assert_eq!(error.kind(), concord::ErrorKind::Build);
+    // The same label as a subdomain value: URL host validation rejects it at build time.
+    let error = Hosts::new(http())
+        .region("xn--pokxncvks")
+        .status()
+        .prepare()
+        .unwrap_err();
+    assert_eq!(error.kind(), concord::ErrorKind::Build);
+    assert!(!error.to_string().contains("pokxncvks"), "{error}");
+}

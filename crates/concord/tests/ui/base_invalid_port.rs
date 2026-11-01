@@ -29,3 +29,9 @@ concord::api! {
         GET a();
     }
 }
+concord::api! {
+    pub client Puny {
+        base "http://a.b.c.xn--pokxncvks";
+        GET a();
+    }
+}

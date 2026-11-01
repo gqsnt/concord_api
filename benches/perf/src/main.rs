@@ -64,12 +64,17 @@ async fn serve() -> std::net::SocketAddr {
     tokio::spawn(async move {
         loop {
             let (mut stream, _) = listener.accept().await.unwrap();
+            stream.set_nodelay(true).unwrap();
             tokio::spawn(async move {
                 let body = br#"{"status":"ok","id":"1","name":"n","healthy":true,"title":"t","items":[],"next_cursor":null}"#;
-                let head = format!(
+                // One write per response: separate head/body writes interact with Nagle's
+                // algorithm and delayed ACKs (~40 ms stalls).
+                let mut response = format!(
                     "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n",
                     body.len()
-                );
+                )
+                .into_bytes();
+                response.extend_from_slice(body);
                 let mut buf = vec![0u8; 8192];
                 let mut pending = Vec::new();
                 loop {
@@ -80,9 +85,7 @@ async fn serve() -> std::net::SocketAddr {
                     pending.extend_from_slice(&buf[..n]);
                     while let Some(pos) = pending.windows(4).position(|w| w == b"\r\n\r\n") {
                         pending.drain(..pos + 4);
-                        if stream.write_all(head.as_bytes()).await.is_err()
-                            || stream.write_all(body).await.is_err()
-                        {
+                        if stream.write_all(&response).await.is_err() {
                             return;
                         }
                     }
@@ -188,18 +191,18 @@ async fn main() {
     let raw_url = format!("http://{addr}/v1/health");
     measure_async(
         "S1 health  raw reqwest get().send().bytes()",
-        5_000,
+        3_000,
         || async {
             let r = http.get(&raw_url).send().await.unwrap();
             black_box(r.bytes().await.unwrap());
         },
     )
     .await;
-    measure_async("S1 health  hand-written send() (json)", 5_000, || async {
+    measure_async("S1 health  hand-written send() (json)", 3_000, || async {
         black_box(simple_base.health().await.unwrap());
     })
     .await;
-    measure_async("S1 health  concord send() (json)", 5_000, || async {
+    measure_async("S1 health  concord send() (json)", 3_000, || async {
         black_box(simple_v4.health().send().await.unwrap());
     })
     .await;

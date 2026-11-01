@@ -1171,6 +1171,16 @@ fn validate_base(lit: &LitStr) -> syn::Result<()> {
                 "the host must be an ASCII DNS name, an IPv4 address or a bracketed IPv6 address",
             );
         }
+        // `xn--` labels go through IDNA validation in URL parsing and can be rejected there;
+        // declare such hosts at runtime with `with_base_url`, which returns an error instead.
+        if labels
+            .iter()
+            .any(|l| l.len() >= 4 && l[..4].eq_ignore_ascii_case("xn--"))
+        {
+            return err(
+                "`xn--` (punycode) labels are not accepted in a declared base; pass such a host to `with_base_url` at runtime",
+            );
+        }
         let all_numeric = labels.iter().all(|l| l.chars().all(|c| c.is_ascii_digit()));
         if all_numeric && host.parse::<std::net::Ipv4Addr>().is_err() {
             return err("invalid IPv4 address");
