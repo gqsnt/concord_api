@@ -11,7 +11,7 @@ There is no converter; declarations are short enough to rewrite by hand.
 |---|---|
 | `credentials { ... }`, `auth { ... }`, `SecretString`, token refresh | a `#[sensitive]` header or query value: `#[sensitive] header("authorization") token: String`. Refresh by building a new client value. |
 | `rate_limits`, `rate_limit` | outside Concord (e.g. a semaphore or governor around `send()`). |
-| retry policies, `effect` | a loop around `request.clone().send()` (endpoints without a body are `Clone`), or a reqwest middleware of your choice. |
+| retry policies, `effect` | a loop around `request.clone().send()` (a request is `Clone` when its values and body are), or a reqwest middleware of your choice. |
 | `paginate`, `.pages()`, `.collect_all()` | call the endpoint again with the next cursor (`maybe_cursor(next)`). |
 | `configure_http`, `configure_runtime`, `timeout` | configure the `reqwest::Client` you pass to `new`; per request: `prepare()?.into_parts()` + `timeout_mut()`. |
 | built-in base URL only | `base "..."` plus `with_base_url(..)` at runtime. |

@@ -156,7 +156,7 @@
 //! ```no_run
 //! # concord::api! { pub client Api { base "http://x.test"; GET ping(); } }
 //! # async fn run(api: Api) -> Result<(), concord::Error> {
-//! let request = api.ping(); // endpoints without a body are `Clone`
+//! let request = api.ping(); // `Clone` when all its values (and body) are `Clone`
 //! let mut attempts = 0;
 //! loop {
 //!     match request.clone().send().await {

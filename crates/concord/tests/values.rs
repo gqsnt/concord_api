@@ -363,3 +363,50 @@ fn v12_borrowed_string_and_literals() {
     assert_eq!(get(&pairs(&query(&p)), "cursor"), vec!["from-ref"]);
     assert_eq!(get(&pairs(&query(&p)), "limit"), vec!["5"]);
 }
+
+/// A move-only value: never `Clone`.
+pub struct Nonce(pub String);
+
+impl fmt::Display for Nonce {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+static CLONE_KEY_INIT: AtomicUsize = AtomicUsize::new(0);
+
+fn clone_key() -> u32 {
+    CLONE_KEY_INIT.fetch_add(1, Ordering::SeqCst) as u32 + 500
+}
+
+concord::api! {
+    /// Request `Clone` follows the data (own counter, so no other test interferes).
+    pub client Cloning {
+        base "http://cloning.invalid";
+        /// Body + Clone values: `Clone`; the clone keeps the evaluated idempotency key.
+        POST submit(header("idempotency-key") key: u32 = clone_key(), body text: concord::Text) {
+            path "submit";
+        }
+        /// A move-only value: accepted, the request is simply not `Clone`.
+        GET once(query nonce: Nonce) { path "once"; }
+    }
+}
+
+/// V10 / D08: an endpoint with a body is `Clone` when its values and body are; cloning neither
+/// re-evaluates initializers nor changes the body; a move-only value is accepted without `Clone`.
+#[test]
+fn v10_request_clone_follows_the_data() {
+    let api = Cloning::new(reqwest::Client::new());
+    let request = api.submit("payload");
+    let retry = request.clone();
+    assert_eq!(CLONE_KEY_INIT.load(Ordering::SeqCst), 1);
+    let a = request.prepare().unwrap();
+    let b = retry.prepare().unwrap();
+    for p in [&a, &b] {
+        assert_eq!(p.request().headers()["idempotency-key"], "500");
+        let body = p.request().body().and_then(|b| b.as_bytes()).unwrap();
+        assert_eq!(body, b"payload");
+    }
+    let once = api.once(Nonce("n-1".into())).prepare().unwrap();
+    assert_eq!(once.request().url().query(), Some("nonce=n-1"));
+}

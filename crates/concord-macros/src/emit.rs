@@ -352,11 +352,7 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
                     quote!(#name: #vty,)
                 }
             });
-            let derive_clone = if body.is_none() {
-                quote!(#[derive(Clone)])
-            } else {
-                quote!()
-            };
+            let clone_impl = endpoint_clone(ty, &owner.values, body.as_ref());
             let repr = match output {
                 Some(t) => quote!(#t),
                 None => quote!(()),
@@ -365,12 +361,13 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
             quote! {
                 #docs
                 #[must_use = "an endpoint request does nothing until `send` or `prepare` is called"]
-                #derive_clone
                 #vis struct #ty {
                     __parent: #parent_ty,
                     #(#fields)*
                     #body_field
                 }
+
+                #clone_impl
 
                 impl #ty {
                     #controls
@@ -390,6 +387,42 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
                     #[inline] fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                         f.debug_struct(#type_label) #debug .finish()
                     }
+                }
+            }
+        }
+    }
+}
+
+/// `Clone` for an endpoint request exactly when every value type (and the body value) is `Clone`.
+///
+/// The type is not generic, so a plain `where Value: Clone` bound would be rejected on stable
+/// (trivially false bound, rust-lang/rust#48214). Each bound carries an unused higher-ranked
+/// lifetime instead: such bounds are not checked where the impl is declared, so the impl simply
+/// does not apply when a value is not `Clone`, and a `.clone()` call reports the unmet bound.
+fn endpoint_clone(ty: &Ident, values: &[Value], body: Option<&Body>) -> TokenStream {
+    let mut seen = std::collections::HashSet::new();
+    let mut bounds = Vec::new();
+    let mut add = |t: TokenStream, span: Span| {
+        if seen.insert(t.to_string()) {
+            bounds.push(quote_spanned!(span=> for<'__concord> #t: ::core::clone::Clone));
+        }
+    };
+    for value in values {
+        let t = &value.ty;
+        add(quote!(#t), value.ty.span());
+    }
+    if let Some(b) = body {
+        add(body_value_type(b), b.ty.span());
+    }
+    let mut fields: Vec<&Ident> = values.iter().map(|v| &v.name).collect();
+    fields.extend(body.map(|b| &b.name));
+    quote! {
+        impl ::core::clone::Clone for #ty where #(#bounds,)* {
+            #[inline]
+            fn clone(&self) -> Self {
+                Self {
+                    __parent: ::core::clone::Clone::clone(&self.__parent),
+                    #(#fields: ::core::clone::Clone::clone(&self.#fields),)*
                 }
             }
         }

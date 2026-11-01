@@ -72,13 +72,15 @@ reference  := name | owner "." name       (owner = `client` or an enclosing scop
 - **Snapshots.** Client and scope handles are immutable `Arc` snapshots; setters consume the handle
   and return a new one (copy-on-write). A child captures a clone of its parent at entry, so later
   changes to the parent produce new handles and never alter existing children or requests.
-  Endpoint requests are plain structs, `Clone` unless they declare a body.
+  Endpoint requests are plain structs.
 - No `reset`: to return to an initializer, use the original handle or a fresh entry call.
 - `x?: Option<U>` has three states: absent (`maybe_x(None)`), present `None` (`set_x(None)`),
   present `Some(u)`.
 - Client and scope value types must be `Clone` (handles are copy-on-write snapshots). An endpoint
-  without a body is `Clone`, so its value types must be too; an endpoint with a body is not
-  `Clone`, and its value types need not be.
+  request is `Clone` exactly when all of its own value types and its body value are `Clone`
+  (`Clone` on the parent handle is always available); otherwise it is simply not `Clone`, and a
+  move-only value is accepted. Concord never clones a value or body to prepare or send. `Clone`
+  says nothing about whether re-sending is safe: replay policy belongs to the application.
 
 ## 4. URL composition
 
