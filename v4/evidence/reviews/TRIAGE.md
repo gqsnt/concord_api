@@ -119,3 +119,10 @@ C4-R-008, C4-R-010, C4-R-012 partially. No blocker; one high-severity residual.
 | C4-R-010 residual | medium | CONFIRMED | Earlier tests could not reject "read everything, then discard". `checks/heap` (own crate: a counting global allocator needs `unsafe`, which the workspace forbids) measures peak heap: 64 MiB body → `()` 0.75 MB, `Binary` 137 MB; making `()` buffer (DISCARD = false) fails the test (136 MB). | `checks/heap/tests/drain.rs` |
 | C4-R-015 | low | CONFIRMED | The representation's content type was validated in `finish`, after host/path/query/headers. Now validated in `encode_body` (body stage). | `representations.rs::content_type_error_precedes_path_error` |
 | C4-R-016 | low | CONFIRMED → spec corrected | `Clone` is required for client/scope values and for values of body-less endpoints (which derive `Clone`), not for endpoints with a body. SEMANTICS §3 now states exactly that. | — |
+
+## Codex focused re-review of the final-review fixes
+
+First attempt (snapshot `caf7cb3` under the session's `/tmp` scratchpad) was interrupted when the
+previous coordinator session ended; it produced no report (its partial log shows only read-only
+exploration). Re-run on `8d6ee22` — code identical to `caf7cb3`, plus the updated `v4/` records —
+from a snapshot worktree on `/home` (`/home/canarit/projects/concord_api_v4_review`).
