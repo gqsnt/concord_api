@@ -28,8 +28,10 @@ Final-gate details, SHAs and exact results: `evidence/GATES.md`. Review triage:
 
 ## Open risks
 
-1. Per-endpoint code generation is ≈ 143 expanded lines per endpoint (linear); measured up to 1,000
-   endpoints (1.36 s incremental `cargo check`). Very large APIs in release builds are unmeasured.
+1. Per-endpoint code generation is ≈ 143 expanded lines per endpoint (linear). Incremental
+   `cargo check` is 1.36 s at 1,000 endpoints, but a release build of that crate takes 17.0 s
+   (≈ 17 ms per endpoint) because all generated methods are compiled eagerly. Next experiment:
+   `#[inline]` on generated methods.
 2. Request construction is 110–250 ns slower than a hand-written builder (owned `String`s per value,
    handle clones); execution cost is indistinguishable over loopback.
 3. Same-typed positional required values can be swapped silently (newtypes are the mitigation).

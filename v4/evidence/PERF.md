@@ -60,7 +60,17 @@ Expansion (`cargo +nightly rustc -- -Zunpretty=expanded`, then `rustfmt`, non-bl
 ≈ 143 generated lines per endpoint and grows linearly; incremental check time grows ≈ 1.2 ms per
 endpoint. This is the cost Codex's blind review predicted for per-endpoint specialization (D1):
 linear, and modest at these sizes; no superlinear behaviour was observed up to 1,000 endpoints.
-Release-profile builds of large declarations were not measured.
+Release profile (`cargo build --release`, incremental after touching the source, 3 runs):
+
+| Endpoints | Release build | `.rlib` size |
+|---|---|---|
+| 200 | 3.410 s ± 0.013 | 4.4 MB |
+| 1,000 | 17.026 s ± 0.082 | 21.9 MB |
+
+Release builds cost ≈ 17 ms per endpoint for the crate that declares the API, because every
+generated (non-generic) method is compiled in that crate whether or not it is called. Marking
+generated methods `#[inline]` would defer code generation to call sites; this was **not** tried or
+measured (open item in `STATUS.md`).
 
 ### Sensitivity propagation (Codex C4-R-011)
 
@@ -109,5 +119,5 @@ Shape sources (effective lines, including DTOs and enum spellings on both sides)
 
 ## Not measured
 
-Allocation counts, HTTP/2, TLS handshakes, Windows/macOS, release builds of large declarations,
-rust-analyzer responsiveness.
+Allocation counts, HTTP/2, TLS handshake cost, Windows/macOS, rust-analyzer responsiveness, the
+effect of `#[inline]` on generated methods.
