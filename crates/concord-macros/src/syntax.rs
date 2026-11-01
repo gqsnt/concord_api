@@ -82,6 +82,8 @@ pub struct Placement {
 }
 
 pub struct BodyParam {
+    /// Number of ordinary values declared before the body (its positional order).
+    pub position: usize,
     pub docs: Vec<Attribute>,
     pub name: Ident,
     pub optional: bool,
@@ -463,6 +465,7 @@ fn parse_params(
                 ));
             }
             body = Some(BodyParam {
+                position: params.len(),
                 docs,
                 name,
                 optional,

@@ -1,0 +1,5 @@
+error: only endpoints can declare a `body`
+ --> tests/ui/body_errors.rs:4:17
+  |
+4 |         scope s(body b: concord::Text) { GET one(); }
+  |                 ^^^^

@@ -1,7 +1,8 @@
 //! Rust code generation from a resolved [`Model`].
 
 use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote};
+use quote::{format_ident, quote, quote_spanned};
+use syn::spanned::Spanned;
 use syn::{Ident, LitStr};
 
 use crate::model::{
@@ -75,16 +76,26 @@ fn value_inits(values: &[Value]) -> (TokenStream, TokenStream) {
 }
 
 fn positional_params(values: &[Value], body: Option<&Body>) -> TokenStream {
+    // Required values and a required body, in declaration order.
+    let body = body.filter(|b| !b.optional);
+    let body_param = |b: &Body| {
+        let name = &b.name;
+        let ty = body_value_type(b);
+        quote!(#name: impl ::concord::IntoValue<#ty>,)
+    };
     let mut params = TokenStream::new();
-    for value in values.iter().filter(|v| v.is_positional()) {
-        let name = &value.name;
-        let ty = &value.ty;
-        params.extend(quote!(#name: impl ::concord::IntoValue<#ty>,));
+    for (i, value) in values.iter().enumerate() {
+        if let Some(b) = body.filter(|b| b.position == i) {
+            params.extend(body_param(b));
+        }
+        if value.is_positional() {
+            let name = &value.name;
+            let ty = &value.ty;
+            params.extend(quote!(#name: impl ::concord::IntoValue<#ty>,));
+        }
     }
-    if let Some(body) = body.filter(|b| !b.optional) {
-        let name = &body.name;
-        let ty = body_value_type(body);
-        params.extend(quote!(#name: impl ::concord::IntoValue<#ty>,));
+    if let Some(b) = body.filter(|b| b.position >= values.len()) {
+        params.extend(body_param(b));
     }
     params
 }
@@ -166,17 +177,26 @@ fn debug_fields(values: &[Value], base: &TokenStream) -> TokenStream {
         let name = &value.name;
         let label = lit(&plain(name));
         let place = quote!(#base.#name);
-        let shown = match (value.sensitive, value.optional, value.usage) {
-            (true, false, _) => quote!(&::concord::__private::Redacted),
-            (true, true, _) => quote!(&#place.as_ref().map(|_| ::concord::__private::Redacted)),
-            (false, false, Some(Usage::Each)) => quote!(&::concord::__private::DebugEach(&#place)),
-            (false, true, Some(Usage::Each)) => {
-                quote!(&#place.as_ref().map(::concord::__private::DebugEach))
+        let span = value.ty.span();
+        let shown = match (value.debug_sensitive, value.optional, value.usage) {
+            (true, false, _) => quote_spanned!(span=> &::concord::__private::Redacted),
+            (true, true, _) => {
+                quote_spanned!(span=> &#place.as_ref().map(|_| ::concord::__private::Redacted))
             }
-            (false, false, _) => quote!(&::concord::__private::DebugDisplay(&#place)),
-            (false, true, _) => quote!(&#place.as_ref().map(::concord::__private::DebugDisplay)),
+            (false, false, Some(Usage::Each)) => {
+                quote_spanned!(span=> &::concord::__private::DebugEach(&#place))
+            }
+            (false, true, Some(Usage::Each)) => {
+                quote_spanned!(span=> &#place.as_ref().map(::concord::__private::DebugEach))
+            }
+            (false, false, _) => {
+                quote_spanned!(span=> &::concord::__private::DebugDisplay(&#place))
+            }
+            (false, true, _) => {
+                quote_spanned!(span=> &#place.as_ref().map(::concord::__private::DebugDisplay))
+            }
         };
-        out.extend(quote!(.field(#label, #shown)));
+        out.extend(quote_spanned!(span=> .field(#label, #shown)));
     }
     out
 }
@@ -505,25 +525,31 @@ fn source_code(
     };
     let key = lit(key);
     let source = contrib.source.as_ref().expect("emitting sources only");
+    let mut span = Span::call_site();
     let (arg, each) = match source {
         Source::Ref { value, each } => {
             let place = places.value(model, *value);
+            span = model.value(*value).ty.span();
             if model.value(*value).optional {
                 bound
                     .patterns
                     .push(quote!(::core::option::Option::Some(__v)));
                 bound.scrutinees.push(quote!(&#place));
-                (quote!(__v), *each)
+                (quote_spanned!(span=> __v), *each)
             } else {
-                (quote!(&#place), *each)
+                (quote_spanned!(span=> &#place), *each)
             }
         }
         Source::Template { pieces } => {
             let mut fmt = String::new();
+            let mut literal = String::new();
             let mut args = Vec::new();
             for piece in pieces {
                 match piece {
-                    Piece::Lit(s) => fmt.push_str(&s.replace('{', "{{").replace('}', "}}")),
+                    Piece::Lit(s) => {
+                        fmt.push_str(&s.replace('{', "{{").replace('}', "}}"));
+                        literal.push_str(s);
+                    }
                     Piece::Hole(r) => {
                         fmt.push_str("{}");
                         let place = places.value(model, *r);
@@ -540,19 +566,21 @@ fn source_code(
                     }
                 }
             }
-            let fmt = lit(&fmt);
             if args.is_empty() {
-                (quote!(#fmt), false)
+                // No holes: the decoded literal itself (`{{` already became `{`).
+                let literal = lit(&literal);
+                (quote!(#literal), false)
             } else {
+                let fmt = lit(&fmt);
                 (quote!(&::std::format!(#fmt, #(#args),*)), false)
             }
         }
     };
     let call = match (id.family, each) {
-        (Family::Query, false) => quote!(__p.query(#key, #arg);),
-        (Family::Query, true) => quote!(__p.query_each(#key, #arg);),
-        (Family::Header, false) => quote!(__p.header(#key, #arg, #sensitive)?;),
-        (Family::Header, true) => quote!(__p.header_each(#key, #arg, #sensitive)?;),
+        (Family::Query, false) => quote_spanned!(span=> __p.query(#key, #arg);),
+        (Family::Query, true) => quote_spanned!(span=> __p.query_each(#key, #arg);),
+        (Family::Header, false) => quote_spanned!(span=> __p.header(#key, #arg, #sensitive)?;),
+        (Family::Header, true) => quote_spanned!(span=> __p.header_each(#key, #arg, #sensitive)?;),
     };
     (bound, call)
 }
@@ -602,10 +630,11 @@ fn component_code(
             }
             Piece::Hole(r) => {
                 let place = places.value(model, *r);
+                let span = model.value(*r).ty.span();
                 if label {
-                    build.extend(quote!(::concord::__private::display_into(&mut __c, &#place);));
+                    build.extend(quote_spanned!(span=> ::concord::__private::display_into(&mut __c, &#place);));
                 } else {
-                    build.extend(quote!(::concord::__private::encode_segment(&mut __c, &#place);));
+                    build.extend(quote_spanned!(span=> ::concord::__private::encode_segment(&mut __c, &#place);));
                 }
             }
         }

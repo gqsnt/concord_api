@@ -1,0 +1,29 @@
+error[E0277]: `u64` is not accepted for a value of type `UserId`
+  --> tests/ui/newtype_is_not_converted.rs:14:22
+   |
+14 |     let _ = api.user(42u64);
+   |                 ---- ^^^^^ expected `UserId`
+   |                 |
+   |                 required by a bound introduced by this call
+   |
+   = help: the trait `IntoValue<UserId>` is not implemented for `u64`
+   = note: Concord accepts the exact declared type, or `&str`/`&String` for `String`; construct newtypes and `Option`s explicitly
+help: the following other types implement trait `IntoValue<T>`
+  --> src/value.rs
+   |
+   | impl IntoValue<String> for &str {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&str`
+...
+   | impl IntoValue<String> for &String {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&String`
+note: required by a bound in `Api::user`
+  --> tests/ui/newtype_is_not_converted.rs:6:1
+   |
+ 6 | / concord::api! {
+ 7 | |     pub client Api {
+ 8 | |         base "http://x.test";
+ 9 | |         GET user(user: UserId) { path "users/{user}"; }
+10 | |     }
+11 | | }
+   | |_^ required by this bound in `Api::user`
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

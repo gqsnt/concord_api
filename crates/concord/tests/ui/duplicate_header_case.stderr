@@ -1,0 +1,5 @@
+error: header `x-tag` is already set by `Api`; use `override`, `append` or `remove` to change an inherited header
+ --> tests/ui/duplicate_header_case.rs:5:32
+  |
+5 |         GET list() { headers { "x-tag" = "b"; } }
+  |                                ^^^^^^^

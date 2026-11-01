@@ -1,0 +1,5 @@
+error: `locale` is not a value of `Api.item`; to use the value of an enclosing owner, write `client.locale`
+ --> tests/ui/ancestor_needs_qualification.rs:5:41
+  |
+5 |         GET item() { query { "locale" = locale; } }
+  |                                         ^^^^^^

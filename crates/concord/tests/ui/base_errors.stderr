@@ -1,0 +1,5 @@
+error: invalid base URL "https://user@x.test/?q=1": it must not contain a query; declare query parameters with `query`
+ --> tests/ui/base_errors.rs:3:14
+  |
+3 |         base "https://user@x.test/?q=1";
+  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^

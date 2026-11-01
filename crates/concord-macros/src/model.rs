@@ -31,6 +31,7 @@ pub enum Kind {
 }
 
 pub struct Body {
+    pub position: usize,
     pub docs: Vec<Attribute>,
     pub name: Ident,
     pub optional: bool,
@@ -78,6 +79,9 @@ pub struct Value {
     pub usage: Option<Usage>,
     /// Direct placement: family, explicit key, span, `each`.
     pub placement: Option<(Family, Option<String>, Span, bool)>,
+    /// Withheld from generated `Debug`: marked `#[sensitive]`, or contributing to a query/header
+    /// key that is sensitive on some chain (marked contribution or safety-list name).
+    pub debug_sensitive: bool,
 }
 
 impl Value {
@@ -291,11 +295,15 @@ impl Model {
         errors.check()?;
 
         // Composition along every chain; errors are reported for each owner's own statements.
+        let mut withheld = Vec::new();
         for index in 0..model.owners.len() {
-            let composed = model.compose(index, &mut errors);
+            let composed = model.compose(index, &mut errors, &mut withheld);
             if model.owners[index].is_endpoint() {
                 model.owners[index].composed = Some(composed);
             }
+        }
+        for r in withheld {
+            model.owners[r.owner].values[r.index].debug_sensitive = true;
         }
 
         // Liveness.
@@ -372,13 +380,6 @@ impl Model {
             Some(qualifier) => {
                 let q = plain(qualifier);
                 let mut cur = self.owners[at].parent;
-                let own = self.qualifier(at);
-                if q == own {
-                    return Err(syn::Error::new(
-                        qualifier.span(),
-                        format!("`{q}` is the current owner; write the bare name `{name}`"),
-                    ));
-                }
                 while let Some(p) = cur {
                     if self.qualifier(p) == q {
                         return match find(p) {
@@ -390,6 +391,12 @@ impl Model {
                         };
                     }
                     cur = self.owners[p].parent;
+                }
+                if q == self.qualifier(at) {
+                    return Err(syn::Error::new(
+                        qualifier.span(),
+                        format!("`{q}` is the current owner; write the bare name `{name}`"),
+                    ));
                 }
                 Err(syn::Error::new(
                     qualifier.span(),
@@ -531,8 +538,12 @@ impl Model {
                             ));
                             ok = false;
                         }
-                        if ok && let Some(c) = self.structural(at, part, lit.span(), "path", errors)
-                        {
+                        let component = if ok {
+                            self.structural(at, part, lit.span(), "path", errors)
+                        } else {
+                            None
+                        };
+                        if let Some(c) = component {
                             self.owners[at].segments.push(c);
                         }
                     }
@@ -578,10 +589,12 @@ impl Model {
                             ));
                             ok = false;
                         }
-                        if ok
-                            && let Some(c) =
-                                self.structural(at, part, lit.span(), "subdomain", errors)
-                        {
+                        let component = if ok {
+                            self.structural(at, part, lit.span(), "subdomain", errors)
+                        } else {
+                            None
+                        };
+                        if let Some(c) = component {
                             self.owners[at].labels.push(c);
                         }
                     }
@@ -737,7 +750,22 @@ impl Model {
         }
     }
 
-    fn compose(&self, at: usize, errors: &mut Errors) -> Composed {
+    /// Values read by a contribution (for effective sensitivity).
+    fn contrib_values(&self, id: ContribId) -> Vec<ValueRef> {
+        match &self.contrib(id).source {
+            Some(Source::Ref { value, .. }) => vec![*value],
+            Some(Source::Template { pieces }) => pieces
+                .iter()
+                .filter_map(|p| match p {
+                    Piece::Hole(r) => Some(*r),
+                    Piece::Lit(_) => None,
+                })
+                .collect(),
+            None => Vec::new(),
+        }
+    }
+
+    fn compose(&self, at: usize, errors: &mut Errors, withheld: &mut Vec<ValueRef>) -> Composed {
         let chain = self.chain(at);
         let mut labels = Vec::new();
         for &owner in chain.iter().rev() {
@@ -751,8 +779,8 @@ impl Model {
                 segments.push((owner, i));
             }
         }
-        let query = self.compose_family(&chain, Family::Query, errors);
-        let headers = self.compose_family(&chain, Family::Header, errors);
+        let query = self.compose_family(&chain, Family::Query, errors, withheld);
+        let headers = self.compose_family(&chain, Family::Header, errors, withheld);
         Composed {
             labels,
             segments,
@@ -762,11 +790,19 @@ impl Model {
         }
     }
 
-    fn compose_family(&self, chain: &[usize], family: Family, errors: &mut Errors) -> Vec<Slot> {
+    fn compose_family(
+        &self,
+        chain: &[usize],
+        family: Family,
+        errors: &mut Errors,
+        withheld: &mut Vec<ValueRef>,
+    ) -> Vec<Slot> {
         struct State {
             slot: Slot,
             live: bool,
             last_writer: String,
+            /// Every contribution applied to this key on the chain, surviving or not.
+            history: Vec<ContribId>,
         }
         let last = *chain.last().unwrap();
         let mut states: Vec<State> = Vec::new();
@@ -809,6 +845,7 @@ impl Model {
                         s.slot.sensitive |= c.sensitive;
                         s.live = true;
                         s.last_writer = writer;
+                        s.history.push(id);
                     }
                     (Op::Introduce | Op::Append, None) => states.push(State {
                         slot: Slot {
@@ -818,11 +855,13 @@ impl Model {
                         },
                         live: true,
                         last_writer: writer,
+                        history: vec![id],
                     }),
                     (Op::Override | Op::Remove, Some(p)) if states[p].live => {
                         let s = &mut states[p];
                         s.slot.sensitive |= c.sensitive;
                         s.last_writer = writer;
+                        s.history.push(id);
                         if c.op == Op::Remove {
                             s.slot.items.clear();
                             s.live = false;
@@ -852,6 +891,13 @@ impl Model {
                 }
             }
         }
+        for state in &states {
+            if state.slot.sensitive {
+                for &id in &state.history {
+                    withheld.extend(self.contrib_values(id));
+                }
+            }
+        }
         states.into_iter().map(|s| s.slot).collect()
     }
 
@@ -870,42 +916,48 @@ impl Model {
         }
         // Methods per generated type.
         for owner in &self.owners {
-            let mut methods: BTreeMap<String, (Span, String)> = BTreeMap::new();
-            let mut add = |name: String, span: Span, origin: String, errors: &mut Errors| {
+            // name -> (declaration span, or None for built-ins; description)
+            let mut methods: BTreeMap<String, (Option<Span>, String)> = BTreeMap::new();
+            let mut add = |name: String,
+                           span: Option<Span>,
+                           origin: String,
+                           errors: &mut Errors| {
                 if let Some((first_span, first_origin)) = methods.get(&name) {
+                    let primary = span.or(*first_span).unwrap_or_else(Span::call_site);
                     let mut e = syn::Error::new(
-                        span,
+                        primary,
                         format!(
-                            "`{}` would have two methods named `{name}`: {origin} and {first_origin}",
+                            "`{}` would have two methods named `{name}`: {origin} and {first_origin}; rename one of them",
                             owner.type_name
                         ),
                     );
-                    e.combine(syn::Error::new(
-                        *first_span,
-                        format!("{first_origin} is declared here"),
-                    ));
+                    if let (Some(_), Some(first)) = (span, first_span) {
+                        e.combine(syn::Error::new(
+                            *first,
+                            format!("{first_origin} is declared here"),
+                        ));
+                    }
                     errors.push(e);
                 } else {
                     methods.insert(name, (span, origin));
                 }
             };
-            let builtin = Span::call_site();
-            add("clone".into(), builtin, "`Clone::clone`".into(), errors);
+            add("clone".into(), None, "`Clone::clone`".into(), errors);
             match owner.kind {
                 Kind::Client { .. } => {
-                    add("new".into(), builtin, "the constructor".into(), errors);
+                    add("new".into(), None, "the constructor".into(), errors);
                     add(
                         "with_base_url".into(),
-                        builtin,
+                        None,
                         "the built-in `with_base_url`".into(),
                         errors,
                     );
                 }
                 Kind::Endpoint { .. } => {
-                    add("send".into(), builtin, "the built-in `send`".into(), errors);
+                    add("send".into(), None, "the built-in `send`".into(), errors);
                     add(
                         "prepare".into(),
-                        builtin,
+                        None,
                         "the built-in `prepare`".into(),
                         errors,
                     );
@@ -916,14 +968,14 @@ impl Model {
                 let name = plain(&value.name);
                 add(
                     format!("set_{name}"),
-                    value.name.span(),
+                    Some(value.name.span()),
                     format!("the control for value `{name}`"),
                     errors,
                 );
                 if value.optional {
                     add(
                         format!("maybe_{name}"),
-                        value.name.span(),
+                        Some(value.name.span()),
                         format!("the control for value `{name}`"),
                         errors,
                     );
@@ -933,13 +985,13 @@ impl Model {
                 let name = plain(&body.name);
                 add(
                     format!("set_{name}"),
-                    body.name.span(),
+                    Some(body.name.span()),
                     format!("the control for body `{name}`"),
                     errors,
                 );
                 add(
                     format!("maybe_{name}"),
-                    body.name.span(),
+                    Some(body.name.span()),
                     format!("the control for body `{name}`"),
                     errors,
                 );
@@ -948,7 +1000,7 @@ impl Model {
                 let c = &self.owners[child];
                 add(
                     plain(&c.name),
-                    c.name.span(),
+                    Some(c.name.span()),
                     format!("the navigation method for `{}`", c.dotted),
                     errors,
                 );
@@ -961,6 +1013,11 @@ fn is_pchar(c: char) -> bool {
     c.is_ascii_alphanumeric() || "-._~!$&'()*+,;=:@".contains(c)
 }
 
+/// Accepts a strict subset of absolute URLs that the `url` crate always parses identically:
+/// `http[s]://host[:port][/path]` where `host` is an ASCII DNS name (letters, digits, `-`, `.`), a
+/// dotted IPv4 address or a bracketed IPv6 address, `port` is 1-65535 in decimal, and the path
+/// consists of `/`-separated RFC 3986 `pchar` without `%`. Anything else is a declaration error,
+/// so the generated constructor cannot fail at runtime.
 fn validate_base(lit: &LitStr) -> syn::Result<()> {
     let text = lit.value();
     let err = |msg: &str| {
@@ -976,21 +1033,89 @@ fn validate_base(lit: &LitStr) -> syn::Result<()> {
     } else {
         return err("it must start with `http://` or `https://`");
     };
-    if text.chars().any(|c| c.is_whitespace() || c.is_control()) {
-        return err("it contains whitespace or control characters");
-    }
     if text.contains('?') {
         return err("it must not contain a query; declare query parameters with `query`");
     }
     if text.contains('#') {
         return err("it must not contain a fragment");
     }
-    let authority = rest.split('/').next().unwrap_or("");
-    if authority.is_empty() {
-        return err("it has no host");
-    }
+    let (authority, path) = match rest.find('/') {
+        Some(i) => (&rest[..i], &rest[i..]),
+        None => (rest, ""),
+    };
     if authority.contains('@') {
         return err("it must not contain user information");
+    }
+    let (host, port) = if let Some(after) = authority.strip_prefix('[') {
+        let Some(end) = after.find(']') else {
+            return err("unterminated IPv6 address");
+        };
+        let (v6, tail) = (&after[..end], &after[end + 1..]);
+        if v6.is_empty()
+            || !v6
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.')
+            || v6.parse::<std::net::Ipv6Addr>().is_err()
+        {
+            return err("invalid IPv6 address");
+        }
+        match tail {
+            "" => (authority, None),
+            t => match t.strip_prefix(':') {
+                Some(p) => (&authority[..authority.len() - t.len()], Some(p)),
+                None => return err("unexpected text after the IPv6 address"),
+            },
+        }
+    } else {
+        match authority.rsplit_once(':') {
+            Some((h, p)) => (h, Some(p)),
+            None => (authority, None),
+        }
+    };
+    if !host.starts_with('[') {
+        let labels: Vec<&str> = host.split('.').collect();
+        let valid = !host.is_empty()
+            && host.len() <= 253
+            && labels.iter().all(|l| {
+                !l.is_empty()
+                    && l.len() <= 63
+                    && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+                    && !l.starts_with('-')
+                    && !l.ends_with('-')
+            });
+        if !valid {
+            return err(
+                "the host must be an ASCII DNS name, an IPv4 address or a bracketed IPv6 address",
+            );
+        }
+        let all_numeric = labels.iter().all(|l| l.chars().all(|c| c.is_ascii_digit()));
+        if all_numeric && host.parse::<std::net::Ipv4Addr>().is_err() {
+            return err("invalid IPv4 address");
+        }
+        if !all_numeric
+            && labels
+                .last()
+                .is_some_and(|l| l.chars().all(|c| c.is_ascii_digit()))
+        {
+            return err("the last label of a host name cannot be numeric");
+        }
+    }
+    if let Some(port) = port {
+        let valid = !port.is_empty()
+            && port.len() <= 5
+            && port.chars().all(|c| c.is_ascii_digit())
+            && port.parse::<u32>().is_ok_and(|p| (1..=65535).contains(&p));
+        if !valid {
+            return err("the port must be a decimal number from 1 to 65535");
+        }
+    }
+    if let Some(bad) = path.chars().find(|c| *c != '/' && !is_pchar(*c)) {
+        return err(&format!(
+            "{bad:?} is not allowed in the base path (RFC 3986 `pchar` without `%`)"
+        ));
+    }
+    if path.split('/').any(|seg| seg == "." || seg == "..") {
+        return err("the base path cannot contain `.` or `..` segments");
     }
     Ok(())
 }
@@ -1039,6 +1164,7 @@ fn flatten(
             method,
             output,
             body: body.map(|b| Body {
+                position: b.position,
                 docs: b.docs,
                 name: b.name,
                 optional: b.optional,
@@ -1070,6 +1196,7 @@ fn flatten(
             optional: p.optional,
             default: p.default,
             sensitive: p.sensitive,
+            debug_sensitive: p.sensitive,
             usage: None,
         });
     }

@@ -1,0 +1,35 @@
+error: path templates are relative: no leading `/`, and no empty template
+ --> tests/ui/path_errors.rs:4:30
+  |
+4 |         GET leading() { path "/items"; }
+  |                              ^^^^^^^^
+
+error: empty path segment (`//`)
+ --> tests/ui/path_errors.rs:5:36
+  |
+5 |         GET empty_segment() { path "a//b"; }
+  |                                    ^^^^^^
+
+error: `.` and `..` path segments are not allowed
+ --> tests/ui/path_errors.rs:6:26
+  |
+6 |         GET dot() { path "a/../b"; }
+  |                          ^^^^^^^^
+
+error: '%' is not allowed literally in a path template; literal path text must be RFC 3986 `pchar` without `%` (values in `{..}` are percent-encoded)
+ --> tests/ui/path_errors.rs:7:30
+  |
+7 |         GET percent() { path "a%2Fb"; }
+  |                              ^^^^^^^
+
+error: ' ' is not allowed literally in a path template; literal path text must be RFC 3986 `pchar` without `%` (values in `{..}` are percent-encoded)
+ --> tests/ui/path_errors.rs:8:28
+  |
+8 |         GET space() { path "a b"; }
+  |                            ^^^^^
+
+error: unclosed `{` in "a/{id"
+ --> tests/ui/path_errors.rs:9:28
+  |
+9 |         GET brace() { path "a/{id"; }
+  |                            ^^^^^^^

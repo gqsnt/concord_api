@@ -1,0 +1,5 @@
+error: cannot override query key `k`: no enclosing owner sets it
+ --> tests/ui/override_after_remove.rs:5:72
+  |
+5 |         scope s { query { remove "k"; } GET list(y?: String) { query { override "k" = y; } } }
+  |                                                                        ^^^^^^^^

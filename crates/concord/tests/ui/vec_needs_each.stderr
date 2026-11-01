@@ -1,0 +1,31 @@
+error[E0277]: `Vec<String>` doesn't implement `std::fmt::Display`
+ --> tests/ui/vec_needs_each.rs:1:1
+  |
+1 | / concord::api! {
+2 | |     pub client Api {
+3 | |         base "http://x.test";
+4 | |         GET list(query tags: Vec<String>);
+  | |                              --- required by a bound introduced by this call
+5 | |     }
+6 | | }
+  | |_^ the trait `std::fmt::Display` is not implemented for `Vec<String>`
+  |
+note: required by a bound in `concord::__private::Parts::query`
+ --> src/__private.rs
+  |
+  |     pub fn query<T: Display + ?Sized>(&mut self, key: &'static str, value: &T) {
+  |                     ^^^^^^^ required by this bound in `Parts::query`
+
+error[E0277]: `Vec<String>` doesn't implement `std::fmt::Display`
+ --> tests/ui/vec_needs_each.rs:4:30
+  |
+4 |         GET list(query tags: Vec<String>);
+  |                              ^^^ the trait `std::fmt::Display` is not implemented for `Vec<String>`
+  |
+help: the trait `Debug` is implemented for `concord::__private::DebugDisplay<'_, T>`
+ --> src/__private.rs
+  |
+  | impl<T: Display + ?Sized> fmt::Debug for DebugDisplay<'_, T> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = note: required for `concord::__private::DebugDisplay<'_, Vec<String>>` to implement `Debug`
+  = note: required for the cast from `&concord::__private::DebugDisplay<'_, Vec<String>>` to `&dyn Debug`

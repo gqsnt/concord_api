@@ -1,0 +1,5 @@
+error: "x tag" is not a valid header field name
+ --> tests/ui/invalid_header_name.rs:4:19
+  |
+4 |         headers { "x tag" = "a"; }
+  |                   ^^^^^^^

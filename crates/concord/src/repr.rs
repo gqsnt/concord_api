@@ -26,6 +26,10 @@ pub trait Decode {
     /// The Rust value `send()` returns.
     type Output;
 
+    /// When `true`, the body is drained chunk by chunk without being buffered, and `decode`
+    /// receives an empty buffer. Used by `()`.
+    const DISCARD: bool = false;
+
     /// Decodes a complete response body.
     fn decode(body: Bytes) -> Result<Self::Output, BodyError>;
 }
@@ -167,9 +171,10 @@ impl Decode for Binary {
     }
 }
 
-/// No typed output: any 2xx succeeds and the body (empty or not) is read and discarded.
+/// No typed output: any 2xx succeeds; the body (empty or not) is drained without being buffered.
 impl Decode for () {
     type Output = ();
+    const DISCARD: bool = true;
 
     fn decode(_body: Bytes) -> Result<(), BodyError> {
         Ok(())
