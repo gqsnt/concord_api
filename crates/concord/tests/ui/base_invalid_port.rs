@@ -23,3 +23,9 @@ concord::api! {
     }
 }
 fn main() {}
+concord::api! {
+    pub client HexHost {
+        base "http://api.0x10";
+        GET a();
+    }
+}

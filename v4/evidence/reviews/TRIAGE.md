@@ -31,3 +31,38 @@ Codex's opinion on the contested D4 point: retain D4 for this iteration, conditi
 discriminating tests (absent override keeps, present-empty `each` clears, nested overrides pick the
 innermost present value). Those tests exist (`q4`, `q5`, `q10`, `remove_then_introduce_absent_removes`).
 Disposition: `DESIGN_TRADEOFF`, kept.
+
+**Correction (found by ADV-6 below):** the C4-R-005 code change did not land in `24717e8`. The
+scripted replacement in `prepared.rs` silently matched nothing (the file had been reformatted),
+and `c4_r_005_unit_drains_large_body` passed anyway because it did not discriminate buffering from
+draining. Re-fixed and re-tested with a discriminating test; scripted edits now assert their match
+count.
+
+## Claude adversarial review — `claude/adversarial_24717e8.md` (Opus 5.5 XHigh subagent, SHA 24717e8)
+
+Independent of the Codex findings (the reviewer was told not to read them). All findings came with
+reproductions in the reviewer's scratch crate.
+
+| ID | Sev | Disposition | Evidence / fix | Regression test |
+|---|---|---|---|---|
+| ADV-1 | medium | CONFIRMED | A TLS name-mismatch error deep in reqwest's `source()` chain contained a `#[sensitive]` host label (reproduced by the reviewer with `openssl s_server`). Fix: for endpoints with a sensitive label, `Error::source()` returns `None`; `Error::transport()` stays as an explicit, documented-unredacted accessor. | `sensitivity.rs::adv_1_sensitive_host_hides_transport_source` |
+| ADV-2 | medium | CONFIRMED | Safety-list sensitivity reached generated `Debug` but not path segments, labels or other keys using the same value (`path "keys/{client.token}"` printed the token). Fix: sensitivity is computed to a fixpoint — a value withheld anywhere makes every segment, label and key that reads it sensitive. | `sensitivity.rs::adv_2_effective_sensitivity_reaches_every_placement` |
+| ADV-3 | medium-low | CONFIRMED | Generated locals (`__p`, `__v`, `__c`) carried user-token spans, so `api!` forwarded through `macro_rules!` failed with hygiene errors. Fix: only the user value expression is respanned. | `tests/hygiene.rs` |
+| ADV-4 | low-medium | CONFIRMED | Expansions hard-coded `::concord::`, breaking a renamed dependency (needed for V3/V4 side by side). Fix: `concord::api!` is a `macro_rules!` forwarding `$crate` to the proc macro. | `examples/shapes` renames nothing; `tests/renamed` downstream crate |
+| ADV-5 | low | CONFIRMED | `base "http://api.0x10"` passed the macro's subset check but `url` parses a hex last label as IPv4 → constructor panic. Fix: a last label that is numeric or `0x`-hex is rejected unless the whole host is a dotted-quad IPv4. | `ui/base_invalid_port.rs` |
+| ADV-6 | low-medium | CONFIRMED | `Decode::DISCARD` was never read (see correction above). | `bodies.rs::adv_6_discard_decoders_receive_no_bytes` |
+| ADV-7 | low | CONFIRMED | An invalid `Encode::CONTENT_TYPE` panicked in `HeaderValue::from_static`. Fix: validated, invalid → `ErrorKind::Build`. | `bodies.rs::adv_7_invalid_content_type_is_a_build_error` |
+| ADV-8 | low | CONFIRMED | A literal header value that can never be valid compiled and failed on every call. Fix: header template literals must be visible ASCII, space or tab at compile time. | `ui/header_literal_value.rs` |
+| ADV-9 | low | CONFIRMED | `{r#self}` (and `r#super`, `r#crate`, `r#Self`, `r#_`) panicked the macro. Fix: rejected with a spanned error. | `ui/template_raw_keyword.rs` |
+| ADV-10 | low | DESIGN_TRADEOFF (documented) | `each` iterates any `IntoIterator`; on `Option<T>` that means 0 or 1 occurrences, and `override "k" = each opt` with `None` clears `k`. Explicit by the use of `each`; rejecting it would need type-name inspection. Documented in SEMANTICS §5. | — |
+| ADV-11 | info | CONFIRMED | clippy `too_many_arguments` fired on generated entry methods with many required values, and users cannot silence it inside `api!`. Fix: generated entry methods carry `#[allow(clippy::too_many_arguments)]`. | `tests/hygiene.rs` (9 required values under `-D clippy::all` in GATES) |
+
+Gap noted, not changed: a secret inside a runtime base URL (webhook-style path) is shown by client and
+`Prepared` `Debug`, because the base is not a declared value (SEMANTICS §9 lists it as outside the
+guarantee).
+
+Side effect of the ADV-4 fix (`DESIGN_TRADEOFF`): because `concord::api!` is now a `macro_rules!`
+wrapper, two rustc trait errors (a scalar placement of an `Option<T>`/`Vec<T>` value, which has no
+`Display`) are reported at the `api!` invocation instead of at the declared type; the message still
+names the type (`ui/option_has_no_wire_spelling.stderr`, `ui/vec_needs_each.stderr`). All
+Concord-generated diagnostics keep their exact spans.

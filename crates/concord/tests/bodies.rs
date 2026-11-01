@@ -286,3 +286,60 @@ async fn c4_r_005_unit_drains_large_body() {
     api.remove(1).send().await.unwrap();
     assert_eq!(server.requests().len(), 1);
 }
+
+static DECODED_LEN: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(usize::MAX);
+
+/// A user representation that asks for the body to be drained.
+pub struct Drained;
+
+impl concord::Decode for Drained {
+    type Output = ();
+    const DISCARD: bool = true;
+    fn decode(body: Bytes) -> Result<(), concord::BodyError> {
+        DECODED_LEN.store(body.len(), std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+/// A user representation with an invalid content type.
+pub struct BadType;
+
+impl concord::Encode for BadType {
+    type Value = String;
+    const CONTENT_TYPE: Option<&'static str> = Some("application/x\u{2011}custom");
+    fn encode(value: String) -> Result<reqwest::Body, concord::BodyError> {
+        Ok(value.into())
+    }
+}
+
+concord::api! {
+    /// ADV-6 / ADV-7 fixture.
+    pub client Reprs {
+        base "http://reprs.invalid";
+        GET drained() -> Drained { path "big"; }
+        POST bad(body value: BadType) { path "bad"; }
+    }
+}
+
+/// ADV-6: a `DISCARD` representation never receives body bytes (the body is drained, not buffered).
+#[tokio::test]
+async fn adv_6_discard_decoders_receive_no_bytes() {
+    let server = Server::reply(Reply::new(200).body(vec![9u8; 1_000_000])).await;
+    let api = Reprs::new(reqwest::Client::new())
+        .with_base_url(server.url())
+        .unwrap();
+    api.drained().send().await.unwrap();
+    assert_eq!(DECODED_LEN.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+/// ADV-7: an invalid content type from a representation is a build error, not a panic.
+#[test]
+fn adv_7_invalid_content_type_is_a_build_error() {
+    let error = Reprs::new(reqwest::Client::new())
+        .bad("x".to_owned())
+        .prepare()
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Build);
+    assert!(error.to_string().contains("content-type"), "{error}");
+}

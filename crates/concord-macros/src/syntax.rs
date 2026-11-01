@@ -28,6 +28,7 @@ pub struct Api {
     pub client: Owner,
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum OwnerKind {
     Client {
         vis: Visibility,

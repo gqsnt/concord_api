@@ -1,0 +1,14 @@
+[package]
+name = "concord-example-renamed"
+description = "Downstream check: Concord used under a renamed dependency (e.g. next to V3)."
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord4 = { package = "concord", path = "../../crates/concord", default-features = false }
+
+[lints]
+workspace = true

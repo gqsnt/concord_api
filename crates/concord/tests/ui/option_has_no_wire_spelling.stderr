@@ -5,7 +5,6 @@ error[E0277]: `Option<String>` doesn't implement `std::fmt::Display`
 2 | |     pub client Api {
 3 | |         base "http://x.test";
 4 | |         GET list(query filter: Option<String>);
-  | |                                ------ required by a bound introduced by this call
 5 | |     }
 6 | | }
   | |_^ the trait `std::fmt::Display` is not implemented for `Option<String>`
@@ -15,12 +14,18 @@ note: required by a bound in `concord::__private::Parts::query`
   |
   |     pub fn query<T: Display + ?Sized>(&mut self, key: &'static str, value: &T) {
   |                     ^^^^^^^ required by this bound in `Parts::query`
+  = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `Option<String>` doesn't implement `std::fmt::Display`
- --> tests/ui/option_has_no_wire_spelling.rs:4:32
+ --> tests/ui/option_has_no_wire_spelling.rs:1:1
   |
-4 |         GET list(query filter: Option<String>);
-  |                                ^^^^^^ the trait `std::fmt::Display` is not implemented for `Option<String>`
+1 | / concord::api! {
+2 | |     pub client Api {
+3 | |         base "http://x.test";
+4 | |         GET list(query filter: Option<String>);
+5 | |     }
+6 | | }
+  | |_^ the trait `std::fmt::Display` is not implemented for `Option<String>`
   |
 help: the trait `Debug` is implemented for `concord::__private::DebugDisplay<'_, T>`
  --> src/__private.rs
@@ -29,3 +34,4 @@ help: the trait `Debug` is implemented for `concord::__private::DebugDisplay<'_,
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   = note: required for `concord::__private::DebugDisplay<'_, Option<String>>` to implement `Debug`
   = note: required for the cast from `&concord::__private::DebugDisplay<'_, Option<String>>` to `&dyn Debug`
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

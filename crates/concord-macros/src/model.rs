@@ -17,6 +17,8 @@ pub struct Model {
     pub owners: Vec<Owner>,
 }
 
+// Few owners per declaration; boxing the larger variant buys nothing.
+#[allow(clippy::large_enum_variant)]
 pub enum Kind {
     Client {
         vis: Visibility,
@@ -79,8 +81,9 @@ pub struct Value {
     pub usage: Option<Usage>,
     /// Direct placement: family, explicit key, span, `each`.
     pub placement: Option<(Family, Option<String>, Span, bool)>,
-    /// Withheld from generated `Debug`: marked `#[sensitive]`, or contributing to a query/header
-    /// key that is sensitive on some chain (marked contribution or safety-list name).
+    /// Effective sensitivity: marked `#[sensitive]`, or feeding a query/header key that is
+    /// sensitive on some chain (marked contribution or safety-list name). Withheld from every
+    /// Concord-produced output, and makes every placement that reads it sensitive.
     pub debug_sensitive: bool,
 }
 
@@ -294,16 +297,33 @@ impl Model {
         }
         errors.check()?;
 
+        // Effective sensitivity, computed to a fixpoint: a value is withheld if it is marked or
+        // feeds a sensitive key on some chain, and every path segment, host label and key that
+        // reads a withheld value is itself sensitive.
+        loop {
+            model.refresh_sensitivity();
+            let mut withheld = Vec::new();
+            let mut ignored = Errors::default();
+            for index in 0..model.owners.len() {
+                model.compose(index, &mut ignored, &mut withheld);
+            }
+            let mut changed = false;
+            for r in withheld {
+                let value = &mut model.owners[r.owner].values[r.index];
+                changed |= !value.debug_sensitive;
+                value.debug_sensitive = true;
+            }
+            if !changed {
+                break;
+            }
+        }
+
         // Composition along every chain; errors are reported for each owner's own statements.
-        let mut withheld = Vec::new();
         for index in 0..model.owners.len() {
-            let composed = model.compose(index, &mut errors, &mut withheld);
+            let composed = model.compose(index, &mut errors, &mut Vec::new());
             if model.owners[index].is_endpoint() {
                 model.owners[index].composed = Some(composed);
             }
-        }
-        for r in withheld {
-            model.owners[r.owner].values[r.index].debug_sensitive = true;
         }
 
         // Liveness.
@@ -676,6 +696,21 @@ impl Model {
                                 continue;
                             }
                         };
+                        if family == Family::Header {
+                            let bad = raw.iter().find_map(|piece| match piece {
+                                RawPiece::Lit(s) => {
+                                    s.chars().find(|c| !(*c == '\t' || (' '..='~').contains(c)))
+                                }
+                                RawPiece::Hole(_) => None,
+                            });
+                            if let Some(bad) = bad {
+                                errors.push(syn::Error::new(
+                                    lit.span(),
+                                    format!("{bad:?} is not allowed in a header value; header values are visible ASCII, space or tab"),
+                                ));
+                                continue;
+                            }
+                        }
                         let Some(pieces) = self.pieces(at, raw, lit.span(), errors) else {
                             continue;
                         };
@@ -746,6 +781,54 @@ impl Model {
                     return None;
                 }
                 Some(lower)
+            }
+        }
+    }
+
+    /// Recomputes segment, label and contribution sensitivity from values' effective sensitivity.
+    fn refresh_sensitivity(&mut self) {
+        for o in 0..self.owners.len() {
+            let reads_withheld = |model: &Model, c: &Component| {
+                c.pieces
+                    .iter()
+                    .any(|p| matches!(p, Piece::Hole(r) if model.value(*r).debug_sensitive))
+            };
+            let labels: Vec<bool> = self.owners[o]
+                .labels
+                .iter()
+                .map(|c| reads_withheld(self, c))
+                .collect();
+            let segments: Vec<bool> = self.owners[o]
+                .segments
+                .iter()
+                .map(|c| reads_withheld(self, c))
+                .collect();
+            for (c, s) in self.owners[o].labels.iter_mut().zip(labels) {
+                c.sensitive = s;
+            }
+            for (c, s) in self.owners[o].segments.iter_mut().zip(segments) {
+                c.sensitive = s;
+            }
+            for family in [Family::Query, Family::Header] {
+                let count = match family {
+                    Family::Query => self.owners[o].query.len(),
+                    Family::Header => self.owners[o].headers.len(),
+                };
+                for index in 0..count {
+                    let id = ContribId {
+                        owner: o,
+                        family,
+                        index,
+                    };
+                    let s = self
+                        .contrib_values(id)
+                        .iter()
+                        .any(|r| self.value(*r).debug_sensitive);
+                    match family {
+                        Family::Query => self.owners[o].query[index].sensitive = s,
+                        Family::Header => self.owners[o].headers[index].sensitive = s,
+                    }
+                }
             }
         }
     }
@@ -1092,12 +1175,18 @@ fn validate_base(lit: &LitStr) -> syn::Result<()> {
         if all_numeric && host.parse::<std::net::Ipv4Addr>().is_err() {
             return err("invalid IPv4 address");
         }
-        if !all_numeric
-            && labels
-                .last()
-                .is_some_and(|l| l.chars().all(|c| c.is_ascii_digit()))
-        {
-            return err("the last label of a host name cannot be numeric");
+        // URL parsing treats a host whose last label is a decimal or `0x` hexadecimal number as
+        // an IPv4 address; only plain dotted-quad IPv4 is accepted in that form.
+        let numeric_label = |l: &str| {
+            l.chars().all(|c| c.is_ascii_digit())
+                || l.strip_prefix("0x")
+                    .or_else(|| l.strip_prefix("0X"))
+                    .is_some_and(|hex| hex.chars().all(|c| c.is_ascii_hexdigit()))
+        };
+        if !all_numeric && labels.last().is_some_and(|l| numeric_label(l)) {
+            return err(
+                "the last label of a host name cannot be numeric (it would be parsed as an IPv4 address)",
+            );
         }
     }
     if let Some(port) = port {

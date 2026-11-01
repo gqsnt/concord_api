@@ -224,3 +224,60 @@ fn c4_r_001_debug_uses_effective_sensitivity() {
     // A value with no sensitive placement stays visible.
     assert!(format!("{:?}", api.plain("hello")).contains(r#"visible: "hello""#));
 }
+
+concord::api! {
+    /// ADV-1 fixture: a sensitive subdomain label.
+    pub client Hidden(#[sensitive] tenant: String) {
+        base "http://hidden.example.test";
+        subdomain "{tenant}";
+        GET ping();
+    }
+}
+
+/// ADV-1: lower transport layers may print the host (e.g. a TLS name mismatch), so an endpoint
+/// whose host contains a sensitive label exposes no `source()` chain; `transport()` still does.
+#[tokio::test]
+async fn adv_1_sensitive_host_hides_transport_source() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let http = reqwest::Client::builder()
+        .resolve(
+            "t0psecret.hidden.example.test",
+            ([127, 0, 0, 1], port).into(),
+        )
+        .build()
+        .unwrap();
+    let api = Hidden::new(http, "t0psecret")
+        .with_base_url(format!("http://hidden.example.test:{port}"))
+        .unwrap();
+    let error = api.ping().send().await.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Transport);
+    assert!(error.source().is_none());
+    assert!(error.transport().is_some());
+    assert!(!format!("{error} {error:?}").contains("t0psecret"));
+}
+
+concord::api! {
+    /// ADV-2 fixture: values withheld by the safety list, then used in other placements.
+    pub client Spread(header("Authorization") token: String) {
+        base "http://spread.invalid/v1";
+        scope keys { path "keys/{client.token}"; GET get(); }
+        GET q(api_key: String) { query { "api_key" = api_key; "echo" = "{api_key}"; } }
+    }
+}
+
+/// ADV-2: a value Concord withholds anywhere is withheld everywhere it is placed.
+#[test]
+fn adv_2_effective_sensitivity_reaches_every_placement() {
+    let api = Spread::new(reqwest::Client::new(), SECRET);
+    let shown = format!("{:?}", api.keys().get().prepare().unwrap());
+    assert_no_secret(&shown);
+    assert!(shown.contains("/v1/keys/<redacted>"), "{shown}");
+    let shown = format!("{:?}", api.q(SECRET).prepare().unwrap());
+    assert_no_secret(&shown);
+    assert!(
+        shown.contains("api_key=<redacted>&echo=<redacted>"),
+        "{shown}"
+    );
+}

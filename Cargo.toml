@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/concord", "crates/concord-macros"]
+members = ["crates/concord", "crates/concord-macros", "examples/shapes", "examples/renamed", "benches/baselines", "benches/perf"]
 resolver = "3"
 
 [workspace.package]

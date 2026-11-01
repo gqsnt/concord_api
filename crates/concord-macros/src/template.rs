@@ -59,6 +59,14 @@ fn parse_hole(inner: &str, span: proc_macro2::Span, text: &str) -> syn::Result<R
     let inner = inner.trim();
     let ident = |s: &str| -> syn::Result<syn::Ident> {
         let raw = s.strip_prefix("r#").unwrap_or(s);
+        if matches!(raw, "self" | "Self" | "super" | "crate" | "_") {
+            return Err(syn::Error::new(
+                span,
+                format!(
+                    "`{{{inner}}}` in {text:?} is not a value reference: `{raw}` cannot name a value"
+                ),
+            ));
+        }
         let valid = !raw.is_empty()
             && raw.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
             && !raw.starts_with(|c: char| c.is_ascii_digit());

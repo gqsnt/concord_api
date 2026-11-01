@@ -11,7 +11,8 @@ use crate::model::{
 };
 use crate::syntax::Family;
 
-pub fn emit(model: &Model) -> TokenStream {
+pub fn emit(model: &Model, krate: TokenStream) -> TokenStream {
+    KRATE.with(|k| *k.borrow_mut() = krate);
     let vis = match &model.owners[0].kind {
         Kind::Client { vis, .. } => vis.clone(),
         _ => unreachable!("the first owner is the client"),
@@ -21,6 +22,15 @@ pub fn emit(model: &Model) -> TokenStream {
         out.extend(emit_owner(model, index, &vis));
     }
     out
+}
+
+thread_local! {
+    /// Path of the `concord` crate as seen from the invocation (`$crate` via `concord::api!`).
+    static KRATE: std::cell::RefCell<TokenStream> = std::cell::RefCell::new(quote!(::concord));
+}
+
+fn krate() -> TokenStream {
+    KRATE.with(|k| k.borrow().clone())
 }
 
 fn lit(s: &str) -> LitStr {
@@ -42,13 +52,15 @@ fn field_type(value: &Value) -> TokenStream {
 }
 
 fn body_value_type(body: &Body) -> TokenStream {
+    let k = krate();
     let ty = &body.ty;
-    quote!(<#ty as ::concord::Encode>::Value)
+    quote!(<#ty as #k::Encode>::Value)
 }
 
 /// The struct literal fields initializing an owner's values, in declaration order, with default
 /// functions that cannot capture the entry method's arguments or `self`.
 fn value_inits(values: &[Value]) -> (TokenStream, TokenStream) {
+    let k = krate();
     let mut fns = TokenStream::new();
     let mut fields = TokenStream::new();
     for value in values {
@@ -59,7 +71,7 @@ fn value_inits(values: &[Value]) -> (TokenStream, TokenStream) {
                 let f = format_ident!("__concord_default_{}", plain(name));
                 fns.extend(quote! {
                     #[allow(non_snake_case)]
-                    fn #f() -> #ty { <_ as ::concord::IntoValue<#ty>>::into_value(#expr) }
+                    fn #f() -> #ty { <_ as #k::IntoValue<#ty>>::into_value(#expr) }
                 });
                 if value.optional {
                     quote!(::core::option::Option::Some(#f()))
@@ -68,7 +80,7 @@ fn value_inits(values: &[Value]) -> (TokenStream, TokenStream) {
                 }
             }
             None if value.optional => quote!(::core::option::Option::None),
-            None => quote!(::concord::IntoValue::into_value(#name)),
+            None => quote!(#k::IntoValue::into_value(#name)),
         };
         fields.extend(quote!(#name: #init,));
     }
@@ -76,12 +88,13 @@ fn value_inits(values: &[Value]) -> (TokenStream, TokenStream) {
 }
 
 fn positional_params(values: &[Value], body: Option<&Body>) -> TokenStream {
+    let k = krate();
     // Required values and a required body, in declaration order.
     let body = body.filter(|b| !b.optional);
     let body_param = |b: &Body| {
         let name = &b.name;
         let ty = body_value_type(b);
-        quote!(#name: impl ::concord::IntoValue<#ty>,)
+        quote!(#name: impl #k::IntoValue<#ty>,)
     };
     let mut params = TokenStream::new();
     for (i, value) in values.iter().enumerate() {
@@ -91,7 +104,7 @@ fn positional_params(values: &[Value], body: Option<&Body>) -> TokenStream {
         if value.is_positional() {
             let name = &value.name;
             let ty = &value.ty;
-            params.extend(quote!(#name: impl ::concord::IntoValue<#ty>,));
+            params.extend(quote!(#name: impl #k::IntoValue<#ty>,));
         }
     }
     if let Some(b) = body.filter(|b| b.position >= values.len()) {
@@ -101,6 +114,7 @@ fn positional_params(values: &[Value], body: Option<&Body>) -> TokenStream {
 }
 
 fn controls(values: &[Value], body: Option<&Body>, target: &TokenStream) -> TokenStream {
+    let k = krate();
     let mut out = TokenStream::new();
     for value in values.iter().filter(|v| !v.is_positional()) {
         let name = &value.name;
@@ -114,16 +128,16 @@ fn controls(values: &[Value], body: Option<&Body>, target: &TokenStream) -> Toke
         ));
         let assign = if value.optional {
             quote!(::core::option::Option::Some(
-                ::concord::IntoValue::into_value(value)
+                #k::IntoValue::into_value(value)
             ))
         } else {
-            quote!(::concord::IntoValue::into_value(value))
+            quote!(#k::IntoValue::into_value(value))
         };
         out.extend(quote! {
             #(#docs)*
             #[doc = ""]
             #[doc = #set_doc]
-            pub fn #set(mut self, value: impl ::concord::IntoValue<#ty>) -> Self {
+            pub fn #set(mut self, value: impl #k::IntoValue<#ty>) -> Self {
                 #target.#name = #assign;
                 self
             }
@@ -155,8 +169,8 @@ fn controls(values: &[Value], body: Option<&Body>, target: &TokenStream) -> Toke
             #(#docs)*
             #[doc = ""]
             #[doc = " Sets the request body."]
-            pub fn #set(mut self, value: impl ::concord::IntoValue<#ty>) -> Self {
-                #target.#name = ::core::option::Option::Some(::concord::IntoValue::into_value(value));
+            pub fn #set(mut self, value: impl #k::IntoValue<#ty>) -> Self {
+                #target.#name = ::core::option::Option::Some(#k::IntoValue::into_value(value));
                 self
             }
             #(#docs)*
@@ -172,6 +186,7 @@ fn controls(values: &[Value], body: Option<&Body>, target: &TokenStream) -> Toke
 }
 
 fn debug_fields(values: &[Value], base: &TokenStream) -> TokenStream {
+    let k = krate();
     let mut out = TokenStream::new();
     for value in values {
         let name = &value.name;
@@ -179,21 +194,21 @@ fn debug_fields(values: &[Value], base: &TokenStream) -> TokenStream {
         let place = quote!(#base.#name);
         let span = value.ty.span();
         let shown = match (value.debug_sensitive, value.optional, value.usage) {
-            (true, false, _) => quote_spanned!(span=> &::concord::__private::Redacted),
+            (true, false, _) => quote_spanned!(span=> &#k::__private::Redacted),
             (true, true, _) => {
-                quote_spanned!(span=> &#place.as_ref().map(|_| ::concord::__private::Redacted))
+                quote_spanned!(span=> &#place.as_ref().map(|_| #k::__private::Redacted))
             }
             (false, false, Some(Usage::Each)) => {
-                quote_spanned!(span=> &::concord::__private::DebugEach(&#place))
+                quote_spanned!(span=> &#k::__private::DebugEach(&#place))
             }
             (false, true, Some(Usage::Each)) => {
-                quote_spanned!(span=> &#place.as_ref().map(::concord::__private::DebugEach))
+                quote_spanned!(span=> &#place.as_ref().map(#k::__private::DebugEach))
             }
             (false, false, _) => {
-                quote_spanned!(span=> &::concord::__private::DebugDisplay(&#place))
+                quote_spanned!(span=> &#k::__private::DebugDisplay(&#place))
             }
             (false, true, _) => {
-                quote_spanned!(span=> &#place.as_ref().map(::concord::__private::DebugDisplay))
+                quote_spanned!(span=> &#place.as_ref().map(#k::__private::DebugDisplay))
             }
         };
         out.extend(quote_spanned!(span=> .field(#label, #shown)));
@@ -202,6 +217,7 @@ fn debug_fields(values: &[Value], base: &TokenStream) -> TokenStream {
 }
 
 fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream {
+    let k = krate();
     let owner = &model.owners[index];
     let ty = &owner.type_name;
     let state = &owner.state_name;
@@ -239,20 +255,20 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
                 #[derive(Clone)]
                 #[allow(non_camel_case_types)]
                 struct #state {
-                    __http: ::concord::reqwest::Client,
-                    __base: ::concord::__private::Base,
+                    __http: #k::reqwest::Client,
+                    __base: #k::__private::Base,
                     #(#fields)*
                 }
 
                 impl #ty {
                     /// Creates the client. `http` is used for every request; configure timeouts,
                     /// redirects, proxies, TLS and default headers on it. Builds no connection.
-                    pub fn new(http: ::concord::reqwest::Client, #params) -> Self {
+                    #[allow(clippy::too_many_arguments)] pub fn new(http: #k::reqwest::Client, #params) -> Self {
                         #default_fns
                         Self {
                             __s: ::std::sync::Arc::new(#state {
                                 __http: http,
-                                __base: ::concord::__private::Base::from_static(#base),
+                                __base: #k::__private::Base::from_static(#base),
                                 #inits
                             }),
                         }
@@ -261,8 +277,8 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
                     /// Replaces the declared base URL (for example with a staging server or a
                     /// local test server). It must be an `http`/`https` URL with a host and no
                     /// user information, query or fragment.
-                    pub fn with_base_url(mut self, url: impl ::core::convert::AsRef<str>) -> ::core::result::Result<Self, ::concord::Error> {
-                        let base = ::concord::__private::Base::parse(url.as_ref())?;
+                    pub fn with_base_url(mut self, url: impl ::core::convert::AsRef<str>) -> ::core::result::Result<Self, #k::Error> {
+                        let base = #k::__private::Base::parse(url.as_ref())?;
                         ::std::sync::Arc::make_mut(&mut self.__s).__base = base;
                         ::core::result::Result::Ok(self)
                     }
@@ -359,12 +375,12 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
                     #controls
 
                     /// Builds the native request without sending it.
-                    pub fn prepare(self) -> ::core::result::Result<::concord::Prepared<#repr>, ::concord::Error> {
+                    pub fn prepare(self) -> ::core::result::Result<#k::Prepared<#repr>, #k::Error> {
                         #prepare
                     }
 
                     /// Sends the request once and decodes a 2xx response.
-                    pub async fn send(self) -> ::core::result::Result<<#repr as ::concord::Decode>::Output, ::concord::Error> {
+                    pub async fn send(self) -> ::core::result::Result<<#repr as #k::Decode>::Output, #k::Error> {
                         self.prepare()?.send().await
                     }
                 }
@@ -399,6 +415,7 @@ fn owner_docs(owner: &Owner) -> TokenStream {
 
 /// Navigation methods on `index` for each of its children.
 fn navigation(model: &Model, index: usize) -> TokenStream {
+    let k = krate();
     let mut out = TokenStream::new();
     for &child in &model.owners[index].children {
         let c = &model.owners[child];
@@ -414,7 +431,7 @@ fn navigation(model: &Model, index: usize) -> TokenStream {
             Kind::Scope => out.extend(quote! {
                 #(#docs)*
                 #[doc = #scope_line]
-                pub fn #name(&self, #params) -> #cty {
+                #[allow(clippy::too_many_arguments)] pub fn #name(&self, #params) -> #cty {
                     #default_fns
                     #cty {
                         __s: ::std::sync::Arc::new(#cstate {
@@ -430,7 +447,7 @@ fn navigation(model: &Model, index: usize) -> TokenStream {
                     if b.optional {
                         quote!(#bname: ::core::option::Option::None,)
                     } else {
-                        quote!(#bname: ::concord::IntoValue::into_value(#bname),)
+                        quote!(#bname: #k::IntoValue::into_value(#bname),)
                     }
                 });
                 let line = lit(&format!(" `{}` endpoint `{}`.", method, c.dotted));
@@ -443,7 +460,7 @@ fn navigation(model: &Model, index: usize) -> TokenStream {
                     #(#docs)*
                     #sep
                     #[doc = #line]
-                    pub fn #name(&self, #params) -> #cty {
+                    #[allow(clippy::too_many_arguments)] pub fn #name(&self, #params) -> #cty {
                         #default_fns
                         #cty {
                             __parent: ::core::clone::Clone::clone(self),
@@ -525,17 +542,17 @@ fn source_code(
     };
     let key = lit(key);
     let source = contrib.source.as_ref().expect("emitting sources only");
-    let mut span = Span::call_site();
     let (arg, each) = match source {
         Source::Ref { value, each } => {
             let place = places.value(model, *value);
-            span = model.value(*value).ty.span();
+            let span = model.value(*value).ty.span();
+            let bound_v = quote!(__v);
             if model.value(*value).optional {
                 bound
                     .patterns
                     .push(quote!(::core::option::Option::Some(__v)));
                 bound.scrutinees.push(quote!(&#place));
-                (quote_spanned!(span=> __v), *each)
+                (quote_spanned!(span=> &*#bound_v), *each)
             } else {
                 (quote_spanned!(span=> &#place), *each)
             }
@@ -577,10 +594,10 @@ fn source_code(
         }
     };
     let call = match (id.family, each) {
-        (Family::Query, false) => quote_spanned!(span=> __p.query(#key, #arg);),
-        (Family::Query, true) => quote_spanned!(span=> __p.query_each(#key, #arg);),
-        (Family::Header, false) => quote_spanned!(span=> __p.header(#key, #arg, #sensitive)?;),
-        (Family::Header, true) => quote_spanned!(span=> __p.header_each(#key, #arg, #sensitive)?;),
+        (Family::Query, false) => quote!(__p.query(#key, #arg);),
+        (Family::Query, true) => quote!(__p.query_each(#key, #arg);),
+        (Family::Header, false) => quote!(__p.header(#key, #arg, #sensitive)?;),
+        (Family::Header, true) => quote!(__p.header_each(#key, #arg, #sensitive)?;),
     };
     (bound, call)
 }
@@ -611,6 +628,7 @@ fn component_code(
     label: bool,
     what: &str,
 ) -> TokenStream {
+    let k = krate();
     let what = lit(what);
     if let [Piece::Lit(s)] = pieces {
         let s = lit(s);
@@ -632,9 +650,11 @@ fn component_code(
                 let place = places.value(model, *r);
                 let span = model.value(*r).ty.span();
                 if label {
-                    build.extend(quote_spanned!(span=> ::concord::__private::display_into(&mut __c, &#place);));
+                    let arg = quote_spanned!(span=> &#place);
+                    build.extend(quote!(#k::__private::display_into(&mut __c, #arg);));
                 } else {
-                    build.extend(quote_spanned!(span=> ::concord::__private::encode_segment(&mut __c, &#place);));
+                    let arg = quote_spanned!(span=> &#place);
+                    build.extend(quote!(#k::__private::encode_segment(&mut __c, #arg);));
                 }
             }
         }
@@ -658,6 +678,7 @@ fn prepare_body(
     repr: &TokenStream,
     body: Option<&Body>,
 ) -> TokenStream {
+    let k = krate();
     let owner: &Owner = &model.owners[index];
     let composed: &Composed = owner.composed.as_ref().expect("endpoints are composed");
     let places = Places {
@@ -730,11 +751,11 @@ fn prepare_body(
             let ty = &b.ty;
             if b.optional {
                 quote!(match self.#name {
-                    ::core::option::Option::Some(__b) => ::core::option::Option::Some(::concord::__private::encode_body::<#ty>(__b, &__META)?),
+                    ::core::option::Option::Some(__b) => ::core::option::Option::Some(#k::__private::encode_body::<#ty>(__b, &__META)?),
                     ::core::option::Option::None => ::core::option::Option::None,
                 })
             } else {
-                quote!(::core::option::Option::Some(::concord::__private::encode_body::<#ty>(self.#name, &__META)?))
+                quote!(::core::option::Option::Some(#k::__private::encode_body::<#ty>(self.#name, &__META)?))
             }
         }
     };
@@ -745,7 +766,7 @@ fn prepare_body(
     let segment_count = composed.segments.len() + usize::from(composed.trailing_slash);
     let root = format_ident!("__o0");
     quote! {
-        static __META: ::concord::__private::EndpointMeta = ::concord::__private::EndpointMeta {
+        static __META: #k::__private::EndpointMeta = #k::__private::EndpointMeta {
             name: #name,
             method: #method_str,
             labels: #label_count,
@@ -756,8 +777,8 @@ fn prepare_body(
         };
         let __body = #body_code;
         #bindings
-        let mut __p = ::concord::__private::Parts::new(&__META);
+        let mut __p = #k::__private::Parts::new(&__META);
         #code
-        __p.finish::<#repr>(::concord::reqwest::Method::#method, &#root.__http, &#root.__base, __body)
+        __p.finish::<#repr>(#k::reqwest::Method::#method, &#root.__http, &#root.__base, __body)
     }
 }

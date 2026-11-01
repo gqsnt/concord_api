@@ -1,0 +1,11 @@
+error: 'é' is not allowed in a header value; header values are visible ASCII, space or tab
+ --> tests/ui/header_literal_value.rs:4:40
+  |
+4 |         GET e() { headers { "x-name" = "café"; } }
+  |                                        ^^^^^^
+
+error: '\n' is not allowed in a header value; header values are visible ASCII, space or tab
+ --> tests/ui/header_literal_value.rs:5:39
+  |
+5 |         GET f() { headers { "x-ctl" = "a\nb"; } }
+  |                                       ^^^^^^

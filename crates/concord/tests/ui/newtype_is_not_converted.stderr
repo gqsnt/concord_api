@@ -23,6 +23,7 @@ note: required by a bound in `Api::user`
  7 | |     pub client Api {
  8 | |         base "http://x.test";
  9 | |         GET user(user: UserId) { path "users/{user}"; }
+   | |             ---- required by a bound in this associated function
 10 | |     }
 11 | | }
    | |_^ required by this bound in `Api::user`

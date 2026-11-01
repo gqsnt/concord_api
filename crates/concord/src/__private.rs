@@ -12,6 +12,7 @@ use crate::prepared::Prepared;
 use crate::repr::{Decode, Encode};
 
 pub use crate::value::IntoValue;
+pub use concord_macros::api as api_impl;
 
 /// Static facts about one endpoint, produced by the macro.
 #[derive(Debug)]
@@ -297,7 +298,20 @@ impl Parts {
         if let Some((body, content_type)) = body {
             if let Some(content_type) = content_type {
                 if !headers.contains_key(CONTENT_TYPE) {
-                    headers.insert(CONTENT_TYPE, HeaderValue::from_static(content_type));
+                    let visible = content_type
+                        .bytes()
+                        .all(|b| b == b'\t' || (0x20..0x7f).contains(&b));
+                    let value = HeaderValue::from_str(content_type)
+                        .ok()
+                        .filter(|_| visible)
+                        .ok_or_else(|| {
+                            Error::build(
+                                Some(self.meta),
+                                "content-type",
+                                "from the body representation is not a valid header value",
+                            )
+                        })?;
+                    headers.insert(CONTENT_TYPE, value);
                 }
             }
             *request.body_mut() = Some(body);

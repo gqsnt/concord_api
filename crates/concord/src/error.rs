@@ -113,6 +113,10 @@ impl Error {
     }
 
     /// The underlying reqwest error (with its URL removed), for [`ErrorKind::Transport`].
+    ///
+    /// Its own `source()` chain comes from hyper, TLS and DNS layers that Concord does not
+    /// control; it can contain the host name (for example in a certificate mismatch), including a
+    /// host built from a sensitive subdomain value.
     pub fn transport(&self) -> Option<&reqwest::Error> {
         match &self.inner.repr {
             Repr::Transport(error) => Some(error),
@@ -185,9 +189,18 @@ impl fmt::Debug for Error {
 }
 
 impl StdError for Error {
+    /// For transport errors, the reqwest error with its URL removed — except for endpoints whose
+    /// host contains a sensitive subdomain label: lower layers (for example a TLS name mismatch)
+    /// may print the host name, so the chain is withheld; [`Error::transport`] still returns it.
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match &self.inner.repr {
-            Repr::Transport(error) => Some(error),
+            Repr::Transport(error) => {
+                let host_withheld = self
+                    .inner
+                    .endpoint
+                    .is_some_and(|m| !m.sensitive_labels.is_empty());
+                if host_withheld { None } else { Some(error) }
+            }
             _ => None,
         }
     }

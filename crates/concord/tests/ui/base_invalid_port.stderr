@@ -21,3 +21,9 @@ error: invalid base URL "http://example.test/a%20b": '%' is not allowed in the b
    |
 21 |         base "http://example.test/a%20b";
    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: invalid base URL "http://api.0x10": the last label of a host name cannot be numeric (it would be parsed as an IPv4 address)
+  --> tests/ui/base_invalid_port.rs:28:14
+   |
+28 |         base "http://api.0x10";
+   |              ^^^^^^^^^^^^^^^^^

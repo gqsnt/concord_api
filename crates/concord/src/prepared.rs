@@ -124,10 +124,21 @@ impl<R: Decode> Decoder<R> {
         if !response.status().is_success() {
             return Err(Error::from_status(self.meta, response));
         }
-        let body = response
-            .bytes()
-            .await
-            .map_err(|e| Error::from_transport(self.meta, e))?;
+        let body = if R::DISCARD {
+            let mut response = response;
+            while response
+                .chunk()
+                .await
+                .map_err(|e| Error::from_transport(self.meta, e))?
+                .is_some()
+            {}
+            bytes::Bytes::new()
+        } else {
+            response
+                .bytes()
+                .await
+                .map_err(|e| Error::from_transport(self.meta, e))?
+        };
         R::decode(body).map_err(|e| Error::from_decode(self.meta, e))
     }
 }
