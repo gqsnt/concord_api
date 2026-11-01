@@ -326,7 +326,11 @@ concord::api! {
 /// not run them. V09: a cloned scope keeps the values set before cloning.
 #[tokio::test]
 async fn v03_v09_initializer_order_and_clone_retention() {
-    let api = Ordered::new(reqwest::Client::new()).set_a(10);
+    let server = support::Server::reply(support::Reply::new(204)).await;
+    let api = Ordered::new(reqwest::Client::new())
+        .with_base_url(server.url())
+        .unwrap()
+        .set_a(10);
     assert_eq!(
         *ORDER_LOG.lock().unwrap(),
         ["a", "b"],
@@ -338,9 +342,10 @@ async fn v03_v09_initializer_order_and_clone_retention() {
     assert_eq!(*ORDER_LOG.lock().unwrap(), ["a", "b", "s", "e"]);
     let p = leaf.clone().prepare().unwrap();
     assert_eq!(query(&p), "a=10&b=2&s=30&e=4");
-    // `send` evaluates nothing either (it fails: the host does not resolve).
-    let _ = leaf.send().await;
+    // `send` evaluates nothing either, and sends the retained values (local server, no DNS).
+    leaf.send().await.unwrap();
     assert_eq!(ORDER_LOG.lock().unwrap().len(), 4);
+    assert_eq!(server.single().query(), Some("a=10&b=2&s=30&e=4"));
 }
 
 /// V12: `&String` converts to `String`; literals infer their exact types.

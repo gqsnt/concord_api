@@ -450,8 +450,10 @@ concord::api! {
     }
 }
 
-/// C09: header names are case-insensitive; `append` groups values under the name (HeaderMap
-/// order); `override` replaces in place.
+/// C09: header names are case-insensitive; `append` adds values after the inherited ones under
+/// the same name; `override` replaces the name's values. Only the order of values *within* one
+/// name is asserted: `http::HeaderMap` does not promise an order between different names, so
+/// neither does Concord (L2).
 #[tokio::test]
 async fn c09_header_slots_on_the_wire() {
     let server = Server::reply(Reply::new(204)).await;
@@ -461,25 +463,22 @@ async fn c09_header_slots_on_the_wire() {
     api.overridden().send().await.unwrap();
     let requests = server.requests();
 
-    let names = |r: &support::Recorded| -> Vec<(String, String)> {
-        r.headers
+    let names = |r: &support::Recorded| -> Vec<String> {
+        let mut names: Vec<String> = r
+            .headers
             .iter()
-            .filter(|(n, _)| n.starts_with('x'))
-            .cloned()
-            .collect()
+            .map(|(n, _)| n.clone())
+            .filter(|n| n.starts_with('x'))
+            .collect();
+        names.sort();
+        names
     };
-    assert_eq!(
-        names(&requests[0]),
-        [
-            ("x-tag".into(), "a".into()),
-            ("x-tag".into(), "b".into()),
-            ("x-other".into(), "o".into())
-        ]
-    );
-    assert_eq!(
-        names(&requests[1]),
-        [("x-tag".into(), "c".into()), ("x-other".into(), "o".into())]
-    );
+    assert_eq!(requests[0].header_all("x-tag"), ["a", "b"]);
+    assert_eq!(requests[0].header_all("x-other"), ["o"]);
+    assert_eq!(names(&requests[0]), ["x-other", "x-tag", "x-tag"]);
+    assert_eq!(requests[1].header_all("x-tag"), ["c"]);
+    assert_eq!(requests[1].header_all("x-other"), ["o"]);
+    assert_eq!(names(&requests[1]), ["x-other", "x-tag"]);
 }
 
 /// C10: `Authorization` is an ordinary header; an absent optional value omits the whole entry.

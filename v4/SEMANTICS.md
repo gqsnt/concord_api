@@ -134,8 +134,13 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
 - `each` iterates any `IntoIterator` (`&T: IntoIterator`, items `Display`). On a required
   `Option<T>` that means zero or one occurrence, so `override "k" = each opt` with `None` clears
   `k` — chosen explicitly by writing `each`; Concord does not inspect the type.
-- Within a slot, occurrences keep contribution order; slots keep first-appearance order. Header
-  slots therefore match `http::HeaderMap`, which groups values by name.
+- **Order on the wire.** Query: slots in first-appearance order, and within a slot the occurrences
+  in contribution order — the query string is exactly that sequence. Headers: the values of one
+  name are sent in contribution order. The order *between different header names* is not part of
+  the contract: the request carries an `http::HeaderMap`, which groups values by name and does not
+  promise an order across names, and reqwest/hyper add their own headers. Interleaved repeats
+  across query keys (`f=a&op=eq&f=b`) cannot be declared; edit the native URL instead
+  (`Prepared::into_parts`, then `Request::url_mut`).
 - Only surviving contributions are formatted; a replaced or removed value's `Display` never runs.
 - Header names must be valid field-name tokens; `host`, `content-length`, `transfer-encoding`,
   `connection`, `te`, `trailer`, `upgrade` and `keep-alive` are rejected (transport-owned).

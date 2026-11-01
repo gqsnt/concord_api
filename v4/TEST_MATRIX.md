@@ -46,7 +46,7 @@ how to do it instead), **deferred**. Status is from the runs recorded in `eviden
 | C06 | required | `each` repeats keys in order; `append` joins the key's slot | `composition.rs::c06_repeated_keys` | PASS |
 | C07 | required | inherited key introduced again without an operation: compile error (query and case-folded header) | `ui/duplicate_inherited_key.rs`, `ui/duplicate_header_case.rs` | PASS |
 | C08 | required | override present/absent/nested, remove, reintroduce, present-empty `each`; suppressed values never formatted | `composition.rs::q2_*`, `q4_*`, `q5_*`, `q6_*`, `q10_*`, `remove_then_introduce_absent_removes`, `c08_suppressed_contributions_are_not_formatted`, `ui/override_without_target.rs`, `ui/remove_without_target.rs`, `ui/override_after_remove.rs`, `composition.rs::each_over_option_under_override` | PASS |
-| C09 | required | header names case-insensitive; `append` groups by name; `override` replaces | `composition.rs::c09_header_slots_on_the_wire` | PASS |
+| C09 | required | header names case-insensitive; values of one name keep contribution order (`append` adds after, `override` replaces); no order between different names is asserted (L2) | `composition.rs::c09_header_slots_on_the_wire` | PASS |
 | C10 | required | `Authorization` ordinary; absent optional template omits the header | `composition.rs::c10_authorization_is_an_ordinary_header` | PASS |
 | C11 | required | omitted optional vs required optional payload differ on the wire | `values.rs::v05_*`, `values.rs::v04_*` | PASS |
 | C12 | required | no shared state between clients built on one reqwest client | `values.rs::c12_no_shared_state_between_clients` | PASS |
