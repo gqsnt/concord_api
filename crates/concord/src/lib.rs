@@ -9,6 +9,7 @@
 //! # Quick start
 //!
 //! ```no_run
+//! # #[cfg(feature = "json")] mod quick_start {
 //! use concord::{Json, reqwest};
 //! use serde::{Deserialize, Serialize};
 //!
@@ -49,6 +50,7 @@
 //! let created = rust.create_issue(NewIssue { title: "hi".into() }).send().await?;
 //! # let _ = (open, one, created);
 //! # Ok(()) }
+//! # }
 //! ```
 //!
 //! `concord::reqwest` is the reqwest crate Concord is built on; depend on reqwest directly (same
