@@ -71,6 +71,7 @@ fn value_inits(values: &[Value]) -> (TokenStream, TokenStream) {
                 let f = format_ident!("__concord_default_{}", plain(name));
                 fns.extend(quote! {
                     #[allow(non_snake_case)]
+                    #[inline]
                     fn #f() -> #ty { <_ as #k::IntoValue<#ty>>::into_value(#expr) }
                 });
                 if value.optional {
@@ -137,7 +138,7 @@ fn controls(values: &[Value], body: Option<&Body>, target: &TokenStream) -> Toke
             #(#docs)*
             #[doc = ""]
             #[doc = #set_doc]
-            pub fn #set(mut self, value: impl #k::IntoValue<#ty>) -> Self {
+            #[inline] pub fn #set(mut self, value: impl #k::IntoValue<#ty>) -> Self {
                 #target.#name = #assign;
                 self
             }
@@ -152,7 +153,7 @@ fn controls(values: &[Value], body: Option<&Body>, target: &TokenStream) -> Toke
                 #(#docs)*
                 #[doc = ""]
                 #[doc = #maybe_doc]
-                pub fn #maybe(mut self, value: ::core::option::Option<#ty>) -> Self {
+                #[inline] pub fn #maybe(mut self, value: ::core::option::Option<#ty>) -> Self {
                     #target.#name = value;
                     self
                 }
@@ -169,14 +170,14 @@ fn controls(values: &[Value], body: Option<&Body>, target: &TokenStream) -> Toke
             #(#docs)*
             #[doc = ""]
             #[doc = " Sets the request body."]
-            pub fn #set(mut self, value: impl #k::IntoValue<#ty>) -> Self {
+            #[inline] pub fn #set(mut self, value: impl #k::IntoValue<#ty>) -> Self {
                 #target.#name = ::core::option::Option::Some(#k::IntoValue::into_value(value));
                 self
             }
             #(#docs)*
             #[doc = ""]
             #[doc = " Sets the request body to exactly `value`: `None` sends no body."]
-            pub fn #maybe(mut self, value: ::core::option::Option<#ty>) -> Self {
+            #[inline] pub fn #maybe(mut self, value: ::core::option::Option<#ty>) -> Self {
                 #target.#name = value;
                 self
             }
@@ -263,7 +264,7 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
                 impl #ty {
                     /// Creates the client. `http` is used for every request; configure timeouts,
                     /// redirects, proxies, TLS and default headers on it. Builds no connection.
-                    #[allow(clippy::too_many_arguments)] pub fn new(http: #k::reqwest::Client, #params) -> Self {
+                    #[inline] #[allow(clippy::too_many_arguments)] pub fn new(http: #k::reqwest::Client, #params) -> Self {
                         #default_fns
                         Self {
                             __s: ::std::sync::Arc::new(#state {
@@ -277,7 +278,7 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
                     /// Replaces the declared base URL (for example with a staging server or a
                     /// local test server). It must be an `http`/`https` URL with a host and no
                     /// user information, query or fragment.
-                    pub fn with_base_url(mut self, url: impl ::core::convert::AsRef<str>) -> ::core::result::Result<Self, #k::Error> {
+                    #[inline] pub fn with_base_url(mut self, url: impl ::core::convert::AsRef<str>) -> ::core::result::Result<Self, #k::Error> {
                         let base = #k::__private::Base::parse(url.as_ref())?;
                         ::std::sync::Arc::make_mut(&mut self.__s).__base = base;
                         ::core::result::Result::Ok(self)
@@ -288,7 +289,7 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
                 }
 
                 impl ::core::fmt::Debug for #ty {
-                    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    #[inline] fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                         let __s = &*self.__s;
                         f.debug_struct(#type_label).field("base", &__s.__base) #debug .finish()
                     }
@@ -324,7 +325,7 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
                 }
 
                 impl ::core::fmt::Debug for #ty {
-                    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    #[inline] fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                         let __s = &*self.__s;
                         f.debug_struct(#type_label) #debug .finish()
                     }
@@ -375,18 +376,18 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
                     #controls
 
                     /// Builds the native request without sending it.
-                    pub fn prepare(self) -> ::core::result::Result<#k::Prepared<#repr>, #k::Error> {
+                    #[inline] pub fn prepare(self) -> ::core::result::Result<#k::Prepared<#repr>, #k::Error> {
                         #prepare
                     }
 
                     /// Sends the request once and decodes a 2xx response.
-                    pub async fn send(self) -> ::core::result::Result<<#repr as #k::Decode>::Output, #k::Error> {
+                    #[inline] pub async fn send(self) -> ::core::result::Result<<#repr as #k::Decode>::Output, #k::Error> {
                         self.prepare()?.send().await
                     }
                 }
 
                 impl ::core::fmt::Debug for #ty {
-                    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    #[inline] fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                         f.debug_struct(#type_label) #debug .finish()
                     }
                 }
@@ -431,7 +432,7 @@ fn navigation(model: &Model, index: usize) -> TokenStream {
             Kind::Scope => out.extend(quote! {
                 #(#docs)*
                 #[doc = #scope_line]
-                #[allow(clippy::too_many_arguments)] pub fn #name(&self, #params) -> #cty {
+                #[inline] #[allow(clippy::too_many_arguments)] pub fn #name(&self, #params) -> #cty {
                     #default_fns
                     #cty {
                         __s: ::std::sync::Arc::new(#cstate {
@@ -460,7 +461,7 @@ fn navigation(model: &Model, index: usize) -> TokenStream {
                     #(#docs)*
                     #sep
                     #[doc = #line]
-                    #[allow(clippy::too_many_arguments)] pub fn #name(&self, #params) -> #cty {
+                    #[inline] #[allow(clippy::too_many_arguments)] pub fn #name(&self, #params) -> #cty {
                         #default_fns
                         #cty {
                             __parent: ::core::clone::Clone::clone(self),
