@@ -253,7 +253,9 @@ impl<'a> Parts<'a> {
         let mut value = HeaderValue::from_str(&text)
             .map_err(|_| Error::build(Some(self.meta), what, "header value is invalid"))?;
         value.set_sensitive(sensitive);
-        self.headers.append(name, value);
+        self.headers
+            .try_append(name, value)
+            .map_err(|_| Error::build(Some(self.meta), what, "does not fit in the header map"))?;
         Ok(())
     }
 
@@ -334,7 +336,15 @@ impl<'a> Parts<'a> {
         if let Some((body, content_type)) = body {
             if let Some(content_type) = content_type {
                 if !headers.contains_key(CONTENT_TYPE) {
-                    headers.insert(CONTENT_TYPE, content_type);
+                    headers
+                        .try_insert(CONTENT_TYPE, content_type)
+                        .map_err(|_| {
+                            Error::build(
+                                Some(self.meta),
+                                "content-type",
+                                "does not fit in the header map",
+                            )
+                        })?;
                 }
             }
             *request.body_mut() = Some(body);

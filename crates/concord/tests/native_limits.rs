@@ -23,3 +23,61 @@ fn longest_native_header_name_is_accepted() {
     assert_eq!(name.as_str().len(), 65_535);
     assert_eq!(value, "v");
 }
+
+/// Drives the generated-code bridge directly (white-box): a declaration with tens of thousands of
+/// distinct header names would be needed to reach `HeaderMap`'s capacity through `api!`.
+mod header_map_capacity {
+    use concord::__private::{Base, EndpointMeta, Parts};
+    use concord::reqwest::header::{HeaderName, HeaderValue};
+    use concord::{ErrorKind, reqwest};
+
+    static META: EndpointMeta = EndpointMeta {
+        name: "Capacity.fill",
+        method: "GET",
+        labels: 0,
+        sensitive_labels: &[],
+        segments: 0,
+        sensitive_segments: &[],
+        sensitive_query: &[],
+    };
+
+    /// Adds distinct header names until the native map refuses one; returns how many fit.
+    fn fill(parts: &mut Parts<'_>) -> usize {
+        for i in 0.. {
+            let name = HeaderName::from_bytes(format!("x-{i}").as_bytes()).unwrap();
+            if let Err(e) = parts.header(name, "x-n", "v", false) {
+                assert_eq!(e.kind(), ErrorKind::Build);
+                assert!(e.to_string().contains("x-n"), "{e}");
+                return i;
+            }
+        }
+        unreachable!()
+    }
+
+    #[test]
+    fn a_full_header_map_is_a_build_error_not_a_panic() {
+        let base = Base::parse("http://capacity.example.test").unwrap();
+        let mut parts = Parts::new(&META, &base);
+        let fitted = fill(&mut parts);
+        assert!(
+            fitted > 1000,
+            "native capacity unexpectedly small: {fitted}"
+        );
+    }
+
+    #[test]
+    fn a_body_content_type_that_does_not_fit_is_a_build_error() {
+        let base = Base::parse("http://capacity.example.test").unwrap();
+        let mut parts = Parts::new(&META, &base);
+        fill(&mut parts);
+        let body = Some((
+            reqwest::Body::from("x"),
+            Some(HeaderValue::from_static("text/plain")),
+        ));
+        let e = parts
+            .finish::<()>(reqwest::Method::POST, &reqwest::Client::new(), body)
+            .unwrap_err();
+        assert_eq!(e.kind(), ErrorKind::Build);
+        assert!(e.to_string().contains("content-type"), "{e}");
+    }
+}
