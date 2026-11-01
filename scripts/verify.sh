@@ -20,12 +20,12 @@ echo "head: $(git rev-parse HEAD)  dirty: $(git status --porcelain --untracked-f
 echo "rustc: $(rustc --version)"
 
 step fmt cargo fmt --all -- --check
-step clippy cargo clippy --workspace --all-targets -- -D warnings
+step clippy cargo clippy --locked --workspace --all-targets -- -D warnings
 step test cargo test --workspace --locked
 step test-no-default cargo test --locked -p concord --no-default-features
 step test-json-only cargo test --locked -p concord --no-default-features --features json
 step test-reqwest-defaults-only cargo test --locked -p concord --no-default-features --features reqwest-defaults
-step doc env RUSTDOCFLAGS="-D warnings" cargo doc -p concord --no-deps
+step doc env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord --no-deps
 
 if [[ "${1:-}" == "--msrv" ]]; then
   step msrv-concord cargo +1.85 test --locked -p concord --lib \
