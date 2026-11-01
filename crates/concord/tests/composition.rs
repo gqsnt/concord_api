@@ -650,3 +650,50 @@ fn runtime_base_with_invalid_punycode_is_an_error() {
     assert_eq!(error.kind(), concord::ErrorKind::Build);
     assert!(!error.to_string().contains("pokxncvks"), "{error}");
 }
+
+concord::api! {
+    /// C4-R-013 fixture: competing build failures.
+    pub client Order {
+        base "http://order.example.test";
+        scope region(region: String) {
+            subdomain "{region}";
+            GET item(id: String) { path "items/{id}"; headers { "x-id" = "{id}"; } }
+        }
+    }
+}
+
+/// C4-R-013: build checks run in the documented order: body, host (labels, IP base, length),
+/// path, query, headers — the first failure is reported.
+#[test]
+fn c4_r_013_build_error_precedence() {
+    // Invalid label and invalid path value: the label error wins.
+    let e = Order::new(http())
+        .region("a.b")
+        .item("..")
+        .prepare()
+        .unwrap_err();
+    assert!(e.to_string().contains("subdomain label"), "{e}");
+    // IP base (host error) and invalid path value: the host error wins.
+    let api = Order::new(http())
+        .with_base_url("http://127.0.0.1:9")
+        .unwrap();
+    let e = api.region("eu").item("..").prepare().unwrap_err();
+    assert!(
+        e.to_string()
+            .contains("subdomain requires a base URL with a domain name"),
+        "{e}"
+    );
+    // Invalid path value and invalid header value: the path error wins.
+    let e = Order::new(http())
+        .region("eu")
+        .item("..")
+        .prepare()
+        .unwrap_err();
+    assert!(e.to_string().contains("path segment"), "{e}");
+    let e = Order::new(http())
+        .region("eu")
+        .item("a\nb")
+        .prepare()
+        .unwrap_err();
+    assert!(e.to_string().contains("x-id"), "{e}");
+}

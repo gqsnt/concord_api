@@ -4,7 +4,7 @@
 //! compile time. Generated code only decides, with plain `if let`s, whether an optional value is
 //! present.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use proc_macro2::Span;
 use quote::format_ident;
@@ -100,7 +100,7 @@ pub enum Usage {
     Each,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ValueRef {
     pub owner: usize,
     pub index: usize,
@@ -133,7 +133,7 @@ pub struct Contrib {
     pub total: bool,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ContribId {
     pub owner: usize,
     pub family: Family,
@@ -297,26 +297,13 @@ impl Model {
         }
         errors.check()?;
 
-        // Effective sensitivity, computed to a fixpoint: a value is withheld if it is marked or
-        // feeds a sensitive key on some chain, and every path segment, host label and key that
-        // reads a withheld value is itself sensitive.
-        loop {
-            model.refresh_sensitivity();
-            let mut withheld = Vec::new();
-            let mut ignored = Errors::default();
-            for index in 0..model.owners.len() {
-                model.compose(index, &mut ignored, &mut withheld);
-            }
-            let mut changed = false;
-            for r in withheld {
-                let value = &mut model.owners[r.owner].values[r.index];
-                changed |= !value.debug_sensitive;
-                value.debug_sensitive = true;
-            }
-            if !changed {
-                break;
-            }
-        }
+        // Effective sensitivity: a value is withheld if it is marked or feeds a sensitive key on
+        // some chain, and every path segment, host label and key that reads a withheld value is
+        // itself sensitive. Slot membership does not depend on sensitivity, so the slots are
+        // computed once and sensitivity is propagated with a worklist (linear in the number of
+        // slot memberships and value reads).
+        model.propagate_sensitivity();
+        model.refresh_sensitivity();
 
         // Composition along every chain; errors are reported for each owner's own statements.
         for index in 0..model.owners.len() {
@@ -833,6 +820,67 @@ impl Model {
         }
     }
 
+    fn propagate_sensitivity(&mut self) {
+        // Every key slot of every chain: (sensitive by name, contributions ever applied).
+        let mut slots: Vec<(bool, Vec<ContribId>)> = Vec::new();
+        let mut ignored = Errors::default();
+        for index in 0..self.owners.len() {
+            self.compose(index, &mut ignored, &mut slots);
+        }
+        let mut slots_of: HashMap<ContribId, Vec<usize>> = HashMap::new();
+        let mut readers: HashMap<ValueRef, Vec<ContribId>> = HashMap::new();
+        for (s, (_, history)) in slots.iter().enumerate() {
+            for &id in history {
+                let entry = slots_of.entry(id).or_default();
+                if entry.last() != Some(&s) {
+                    entry.push(s);
+                    for r in self.contrib_values(id) {
+                        readers.entry(r).or_default().push(id);
+                    }
+                }
+            }
+        }
+        for list in readers.values_mut() {
+            list.sort_by_key(|c| (c.owner, c.family == Family::Header, c.index));
+            list.dedup_by_key(|c| (c.owner, c.family == Family::Header, c.index));
+        }
+        let mut sensitive = vec![false; slots.len()];
+        let mut queue: Vec<usize> = (0..slots.len()).filter(|&s| slots[s].0).collect();
+        let marked: Vec<ValueRef> = self
+            .owners
+            .iter()
+            .enumerate()
+            .flat_map(|(o, owner)| {
+                owner
+                    .values
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, v)| v.debug_sensitive)
+                    .map(move |(i, _)| ValueRef { owner: o, index: i })
+            })
+            .collect();
+        for r in marked {
+            for id in readers.get(&r).into_iter().flatten() {
+                queue.extend(slots_of.get(id).into_iter().flatten().copied());
+            }
+        }
+        while let Some(s) = queue.pop() {
+            if std::mem::replace(&mut sensitive[s], true) {
+                continue;
+            }
+            for &id in &slots[s].1 {
+                for r in self.contrib_values(id) {
+                    let value = &mut self.owners[r.owner].values[r.index];
+                    if !std::mem::replace(&mut value.debug_sensitive, true) {
+                        for reader in readers.get(&r).into_iter().flatten() {
+                            queue.extend(slots_of.get(reader).into_iter().flatten().copied());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Values read by a contribution (for effective sensitivity).
     fn contrib_values(&self, id: ContribId) -> Vec<ValueRef> {
         match &self.contrib(id).source {
@@ -848,7 +896,14 @@ impl Model {
         }
     }
 
-    fn compose(&self, at: usize, errors: &mut Errors, withheld: &mut Vec<ValueRef>) -> Composed {
+    /// Composes `at`'s chain. `slots_out` receives, per key slot, whether its name is on the
+    /// safety list and every contribution applied to it.
+    fn compose(
+        &self,
+        at: usize,
+        errors: &mut Errors,
+        slots_out: &mut Vec<(bool, Vec<ContribId>)>,
+    ) -> Composed {
         let chain = self.chain(at);
         let mut labels = Vec::new();
         for &owner in chain.iter().rev() {
@@ -862,8 +917,8 @@ impl Model {
                 segments.push((owner, i));
             }
         }
-        let query = self.compose_family(&chain, Family::Query, errors, withheld);
-        let headers = self.compose_family(&chain, Family::Header, errors, withheld);
+        let query = self.compose_family(&chain, Family::Query, errors, slots_out);
+        let headers = self.compose_family(&chain, Family::Header, errors, slots_out);
         Composed {
             labels,
             segments,
@@ -878,7 +933,7 @@ impl Model {
         chain: &[usize],
         family: Family,
         errors: &mut Errors,
-        withheld: &mut Vec<ValueRef>,
+        slots_out: &mut Vec<(bool, Vec<ContribId>)>,
     ) -> Vec<Slot> {
         struct State {
             slot: Slot,
@@ -889,6 +944,7 @@ impl Model {
         }
         let last = *chain.last().unwrap();
         let mut states: Vec<State> = Vec::new();
+        let mut position: HashMap<String, usize> = HashMap::new();
         let noun = match family {
             Family::Query => "query key",
             Family::Header => "header",
@@ -905,7 +961,7 @@ impl Model {
                     index,
                 };
                 let report = owner == last;
-                let pos = states.iter().position(|s| s.slot.key == c.key);
+                let pos = position.get(&c.key).copied();
                 let writer = self.owners[owner].dotted.clone();
                 match (c.op, pos) {
                     (Op::Introduce, Some(p)) if states[p].live => {
@@ -930,16 +986,19 @@ impl Model {
                         s.last_writer = writer;
                         s.history.push(id);
                     }
-                    (Op::Introduce | Op::Append, None) => states.push(State {
-                        slot: Slot {
-                            key: c.key.clone(),
-                            sensitive: c.sensitive || sensitive_name(&c.key),
-                            items: vec![Item::Emit(id)],
-                        },
-                        live: true,
-                        last_writer: writer,
-                        history: vec![id],
-                    }),
+                    (Op::Introduce | Op::Append, None) => {
+                        position.insert(c.key.clone(), states.len());
+                        states.push(State {
+                            slot: Slot {
+                                key: c.key.clone(),
+                                sensitive: c.sensitive || sensitive_name(&c.key),
+                                items: vec![Item::Emit(id)],
+                            },
+                            live: true,
+                            last_writer: writer,
+                            history: vec![id],
+                        })
+                    }
                     (Op::Override | Op::Remove, Some(p)) if states[p].live => {
                         let s = &mut states[p];
                         s.slot.sensitive |= c.sensitive;
@@ -975,11 +1034,7 @@ impl Model {
             }
         }
         for state in &states {
-            if state.slot.sensitive {
-                for &id in &state.history {
-                    withheld.extend(self.contrib_values(id));
-                }
-            }
+            slots_out.push((sensitive_name(&state.slot.key), state.history.clone()));
         }
         states.into_iter().map(|s| s.slot).collect()
     }

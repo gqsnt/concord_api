@@ -9,11 +9,11 @@ error[E0277]: `Vec<String>` doesn't implement `std::fmt::Display`
 6 | | }
   | |_^ the trait `std::fmt::Display` is not implemented for `Vec<String>`
   |
-note: required by a bound in `concord::__private::Parts::query`
+note: required by a bound in `concord::__private::Parts::<'a>::query`
  --> src/__private.rs
   |
   |     pub fn query<T: Display + ?Sized>(&mut self, key: &'static str, value: &T) {
-  |                     ^^^^^^^ required by this bound in `Parts::query`
+  |                     ^^^^^^^ required by this bound in `Parts::<'a>::query`
   = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `Vec<String>` doesn't implement `std::fmt::Display`

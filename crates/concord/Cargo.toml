@@ -30,6 +30,8 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "net", "io-util", "time", "sync"] }
 trybuild.workspace = true
+tokio-rustls = "0.26"
+rustls-pki-types = { version = "1.9", features = ["std"] }
 
 [lints]
 workspace = true
@@ -41,3 +43,7 @@ required-features = ["json"]
 [[test]]
 name = "bodies"
 required-features = ["json"]
+
+[[test]]
+name = "tls"
+required-features = ["reqwest-defaults"]

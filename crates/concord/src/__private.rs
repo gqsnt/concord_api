@@ -124,8 +124,10 @@ pub fn encode_body<E: Encode>(
 }
 
 /// The request being composed by one endpoint's generated code.
-pub struct Parts {
+pub struct Parts<'a> {
     meta: &'static EndpointMeta,
+    base: &'a Base,
+    url: Url,
     labels: Vec<String>,
     segments: Vec<String>,
     trailing_slash: bool,
@@ -133,11 +135,13 @@ pub struct Parts {
     headers: HeaderMap,
 }
 
-impl Parts {
-    /// Starts composing a request for `meta`.
-    pub fn new(meta: &'static EndpointMeta) -> Self {
+impl<'a> Parts<'a> {
+    /// Starts composing a request for `meta` against `base`.
+    pub fn new(meta: &'static EndpointMeta, base: &'a Base) -> Self {
         Self {
             meta,
+            base,
+            url: base.url.clone(),
             labels: Vec::new(),
             segments: Vec::new(),
             trailing_slash: false,
@@ -245,17 +249,11 @@ impl Parts {
         Ok(())
     }
 
-    /// Assembles the native request.
-    pub fn finish<R: Decode>(
-        self,
-        method: Method,
-        client: &reqwest::Client,
-        base: &Base,
-        body: Option<(reqwest::Body, Option<&'static str>)>,
-    ) -> Result<Prepared<R>, Error> {
-        let mut url = base.url.clone();
+    /// Prepends the labels to the base host and validates the result. Called once, right after
+    /// the last label, so host errors precede path errors.
+    pub fn host(&mut self) -> Result<(), Error> {
         if !self.labels.is_empty() {
-            let domain = match url.host() {
+            let domain = match self.url.host() {
                 Some(url::Host::Domain(domain)) => domain,
                 _ => {
                     return Err(Error::build(
@@ -273,11 +271,23 @@ impl Parts {
                     "is longer than 253 bytes",
                 ));
             }
-            url.set_host(Some(&host))
+            self.url
+                .set_host(Some(&host))
                 .map_err(|_| Error::build(Some(self.meta), "host", "is not a valid host name"))?;
         }
+        Ok(())
+    }
+
+    /// Assembles the native request.
+    pub fn finish<R: Decode>(
+        self,
+        method: Method,
+        client: &reqwest::Client,
+        body: Option<(reqwest::Body, Option<&'static str>)>,
+    ) -> Result<Prepared<R>, Error> {
+        let mut url = self.url;
         if !self.segments.is_empty() || self.trailing_slash {
-            let mut path = base.prefix.clone();
+            let mut path = self.base.prefix.clone();
             for segment in &self.segments {
                 path.push('/');
                 path.push_str(segment);

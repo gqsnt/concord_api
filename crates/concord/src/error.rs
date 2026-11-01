@@ -114,9 +114,10 @@ impl Error {
 
     /// The underlying reqwest error (with its URL removed), for [`ErrorKind::Transport`].
     ///
-    /// Its own `source()` chain comes from hyper, TLS and DNS layers that Concord does not
-    /// control; it can contain the host name (for example in a certificate mismatch), including a
-    /// host built from a sensitive subdomain value.
+    /// **Not redacted below the top level:** its `source()` chain comes from reqwest, hyper, TLS
+    /// and DNS layers that Concord does not control; it can contain URLs (a redirect error's
+    /// source holds the redirect target, query included) and host names (a certificate
+    /// mismatch), including sensitive values.
     pub fn transport(&self) -> Option<&reqwest::Error> {
         match &self.inner.repr {
             Repr::Transport(error) => Some(error),
@@ -189,17 +190,20 @@ impl fmt::Debug for Error {
 }
 
 impl StdError for Error {
-    /// For transport errors, the reqwest error with its URL removed — except for endpoints whose
-    /// host contains a sensitive subdomain label: lower layers (for example a TLS name mismatch)
-    /// may print the host name, so the chain is withheld; [`Error::transport`] still returns it.
+    /// For transport errors, the reqwest error with its top-level URL removed — but only for
+    /// endpoints whose URL contains no sensitive placement. reqwest nests further errors that
+    /// can carry a URL (a redirect error's source holds the redirect target) and lower layers
+    /// print host names (a TLS name mismatch), so for an endpoint with a sensitive query key,
+    /// path segment or host label the chain is withheld; [`Error::transport`] still returns it.
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match &self.inner.repr {
             Repr::Transport(error) => {
-                let host_withheld = self
-                    .inner
-                    .endpoint
-                    .is_some_and(|m| !m.sensitive_labels.is_empty());
-                if host_withheld { None } else { Some(error) }
+                let url_has_secrets = self.inner.endpoint.is_some_and(|m| {
+                    !m.sensitive_labels.is_empty()
+                        || !m.sensitive_segments.is_empty()
+                        || !m.sensitive_query.is_empty()
+                });
+                if url_has_secrets { None } else { Some(error) }
             }
             _ => None,
         }

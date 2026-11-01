@@ -715,6 +715,9 @@ fn prepare_body(
             &format!("subdomain label `{}`", c.text),
         ));
     }
+    if !composed.labels.is_empty() {
+        code.extend(quote!(__p.host()?;));
+    }
     let mut sensitive_segments = Vec::new();
     for (i, &(o, si)) in composed.segments.iter().enumerate() {
         let c = &model.owners[o].segments[si];
@@ -777,8 +780,8 @@ fn prepare_body(
         };
         let __body = #body_code;
         #bindings
-        let mut __p = #k::__private::Parts::new(&__META);
+        let mut __p = #k::__private::Parts::new(&__META, &#root.__base);
         #code
-        __p.finish::<#repr>(#k::reqwest::Method::#method, &#root.__http, &#root.__base, __body)
+        __p.finish::<#repr>(#k::reqwest::Method::#method, &#root.__http, __body)
     }
 }

@@ -69,7 +69,7 @@ pub struct Param {
     pub default: Option<Expr>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Family {
     Query,
     Header,
