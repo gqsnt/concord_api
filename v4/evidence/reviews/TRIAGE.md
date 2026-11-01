@@ -126,3 +126,16 @@ First attempt (snapshot `caf7cb3` under the session's `/tmp` scratchpad) was int
 previous coordinator session ended; it produced no report (its partial log shows only read-only
 exploration). Re-run on `8d6ee22` — code identical to `caf7cb3`, plus the updated `v4/` records —
 from a snapshot worktree on `/home` (`/home/canarit/projects/concord_api_v4_review`).
+
+Result — `codex/gate6_focused_20261101T221117Z_8d6ee22.md` (GPT-6.1 Sol XHigh, read-only):
+
+| ID | Codex disposition | Coordinator action |
+|---|---|---|
+| C4-R-008 residual | resolved (`source()` empty; no other Concord formatter exposes nested reqwest text) | — |
+| C4-R-010 residual | resolved (peak-heap test discriminates buffer-then-discard; measurements are coordinator evidence) | — |
+| C4-R-014 | resolved (lockfile complete; locked resolution succeeds) | — |
+| C4-R-015 | resolved | — |
+| C4-R-016 | resolved by documentation | — |
+| C4-R-012 residual | partially: GATES claimed every cargo call is `--locked`, but the clippy and rustdoc steps were not; TEST_MATRIX L04 named a stale SHA | CONFIRMED and fixed in `8ae19ec` (`--locked` added in `verify.sh` and CI; reference corrected); full gate set re-run PASS at `8ae19ec`. This last change (verification script and records only) was not re-reviewed. |
+
+New blocker or high-severity defects in `33a88d9..8d6ee22`: none found by the reviewer.

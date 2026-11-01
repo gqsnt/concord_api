@@ -11,9 +11,14 @@ V3 preserved at tag `concord-v3-preserved`, `origin/main`, `origin/concord-v3` a
 | 0 Preservation and baseline | yes (`evidence/BASELINE.md`) | V3 build/test baseline recorded | — | yes |
 | 1 Research and blind design challenge | `DECISIONS.md`, research reports | — | blind Codex review before design; 4 independent Claude tracks | yes |
 | 2 Vertical slice | `2639b39` | `slice.rs` 7/7 | Codex Gate 2 (7 findings, all fixed) | yes |
-| 3 Values and composition | `24717e8` → `caf7cb3` | values, composition, hygiene, ui | Claude adversarial (10 fixed, 1 documented); Codex Gates 3/4 and final (all findings fixed or resolved by correcting the spec); Claude matrix audit (gaps closed) | see focused re-review below |
-| 4 Bodies, responses, sensitivity | `24717e8` → `caf7cb3` | bodies, representations, sensitivity, tls, heap check | as above | see focused re-review below |
-| 5 Hardening | docs, examples, perf, CI file, MSRV, locked verification | `scripts/verify.sh --msrv` all PASS at `caf7cb3` | Codex final review on `33a88d9`; focused re-review of its residuals on `caf7cb3` | see below |
+| 3 Values and composition | `24717e8` → `caf7cb3` | values, composition, hygiene, ui | Claude adversarial (10 fixed, 1 documented); Codex Gates 3/4 and final (all findings fixed or resolved by correcting the spec); Claude matrix audit (gaps closed); focused Codex re-review: resolved | yes, on Linux |
+| 4 Bodies, responses, sensitivity | `24717e8` → `caf7cb3` | bodies, representations, sensitivity, tls, heap check | as above | yes, on Linux |
+| 5 Hardening | docs, examples, perf, CI file, MSRV, locked verification (`8ae19ec`) | `scripts/verify.sh --msrv` all PASS at `8ae19ec` | Codex final review on `33a88d9`; focused re-review on `8d6ee22`: no blocker or high finding; last residual (documentation/script) fixed in `8ae19ec`, not re-reviewed | yes, on Linux; Windows and macOS unverified |
+
+**Acceptance statement.** V4 is accepted for Linux x86_64 (rustc 1.97.1, MSRV 1.85.1): every
+high-severity finding from the independent Codex and Claude reviews was reproduced, fixed and
+confirmed resolved by re-review; the remaining open items below are documented trade-offs or
+unmeasured areas, not defects. It is not accepted for Windows or macOS (never executed).
 
 Final-gate details, SHAs and exact results: `evidence/GATES.md`. Review triage:
 `evidence/reviews/TRIAGE.md`.
