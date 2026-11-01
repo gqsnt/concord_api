@@ -30,7 +30,7 @@ re-run on the same snapshot).
 
 ## Gate 5 — hardening
 
-Final run on `33a88d9` (clean tree), 2026-11-01, Linux x86_64, rustc 1.97.1; MSRV with rustc
+Final run on `33a88d9` (clean tree; its `Cargo.lock` lacked the entries for the `tokio-rustls`/`rustls-pki-types` test dev-dependencies, which cargo resolved locally without `--locked` — committed in the next lockfile commit), 2026-11-01, Linux x86_64, rustc 1.97.1; MSRV with rustc
 1.85.1. Command: `scripts/verify.sh --msrv` (the MSRV step was then extended with the
 `representations` and `tls` suites and re-run on the same source; result below).
 
