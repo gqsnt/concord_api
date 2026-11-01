@@ -230,10 +230,12 @@ impl<'a> Parts<'a> {
         }
     }
 
-    /// Adds one header line. `name` is a lowercase field name validated by the macro.
+    /// Adds one header line. The expansion builds `name` in a `const` block, so the native
+    /// `HeaderName` validator has accepted it at compile time; `what` is the same text.
     pub fn header<T: Display + ?Sized>(
         &mut self,
-        name: &'static str,
+        name: HeaderName,
+        what: &'static str,
         value: &T,
         sensitive: bool,
     ) -> Result<(), Error> {
@@ -244,21 +246,22 @@ impl<'a> Parts<'a> {
         {
             return Err(Error::build(
                 Some(self.meta),
-                name,
+                what,
                 "header value contains a control or non-ASCII character",
             ));
         }
         let mut value = HeaderValue::from_str(&text)
-            .map_err(|_| Error::build(Some(self.meta), name, "header value is invalid"))?;
+            .map_err(|_| Error::build(Some(self.meta), what, "header value is invalid"))?;
         value.set_sensitive(sensitive);
-        self.headers.append(HeaderName::from_static(name), value);
+        self.headers.append(name, value);
         Ok(())
     }
 
     /// Adds one header line per item, in iteration order.
     pub fn header_each<I>(
         &mut self,
-        name: &'static str,
+        name: HeaderName,
+        what: &'static str,
         values: I,
         sensitive: bool,
     ) -> Result<(), Error>
@@ -267,7 +270,7 @@ impl<'a> Parts<'a> {
         I::Item: Display,
     {
         for value in values {
-            self.header(name, &value, sensitive)?;
+            self.header(name.clone(), what, &value, sensitive)?;
         }
         Ok(())
     }

@@ -594,11 +594,18 @@ fn source_code(
             }
         }
     };
+    // Header names go through the native validator at compile time: the unnamed `const` item is
+    // always evaluated (even when `prepare` is never instantiated), so an invalid literal — e.g.
+    // longer than `http` allows — is a compile error; the `const` block builds the name without
+    // a runtime check or panic path.
+    let k = krate();
+    let name = quote!(const { #k::reqwest::header::HeaderName::from_static(#key) });
+    let guard = quote_spanned!(contrib.span=> const _: () = ::core::mem::forget(#k::reqwest::header::HeaderName::from_static(#key)););
     let call = match (id.family, each) {
         (Family::Query, false) => quote!(__p.query(#key, #arg);),
         (Family::Query, true) => quote!(__p.query_each(#key, #arg);),
-        (Family::Header, false) => quote!(__p.header(#key, #arg, #sensitive)?;),
-        (Family::Header, true) => quote!(__p.header_each(#key, #arg, #sensitive)?;),
+        (Family::Header, false) => quote!(#guard __p.header(#name, #key, #arg, #sensitive)?;),
+        (Family::Header, true) => quote!(#guard __p.header_each(#name, #key, #arg, #sensitive)?;),
     };
     (bound, call)
 }

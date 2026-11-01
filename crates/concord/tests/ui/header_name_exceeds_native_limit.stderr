@@ -1,0 +1,21 @@
+error[E0080]: evaluation panicked: HeaderName::from_static with invalid bytes
+ --> tests/ui/header_name_exceeds_native_limit.rs:3:1
+  |
+3 | / concord::api! {
+4 | |     pub client Api {
+5 | |         base "http://x.test";
+6 | |         headers { "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...
+... |
+9 | | }
+  | |_^ evaluation of `ApiList::prepare::_` failed inside this call
+  |
+note: inside `HeaderName::from_static`
+ --> $RUST/core/src/panic.rs
+  |
+  |         $crate::panicking::panic_fmt($crate::const_format_args!($($t)+));
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the failure occurred here
+  |
+ ::: $CARGO/http-$VERSION/src/header/name.rs
+  |
+  |             panic!("HeaderName::from_static with invalid bytes")
+  |             ---------------------------------------------------- in this macro invocation
