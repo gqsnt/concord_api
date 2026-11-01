@@ -1,5 +1,0 @@
-error: [C3-REP] request body `input` of endpoint `RequestFenceApi::fenced::missing` has no request representation (`request explicit` in RequestFenceApi::fenced blocks inherited defaults); declare `request R;` on an owner or write `body input: T via R`
-  --> tests/ui/fail/syntax/request_fence_requires_inline_representation.rs:15:31
-   |
-15 |             POST missing(body input: String) -> String;
-   |                               ^^^^^

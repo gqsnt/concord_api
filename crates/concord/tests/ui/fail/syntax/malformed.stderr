@@ -1,5 +1,0 @@
-error: [C3-OWNER] unsupported scope entry in scope `MalformedApi::resources`; expected a child scope or endpoint, or a `request`, `response`, `subdomain`, `path`, `query`, `headers`, `auth`, `timeout` or `rate_limit` clause
-  --> tests/ui/fail/syntax/malformed.rs:14:13
-   |
-14 |             FETCH by_id(endpoint_value: String) -> () via Empty {
-   |             ^^^^^

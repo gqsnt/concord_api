@@ -1,5 +1,0 @@
-error: [C3-OWNER] unsupported attribute on endpoint parameter of endpoint `InvalidBodyAttributeApi::submit`; supported attributes are docs, `#[deprecated]`, and (ordinary values only) `#[sensitive]` and `#[default]`
-  --> tests/ui/fail/syntax/invalid_body_attribute.rs:12:21
-   |
-12 |         POST submit(#[body(replay)] payload: Text) -> Bytes via Binary;
-   |                     ^

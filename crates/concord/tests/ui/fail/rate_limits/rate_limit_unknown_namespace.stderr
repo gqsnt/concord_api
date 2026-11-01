@@ -1,5 +1,0 @@
-error: [C3-NAME] `other` is not the client or a visible ancestor scope of client `Api`; qualify with `client.` or the name of an enclosing scope
-  --> tests/ui/fail/rate_limits/rate_limit_unknown_namespace.rs:11:29
-   |
-11 |             key ["tenant" = other.tenant];
-   |                             ^^^^^
