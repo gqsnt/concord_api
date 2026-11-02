@@ -37,7 +37,9 @@ impl<T> Prepared<T> {
         }
     }
 
-    /// The native request, for inspection. Its `Debug` output is **not** redacted.
+    /// The native request, for inspection. Its `Debug` output is **not** Concord's: it prints the full
+    /// URL, sensitive query values and path segments included; only header values Concord flagged
+    /// sensitive are masked (reqwest prints them as `Sensitive`).
     pub fn request(&self) -> &reqwest::Request {
         &self.request
     }

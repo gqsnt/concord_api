@@ -137,7 +137,8 @@ What to know about values:
   place among them). Keep them few; give extra inputs a default or make them optional.
 - **Initializers** (`= expr`) are any Rust expression, evaluated once each time the owner is
   created — `new` for the client, each scope entry, each endpoint call — even if a setter replaces
-  the value right after. Cloning, setters, `prepare` and `send` never evaluate them. The
+  the value right after (so keep side effects out of initializers whose value callers often
+  replace). Cloning, setters, `prepare` and `send` never evaluate them. The
   expression is compiled in a nested function: it can use items of the module (constants,
   functions), not other values or arguments.
 - **No reset.** `maybe_x(None)` on an initialized optional value makes it *absent*; it does not
@@ -343,7 +344,9 @@ the owner inherits.
 
 `remove` is static. To let each call choose between the inherited value, no value, and its own
 value, declare an optional `Option<T>` and override with `each ... else inherit`: absent inherits,
-`None` sends nothing (zero items), `Some(v)` replaces.
+`None` sends nothing (zero items), `Some(v)` replaces. The choice exists where it is declared:
+give each endpoint that offers it its own value and `override` (declared on a scope instead, it is
+made once for every request created from that scope handle).
 
 ```rust
 use concord::reqwest;
@@ -591,6 +594,9 @@ output Concord produces: the generated `Debug` of clients, scopes and requests, 
   `api-key`, `apikey`, `x-auth-token`, `auth-token`, `access-token`, `refresh-token`, `id-token`,
   `token`, `client-secret`, `secret`, `password`, `signature` or `session` (compared lowercase,
   `_` as `-`) are treated as sensitive without the marker.
+- Prefer `#[sensitive]` on every secret even when its key is on this list: the name rule follows
+  the key, so renaming the header to a name not on the list would silently stop the redaction,
+  while the marker follows the value.
 - Sensitivity is sticky along the chain: a later public override does not make a key public.
 - A value that feeds a sensitive key is itself withheld, everywhere it appears.
 - `#[sensitive]` applies to values, not bodies: Concord never renders bodies.

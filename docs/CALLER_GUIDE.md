@@ -236,7 +236,8 @@ local stand-in server.)
   `Result<Prepared<T>, Error>`, `T` being the declared output (`()` without `->`). A value that
   cannot form a valid request (an empty path segment, an invalid header value or host label) is an
   error of kind `Build`. `Prepared`'s `Debug` is redacted; `request()` gives read-only access to
-  the native request, whose own `Debug` is **not** redacted.
+  the native request, whose own `Debug` prints the full URL (sensitive query values and path
+  segments included; flagged header values show as `Sensitive`).
 - `send()` is `prepare()?.send()`: one `reqwest::Client::execute`, a 2xx check, then decoding with
   the declared representation. No retry, no extra request.
 - `send_raw()` on a prepared request returns the native response, status unchecked, body unread.
@@ -375,7 +376,8 @@ More: the [recipes](RECIPES.md) (streaming, multipart, interleaved query paramet
 Covered — output produced by Concord:
 
 - the generated `Debug` of clients, config structs, scopes and requests (they show values through
-  `Display`, so numbers appear quoted: `limit: "20"`);
+  `Display`, so numbers appear quoted: `limit: "20"`). Each shows only its own values — a request
+  does not repeat its scope's or client's; for the whole request use `Prepared`'s `Debug`;
 - `Prepared`'s `Debug`: sensitive query values, path segments and host labels appear as
   `<redacted>`, sensitive headers as `name: <redacted>`;
 - `Error`'s `Display` and `Debug`.
@@ -387,8 +389,9 @@ They are always sent.
 
 Not covered:
 
-- the native `reqwest::Request`, `Url` and `Response` `Debug` (it prints the full URL) — including
-  `prepared.request()` and anything after `into_parts()`;
+- the native `reqwest::Request`, `Url` and `Response` `Debug` — including `prepared.request()` and
+  anything after `into_parts()`. It prints the full URL, sensitive query values and path segments
+  included; header values Concord flagged sensitive print as `Sensitive` (reqwest's own masking);
 - `Error::transport()` and `Error::body_source()`, and reqwest errors from requests you execute
   yourself;
 - redirects: reqwest forwards custom headers and sends a `Referer` with the query;

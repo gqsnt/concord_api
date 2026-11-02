@@ -120,13 +120,28 @@ fn value_notes(model: &Model) -> Vec<Vec<Vec<String>>> {
                 Family::Header => "header",
             };
             for c in list.iter().filter(|c| c.op != Op::Remove) {
-                let reads = match &c.source {
-                    Some(Source::Ref { value, .. }) => vec![*value],
-                    Some(Source::Template { pieces }) => holes(pieces),
-                    None => Vec::new(),
+                let (reads, each) = match &c.source {
+                    Some(Source::Ref { value, each }) => (vec![*value], *each),
+                    Some(Source::Template { pieces }) => (holes(pieces), false),
+                    None => (Vec::new(), false),
                 };
                 for r in reads {
-                    add(&mut places, r, placement_label(family, &c.key).value());
+                    let mut label = placement_label(family, &c.key).value();
+                    if each {
+                        label.push_str(" (one occurrence per item)");
+                    }
+                    add(&mut places, r, label);
+                    if c.op == Op::Override && each && model.value(r).optional {
+                        let x = plain(&model.value(r).name);
+                        add(
+                            &mut fallbacks,
+                            r,
+                            format!(
+                                " Per call: `maybe_{x}(None)` (the default) keeps the inherited `{}`; `set_{x}(v)` replaces it with one occurrence per item of `v`, and with nothing at all when `v` has no items (for example `None` or an empty collection).",
+                                c.key
+                            ),
+                        );
+                    }
                     if c.op == Op::Override && model.value(r).optional {
                         add(
                             &mut fallbacks,
