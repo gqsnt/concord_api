@@ -61,6 +61,7 @@ SUITE (OUT/, one cargo workspace; member names are the package names)
   scale_shared                   `shared`: 200 endpoints, C = 16 (56 inherited contributions each)
   scale_typed                    `typed`: 200 endpoints (160 inheriting a format default, 40
                                  in-place exceptions)
+  scale_fanout                   `fanout`: one value feeding 4,000 distinct query keys
   use5, use100, use1000          binaries calling 5 / 100 / 1,000 of scale1000's endpoints
   fan_a, fan_b                   libraries calling 100 endpoints of scale1000 each (50 in common)
   fan_app                        binary depending on fan_a and fan_b (two-crate fanout)
@@ -83,7 +84,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONCORD = os.path.normpath(os.path.join(HERE, "..", "..", "crates", "concord"))
-GENERATOR_VERSION = 4
+GENERATOR_VERSION = 5
 
 # Declaration/caller syntax, so that the same workload can be generated for an A/B comparison of
 # Concord versions:
@@ -399,6 +400,7 @@ def cmd_suite(args):
         {"shape": "shared", "endpoints": 200, "contribs": 16, "inherited_per_endpoint": 56})
     api("scale_typed", shape_typed(200),
         {"shape": "typed", "endpoints": 200, "inheriting": 160, "in_place": 40})
+    api("scale_fanout", shape_fanout(4000), {"shape": "fanout", "placements": 4000})
 
     deps = ["concord = { workspace = true }", 'scale1000 = { path = "../scale1000" }']
     for k in (5, 100, 1000):

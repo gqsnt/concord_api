@@ -40,6 +40,7 @@ ROWS_ALL=(
   "rel-scale_shared|scale_shared/src/lib.rs|build --release -p scale_shared"
   "check-scale_typed|scale_typed/src/lib.rs|check -p scale_typed"
   "rel-scale_typed|scale_typed/src/lib.rs|build --release -p scale_typed"
+  "check-scale_fanout|scale_fanout/src/lib.rs|check -p scale_fanout"
 )
 
 # Warm every suite (dependencies and all members, dev and release) outside timing.

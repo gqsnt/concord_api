@@ -82,6 +82,8 @@ threshold 1%).
 cargo bench -p concord-bench --bench runtime -- --save-baseline v4-pre
 # On revision B, same machine, same conditions:
 cargo bench -p concord-bench --bench runtime -- --baseline v4-pre     # compares; does not overwrite v4-pre
+# --baseline aborts at the first ID the baseline lacks (e.g. a variant added since); use
+# --baseline-lenient v4-pre when IDs were added.
 python3 -I benches/criterion/summarize.py --baseline v4-pre --criterion-change > comparison.md
 ```
 
