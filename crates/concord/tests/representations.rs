@@ -252,3 +252,22 @@ fn content_type_error_precedes_path_error() {
         .unwrap_err();
     assert!(error.to_string().contains("content-type"), "{error}");
 }
+
+/// D13: `into_response` hands back the unread response of a status error and returns any other
+/// error unchanged, so `?` propagates it (it used to drop non-status errors).
+#[tokio::test]
+async fn into_response_keeps_other_errors() {
+    let (_server, api) = reps(Reply::text(503, "busy")).await;
+    let e = api.text_out().send().await.unwrap_err();
+    let response = e.into_response().unwrap();
+    assert_eq!(response.status(), 503);
+    assert_eq!(response.text().await.unwrap(), "busy");
+
+    let unreachable = Reps::new(reqwest::Client::new())
+        .with_base_url("http://127.0.0.1:1")
+        .unwrap();
+    let e = unreachable.text_out().send().await.unwrap_err();
+    let e = e.into_response().unwrap_err();
+    assert_eq!(e.kind(), ErrorKind::Transport);
+    assert_eq!(e.endpoint(), Some("Reps.text_out"));
+}

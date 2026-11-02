@@ -227,7 +227,8 @@ representation and no inference from `T`.
 ## 8. Errors
 
 `concord::Error` has `kind()` ∈ {`Build`, `Transport`, `Status`, `Decode`}, `endpoint()`
-(`Client.scope.endpoint`), `status()`, `into_response()`, `transport()` and `body_source()`.
+(`Client.scope.endpoint`), `status()`, `into_response()` (`Ok(unread response)` for a status
+error, `Err(self)` otherwise), `transport()` and `body_source()`.
 
 - `Display` is `METHOD Client.scope.endpoint: <stage message>` and contains only static text: the
   failing placement's template (e.g. ``path segment `{id}` ``), the header name, the status code and

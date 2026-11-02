@@ -103,12 +103,30 @@ impl Error {
         }
     }
 
-    /// The unread non-2xx response, for [`ErrorKind::Status`]. Concord never reads or prints its
-    /// body; use it to decode an API error document.
-    pub fn into_response(self) -> Option<reqwest::Response> {
-        match self.inner.repr {
-            Repr::Status(response) => Some(response),
-            _ => None,
+    /// The unread non-2xx response of an [`ErrorKind::Status`] error; any other error is returned
+    /// unchanged as `Err`. Concord never reads or prints the body: use it to decode an API error
+    /// document, for example with `<Json as Decode<Problem>>::decode(response.bytes().await?)`.
+    ///
+    /// ```no_run
+    /// # async fn run(request: impl std::future::Future<Output = Result<(), concord::Error>>)
+    /// # -> Result<(), concord::Error> {
+    /// match request.await {
+    ///     Ok(()) => {}
+    ///     Err(e) => {
+    ///         let response = e.into_response()?; // not a status error: propagate it
+    ///         let status = response.status();
+    ///         # let _ = status;
+    ///     }
+    /// }
+    /// # Ok(()) }
+    /// ```
+    pub fn into_response(self) -> Result<reqwest::Response, Error> {
+        let Inner { endpoint, repr } = *self.inner;
+        match repr {
+            Repr::Status(response) => Ok(response),
+            repr => Err(Error {
+                inner: Box::new(Inner { endpoint, repr }),
+            }),
         }
     }
 
