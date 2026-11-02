@@ -1,0 +1,6 @@
+{
+  "git": {
+    "sha1": "bed9fd29d336c30be4735a6d545d2c7ee19b6355"
+  },
+  "path_in_vcs": "crates/concord-macros"
+}

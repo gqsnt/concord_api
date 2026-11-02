@@ -1,0 +1,17 @@
+   Compiling focused-rereview v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/rereview-1174d5d/target/probes/focused)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.60s
+     Running unittests src/lib.rs (target/probe-build/debug/deps/focused_rereview-3d379df38a1c1974)
+
+running 9 tests
+test tests::build_errors_omit_sensitive_value ... ok
+test tests::declared_marker_redacts_config_client_scope_request_prepared ... ok
+test tests::text_controls_keep_contents_and_flags ... ok
+test tests::repeated_and_optional_composition ... ok
+test tests::across_endpoints_and_cfg_classification ... ok
+test tests::names_classify_all_uses ... ok
+test tests::dual_use_transport_error ... ok
+test tests::native_sensitive_header_and_status_error ... ok
+test tests::dual_use_status_error_and_wire ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

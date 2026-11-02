@@ -79,3 +79,27 @@ by Codex.
 | F4 | P3 | `PERF.md` claimed ±1% intervals for every row and rlibs within 0.5% | FIXED (records) | two rows marked † (±43%, ±8.6%); rlibs +0.03% to +1.15%; figures recomputed from the archived summaries and `sizes.tsv` |
 | cleanup | — | a reviewer documentation server (`127.0.0.1:44975`) outlived its session | RESOLVED | identity checked (started during the review, working directory the review snapshot, `http.server`), stopped by the coordinator |
 | receipt | — | `evidence/verify_66a4478.txt` was absent from the reviewed snapshot | NOTED | it was committed after `66a4478` (`5e6d244`), so the snapshot could not contain it |
+
+## Codex focused executable re-review of `1174d5d`
+
+- Reviewer: `gpt-6.1-sol`, `xhigh` (session `turn_context`), execute mode in the fresh snapshot
+  `rereview-1174d5d` (HEAD `bed9fd2`), loopback only, private `CARGO_HOME`, fresh target directory;
+  2026-11-02 07:29–07:35 UTC; all 806 origin files unchanged; no server left running. Report
+  `rereview_1174d5d_report.md` (sha256 `5c8329a2…`), probes in `rereview_1174d5d_evidence/`.
+- Personally executed: the F1 reproducer and 40 compiler bypass cases per toolchain (optional and
+  `each` values, `Box`/`Arc`/`Cow`/`&`, aliases, enclosing-owner references, separate endpoints,
+  `override`/`append`, subdomains, sensitive key names, `#[cfg]`, renamed dependency) — all with
+  the expected outcome; 9 runtime checks per toolchain (text controls, declared-sensitive dual
+  use, owner/`Prepared` `Debug`, build/transport/status errors, raw-wire positive controls);
+  package check with a foreign `CARGO_TARGET_DIR` and locked packaged consumers on stable,
+  no-default and 1.85; migration reproducers; archive reconciliation for F4;
+  `verify.sh --msrv --package` (all PASS; 535 / 416 / 96 / 11). Not run: benchmarks, nightly,
+  visual rustdoc. Verdict: **REVISE** (F3 only).
+
+| ID | Disposition | Evidence |
+|---|---|---|
+| F1 | RESOLVED | as above |
+| F2 | RESOLVED | as above |
+| F4 | RESOLVED | intervals 43.24% / 8.56%, rlibs +0.0306% to +1.1543%, consistent with the corrected record |
+| F3 / F3a (P2) | NOT RESOLVED → FIXED in `b77084a` | the file-wide import scan ignored Rust scope, `cfg` and comments (`use concord::Text` in another module or a comment still mapped a downstream `Text`). Now only `concord::`-qualified markers become words; every other path is kept (same type). `migrate_via.py --self-test` includes the reviewer's scoped and commented imports (mutation-checked: mapping bare names again fails it); `formats.rs::migrated_marker_paths_behave_like_the_words` |
+

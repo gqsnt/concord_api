@@ -1,0 +1,18 @@
+[package]
+name = "package-consumer"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[features]
+default = ["json"]
+json = ["concord/json"]
+
+[dependencies]
+concord = { path = "../concord-4.0.0-alpha.1", default-features = false, features = ["reqwest-defaults"] }
+serde = { version = "1", features = ["derive"] }
+
+[patch.crates-io]
+concord-macros = { path = "../concord-macros-4.0.0-alpha.1" }
+
+[workspace]

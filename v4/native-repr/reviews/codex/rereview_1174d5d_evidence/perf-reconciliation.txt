@@ -1,0 +1,63 @@
+Archive estimate counts: {'a915c8d': 171, 'cand-aaa5a3c': 180, 'run3-aaa5a3c': 180}
+construct/minimal/concord/prepare | a915c8d | mean 138.526458 ns | 95% CI 138.165874..138.927730 | max deviation 0.2897%
+construct/minimal/concord/prepare | cand-aaa5a3c | mean 140.003497 ns | 95% CI 139.661519..140.400509 | max deviation 0.2836%
+construct/minimal/concord/prepare | run3-aaa5a3c | mean 145.342755 ns | 95% CI 144.806370..145.939196 | max deviation 0.4104%
+construct/realistic_all_present/concord/prepare | a915c8d | mean 1550.437183 ns | 95% CI 1545.442231..1556.439218 | max deviation 0.3871%
+construct/realistic_all_present/concord/prepare | cand-aaa5a3c | mean 1400.917965 ns | 95% CI 1393.891258..1409.341186 | max deviation 0.6013%
+construct/realistic_all_present/concord/prepare | run3-aaa5a3c | mean 1414.444957 ns | 95% CI 1409.412029..1420.016597 | max deviation 0.3939%
+construct/realistic_optional_absent/concord/prepare | a915c8d | mean 1001.879482 ns | 95% CI 999.738207..1005.104080 | max deviation 0.3219%
+construct/realistic_optional_absent/concord/prepare | cand-aaa5a3c | mean 853.169468 ns | 95% CI 848.628346..858.073267 | max deviation 0.5748%
+construct/realistic_optional_absent/concord/prepare | run3-aaa5a3c | mean 900.802311 ns | 95% CI 860.573875..977.947481 | max deviation 8.5641%
+construct/s2_product_scoped/concord/prepare | a915c8d | mean 786.191816 ns | 95% CI 784.335686..788.683276 | max deviation 0.3169%
+construct/s2_product_scoped/concord/prepare | cand-aaa5a3c | mean 717.329320 ns | 95% CI 713.816037..721.083326 | max deviation 0.5233%
+construct/s2_product_scoped/concord/prepare | run3-aaa5a3c | mean 731.020050 ns | 95% CI 727.857010..734.328329 | max deviation 0.4526%
+compose/inherit/concord/prepare | a915c8d | mean 481.267134 ns | 95% CI 480.515253..482.211471 | max deviation 0.1962%
+compose/inherit/concord/prepare | cand-aaa5a3c | mean 412.068867 ns | 95% CI 409.935697..414.859275 | max deviation 0.6772%
+compose/inherit/concord/prepare | run3-aaa5a3c | mean 406.832255 ns | 95% CI 405.613128..408.485668 | max deviation 0.4064%
+compose/deep8_reused_scope/concord/prepare | a915c8d | mean 1492.272485 ns | 95% CI 1486.213314..1500.378006 | max deviation 0.5432%
+compose/deep8_reused_scope/concord/prepare | cand-aaa5a3c | mean 1344.645943 ns | 95% CI 1341.817650..1348.116209 | max deviation 0.2581%
+compose/deep8_reused_scope/concord/prepare | run3-aaa5a3c | mean 1347.018583 ns | 95% CI 1345.009289..1349.549347 | max deviation 0.1879%
+headers/16/concord_text/prepare | a915c8d | mean 1076.109225 ns | 95% CI 1074.568221..1077.925915 | max deviation 0.1688%
+headers/16/concord_text/prepare | cand-aaa5a3c | mean 1121.372927 ns | 95% CI 878.276128..1606.287555 | max deviation 43.2429%
+headers/16/concord_text/prepare | run3-aaa5a3c | mean 879.290497 ns | 95% CI 876.188337..882.690322 | max deviation 0.3867%
+headers/16/concord_numeric/prepare | a915c8d | mean 1208.541007 ns | 95% CI 1204.616552..1213.558447 | max deviation 0.4152%
+headers/16/concord_numeric/prepare | cand-aaa5a3c | mean 964.474866 ns | 95% CI 961.382676..967.874814 | max deviation 0.3525%
+headers/16/concord_numeric/prepare | run3-aaa5a3c | mean 960.133196 ns | 95% CI 956.606379..964.285394 | max deviation 0.4325%
+headers/16/concord_native/prepare | cand-aaa5a3c | mean 713.161929 ns | 95% CI 710.632247..715.725633 | max deviation 0.3595%
+headers/16/concord_native/prepare | run3-aaa5a3c | mean 702.443410 ns | 95% CI 701.344244..703.636173 | max deviation 0.1698%
+headers/16/concord_literal/prepare | cand-aaa5a3c | mean 680.096743 ns | 95% CI 676.986435..683.362618 | max deviation 0.4802%
+headers/16/concord_literal/prepare | run3-aaa5a3c | mean 678.774177 ns | 95% CI 677.518400..680.327128 | max deviation 0.2288%
+headers/4/concord_native/prepare | cand-aaa5a3c | mean 235.683526 ns | 95% CI 234.947681..236.477679 | max deviation 0.3370%
+headers/4/concord_native/prepare | run3-aaa5a3c | mean 236.479126 ns | 95% CI 235.763079..237.279418 | max deviation 0.3384%
+headers/4/concord_literal/prepare | cand-aaa5a3c | mean 219.669600 ns | 95% CI 219.220804..220.247453 | max deviation 0.2631%
+headers/4/concord_literal/prepare | run3-aaa5a3c | mean 224.160704 ns | 95% CI 223.598344..224.726255 | max deviation 0.2523%
+headers/1/concord_native/prepare | cand-aaa5a3c | mean 145.601412 ns | 95% CI 145.258663..145.985509 | max deviation 0.2638%
+headers/1/concord_native/prepare | run3-aaa5a3c | mean 150.844744 ns | 95% CI 150.395596..151.302673 | max deviation 0.3036%
+headers/1/concord_literal/prepare | cand-aaa5a3c | mean 145.103303 ns | 95% CI 144.801198..145.555330 | max deviation 0.3115%
+headers/1/concord_literal/prepare | run3-aaa5a3c | mean 146.263458 ns | 95% CI 145.804641..146.760617 | max deviation 0.3399%
+body_encode/bytes/100B/concord/prepare | a915c8d | mean 184.159630 ns | 95% CI 183.638677..184.783272 | max deviation 0.3386%
+body_encode/bytes/100B/concord/prepare | cand-aaa5a3c | mean 208.590096 ns | 95% CI 207.847707..209.504922 | max deviation 0.4386%
+body_encode/bytes/100B/concord/prepare | run3-aaa5a3c | mean 205.835612 ns | 95% CI 204.961165..206.839686 | max deviation 0.4878%
+body_encode/json/100B/concord/prepare | a915c8d | mean 481.392667 ns | 95% CI 480.636842..482.385349 | max deviation 0.2062%
+body_encode/json/100B/concord/prepare | cand-aaa5a3c | mean 483.727250 ns | 95% CI 482.821615..485.031776 | max deviation 0.2697%
+body_encode/json/100B/concord/prepare | run3-aaa5a3c | mean 499.022056 ns | 95% CI 498.165089..499.998530 | max deviation 0.1957%
+body_encode/json/1MB/concord/prepare | a915c8d | mean 1126573.061333 ns | 95% CI 1124826.884954..1128459.614757 | max deviation 0.1675%
+body_encode/json/1MB/concord/prepare | cand-aaa5a3c | mean 1153599.121068 ns | 95% CI 1152687.190546..1154628.082304 | max deviation 0.0892%
+body_encode/json/1MB/concord/prepare | run3-aaa5a3c | mean 1038691.808279 ns | 95% CI 1037577.840051..1039834.048249 | max deviation 0.1100%
+decode/json/10KB/concord/decode | a915c8d | mean 21266.636687 ns | 95% CI 21215.915124..21330.437208 | max deviation 0.3000%
+decode/json/10KB/concord/decode | cand-aaa5a3c | mean 21231.622241 ns | 95% CI 21182.497067..21302.283226 | max deviation 0.3328%
+decode/json/10KB/concord/decode | run3-aaa5a3c | mean 21341.751326 ns | 95% CI 21291.205412..21413.527553 | max deviation 0.3363%
+roundtrip/small/concord/send | a915c8d | mean 8247.308133 ns | 95% CI 8243.759216..8251.152029 | max deviation 0.0466%
+roundtrip/small/concord/send | cand-aaa5a3c | mean 8220.324396 ns | 95% CI 8217.875497..8222.840671 | max deviation 0.0306%
+roundtrip/small/concord/send | run3-aaa5a3c | mean 8511.179115 ns | 95% CI 8438.056649..8586.128902 | max deviation 0.8806%
+Exactly the two documented confidence exceptions: [('construct/realistic_optional_absent/concord/prepare', 'run3-aaa5a3c', 8.564051029182759), ('headers/16/concord_text/prepare', 'cand-aaa5a3c', 43.242940587226165)]
+Release sizes:
+use5: 2398656 -> 2398232 bytes (-0.017677%)
+use100: 2877680 -> 2878040 bytes (+0.012510%)
+use1000: 6417656 -> 6425208 bytes (+0.117675%)
+fan_app: 3465040 -> 3465256 bytes (+0.006234%)
+libscale1000.rlib: 36370394 -> 36402578 bytes (+0.088490%)
+libscale_deep.rlib: 7252300 -> 7254516 bytes (+0.030556%)
+libscale_shared.rlib: 30193408 -> 30349566 bytes (+0.517192%)
+libscale_typed.rlib: 4549844 -> 4602364 bytes (+1.154325%)
+PASS: corrected PERF.md F4 statements match archived estimates and sizes. No benchmark executed.

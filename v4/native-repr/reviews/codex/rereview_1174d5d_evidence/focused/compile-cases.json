@@ -1,0 +1,162 @@
+{
+  "original": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "wrapper_1": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "wrapper_2": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "wrapper_3": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "wrapper_4": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "wrapper_5": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "wrapper_6": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "wrapper_7": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "optional": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "defaulted": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "option_each": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "vec_each": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "wrapped_each": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "optional_each": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "optional_type": {
+    "ok": false,
+    "diagnostic": "written as text here and has no `Display`"
+  },
+  "direct_placement": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "subdomain": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "template_only": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "owner_reference": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "scope_reference": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "separate_endpoints": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "override": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "append": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "optional_override": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "cfg_enabled": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "cfg_disabled": {
+    "ok": true,
+    "diagnostic": null
+  },
+  "cfg_owner_text": {
+    "ok": false,
+    "diagnostic": "placed both as a header value and as text"
+  },
+  "sensitive_marker": {
+    "ok": true,
+    "diagnostic": null
+  },
+  "sensitive_header_name": {
+    "ok": true,
+    "diagnostic": null
+  },
+  "sensitive_query_name": {
+    "ok": true,
+    "diagnostic": null
+  },
+  "header_only": {
+    "ok": true,
+    "diagnostic": null
+  },
+  "string": {
+    "ok": true,
+    "diagnostic": null
+  },
+  "integer": {
+    "ok": true,
+    "diagnostic": null
+  },
+  "boolean": {
+    "ok": true,
+    "diagnostic": null
+  },
+  "ordinary_wrapper_0": {
+    "ok": true,
+    "diagnostic": null
+  },
+  "ordinary_wrapper_1": {
+    "ok": true,
+    "diagnostic": null
+  },
+  "ordinary_wrapper_2": {
+    "ok": true,
+    "diagnostic": null
+  },
+  "ordinary_wrapper_3": {
+    "ok": true,
+    "diagnostic": null
+  },
+  "ordinary_wrapper_4": {
+    "ok": true,
+    "diagnostic": null
+  },
+  "ordinary_each": {
+    "ok": true,
+    "diagnostic": null
+  }
+}

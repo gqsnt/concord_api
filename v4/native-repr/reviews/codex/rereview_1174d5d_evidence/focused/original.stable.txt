@@ -1,0 +1,103 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+    Checking stable_deref_trait v1.2.1
+   Compiling libc v0.2.191
+    Checking writeable v0.6.4
+    Checking pin-project-lite v0.2.17
+    Checking litemap v0.8.3
+    Checking futures-core v0.3.34
+   Compiling icu_properties_data v2.1.2
+   Compiling icu_normalizer_data v2.1.1
+    Checking smallvec v1.16.4
+    Checking itoa v1.0.18
+    Checking bytes v1.12.1
+    Checking percent-encoding v2.3.2
+    Checking futures-task v0.3.34
+    Checking slab v0.4.12
+    Checking utf_types v1.0.0
+   Compiling httparse v1.10.1
+    Checking tower-service v0.3.3
+    Checking once_cell v1.21.4
+    Checking try-lock v0.2.5
+    Checking sync_wrapper v1.0.2
+    Checking tower-layer v0.3.3
+    Checking want v0.3.2
+    Checking form_urlencoded v1.2.2
+    Checking atomic-waker v1.1.2
+    Checking futures-channel v0.3.34
+    Checking ipnet v2.12.2
+    Checking futures-util v0.3.34
+    Checking bitflags v2.13.2
+    Checking base64 v0.23.1
+    Checking tracing-core v0.1.36
+    Checking log v0.4.35
+    Checking utf8_iter v1.1.0
+    Checking tracing v0.1.44
+    Checking http v1.5.0
+   Compiling syn v3.0.9
+    Checking http-body v1.1.0
+    Checking http-body-util v0.1.5
+    Checking mio v1.2.4
+    Checking socket2 v0.6.5
+   Compiling synstructure v0.14.0
+   Compiling zerovec-derive v0.11.7
+   Compiling displaydoc v0.2.7
+   Compiling tokio-macros v2.7.2
+   Compiling concord-macros v4.0.0-alpha.1 (/home/canarit/projects/concord_v4_native_work/snapshots/rereview-1174d5d/crates/concord-macros)
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+    Checking tokio v1.54.1
+    Checking zerofrom v0.1.8
+    Checking yoke v0.8.4
+    Checking zerotrie v0.2.5
+    Checking zerovec v0.11.9
+    Checking tinystr v0.8.5
+    Checking potential_utf v0.1.6
+    Checking icu_collections v2.1.1
+    Checking icu_locale_core v2.1.1
+    Checking icu_provider v2.1.1
+    Checking icu_normalizer v2.1.1
+    Checking icu_properties v2.1.2
+    Checking tower v0.5.3
+    Checking hyper v1.12.0
+    Checking idna_adapter v1.2.1
+    Checking idna v1.1.0
+    Checking url v2.5.8
+    Checking hyper-util v0.1.21
+    Checking tower-http v0.6.11
+    Checking reqwest v0.13.5
+    Checking concord v4.0.0-alpha.1 (/home/canarit/projects/concord_v4_native_work/snapshots/rereview-1174d5d/crates/concord)
+    Checking focused-rereview v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/rereview-1174d5d/target/probes/focused)
+error[E0277]: `Dual` is placed both as a header value and as text
+   --> src/bin/original.rs:13:56
+    |
+ 13 | ...mple.test"; GET go(v: Dual) { path "{v}"; query { "q" = v; } headers { "x-dual" = v; "x-copy" = "{v}"; } } }
+    |                          ^^^^ used as a whole header value and in a path, subdomain, query value or template
+    |
+help: the trait `concord::__private::TextHeader` is not implemented for `Dual`
+   --> src/bin/original.rs:5:1
+    |
+  5 | pub struct Dual(pub &'static str);
+    | ^^^^^^^^^^^^^^^
+    = note: a header value that is also written as text must be text itself (`String`, `&str`, an integer or `bool`): a type's own `ToHeaderValue` can mark its header value sensitive, which a path, query value or template cannot see
+    = note: send this header as text through a template (`headers { "name" = "{value}"; }`), use a separate value for the header, or mark the value `#[sensitive]`
+    = help: the following other types implement trait `concord::__private::TextHeader`:
+              &T
+              Arc<T>
+              Box<T>
+              Cow<'_, T>
+              Rc<T>
+              String
+              bool
+              i16
+            and 10 others
+note: required by a bound in `concord::__private::Parts::<'a>::header_text`
+   --> /home/canarit/projects/concord_v4_native_work/snapshots/rereview-1174d5d/crates/concord/src/__private.rs:392:27
+    |
+392 |     pub fn header_text<T: TextHeader + ?Sized>(
+    |                           ^^^^^^^^^^ required by this bound in `Parts::<'a>::header_text`
+    = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `wire::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `focused-rereview` (bin "original") due to 1 previous error
