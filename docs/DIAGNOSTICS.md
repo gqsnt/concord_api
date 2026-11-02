@@ -18,6 +18,12 @@ Two kinds of messages appear:
 
 None of these messages contains a runtime value: compile-time errors only quote the declaration.
 
+A declaration with an error generates nothing, so code that uses the client elsewhere reports
+unresolved names too: fix the `api!` error first. One exception, for the usual state while you
+write a declaration: a value that is declared but not yet used is reported and rejected, but the
+client is still generated, so its uses keep resolving
+([`unused_value_keeps_the_client.rs`](../crates/concord/tests/ui/unused_value_keeps_the_client.rs)).
+
 ## Names
 
 ### A value of an enclosing owner, used without qualification
@@ -52,7 +58,7 @@ error: `locale` is not a value of `Api.item`; to use the value of an enclosing o
 Excerpt of [`unknown_value.stderr`](../crates/concord/tests/ui/unknown_value.stderr):
 
 ```text
-error: `idd` is not a value of `Api.item`
+error: `idd` is not a value of `Api.item`; did you mean `id`?
  --> tests/ui/unknown_value.rs:4:37
   |
 4 |         GET item(id: String) { path "items/{idd}"; query { "id" = id; } }
@@ -60,6 +66,24 @@ error: `idd` is not a value of `Api.item`
 ```
 
 **Fix:** correct the name, or declare the value on this owner.
+
+### A Rust constant on the right of `=`
+
+In a block, the left of `=` is a key (a literal, or a Rust path to a `HeaderName` for a header) and
+the right is a value: a template or a declared value's name. A Rust constant is neither. Excerpt
+of [`header_constant_as_value.stderr`](../crates/concord/tests/ui/header_constant_as_value.stderr):
+
+```text
+error: `JSON` is not a value of `Api`; the right of `=` and `{..}` holes name values declared in a parameter list (a Rust constant is not one: declare a value initialized from it, `json: T = ..`)
+  --> tests/ui/header_constant_as_value.rs:10:28
+   |
+10 |         headers { ACCEPT = JSON; }
+   |                            ^^^^
+```
+
+**Fix:** write the literal (`ACCEPT = "application/json";`), or declare a value initialized from
+the constant and place it: `header(ACCEPT) accept: &'static str = JSON`. On the left, a path that is
+not a `HeaderName` is rustc's `` `&str` is not a native header name `` from the same fixture.
 
 ## Required values
 

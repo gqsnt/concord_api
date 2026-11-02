@@ -26,6 +26,22 @@ CONCORD DEFECT (harness, brief or fixture). Trial reports: `trials/terra-xhigh.m
 | U15 | Terra T3, Sonnet T1–T10 | Task ambiguities (PATCH response, bare or prefixed token, "change the default", which collision) | Preserved in the reports; no change |
 | U16 | coordinator, while triaging U1–U11 | Stale prose in `DIAGNOSTICS` rough edges ("written in place") and stale spellings (`json b: T` in the AUTHOR_GUIDE table, `form credentials: Login` in `Form`'s docs, "implement `ToHeaderValue`" in DIAGNOSTICS) | FIXED `4e01aa4`, `663dbe9`, `3b5c5ed` |
 
+## Measurement and review-pack reconciliation (coordinator)
+
+The full item-by-item reconciliation of the owner's review pack is in `RECONCILIATION.md`. Items
+found or reproduced here:
+
+| Id | Source | Observation | Disposition |
+|---|---|---|---|
+| P1 | compile-time measurement (`PERF.md` §3) | With native header keys, generated code grew with the square of the native keys on a chain. Every value's run-time sensitivity condition compared its key with every other native key (34,816 comparisons in the deep suite); release builds were 11× slower | FIXED `0e56a65` (F09 amended): only conditions not already implied are added; 1,088 comparisons. Re-measured on the frozen candidate (`PERF.md` §3) |
+| R1 | pack D-REP-2/D-REP-5; Sonnet T2 and the 204 probe | A JSON decode failure on an empty body or a non-JSON body said only "unexpected end of input" or "syntax at line 1, column 1" | FIXED `0e56a65`: static hints; empty, whitespace and `null` stay distinct |
+| R2 | pack D-SURF-1 | Discarding a setter's result on a clone or temporary loses the change silently | FIXED `0e56a65`: `#[must_use]` |
+| R3 | pack D-SURF-2 | No borrowing access to a status error's response; a standalone `BodyError`'s source unreachable | FIXED `0e56a65` |
+| R4 | pack D-HDR-1 | A Rust constant on the right of `=` gave "not a value" without saying why; a typo gave no suggestion | FIXED: boundary and remedy in the message, did-you-mean |
+| R5 | pack D-ED-1 | A value declared before it is placed removed the whole client: unresolved names elsewhere (rustc), unknown types (rust-analyzer) | FIXED (narrow): reported next to the full expansion; other errors unchanged |
+| R6 | pack D-DIAG-2 | Two errors per missing `Display`/`ToHeaderValue`; the second, from `Debug`, names `DebugDisplay` | DEFERRED: reproduced; the first error carries Concord's notes at the value's type. Removing the second needs a dyn witness on measured runtime paths |
+| R7 | pack D-SURF-3 | Generated `#[derive(Clone)]` needs the prelude; base-URL error said "request not built" | FIXED `0e56a65` |
+
 ## Independent final reviews
 
 Pending (frozen candidate, Sol XHigh executable audit and Opus semantic review).

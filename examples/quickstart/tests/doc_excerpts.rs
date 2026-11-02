@@ -14,7 +14,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const DOCTESTED: &[&str] = &["docs/AUTHOR_GUIDE.md", "docs/MIGRATION.md"];
+const DOCTESTED: &[&str] = &[
+    "docs/AUTHOR_GUIDE.md",
+    "docs/CHEATSHEET.md",
+    "docs/MIGRATION.md",
+];
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")

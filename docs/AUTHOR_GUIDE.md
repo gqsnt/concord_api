@@ -282,9 +282,12 @@ The shortest form places a value directly in its parameter list:
 
 ### 4.2 Blocks, templates and references
 
-`query { .. }` and `headers { .. }` blocks set keys from literals, values or templates. A bare name
+`query { .. }` and `headers { .. }` blocks set keys from literals, values or templates. **The left
+of `=` is a key**: a literal, or for a header a Rust path to a `HeaderName` (§4.8). **The right of
+`=` is a value**: a template (`"Bearer {token}"`) or the name of a declared value. A bare name
 refers to a value **of the current owner only**; a value of an enclosing owner is written
-`client.x` or `<scope>.x`.
+`client.x` or `<scope>.x`. A Rust constant is not a value: write its text as a literal, or declare
+a value initialized from it (`header(ACCEPT) accept: &'static str = JSON`).
 
 ```rust
 use concord::reqwest;
@@ -1083,6 +1086,27 @@ fn main() {
 - Two `api!` invocations in one module share its namespace. Generated names are concatenations,
   so client `Shop` with scope `api` and a second client `ShopApi` both define `ShopApi` (rustc
   `E0428`). Give each client its own module, or names that cannot concatenate to each other.
+  Generated names can also collide with your own types (`ForgeIssue`); a module per API avoids
+  both:
+
+```rust
+mod forge {
+    concord::api! {
+        pub client Api { base "https://api.forge.example"; GET ping(); }
+    }
+}
+mod shop {
+    concord::api! {
+        pub client Api { base "https://shop.example.com"; GET ping(); }
+    }
+}
+
+fn main() {
+    let http = concord::reqwest::Client::new();
+    let (_forge, _shop) = (forge::Api::new(http.clone()), shop::Api::new(http));
+}
+```
+
 - Naming a scope like its value (`scope tenant(tenant: String)`) is legal; references then read
   `tenant.tenant`.
 
@@ -1100,3 +1124,26 @@ fn main() {
   escapes in its path — pass such a URL to `with_base_url`.
 - **Interleaved query repeats** across keys and per-call removal through `remove` are not
   declarable; see §4.6 and §4.7.
+
+## 11. Changing a declaration
+
+The generated methods follow the declaration (§9), so some edits change the caller's code. What
+each edit does to code that calls the endpoint:
+
+| Edit | Calling code |
+|---|---|
+| Add an optional or initialized value (`x?: T`, `x: T = e`) | unchanged; `set_x` is new |
+| Add a required value (`x: T`) | breaks: a new positional argument (or a `{Client}Config` field) |
+| Required → optional (`x: T` → `x?: T`) | breaks: the argument goes; callers write `.set_x(v)` |
+| Optional → required | breaks: a new positional argument; `maybe_x` disappears |
+| Required → initialized (`x: T` → `x: T = e`) | breaks: the argument goes; `set_x(v)` still replaces it |
+| Reorder required values | breaks only if the types differ; with equal types it still compiles and **silently swaps the values**: rename instead |
+| Add a required body (`body b: T`) | breaks: a new positional argument, where the body is declared |
+| Add an optional body (`body b?: T`) | unchanged; no body is sent until `set_b` |
+| Change the body or output type | breaks where the old type was used |
+| Change a format or media type (`request`, `response`) | unchanged code; **different bytes on the wire** |
+| Move an endpoint to another scope | breaks: navigation goes through the new scope |
+| Rename an endpoint, scope or value | breaks: the method names follow |
+| Move a value between owners | breaks: it is supplied where it is now declared |
+
+`#[deprecated]` on a scope or endpoint (§8) lets callers migrate before a removal.

@@ -1073,6 +1073,9 @@ fn debug_fields<'a>(
             (quote!(DebugHeader), quote!(DebugHeaderEach))
         };
         let shown = match (value.debug_sensitive, value.optional, value.usage) {
+            // Never used: the declaration is rejected (`Model::build`); its value is not shown
+            // and adds no trait obligation to the error.
+            (_, _, None) => quote_spanned!(span=> &#k::__private::Redacted),
             (true, false, _) => quote_spanned!(span=> &#k::__private::Redacted),
             (true, true, _) => {
                 quote_spanned!(span=> &#place.as_ref().map(|_| #k::__private::Redacted))
@@ -2110,7 +2113,8 @@ mod tests {
     /// The generated rustdoc text of a declaration.
     fn docs(declaration: proc_macro2::TokenStream) -> String {
         let api: Api = syn::parse2(declaration).expect("declaration parses");
-        let model = Model::build(api).unwrap_or_else(|e| panic!("model: {e}"));
+        let (model, unused) = Model::build(api).unwrap_or_else(|e| panic!("model: {e}"));
+        assert!(unused.is_none(), "unused values in a unit fixture");
         emit(&model, quote!(::concord)).to_string()
     }
 

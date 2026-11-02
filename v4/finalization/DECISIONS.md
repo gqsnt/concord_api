@@ -134,6 +134,21 @@ outgoing flags come from the header plan. A conditional value that is also text 
 statically (URL redaction is static). One list of sensitive names and one of reserved names exist
 in the macro and the runtime, kept equal by a unit test.
 
+**Amended (`0e56a65`, after the compile measurement).** The condition "its key equals that of a
+sensitive contribution" was emitted for every other native key that might be sensitive, including
+keys that might be sensitive only by their own name. Generated code then grew with the square of
+the native keys on a chain: the deep native suite expanded to 34,816 inline name comparisons, and
+compiled 11× slower in release. A condition is now added only when it is not implied by the value's
+own conditions. When the two keys name one header, the other key's name being on the list means
+this key's name is on it too, which is the value's own `Name` condition. The deep suite drops to
+1,088 comparisons (expansion 7.7 MB → 2.1 MB). The rule is the documented one, and no value it
+withholds is shown. A value whose native key only aliases a *public* header was withheld before
+by over-approximation and is now shown, as the generated docs and §7 always said
+(`native_keys::transitive_classification_follows_resolved_names`,
+`deep_native_chain_withholds_only_the_aliased_level`). The list gained seven vendor secret names
+(`api-token`, `x-api-token`, `x-access-token`, `private-token`, `x-goog-api-key`,
+`ocp-apim-subscription-key`, `x-amz-security-token`); it remains a safety net.
+
 ## F10 — The regex migration script is withdrawn (CHANGE)
 
 The script migrate_via.py corrupted string constants, comments and header literals and merged two
@@ -157,3 +172,20 @@ key-header name in retrieved official text, stub eligibility.
 `scripts/check-records.py` checks `v4/finalization/*.md` and `v4/TEST_MATRIX.md` by default.
 Earlier campaigns' records describe their own revisions and are not re-checked against the current
 tree.
+
+## F13 — Review-pack reconciliation (KEEP the selected design; bounded additions)
+
+The owner's independent review pack was reconciled item by item against the current code
+(`RECONCILIATION.md`). Kept: uniform statements without `body("m")` (F01); empty and whitespace
+responses are not JSON `null` (an empty body is reported with a static hint instead); no
+format/media-type allowlist (Kubernetes server-side apply sends JSON as
+`application/apply-patch+yaml`); no ban on literal `content-type` headers (8b/8c stand).
+Added:
+- `Error::response(&self)`, which borrows a status error's unread response;
+- a public `BodyError::body_source`;
+- `#[must_use]` on generated setters and scope navigation;
+- static hints in the JSON decoder;
+- an `=` boundary explanation and a did-you-mean in the unknown-value error;
+- `# Errors` docs;
+- a cheat sheet, a declaration-change table and module wrapping in the author guide;
+- the compatibility example (`examples/compat`).

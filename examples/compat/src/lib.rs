@@ -1,0 +1,187 @@
+//! Compact downstream compatibility declarations, exercised only on loopback.
+use concord::{reqwest, BodyError, Decode, Encode};
+use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// A typed success or status-error document.
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct Document {
+    /// Fixture value.
+    pub value: String,
+}
+
+concord::api! {
+    client Metadata {
+        base "http://compat.invalid";
+        response json;
+        GET get() -> Document { path "document"; }
+    }
+}
+
+/// Uses a private client inside this crate, returning the public native exit.
+pub fn metadata(
+    http: reqwest::Client,
+    base: &str,
+) -> Result<concord::Prepared<Document>, concord::Error> {
+    Metadata::new(http).with_base_url(base)?.get().prepare()
+}
+
+/// A synthetic service's application envelope.
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct Envelope {
+    /// Application success, independent of HTTP status.
+    pub ok: bool,
+    /// Application error detail.
+    pub error: Option<String>,
+}
+
+/// Checks the synthetic envelope after JSON decoding.
+pub struct Checked;
+impl Decode<Envelope> for Checked {
+    fn decode(body: concord::bytes::Bytes) -> Result<Envelope, BodyError> {
+        let envelope = <concord::Json as Decode<Envelope>>::decode(body)?;
+        if !envelope.ok {
+            return Err(BodyError::new("application rejected request")
+                .with_source(std::io::Error::other(envelope.error.unwrap_or_default())));
+        }
+        Ok(envelope)
+    }
+}
+concord::api! {
+    /// Explicit application-error handling routes.
+    pub client Application {
+        base "http://compat.invalid";
+        response json;
+        GET explicit() -> Envelope { path "explicit"; }
+        GET checked() -> Envelope { path "checked"; response Checked; }
+    }
+}
+
+/// A flat form.
+#[derive(Clone, Serialize)]
+pub struct Flat {
+    /// A text value containing spaces and punctuation.
+    pub title: String,
+    /// Order number.
+    pub order: u32,
+}
+/// A nested form, unsupported by the built-in form encoder.
+#[derive(Clone, Serialize)]
+pub struct Nested {
+    /// Nested order metadata.
+    pub metadata: Order,
+}
+/// Order metadata.
+#[derive(Clone, Serialize)]
+pub struct Order {
+    /// Order number.
+    pub order: u32,
+}
+/// A synthetic bracket-key convention, explicitly implemented by the caller.
+pub struct Brackets;
+impl Encode<Nested> for Brackets {
+    const CONTENT_TYPE: Option<&'static str> = Some("application/x-www-form-urlencoded");
+    fn encode(value: Nested) -> Result<reqwest::Body, BodyError> {
+        let bytes = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("metadata[order]", &value.metadata.order.to_string())
+            .finish();
+        Ok(bytes.into())
+    }
+}
+concord::api! {
+    /// Flat and custom nested form bodies.
+    pub client Forms {
+        base "http://compat.invalid";
+        request form;
+        POST flat(body form: Flat) { path "flat"; }
+        POST nested(body form: Nested) { path "nested"; }
+        POST brackets(body form: Nested) { path "brackets"; request Brackets; }
+    }
+}
+concord::api! {
+    /// A resource whose ordinary key is a single segment.
+    pub client Resources {
+        base "http://compat.invalid";
+        PUT write(key: String) { path "objects/{key}"; }
+    }
+}
+concord::api! {
+    /// Kubernetes-style server-side apply serialization.
+    pub client Apply {
+        base "http://compat.invalid";
+        PATCH patch(query("fieldManager") manager: String, body document: serde_json::Value) {
+            path "api/v1/namespaces/default/configmaps/demo";
+            request json "application/apply-patch+yaml";
+        }
+    }
+}
+
+static NEXT: AtomicU64 = AtomicU64::new(1);
+fn new_key() -> String {
+    format!("fixture-{}", NEXT.fetch_add(1, Ordering::Relaxed))
+}
+concord::api! {
+    /// Endpoint initializers run per request handle.
+    pub client Fresh {
+        base "http://compat.invalid";
+        POST charge(header("idempotency-key") key: String = new_key()) { path "charge"; }
+    }
+}
+concord::api! {
+    /// The pitfall: a root initializer runs once per client construction.
+    pub client Shared(header("idempotency-key") key: String = new_key()) {
+        base "http://compat.invalid";
+        POST charge() { path "charge"; }
+    }
+}
+concord::api! {
+    /// Root refresh creates a new snapshot.
+    pub client Refresh(#[sensitive] header("authorization") token: String) {
+        base "http://compat.invalid";
+        scope account {
+            path "account";
+            GET get() { path "value"; }
+        }
+    }
+}
+
+use reqwest::header::{HeaderName, CONTENT_TYPE};
+/// A native alias of Content-Type.
+pub const CT: HeaderName = CONTENT_TYPE;
+/// A re-export retains the native header identity.
+pub use reqwest::header::AUTHORIZATION as GATE;
+/// A misleading identifier still resolves to its actual native name.
+pub mod local {
+    use concord::reqwest::header::HeaderName;
+    /// This is x-other, regardless of the Rust identifier.
+    pub const AUTHORIZATION: HeaderName = HeaderName::from_static("x-other");
+}
+concord::api! {
+    /// Native and literal header composition and redaction.
+    pub client Headers(#[sensitive] header(GATE) token: String) {
+        base "http://compat.invalid";
+        request json;
+        headers { "content-type" = "text/plain"; local::AUTHORIZATION = "ordinary"; }
+        #[cfg(any())]
+        POST disabled(body value: DoesNotExist) { request MissingCodec; }
+        POST removed(#[sensitive] secret: String, body value: Flat) {
+            path "removed";
+            headers { remove CT; override GATE = secret; }
+        }
+        POST replaced(#[sensitive] secret: String, body value: Flat) {
+            path "replaced";
+            headers { override CT = "application/custom"; override "authorization" = secret; }
+        }
+    }
+}
+
+concord::api! {
+    /// A literal `content-type` inherited by every endpoint: it is the request's `Content-Type`,
+    /// with or without a body, replacing the format's own media type (author guide, §5.3).
+    pub client Relabel {
+        base "http://compat.invalid";
+        request json;
+        headers { "content-type" = "application/vnd.compat+json"; }
+        POST maybe(body value?: Flat) { path "maybe"; }
+    }
+}

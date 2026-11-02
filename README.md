@@ -150,14 +150,19 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 With `default-features = false`, choose reqwest's features yourself: depend on `reqwest` (the
 same major version that Concord re-exports as `concord::reqwest`) with the features you need.
 
+reqwest is part of Concord's public API (`concord::reqwest`, `Prepared::request`, the native
+exits). A Concord release keeps one reqwest minor series (0.13 for 4.x); moving to another is a
+breaking Concord release.
+
 ## Documentation
 
 | Task | Guide |
 |---|---|
 | Set up a crate and make a first call | [Quick start](docs/QUICKSTART.md) |
+| The whole language on one page | [Cheat sheet](docs/CHEATSHEET.md) |
 | Write a declaration: scopes, values, paths, query and headers, body and response formats | [Author guide](docs/AUTHOR_GUIDE.md) |
 | Use a generated client: construction, options, errors, native requests | [Caller guide](docs/CALLER_GUIDE.md) |
-| Error documents, timeouts, streaming, custom formats, retries, pagination | [Recipes](docs/RECIPES.md) |
+| Error documents, timeouts, streaming, custom formats, retries, pagination; patterns from other APIs | [Recipes](docs/RECIPES.md), [`examples/compat`](examples/compat) |
 | Read a compile error | [Diagnostics](docs/DIAGNOSTICS.md) |
 | Upgrade from in-place formats, from `via`, from the V4 alpha or from V3 | [Migration](docs/MIGRATION.md) |
 | A complete real-world client (Riot Games), offline tests, sources | [`examples/riot`](examples/riot) |

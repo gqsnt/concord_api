@@ -214,6 +214,13 @@ async fn handling_errors() -> Result<(), Box<dyn std::error::Error>> {
         "GET Catalog.shop.product: HTTP status 404 Not Found"
     );
 
+    // Borrowed: headers can be read while the error is kept.
+    let response = error.response().expect("a status error");
+    assert_eq!(
+        response.headers()["content-type"],
+        "application/problem+json"
+    );
+
     // The API's error document: the response of a status error is unread.
     let response = error.into_response()?; // any other kind of error is returned as Err
     let problem = <Json as Decode<Problem>>::decode(response.bytes().await?)?;

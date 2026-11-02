@@ -8,7 +8,7 @@ exercised against a loopback server in `examples/native/tests/`
 assumes; the code is in the linked files.
 
 They use only the public surface: `Prepared::{send, send_raw, into_parts}`, `Decoder::finish`,
-`Error::into_response`, `Encode`/`Decode` and the generated setters.
+`Error::{response, into_response}`, `Encode`/`Decode` and the generated setters.
 
 ## Responses
 
@@ -148,10 +148,30 @@ recommended default for every API. All are in [`policies.rs`](../examples/native
 A request value's `Clone` (available when its values and body are `Clone`) only means it can be
 copied. The retry recipe deliberately takes a request **factory** instead.
 
+## Patterns from other APIs
+
+[`examples/compat`](../examples/compat) is a downstream crate (edition 2021, a private client) with
+one compact case per pattern below, each checked against a loopback server. Its
+[README](../examples/compat/README.md) says which outside facts are sourced and which are
+synthetic; a fake server proves nothing about the real service.
+
+| Need | How | Case |
+|---|---|---|
+| Read response headers (`ETag`, `Link`) and keep the typed decoding | `prepare()?.into_parts()`, execute, read the headers, then `decoder.decode(response)` | `tests/metadata.rs` |
+| Read a status error's headers without consuming it | `error.response()`; `into_response()` afterwards for the body | `tests/metadata.rs` |
+| An error inside a 2xx (`{"ok": false}`) | a typed output that models the envelope, or a custom `Decode` returning a `BodyError` | `tests/application.rs` |
+| Nested or bracket form keys (`metadata[order]=7`) | a custom `Encode<T>` with the form media type; `form` itself is flat | `tests/forms.rs` |
+| A key spanning path segments (`docs/2026/report.md`) | `into_parts()`, then `url_mut().path_segments_mut()`; an ordinary path value is one segment (`/` is sent as `%2F`) | `tests/resource_key.rs` |
+| JSON under another media type (Kubernetes server-side apply) | `request json "application/apply-patch+yaml";` on the endpoint | `tests/apply.rs` |
+| A fresh value per request (an idempotency key) | an initialized value on the endpoint; a `.clone()` of the request handle repeats it (a deliberate retry); a client initializer runs once, in `new` | `tests/idempotency.rs` |
+| A new base URL or credential | `with_base_url` and setters return new handles; scopes created earlier keep the old values | `tests/refresh.rs` |
+| Header aliases, `Content-Type` and secrets | native constants, re-exports and shadowed names compose and classify by resolved name | `tests/headers.rs` |
+
 ## Running them
 
 ```sh
 cargo test -p concord-example-native --locked
+cargo test -p concord-example-compat --locked
 ```
 
 All fixtures are plain HTTP/1.1 on loopback: no HTTP/2, TLS, proxy or redirect behaviour is

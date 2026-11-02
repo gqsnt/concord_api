@@ -27,7 +27,13 @@ pub fn api(input: TokenStream) -> TokenStream {
         Err(error) => return error.to_compile_error().into(),
     };
     match model::Model::build(api) {
-        Ok(model) => emit::emit(&model, krate).into(),
+        Ok((model, unused)) => {
+            let mut out = emit::emit(&model, krate);
+            if let Some(error) = unused {
+                out.extend(error.to_compile_error());
+            }
+            out.into()
+        }
         Err(error) => error.to_compile_error().into(),
     }
 }

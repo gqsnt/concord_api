@@ -255,6 +255,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-example-compat"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "concord-example-multipart"
 version = "0.0.0"
 dependencies = [

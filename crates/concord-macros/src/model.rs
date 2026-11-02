@@ -421,6 +421,22 @@ impl Errors {
     }
 }
 
+/// Levenshtein distance, for "did you mean" on value names.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut prev = row[0];
+        row[0] = i + 1;
+        for (j, &cb) in b.iter().enumerate() {
+            let cur = row[j + 1];
+            row[j + 1] = (prev + usize::from(ca != cb)).min(row[j] + 1).min(cur + 1);
+            prev = cur;
+        }
+    }
+    row[b.len()]
+}
+
 fn plain(ident: &Ident) -> String {
     let s = ident.to_string();
     s.strip_prefix("r#").map(str::to_owned).unwrap_or(s)
@@ -440,7 +456,10 @@ fn pascal(ident: &Ident) -> String {
 }
 
 impl Model {
-    pub fn build(api: syntax::Api) -> syn::Result<Model> {
+    /// The model, and the errors that leave it complete (a value that is never used): the
+    /// declaration is still rejected, but the client is emitted so that code using it resolves
+    /// while the author finishes the declaration.
+    pub fn build(api: syntax::Api) -> syn::Result<(Model, Option<syn::Error>)> {
         let mut errors = Errors::default();
         let mut owners = Vec::new();
         let mut stmts = Vec::new();
@@ -518,11 +537,13 @@ impl Model {
             }
         }
 
-        // Liveness.
+        // Liveness. An unused value changes nothing else in the model, so on its own it is
+        // reported next to the full expansion instead of replacing it.
+        let mut unused = Errors::default();
         for owner in &model.owners {
             for value in &owner.values {
                 if value.usage.is_none() {
-                    errors.push(syn::Error::new(
+                    unused.push(syn::Error::new(
                         value.name.span(),
                         format!(
                             "value `{}` is never used; place it (`query`, `header(\"..\")`) or reference it from `path`, `subdomain`, `query` or `headers`",
@@ -533,8 +554,14 @@ impl Model {
             }
         }
         model.check_names(&mut errors);
-        errors.check()?;
-        Ok(model)
+        match (unused.check(), errors.check()) {
+            (Err(mut first), Err(rest)) => {
+                first.combine(rest);
+                Err(first)
+            }
+            (Ok(()), Err(rest)) => Err(rest),
+            (unused, Ok(())) => Ok((model, unused.err())),
+        }
     }
 
     /// The owners from the client down to `index`.
@@ -576,15 +603,33 @@ impl Model {
                     let mut msg =
                         format!("`{name}` is not a value of `{}`", self.owners[at].dotted);
                     let mut cur = self.owners[at].parent;
+                    let mut enclosing = false;
                     while let Some(p) = cur {
                         if find(p).is_some() {
                             msg.push_str(&format!(
                                 "; to use the value of an enclosing owner, write `{}.{name}`",
                                 self.qualifier(p)
                             ));
+                            enclosing = true;
                             break;
                         }
                         cur = self.owners[p].parent;
+                    }
+                    let close = self.owners[at]
+                        .values
+                        .iter()
+                        .map(|v| plain(&v.name))
+                        .find(|v| edit_distance(v, &name) <= 2);
+                    if let Some(close) = close.filter(|_| !enclosing) {
+                        msg.push_str(&format!("; did you mean `{close}`?"));
+                    } else if !enclosing {
+                        // Keys and values share one token shape in blocks (`ACCEPT = JSON`).
+                        msg.push_str(&format!(
+                            "; the right of `=` and `{{..}}` holes name values declared in a \
+                             parameter list (a Rust constant is not one: declare a value \
+                             initialized from it, `{}: T = ..`)",
+                            name.to_lowercase()
+                        ));
                     }
                     Err(syn::Error::new(r.name.span(), msg))
                 }

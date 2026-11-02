@@ -87,6 +87,11 @@ pub async fn run(base_url: &str, token: String) -> Result<(), Box<dyn std::error
 #[doc = include_str!("../../../docs/AUTHOR_GUIDE.md")]
 pub struct AuthorGuide;
 
+/// The code of `docs/CHEATSHEET.md`, compiled and run as a doctest.
+#[cfg(doctest)]
+#[doc = include_str!("../../../docs/CHEATSHEET.md")]
+pub struct CheatSheet;
+
 /// The current-syntax code blocks of `docs/MIGRATION.md`, compiled and run as doctests.
 #[cfg(doctest)]
 #[doc = include_str!("../../../docs/MIGRATION.md")]

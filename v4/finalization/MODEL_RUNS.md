@@ -44,4 +44,14 @@ design records unless blocked). Each participant had its own snapshot of `389392
 | fu-terra | Fresh user, author + caller | gpt-6.1-terra / xhigh | gpt-6.1-terra / xhigh, workspace-write, network on (turn_context) | snapshot fu-terra (`389392f`); 28 commands; no transition to library source, tests, expansions or `v4/` | 17:33:57→17:36:26Z, tracked files unchanged; all ten tasks run with loopback tests; report `trials/terra-xhigh.md`, archive `/home/canarit/projects/concord_v4_finish_work/evidence/fresh-use/terra/` (SHA256SUMS) |
 | fu-sonnet | Fresh user, author + caller | Claude Sonnet | claude-sonnet-5-5 (119/119 assistant records), 0 advisor calls; 63 tool calls (59 Bash), none on library source, expansions or `v4/` | snapshot fu-sonnet (`389392f`) | 17:33:57→17:48:24Z, tracked files unchanged; all ten tasks with loopback tests and expected-failure probes; report returned as a message (file write refused by the harness), `trials/sonnet.md`, archive `/home/canarit/projects/concord_v4_finish_work/evidence/fresh-use/sonnet/` (SHA256SUMS) |
 
+## Round 4 — review-pack reconciliation
+
+The owner supplied an independent review pack (`concord_next_update_direction(2).zip`, written for
+`6bc5032`, nothing executed) with AGENT_ADDENDUM.md and DISPOSITIONS.md after the fresh-use trials
+were frozen; no designer or fresh-use participant saw it. Reconciliation: `RECONCILIATION.md`.
+
+| Run | Role | Requested | Observed | Source scope | Status |
+|---|---|---|---|---|---|
+| compat | Fixture builder: the eight compatibility cases (not a designer or reviewer) | gpt-6.1-sol / medium | gpt-6.1-sol / medium, workspace-write, network on (turn_context) | snapshot compat-sol-medium (`0e56a65`); brief `/home/canarit/projects/concord_v4_finish_work/briefs/COMPAT_BUILD.md` (written by the coordinator, not the pack) | 19:50:37→19:52:55Z; wrote `examples/compat` + the workspace member and lock entry only; 8/8 cases, clippy, fmt, `+1.85` pass (its report); imported after the coordinator's review with one added case; report and receipt `/home/canarit/projects/concord_v4_finish_work/evidence/compat/` (SHA256SUMS) |
+
 Frozen outputs and their SHA-256 sums: `/home/canarit/projects/concord_v4_finish_work/proposals/r1/FROZEN.sha256`, `/home/canarit/projects/concord_v4_finish_work/proposals/r2/FROZEN-a.sha256`, `/home/canarit/projects/concord_v4_finish_work/proposals/r2/FROZEN-b.sha256`, `/home/canarit/projects/concord_v4_finish_work/proposals/r2/xreview/FROZEN.sha256`.

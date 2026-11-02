@@ -284,7 +284,7 @@ Every call returns `Result<_, concord::Error>`.
 |---|---|---|
 | `ErrorKind::Build` | the request could not be built from the values; nothing was sent | — |
 | `ErrorKind::Transport` | reqwest failed to send or to read the response (connect, timeout, ...) | `transport()` |
-| `ErrorKind::Status` | the server answered with a non-2xx status | `status()`, `into_response()` |
+| `ErrorKind::Status` | the server answered with a non-2xx status | `status()`, `response()`, `into_response()` |
 | `ErrorKind::Decode` | a 2xx body could not be decoded with the endpoint's format | `body_source()` |
 
 `ErrorKind` is `#[non_exhaustive]`: keep a `_` arm when matching it. `error.endpoint()` names the
@@ -306,9 +306,11 @@ async fn find_product(shop: &CatalogShop, id: u64) -> Result<Option<Product>, co
 }
 ```
 
-A status error keeps the **unread** response. `into_response()` returns it, and returns any other
-error unchanged as `Err`, so `?` propagates those. It consumes the error: read `status()` and
-`endpoint()` first if you need them. Reading the body is reqwest's (`response.bytes()` fails with a
+A status error keeps the **unread** response. `response()` borrows it, so its headers
+(`Retry-After`, a request id) can be read while the error is kept, for example in a predicate
+`Fn(&concord::Error) -> bool`. `into_response()` returns it, and returns any other error unchanged
+as `Err`, so `?` propagates those. It consumes the error: read `status()` and `endpoint()` first if
+you need them. Reading the body is reqwest's (`response.bytes()` fails with a
 `reqwest::Error`, which does not convert into `concord::Error`). Decode the API's error document with any
 format's `Decode` impl. Excerpt of
 [`examples/quickstart/tests/caller_guide.rs`](../examples/quickstart/tests/caller_guide.rs):
@@ -325,6 +327,13 @@ assert_eq!(error.endpoint(), Some("Catalog.shop.product"));
 assert_eq!(
     error.to_string(),
     "GET Catalog.shop.product: HTTP status 404 Not Found"
+);
+
+// Borrowed: headers can be read while the error is kept.
+let response = error.response().expect("a status error");
+assert_eq!(
+    response.headers()["content-type"],
+    "application/problem+json"
 );
 
 // The API's error document: the response of a status error is unread.
@@ -346,8 +355,15 @@ your own limit (see the [error-document recipe](RECIPES.md#error-documents)).
 
 `Error` has no `source()` chain on purpose. The underlying errors are reachable through
 `transport()` (the reqwest error, top-level URL removed) and `body_source()` (the decoder's
-error); both are **not** redacted: reqwest's nested errors can contain URLs (a refused redirect
-keeps its target), TLS errors name hosts, and decoder errors quote the body.
+error; `BodyError::body_source()` on a `BodyError` you decoded yourself); both are **not**
+redacted: reqwest's nested errors can contain URLs (a refused redirect keeps its target), TLS
+errors name hosts, and decoder errors quote the body. To log one, pass it explicitly
+(`error.transport().map(|e| e as &dyn std::error::Error)`) where that output may contain them.
+
+Errors in documents a successful status carries (`{"ok": false}`) are the API's own: decode them
+as the typed output, or write a format that turns them into a `Decode` error (the
+[compatibility example](../examples/compat/README.md), case 2). Concord never inspects a body for
+error markers.
 
 ## 7. Native requests
 
