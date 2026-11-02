@@ -50,9 +50,10 @@ SHAPES (each varies one dimension; everything else is fixed)
   typed     --endpoints N   Typed bodies and outputs: N/10 scopes, 10 endpoints each. The client
                             declares `request text; response text;`; per scope six `-> String`
                             and two `body note: String` + `-> String` endpoints inherit them, and
-                            two are in-place exceptions (`-> bytes Vec<u8>`, `bytes data:
-                            Vec<u8>` without output). Text and bytes only, so the suite needs no
-                            `json` feature.
+                            two are exceptions with an endpoint statement of their own (`-> Vec<u8>`
+                            with `response bytes;`, `body data: Vec<u8>` without output with
+                            `request bytes;`). Text and bytes only, so the suite needs no `json`
+                            feature.
 
 SUITE (OUT/, one cargo workspace; member names are the package names)
 
@@ -60,7 +61,7 @@ SUITE (OUT/, one cargo workspace; member names are the package names)
   scale_deep                     `deep`: depth 32, 2 endpoints per level (64 endpoints)
   scale_shared                   `shared`: 200 endpoints, C = 16 (56 inherited contributions each)
   scale_typed                    `typed`: 200 endpoints (160 inheriting a format default, 40
-                                 in-place exceptions)
+                                 exceptions with a statement of their own)
   scale_fanout                   `fanout`: one value feeding 4,000 distinct query keys
   use5, use100, use1000          binaries calling 5 / 100 / 1,000 of scale1000's endpoints
   fan_a, fan_b                   libraries calling 100 endpoints of scale1000 each (50 in common)
@@ -84,17 +85,22 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONCORD = os.path.normpath(os.path.join(HERE, "..", "..", "crates", "concord"))
-GENERATOR_VERSION = 5
+GENERATOR_VERSION = 6
 
 # Declaration/caller syntax, so that the same workload can be generated for an A/B comparison of
 # Concord versions:
-#   "formats" (current): body/output formats in place or as `request`/`response` defaults;
+#   "statements" (current, the default): payloads name only types (`body b: T`, `-> T`); the
+#             format is a `format`/`request`/`response` statement on the client, a scope or the
+#             endpoint (`request bytes;` in the endpoint block);
+#   "formats" (previous surface, kept to measure it): the format written in the payload position
+#             (`bytes b: T`, `-> bytes T`) or as a `request`/`response` default on an owner;
 #   "via"     (refined V4 up to a915c8d, before formats): `body b: T via R`, `-> T via R`;
 #   "alpha"   (V4 alpha 8f7adc2): positional root constructor, no `else inherit`, `-> Text`.
 # "refined" is accepted as the former name of "via". Only the `typed` shape has bodies and
-# outputs; for the others "formats" and "via" produce the same bytes.
-SYNTAX = "formats"
-SYNTAXES = ["formats", "via", "alpha", "refined"]
+# outputs; for the others "statements", "formats" and "via" produce the same bytes.
+DEFAULT_SYNTAX = "statements"
+SYNTAX = DEFAULT_SYNTAX
+SYNTAXES = ["statements", "formats", "via", "alpha", "refined"]
 
 
 def new_scale(path):
@@ -110,23 +116,29 @@ def else_inherit():
 
 
 def typed_output(fmt, ty):
-    """An output of `ty` with format `fmt` (`text`/`bytes`); `fmt` None inherits the default."""
+    """An output of `ty` with format `fmt` (`text`/`bytes`); `fmt` None inherits the default.
+    Returns the text after the parameter list and the statements for the endpoint block."""
     marker = {"text": "concord::Text", "bytes": "concord::Binary"}
     if SYNTAX == "alpha":
-        return f"-> {marker[fmt or 'text']}"
+        return f"-> {marker[fmt or 'text']}", []
     if SYNTAX in ("via", "refined"):
-        return f"-> {ty} via {marker[fmt or 'text']}"
-    return f"-> {fmt} {ty}" if fmt else f"-> {ty}"
+        return f"-> {ty} via {marker[fmt or 'text']}", []
+    if SYNTAX == "statements":
+        return f"-> {ty}", [f"response {fmt};"] if fmt else []
+    return (f"-> {fmt} {ty}" if fmt else f"-> {ty}"), []
 
 
 def typed_body(fmt, name, ty):
-    """A body; `fmt` None inherits the `request` default."""
+    """A body; `fmt` None inherits the `request` default. Returns the parameter and the
+    statements for the endpoint block."""
     marker = {"text": "concord::Text", "bytes": "concord::Binary"}
     if SYNTAX == "alpha":
-        return f"body {name}: {marker[fmt or 'text']}"
+        return f"body {name}: {marker[fmt or 'text']}", []
     if SYNTAX in ("via", "refined"):
-        return f"body {name}: {ty} via {marker[fmt or 'text']}"
-    return f"{fmt} {name}: {ty}" if fmt else f"body {name}: {ty}"
+        return f"body {name}: {ty} via {marker[fmt or 'text']}", []
+    if SYNTAX == "statements":
+        return f"body {name}: {ty}", [f"request {fmt};"] if fmt else []
+    return (f"{fmt} {name}: {ty}" if fmt else f"body {name}: {ty}"), []
 
 
 def write(path, text):
@@ -253,7 +265,7 @@ def shape_typed(n):
     lines = ["#![allow(missing_docs)]", "concord::api! {",
              '    pub client Typed(#[sensitive] header("x-api-key") key: String) {',
              '        base "https://api.example.com/v1";']
-    if SYNTAX == "formats":
+    if SYNTAX in ("statements", "formats"):
         lines += ["        request text;", "        response text;"]
     scopes = max(1, n // 10)
     for s in range(scopes):
@@ -262,14 +274,20 @@ def shape_typed(n):
         for e in range(n // scopes):
             kind = e % 10
             if kind < 6:
-                sig = f"GET e{e}(id: u64) {typed_output(None, 'String')}"
+                out, stmts = typed_output(None, "String")
+                sig = f"GET e{e}(id: u64) {out}"
             elif kind < 8:
-                sig = f"PUT e{e}(id: u64, {typed_body(None, 'note', 'String')}) {typed_output(None, 'String')}"
+                body, stmts = typed_body(None, "note", "String")
+                out, out_stmts = typed_output(None, "String")
+                sig, stmts = f"PUT e{e}(id: u64, {body}) {out}", stmts + out_stmts
             elif kind == 8:
-                sig = f"GET e{e}(id: u64) {typed_output('bytes', 'Vec<u8>')}"
+                out, stmts = typed_output("bytes", "Vec<u8>")
+                sig = f"GET e{e}(id: u64) {out}"
             else:
-                sig = f"PUT e{e}(id: u64, {typed_body('bytes', 'data', 'Vec<u8>')})"
-            lines.append(f'            {sig} {{ path "items/{{id}}"; }}')
+                body, stmts = typed_body("bytes", "data", "Vec<u8>")
+                sig = f"PUT e{e}(id: u64, {body})"
+            block = " ".join(stmts + ['path "items/{id}";'])
+            lines.append(f"            {sig} {{ {block} }}")
         lines.append("        }")
     lines += ["    }", "}"]
     return "\n".join(lines) + "\n"
@@ -467,14 +485,14 @@ def main(argv):
     s = sub.add_parser("suite", help="the measurement workspace")
     s.add_argument("out")
     s.add_argument("--concord", default=DEFAULT_CONCORD)
-    s.add_argument("--syntax", choices=SYNTAXES, default="formats")
+    s.add_argument("--syntax", choices=SYNTAXES, default=DEFAULT_SYNTAX)
     s.add_argument("--no-lock", action="store_true", help="do not seed and settle Cargo.lock")
     a = sub.add_parser("api", help="one standalone API crate")
     a.add_argument("out")
     a.add_argument("shape", choices=["rest", "deep", "shared", "override", "optionals", "refs",
                                           "fanout", "typed"])
     a.add_argument("--concord", default=DEFAULT_CONCORD)
-    a.add_argument("--syntax", choices=SYNTAXES, default="formats")
+    a.add_argument("--syntax", choices=SYNTAXES, default=DEFAULT_SYNTAX)
     a.add_argument("--name")
     a.add_argument("--endpoints", type=int, default=10)
     a.add_argument("--depth", type=int, default=8)
@@ -486,7 +504,7 @@ def main(argv):
     a.add_argument("--placements", type=int, default=1000)
     args = p.parse_args(argv)
     global SYNTAX
-    SYNTAX = args.syntax if not legacy else "formats"
+    SYNTAX = args.syntax if not legacy else DEFAULT_SYNTAX
     if args.cmd == "suite":
         cmd_suite(args)
     else:
