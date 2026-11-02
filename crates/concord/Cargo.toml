@@ -49,6 +49,14 @@ name = "bodies"
 required-features = ["json"]
 
 [[test]]
+name = "formats"
+required-features = ["json"]
+
+[[test]]
+name = "forms"
+required-features = ["form"]
+
+[[test]]
 name = "tls"
 required-features = ["reqwest-defaults"]
 
