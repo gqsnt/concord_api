@@ -162,6 +162,7 @@ synthetic; a fake server proves nothing about the real service.
 | An error inside a 2xx (`{"ok": false}`) | a typed output that models the envelope, or a custom `Decode` returning a `BodyError` | `tests/application.rs` |
 | Nested or bracket form keys (`metadata[order]=7`) | a custom `Encode<T>` with the form media type; `form` itself is flat | `tests/forms.rs` |
 | A key spanning path segments (`docs/2026/report.md`) | `into_parts()`, then `url_mut().path_segments_mut()`; an ordinary path value is one segment (`/` is sent as `%2F`) | `tests/resource_key.rs` |
+| JSON or nothing (`200` with a document, `204` without) | a format of your own implementing `Decode<Option<T>>` that maps an empty body to `None` (`json` keeps it an error) | `tests/json_or_empty.rs` |
 | JSON under another media type (Kubernetes server-side apply) | `request json "application/apply-patch+yaml";` on the endpoint | `tests/apply.rs` |
 | A fresh value per request (an idempotency key) | an initialized value on the endpoint; a `.clone()` of the request handle repeats it (a deliberate retry); a client initializer runs once, in `new` | `tests/idempotency.rs` |
 | A new base URL or credential | `with_base_url` and setters return new handles; scopes created earlier keep the old values | `tests/refresh.rs` |

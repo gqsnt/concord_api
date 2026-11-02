@@ -182,7 +182,7 @@ async fn r04_empty_responses() {
     assert!(
         error
             .to_string()
-            .ends_with("the response body is empty or only whitespace, which is not JSON; an endpoint whose response has no body omits `->`"),
+            .ends_with("the response body is empty or only whitespace, which is not JSON; omit `->` if this endpoint never returns a body, or use a format that accepts an empty one"),
         "{error}"
     );
     assert!(

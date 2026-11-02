@@ -27,7 +27,7 @@ Reference pages are rendered from
 | tournament-stub-v5 registerTournament | `POST /lol/tournament-stub/v5/tournaments` | not stated | body TournamentRegistrationParametersV5 {providerId: int, name: string "optional"} | int |
 | tournament-stub-v5 getTournamentCode | `GET /lol/tournament-stub/v5/codes/{tournamentCode}` | not stated | path tournamentCode | TournamentCodeV5DTO |
 
-Error statuses listed for every operation above: 400, 401, 403, 404, 405, 415 (tournament only), 429, 500, 502, 503, 504.
+Error statuses listed for every operation above: 400, 401, 403, 404, 405, 415, 429, 500, 502, 503, 504.
 
 ### DTOs (fields as published)
 

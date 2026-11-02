@@ -47,6 +47,30 @@ found or reproduced here:
 | P4 | coordinator, rendering Riot's rustdoc for the final record | The request summary of `account.me` listed `X_RIOT_TOKEN`, which that endpoint removes through the same constant | FIXED `aa9819c`: a contribution a later `remove` of the provably same key drops is not listed (unit test `request_summary_omits_a_provably_removed_native_key`) |
 | R7 | pack D-SURF-3 | Generated `#[derive(Clone)]` needs the prelude; base-URL error said "request not built" | FIXED `0e56a65` |
 
-## Independent final reviews
+## Independent final reviews (`ab3cb85`, code of `d884461`)
 
-Pending (frozen candidate, Sol XHigh executable audit and Opus semantic review).
+Executable audit: Sol 6.1 XHigh (106 own tests, 16 negative compile probes, 5 mutants all
+killed, packaged consumers on 1.97.1 and 1.85.1). Semantic review: Claude Opus (probes, rustdoc,
+the three pack rejections). Reports: `/home/canarit/projects/concord_v4_finish_work/evidence/reviews-final/`
+(SHA256SUMS). "Own" means the reviewer's own finding; none came from the review pack.
+
+| Id | Reviewer | Severity | Finding | Disposition |
+|---|---|---|---|---|
+| X-R1 | Sol XHigh | release-blocking | Native paths were merged by tokens: two crates' `macro_rules` passing `$crate::KEY` (`x-public`, `authorization`) were one header; the secret was sent as `x-public` and printed by `Prepared`'s `Debug`. The known limit recorded in F06 breaks identity-by-resolved-name | FIXED: one key per path occurrence, compared by `HeaderName` when the request is built; the same constant set twice is now a `Build` error from `prepare()`. `checks/hygiene` (two helper crates; fails on `d884461`, passes now), `native_keys::the_same_constant_twice_*`, `ui/native_key_static_errors` updated; F06, SEMANTICS §5, AUTHOR_GUIDE §4.8 |
+| X-R2 | Sol XHigh | should-fix | Riot `player_summary` fetched up to `MAX_MATCHES` details whatever the caller's smaller budget | FIXED: one limit for `count` and for the details; `workflows::the_caller_budget_bounds_the_details_fetched` (0 and 1 with a longer id list) |
+| X-R3 | Sol XHigh | minor | MIGRATION's V3 table still recommended `-> json T`, `json b: T`, `json("…") b: T` | FIXED: statements and `request F "m";` |
+| X-R4 | Sol XHigh | minor | Riot SOURCES said 415 is "tournament only"; every archived operation lists it | FIXED |
+| O-R1 | Opus | release-blocking | A value conditionally withheld on a chain with a native key was not withheld on chains with literal keys only (cross-chain shared slot; sticky override): classification depended on spelling | FIXED: run-time conditions are computed over every endpoint chain once the declaration has a native key. `spelling_equivalence.rs` (native and literal declarations must print and flag the same; both tests fail with the old chain filter) |
+| O-S1 | Opus | should-fix | Request rustdoc on native chains: listed a header the endpoint removes (Riot `account.me`, cheat sheet `public`), stated the format's `Content-Type` where a native `content-type` key replaces it, no "(sensitive)" | FIXED: operations listed in chain order with removals and "(sensitive)"; the `Content-Type` sentence says a native `content-type` key replaces it; unit test `request_summary_lists_native_header_operations_in_order` |
+| O-S2 | Opus | should-fix | SEMANTICS listed 18 sensitive names (25 in code) and the removed `FORMAT b: T` rows | FIXED: one list (AUTHOR_GUIDE §7), rows removed |
+| O-S3 | Opus | should-fix | No route for "JSON or empty" (200/204); the empty-body hint told such endpoints to omit `->` | FIXED: hint reworded ("omit `->` if this endpoint never returns a body, or use a format that accepts an empty one"); `examples/compat` case 9 (`JsonOrEmpty`, tested), RECIPES, AUTHOR_GUIDE §5.5, cheat sheet |
+| O-S4 | Opus | should-fix | "has no representation" and "representation statement" in user-facing text | FIXED: "format"; fixtures and DIAGNOSTICS/MIGRATION excerpts updated |
+| O-P1 | Opus | preference | A public alias whose partner carries its own condition is still withheld (`Same` added without its conjunct); DECISIONS overclaimed | DOCUMENTED (F09 amendment text corrected); safe direction. Exact classification is D1 |
+| O-P2 | Opus | preference | A literal override after a conditionally sensitive value: the outgoing flag ignored the overridden value (static stickiness covers it) | FIXED: static slot flags are computed over the slot's whole history (`spelling_equivalence::stickiness_*`) |
+| O-P3 | Opus | preference | `format json; request json "application/vnd.api+json";` fails with no replacement | FIXED: the message says to write `request F "type/subtype";` and `response F;` instead of `format` |
+| O-P4 | Opus | preference | Long repeated setter docs (`ToHeaderValue` paragraph, native-name hedge) | DEFERRED: wording only; trigger: the next generated-docs pass |
+| O-P5 | Opus | preference | D-REP-3's recorded counterexample was weak; the spelling argument is the decisive one | DOCUMENTED (RECONCILIATION D-REP-3) |
+| O-P6 | Opus | preference | Stale internal comments (`FORMAT("…")`, `body("…")`), an unused `Site` parameter, an incomplete statement list in a message, a wrong comment in `examples/riot/src/main.rs` | FIXED |
+| O-P7 | Opus | preference | A literal key in a compiled-out owner still classifies (over-approximation) | DOCUMENTED (AUTHOR_GUIDE §7) |
+| O-D1 | Opus | deferred | One static table and one run-time fixpoint instead of `Cond`/`implied`/per-value functions: exact by construction | DEFERRED; trigger: the next change to classification or divergence |
+| O-D2 | Opus | deferred | A generated name-only check of all deferred header plans per client, instead of "prepare every endpoint in a test" | DEFERRED; trigger: friction with deferred errors |

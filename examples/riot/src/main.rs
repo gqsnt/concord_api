@@ -83,7 +83,7 @@ async fn main() {
             std::process::exit(1);
         }
         Err(Stop::Failed(error)) => {
-            // Concord's error output withholds the key; the URL path is shown.
+            // Concord's error output names the endpoint and the failure, never the URL or the key.
             eprintln!("{error}");
             std::process::exit(1);
         }

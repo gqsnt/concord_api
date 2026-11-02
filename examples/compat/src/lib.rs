@@ -185,3 +185,34 @@ concord::api! {
         POST maybe(body value?: Flat) { path "maybe"; }
     }
 }
+
+/// A response format for an endpoint that answers either JSON or nothing (`200` with a document,
+/// `204` without): an empty or whitespace-only body is `None`, anything else is decoded as JSON.
+/// JSON itself has no empty document, so this is a format of the application's own.
+pub struct JsonOrEmpty;
+impl<T: serde::de::DeserializeOwned> Decode<Option<T>> for JsonOrEmpty {
+    fn decode(body: concord::bytes::Bytes) -> Result<Option<T>, BodyError> {
+        if body.iter().all(u8::is_ascii_whitespace) {
+            return Ok(None);
+        }
+        <concord::Json as Decode<T>>::decode(body).map(Some)
+    }
+}
+
+/// What is playing, if anything.
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct Playback {
+    /// The track.
+    pub track: String,
+}
+
+concord::api! {
+    /// A synthetic player API: `GET /playing` answers `200` with JSON, or `204` when idle.
+    pub client Player {
+        base "http://compat.invalid";
+        GET playing() -> Option<Playback> {
+            path "playing";
+            response JsonOrEmpty;
+        }
+    }
+}

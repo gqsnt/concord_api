@@ -472,9 +472,10 @@ header("x-request-id") id: String              headers { header::ACCEPT_LANGUAGE
   and an alias of it are one header, so `override "Authorization" = ..` replaces an inherited
   `header(AUTHORIZATION)`. When every key of an endpoint's chain is a literal, the macro composes
   it and every mistake is a compile error. When a chain names a native constant, the macro cannot
-  see which header the constant holds: it still reports the mistakes it can prove (the same
-  constant on both sides, literals on both sides), and the others — such as setting
-  `"authorization"` below `header(AUTHORIZATION)` without `override` — are a `Build` error from
+  see which header the constant holds: it still reports the mistakes it can prove (literals on
+  both sides, an optional `override` without `else inherit`), and the others — such as setting
+  `"authorization"`, or `AUTHORIZATION` again, below `header(AUTHORIZATION)` without `override` —
+  are a `Build` error from
   `prepare()` naming the declaration (and, for a header set twice, the earlier one). Names are
   compared before values, so such an endpoint fails even when its value is absent: a test that
   prepares every endpoint finds these mistakes. Which header each contribution names is decided on the names
@@ -790,7 +791,9 @@ A body cannot have an initializer (`body b: T = ..` is a compile error): its pre
   error on the endpoint itself).
 - **`-> ()`** is a typed output like any other, decoded with its format: under `response json;` the
   body must be JSON `null`, so an empty 204 is a decode error. `-> Unit` for `type Unit = ()`
-  behaves the same. An endpoint that returns nothing omits `->`.
+  behaves the same. An endpoint that returns nothing omits `->`; one that answers either JSON or
+  nothing (`200` or `204`) needs a format of its own that accepts an empty body
+  ([recipes](RECIPES.md#patterns-from-other-apis)).
 - Any 2xx status is success; anything else is an error of kind `Status` with the unread response
   (see the [caller guide](CALLER_GUIDE.md#6-errors)). `-> Option<T>` gives no meaning to 404:
   `null` decodes to `None`, a 404 is still an error.
@@ -993,6 +996,9 @@ output Concord produces: the generated `Debug` of clients, scopes and requests, 
   the key, so renaming the header to a name not on the list would silently stop the redaction,
   while the marker follows the value.
 - Sensitivity is sticky along the chain: a later public override does not make a key public.
+- Classification looks at every declared owner, also those behind a `#[cfg]` that is off: a
+  literal key in a compiled-out endpoint can still withhold a value it reads (more redaction, not
+  less). A native key there has no accessor, so it classifies nothing.
 - A value that feeds a sensitive key is itself withheld, everywhere it appears.
 - A native `HeaderValue` that is already flagged (`set_sensitive(true)`) stays flagged and is
   withheld from Concord's output, marker or not; Concord only ever adds the flag, per value.

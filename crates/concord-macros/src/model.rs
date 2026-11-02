@@ -16,7 +16,7 @@ use crate::template::{self, RawPiece};
 
 pub struct Model {
     pub owners: Vec<Owner>,
-    /// Native `HeaderName` paths written as header keys, one per distinct token sequence.
+    /// Native `HeaderName` paths written as header keys, one per occurrence.
     pub key_paths: Vec<KeyPath>,
 }
 
@@ -25,8 +25,9 @@ pub struct Model {
 pub enum KeyName {
     /// A query key as written, or a header name as normalised by `http::HeaderName::from_bytes`.
     Lit(String),
-    /// A native `HeaderName` constant or static (index into [`Model::key_paths`]). The macro
-    /// cannot evaluate it: it equals another key only when written with the same tokens.
+    /// A native `HeaderName` constant or static (index into [`Model::key_paths`], one per
+    /// occurrence). The macro cannot evaluate it: it equals no other key at compile time, whatever
+    /// its tokens; the names are compared when the request is built.
     Path(usize),
 }
 
@@ -139,8 +140,8 @@ pub struct Body {
     /// Its format (`Encode<ty>`) and where it comes from.
     pub format: Format,
     pub origin: Origin,
-    /// A declared media type (`FORMAT("…")`, `body("…")`, or a `request` default's, reached
-    /// through `body`) and where it is written; `None`: the format's `Encode::CONTENT_TYPE`.
+    /// A declared media type (`request F "…";`, on the endpoint or the nearest owner that states
+    /// the request format) and where it is written; `None`: the format's `Encode::CONTENT_TYPE`.
     pub media: Option<(LitStr, Origin)>,
 }
 
@@ -154,7 +155,7 @@ pub struct Output {
 /// A `request`/`response` default declared on a client or scope.
 pub struct OwnerDefault {
     pub format: Format,
-    /// `request FORMAT("…");`
+    /// `request F "…";`
     pub media: Option<LitStr>,
     /// The hidden type alias through which consuming endpoints name the format, so that a
     /// missing or feature-disabled format is reported once, at the default.
@@ -303,6 +304,9 @@ pub struct Slot {
     pub key: KeyName,
     pub sensitive: bool,
     pub items: Vec<Item>,
+    /// Every contribution ever applied to the slot, overridden and removed ones included:
+    /// sensitivity is sticky along the chain.
+    pub history: Vec<ContribId>,
 }
 
 pub struct Composed {
@@ -1058,17 +1062,15 @@ impl Model {
                     .to_string()
                     .replace(" :: ", "::")
                     .replace(":: ", "::");
-                let index = match self.key_paths.iter().position(|k| k.text == text) {
-                    Some(index) => index,
-                    None => {
-                        self.key_paths.push(KeyPath {
-                            path: path.clone(),
-                            text,
-                        });
-                        self.key_paths.len() - 1
-                    }
-                };
-                Some(KeyName::Path(index))
+                // One entry per occurrence, never merged by tokens: equal tokens can resolve to
+                // different constants (`$crate::KEY` from two crates' `macro_rules`, whose
+                // hygiene a proc-macro cannot see). Occurrences compare by `HeaderName` when the
+                // request is built.
+                self.key_paths.push(KeyPath {
+                    path: path.clone(),
+                    text,
+                });
+                Some(KeyName::Path(self.key_paths.len() - 1))
             }
         }
     }
@@ -1336,6 +1338,7 @@ impl Model {
                                 key: c.key.clone(),
                                 sensitive: c.sensitive || c.key.lit().is_some_and(sensitive_name),
                                 items: vec![Item::Emit(id)],
+                                history: Vec::new(),
                             },
                             live: true,
                             last_writer: writer,
@@ -1400,12 +1403,18 @@ impl Model {
                 state.history.clone(),
             ));
         }
-        states.into_iter().map(|s| s.slot).collect()
+        states
+            .into_iter()
+            .map(|s| Slot {
+                history: s.history,
+                ..s.slot
+            })
+            .collect()
     }
 
     /// Header composition of a chain that writes a native `HeaderName` constant. Returns its
     /// contributions in composition order (the run-time plan composes them on names). Errors the
-    /// macro can prove (with literal names or the same constant on both sides) are compile errors;
+    /// macro can prove (with literal names on both sides) are compile errors;
     /// the others are checked by the plan at `prepare()`. `slots_out` receives one slot per
     /// identity the macro knows (a lower bound for sensitivity propagation).
     fn compose_native(
@@ -1493,16 +1502,14 @@ impl Model {
     fn native_conditions(&mut self) -> bool {
         let mut conds: HashMap<ValueRef, std::collections::BTreeSet<Cond>> = HashMap::new();
         let mut chains = Vec::new();
+        // Every endpoint chain once the declaration has a native key: a value conditionally
+        // withheld on one chain is withheld everywhere, also on chains with literal keys only.
+        if self.key_paths.is_empty() {
+            return false;
+        }
         for index in 0..self.owners.len() {
-            let chain = self.chain(index);
-            let native = chain.iter().any(|&o| {
-                self.owners[o]
-                    .headers
-                    .iter()
-                    .any(|c| matches!(c.key, KeyName::Path(_)))
-            });
-            if native && self.owners[index].is_endpoint() {
-                chains.push(self.header_seq(&chain));
+            if self.owners[index].is_endpoint() {
+                chains.push(self.header_seq(&self.chain(index)));
             }
         }
         let open = |model: &Model, id: ContribId| -> Vec<ValueRef> {
@@ -2244,7 +2251,7 @@ fn endpoint_body(
             None => {
                 let name = plain(&b.name);
                 let message = format!(
-                    "body `{name}` has no representation: say `request json;` on this endpoint, a scope or the client"
+                    "body `{name}` has no format: say `request json;` on this endpoint, a scope or the client"
                 );
                 errors.push(syn::Error::new(b.ty.span(), message));
                 return None;
@@ -2299,7 +2306,7 @@ fn endpoint_output(
                     "; omit `->` to drain"
                 };
                 let message = format!(
-                    "output `{ty}` has no representation: say `response json;` on this endpoint, a scope or the client{unit}"
+                    "output `{ty}` has no format: say `response json;` on this endpoint, a scope or the client{unit}"
                 );
                 errors.push(syn::Error::new(o.ty.span(), message));
                 return None;

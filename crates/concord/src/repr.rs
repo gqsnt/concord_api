@@ -146,7 +146,8 @@ impl<T: serde::de::DeserializeOwned> Decode<T> for Json {
                 .all(|b| matches!(b, b' ' | b'\t' | b'\n' | b'\r'));
             let description = if blank {
                 "JSON decode error: the response body is empty or only whitespace, which is not \
-                 JSON; an endpoint whose response has no body omits `->`"
+                 JSON; omit `->` if this endpoint never returns a body, or use a format that \
+                 accepts an empty one"
                     .into()
             } else if e.classify() == Category::Syntax && e.line() == 1 && e.column() == 1 {
                 format!(

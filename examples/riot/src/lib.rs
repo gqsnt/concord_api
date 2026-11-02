@@ -113,14 +113,16 @@ pub async fn player_summary(
         .set_count(3)
         .send()
         .await?;
+    // The budget bounds both what is asked for and what is fetched, whatever the server returns.
+    let limit = matches.min(MAX_MATCHES);
     let history = riot.matches(match_route);
     let ids = history
         .ids(account.puuid.clone())
-        .set_count(matches.min(MAX_MATCHES))
+        .set_count(limit)
         .send()
         .await?;
     let mut recent = Vec::new();
-    for id in ids.into_iter().take(MAX_MATCHES as usize) {
+    for id in ids.into_iter().take(limit as usize) {
         let game = history.get(id.clone()).send().await?;
         if let Some(me) = game
             .info

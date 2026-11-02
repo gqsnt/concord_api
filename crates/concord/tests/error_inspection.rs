@@ -120,7 +120,7 @@ async fn body_source_of_a_standalone_body_error() {
     assert!(std::error::Error::source(&error).is_none());
 }
 
-const EMPTY_HINT: &str = "the response body is empty or only whitespace, which is not JSON; an endpoint whose response has no body omits `->`";
+const EMPTY_HINT: &str = "the response body is empty or only whitespace, which is not JSON; omit `->` if this endpoint never returns a body, or use a format that accepts an empty one";
 const TEXT_HINT: &str =
     "if the response is not JSON, the endpoint may need `response text;` or `response bytes;`";
 

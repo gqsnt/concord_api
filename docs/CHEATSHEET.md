@@ -116,7 +116,8 @@ format statements, then children.
 
 - The format, not the Rust type, decides the wire: `-> String` under `json` decodes a JSON string;
   `request text;` sends raw text. An empty response is not JSON: an endpoint that returns nothing
-  omits `->`.
+  omits `->`; one that sometimes answers nothing needs a format that accepts an empty body
+  ([recipes](RECIPES.md#patterns-from-other-apis)).
 - An optional body: `set_b(v)` always sends `v` encoded (`None` in an `Option<T>` body is `null`);
   `maybe_b(None)` sends no body.
 - Initializers run each time their owner is created: put a per-request value (an idempotency key)

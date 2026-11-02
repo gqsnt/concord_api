@@ -524,7 +524,7 @@ impl Parse for Api {
         let content;
         braced!(content in input);
         let mut base = None;
-        let (stmts, children) = parse_owner_body(&content, Some(&mut base), Site::Owner)?;
+        let (stmts, children) = parse_owner_body(&content, Some(&mut base))?;
         if !input.is_empty() {
             return Err(input.error("unexpected tokens after the client declaration; `api!` declares exactly one client"));
         }
@@ -559,17 +559,9 @@ fn docs_only(attrs: Vec<Attribute>) -> syn::Result<Vec<Attribute>> {
     Ok(docs)
 }
 
-/// Where an owner body is parsed: format defaults belong to clients and scopes only.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Site {
-    Owner,
-    Endpoint,
-}
-
 fn parse_owner_body(
     input: ParseStream<'_>,
     mut base: Option<&mut Option<LitStr>>,
-    site: Site,
 ) -> syn::Result<(Stmts, Vec<Owner>)> {
     let mut stmts = Stmts::default();
     let mut children = Vec::new();
@@ -600,13 +592,13 @@ fn parse_owner_body(
                 return Err(syn::Error::new(
                     input.span(),
                     format!(
-                        "owner statements (`path`, `subdomain`, `query`, `headers`, `request`, `response`) must precede child declarations (first child: `{}`)",
+                        "owner statements (`path`, `subdomain`, `query`, `headers`, `format`, `request`, `response`) must precede child declarations (first child: `{}`)",
                         first.name
                     ),
                 ));
             }
             if input.peek(kw::request) || input.peek(kw::response) || input.peek(kw::format) {
-                parse_default(input, &mut stmts, site)?;
+                parse_default(input, &mut stmts)?;
             } else {
                 parse_stmt(input, &mut stmts)?;
             }
@@ -617,9 +609,9 @@ fn parse_owner_body(
     Ok((stmts, children))
 }
 
-/// `request FORMAT;`, `request FORMAT("media/type");`, `response FORMAT;`: the formats of the
-/// bodies and typed outputs below that do not write their own.
-fn parse_default(input: ParseStream<'_>, stmts: &mut Stmts, _site: Site) -> syn::Result<()> {
+/// `format F;`, `request F;`, `request F "media/type";`, `response F;`: the formats of the bodies
+/// and typed outputs of this owner and below, the nearest statement winning.
+fn parse_default(input: ParseStream<'_>, stmts: &mut Stmts) -> syn::Result<()> {
     let both = input.peek(kw::format);
     let request = both || input.peek(kw::request);
     let span = if both {
@@ -681,7 +673,7 @@ fn parse_default(input: ParseStream<'_>, stmts: &mut Stmts, _site: Site) -> syn:
             Some(first) if first.both || both => Err(syn::Error::new(
                 span,
                 format!(
-                    "duplicate `{direction}` direction: `format` counts as both `request` and `response`, at most once each per owner"
+                    "duplicate `{direction}` direction: `format` counts as both `request` and `response`, at most once each per owner; for a different media type write `request F \"type/subtype\";` and `response F;` instead of `format`"
                 ),
             )),
             _ => Ok(()),
@@ -872,7 +864,7 @@ fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
         };
         let content;
         braced!(content in input);
-        let (stmts, children) = parse_owner_body(&content, None, Site::Owner)?;
+        let (stmts, children) = parse_owner_body(&content, None)?;
         return Ok(Owner {
             kind: OwnerKind::Scope,
             docs,
@@ -913,7 +905,7 @@ fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
     } else {
         let content;
         braced!(content in input);
-        let (stmts, children) = parse_owner_body(&content, None, Site::Endpoint)?;
+        let (stmts, children) = parse_owner_body(&content, None)?;
         if let Some(child) = children.first() {
             return Err(syn::Error::new(
                 child.name.span(),

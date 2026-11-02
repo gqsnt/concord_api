@@ -65,8 +65,8 @@ reference  := name | owner "." name       (owner = `client` or an enclosing scop
 | `x: T = E` | `T` | `E` | `set_x(v)` |
 | `x?: T` | `Option<T>` | absent | `set_x(v)` (present), `maybe_x(o)` (exactly `o`) |
 | `x?: T = E` | `Option<T>` | present `E` | `set_x(v)`, `maybe_x(o)` |
-| `body b: T`, `FORMAT b: T` | `T` | — | positional argument; then `set_b(v)` |
-| `body b?: T`, `FORMAT b?: T` | `Option<T>` | absent | `set_b(v)`, `maybe_b(o)` |
+| `body b: T` | `T` | — | positional argument; then `set_b(v)` |
+| `body b?: T` | `Option<T>` | absent | `set_b(v)`, `maybe_b(o)` |
 
 - Entry calls: `Client::new(http: reqwest::Client, config: {Client}Config)` when the client has
   required values (`Client::new(http)` otherwise); `parent.scope(...)`, `parent.endpoint(...)`.
@@ -161,8 +161,9 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
 - A removed and later reintroduced key keeps the slot position of its first appearance.
 - **When composition is decided.** If every header key on an endpoint's chain is a literal, the
   macro composes the headers and every rule violation is a compile error. If a native constant is
-  on the chain, the macro cannot evaluate it: two literals or two identical paths are known to be
-  the same header or not, any other pair is unknown. Violations that hold whatever the unknown
+  on the chain, the macro cannot evaluate it: two literals are known to be the same header or
+  not, any pair involving a native path is unknown — also two paths written with the same tokens,
+  which can resolve to different constants (`$crate::KEY` from two crates' macros). Violations that hold whatever the unknown
   pairs turn out to be are compile errors; the others are checked when the request is built, by
   `__private::HeaderPlan`, which applies the same rules to the native names (equality only, no
   value converted or formatted) and reports a `Build` error naming the declaration. The result —
@@ -343,10 +344,9 @@ sent on the wire.
 
 - A value is marked with `#[sensitive]`.
 - A query/header **key** is sensitive for an endpoint if any contribution to it on the chain reads a
-  marked value, or if its name (lowercased, `_` → `-`) is exactly one of: `authorization`,
-  `proxy-authorization`, `cookie`, `set-cookie`, `x-api-key`, `api-key`, `apikey`, `x-auth-token`,
-  `auth-token`, `access-token`, `refresh-token`, `id-token`, `token`, `client-secret`, `secret`,
-  `password`, `signature`, `session`. Sensitivity is sticky: a later public override, removal or
+  marked value, or if its name (lowercased, `_` → `-`) is exactly one of the well-known names
+  listed once, in the author guide (§7, "Sensitive values"; the macro's and the runtime's copies
+  are kept equal by a unit test). Sensitivity is sticky: a later public override, removal or
   reintroduction does not clear it.
 - A path segment or host label is sensitive if any of its holes reads a marked value.
 - **Native keys.** A key's name is its resolved `HeaderName`: a native constant on the list above

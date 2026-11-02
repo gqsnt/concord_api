@@ -80,7 +80,7 @@ if [[ $msrv == 1 ]]; then
     --test oracle_sensitivity --test formats --test forms --test native_keys --test header_plan \
     --test error_inspection
   step msrv-examples cargo +1.85 test --locked -p concord-macros -p concord-example-shapes \
-    -p concord-example-renamed -p concord-example-native -p concord-example-quickstart -p concord-example-riot -p concord-example-compat -p concord-heap-check \
+    -p concord-example-renamed -p concord-example-native -p concord-example-quickstart -p concord-example-riot -p concord-example-compat -p concord-hygiene-check -p concord-heap-check \
     -p concord-clone-compat
   step msrv-multipart-alone cargo +1.85 test --locked -p concord-example-multipart
 fi

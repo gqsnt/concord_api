@@ -291,13 +291,13 @@ fn main() {}
 Excerpt of [`representation_missing_via.stderr`](../crates/concord/tests/ui/representation_missing_via.stderr):
 
 ```text
-error: output `Item` has no representation: say `response json;` on this endpoint, a scope or the client; omit `->` to drain
+error: output `Item` has no format: say `response json;` on this endpoint, a scope or the client; omit `->` to drain
  --> tests/ui/representation_missing_via.rs:9:23
   |
 9 |         GET item() -> Item;
   |                       ^^^^
 
-error: body `item` has no representation: say `request json;` on this endpoint, a scope or the client
+error: body `item` has no format: say `request json;` on this endpoint, a scope or the client
   --> tests/ui/representation_missing_via.rs:16:32
    |
 16 |         POST create(body item: Item);

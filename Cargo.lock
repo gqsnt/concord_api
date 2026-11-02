@@ -333,6 +333,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-hygiene-check"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-hygiene-key-a",
+ "concord-hygiene-key-b",
+]
+
+[[package]]
+name = "concord-hygiene-key-a"
+version = "0.0.0"
+dependencies = [
+ "concord",
+]
+
+[[package]]
+name = "concord-hygiene-key-b"
+version = "0.0.0"
+dependencies = [
+ "concord",
+]
+
+[[package]]
 name = "concord-macros"
 version = "4.0.0-alpha.1"
 dependencies = [

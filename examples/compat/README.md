@@ -110,6 +110,15 @@ whether or not the body is, and labels the JSON body when it is (author guide §
 `content-type` is deliberately not rejected; a declared media type plus a reaching `content-type`
 header is the compile error.
 
+## 9. JSON or nothing (`tests/json_or_empty.rs`, added by the coordinator)
+
+An endpoint that answers `200` with a JSON document or `204` with no body. Concord's `json`
+format keeps an empty body an error (JSON has no empty document), so the application declares a
+small format of its own: `JsonOrEmpty` implements `Decode<Option<T>>`, maps an empty or
+whitespace-only body to `None` and decodes anything else as JSON; the endpoint names it with
+`response JsonOrEmpty;` and returns `-> Option<Playback>`. A malformed body is still an error.
+Outside facts: **synthetic**, modelled on a media player service and not verified here.
+
 ## Validation
 
 Run offline from the workspace root after updating the lock entry:

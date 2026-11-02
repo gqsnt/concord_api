@@ -925,6 +925,12 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
                     c.key == content_type && c.op != crate::syntax::Op::Remove
                 }),
             };
+            // A native key may name `content-type` (the macro cannot tell): say so.
+            let native_maybe = !header
+                && matches!(&composed.headers, HeaderComposition::Dynamic(seq) if seq.iter().any(|&id| {
+                    let c = model.contrib(id);
+                    matches!(c.key, KeyName::Path(_)) && c.op != crate::syntax::Op::Remove
+                }));
             let media = match (&b.media, &b.format) {
                 (Some((m, origin)), _) => format!(
                     " `Content-Type: {}` ({}) is sent with the body.",
@@ -948,6 +954,13 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
                     " `Content-Type`: the format's `Encode::CONTENT_TYPE`, sent with the body."
                         .to_owned()
                 }
+            };
+            let media = if native_maybe && b.media.is_none() {
+                format!(
+                    "{media} A header of this chain whose native name is `content-type` replaces it (and is sent with or without the body)."
+                )
+            } else {
+                media
             };
             let absent = if b.optional {
                 " Absent: no body, and the format adds no `Content-Type`."
@@ -1004,30 +1017,30 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
             }
         }
         HeaderComposition::Dynamic(seq) => {
+            // The macro cannot tell which contributions name the same header, so the operations
+            // are listed in chain order (`remove X_RIOT_TOKEN` under a client that sets it).
             let mut shown: Vec<String> = Vec::new();
-            for (i, &id) in seq.iter().enumerate() {
+            for &id in seq {
                 let c = model.contrib(id);
-                // Not listed: a `remove`, and a contribution a later `remove` of the provably
-                // same key drops (`remove X_RIOT_TOKEN;` under a client that sets it).
-                let removed_later = seq[i + 1..].iter().any(|&later| {
-                    let l = model.contrib(later);
-                    l.op == crate::syntax::Op::Remove
-                        && matches!(
-                            crate::model::relation(&c.key, &l.key),
-                            crate::model::Rel::Same
-                        )
-                });
-                if c.op == crate::syntax::Op::Remove || removed_later {
-                    continue;
-                }
-                let text = format!("`{}`", model.key_text(&c.key));
+                let op = match (c.op, c.else_inherit) {
+                    (crate::syntax::Op::Introduce, _) => "",
+                    (crate::syntax::Op::Append, _) => "append ",
+                    (crate::syntax::Op::Override, false) => "override ",
+                    (crate::syntax::Op::Override, true) => "override else inherit ",
+                    (crate::syntax::Op::Remove, _) => "remove ",
+                };
+                let text = format!(
+                    "`{op}{}`{}",
+                    model.key_text(&c.key),
+                    if c.sensitive { " (sensitive)" } else { "" }
+                );
                 if !shown.contains(&text) {
                     shown.push(text);
                 }
             }
             if !shown.is_empty() {
                 lines.push(lit(&format!(
-                    " Headers (when present; native names are composed by identity when the request is built): {}.",
+                    " Headers, in chain order (sent when present; native names are compared when the request is built): {}.",
                     shown.join(", ")
                 )));
             }
@@ -1086,7 +1099,7 @@ fn defaults_line(model: &Model, index: usize) -> Option<LitStr> {
     .collect();
     (!parts.is_empty()).then(|| {
         lit(&format!(
-            " Formats of the endpoints below: {}. The nearest representation statement wins (endpoint, inner scopes, client); an endpoint without `->` drains its response.",
+            " Formats of the endpoints below: {}. The nearest format statement wins (endpoint, inner scopes, client); an endpoint without `->` drains its response.",
             parts.join("; ")
         ))
     })
@@ -1807,11 +1820,10 @@ fn items_code(
     let (name, sensitive) = match (family, &slot.key) {
         (Family::Header, key) => {
             let name = key_ref(model, headers, key);
-            let mut ids = Vec::new();
-            collect_items(items, &mut ids);
+            // Sticky, like `slot.sensitive`: every contribution ever applied to the slot.
             (
                 quote!(::core::clone::Clone::clone(#name)),
-                flag_expr(model, slot.sensitive, &ids),
+                flag_expr(model, slot.sensitive, &slot.history),
             )
         }
         (Family::Query, _) => (quote!(), quote!()),
@@ -1831,18 +1843,6 @@ fn items_code(
         }
     }
     out
-}
-
-fn collect_items(items: &[Item], out: &mut Vec<ContribId>) {
-    for item in items {
-        match item {
-            Item::Emit(id) => out.push(*id),
-            Item::Override { src, fallback } => {
-                out.push(*src);
-                collect_items(fallback, out);
-            }
-        }
-    }
 }
 
 /// A chain with a native `HeaderName` constant: every key is bound first (so a key's type error
@@ -2206,11 +2206,10 @@ mod tests {
         emit(&model, quote!(::concord)).to_string()
     }
 
-    /// Placement notes are deduplicated (a label seen twice is listed once) and keep first-seen
-    /// order, whatever the number of distinct placements.
-    /// A native key removed through the same path is not listed among the endpoint's headers.
+    /// With a native key on the chain, the header operations are listed in chain order, removals
+    /// included: the macro cannot tell which of them name the same header.
     #[test]
-    fn request_summary_omits_a_provably_removed_native_key() {
+    fn request_summary_lists_native_header_operations_in_order() {
         let docs = docs(quote! {
             pub client Api(header(X_KEY) key: String) {
                 base "http://x.test";
@@ -2223,14 +2222,18 @@ mod tests {
         });
         let line = |names: &str| {
             format!(
-                "Headers (when present; native names are composed by identity when the request is built): {names}."
+                "Headers, in chain order (sent when present; native names are compared when the request is built): {names}."
             )
         };
         // Each summary is on the navigation method and on the request type.
-        assert_eq!(docs.matches(&line("`ACCEPT`, `AUTHORIZATION`")).count(), 2);
+        // The token is written as text under a native key: withheld statically (F09).
+        let me = "`X_KEY`, `ACCEPT`, `remove X_KEY`, `AUTHORIZATION` (sensitive)";
+        assert_eq!(docs.matches(&line(me)).count(), 2);
         assert_eq!(docs.matches(&line("`X_KEY`, `ACCEPT`")).count(), 2);
     }
 
+    /// Placement notes are deduplicated (a label seen twice is listed once) and keep first-seen
+    /// order, whatever the number of distinct placements.
     #[test]
     fn placement_notes_are_distinct_in_first_seen_order() {
         let docs = docs(quote! {

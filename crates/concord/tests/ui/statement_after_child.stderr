@@ -1,4 +1,4 @@
-error: owner statements (`path`, `subdomain`, `query`, `headers`, `request`, `response`) must precede child declarations (first child: `list`)
+error: owner statements (`path`, `subdomain`, `query`, `headers`, `format`, `request`, `response`) must precede child declarations (first child: `list`)
  --> tests/ui/statement_after_child.rs:5:9
   |
 5 |         path "late";

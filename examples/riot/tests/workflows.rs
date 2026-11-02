@@ -100,6 +100,31 @@ async fn player_summary_reads_a_bounded_history() {
     );
 }
 
+/// The caller's budget holds even when the id list is longer than asked (here: 2 ids for 0 and 1).
+#[tokio::test]
+async fn the_caller_budget_bounds_the_details_fetched() {
+    for (budget, details) in [(0, 0), (1, 1)] {
+        let server = Server::start(routed()).await;
+        let summary = player_summary(
+            &riot(&server),
+            "Fixture Player",
+            "EUW",
+            AccountRoute::Europe,
+            Platform::Euw1,
+            MatchRoute::Europe,
+            budget,
+        )
+        .await
+        .unwrap();
+        assert_eq!(summary.recent.len(), details);
+        assert_eq!(server.requests().len(), 4 + details);
+        assert_eq!(
+            server.requests()[3].query(),
+            Some(&*format!("count={budget}"))
+        );
+    }
+}
+
 #[tokio::test]
 async fn history_is_capped_whatever_the_caller_asks() {
     let server = Server::start(routed()).await;

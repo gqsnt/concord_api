@@ -38,7 +38,7 @@ Migrate by hand: the compiler names the exact replacement at each old form, for 
 "removed in-place body format: write `body note: String` and `request text;` on this endpoint",
 "removed output format: write `-> String` and `response text;` on this endpoint" and
 "removed parenthesized media type: write `request json "application/vnd.api+json";`". A body or
-output that no statement reaches is "body `note` has no representation: say `request json;` on
+output that no statement reaches is "body `note` has no format: say `request json;` on
 this endpoint, a scope or the client".
 
 Before (`concord-v4-native-repr`, does not compile any more):
@@ -614,7 +614,7 @@ There is no converter; declarations are short enough to rewrite by hand. V3 is p
 | built-in base URL only | `base "..."` plus `with_base_url(..)` at runtime. |
 | `Client::builder()...build()?` | `Client::new(http, ClientConfig { .. })` — required values are fields of the generated config struct, checked by the compiler. |
 | `.await` on a request | `.send().await` (explicit verb). |
-| `response Json;` defaults, `via Json` | `response json;` / `request json;` on the client or a scope (lowercase words), or the format in place: `-> json T`, `json b: T`. An endpoint has no `response` statement; without `->` nothing is decoded. |
+| `response Json;` defaults, `via Json` | `format json;` (or `request json;` / `response json;`, lowercase words) on the client, a scope or an endpoint, the nearest one winning; payloads name types only (`body b: T`, `-> T`). Without `->` nothing is decoded. |
 | `absent on 404` | `match` on `e.status()` ([caller guide](CALLER_GUIDE.md#6-errors)), or `send_raw()`. |
 | `status [...]` | any 2xx is success; other statuses are `ErrorKind::Status` with the unread response. |
 | `plan()` | `prepare()` gives a native `reqwest::Request`; `Prepared`'s `Debug` is redacted. |
@@ -625,7 +625,7 @@ There is no converter; declarations are short enough to rewrite by hand. V3 is p
 | `replace "k" = v`, `when_present "k" = v` | `override "k" = v else inherit` (absent keeps the inherited value); exact replacement is `remove "k"; "k" = v;`. |
 | `query off`, `path replace/off`, `subdomain replace/off` | not available; restructure scopes. |
 | `#[default] x: T` | `x: T = Default::default()`. Initializers may be any expression. |
-| Authorization/Cookie/Accept/Content-Type forbidden as public headers | ordinary headers (a declared `content-type` replaces a format's own media type; a body's media type is written on the body, `json("…") b: T`). |
+| Authorization/Cookie/Accept/Content-Type forbidden as public headers | ordinary headers (a declared `content-type` replaces a format's own media type; a body's media type is written with its format, `request json "application/problem+json";`). |
 
 ### Before and after
 

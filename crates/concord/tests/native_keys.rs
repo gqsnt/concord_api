@@ -446,3 +446,34 @@ fn native_conditions_follow_cfg() {
     let p = api.on().prepare().unwrap();
     assert!(!p.request().headers()["x-d"].is_sensitive());
 }
+
+concord::api! {
+    /// The same constant written twice: a `Build` error from `prepare()`, not a compile error
+    /// (equal tokens are not proof of one header; see `checks/hygiene`).
+    pub client Twice(header(AUTHORIZATION) token: String) {
+        base "http://twice.invalid";
+        GET again(again: String) { headers { AUTHORIZATION = again; } }
+        GET replaced(fresh: String) { headers { override AUTHORIZATION = fresh; } }
+    }
+}
+
+#[test]
+fn the_same_constant_twice_is_decided_when_the_request_is_built() {
+    let api = Twice::new(
+        http(),
+        TwiceConfig {
+            token: "TOK".into(),
+        },
+    );
+    let error = api.again("AGAIN").prepare().unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Build);
+    let text = format!("{error} {error:?}");
+    assert!(
+        text.contains("`AUTHORIZATION` on `Twice.again` sets a header that `AUTHORIZATION` on `Twice` already sets"),
+        "{text}"
+    );
+    assert!(!text.contains("TOK") && !text.contains("AGAIN"), "{text}");
+    let p = api.replaced("FRESH").prepare().unwrap();
+    assert_eq!(p.request().headers()["authorization"], "FRESH");
+    assert!(p.request().headers()["authorization"].is_sensitive());
+}

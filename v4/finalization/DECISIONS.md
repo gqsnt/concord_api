@@ -89,8 +89,9 @@ direct placements (`header(AUTHORIZATION) token: String`) and block entries
 (`ACCEPT = ".."; override AUTH = v; remove "authorization";`). No Concord key wrapper; no name
 table; the identifier of a path is never read.
 
-**Identity.** The macro knows literal/literal pairs (normalized by `http::HeaderName::from_bytes`)
-and identical paths; any pair involving a native constant is unknown (const comparison of
+**Identity.** The macro knows literal/literal pairs (normalized by `http::HeaderName::from_bytes`);
+any pair involving a native constant is unknown, including two occurrences written with the same
+tokens (const comparison of
 `HeaderName` is impossible on stable: E0015/E0493, reproduced by three designers). Chains with
 literal keys only are composed by the macro, as before. A chain with a native constant is composed
 when the request is built by `__private::HeaderPlan`, on names and presence flags only — no value
@@ -101,8 +102,13 @@ residual comparisons (larger generated code, same result) and a cached interpret
 request (unnecessary). `tests/header_plan.rs` checks the plan against the sequential rule on every
 chain of up to four contributions over three names (~838,000 cases).
 
-**Known limit.** Two key paths with identical tokens are treated as the same header even under
-different `macro_rules` hygiene (a proc-macro cannot observe hygiene).
+**Known limit withdrawn (final executable review R1).** Paths were merged by their tokens, so
+two crates' macros writing `$crate::KEY` (one `x-public`, one `authorization`) were composed as one
+header: the secret was sent under `x-public` and printed by `Prepared`'s `Debug`. A proc-macro
+cannot observe hygiene, so equal tokens prove nothing: every path occurrence is now its own key,
+compared by `HeaderName` when the request is built (`checks/hygiene`). Setting the same constant
+twice is therefore a `Build` error from `prepare()`, like every other identity mistake involving a
+native constant, no longer a compile error.
 
 ## F07 — HTTP validity belongs to `http` (CHANGE; supersedes N03's text rule)
 
@@ -143,7 +149,11 @@ own conditions. When the two keys name one header, the other key's name being on
 this key's name is on it too, which is the value's own `Name` condition. The deep suite drops to
 1,088 comparisons (expansion 7.7 MB → 2.1 MB). The rule is the documented one, and no value it
 withholds is shown. A value whose native key only aliases a *public* header was withheld before
-by over-approximation and is now shown, as the generated docs and §7 always said
+by over-approximation and is now shown, as the generated docs and §7 always said, unless the
+public partner carries a condition of its own (for example its value is also sent under another
+native key). In that case `Same(ka, kb)` is still added alone instead of together with that
+condition, which withholds more than the rule requires (the safe direction; final semantic review
+P1)
 (`native_keys::transitive_classification_follows_resolved_names`,
 `deep_native_chain_withholds_only_the_aliased_level`). The list gained seven vendor secret names
 (`api-token`, `x-api-token`, `x-access-token`, `private-token`, `x-goog-api-key`,
