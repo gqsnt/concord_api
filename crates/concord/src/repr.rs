@@ -214,7 +214,7 @@ impl Decode<Vec<u8>> for Binary {
 /// URL-encoded forms via `serde_urlencoded`, the format word `form` (feature `form`):
 /// `application/x-www-form-urlencoded` request bodies from any `Serialize` struct, map or
 /// sequence of pairs (flat values only: nested structures and sequences are an encoding error);
-/// responses decode into any `DeserializeOwned`. `form credentials: Login`, `-> form Token`.
+/// responses decode into any `DeserializeOwned`. `request form;`, `response form;`.
 #[cfg(feature = "form")]
 pub struct Form(());
 

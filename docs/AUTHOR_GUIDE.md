@@ -84,8 +84,8 @@ never by its Rust type:
 | `x: T = expr` | `expr` | `set_x(v)` |
 | `x?: T` | absent | `set_x(v)` (present), `maybe_x(o: Option<T>)` (exactly `o`) |
 | `x?: T = expr` | present, `expr` | `set_x(v)`, `maybe_x(o)` |
-| `body b: T`, `json b: T` (any format) | required | positional argument; then `set_b(v)` |
-| `body b?: T`, `json b?: T` | absent (no body) | `set_b(v)`, `maybe_b(o)` |
+| `body b: T` | required | positional argument; then `set_b(v)` |
+| `body b?: T` | absent (no body) | `set_b(v)`, `maybe_b(o)` |
 
 ```rust
 use concord::reqwest;

@@ -33,4 +33,14 @@ Note (r1): the private registry lacked `criterion` and reqwest's multipart depen
 
 Packet mapping (not given to reviewers): X = Candidate B, Y = control (current grammar), Z = Candidate A.
 
+## Round 3 — fresh use (docs first) on the integrated candidate
+
+Brief: `/home/canarit/projects/concord_v4_finish_work/briefs/FRESH_USE.md` (MODEL_BRIEFS §5 and
+the ten SCENARIOS §5 tasks over a fictional mostly-JSON API; no library source, macro expansion or
+design records unless blocked). Each participant had its own snapshot of `389392f`.
+
+| Run | Role | Requested | Observed | Source scope | Status |
+|---|---|---|---|---|---|
+| fu-terra | Fresh user, author + caller | gpt-6.1-terra / xhigh | gpt-6.1-terra / xhigh, workspace-write, network on (turn_context) | snapshot fu-terra (`389392f`); 28 commands; no transition to library source, tests, expansions or `v4/` | 17:33:57→17:36:26Z, tracked files unchanged; all ten tasks run with loopback tests; report `trials/terra-xhigh.md`, archive `/home/canarit/projects/concord_v4_finish_work/evidence/fresh-use/terra/` (SHA256SUMS) |
+
 Frozen outputs and their SHA-256 sums: `/home/canarit/projects/concord_v4_finish_work/proposals/r1/FROZEN.sha256`, `/home/canarit/projects/concord_v4_finish_work/proposals/r2/FROZEN-a.sha256`, `/home/canarit/projects/concord_v4_finish_work/proposals/r2/FROZEN-b.sha256`, `/home/canarit/projects/concord_v4_finish_work/proposals/r2/xreview/FROZEN.sha256`.
