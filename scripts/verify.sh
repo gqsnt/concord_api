@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # Runs every V4 quality gate and prints one PASS/FAIL line per step.
-# Usage: scripts/verify.sh [--msrv] [--nightly]
+# Usage: scripts/verify.sh [--msrv] [--nightly] [--package]
 #   --msrv     also runs the runtime suites on Rust 1.85
 #   --nightly  also runs the conditional-`Clone` checks on nightly (reported, never fails the run)
+#   --package  also builds and tests a consumer against the packaged .crate files (release check)
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-msrv=0 nightly=0
+msrv=0 nightly=0 package=0
 for arg in "$@"; do
   case "$arg" in
     --msrv) msrv=1 ;;
     --nightly) nightly=1 ;;
+    --package) package=1 ;;
     *) echo "unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
@@ -79,6 +81,10 @@ if [[ $msrv == 1 ]]; then
     -p concord-example-renamed -p concord-example-native -p concord-example-quickstart -p concord-heap-check \
     -p concord-clone-compat
   step msrv-multipart-alone cargo +1.85 test --locked -p concord-example-multipart
+fi
+
+if [[ $package == 1 ]]; then
+  step package-check scripts/package-check.sh target/package-check
 fi
 
 if [[ $nightly == 1 ]]; then

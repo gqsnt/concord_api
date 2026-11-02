@@ -10,9 +10,14 @@ rm -rf "$out"
 mkdir -p "$out"
 out=$(cd "$out" && pwd)
 
-# `--no-verify`: concord's verification would resolve concord-macros from crates.io, where this
-# version does not exist; the consumer below verifies both packages together instead.
-cargo package --locked --no-verify -p concord-macros -p concord --allow-dirty >/dev/null 2>"$out/package.log" \
+# concord-macros is not on crates.io, so concord is packaged with a crates.io patch pointing at the
+# local crate (packaging resolves dependencies even with `--no-verify`), and without cargo's own
+# verification build: the consumer below builds both packaged crates together instead. The
+# "ignoring test" warnings list the test targets deliberately left out of the package.
+cargo package --offline --locked --no-verify -p concord-macros --allow-dirty >"$out/package.log" 2>&1 \
+  || { cat "$out/package.log"; exit 1; }
+cargo package --offline --locked --no-verify -p concord --allow-dirty \
+  --config 'patch.crates-io.concord-macros.path="crates/concord-macros"' >>"$out/package.log" 2>&1 \
   || { cat "$out/package.log"; exit 1; }
 version=$(cargo metadata --format-version 1 --no-deps --locked \
   | python3 -I -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"]=="concord"))')
@@ -104,7 +109,16 @@ EOF
 cp "$root/Cargo.lock" "$out/consumer/Cargo.lock" 2>/dev/null || true
 cd "$out/consumer"
 export CARGO_TARGET_DIR="$out/target"
-cargo test --offline 2>&1 | tail -n 4
-cargo test --offline --no-default-features 2>&1 | tail -n 4
-cargo +1.85 test --offline 2>&1 | tail -n 4
+# Each run must pass exactly the expected number of consumer tests (not just compile).
+run() {
+  local expected="$1"; shift
+  local log passed
+  log=$("$@" 2>&1) || { echo "$log"; echo "FAIL  $*"; exit 1; }
+  passed=$(grep -o 'test result: ok. [0-9]* passed' <<<"$log" | awk '{s+=$4} END {print s+0}')
+  if [[ "$passed" != "$expected" ]]; then echo "$log"; echo "FAIL  $* ($passed passed, expected $expected)"; exit 1; fi
+  echo "ok    $* ($passed tests)"
+}
+run 2 cargo test --offline
+run 1 cargo test --offline --no-default-features
+run 2 cargo +1.85 test --offline
 echo "PASS  package-check (consumer built against the extracted .crate files)"
