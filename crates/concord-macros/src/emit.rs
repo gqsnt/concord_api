@@ -397,7 +397,8 @@ fn debug_fields<'a>(
                 quote_spanned!(span=> &#place.as_ref().map(#k::__private::DebugDisplay))
             }
         };
-        out.extend(located(quote!(.field(#label, #shown)), span));
+        // One statement per field (not a method chain): thousands of values must not nest.
+        out.extend(located(quote!(__d.field(#label, #shown);), span));
     }
     out
 }
@@ -466,7 +467,9 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
 
                         impl ::core::fmt::Debug for #config {
                             #[inline] fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                                f.debug_struct(#config_label) #config_debug .finish()
+                                let mut __d = f.debug_struct(#config_label);
+                                #config_debug
+                                __d.finish()
                             }
                         }
                     },
@@ -524,7 +527,10 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
                 impl ::core::fmt::Debug for #ty {
                     #[inline] fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                         let __s = &*self.__s;
-                        f.debug_struct(#type_label).field("base", &__s.__base) #debug .finish()
+                        let mut __d = f.debug_struct(#type_label);
+                        __d.field("base", &__s.__base);
+                        #debug
+                        __d.finish()
                     }
                 }
             }
@@ -562,7 +568,9 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
                 impl ::core::fmt::Debug for #ty {
                     #[inline] fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                         let __s = &*self.__s;
-                        f.debug_struct(#type_label) #debug .finish()
+                        let mut __d = f.debug_struct(#type_label);
+                        #debug
+                        __d.finish()
                     }
                 }
             }
@@ -586,10 +594,10 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
                 let vty = body_value_type(b);
                 let label = lit(&plain(name));
                 if b.optional {
-                    debug.extend(quote!(.field(#label, &self.#name.as_ref().map(|_| ".."))));
+                    debug.extend(quote!(__d.field(#label, &self.#name.as_ref().map(|_| ".."));));
                     quote!(#name: ::core::option::Option<#vty>,)
                 } else {
-                    debug.extend(quote!(.field(#label, &"..")));
+                    debug.extend(quote!(__d.field(#label, &"..");));
                     quote!(#name: #vty,)
                 }
             });
@@ -629,7 +637,9 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
 
                 impl ::core::fmt::Debug for #ty {
                     #[inline] fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                        f.debug_struct(#type_label) #debug .finish()
+                        let mut __d = f.debug_struct(#type_label);
+                        #debug
+                        __d.finish()
                     }
                 }
             }
