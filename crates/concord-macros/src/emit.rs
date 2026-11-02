@@ -306,6 +306,65 @@ fn placement_label(family: Family, key: &str) -> LitStr {
     })
 }
 
+/// The request an endpoint builds, as rustdoc derived from the resolved model: method and URL
+/// template (`{x}` holes are filled from values), then the query and header keys it may send.
+fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStream {
+    let Some(composed) = model.owners[endpoint].composed.as_ref() else {
+        return quote!();
+    };
+    let base = match &model.owners[0].kind {
+        Kind::Client { base, .. } => base.value(),
+        _ => return quote!(),
+    };
+    let (scheme, rest) = base.split_once("://").unwrap_or(("", base.as_str()));
+    let (host, base_path) = match rest.find('/') {
+        Some(i) => rest.split_at(i),
+        None => (rest, ""),
+    };
+    let mut url = format!("{scheme}://");
+    for &(o, i) in &composed.labels {
+        url.push_str(&model.owners[o].labels[i].text);
+        url.push('.');
+    }
+    url.push_str(host);
+    if composed.segments.is_empty() && !composed.trailing_slash {
+        url.push_str(base_path);
+    } else {
+        url.push_str(base_path.strip_suffix('/').unwrap_or(base_path));
+        for &(o, i) in &composed.segments {
+            url.push('/');
+            url.push_str(&model.owners[o].segments[i].text);
+        }
+        if composed.trailing_slash {
+            url.push('/');
+        }
+    }
+    let keys = |slots: &[crate::model::Slot]| -> String {
+        let shown: Vec<String> = slots
+            .iter()
+            .filter(|s| !s.items.is_empty())
+            .map(|s| {
+                if s.sensitive {
+                    format!("`{}` (sensitive)", s.key)
+                } else {
+                    format!("`{}`", s.key)
+                }
+            })
+            .collect();
+        shown.join(", ")
+    };
+    let mut lines = vec![lit(""), lit(&format!(" Request: `{method} {url}`."))];
+    let query = keys(&composed.query);
+    if !query.is_empty() {
+        lines.push(lit(&format!(" Query (when present): {query}.")));
+    }
+    let headers = keys(&composed.headers);
+    if !headers.is_empty() {
+        lines.push(lit(&format!(" Headers (when present): {headers}.")));
+    }
+    quote!(#(#[doc = #lines])*)
+}
+
 /// A rustdoc list of an entry call's positional arguments with their documentation.
 fn argument_docs(values: &[Value], body: Option<&Body>) -> TokenStream {
     let mut lines = Vec::new();
@@ -623,7 +682,9 @@ fn emit_owner(k: &TokenStream, model: &Model, index: usize, vis: &syn::Visibilit
                         #prepare
                     }
 
-                    /// Sends the request once and decodes a 2xx response.
+                    /// Sends the request once (`prepare` then one `reqwest::Client::execute`) and
+                    /// decodes a 2xx response. A non-2xx status is `ErrorKind::Status` holding the
+                    /// unread response (`Error::into_response`); Concord never retries.
                     #[inline] pub async fn send(self) -> ::core::result::Result<#out, #k::Error> {
                         self.prepare()?.send().await
                     }
@@ -749,10 +810,12 @@ fn navigation(k: &TokenStream, model: &Model, index: usize) -> TokenStream {
                 } else {
                     quote!(#[doc = ""])
                 };
+                let summary = request_summary(model, child, method);
                 out.extend(quote! {
                     #(#docs)*
                     #sep
                     #[doc = #line]
+                    #summary
                     #args
                     #(#nav_attrs)*
                     #[inline] #[allow(clippy::too_many_arguments)] pub fn #name(&self, #params) -> #cty {
