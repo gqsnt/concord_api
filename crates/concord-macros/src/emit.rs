@@ -501,8 +501,11 @@ fn emit_owner(k: &TokenStream, model: &Model, index: usize, vis: &syn::Visibilit
                     }
 
                     /// Replaces the declared base URL (for example with a staging server or a
-                    /// local test server). It must be an `http`/`https` URL with a host and no
-                    /// user information, query or fragment.
+                    /// local test server). It must be an `http`/`https` URL with a host, no port 0
+                    /// and no user information, query or fragment; anything else is an error.
+                    /// Declared paths are appended to its path. With `subdomain` labels the host
+                    /// must be a domain name: to reach a local server, keep a domain and map it
+                    /// with `reqwest::ClientBuilder::resolve`.
                     #[inline] pub fn with_base_url(mut self, url: impl ::core::convert::AsRef<str>) -> ::core::result::Result<Self, #k::Error> {
                         let base = #k::__private::Base::parse(url.as_ref())?;
                         ::std::sync::Arc::make_mut(&mut self.__s).__base = base;
@@ -709,9 +712,15 @@ fn navigation(k: &TokenStream, model: &Model, index: usize) -> TokenStream {
         // `#[cfg]` and `#[deprecated]` of a child apply to its navigation method.
         let nav_attrs: Vec<&syn::Attribute> =
             c.own_cfgs.iter().chain(c.deprecated.iter()).collect();
+        let scope_sep = if docs.is_empty() {
+            quote!()
+        } else {
+            quote!(#[doc = ""])
+        };
         match &c.kind {
             Kind::Scope => out.extend(quote! {
                 #(#docs)*
+                #scope_sep
                 #[doc = #scope_line]
                 #args
                 #(#nav_attrs)*
@@ -935,7 +944,6 @@ fn component_code(
     k: &TokenStream,
     model: &Model,
     places: &Places,
-    owner: usize,
     pieces: &[Piece],
     label: bool,
     what: &str,
@@ -949,7 +957,6 @@ fn component_code(
             quote!(__p.segment_static(#s);)
         };
     }
-    let _ = owner;
     let mut build = TokenStream::new();
     for piece in pieces {
         match piece {
@@ -1021,7 +1028,6 @@ fn prepare_body(
             k,
             model,
             &places,
-            o,
             &c.pieces,
             true,
             &format!("subdomain label `{}`", c.text),
@@ -1040,7 +1046,6 @@ fn prepare_body(
             k,
             model,
             &places,
-            o,
             &c.pieces,
             false,
             &format!("path segment `{}`", c.text),
