@@ -55,7 +55,7 @@ concord-macros = { path = "../concord-macros-$version" }
 [workspace]
 EOF
 cat >"$out/consumer/src/lib.rs" <<'EOF'
-//! A consumer of the packaged crates: formats (in place and defaults), a native header.
+//! A consumer of the packaged crates: format statements (defaults and endpoint), a native header.
 use concord::reqwest::header::HeaderValue;
 
 pub static ACCEPT: HeaderValue = HeaderValue::from_static("application/json");
@@ -76,8 +76,8 @@ concord::api! {
             GET item(id: u64) -> Item { path "items/{id}"; }
             POST create(body item: Item) -> Item { path "items"; }
         }
-        GET health() -> text String { path "health"; }
-        PUT upload(bytes("image/png") png: concord::bytes::Bytes) { path "image"; }
+        GET health() -> String { response text; path "health"; }
+        PUT upload(body png: concord::bytes::Bytes) { request bytes "image/png"; path "image"; }
     }
 }
 EOF

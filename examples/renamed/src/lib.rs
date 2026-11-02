@@ -13,8 +13,12 @@ concord4::api! {
     /// A client declared through the renamed crate.
     pub client Renamed(query("v") version: u32 = 4) {
         base "http://renamed.invalid";
-        GET ping() -> text String { path "ping"; }
-        PUT upload(bytes data: Vec<u8>) -> concord4::Binary Vec<u8> { path "upload"; }
+        GET ping() -> String { response text; path "ping"; }
+        PUT upload(body data: Vec<u8>) -> Vec<u8> {
+            request bytes;
+            response concord4::Binary;
+            path "upload";
+        }
     }
 }
 

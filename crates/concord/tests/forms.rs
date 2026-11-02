@@ -39,14 +39,27 @@ pub struct Nested {
 }
 
 concord::api! {
-    /// Form-encoded fixture: in place, as a default, and as a response format.
+    /// Form-encoded fixture: on an endpoint, as a default, and as a response format.
     pub client Auth {
         base "http://auth.invalid";
 
-        POST login(form credentials: Login) -> text String { path "login"; }
-        POST pairs(form fields: Vec<(String, String)>) { path "pairs"; }
-        POST nested(form n: Nested) { path "nested"; }
-        GET token() -> form Token { path "token"; }
+        POST login(body credentials: Login) -> String {
+            request form;
+            response text;
+            path "login";
+        }
+        POST pairs(body fields: Vec<(String, String)>) {
+            request form;
+            path "pairs";
+        }
+        POST nested(body n: Nested) {
+            request form;
+            path "nested";
+        }
+        GET token() -> Token {
+            response form;
+            path "token";
+        }
         scope forms {
             request form;
             POST submit(body credentials?: Login) { path "submit"; }

@@ -29,8 +29,9 @@ concord::api! {
             query note?: C,
             key: C = fresh_key(),
             query("tag") each tags: Vec<C>,
-            Raw payload: C,
+            body payload: C,
         ) {
+            request Raw;
             path "items/{id}";
             headers { "x-key" = "{key}"; }
         }
@@ -51,8 +52,9 @@ concord::api! {
             query note?: M,
             key: M = M::new("k"),
             query("tag") each tags: Vec<M>,
-            Raw payload: M,
+            body payload: M,
         ) {
+            request Raw;
             path "items/{id}";
             headers { "x-key" = "{key}"; }
         }

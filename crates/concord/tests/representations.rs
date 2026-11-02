@@ -38,14 +38,32 @@ concord::api! {
     pub client Reps {
         base "http://reps.invalid";
 
-        PUT text(text value: String) { path "text"; }
-        PUT binary(bytes value: concord::bytes::Bytes) { path "binary"; }
-        GET text_out() -> text String { path "text"; }
-        GET bytes_out() -> bytes concord::bytes::Bytes { path "bytes"; }
+        PUT text(body value: String) {
+            request text;
+            path "text";
+        }
+        PUT binary(body value: concord::bytes::Bytes) {
+            request bytes;
+            path "binary";
+        }
+        GET text_out() -> String {
+            response text;
+            path "text";
+        }
+        GET bytes_out() -> concord::bytes::Bytes {
+            response bytes;
+            path "bytes";
+        }
         DELETE remove(id: u32) { path "items/{id}"; }
         HEAD exists(id: u32) { path "items/{id}"; }
-        GET measured() -> Measured usize { path "big"; }
-        POST bad(BadType("application/x-custom") value: String) { path "bad"; }
+        GET measured() -> usize {
+            response Measured;
+            path "big";
+        }
+        POST bad(body value: String) {
+            request BadType "application/x-custom";
+            path "bad";
+        }
     }
 }
 

@@ -111,8 +111,10 @@ concord::api! {
         base "http://policy.invalid";
         /// Declaring a transport-managed header is an error, present or not.
         GET host_set(header(HOST) h?: String);
-        POST typed(header(CONTENT_TYPE) ct: String, text b: String);
-        POST conflict(header(CONTENT_TYPE) ct: String, text("text/markdown") b: String);
+        POST typed(header(CONTENT_TYPE) ct: String, body b: String) { request text; }
+        POST conflict(header(CONTENT_TYPE) ct: String, body b: String) {
+            request text "text/markdown";
+        }
     }
 }
 

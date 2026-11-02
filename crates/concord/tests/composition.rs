@@ -446,7 +446,10 @@ concord::api! {
         GET appended() { headers { append "x-tag" = "b"; } }
         GET overridden() { headers { override "X-TAG" = "c"; } }
         GET removed() { headers { remove "Authorization"; } }
-        GET content_type(text payload: String) { headers { "content-type" = "text/csv"; } }
+        GET content_type(body payload: String) {
+            request text;
+            headers { "content-type" = "text/csv"; }
+        }
     }
 }
 
@@ -585,7 +588,8 @@ concord::api! {
         scope repo(x: String) {
             GET repo() { path "{repo.x}"; }
         }
-        POST ordered(id: u64, text payload: String, tag: String) {
+        POST ordered(id: u64, body payload: String, tag: String) {
+            request text;
             path "o/{id}";
             query { "tag" = tag; }
         }

@@ -59,7 +59,7 @@ pub mod formats {
     pub type Wire = concord::Text;
 }
 
-/// Row 9: a downstream format, named by its path in place and in a default.
+/// Row 9: a downstream format, named by its path on an endpoint and in a default.
 pub mod codecs {
     use concord::bytes::Bytes;
     use concord::{BodyError, Decode, Encode, reqwest};
@@ -140,7 +140,7 @@ fn http() -> reqwest::Client {
 }
 
 concord::api! {
-    /// A mostly-JSON client: defaults once, exceptions written in place.
+    /// A mostly-JSON client: defaults once, exceptions written as endpoint statements.
     pub client Shop {
         base "http://shop.invalid";
         request json;
@@ -149,14 +149,27 @@ concord::api! {
         GET item(id: u64) -> Item { path "items/{id}"; }
         PUT discount(body d: Option<Discount>) { path "discount"; }
         POST search(body q?: NewItem) -> Vec<Item> { path "search"; }
-        PUT note(text note: String) { path "note"; }
-        PUT blob(bytes b: Bytes) { path "blob"; }
+        PUT note(body note: String) {
+            request text;
+            path "note";
+        }
+        PUT blob(body b: Bytes) {
+            request bytes;
+            path "blob";
+        }
         DELETE remove(id: u64) { path "items/{id}"; }
         GET ping() -> () { path "ping"; }
-        GET ping_json() -> json () { path "ping"; }
+        GET ping_json() -> () {
+            response json;
+            path "ping";
+        }
         GET version() -> String { path "version"; }
-        GET readme() -> text String { path "readme"; }
-        PATCH patch(id: u64, json("application/merge-patch+json") p: Patch) -> Item {
+        GET readme() -> String {
+            response text;
+            path "readme";
+        }
+        PATCH patch(id: u64, body p: Patch) -> Item {
+            request json "application/merge-patch+json";
             path "items/{id}";
         }
     }
@@ -246,7 +259,8 @@ async fn row3a_no_output_drains_under_a_response_default() {
     assert_eq!(error.kind(), ErrorKind::Status);
 }
 
-/// Rows 3b/3c: `-> ()` with the inherited format and `-> json ()` decode a typed unit: JSON
+/// Rows 3b/3c: `-> ()` with the inherited format and `-> ()` with `response json;` on the endpoint
+/// decode a typed unit: JSON
 /// `null` is accepted, an empty 204 is a decode error — unlike no `->` (row 3a).
 #[tokio::test]
 async fn row3b_3c_typed_unit_is_decoded() {
@@ -267,7 +281,8 @@ async fn row3b_3c_typed_unit_is_decoded() {
     let () = api.remove(1).send().await.unwrap();
 }
 
-/// Rows 4a/4b: `-> String` under `response json;` is a JSON string; `-> text String` is raw text.
+/// Rows 4a/4b: `-> String` under `response json;` is a JSON string; with `response text;` on the
+/// endpoint it is raw text.
 #[tokio::test]
 async fn row4_json_string_versus_raw_text() {
     let (_server, api) = shop(Reply::json(200, r#""2.4.1""#)).await;
@@ -279,8 +294,8 @@ async fn row4_json_string_versus_raw_text() {
     assert_eq!(error.kind(), ErrorKind::Decode);
 }
 
-/// Row 6b / 8a: an in-place format with a media type replaces the inherited format for that body;
-/// the media type is sent exactly once, with the body.
+/// Row 6b / 8a: an endpoint `request` statement with a media type replaces the inherited format
+/// and media type for that body; the media type is sent exactly once, with the body.
 #[tokio::test]
 async fn row6b_in_place_exception_with_media_type() {
     let (server, api) = shop(Reply::json(200, r#"{"id":3}"#)).await;
@@ -299,11 +314,17 @@ concord::api! {
         response json;
 
         GET raw() -> Raw { path "raw"; }
-        GET raw_text() -> formats::Wire Raw { path "raw"; }
+        GET raw_text() -> Raw {
+            response formats::Wire;
+            path "raw";
+        }
         GET unit() -> Unit { path "unit"; }
         GET doc() -> JsonDoc { path "doc"; }
         PUT json_body(body b: Raw) { path "b"; }
-        PUT text_body(formats::Wire b: Raw) { path "b"; }
+        PUT text_body(body b: Raw) {
+            request formats::Wire;
+            path "b";
+        }
     }
 }
 
@@ -344,8 +365,8 @@ async fn row5_aliases_follow_the_written_format() {
     );
 }
 
-/// What `scripts/migrate_via.py` leaves for a bare `via Json` / `via Text` (review F3a): the marker
-/// types named by path behave exactly like the words `json` / `text`.
+/// The marker types named by path in a statement (`format Json;`) behave exactly like the words
+/// `json` / `text` (review F3a); an absolute path works in either direction (review F3d).
 mod migrated {
     use super::{Item, NewItem};
     use concord::{Json, Text};
@@ -353,11 +374,24 @@ mod migrated {
     concord::api! {
         pub client Migrated {
             base "http://migrated.invalid";
-            POST by_path(Json item: NewItem) -> Json Item { path "p"; }
-            POST by_word(json item: NewItem) -> json Item { path "w"; }
-            PUT note(Text n: String) -> Text String { path "n"; }
-            // An absolute path in either position (review F3d: the body form was rejected).
-            PUT absolute(::concord::Text n: String) -> ::concord::Text String { path "n"; }
+            POST by_path(body item: NewItem) -> Item {
+                format Json;
+                path "p";
+            }
+            POST by_word(body item: NewItem) -> Item {
+                format json;
+                path "w";
+            }
+            PUT note(body n: String) -> String {
+                format Text;
+                path "n";
+            }
+            // An absolute path in either direction (review F3d: the body form was rejected).
+            PUT absolute(body n: String) -> String {
+                request ::concord::Text;
+                response ::concord::Text;
+                path "n";
+            }
         }
     }
 }
@@ -440,19 +474,144 @@ async fn row6a_nearest_owner_per_direction() {
 }
 
 concord::api! {
-    /// Row 8a: the body's media type: a default's media type reached through `body`, a
-    /// `body("…")` media type with the inherited format, and an in-place word that replaces the
-    /// default's format and media type.
+    /// Row 6c: an endpoint's own statements, the nearest per direction. `format F;` sets both
+    /// directions and needs only one of them to apply; `request` and `response` are independent.
+    pub client OnTheEndpoint {
+        base "http://endpoint.invalid";
+        request json;
+        response json;
+
+        POST both(body b: String) -> String {
+            format text;
+            path "both";
+        }
+        POST only_body(body b: String) {
+            format text;
+            path "only-body";
+        }
+        GET only_output() -> String {
+            format text;
+            path "only-output";
+        }
+        POST request_only(body b: NewItem) -> Item {
+            request json "application/vnd.x+json";
+            path "request-only";
+        }
+        POST response_only(body b: NewItem) -> String {
+            response text;
+            path "response-only";
+        }
+        scope inner {
+            request bytes;
+            response bytes;
+            POST swapped(body b: String) -> String {
+                request text;
+                response text;
+                path "swapped";
+            }
+            POST inherited(body b: Vec<u8>) -> Vec<u8> { path "inherited"; }
+        }
+    }
+}
+
+/// Row 6c: `format text;` on an endpoint replaces the client's `json` in both directions (body and
+/// output), and applies to whichever of the two the endpoint has.
+#[tokio::test]
+async fn row6c_endpoint_format_sets_both_directions() {
+    let server = Server::start(|r| match r.path() {
+        "/both" | "/only-output" => Reply::text(200, "raw"),
+        _ => Reply::new(204),
+    })
+    .await;
+    let api = OnTheEndpoint::new(http())
+        .with_base_url(server.url())
+        .unwrap();
+    assert_eq!(api.both("x").send().await.unwrap(), "raw");
+    api.only_body("y").send().await.unwrap();
+    assert_eq!(api.only_output().send().await.unwrap(), "raw");
+    let r = server.requests();
+    assert_eq!(
+        (r[0].body.as_slice(), content_types(&r[0])),
+        (&b"x"[..], ct("text/plain; charset=utf-8"))
+    );
+    assert_eq!(
+        (r[1].body.as_slice(), content_types(&r[1])),
+        (&b"y"[..], ct("text/plain; charset=utf-8"))
+    );
+    assert!(r[2].body.is_empty() && content_types(&r[2]).is_empty());
+}
+
+/// Row 6c: an endpoint's `request` and `response` statements are independent of each other and of
+/// the owners' statements: the direction without a statement of its own keeps the client's, and an
+/// endpoint statement wins over the scope's in its direction only.
+#[tokio::test]
+async fn row6c_endpoint_statements_override_per_direction() {
+    let server = Server::start(|r| match r.path() {
+        "/request-only" => Reply::json(200, r#"{"id":5}"#),
+        "/response-only" => Reply::text(200, "raw"),
+        "/swapped" => Reply::text(200, "raw"),
+        _ => Reply::new(200).body("bin"),
+    })
+    .await;
+    let api = OnTheEndpoint::new(http())
+        .with_base_url(server.url())
+        .unwrap();
+    let new = || NewItem { name: "n".into() };
+    // The response keeps the client's `json`, the request has its own format and media type.
+    assert_eq!(
+        api.request_only(new()).send().await.unwrap(),
+        Item { id: 5 }
+    );
+    // The request keeps the client's `json`, the response has its own format.
+    assert_eq!(api.response_only(new()).send().await.unwrap(), "raw");
+    // The endpoint's statements win over the scope's `bytes` in both directions.
+    assert_eq!(api.inner().swapped("s").send().await.unwrap(), "raw");
+    // Without statements of its own the endpoint takes the scope's.
+    assert_eq!(
+        api.inner().inherited(vec![1, 2]).send().await.unwrap(),
+        b"bin"
+    );
+    let r = server.requests();
+    assert_eq!(r[0].body, br#"{"name":"n"}"#);
+    assert_eq!(content_types(&r[0]), ct("application/vnd.x+json"));
+    assert_eq!(r[1].body, br#"{"name":"n"}"#);
+    assert_eq!(content_types(&r[1]), ct("application/json"));
+    assert_eq!(
+        (r[2].body.as_slice(), content_types(&r[2])),
+        (&b"s"[..], ct("text/plain; charset=utf-8"))
+    );
+    assert_eq!(
+        (r[3].body.as_slice(), content_types(&r[3])),
+        (&[1u8, 2][..], ct("application/octet-stream"))
+    );
+}
+
+concord::api! {
+    /// Row 8a: the body's media type: a default's media type reached through `body`, an endpoint
+    /// `request json "…";` with a media type of its own, and an endpoint statement without a
+    /// media type that replaces the default's format and media type.
     pub client Media {
         base "http://media.invalid";
-        request json("application/vnd.api+json");
+        request json "application/vnd.api+json";
 
         POST create(body b: NewItem) { path "a"; }
-        POST problem(body("application/problem+json") b: NewItem) { path "b"; }
-        POST plain(json b: NewItem) { path "c"; }
-        POST note(text n: String) { path "d"; }
+        POST problem(body b: NewItem) {
+            request json "application/problem+json";
+            path "b";
+        }
+        POST plain(body b: NewItem) {
+            request json;
+            path "c";
+        }
+        POST note(body n: String) {
+            request text;
+            path "d";
+        }
         POST maybe(body b?: NewItem) { path "e"; }
-        POST untyped(Untyped b: String) { path "f"; }
+        POST untyped(body b: String) {
+            request Untyped;
+            path "f";
+        }
     }
 }
 
@@ -485,7 +644,10 @@ concord::api! {
     /// Row 8b: `content-type` header contributions and an implicit body media type.
     pub client Header {
         base "http://header.invalid";
-        POST up(header("content-type") ct?: HeaderValue, bytes b?: Vec<u8>) { path "up"; }
+        POST up(header("content-type") ct?: HeaderValue, body b?: Vec<u8>) {
+            request bytes;
+            path "up";
+        }
     }
 }
 
@@ -493,10 +655,12 @@ concord::api! {
     /// Row 8b: an `each` contribution and a text contribution that cannot be converted.
     pub client HeaderEach(header("content-type") each cts?: Vec<HeaderValue>) {
         base "http://header.invalid";
-        POST up(text b: String) { path "up"; }
+        request text;
+
+        POST up(body b: String) { path "up"; }
         scope typed(header("content-type") ct: String) {
             headers { remove "content-type"; }
-            POST up(text b: String) { path "up"; }
+            POST up(body b: String) { path "up"; }
         }
     }
 }
@@ -561,14 +725,17 @@ async fn row8b_empty_value_empty_each_and_conversion_failure() {
 
 concord::api! {
     /// Row 8c, compile-pass side (the rejections are `tests/ui/format_header_media_conflict.rs`):
-    /// an in-place word without a media type under a header contribution is the 8b rule, and a
-    /// `remove "content-type"` that drops every inherited contribution allows the default's media
-    /// type.
+    /// an endpoint `request` statement without a media type under a header contribution is the 8b
+    /// rule, and a `remove "content-type"` that drops every inherited contribution allows the
+    /// default's media type.
     pub client Contract(header("content-type") ct?: HeaderValue) {
         base "http://contract.invalid";
-        request json("application/vnd.api+json");
+        request json "application/vnd.api+json";
 
-        POST plain(text p: String) { path "plain"; }
+        POST plain(body p: String) {
+            request text;
+            path "plain";
+        }
         scope clean {
             headers { remove "content-type"; }
             POST save(body p: NewItem) { path "save"; }
@@ -576,7 +743,7 @@ concord::api! {
     }
 }
 
-/// Row 8c: `remove` resolves the conflict; the in-place word's media type yields to the header.
+/// Row 8c: `remove` resolves the conflict; the endpoint statement's media type yields to the header.
 #[tokio::test]
 async fn row8c_remove_resolves_the_conflict() {
     let server = Server::reply(Reply::new(204)).await;
@@ -607,7 +774,10 @@ concord::api! {
         POST save(body p: String) { path "save"; }
         scope removed {
             headers { remove "content-type"; }
-            POST save(json("application/x-declared") p: NewItem) { path "removed"; }
+            POST save(body p: NewItem) {
+                request json "application/x-declared";
+                path "removed";
+            }
         }
     }
 }
@@ -616,7 +786,10 @@ concord::api! {
     /// Row 8f control: the same format without a sensitive `content-type` key.
     pub client Open {
         base "http://open.invalid";
-        POST save(Private p: String) { path "save"; }
+        POST save(body p: String) {
+            request Private;
+            path "save";
+        }
     }
 }
 
@@ -666,14 +839,18 @@ async fn row8d_no_accept_and_no_response_type_check() {
 }
 
 concord::api! {
-    /// Row 9: a downstream format named by path, in a default and in place.
+    /// Row 9: a downstream format named by path, in a default and on the endpoint.
     pub client Rows {
         base "http://rows.invalid";
         response codecs::Csv;
 
         GET export() -> Vec<(String, u32)> { path "export"; }
         GET done() -> () { path "done"; }
-        POST import(codecs::Csv rows: Vec<(String, u32)>) -> json Item { path "import"; }
+        POST import(body rows: Vec<(String, u32)>) -> Item {
+            request codecs::Csv;
+            response json;
+            path "import";
+        }
     }
 }
 
@@ -715,7 +892,7 @@ async fn row11_status_and_native_decoder_unchanged() {
 concord::api! {
     /// Row 12b: a default is referenced only through an alias gated by its consumers' `cfg`s, so
     /// a default naming types that do not exist compiles when its only users are disabled or when
-    /// nothing uses it; disabled endpoints may name missing formats and payloads in place.
+    /// nothing uses it; disabled endpoints may name missing formats and payloads in their own statements.
     pub client Gated {
         base "http://gated.invalid";
 
@@ -734,7 +911,10 @@ concord::api! {
             GET x() -> Item { path "x"; }
         }
         #[cfg(any())]
-        GET in_place() -> self::missing::Format MissingToo { path "y"; }
+        GET in_place() -> MissingToo {
+            response self::missing::Format;
+            path "y";
+        }
     }
 }
 
@@ -796,16 +976,28 @@ pub mod lexical {
             }
             /// `header("x") json: T` is a header value named `json`.
             GET header(header("x-json") json: String) { path "h"; }
-            /// `json query: T` is a JSON body named `query`.
-            POST body_named_query(json query: super::NewItem) { path "q"; }
-            /// `self::csv rows: T` and `json::Codec rows: T` are format paths.
-            POST lower(self::csv rows: Vec<u8>) { path "l"; }
-            POST codec(json::Codec rows: String) { path "c"; }
+            /// `body query: T` is a JSON body named `query`.
+            POST body_named_query(body query: super::NewItem) {
+                request json;
+                path "q";
+            }
+            /// `request self::csv;` and `request json::Codec;` are format paths.
+            POST lower(body rows: Vec<u8>) {
+                request self::csv;
+                path "l";
+            }
+            POST codec(body rows: String) {
+                request json::Codec;
+                path "c";
+            }
             /// `-> Vec<u8> {` and `-> Vec<u8>;` are the inherited format.
             GET inherited() -> Vec<u8> { path "i"; }
             GET inherited_semi() -> Vec<u8>;
-            /// `-> self::csv Vec<u8>` is an explicit custom format.
-            GET explicit() -> self::csv Vec<u8> { path "e"; }
+            /// `response self::csv;` is an explicit custom format.
+            GET explicit() -> Vec<u8> {
+                response self::csv;
+                path "e";
+            }
         }
     }
 }
@@ -891,7 +1083,7 @@ concord::api! {
 }
 
 concord::api! {
-    /// The same headers without format defaults (formats written in place).
+    /// The same headers without format defaults (formats written on the endpoint).
     pub client CrossLocal(
         header("x-static") fixed: HeaderValue = HeaderValue::from_static("s"),
         header("x-opt") opt?: HeaderValue,
@@ -900,11 +1092,15 @@ concord::api! {
         base "http://cross.invalid";
         headers { "x-literal" = "l"; }
 
-        POST create(json b?: NewItem, header("x-unlisted") secret?: HeaderValue) -> json Item {
+        POST create(body b?: NewItem, header("x-unlisted") secret?: HeaderValue) -> Item {
+            format json;
             path "c";
             headers { override "x-static" = "o"; }
         }
-        GET get() -> json Item { path "g"; }
+        GET get() -> Item {
+            response json;
+            path "g";
+        }
     }
 }
 
@@ -1006,14 +1202,16 @@ fn compile_time_rows_have_ui_cases() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
     for case in [
         "ui/body_errors.rs", // 2d, at most one body, bodies on endpoints only
-        "ui/format_endpoint_statement.rs", // 6c
+        "ui/format_endpoint_statement.rs", // 6c (nothing to apply to, duplicates, order)
+        "ui/format_media_type_needs_format.rs", // 8a (`request "m";` without a format)
+        "ui/format_removed_spellings.rs", // 6c/7 (removed in-place forms name their replacement)
         "ui/representation_missing_via.rs", // 7
         "ui/representation_alpha_spelling.rs", // 7 + alpha hints
         "ui/format_header_media_conflict.rs", // 8c
-        "ui/format_output_media_type.rs", // 8e
+        "ui/format_output_media_type.rs", // 8e (`response`, `format`)
         "ui/format_media_type_invalid.rs", // 8g (explicit)
         "ui/format_invalid_content_type.rs", // 8g (format constant)
-        "ui/representation_unsupported_payload.rs", // 9 (in place)
+        "ui/representation_unsupported_payload.rs", // 9 (endpoint, scope; scalar payloads)
         "ui/format_inherited_unsupported.rs", // 9 (inherited)
         "ui_json/format_serde_bound.rs", // 9 (blanket bound)
         "ui_features/feature_disabled_formats.rs", // 12a/12b

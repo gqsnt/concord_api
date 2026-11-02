@@ -17,6 +17,7 @@ pub mod tracker {
             header("x-api-version") api_version: String = "2024-06-01",
         ) {
             base "https://api.example.com/v3";
+            response json;
             headers { "accept" = "application/json"; "user-agent" = "concord-bench/1"; }
 
             scope org(org: String) {
@@ -37,7 +38,7 @@ pub mod tracker {
                         query include_closed?: bool,
                         query page: u32 = 1,
                         query per_page: u32 = 50,
-                    ) -> json Vec<Issue> {
+                    ) -> Vec<Issue> {
                         path "milestones/{milestone}/issues";
                         headers { "x-request-kind" = "list"; }
                     }
@@ -225,13 +226,31 @@ pub mod bodies {
         pub client Bodies {
             base "https://api.example.com/v1";
 
-            POST post_json(json b: Payload) { path "json"; }
-            POST post_text(text b: String) { path "text"; }
-            POST post_bytes(bytes b: Bytes) { path "bytes"; }
+            POST post_json(body b: Payload) {
+                request json;
+                path "json";
+            }
+            POST post_text(body b: String) {
+                request text;
+                path "text";
+            }
+            POST post_bytes(body b: Bytes) {
+                request bytes;
+                path "bytes";
+            }
 
-            GET get_json() -> json Payload { path "json"; }
-            GET get_text() -> text String { path "text"; }
-            GET get_bytes() -> bytes Bytes { path "bytes"; }
+            GET get_json() -> Payload {
+                response json;
+                path "json";
+            }
+            GET get_text() -> String {
+                response text;
+                path "text";
+            }
+            GET get_bytes() -> Bytes {
+                response bytes;
+                path "bytes";
+            }
         }
     }
 }
