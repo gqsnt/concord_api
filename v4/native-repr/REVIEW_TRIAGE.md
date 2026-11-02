@@ -119,3 +119,18 @@ by Codex.
 | F3c | P2 | a downstream type named `text`/`json`/`bytes` kept verbatim lands in format position as the built-in word | FIXED | a bare lowercase name is left unmigrated and reported (self-test cases `via text`, `via r#json`); the compiler's leftover-`via` hint now names the path as written and `self::name` for a bare lowercase name, never a word (`ui/format_via_removed.stderr`, DIAGNOSTICS excerpt) |
 | F3d | P3 | an absolute body format path (`::c4::Text b: T`) was rejected by the parameter lookahead | FIXED | `named` requires an identifier first; `formats.rs::migrated_marker_paths_behave_like_the_words` (`::concord::Text` in both positions; mutation: the old lookahead reproduces "expected identifier") |
 
+## Codex narrow executable re-check of F3b–F3d (`d6b209f`)
+
+- Reviewer: `gpt-6.1-sol`, `xhigh` (session `turn_context`, also visible to the reviewer this
+  time), execute mode in the fresh snapshot `f3recheck-d6b209f`, loopback only, private
+  `CARGO_HOME`; 2026-11-02 07:52–07:57 UTC; all 1,211 origin files unchanged; no server left.
+  Report `f3recheck_d6b209f_report.md`; probes in `f3recheck_d6b209f_evidence/`. Executed on
+  1.99.0, 1.97.1 and 1.85.1: the original reproducers (4/4), the paired wire matrix (38/38: 35
+  automatic migrations, 3 documented manual edits), rename/re-export and absolute-path probes,
+  128 leftover-`via` diagnostics, the self-test, and `formats` + `ui` once (27 + 66 cases).
+  Verdict: REVISE for one new P3; F3, F3a, F3b, F3c, F3d **RESOLVED**.
+
+| ID | Severity | Finding | Disposition | Fix / test |
+|---|---|---|---|---|
+| F3e | P3 | for `type r#type = …`, the script and the compiler suggested `self::type`, which does not parse | FIXED | the suggestion keeps the identifier as written (`self::r#type`), also in the lowercase-format error; `syntax::tests::via_replacement_names_the_same_path` (mutation: dropping `r#` fails it); `migrate_via.py --self-test` asserts the suggestion |
+

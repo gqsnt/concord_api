@@ -167,7 +167,8 @@ fn replacement(repr: &Type) -> String {
             let name = segment.ident.to_string();
             let bare = name.trim_start_matches("r#");
             if segment.arguments.is_none() && bare.starts_with(|c: char| c.is_ascii_lowercase()) {
-                return format!("self::{bare}");
+                // As written: a raw identifier keeps its `r#` (`self::r#type`).
+                return format!("self::{name}");
             }
         }
     }
@@ -224,14 +225,13 @@ fn parse_format(input: ParseStream<'_>, in_params: bool) -> syn::Result<Format> 
                 .trim_start_matches("r#")
                 .starts_with(|c: char| c.is_ascii_lowercase())
         {
-            let bare = text.trim_start_matches("r#");
             let what = if in_params {
                 format!(
-                    "`{text}` is neither a placement (`query`, `header(\"..\")`) nor a body format: the built-in formats are {WORDS}; a format type is written as a path (`self::{bare}`)"
+                    "`{text}` is neither a placement (`query`, `header(\"..\")`) nor a body format: the built-in formats are {WORDS}; a format type is written as a path (`self::{text}`)"
                 )
             } else {
                 format!(
-                    "`{text}` is not a format: the built-in formats are {WORDS}; a format type is written as a path (`self::{bare}`)"
+                    "`{text}` is not a format: the built-in formats are {WORDS}; a format type is written as a path (`self::{text}`)"
                 )
             };
             return Err(syn::Error::new(segment.ident.span(), what));
@@ -1137,4 +1137,22 @@ fn parse_placement(input: ParseStream<'_>) -> syn::Result<Option<Placement>> {
         each,
         span: family.1,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::replacement;
+
+    /// A `via` path is suggested as written; a bare lowercase identifier gets `self::`, keeping a
+    /// raw identifier's `r#` (`self::type` would not parse) — re-check F3e.
+    #[test]
+    fn via_replacement_names_the_same_path() {
+        let text = |t: syn::Type| replacement(&t);
+        assert_eq!(text(syn::parse_quote!(concord::Json)), "concord::Json");
+        assert_eq!(text(syn::parse_quote!(Text)), "Text");
+        assert_eq!(text(syn::parse_quote!(::c4::Text)), "::c4::Text");
+        assert_eq!(text(syn::parse_quote!(text)), "self::text");
+        assert_eq!(text(syn::parse_quote!(r#type)), "self::r#type");
+        assert_eq!(text(syn::parse_quote!(r#text)), "self::r#text");
+    }
 }

@@ -1,0 +1,65 @@
+{
+  "scope": "Narrow executable migration and leftover-via re-check of original d6b209f; not a full audit.",
+  "verdict": "REVISE",
+  "findings": [
+    {
+      "id": "F3",
+      "status": "RESOLVED",
+      "evidence": "codec::Text remains a path; original qualified reproducer and paired CUSTOM request/response observations pass on all three toolchains."
+    },
+    {
+      "id": "F3a",
+      "status": "RESOLVED",
+      "evidence": "Scoped, cfg-disabled and commented Concord imports do not affect migration. Four original reproducers plus expanded paired matrix pass."
+    },
+    {
+      "id": "F3b",
+      "status": "RESOLVED",
+      "evidence": "Local concord modules, import alias named concord, and macro re-export shadow retain custom codec body, Content-Type and decoded response."
+    },
+    {
+      "id": "F3c",
+      "status": "RESOLVED",
+      "evidence": "Original text/json/bytes cases are byte-for-byte untouched, reported, and rejected as leftover via. Applying self:: paths matches explicit custom controls. Raw r#json is also untouched and its suggestion compiles. Separate raw-keyword hint defect is F3e."
+    },
+    {
+      "id": "F3d",
+      "status": "RESOLVED",
+      "evidence": "All four archived renamed absolute-path compiler probes pass; matrix absolute body/response cases pass, as does repository migrated_marker_paths_behave_like_the_words."
+    },
+    {
+      "id": "F3e",
+      "severity": "P3",
+      "status": "NOT RESOLVED",
+      "title": "Migration guidance drops a required raw-identifier prefix",
+      "locations": [
+        "scripts/migrate_via.py:46",
+        "scripts/migrate_via.py:55",
+        "crates/concord-macros/src/syntax.rs:168"
+      ],
+      "input": "type r#type = concord::Text; concord::api! { pub client A { base \"http://127.0.0.1\"; POST p(body b: String via r#type); } }",
+      "observed": "CLI leaves input unchanged and reports self::type. Compiler also suggests self::type b: String. Applying that hint fails: expected identifier, found keyword type.",
+      "control": "self::r#type b: String compiles; raw r#json controls compile. Same result on Rust 1.99.0, 1.97.1 and 1.85.1. Body/optional/output diagnostics all drop r#.",
+      "impact": "Invalid manual migration advice for keyword-named downstream codecs; no silent wire change. Preserve r# when qualifying the original identifier.",
+      "reproduction": "python3 scripts/migrate_via.py target/probes/raw-keyword/keyword-migrated.rs; cargo +1.85 check --locked --offline --manifest-path target/probes/raw-keyword/Cargo.toml --bin keyword_leftover; compare keyword_suggested (fails) and keyword_corrected (passes)."
+    }
+  ],
+  "personally_executed": [
+    "All commands in execution-results.json and additional-execution-results.json",
+    "Current script applied to archived originals; 38 paired wire checks and four original reproducers on 3 toolchains",
+    "128 leftover-via diagnostics per toolchain, matched to source module and expected snippet",
+    "Raw-keyword suggested-edit failure and corrected-edit positive controls",
+    "Current source-tree provenance, baseline/final hashes and process cleanup"
+  ],
+  "inspected_only": [
+    "Historical F1/F2/F4 dispositions and prior reviewers\u2019 execution claims",
+    "Archived generator and prior report as inputs; their old outputs are not fresh evidence"
+  ],
+  "not_run": [
+    "Full workspace verification",
+    "Benchmarks",
+    "Packaging checks",
+    "Nightly",
+    "An older library accepting via"
+  ]
+}

@@ -1,0 +1,1940 @@
+{
+  "pinned": {
+    "hints": {
+      "f3_qualified_body": {
+        "expected_snippet": "codec::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `codec::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 30
+      },
+      "f3_qualified_optional": {
+        "expected_snippet": "codec::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `codec::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 34
+      },
+      "f3_qualified_output": {
+        "expected_snippet": "-> codec::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> codec::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 38
+      },
+      "f3a_scoped_import_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 42
+      },
+      "f3a_scoped_import_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 46
+      },
+      "f3a_scoped_import_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 50
+      },
+      "f3a_cfg_disabled_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 54
+      },
+      "f3a_cfg_disabled_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 58
+      },
+      "f3a_cfg_disabled_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 62
+      },
+      "f3a_line_comment_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 66
+      },
+      "f3a_line_comment_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 70
+      },
+      "f3a_line_comment_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 74
+      },
+      "f3a_block_comment_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 78
+      },
+      "f3a_block_comment_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 82
+      },
+      "f3a_block_comment_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 86
+      },
+      "cfg_selected_custom_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 90
+      },
+      "cfg_selected_custom_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 94
+      },
+      "cfg_selected_custom_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 98
+      },
+      "glob_custom_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 102
+      },
+      "glob_custom_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 106
+      },
+      "glob_custom_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 110
+      },
+      "aliased_import_body": {
+        "expected_snippet": "CustomText b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `CustomText b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 114
+      },
+      "aliased_import_optional": {
+        "expected_snippet": "CustomText b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `CustomText b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 118
+      },
+      "aliased_import_output": {
+        "expected_snippet": "-> CustomText String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> CustomText String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 122
+      },
+      "self_path_body": {
+        "expected_snippet": "self::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 126
+      },
+      "self_path_optional": {
+        "expected_snippet": "self::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 130
+      },
+      "self_path_output": {
+        "expected_snippet": "-> self::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> self::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 134
+      },
+      "super_path_body": {
+        "expected_snippet": "super::codec::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `super::codec::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 138
+      },
+      "super_path_optional": {
+        "expected_snippet": "super::codec::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `super::codec::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 142
+      },
+      "super_path_output": {
+        "expected_snippet": "-> super::codec::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> super::codec::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 146
+      },
+      "crate_path_body": {
+        "expected_snippet": "crate::codec::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `crate::codec::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 150
+      },
+      "crate_path_optional": {
+        "expected_snippet": "crate::codec::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `crate::codec::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 154
+      },
+      "crate_path_output": {
+        "expected_snippet": "-> crate::codec::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> crate::codec::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 158
+      },
+      "nested_module_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 163
+      },
+      "nested_module_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 169
+      },
+      "nested_module_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 175
+      },
+      "nested_super_body": {
+        "expected_snippet": "super::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `super::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 180
+      },
+      "nested_super_optional": {
+        "expected_snippet": "super::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `super::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 184
+      },
+      "nested_super_output": {
+        "expected_snippet": "-> super::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> super::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 188
+      },
+      "downstream_form_body": {
+        "expected_snippet": "Form b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Form b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 192
+      },
+      "downstream_form_optional": {
+        "expected_snippet": "Form b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Form b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 196
+      },
+      "downstream_form_output": {
+        "expected_snippet": "-> Form String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Form String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 200
+      },
+      "bare_builtin_text_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 204
+      },
+      "bare_builtin_text_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 208
+      },
+      "bare_builtin_text_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 212
+      },
+      "qualified_builtin_text_body": {
+        "expected_snippet": "concord::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 216
+      },
+      "qualified_builtin_text_optional": {
+        "expected_snippet": "concord::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 220
+      },
+      "qualified_builtin_text_output": {
+        "expected_snippet": "-> concord::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 224
+      },
+      "absolute_builtin_text_body": {
+        "expected_snippet": "::concord::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 228
+      },
+      "absolute_builtin_text_optional": {
+        "expected_snippet": "::concord::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 232
+      },
+      "absolute_builtin_text_output": {
+        "expected_snippet": "-> ::concord::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::concord::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 236
+      },
+      "local_concord_text_body": {
+        "expected_snippet": "concord::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 240
+      },
+      "local_concord_text_optional": {
+        "expected_snippet": "concord::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 244
+      },
+      "local_concord_text_output": {
+        "expected_snippet": "-> concord::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 248
+      },
+      "absolute_under_shadow_text_body": {
+        "expected_snippet": "::concord::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 252
+      },
+      "absolute_under_shadow_text_optional": {
+        "expected_snippet": "::concord::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 256
+      },
+      "absolute_under_shadow_text_output": {
+        "expected_snippet": "-> ::concord::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::concord::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 260
+      },
+      "bare_builtin_json_body": {
+        "expected_snippet": "Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 264
+      },
+      "bare_builtin_json_optional": {
+        "expected_snippet": "Json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 268
+      },
+      "bare_builtin_json_output": {
+        "expected_snippet": "-> Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 272
+      },
+      "qualified_builtin_json_body": {
+        "expected_snippet": "concord::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 276
+      },
+      "qualified_builtin_json_optional": {
+        "expected_snippet": "concord::Json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 280
+      },
+      "qualified_builtin_json_output": {
+        "expected_snippet": "-> concord::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 284
+      },
+      "absolute_builtin_json_body": {
+        "expected_snippet": "::concord::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 288
+      },
+      "absolute_builtin_json_optional": {
+        "expected_snippet": "::concord::Json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 292
+      },
+      "absolute_builtin_json_output": {
+        "expected_snippet": "-> ::concord::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::concord::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 296
+      },
+      "local_concord_json_body": {
+        "expected_snippet": "concord::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 300
+      },
+      "local_concord_json_optional": {
+        "expected_snippet": "concord::Json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 304
+      },
+      "local_concord_json_output": {
+        "expected_snippet": "-> concord::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 308
+      },
+      "absolute_under_shadow_json_body": {
+        "expected_snippet": "::concord::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 312
+      },
+      "absolute_under_shadow_json_optional": {
+        "expected_snippet": "::concord::Json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 316
+      },
+      "absolute_under_shadow_json_output": {
+        "expected_snippet": "-> ::concord::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::concord::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 320
+      },
+      "bare_builtin_binary_body": {
+        "expected_snippet": "Binary b: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `Binary b: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: Vec<u8>`",
+        "line": 324
+      },
+      "bare_builtin_binary_optional": {
+        "expected_snippet": "Binary b?: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `Binary b?: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: Vec<u8>`",
+        "line": 328
+      },
+      "bare_builtin_binary_output": {
+        "expected_snippet": "-> Binary Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Binary Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> Vec<u8>`",
+        "line": 332
+      },
+      "qualified_builtin_binary_body": {
+        "expected_snippet": "concord::Binary b: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Binary b: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: Vec<u8>`",
+        "line": 336
+      },
+      "qualified_builtin_binary_optional": {
+        "expected_snippet": "concord::Binary b?: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Binary b?: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: Vec<u8>`",
+        "line": 340
+      },
+      "qualified_builtin_binary_output": {
+        "expected_snippet": "-> concord::Binary Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Binary Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> Vec<u8>`",
+        "line": 344
+      },
+      "absolute_builtin_binary_body": {
+        "expected_snippet": "::concord::Binary b: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Binary b: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: Vec<u8>`",
+        "line": 348
+      },
+      "absolute_builtin_binary_optional": {
+        "expected_snippet": "::concord::Binary b?: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Binary b?: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: Vec<u8>`",
+        "line": 352
+      },
+      "absolute_builtin_binary_output": {
+        "expected_snippet": "-> ::concord::Binary Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::concord::Binary Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> Vec<u8>`",
+        "line": 356
+      },
+      "local_concord_binary_body": {
+        "expected_snippet": "concord::Binary b: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Binary b: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: Vec<u8>`",
+        "line": 360
+      },
+      "local_concord_binary_optional": {
+        "expected_snippet": "concord::Binary b?: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Binary b?: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: Vec<u8>`",
+        "line": 364
+      },
+      "local_concord_binary_output": {
+        "expected_snippet": "-> concord::Binary Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Binary Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> Vec<u8>`",
+        "line": 368
+      },
+      "absolute_under_shadow_binary_body": {
+        "expected_snippet": "::concord::Binary b: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Binary b: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: Vec<u8>`",
+        "line": 372
+      },
+      "absolute_under_shadow_binary_optional": {
+        "expected_snippet": "::concord::Binary b?: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Binary b?: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: Vec<u8>`",
+        "line": 376
+      },
+      "absolute_under_shadow_binary_output": {
+        "expected_snippet": "-> ::concord::Binary Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::concord::Binary Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> Vec<u8>`",
+        "line": 380
+      },
+      "alias_named_concord_body": {
+        "expected_snippet": "concord::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 384
+      },
+      "alias_named_concord_optional": {
+        "expected_snippet": "concord::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 388
+      },
+      "alias_named_concord_output": {
+        "expected_snippet": "-> concord::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 392
+      },
+      "macro_reexport_safe_body": {
+        "expected_snippet": "facade::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `facade::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 396
+      },
+      "macro_reexport_safe_optional": {
+        "expected_snippet": "facade::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `facade::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 400
+      },
+      "macro_reexport_safe_output": {
+        "expected_snippet": "-> facade::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> facade::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 404
+      },
+      "macro_reexport_custom_body": {
+        "expected_snippet": "facade::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `facade::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 408
+      },
+      "macro_reexport_custom_optional": {
+        "expected_snippet": "facade::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `facade::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 412
+      },
+      "macro_reexport_custom_output": {
+        "expected_snippet": "-> facade::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> facade::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 416
+      },
+      "macro_reexport_shadow_body": {
+        "expected_snippet": "concord::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 420
+      },
+      "macro_reexport_shadow_optional": {
+        "expected_snippet": "concord::Json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 424
+      },
+      "macro_reexport_shadow_output": {
+        "expected_snippet": "-> concord::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 428
+      },
+      "nested_shadow_path_body": {
+        "expected_snippet": "nested::concord::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `nested::concord::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 432
+      },
+      "nested_shadow_path_optional": {
+        "expected_snippet": "nested::concord::Json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `nested::concord::Json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 436
+      },
+      "nested_shadow_path_output": {
+        "expected_snippet": "-> nested::concord::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> nested::concord::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 440
+      },
+      "bare_lowercase_text_body": {
+        "expected_snippet": "self::text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 444
+      },
+      "bare_lowercase_text_optional": {
+        "expected_snippet": "self::text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 448
+      },
+      "bare_lowercase_text_output": {
+        "expected_snippet": "-> self::text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> self::text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 452
+      },
+      "bare_lowercase_json_body": {
+        "expected_snippet": "self::json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 456
+      },
+      "bare_lowercase_json_optional": {
+        "expected_snippet": "self::json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 460
+      },
+      "bare_lowercase_json_output": {
+        "expected_snippet": "-> self::json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> self::json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 464
+      },
+      "bare_lowercase_bytes_body": {
+        "expected_snippet": "self::bytes b: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `self::bytes b: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: Vec<u8>`",
+        "line": 468
+      },
+      "bare_lowercase_bytes_optional": {
+        "expected_snippet": "self::bytes b?: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `self::bytes b?: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: Vec<u8>`",
+        "line": 472
+      },
+      "bare_lowercase_bytes_output": {
+        "expected_snippet": "-> self::bytes Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the type, `-> self::bytes Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> Vec<u8>`",
+        "line": 476
+      },
+      "qualified_lowercase_body": {
+        "expected_snippet": "self::text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 480
+      },
+      "qualified_lowercase_optional": {
+        "expected_snippet": "self::text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 484
+      },
+      "qualified_lowercase_output": {
+        "expected_snippet": "-> self::text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> self::text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 488
+      },
+      "raw_json_body": {
+        "expected_snippet": "self::json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 490
+      },
+      "raw_json_optional": {
+        "expected_snippet": "self::json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 491
+      },
+      "raw_json_output": {
+        "expected_snippet": "-> self::json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> self::json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 492
+      },
+      "raw_type_body": {
+        "expected_snippet": "self::type b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::type b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 493
+      },
+      "raw_type_optional": {
+        "expected_snippet": "self::type b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::type b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 494
+      },
+      "raw_type_output": {
+        "expected_snippet": "-> self::type String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> self::type String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 495
+      }
+    },
+    "renamed-hints": {
+      "absolute_body": {
+        "expected_snippet": "::c4::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::c4::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 4
+      },
+      "absolute_output": {
+        "expected_snippet": "-> ::c4::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::c4::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 8
+      },
+      "absolute_custom_body": {
+        "expected_snippet": "::codec::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::codec::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 13
+      },
+      "absolute_alias_output": {
+        "expected_snippet": "-> ::codec::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::codec::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 18
+      },
+      "renamed_body": {
+        "expected_snippet": "c4::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `c4::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 21
+      },
+      "renamed_output": {
+        "expected_snippet": "-> c4::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> c4::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 22
+      },
+      "reexported_body": {
+        "expected_snippet": "facade::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `facade::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 23
+      },
+      "reexported_output": {
+        "expected_snippet": "-> facade::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> facade::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 24
+      }
+    }
+  },
+  "stable": {
+    "hints": {
+      "f3_qualified_body": {
+        "expected_snippet": "codec::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `codec::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 30
+      },
+      "f3_qualified_optional": {
+        "expected_snippet": "codec::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `codec::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 34
+      },
+      "f3_qualified_output": {
+        "expected_snippet": "-> codec::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> codec::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 38
+      },
+      "f3a_scoped_import_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 42
+      },
+      "f3a_scoped_import_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 46
+      },
+      "f3a_scoped_import_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 50
+      },
+      "f3a_cfg_disabled_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 54
+      },
+      "f3a_cfg_disabled_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 58
+      },
+      "f3a_cfg_disabled_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 62
+      },
+      "f3a_line_comment_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 66
+      },
+      "f3a_line_comment_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 70
+      },
+      "f3a_line_comment_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 74
+      },
+      "f3a_block_comment_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 78
+      },
+      "f3a_block_comment_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 82
+      },
+      "f3a_block_comment_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 86
+      },
+      "cfg_selected_custom_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 90
+      },
+      "cfg_selected_custom_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 94
+      },
+      "cfg_selected_custom_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 98
+      },
+      "glob_custom_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 102
+      },
+      "glob_custom_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 106
+      },
+      "glob_custom_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 110
+      },
+      "aliased_import_body": {
+        "expected_snippet": "CustomText b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `CustomText b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 114
+      },
+      "aliased_import_optional": {
+        "expected_snippet": "CustomText b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `CustomText b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 118
+      },
+      "aliased_import_output": {
+        "expected_snippet": "-> CustomText String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> CustomText String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 122
+      },
+      "self_path_body": {
+        "expected_snippet": "self::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 126
+      },
+      "self_path_optional": {
+        "expected_snippet": "self::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 130
+      },
+      "self_path_output": {
+        "expected_snippet": "-> self::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> self::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 134
+      },
+      "super_path_body": {
+        "expected_snippet": "super::codec::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `super::codec::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 138
+      },
+      "super_path_optional": {
+        "expected_snippet": "super::codec::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `super::codec::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 142
+      },
+      "super_path_output": {
+        "expected_snippet": "-> super::codec::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> super::codec::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 146
+      },
+      "crate_path_body": {
+        "expected_snippet": "crate::codec::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `crate::codec::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 150
+      },
+      "crate_path_optional": {
+        "expected_snippet": "crate::codec::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `crate::codec::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 154
+      },
+      "crate_path_output": {
+        "expected_snippet": "-> crate::codec::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> crate::codec::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 158
+      },
+      "nested_module_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 163
+      },
+      "nested_module_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 169
+      },
+      "nested_module_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 175
+      },
+      "nested_super_body": {
+        "expected_snippet": "super::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `super::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 180
+      },
+      "nested_super_optional": {
+        "expected_snippet": "super::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `super::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 184
+      },
+      "nested_super_output": {
+        "expected_snippet": "-> super::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> super::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 188
+      },
+      "downstream_form_body": {
+        "expected_snippet": "Form b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Form b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 192
+      },
+      "downstream_form_optional": {
+        "expected_snippet": "Form b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Form b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 196
+      },
+      "downstream_form_output": {
+        "expected_snippet": "-> Form String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Form String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 200
+      },
+      "bare_builtin_text_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 204
+      },
+      "bare_builtin_text_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 208
+      },
+      "bare_builtin_text_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 212
+      },
+      "qualified_builtin_text_body": {
+        "expected_snippet": "concord::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 216
+      },
+      "qualified_builtin_text_optional": {
+        "expected_snippet": "concord::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 220
+      },
+      "qualified_builtin_text_output": {
+        "expected_snippet": "-> concord::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 224
+      },
+      "absolute_builtin_text_body": {
+        "expected_snippet": "::concord::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 228
+      },
+      "absolute_builtin_text_optional": {
+        "expected_snippet": "::concord::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 232
+      },
+      "absolute_builtin_text_output": {
+        "expected_snippet": "-> ::concord::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::concord::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 236
+      },
+      "local_concord_text_body": {
+        "expected_snippet": "concord::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 240
+      },
+      "local_concord_text_optional": {
+        "expected_snippet": "concord::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 244
+      },
+      "local_concord_text_output": {
+        "expected_snippet": "-> concord::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 248
+      },
+      "absolute_under_shadow_text_body": {
+        "expected_snippet": "::concord::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 252
+      },
+      "absolute_under_shadow_text_optional": {
+        "expected_snippet": "::concord::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 256
+      },
+      "absolute_under_shadow_text_output": {
+        "expected_snippet": "-> ::concord::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::concord::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 260
+      },
+      "bare_builtin_json_body": {
+        "expected_snippet": "Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 264
+      },
+      "bare_builtin_json_optional": {
+        "expected_snippet": "Json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 268
+      },
+      "bare_builtin_json_output": {
+        "expected_snippet": "-> Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 272
+      },
+      "qualified_builtin_json_body": {
+        "expected_snippet": "concord::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 276
+      },
+      "qualified_builtin_json_optional": {
+        "expected_snippet": "concord::Json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 280
+      },
+      "qualified_builtin_json_output": {
+        "expected_snippet": "-> concord::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 284
+      },
+      "absolute_builtin_json_body": {
+        "expected_snippet": "::concord::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 288
+      },
+      "absolute_builtin_json_optional": {
+        "expected_snippet": "::concord::Json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 292
+      },
+      "absolute_builtin_json_output": {
+        "expected_snippet": "-> ::concord::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::concord::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 296
+      },
+      "local_concord_json_body": {
+        "expected_snippet": "concord::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 300
+      },
+      "local_concord_json_optional": {
+        "expected_snippet": "concord::Json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 304
+      },
+      "local_concord_json_output": {
+        "expected_snippet": "-> concord::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 308
+      },
+      "absolute_under_shadow_json_body": {
+        "expected_snippet": "::concord::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 312
+      },
+      "absolute_under_shadow_json_optional": {
+        "expected_snippet": "::concord::Json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 316
+      },
+      "absolute_under_shadow_json_output": {
+        "expected_snippet": "-> ::concord::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::concord::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 320
+      },
+      "bare_builtin_binary_body": {
+        "expected_snippet": "Binary b: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `Binary b: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: Vec<u8>`",
+        "line": 324
+      },
+      "bare_builtin_binary_optional": {
+        "expected_snippet": "Binary b?: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `Binary b?: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: Vec<u8>`",
+        "line": 328
+      },
+      "bare_builtin_binary_output": {
+        "expected_snippet": "-> Binary Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Binary Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> Vec<u8>`",
+        "line": 332
+      },
+      "qualified_builtin_binary_body": {
+        "expected_snippet": "concord::Binary b: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Binary b: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: Vec<u8>`",
+        "line": 336
+      },
+      "qualified_builtin_binary_optional": {
+        "expected_snippet": "concord::Binary b?: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Binary b?: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: Vec<u8>`",
+        "line": 340
+      },
+      "qualified_builtin_binary_output": {
+        "expected_snippet": "-> concord::Binary Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Binary Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> Vec<u8>`",
+        "line": 344
+      },
+      "absolute_builtin_binary_body": {
+        "expected_snippet": "::concord::Binary b: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Binary b: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: Vec<u8>`",
+        "line": 348
+      },
+      "absolute_builtin_binary_optional": {
+        "expected_snippet": "::concord::Binary b?: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Binary b?: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: Vec<u8>`",
+        "line": 352
+      },
+      "absolute_builtin_binary_output": {
+        "expected_snippet": "-> ::concord::Binary Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::concord::Binary Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> Vec<u8>`",
+        "line": 356
+      },
+      "local_concord_binary_body": {
+        "expected_snippet": "concord::Binary b: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Binary b: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: Vec<u8>`",
+        "line": 360
+      },
+      "local_concord_binary_optional": {
+        "expected_snippet": "concord::Binary b?: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Binary b?: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: Vec<u8>`",
+        "line": 364
+      },
+      "local_concord_binary_output": {
+        "expected_snippet": "-> concord::Binary Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Binary Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> Vec<u8>`",
+        "line": 368
+      },
+      "absolute_under_shadow_binary_body": {
+        "expected_snippet": "::concord::Binary b: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Binary b: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: Vec<u8>`",
+        "line": 372
+      },
+      "absolute_under_shadow_binary_optional": {
+        "expected_snippet": "::concord::Binary b?: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Binary b?: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: Vec<u8>`",
+        "line": 376
+      },
+      "absolute_under_shadow_binary_output": {
+        "expected_snippet": "-> ::concord::Binary Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::concord::Binary Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> Vec<u8>`",
+        "line": 380
+      },
+      "alias_named_concord_body": {
+        "expected_snippet": "concord::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 384
+      },
+      "alias_named_concord_optional": {
+        "expected_snippet": "concord::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 388
+      },
+      "alias_named_concord_output": {
+        "expected_snippet": "-> concord::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 392
+      },
+      "macro_reexport_safe_body": {
+        "expected_snippet": "facade::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `facade::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 396
+      },
+      "macro_reexport_safe_optional": {
+        "expected_snippet": "facade::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `facade::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 400
+      },
+      "macro_reexport_safe_output": {
+        "expected_snippet": "-> facade::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> facade::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 404
+      },
+      "macro_reexport_custom_body": {
+        "expected_snippet": "facade::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `facade::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 408
+      },
+      "macro_reexport_custom_optional": {
+        "expected_snippet": "facade::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `facade::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 412
+      },
+      "macro_reexport_custom_output": {
+        "expected_snippet": "-> facade::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> facade::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 416
+      },
+      "macro_reexport_shadow_body": {
+        "expected_snippet": "concord::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 420
+      },
+      "macro_reexport_shadow_optional": {
+        "expected_snippet": "concord::Json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 424
+      },
+      "macro_reexport_shadow_output": {
+        "expected_snippet": "-> concord::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 428
+      },
+      "nested_shadow_path_body": {
+        "expected_snippet": "nested::concord::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `nested::concord::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 432
+      },
+      "nested_shadow_path_optional": {
+        "expected_snippet": "nested::concord::Json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `nested::concord::Json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 436
+      },
+      "nested_shadow_path_output": {
+        "expected_snippet": "-> nested::concord::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> nested::concord::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 440
+      },
+      "bare_lowercase_text_body": {
+        "expected_snippet": "self::text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 444
+      },
+      "bare_lowercase_text_optional": {
+        "expected_snippet": "self::text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 448
+      },
+      "bare_lowercase_text_output": {
+        "expected_snippet": "-> self::text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> self::text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 452
+      },
+      "bare_lowercase_json_body": {
+        "expected_snippet": "self::json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 456
+      },
+      "bare_lowercase_json_optional": {
+        "expected_snippet": "self::json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 460
+      },
+      "bare_lowercase_json_output": {
+        "expected_snippet": "-> self::json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> self::json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 464
+      },
+      "bare_lowercase_bytes_body": {
+        "expected_snippet": "self::bytes b: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `self::bytes b: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: Vec<u8>`",
+        "line": 468
+      },
+      "bare_lowercase_bytes_optional": {
+        "expected_snippet": "self::bytes b?: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `self::bytes b?: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: Vec<u8>`",
+        "line": 472
+      },
+      "bare_lowercase_bytes_output": {
+        "expected_snippet": "-> self::bytes Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the type, `-> self::bytes Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> Vec<u8>`",
+        "line": 476
+      },
+      "qualified_lowercase_body": {
+        "expected_snippet": "self::text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 480
+      },
+      "qualified_lowercase_optional": {
+        "expected_snippet": "self::text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 484
+      },
+      "qualified_lowercase_output": {
+        "expected_snippet": "-> self::text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> self::text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 488
+      },
+      "raw_json_body": {
+        "expected_snippet": "self::json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 490
+      },
+      "raw_json_optional": {
+        "expected_snippet": "self::json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 491
+      },
+      "raw_json_output": {
+        "expected_snippet": "-> self::json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> self::json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 492
+      },
+      "raw_type_body": {
+        "expected_snippet": "self::type b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::type b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 493
+      },
+      "raw_type_optional": {
+        "expected_snippet": "self::type b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::type b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 494
+      },
+      "raw_type_output": {
+        "expected_snippet": "-> self::type String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> self::type String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 495
+      }
+    },
+    "renamed-hints": {
+      "absolute_body": {
+        "expected_snippet": "::c4::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::c4::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 4
+      },
+      "absolute_output": {
+        "expected_snippet": "-> ::c4::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::c4::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 8
+      },
+      "absolute_custom_body": {
+        "expected_snippet": "::codec::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::codec::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 13
+      },
+      "absolute_alias_output": {
+        "expected_snippet": "-> ::codec::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::codec::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 18
+      },
+      "renamed_body": {
+        "expected_snippet": "c4::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `c4::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 21
+      },
+      "renamed_output": {
+        "expected_snippet": "-> c4::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> c4::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 22
+      },
+      "reexported_body": {
+        "expected_snippet": "facade::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `facade::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 23
+      },
+      "reexported_output": {
+        "expected_snippet": "-> facade::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> facade::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 24
+      }
+    }
+  },
+  "msrv": {
+    "hints": {
+      "f3_qualified_body": {
+        "expected_snippet": "codec::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `codec::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 30
+      },
+      "f3_qualified_optional": {
+        "expected_snippet": "codec::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `codec::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 34
+      },
+      "f3_qualified_output": {
+        "expected_snippet": "-> codec::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> codec::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 38
+      },
+      "f3a_scoped_import_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 42
+      },
+      "f3a_scoped_import_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 46
+      },
+      "f3a_scoped_import_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 50
+      },
+      "f3a_cfg_disabled_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 54
+      },
+      "f3a_cfg_disabled_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 58
+      },
+      "f3a_cfg_disabled_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 62
+      },
+      "f3a_line_comment_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 66
+      },
+      "f3a_line_comment_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 70
+      },
+      "f3a_line_comment_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 74
+      },
+      "f3a_block_comment_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 78
+      },
+      "f3a_block_comment_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 82
+      },
+      "f3a_block_comment_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 86
+      },
+      "cfg_selected_custom_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 90
+      },
+      "cfg_selected_custom_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 94
+      },
+      "cfg_selected_custom_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 98
+      },
+      "glob_custom_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 102
+      },
+      "glob_custom_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 106
+      },
+      "glob_custom_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 110
+      },
+      "aliased_import_body": {
+        "expected_snippet": "CustomText b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `CustomText b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 114
+      },
+      "aliased_import_optional": {
+        "expected_snippet": "CustomText b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `CustomText b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 118
+      },
+      "aliased_import_output": {
+        "expected_snippet": "-> CustomText String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> CustomText String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 122
+      },
+      "self_path_body": {
+        "expected_snippet": "self::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 126
+      },
+      "self_path_optional": {
+        "expected_snippet": "self::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 130
+      },
+      "self_path_output": {
+        "expected_snippet": "-> self::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> self::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 134
+      },
+      "super_path_body": {
+        "expected_snippet": "super::codec::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `super::codec::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 138
+      },
+      "super_path_optional": {
+        "expected_snippet": "super::codec::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `super::codec::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 142
+      },
+      "super_path_output": {
+        "expected_snippet": "-> super::codec::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> super::codec::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 146
+      },
+      "crate_path_body": {
+        "expected_snippet": "crate::codec::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `crate::codec::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 150
+      },
+      "crate_path_optional": {
+        "expected_snippet": "crate::codec::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `crate::codec::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 154
+      },
+      "crate_path_output": {
+        "expected_snippet": "-> crate::codec::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> crate::codec::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 158
+      },
+      "nested_module_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 163
+      },
+      "nested_module_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 169
+      },
+      "nested_module_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 175
+      },
+      "nested_super_body": {
+        "expected_snippet": "super::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `super::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 180
+      },
+      "nested_super_optional": {
+        "expected_snippet": "super::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `super::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 184
+      },
+      "nested_super_output": {
+        "expected_snippet": "-> super::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> super::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 188
+      },
+      "downstream_form_body": {
+        "expected_snippet": "Form b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Form b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 192
+      },
+      "downstream_form_optional": {
+        "expected_snippet": "Form b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Form b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 196
+      },
+      "downstream_form_output": {
+        "expected_snippet": "-> Form String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Form String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 200
+      },
+      "bare_builtin_text_body": {
+        "expected_snippet": "Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 204
+      },
+      "bare_builtin_text_optional": {
+        "expected_snippet": "Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 208
+      },
+      "bare_builtin_text_output": {
+        "expected_snippet": "-> Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 212
+      },
+      "qualified_builtin_text_body": {
+        "expected_snippet": "concord::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 216
+      },
+      "qualified_builtin_text_optional": {
+        "expected_snippet": "concord::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 220
+      },
+      "qualified_builtin_text_output": {
+        "expected_snippet": "-> concord::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 224
+      },
+      "absolute_builtin_text_body": {
+        "expected_snippet": "::concord::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 228
+      },
+      "absolute_builtin_text_optional": {
+        "expected_snippet": "::concord::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 232
+      },
+      "absolute_builtin_text_output": {
+        "expected_snippet": "-> ::concord::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::concord::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 236
+      },
+      "local_concord_text_body": {
+        "expected_snippet": "concord::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 240
+      },
+      "local_concord_text_optional": {
+        "expected_snippet": "concord::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 244
+      },
+      "local_concord_text_output": {
+        "expected_snippet": "-> concord::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 248
+      },
+      "absolute_under_shadow_text_body": {
+        "expected_snippet": "::concord::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 252
+      },
+      "absolute_under_shadow_text_optional": {
+        "expected_snippet": "::concord::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 256
+      },
+      "absolute_under_shadow_text_output": {
+        "expected_snippet": "-> ::concord::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::concord::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 260
+      },
+      "bare_builtin_json_body": {
+        "expected_snippet": "Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 264
+      },
+      "bare_builtin_json_optional": {
+        "expected_snippet": "Json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `Json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 268
+      },
+      "bare_builtin_json_output": {
+        "expected_snippet": "-> Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 272
+      },
+      "qualified_builtin_json_body": {
+        "expected_snippet": "concord::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 276
+      },
+      "qualified_builtin_json_optional": {
+        "expected_snippet": "concord::Json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 280
+      },
+      "qualified_builtin_json_output": {
+        "expected_snippet": "-> concord::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 284
+      },
+      "absolute_builtin_json_body": {
+        "expected_snippet": "::concord::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 288
+      },
+      "absolute_builtin_json_optional": {
+        "expected_snippet": "::concord::Json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 292
+      },
+      "absolute_builtin_json_output": {
+        "expected_snippet": "-> ::concord::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::concord::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 296
+      },
+      "local_concord_json_body": {
+        "expected_snippet": "concord::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 300
+      },
+      "local_concord_json_optional": {
+        "expected_snippet": "concord::Json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 304
+      },
+      "local_concord_json_output": {
+        "expected_snippet": "-> concord::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 308
+      },
+      "absolute_under_shadow_json_body": {
+        "expected_snippet": "::concord::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 312
+      },
+      "absolute_under_shadow_json_optional": {
+        "expected_snippet": "::concord::Json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 316
+      },
+      "absolute_under_shadow_json_output": {
+        "expected_snippet": "-> ::concord::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::concord::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 320
+      },
+      "bare_builtin_binary_body": {
+        "expected_snippet": "Binary b: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `Binary b: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: Vec<u8>`",
+        "line": 324
+      },
+      "bare_builtin_binary_optional": {
+        "expected_snippet": "Binary b?: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `Binary b?: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: Vec<u8>`",
+        "line": 328
+      },
+      "bare_builtin_binary_output": {
+        "expected_snippet": "-> Binary Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the type, `-> Binary Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> Vec<u8>`",
+        "line": 332
+      },
+      "qualified_builtin_binary_body": {
+        "expected_snippet": "concord::Binary b: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Binary b: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: Vec<u8>`",
+        "line": 336
+      },
+      "qualified_builtin_binary_optional": {
+        "expected_snippet": "concord::Binary b?: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Binary b?: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: Vec<u8>`",
+        "line": 340
+      },
+      "qualified_builtin_binary_output": {
+        "expected_snippet": "-> concord::Binary Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Binary Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> Vec<u8>`",
+        "line": 344
+      },
+      "absolute_builtin_binary_body": {
+        "expected_snippet": "::concord::Binary b: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Binary b: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: Vec<u8>`",
+        "line": 348
+      },
+      "absolute_builtin_binary_optional": {
+        "expected_snippet": "::concord::Binary b?: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Binary b?: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: Vec<u8>`",
+        "line": 352
+      },
+      "absolute_builtin_binary_output": {
+        "expected_snippet": "-> ::concord::Binary Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::concord::Binary Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> Vec<u8>`",
+        "line": 356
+      },
+      "local_concord_binary_body": {
+        "expected_snippet": "concord::Binary b: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Binary b: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: Vec<u8>`",
+        "line": 360
+      },
+      "local_concord_binary_optional": {
+        "expected_snippet": "concord::Binary b?: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Binary b?: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: Vec<u8>`",
+        "line": 364
+      },
+      "local_concord_binary_output": {
+        "expected_snippet": "-> concord::Binary Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Binary Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> Vec<u8>`",
+        "line": 368
+      },
+      "absolute_under_shadow_binary_body": {
+        "expected_snippet": "::concord::Binary b: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Binary b: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: Vec<u8>`",
+        "line": 372
+      },
+      "absolute_under_shadow_binary_optional": {
+        "expected_snippet": "::concord::Binary b?: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `::concord::Binary b?: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: Vec<u8>`",
+        "line": 376
+      },
+      "absolute_under_shadow_binary_output": {
+        "expected_snippet": "-> ::concord::Binary Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::concord::Binary Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> Vec<u8>`",
+        "line": 380
+      },
+      "alias_named_concord_body": {
+        "expected_snippet": "concord::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 384
+      },
+      "alias_named_concord_optional": {
+        "expected_snippet": "concord::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 388
+      },
+      "alias_named_concord_output": {
+        "expected_snippet": "-> concord::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 392
+      },
+      "macro_reexport_safe_body": {
+        "expected_snippet": "facade::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `facade::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 396
+      },
+      "macro_reexport_safe_optional": {
+        "expected_snippet": "facade::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `facade::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 400
+      },
+      "macro_reexport_safe_output": {
+        "expected_snippet": "-> facade::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> facade::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 404
+      },
+      "macro_reexport_custom_body": {
+        "expected_snippet": "facade::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `facade::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 408
+      },
+      "macro_reexport_custom_optional": {
+        "expected_snippet": "facade::Text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `facade::Text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 412
+      },
+      "macro_reexport_custom_output": {
+        "expected_snippet": "-> facade::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> facade::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 416
+      },
+      "macro_reexport_shadow_body": {
+        "expected_snippet": "concord::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 420
+      },
+      "macro_reexport_shadow_optional": {
+        "expected_snippet": "concord::Json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `concord::Json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 424
+      },
+      "macro_reexport_shadow_output": {
+        "expected_snippet": "-> concord::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> concord::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 428
+      },
+      "nested_shadow_path_body": {
+        "expected_snippet": "nested::concord::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `nested::concord::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 432
+      },
+      "nested_shadow_path_optional": {
+        "expected_snippet": "nested::concord::Json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `nested::concord::Json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 436
+      },
+      "nested_shadow_path_output": {
+        "expected_snippet": "-> nested::concord::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> nested::concord::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 440
+      },
+      "bare_lowercase_text_body": {
+        "expected_snippet": "self::text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 444
+      },
+      "bare_lowercase_text_optional": {
+        "expected_snippet": "self::text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 448
+      },
+      "bare_lowercase_text_output": {
+        "expected_snippet": "-> self::text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> self::text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 452
+      },
+      "bare_lowercase_json_body": {
+        "expected_snippet": "self::json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 456
+      },
+      "bare_lowercase_json_optional": {
+        "expected_snippet": "self::json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 460
+      },
+      "bare_lowercase_json_output": {
+        "expected_snippet": "-> self::json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> self::json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 464
+      },
+      "bare_lowercase_bytes_body": {
+        "expected_snippet": "self::bytes b: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `self::bytes b: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: Vec<u8>`",
+        "line": 468
+      },
+      "bare_lowercase_bytes_optional": {
+        "expected_snippet": "self::bytes b?: Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the name, `self::bytes b?: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: Vec<u8>`",
+        "line": 472
+      },
+      "bare_lowercase_bytes_output": {
+        "expected_snippet": "-> self::bytes Vec<u8>",
+        "observed_message": "`via` was removed: the format comes before the type, `-> self::bytes Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> Vec<u8>`",
+        "line": 476
+      },
+      "qualified_lowercase_body": {
+        "expected_snippet": "self::text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 480
+      },
+      "qualified_lowercase_optional": {
+        "expected_snippet": "self::text b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::text b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 484
+      },
+      "qualified_lowercase_output": {
+        "expected_snippet": "-> self::text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> self::text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 488
+      },
+      "raw_json_body": {
+        "expected_snippet": "self::json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 490
+      },
+      "raw_json_optional": {
+        "expected_snippet": "self::json b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::json b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 491
+      },
+      "raw_json_output": {
+        "expected_snippet": "-> self::json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> self::json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 492
+      },
+      "raw_type_body": {
+        "expected_snippet": "self::type b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::type b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 493
+      },
+      "raw_type_optional": {
+        "expected_snippet": "self::type b?: String",
+        "observed_message": "`via` was removed: the format comes before the name, `self::type b?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b?: String`",
+        "line": 494
+      },
+      "raw_type_output": {
+        "expected_snippet": "-> self::type String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> self::type String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 495
+      }
+    },
+    "renamed-hints": {
+      "absolute_body": {
+        "expected_snippet": "::c4::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::c4::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 4
+      },
+      "absolute_output": {
+        "expected_snippet": "-> ::c4::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::c4::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 8
+      },
+      "absolute_custom_body": {
+        "expected_snippet": "::codec::Text b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `::codec::Text b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 13
+      },
+      "absolute_alias_output": {
+        "expected_snippet": "-> ::codec::Text String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> ::codec::Text String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 18
+      },
+      "renamed_body": {
+        "expected_snippet": "c4::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `c4::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 21
+      },
+      "renamed_output": {
+        "expected_snippet": "-> c4::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> c4::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 22
+      },
+      "reexported_body": {
+        "expected_snippet": "facade::Json b: String",
+        "observed_message": "`via` was removed: the format comes before the name, `facade::Json b: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body b: String`",
+        "line": 23
+      },
+      "reexported_output": {
+        "expected_snippet": "-> facade::Json String",
+        "observed_message": "`via` was removed: the format comes before the type, `-> facade::Json String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> String`",
+        "line": 24
+      }
+    }
+  }
+}

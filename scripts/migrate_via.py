@@ -37,13 +37,18 @@ def bare_lowercase(path: str) -> bool:
     return "::" not in path and path.removeprefix("r#")[:1].islower()
 
 
+def suggestion(path: str) -> str:
+    """The format path to write for a bare lowercase name, as written (`r#type` keeps its `r#`)."""
+    return f"self::{path}"
+
+
 def rewrite(text: str) -> tuple[str, int]:
     count = 0
 
     def body(m: re.Match) -> str:
         nonlocal count
         if bare_lowercase(m.group(4)):
-            print(f"kept: `via {m.group(4)}` (write `self::{m.group(4).removeprefix('r#')}` "
+            print(f"kept: `via {m.group(4)}` (write `{suggestion(m.group(4))}` "
                   "or the word yourself)", file=sys.stderr)
             return m.group(0)
         count += 1
@@ -52,7 +57,7 @@ def rewrite(text: str) -> tuple[str, int]:
     def output(m: re.Match) -> str:
         nonlocal count
         if bare_lowercase(m.group(3)):
-            print(f"kept: `via {m.group(3)}` (write `self::{m.group(3).removeprefix('r#')}` "
+            print(f"kept: `via {m.group(3)}` (write `{suggestion(m.group(3))}` "
                   "or the word yourself)", file=sys.stderr)
             return m.group(0)
         count += 1
@@ -92,6 +97,8 @@ def self_test() -> None:
         ("PUT j(body b: String via text);", "body b: String via text", 0),
         ("GET k() -> Item via r#json;", "-> Item via r#json", 0),
     ]
+    # The suggested path keeps a raw identifier's `r#` (`self::type` would not parse; F3e).
+    assert suggestion("text") == "self::text" and suggestion("r#type") == "self::r#type"
     for source, expected, count in cases:
         out, n = rewrite(source)
         assert n == count and expected in out, (source, out)

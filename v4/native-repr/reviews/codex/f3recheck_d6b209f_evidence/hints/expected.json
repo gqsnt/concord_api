@@ -1,0 +1,602 @@
+[
+  {
+    "case": "f3_qualified_body",
+    "path": "codec::Text",
+    "snippet": "codec::Text b: String"
+  },
+  {
+    "case": "f3_qualified_optional",
+    "path": "codec::Text",
+    "snippet": "codec::Text b?: String"
+  },
+  {
+    "case": "f3_qualified_output",
+    "path": "codec::Text",
+    "snippet": "-> codec::Text String"
+  },
+  {
+    "case": "f3a_scoped_import_body",
+    "path": "Text",
+    "snippet": "Text b: String"
+  },
+  {
+    "case": "f3a_scoped_import_optional",
+    "path": "Text",
+    "snippet": "Text b?: String"
+  },
+  {
+    "case": "f3a_scoped_import_output",
+    "path": "Text",
+    "snippet": "-> Text String"
+  },
+  {
+    "case": "f3a_cfg_disabled_body",
+    "path": "Text",
+    "snippet": "Text b: String"
+  },
+  {
+    "case": "f3a_cfg_disabled_optional",
+    "path": "Text",
+    "snippet": "Text b?: String"
+  },
+  {
+    "case": "f3a_cfg_disabled_output",
+    "path": "Text",
+    "snippet": "-> Text String"
+  },
+  {
+    "case": "f3a_line_comment_body",
+    "path": "Text",
+    "snippet": "Text b: String"
+  },
+  {
+    "case": "f3a_line_comment_optional",
+    "path": "Text",
+    "snippet": "Text b?: String"
+  },
+  {
+    "case": "f3a_line_comment_output",
+    "path": "Text",
+    "snippet": "-> Text String"
+  },
+  {
+    "case": "f3a_block_comment_body",
+    "path": "Text",
+    "snippet": "Text b: String"
+  },
+  {
+    "case": "f3a_block_comment_optional",
+    "path": "Text",
+    "snippet": "Text b?: String"
+  },
+  {
+    "case": "f3a_block_comment_output",
+    "path": "Text",
+    "snippet": "-> Text String"
+  },
+  {
+    "case": "cfg_selected_custom_body",
+    "path": "Text",
+    "snippet": "Text b: String"
+  },
+  {
+    "case": "cfg_selected_custom_optional",
+    "path": "Text",
+    "snippet": "Text b?: String"
+  },
+  {
+    "case": "cfg_selected_custom_output",
+    "path": "Text",
+    "snippet": "-> Text String"
+  },
+  {
+    "case": "glob_custom_body",
+    "path": "Text",
+    "snippet": "Text b: String"
+  },
+  {
+    "case": "glob_custom_optional",
+    "path": "Text",
+    "snippet": "Text b?: String"
+  },
+  {
+    "case": "glob_custom_output",
+    "path": "Text",
+    "snippet": "-> Text String"
+  },
+  {
+    "case": "aliased_import_body",
+    "path": "CustomText",
+    "snippet": "CustomText b: String"
+  },
+  {
+    "case": "aliased_import_optional",
+    "path": "CustomText",
+    "snippet": "CustomText b?: String"
+  },
+  {
+    "case": "aliased_import_output",
+    "path": "CustomText",
+    "snippet": "-> CustomText String"
+  },
+  {
+    "case": "self_path_body",
+    "path": "self::Text",
+    "snippet": "self::Text b: String"
+  },
+  {
+    "case": "self_path_optional",
+    "path": "self::Text",
+    "snippet": "self::Text b?: String"
+  },
+  {
+    "case": "self_path_output",
+    "path": "self::Text",
+    "snippet": "-> self::Text String"
+  },
+  {
+    "case": "super_path_body",
+    "path": "super::codec::Text",
+    "snippet": "super::codec::Text b: String"
+  },
+  {
+    "case": "super_path_optional",
+    "path": "super::codec::Text",
+    "snippet": "super::codec::Text b?: String"
+  },
+  {
+    "case": "super_path_output",
+    "path": "super::codec::Text",
+    "snippet": "-> super::codec::Text String"
+  },
+  {
+    "case": "crate_path_body",
+    "path": "crate::codec::Text",
+    "snippet": "crate::codec::Text b: String"
+  },
+  {
+    "case": "crate_path_optional",
+    "path": "crate::codec::Text",
+    "snippet": "crate::codec::Text b?: String"
+  },
+  {
+    "case": "crate_path_output",
+    "path": "crate::codec::Text",
+    "snippet": "-> crate::codec::Text String"
+  },
+  {
+    "case": "nested_module_body",
+    "path": "Text",
+    "snippet": "Text b: String"
+  },
+  {
+    "case": "nested_module_optional",
+    "path": "Text",
+    "snippet": "Text b?: String"
+  },
+  {
+    "case": "nested_module_output",
+    "path": "Text",
+    "snippet": "-> Text String"
+  },
+  {
+    "case": "nested_super_body",
+    "path": "super::Text",
+    "snippet": "super::Text b: String"
+  },
+  {
+    "case": "nested_super_optional",
+    "path": "super::Text",
+    "snippet": "super::Text b?: String"
+  },
+  {
+    "case": "nested_super_output",
+    "path": "super::Text",
+    "snippet": "-> super::Text String"
+  },
+  {
+    "case": "downstream_form_body",
+    "path": "Form",
+    "snippet": "Form b: String"
+  },
+  {
+    "case": "downstream_form_optional",
+    "path": "Form",
+    "snippet": "Form b?: String"
+  },
+  {
+    "case": "downstream_form_output",
+    "path": "Form",
+    "snippet": "-> Form String"
+  },
+  {
+    "case": "bare_builtin_text_body",
+    "path": "Text",
+    "snippet": "Text b: String"
+  },
+  {
+    "case": "bare_builtin_text_optional",
+    "path": "Text",
+    "snippet": "Text b?: String"
+  },
+  {
+    "case": "bare_builtin_text_output",
+    "path": "Text",
+    "snippet": "-> Text String"
+  },
+  {
+    "case": "qualified_builtin_text_body",
+    "path": "concord::Text",
+    "snippet": "concord::Text b: String"
+  },
+  {
+    "case": "qualified_builtin_text_optional",
+    "path": "concord::Text",
+    "snippet": "concord::Text b?: String"
+  },
+  {
+    "case": "qualified_builtin_text_output",
+    "path": "concord::Text",
+    "snippet": "-> concord::Text String"
+  },
+  {
+    "case": "absolute_builtin_text_body",
+    "path": "::concord::Text",
+    "snippet": "::concord::Text b: String"
+  },
+  {
+    "case": "absolute_builtin_text_optional",
+    "path": "::concord::Text",
+    "snippet": "::concord::Text b?: String"
+  },
+  {
+    "case": "absolute_builtin_text_output",
+    "path": "::concord::Text",
+    "snippet": "-> ::concord::Text String"
+  },
+  {
+    "case": "local_concord_text_body",
+    "path": "concord::Text",
+    "snippet": "concord::Text b: String"
+  },
+  {
+    "case": "local_concord_text_optional",
+    "path": "concord::Text",
+    "snippet": "concord::Text b?: String"
+  },
+  {
+    "case": "local_concord_text_output",
+    "path": "concord::Text",
+    "snippet": "-> concord::Text String"
+  },
+  {
+    "case": "absolute_under_shadow_text_body",
+    "path": "::concord::Text",
+    "snippet": "::concord::Text b: String"
+  },
+  {
+    "case": "absolute_under_shadow_text_optional",
+    "path": "::concord::Text",
+    "snippet": "::concord::Text b?: String"
+  },
+  {
+    "case": "absolute_under_shadow_text_output",
+    "path": "::concord::Text",
+    "snippet": "-> ::concord::Text String"
+  },
+  {
+    "case": "bare_builtin_json_body",
+    "path": "Json",
+    "snippet": "Json b: String"
+  },
+  {
+    "case": "bare_builtin_json_optional",
+    "path": "Json",
+    "snippet": "Json b?: String"
+  },
+  {
+    "case": "bare_builtin_json_output",
+    "path": "Json",
+    "snippet": "-> Json String"
+  },
+  {
+    "case": "qualified_builtin_json_body",
+    "path": "concord::Json",
+    "snippet": "concord::Json b: String"
+  },
+  {
+    "case": "qualified_builtin_json_optional",
+    "path": "concord::Json",
+    "snippet": "concord::Json b?: String"
+  },
+  {
+    "case": "qualified_builtin_json_output",
+    "path": "concord::Json",
+    "snippet": "-> concord::Json String"
+  },
+  {
+    "case": "absolute_builtin_json_body",
+    "path": "::concord::Json",
+    "snippet": "::concord::Json b: String"
+  },
+  {
+    "case": "absolute_builtin_json_optional",
+    "path": "::concord::Json",
+    "snippet": "::concord::Json b?: String"
+  },
+  {
+    "case": "absolute_builtin_json_output",
+    "path": "::concord::Json",
+    "snippet": "-> ::concord::Json String"
+  },
+  {
+    "case": "local_concord_json_body",
+    "path": "concord::Json",
+    "snippet": "concord::Json b: String"
+  },
+  {
+    "case": "local_concord_json_optional",
+    "path": "concord::Json",
+    "snippet": "concord::Json b?: String"
+  },
+  {
+    "case": "local_concord_json_output",
+    "path": "concord::Json",
+    "snippet": "-> concord::Json String"
+  },
+  {
+    "case": "absolute_under_shadow_json_body",
+    "path": "::concord::Json",
+    "snippet": "::concord::Json b: String"
+  },
+  {
+    "case": "absolute_under_shadow_json_optional",
+    "path": "::concord::Json",
+    "snippet": "::concord::Json b?: String"
+  },
+  {
+    "case": "absolute_under_shadow_json_output",
+    "path": "::concord::Json",
+    "snippet": "-> ::concord::Json String"
+  },
+  {
+    "case": "bare_builtin_binary_body",
+    "path": "Binary",
+    "snippet": "Binary b: Vec<u8>"
+  },
+  {
+    "case": "bare_builtin_binary_optional",
+    "path": "Binary",
+    "snippet": "Binary b?: Vec<u8>"
+  },
+  {
+    "case": "bare_builtin_binary_output",
+    "path": "Binary",
+    "snippet": "-> Binary Vec<u8>"
+  },
+  {
+    "case": "qualified_builtin_binary_body",
+    "path": "concord::Binary",
+    "snippet": "concord::Binary b: Vec<u8>"
+  },
+  {
+    "case": "qualified_builtin_binary_optional",
+    "path": "concord::Binary",
+    "snippet": "concord::Binary b?: Vec<u8>"
+  },
+  {
+    "case": "qualified_builtin_binary_output",
+    "path": "concord::Binary",
+    "snippet": "-> concord::Binary Vec<u8>"
+  },
+  {
+    "case": "absolute_builtin_binary_body",
+    "path": "::concord::Binary",
+    "snippet": "::concord::Binary b: Vec<u8>"
+  },
+  {
+    "case": "absolute_builtin_binary_optional",
+    "path": "::concord::Binary",
+    "snippet": "::concord::Binary b?: Vec<u8>"
+  },
+  {
+    "case": "absolute_builtin_binary_output",
+    "path": "::concord::Binary",
+    "snippet": "-> ::concord::Binary Vec<u8>"
+  },
+  {
+    "case": "local_concord_binary_body",
+    "path": "concord::Binary",
+    "snippet": "concord::Binary b: Vec<u8>"
+  },
+  {
+    "case": "local_concord_binary_optional",
+    "path": "concord::Binary",
+    "snippet": "concord::Binary b?: Vec<u8>"
+  },
+  {
+    "case": "local_concord_binary_output",
+    "path": "concord::Binary",
+    "snippet": "-> concord::Binary Vec<u8>"
+  },
+  {
+    "case": "absolute_under_shadow_binary_body",
+    "path": "::concord::Binary",
+    "snippet": "::concord::Binary b: Vec<u8>"
+  },
+  {
+    "case": "absolute_under_shadow_binary_optional",
+    "path": "::concord::Binary",
+    "snippet": "::concord::Binary b?: Vec<u8>"
+  },
+  {
+    "case": "absolute_under_shadow_binary_output",
+    "path": "::concord::Binary",
+    "snippet": "-> ::concord::Binary Vec<u8>"
+  },
+  {
+    "case": "alias_named_concord_body",
+    "path": "concord::Text",
+    "snippet": "concord::Text b: String"
+  },
+  {
+    "case": "alias_named_concord_optional",
+    "path": "concord::Text",
+    "snippet": "concord::Text b?: String"
+  },
+  {
+    "case": "alias_named_concord_output",
+    "path": "concord::Text",
+    "snippet": "-> concord::Text String"
+  },
+  {
+    "case": "macro_reexport_safe_body",
+    "path": "facade::Text",
+    "snippet": "facade::Text b: String"
+  },
+  {
+    "case": "macro_reexport_safe_optional",
+    "path": "facade::Text",
+    "snippet": "facade::Text b?: String"
+  },
+  {
+    "case": "macro_reexport_safe_output",
+    "path": "facade::Text",
+    "snippet": "-> facade::Text String"
+  },
+  {
+    "case": "macro_reexport_custom_body",
+    "path": "facade::Text",
+    "snippet": "facade::Text b: String"
+  },
+  {
+    "case": "macro_reexport_custom_optional",
+    "path": "facade::Text",
+    "snippet": "facade::Text b?: String"
+  },
+  {
+    "case": "macro_reexport_custom_output",
+    "path": "facade::Text",
+    "snippet": "-> facade::Text String"
+  },
+  {
+    "case": "macro_reexport_shadow_body",
+    "path": "concord::Json",
+    "snippet": "concord::Json b: String"
+  },
+  {
+    "case": "macro_reexport_shadow_optional",
+    "path": "concord::Json",
+    "snippet": "concord::Json b?: String"
+  },
+  {
+    "case": "macro_reexport_shadow_output",
+    "path": "concord::Json",
+    "snippet": "-> concord::Json String"
+  },
+  {
+    "case": "nested_shadow_path_body",
+    "path": "nested::concord::Json",
+    "snippet": "nested::concord::Json b: String"
+  },
+  {
+    "case": "nested_shadow_path_optional",
+    "path": "nested::concord::Json",
+    "snippet": "nested::concord::Json b?: String"
+  },
+  {
+    "case": "nested_shadow_path_output",
+    "path": "nested::concord::Json",
+    "snippet": "-> nested::concord::Json String"
+  },
+  {
+    "case": "bare_lowercase_text_body",
+    "path": "text",
+    "snippet": "self::text b: String"
+  },
+  {
+    "case": "bare_lowercase_text_optional",
+    "path": "text",
+    "snippet": "self::text b?: String"
+  },
+  {
+    "case": "bare_lowercase_text_output",
+    "path": "text",
+    "snippet": "-> self::text String"
+  },
+  {
+    "case": "bare_lowercase_json_body",
+    "path": "json",
+    "snippet": "self::json b: String"
+  },
+  {
+    "case": "bare_lowercase_json_optional",
+    "path": "json",
+    "snippet": "self::json b?: String"
+  },
+  {
+    "case": "bare_lowercase_json_output",
+    "path": "json",
+    "snippet": "-> self::json String"
+  },
+  {
+    "case": "bare_lowercase_bytes_body",
+    "path": "bytes",
+    "snippet": "self::bytes b: Vec<u8>"
+  },
+  {
+    "case": "bare_lowercase_bytes_optional",
+    "path": "bytes",
+    "snippet": "self::bytes b?: Vec<u8>"
+  },
+  {
+    "case": "bare_lowercase_bytes_output",
+    "path": "bytes",
+    "snippet": "-> self::bytes Vec<u8>"
+  },
+  {
+    "case": "qualified_lowercase_body",
+    "path": "self::text",
+    "snippet": "self::text b: String"
+  },
+  {
+    "case": "qualified_lowercase_optional",
+    "path": "self::text",
+    "snippet": "self::text b?: String"
+  },
+  {
+    "case": "qualified_lowercase_output",
+    "path": "self::text",
+    "snippet": "-> self::text String"
+  },
+  {
+    "case": "raw_json_body",
+    "path": "r#json",
+    "snippet": "self::json b: String"
+  },
+  {
+    "case": "raw_json_optional",
+    "path": "r#json",
+    "snippet": "self::json b?: String"
+  },
+  {
+    "case": "raw_json_output",
+    "path": "r#json",
+    "snippet": "-> self::json String"
+  },
+  {
+    "case": "raw_type_body",
+    "path": "r#type",
+    "snippet": "self::type b: String"
+  },
+  {
+    "case": "raw_type_optional",
+    "path": "r#type",
+    "snippet": "self::type b?: String"
+  },
+  {
+    "case": "raw_type_output",
+    "path": "r#type",
+    "snippet": "-> self::type String"
+  }
+]

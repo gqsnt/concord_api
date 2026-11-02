@@ -1,0 +1,306 @@
+[
+  {
+    "name": "f3_qualified",
+    "path": "codec::Text",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "f3a_scoped_import",
+    "path": "Text",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "f3a_cfg_disabled",
+    "path": "Text",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "f3a_line_comment",
+    "path": "Text",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "f3a_block_comment",
+    "path": "Text",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "cfg_selected_custom",
+    "path": "Text",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "glob_custom",
+    "path": "Text",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "aliased_import",
+    "path": "CustomText",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "self_path",
+    "path": "self::Text",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "super_path",
+    "path": "super::codec::Text",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "crate_path",
+    "path": "crate::codec::Text",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "nested_module",
+    "path": "Text",
+    "binary": false,
+    "json_reply": false,
+    "depth": true,
+    "semantic_change": false
+  },
+  {
+    "name": "nested_super",
+    "path": "super::Text",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "downstream_form",
+    "path": "Form",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "bare_builtin_text",
+    "path": "Text",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "qualified_builtin_text",
+    "path": "concord::Text",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "absolute_builtin_text",
+    "path": "::concord::Text",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "local_concord_text",
+    "path": "concord::Text",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": true
+  },
+  {
+    "name": "absolute_under_shadow_text",
+    "path": "::concord::Text",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "bare_builtin_json",
+    "path": "Json",
+    "binary": false,
+    "json_reply": true,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "qualified_builtin_json",
+    "path": "concord::Json",
+    "binary": false,
+    "json_reply": true,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "absolute_builtin_json",
+    "path": "::concord::Json",
+    "binary": false,
+    "json_reply": true,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "local_concord_json",
+    "path": "concord::Json",
+    "binary": false,
+    "json_reply": true,
+    "depth": false,
+    "semantic_change": true
+  },
+  {
+    "name": "absolute_under_shadow_json",
+    "path": "::concord::Json",
+    "binary": false,
+    "json_reply": true,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "bare_builtin_binary",
+    "path": "Binary",
+    "binary": true,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "qualified_builtin_binary",
+    "path": "concord::Binary",
+    "binary": true,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "absolute_builtin_binary",
+    "path": "::concord::Binary",
+    "binary": true,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "local_concord_binary",
+    "path": "concord::Binary",
+    "binary": true,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": true
+  },
+  {
+    "name": "absolute_under_shadow_binary",
+    "path": "::concord::Binary",
+    "binary": true,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "alias_named_concord",
+    "path": "concord::Text",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": true
+  },
+  {
+    "name": "macro_reexport_safe",
+    "path": "facade::Text",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "macro_reexport_custom",
+    "path": "facade::Text",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "macro_reexport_shadow",
+    "path": "concord::Json",
+    "binary": false,
+    "json_reply": true,
+    "depth": false,
+    "semantic_change": true
+  },
+  {
+    "name": "nested_shadow_path",
+    "path": "nested::concord::Json",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  },
+  {
+    "name": "bare_lowercase_text",
+    "path": "text",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": true
+  },
+  {
+    "name": "bare_lowercase_json",
+    "path": "json",
+    "binary": false,
+    "json_reply": true,
+    "depth": false,
+    "semantic_change": true
+  },
+  {
+    "name": "bare_lowercase_bytes",
+    "path": "bytes",
+    "binary": true,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": true
+  },
+  {
+    "name": "qualified_lowercase",
+    "path": "self::text",
+    "binary": false,
+    "json_reply": false,
+    "depth": false,
+    "semantic_change": false
+  }
+]

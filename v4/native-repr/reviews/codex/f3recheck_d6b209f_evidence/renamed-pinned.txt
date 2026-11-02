@@ -1,0 +1,10 @@
+   Compiling f3check-renamed v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/f3recheck-d6b209f/target/probes/renamed)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.34s
+     Running unittests src/lib.rs (target/review-build/debug/deps/f3check_renamed-63261bba4a983669)
+
+running 1 test
+renamed: Observation { body: [34, 118, 97, 108, 117, 101, 34], content_types: ["application/json"], decoded: Ok("reply") }; reexported: Observation { body: [34, 118, 97, 108, 117, 101, 34], content_types: ["application/json"], decoded: Ok("reply") }
+test renamed_and_reexported ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

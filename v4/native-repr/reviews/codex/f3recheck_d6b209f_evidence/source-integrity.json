@@ -1,0 +1,14 @@
+{
+  "snapshot_head": "46c3da64ce26beff5e62c671ec1b1bf3d44e502b",
+  "baseline_tracked_files": 1212,
+  "baseline_changed": [],
+  "original_files": 1211,
+  "original_changed": [],
+  "git_status": "",
+  "active_probe_processes": [],
+  "servers": "Independent listeners are owned by joined threads; test processes have exited.",
+  "external_services_contacted": false,
+  "push_or_publish": false,
+  "global_setting_changes": false,
+  "sandbox_bypass": false
+}
