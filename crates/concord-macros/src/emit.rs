@@ -12,7 +12,7 @@ use crate::model::{
 use crate::syntax::Family;
 
 pub fn emit(model: &Model, krate: TokenStream) -> TokenStream {
-    KRATE.with(|k| *k.borrow_mut() = krate);
+    let k = &krate;
     let vis = match &model.owners[0].kind {
         Kind::Client { vis, .. } => vis.clone(),
         _ => unreachable!("the first owner is the client"),
@@ -21,10 +21,10 @@ pub fn emit(model: &Model, krate: TokenStream) -> TokenStream {
     for index in 0..model.owners.len() {
         let cfgs = &model.owners[index].cfgs;
         if cfgs.is_empty() {
-            out.extend(emit_owner(model, index, &vis));
+            out.extend(emit_owner(k, model, index, &vis));
         } else {
             // Every item of a `#[cfg]` owner carries its own and its ancestors' `cfg`s.
-            out.extend(with_attrs(emit_owner(model, index, &vis), cfgs));
+            out.extend(with_attrs(emit_owner(k, model, index, &vis), cfgs));
         }
     }
     out
@@ -79,15 +79,6 @@ fn override_notes(model: &Model, owner: usize) -> Vec<Vec<String>> {
     notes
 }
 
-thread_local! {
-    /// Path of the `concord` crate as seen from the invocation (`$crate` via `concord::api!`).
-    static KRATE: std::cell::RefCell<TokenStream> = std::cell::RefCell::new(quote!(::concord));
-}
-
-fn krate() -> TokenStream {
-    KRATE.with(|k| k.borrow().clone())
-}
-
 fn lit(s: &str) -> LitStr {
     LitStr::new(s, Span::call_site())
 }
@@ -114,8 +105,7 @@ fn body_value_type(body: &Body) -> TokenStream {
 
 /// The struct literal fields initializing an owner's values, in declaration order, with default
 /// functions that cannot capture the entry method's arguments or `self`.
-fn value_inits(values: &[Value]) -> (TokenStream, TokenStream) {
-    let k = krate();
+fn value_inits(k: &TokenStream, values: &[Value]) -> (TokenStream, TokenStream) {
     let mut fns = TokenStream::new();
     let mut fields = TokenStream::new();
     for value in values {
@@ -143,8 +133,7 @@ fn value_inits(values: &[Value]) -> (TokenStream, TokenStream) {
     (fns, fields)
 }
 
-fn positional_params(values: &[Value], body: Option<&Body>) -> TokenStream {
-    let k = krate();
+fn positional_params(k: &TokenStream, values: &[Value], body: Option<&Body>) -> TokenStream {
     // Required values and a required body, in declaration order.
     let body = body.filter(|b| !b.optional);
     let body_param = |b: &Body| {
@@ -189,13 +178,13 @@ fn initially(value: &Value, owner: &str) -> String {
 /// `set_x` for every value and body; `maybe_x` for optional ones. `owner` names the receiver in
 /// docs ("the client", "this scope", "this request").
 fn controls(
+    k: &TokenStream,
     values: &[Value],
     body: Option<&Body>,
     target: &TokenStream,
     owner: &str,
     notes: &[Vec<String>],
 ) -> TokenStream {
-    let k = krate();
     let mut out = TokenStream::new();
     for (value, notes) in values.iter().zip(notes) {
         let notes: Vec<LitStr> = notes.iter().map(|n| lit(n)).collect();
@@ -369,10 +358,10 @@ fn doc_text(docs: &[syn::Attribute]) -> String {
 }
 
 fn debug_fields<'a>(
+    k: &TokenStream,
     values: impl IntoIterator<Item = &'a Value>,
     base: &TokenStream,
 ) -> TokenStream {
-    let k = krate();
     let mut out = TokenStream::new();
     for value in values {
         let name = &value.name;
@@ -403,8 +392,7 @@ fn debug_fields<'a>(
     out
 }
 
-fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream {
-    let k = krate();
+fn emit_owner(k: &TokenStream, model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream {
     let owner = &model.owners[index];
     let ty = &owner.type_name;
     let state = &owner.state_name;
@@ -418,20 +406,21 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
             quote!(#name: #fty,)
         })
         .collect();
-    let nav = navigation(model, index);
+    let nav = navigation(k, model, index);
     let type_label = lit(&ty.to_string());
 
     match &owner.kind {
         Kind::Client { base, .. } => {
-            let (default_fns, inits) = value_inits(&owner.values);
+            let (default_fns, inits) = value_inits(k, &owner.values);
             let controls = controls(
+                k,
                 &owner.values,
                 None,
                 &quote!(::std::sync::Arc::make_mut(&mut self.__s)),
                 "the client",
                 &override_notes(model, index),
             );
-            let debug = debug_fields(&owner.values, &quote!(__s));
+            let debug = debug_fields(k, &owner.values, &quote!(__s));
             let required: Vec<&Value> = owner.values.iter().filter(|v| v.is_positional()).collect();
             let (config_item, config_param, config_bind) = if required.is_empty() {
                 (quote!(), quote!(), quote!())
@@ -456,7 +445,7 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
                      `maybe_*` methods."
                 ));
                 let config_label = lit(&config.to_string());
-                let config_debug = debug_fields(required.iter().copied(), &quote!(self));
+                let config_debug = debug_fields(k, required.iter().copied(), &quote!(self));
                 (
                     quote! {
                         #[doc = #config_doc]
@@ -538,13 +527,14 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
         Kind::Scope => {
             let parent_ty = &model.owners[owner.parent.unwrap()].type_name;
             let controls = controls(
+                k,
                 &owner.values,
                 None,
                 &quote!(::std::sync::Arc::make_mut(&mut self.__s)),
                 "this scope",
                 &override_notes(model, index),
             );
-            let debug = debug_fields(&owner.values, &quote!(__s));
+            let debug = debug_fields(k, &owner.values, &quote!(__s));
             quote! {
                 #docs
                 #[derive(Clone)]
@@ -582,13 +572,14 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
         } => {
             let parent_ty = &model.owners[owner.parent.unwrap()].type_name;
             let controls = controls(
+                k,
                 &owner.values,
                 body.as_ref(),
                 &quote!(self),
                 "this request",
                 &override_notes(model, index),
             );
-            let mut debug = debug_fields(&owner.values, &quote!(self));
+            let mut debug = debug_fields(k, &owner.values, &quote!(self));
             let body_field = body.as_ref().map(|b| {
                 let name = &b.name;
                 let vty = body_value_type(b);
@@ -609,7 +600,7 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
                 }
                 None => quote!(()),
             };
-            let prepare = prepare_body(model, index, method, output.as_ref(), body.as_ref());
+            let prepare = prepare_body(k, model, index, method, output.as_ref(), body.as_ref());
             quote! {
                 #docs
                 #[must_use = "an endpoint request does nothing until `send` or `prepare` is called"]
@@ -702,8 +693,7 @@ fn owner_docs(owner: &Owner) -> TokenStream {
 }
 
 /// Navigation methods on `index` for each of its children.
-fn navigation(model: &Model, index: usize) -> TokenStream {
-    let k = krate();
+fn navigation(k: &TokenStream, model: &Model, index: usize) -> TokenStream {
     let mut out = TokenStream::new();
     for &child in &model.owners[index].children {
         let c = &model.owners[child];
@@ -712,8 +702,8 @@ fn navigation(model: &Model, index: usize) -> TokenStream {
         let cstate = &c.state_name;
         let docs = &c.docs;
         let body = c.body();
-        let params = positional_params(&c.values, body);
-        let (default_fns, inits) = value_inits(&c.values);
+        let params = positional_params(k, &c.values, body);
+        let (default_fns, inits) = value_inits(k, &c.values);
         let scope_line = lit(&format!(" Enters scope `{}`.", c.dotted));
         let args = argument_docs(&c.values, body);
         // `#[cfg]` and `#[deprecated]` of a child apply to its navigation method.
@@ -825,13 +815,13 @@ impl Bound {
 }
 
 fn source_code(
+    k: &TokenStream,
     model: &Model,
     places: &Places,
     id: ContribId,
     key: &str,
     sensitive: bool,
 ) -> (Bound, TokenStream) {
-    let k = krate();
     let contrib = model.contrib(id);
     let mut bound = Bound {
         patterns: Vec::new(),
@@ -900,7 +890,6 @@ fn source_code(
     // always evaluated (even when `prepare` is never instantiated), so an invalid literal — e.g.
     // longer than `http` allows — is a compile error; the `const` block builds the name without
     // a runtime check or panic path.
-    let k = krate();
     let name = quote!(const { #k::reqwest::header::HeaderName::from_static(#key) });
     let guard = quote_spanned!(contrib.span=> const _: () = ::core::mem::forget(#k::reqwest::header::HeaderName::from_static(#key)););
     let what = placement_label(id.family, key.value().as_str());
@@ -918,17 +907,23 @@ fn source_code(
     (bound, call)
 }
 
-fn items_code(model: &Model, places: &Places, items: &[Item], slot: &Slot) -> TokenStream {
+fn items_code(
+    k: &TokenStream,
+    model: &Model,
+    places: &Places,
+    items: &[Item],
+    slot: &Slot,
+) -> TokenStream {
     let mut out = TokenStream::new();
     for item in items {
         match item {
             Item::Emit(id) => {
-                let (bound, call) = source_code(model, places, *id, &slot.key, slot.sensitive);
+                let (bound, call) = source_code(k, model, places, *id, &slot.key, slot.sensitive);
                 out.extend(bound.wrap(call, None));
             }
             Item::Override { src, fallback } => {
-                let (bound, call) = source_code(model, places, *src, &slot.key, slot.sensitive);
-                let otherwise = items_code(model, places, fallback, slot);
+                let (bound, call) = source_code(k, model, places, *src, &slot.key, slot.sensitive);
+                let otherwise = items_code(k, model, places, fallback, slot);
                 out.extend(bound.wrap(call, Some(otherwise)));
             }
         }
@@ -937,6 +932,7 @@ fn items_code(model: &Model, places: &Places, items: &[Item], slot: &Slot) -> To
 }
 
 fn component_code(
+    k: &TokenStream,
     model: &Model,
     places: &Places,
     owner: usize,
@@ -944,7 +940,6 @@ fn component_code(
     label: bool,
     what: &str,
 ) -> TokenStream {
-    let k = krate();
     let what = lit(what);
     if let [Piece::Lit(s)] = pieces {
         let s = lit(s);
@@ -988,13 +983,13 @@ fn component_code(
 }
 
 fn prepare_body(
+    k: &TokenStream,
     model: &Model,
     index: usize,
     method: &Ident,
     output: Option<&crate::syntax::Payload>,
     body: Option<&Body>,
 ) -> TokenStream {
-    let k = krate();
     let owner: &Owner = &model.owners[index];
     let composed: &Composed = owner.composed.as_ref().expect("endpoints are composed");
     let places = Places {
@@ -1023,6 +1018,7 @@ fn prepare_body(
             sensitive_labels.push(i);
         }
         code.extend(component_code(
+            k,
             model,
             &places,
             o,
@@ -1041,6 +1037,7 @@ fn prepare_body(
             sensitive_segments.push(i);
         }
         code.extend(component_code(
+            k,
             model,
             &places,
             o,
@@ -1057,10 +1054,10 @@ fn prepare_body(
         if slot.sensitive {
             sensitive_query.push(lit(&slot.key));
         }
-        code.extend(items_code(model, &places, &slot.items, slot));
+        code.extend(items_code(k, model, &places, &slot.items, slot));
     }
     for slot in &composed.headers {
-        code.extend(items_code(model, &places, &slot.items, slot));
+        code.extend(items_code(k, model, &places, &slot.items, slot));
     }
 
     let body_code = match body {
