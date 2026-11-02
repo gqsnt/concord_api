@@ -14,7 +14,7 @@ For people changing Concord itself. Users start at the [README](../README.md).
 | `examples/renamed` | Concord depended on under another name (`$crate` paths) |
 | `checks/heap` | peak-heap check that `()` outputs drain without buffering (own crate: global allocator) |
 | `benches/baselines` | hand-written reqwest wrappers for the `examples/shapes` APIs |
-| `benches/perf` | request-construction and loopback timing, Concord vs baselines |
+| `benches/criterion` | Criterion runtime suite and allocation counts, Concord vs hand-written reqwest (its `README.md`) |
 | `benches/scale` | synthetic-declaration generator and compile-time plan |
 | `v4/` | specification (`SEMANTICS.md`), acceptance matrix (`TEST_MATRIX.md`) and records |
 
@@ -111,7 +111,8 @@ the UI test.
 ## Benchmarks and scale
 
 ```sh
-cargo run --release -p concord-perf          # construction and loopback timing vs benches/baselines
+cargo bench -p concord-bench --bench runtime  # Criterion: construction, headers, composition, bodies, decoding, loopback
+cargo run --release -p concord-bench --bin alloc-count   # allocation counts per case
 cargo test -p concord-heap-check --locked    # `()` outputs drain without buffering
 ```
 

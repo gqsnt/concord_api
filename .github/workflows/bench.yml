@@ -1,0 +1,55 @@
+name: bench
+
+# Manual only. Shared runners are noisy and heterogeneous: results from this workflow are never
+# baselines. Use it to check that the suite runs and to look at gross effects; record baselines on
+# a quiet, dedicated machine (benches/criterion/README.md).
+on:
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: "Criterion ID regex (empty: every benchmark, ~30 min)"
+        required: false
+        default: ""
+      quick:
+        description: "Short warm-up/measurement (1 s / 2 s)"
+        type: boolean
+        default: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  criterion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - name: allocation counts
+        run: cargo run --locked --release -p concord-bench --bin alloc-count -- --json allocs.json | tee allocs.md
+      - name: criterion
+        env:
+          FILTER: ${{ inputs.filter }}
+          QUICK: ${{ inputs.quick }}
+        run: |
+          args=()
+          if [[ "$QUICK" == "true" ]]; then args+=(--warm-up-time 1 --measurement-time 2); fi
+          if [[ -n "$FILTER" ]]; then args+=("$FILTER"); fi
+          cargo bench --locked -p concord-bench --bench runtime -- "${args[@]}"
+      - name: summary
+        run: |
+          {
+            echo "Shared runner: not a baseline."
+            echo
+            python3 -I benches/criterion/summarize.py
+          } | tee summary.md >> "$GITHUB_STEP_SUMMARY"
+          { git rev-parse HEAD; rustc -vV; uname -a; nproc; lscpu | head -20; } > environment.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: criterion-${{ github.sha }}
+          path: |
+            target/criterion
+            allocs.json
+            allocs.md
+            summary.md
+            environment.txt
