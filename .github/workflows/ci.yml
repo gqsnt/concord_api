@@ -23,6 +23,15 @@ jobs:
       - run: cargo test --locked -p concord --no-default-features
       - run: cargo test --locked -p concord --no-default-features --features json
       - run: cargo test --locked -p concord --no-default-features --features reqwest-defaults
+      # reqwest's `multipart` feature must reach examples/multipart only (cargo tree, no build).
+      - name: feature isolation (reqwest multipart)
+        shell: bash
+        run: |
+          for args in "-p concord" "-p concord --no-default-features" "-p concord-example-native"; do
+            tree=$(cargo tree --locked -e features -i reqwest $args)
+            if grep -q 'reqwest feature "multipart"' <<<"$tree"; then echo "multipart reaches $args"; exit 1; fi
+          done
+          cargo tree --locked -e features -i reqwest -p concord-example-multipart | grep -q 'reqwest feature "multipart"'
       - run: cargo doc --locked -p concord --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
@@ -47,4 +56,16 @@ jobs:
       - run: >
           cargo +1.85 test --locked -p concord-macros -p concord-example-shapes
           -p concord-example-renamed -p concord-example-native -p concord-example-quickstart
-          -p concord-heap-check
+          -p concord-heap-check -p concord-clone-compat
+      # A separate consumer: built and tested alone, so workspace feature unification cannot help.
+      - run: cargo +1.85 test --locked -p concord-example-multipart
+
+  # Conditional `Clone` (D08) relies on rustc not checking global bounds under a binder
+  # (rust-lang/rust#48214). Nightly is where a change shows first; it must not block merges.
+  nightly-clone:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install nightly --profile minimal
+      - run: cargo +nightly test --locked -p concord-clone-compat

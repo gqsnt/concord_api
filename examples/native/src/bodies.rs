@@ -1,11 +1,6 @@
-//! U16 / U29 (R09): custom representations and a native multipart body.
+//! U16 / U29 (R09): custom representations (NDJSON, form-encoded).
 
-use concord::reqwest::{
-    self,
-    header::{CONTENT_TYPE, HeaderValue},
-};
-
-use crate::api::{Inventory, Item, StockRow};
+use crate::api::{Inventory, StockRow};
 
 /// Imports stock rows; request and response are NDJSON via this crate's
 /// [`Ndjson`](crate::repr::Ndjson) representation (U16).
@@ -32,68 +27,6 @@ pub async fn send_feedback(
     api.feedback(fields).send().await
 }
 
-/// A file part for [`upload_file`].
-#[derive(Debug, Clone)]
-pub struct FilePart<'a> {
-    /// The form field name.
-    pub field: &'a str,
-    /// The file name sent in `Content-Disposition` (`"`, CR and LF are percent-encoded).
-    pub file_name: &'a str,
-    /// The part's media type.
-    pub content_type: &'a str,
-    /// The file content.
-    pub content: &'a [u8],
-}
-
-/// Uploads one file as `multipart/form-data` built by the application and attached to the
-/// native request (U29).
-///
-/// Why native: a multipart `Content-Type` carries a boundary chosen per body, but
-/// [`concord::Encode::CONTENT_TYPE`] is a constant. (An `Encode` with a fixed boundary also
-/// works if it rejects content containing that boundary.) This recipe declares the endpoint
-/// without a body, then sets the body and its content type on the native request, keeping the
-/// declared path, headers (authorization) and decoder. reqwest's own `multipart` feature is
-/// not enabled in this workspace, so the body is assembled by hand and buffered in memory;
-/// streamed file parts are not covered here.
-pub async fn upload_file(api: &Inventory, part: FilePart<'_>) -> Result<Item, concord::Error> {
-    let (client, mut request, decoder) = api.upload().prepare()?.into_parts();
-    let (boundary, body) = multipart_body(&part);
-    let content_type = HeaderValue::from_str(&format!("multipart/form-data; boundary={boundary}"))
-        .expect("boundary is a visible-ASCII token");
-    request.headers_mut().insert(CONTENT_TYPE, content_type);
-    *request.body_mut() = Some(reqwest::Body::from(body));
-    decoder.finish(client.execute(request).await).await
-}
-
-/// Builds a single-part multipart body with a boundary that occurs nowhere in the part.
-fn multipart_body(part: &FilePart<'_>) -> (String, Vec<u8>) {
-    /// Text for a quoted `Content-Disposition` parameter, as reqwest's own multipart writer does:
-    /// a backslash is escaped (`\\`), quotes and line breaks are percent-encoded.
-    fn header_safe(text: &str) -> String {
-        text.replace('\\', "\\\\")
-            .replace('"', "%22")
-            .replace('\r', "%0D")
-            .replace('\n', "%0A")
-    }
-    let head = format!(
-        "Content-Disposition: form-data; name=\"{}\"; filename=\"{}\"\r\nContent-Type: {}\r\n\r\n",
-        header_safe(part.field),
-        header_safe(part.file_name),
-        header_safe(part.content_type),
-    );
-    let mut boundary = String::new();
-    for n in 0u64.. {
-        boundary = format!("concord-example-boundary-{n:016x}");
-        let needle = boundary.as_bytes();
-        let clash = |hay: &[u8]| hay.windows(needle.len()).any(|w| w == needle);
-        if !clash(part.content) && !clash(head.as_bytes()) {
-            break;
-        }
-    }
-    let mut body = Vec::with_capacity(part.content.len() + head.len() + 2 * boundary.len() + 16);
-    body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
-    body.extend_from_slice(head.as_bytes());
-    body.extend_from_slice(part.content);
-    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
-    (boundary, body)
-}
+// Multipart uploads: see the `concord-example-multipart` crate (`examples/multipart`), which
+// attaches a `reqwest::multipart::Form` to a declared endpoint with reqwest's own `multipart`
+// feature. That feature is enabled there only; this crate does not hand-write MIME bodies.

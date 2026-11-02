@@ -1,6 +1,6 @@
 [package]
 name = "concord-example-native"
-description = "Downstream example: application-owned native integration recipes around Concord V4 (error documents, native edits, custom representations, streaming, form/multipart, retry, cursor, admission, auth rotation, interleaved query keys)."
+description = "Downstream example: application-owned native integration recipes around Concord V4 (error documents, native edits, custom representations, streaming, form-encoded bodies, retry, cursor, admission, auth rotation, interleaved query keys)."
 version = "0.0.0"
 edition = "2024"
 rust-version.workspace = true

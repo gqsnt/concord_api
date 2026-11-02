@@ -1,10 +1,10 @@
-//! U16 / U29 (R09): downstream representations (NDJSON, form) and a native multipart body.
+//! U16 / U29 (R09): downstream representations (NDJSON, form). Multipart: `examples/multipart`.
 
 mod support;
 
 use concord::{Decode, Encode, ErrorKind};
 use concord_example_native::api::StockRow;
-use concord_example_native::bodies::{FilePart, import_stock, send_feedback, upload_file};
+use concord_example_native::bodies::{import_stock, send_feedback};
 use concord_example_native::repr::{Form, Ndjson};
 use support::{Reply, Server, inventory_at};
 
@@ -93,119 +93,4 @@ async fn form_body_keeps_order_repeats_and_encoding() {
         String::from_utf8(request.body).unwrap(),
         "topic=stock+%26+pricing&tag=a%2Fb&tag=%C3%A9%3D1"
     );
-}
-
-#[tokio::test]
-async fn multipart_upload_through_the_native_body() {
-    let server = Server::reply(Reply::json(201, r#"{"id":11,"name":"report.csv"}"#)).await;
-    let api = inventory_at(server.addr, "Bearer secret-token");
-    let content = b"sku,qty\r\nA-1,5\r\n";
-    let item = upload_file(
-        &api,
-        FilePart {
-            field: "file",
-            file_name: "report \"q3\".csv",
-            content_type: "text/csv",
-            content,
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(item.id, 11);
-
-    let request = server.single();
-    assert_eq!(
-        (request.method.as_str(), request.target.as_str()),
-        ("POST", "/v1/uploads")
-    );
-    assert_eq!(request.header("authorization"), Some("Bearer secret-token"));
-    let content_type = request.header("content-type").unwrap();
-    let boundary = content_type
-        .strip_prefix("multipart/form-data; boundary=")
-        .expect("multipart content type");
-    let expected = format!(
-        "--{boundary}\r\n\
-         Content-Disposition: form-data; name=\"file\"; filename=\"report %22q3%22.csv\"\r\n\
-         Content-Type: text/csv\r\n\r\n\
-         sku,qty\r\nA-1,5\r\n\r\n\
-         --{boundary}--\r\n"
-    );
-    assert_eq!(String::from_utf8(request.body).unwrap(), expected);
-}
-
-#[tokio::test]
-async fn multipart_boundary_never_occurs_in_the_content() {
-    let server = Server::reply(Reply::json(201, r#"{"id":1,"name":"x"}"#)).await;
-    let api = inventory_at(server.addr, "Bearer t");
-    // Content that contains the first candidate boundary.
-    let content = b"--concord-example-boundary-0000000000000000--";
-    upload_file(
-        &api,
-        FilePart {
-            field: "f",
-            file_name: "x",
-            content_type: "text/plain",
-            content,
-        },
-    )
-    .await
-    .unwrap();
-    let request = server.single();
-    let boundary = request
-        .header("content-type")
-        .unwrap()
-        .strip_prefix("multipart/form-data; boundary=")
-        .unwrap()
-        .to_owned();
-    assert_eq!(boundary, "concord-example-boundary-0000000000000001");
-    let body = String::from_utf8(request.body).unwrap();
-    assert_eq!(body.matches(&*boundary).count(), 2);
-}
-
-/// Reads the quoted `name="..."` parameter of a `Content-Disposition` line the way a MIME
-/// recipient does (RFC 9110 quoted-string: `\x` is `x`), independently of the recipe's writer.
-fn quoted_param(line: &str, name: &str) -> String {
-    let start = line.find(&format!("{name}=\"")).expect("parameter present") + name.len() + 2;
-    let mut out = String::new();
-    let mut chars = line[start..].chars();
-    while let Some(c) = chars.next() {
-        match c {
-            '\\' => out.push(chars.next().expect("quoted-pair")),
-            '"' => return out,
-            c => out.push(c),
-        }
-    }
-    panic!("unterminated quoted string")
-}
-
-/// Milestone review F-01: backslashes in a field name or filename must survive a MIME recipient's
-/// quoted-string parsing (they used to be read as escapes: `file\name` arrived as `filename`).
-#[tokio::test]
-async fn multipart_parameters_survive_quoted_string_parsing() {
-    for (field, file_name) in [
-        (r"file\name", r"report\q.csv"),
-        (r"trail\", r"ends\"),
-        ("plain", "no-escapes.csv"),
-    ] {
-        let server = Server::reply(Reply::json(201, r#"{"id":1,"name":"x"}"#)).await;
-        let api = inventory_at(server.addr, "Bearer t");
-        upload_file(
-            &api,
-            FilePart {
-                field,
-                file_name,
-                content_type: "text/plain",
-                content: b"hello",
-            },
-        )
-        .await
-        .unwrap();
-        let body = String::from_utf8(server.single().body).unwrap();
-        let line = body
-            .lines()
-            .find(|l| l.starts_with("Content-Disposition:"))
-            .expect("disposition line");
-        assert_eq!(quoted_param(line, "name"), field, "{line}");
-        assert_eq!(quoted_param(line, "filename"), file_name, "{line}");
-    }
 }
