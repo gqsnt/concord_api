@@ -171,11 +171,17 @@ async fn s07_runtime_base_is_shown_but_not_echoed_by_errors() {
     assert_eq!(error.kind(), ErrorKind::Transport);
     let shown = shown(&error);
     assert!(!shown.contains("PRIVATE"), "{shown}");
-    // Positive control: the underlying reqwest error had the URL; Concord removed it from
-    // `transport()` too (documented: top-level URL removed).
+    // Concord removed the top-level URL from `transport()` too (documented).
     let native = native(&error);
-    assert!(!native.contains("PRIVATE"), "top-level URL removed: {native}");
+    assert!(
+        !native.contains("PRIVATE"),
+        "top-level URL removed: {native}"
+    );
     assert!(error.transport().unwrap().url().is_none());
+    // Positive control: the same request executed natively yields a reqwest error that shows it.
+    let (http, request, _) = api.ping().prepare().unwrap().into_parts();
+    let raw = http.execute(request).await.unwrap_err();
+    assert!(format!("{raw} {raw:?}").contains("/u/PRIVATE"), "{raw:?}");
 }
 
 /// A user encoder whose description quotes the value (violating the `BodyError` contract).
