@@ -1,0 +1,39 @@
+    Checking independent-compile v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/final-66a4478/target/probes/compile-work)
+error[E0277]: `HeaderValue` is written as text here and has no `Display`
+   --> src/lib.rs:2:1
+    |
+  2 | wire::api! { pub client Api { base "http://127.0.0.1";  GET p(v: Alias) { subdomain "{v}"; } } }
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^-----^^^^^^^^^^^^^^^^^^^^^^^^^^
+    | |                                                                |
+    | |                                                                required by a bound introduced by this call
+    | used in a path, subdomain, query value or template
+    |
+    = help: the trait `std::fmt::Display` is not implemented for `HeaderValue`
+    = note: path segments, subdomain labels, query values and template holes are written with `Display`; a value that may be absent is declared `x?: T`, and a list is placed with `each`
+    = note: a native `HeaderValue` is not text: it can only be placed as a whole header value; to reuse its text elsewhere, convert it explicitly (for example `to_str()`) into a `String` value
+    = note: required for `HeaderValue` to implement `concord::__private::Text`
+note: required by a bound in `concord::__private::display_into`
+   --> /home/canarit/projects/concord_v4_native_work/snapshots/final-66a4478/crates/concord/src/__private.rs:163:24
+    |
+163 | pub fn display_into<T: Text + ?Sized>(
+    |                        ^^^^ required by this bound in `display_into`
+    = note: this error originates in the macro `wire::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `HeaderValue` doesn't implement `std::fmt::Display`
+   --> src/lib.rs:2:66
+    |
+  2 | wire::api! { pub client Api { base "http://127.0.0.1";  GET p(v: Alias) { subdomain "{v}"; } } }
+    |                                                                  ^^^^^ the trait `std::fmt::Display` is not implemented for `HeaderValue`
+    |
+help: the trait `Debug` is implemented for `concord::__private::DebugDisplay<'_, T>`
+   --> /home/canarit/projects/concord_v4_native_work/snapshots/final-66a4478/crates/concord/src/__private.rs:508:1
+    |
+508 | impl<T: Text + ?Sized> fmt::Debug for DebugDisplay<'_, T> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: required for `HeaderValue` to implement `concord::__private::Text`
+    = note: required for `concord::__private::DebugDisplay<'_, HeaderValue>` to implement `Debug`
+    = note: required for the cast from `&concord::__private::DebugDisplay<'_, HeaderValue>` to `&dyn Debug`
+    = note: this error originates in the macro `wire::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `independent-compile` (lib) due to 2 previous errors

@@ -30,18 +30,20 @@ RUNS=3 benches/scale/ab.sh RESULTS OUT_A OUT_B && python3 -I benches/scale/ab_su
 
 Baseline: one full run (171 IDs, `--save-baseline a915c8d`). Candidate: two full runs (180 IDs;
 run 2 `--save-baseline cand-aaa5a3c`, run 3 `--baseline-lenient a915c8d`). Means; Criterion's 95%
-intervals of the mean were within ±1% for every row below except where noted
-(`evidence/perf/criterion/summary-run{2,3}.md`).
+intervals of the mean were within ±1% for every row below except two, marked †: run 2's
+`headers/16/concord_text` (±43%, a burst of outliers; run 3's interval is tight) and run 3's
+`construct/realistic_optional_absent` (±8.6%) (`evidence/perf/criterion/summary-run{2,3}.md`;
+corrected after the executable review, F4).
 
 | ID (`…/prepare`) | a915c8d | candidate run 2 | run 3 | hand-written |
 |---|---|---|---|---|
 | `construct/minimal/concord` | 138.5 ns | 140.0 ns | 145.3 ns | 102.3 ns |
 | `construct/realistic_all_present/concord` | 1.550 µs | 1.401 µs (−9.6%) | 1.414 µs (−8.8%) | 782 ns |
-| `construct/realistic_optional_absent/concord` | 1.002 µs | 853 ns (−14.8%) | 901 ns (−10.1%) | 541 ns |
+| `construct/realistic_optional_absent/concord` | 1.002 µs | 853 ns (−14.8%) | 901 ns (−10.1%) † | 541 ns |
 | `construct/s2_product_scoped/concord` | 786 ns | 717 ns (−8.8%) | 731 ns (−7.0%) | 528 ns |
 | `compose/inherit/concord` | 481 ns | 412 ns (−14.4%) | 407 ns (−15.5%) | — |
 | `compose/deep8_reused_scope/concord` | 1.492 µs | 1.345 µs (−9.9%) | 1.347 µs (−9.7%) | — |
-| `headers/16/concord_text` | 1.076 µs | 1.121 µs (wide interval) | 879 ns (−18.3%) | `manual_from_str` 1.063 µs |
+| `headers/16/concord_text` | 1.076 µs | 1.121 µs † | 879 ns (−18.3%) | `manual_from_str` 1.063 µs |
 | `headers/16/concord_numeric` | 1.209 µs | 965 ns (−20.2%) | 960 ns (−20.6%) | `manual_numeric` 1.071 µs |
 | `headers/16/concord_native` (new) | — | 713 ns | 702 ns | `manual_prebuilt_clone` 877 ns |
 | `headers/16/concord_literal` (new) | — | 680 ns | 679 ns | `manual_from_static` 845 ns |
@@ -109,7 +111,9 @@ Run `ab-20261102T063238` (`evidence/perf/compile/`): suite `a915c8d` generated w
 | release, edit API + `use5` / `use100` / `use1000` / `fan_app` | 6.90 / 9.10 / 50.74 / 9.07 | 6.93 / 9.05 / 50.89 / 9.06 | 1.00 / 0.99 / 1.00 / 1.00 |
 | release, edit consumer `use5` / `use100` / `use1000` / `fan_app` | 0.39 / 2.55 / 44.21 / 2.61 | 0.41 / 2.54 / 44.21 / 2.56 | 1.03 / 1.00 / 1.00 / 0.98 |
 
-Release binaries and rlibs: within 0.5% (`sizes.tsv`). The declaring-crate and downstream costs
+Release binaries: within 0.12% (`sizes.tsv`). Rlibs: +0.03% to +1.15% (`libscale_shared` +0.52%,
+`libscale_typed` +1.15%: longer generated documentation and one static per body; corrected after
+the executable review, F4). The declaring-crate and downstream costs
 are unchanged within noise; typed bodies with defaults cost +2–4% (longer generated rustdoc: format,
 origin, media type). The placement-note fix (`01774a9`): −15% on the 4,000-placement fanout; a
 preliminary, busier run at 16,000 placements (`evidence/perf/compile/hf-16000.json`, 5 runs) gave 0.995 → 0.516 s

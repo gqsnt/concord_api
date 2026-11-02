@@ -1,0 +1,8 @@
+    Checking independent-compile v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/final-66a4478/target/probes/compile-work)
+error: the output type is missing after `json`: `-> json Item` (format words are reserved in format position; a payload type named `json` is written `r#json`)
+ --> src/lib.rs:2:68
+  |
+2 | wire::api! { pub client Api { base "http://127.0.0.1";  GET p() -> json; } }
+  |                                                                    ^^^^
+
+error: could not compile `independent-compile` (lib) due to 1 previous error

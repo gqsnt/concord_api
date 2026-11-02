@@ -1,0 +1,9 @@
+{
+  "tracked_files_compared": 654,
+  "changed": [],
+  "doc_server_port": 44975,
+  "doc_server_stopped": false,
+  "original_sources_modified": false,
+  "mutations_only_in": "target/probes/mutation-source",
+  "cleanup_limitation": "Exec session 44628 returned exit 130 after interrupt, then became unknown; port 44975 still accepts connections; ss and fuser cannot see its process in this sandbox PID namespace."
+}

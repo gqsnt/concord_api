@@ -1,0 +1,20 @@
+
+running 1 test
+test format_presence_aliases_independent_defaults_lexical_and_media ... FAILED
+
+failures:
+
+failures:
+    format_presence_aliases_independent_defaults_lexical_and_media
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+   Compiling concord v4.0.0-alpha.1 (/home/canarit/projects/concord_v4_native_work/snapshots/final-66a4478/target/probes/mutation-source/crates/concord)
+   Compiling independent-acceptance v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/final-66a4478/target/probes/mutation-consumer)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.39s
+     Running tests/contract.rs (target/mutation-build/debug/deps/contract-1e2d1bc04b9cc4d9)
+
+thread 'format_presence_aliases_independent_defaults_lexical_and_media' (2795) panicked at tests/contract.rs:185:5:
+assertion failed: body(&p).is_none() && ct(&p).is_none()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test contract`

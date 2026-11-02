@@ -1,0 +1,33 @@
+    Checking independent-compile v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/final-66a4478/target/probes/compile-work)
+error[E0425]: cannot find type `Json` in crate `$crate`
+   --> src/lib.rs:2:64
+    |
+  2 | wire::api! { pub client Api { base "http://127.0.0.1";  POST p(json b: String) -> form String; } }
+    |                                                                ^^^^ not found in `$crate`
+    |
+note: found an item that was configured out
+   --> /home/canarit/projects/concord_v4_native_work/snapshots/final-66a4478/crates/concord/src/lib.rs:225:15
+    |
+224 | #[cfg(feature = "json")]
+    |       ---------------- the item is gated behind the `json` feature
+225 | pub use repr::Json;
+    |               ^^^^
+    = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `wire::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0425]: cannot find type `Form` in crate `$crate`
+   --> src/lib.rs:2:83
+    |
+  2 | wire::api! { pub client Api { base "http://127.0.0.1";  POST p(json b: String) -> form String; } }
+    |                                                                                   ^^^^ not found in `$crate`
+    |
+note: found an item that was configured out
+   --> /home/canarit/projects/concord_v4_native_work/snapshots/final-66a4478/crates/concord/src/lib.rs:223:15
+    |
+222 | #[cfg(feature = "form")]
+    |       ---------------- the item is gated behind the `form` feature
+223 | pub use repr::Form;
+    |               ^^^^
+    = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `wire::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `independent-compile` (lib) due to 2 previous errors

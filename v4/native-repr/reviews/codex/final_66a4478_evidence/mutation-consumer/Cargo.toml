@@ -1,0 +1,16 @@
+[package]
+name = "independent-acceptance"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[features]
+default = ["codecs"]
+codecs = ["wire/json", "wire/form"]
+
+[dependencies]
+wire = { package = "concord", path = "../mutation-source/crates/concord", default-features = false }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt", "time"] }
+
+[workspace]

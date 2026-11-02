@@ -50,6 +50,32 @@ by Codex.
 | P2-7 | Low | clearing rationale misstated inheritance | FIXED (wording) | `DECISIONS.md` N06, contract 6d, AUTHOR_GUIDE §5.2 |
 | grammar | — | pin lexical precedence | FIXED | contract lexical table; `formats.rs::lexical_precedence`, `lexical_raw_identifier_is_a_payload`, `ui/format_reserved_words.rs` |
 
-## Codex executable review of the candidate
+## Codex executable review of the candidate `66a4478`
 
-Pending — recorded here when it has run.
+- Reviewer: `gpt-6.1-sol`, effort `xhigh` (session `turn_context`), execute mode: workspace-write in
+  the disposable snapshot `final-66a4478` (HEAD `e374f20`), network for loopback only, private
+  `CARGO_HOME` outside the snapshot, fresh target directory. 2026-11-02 07:06–07:20 UTC. All origin
+  files unchanged afterwards (receipt `final_66a4478_receipt.json`; the reviewer's own check: 654
+  files byte-identical).
+- Report: `final_66a4478_report.md` (sha256 `f75c5a92…`); probes, outputs and reconciliations in
+  `final_66a4478_evidence/` (copies of the repository the reviewer made are not archived).
+- Personally executed (per the report): fresh `verify.sh --msrv --package --nightly` (every gate
+  but the package check, F2); 535 workspace tests; MSRV 416 / 96 / 11; nightly `Clone` 16; 31
+  independent compiler probes on stable and 1.85; 7 independent contract/runtime probes (native
+  bytes on the raw wire, flag preservation and OR-ing, borrowed statics, aliases, snapshots,
+  request `Clone` with bodies, same-name order, owner `Debug`, absence/null/empty bodies,
+  `Content-Type` precedence and sensitive insertion, drain vs typed unit, independent defaults,
+  custom codecs, form in/out, unread status errors, decoding after native execution) plus the F1
+  reproducer; four isolated mutations (all killed); 531 archived Criterion means reconciled;
+  rustdoc in five feature configurations (HTML inspected as text; visual rendering blocked in the
+  reviewer's sandbox — it was inspected by the coordinator in the in-app browser, `2c4ce3b`).
+  Benchmarks not re-run. Verdict: **REVISE** (one P1, two P2, one P3; no P0).
+
+| ID | Severity | Finding | Disposition | Fix / test |
+|---|---|---|---|---|
+| F1 | P1 | a custom `ToHeaderValue + Display` value whose header value is flagged, placed as a header and in a path, query and template: owner `Debug` redacted it, `Prepared`'s `Debug` printed it in the URL and in the template header | FIXED | `f2fb5a3`: such a value must be text itself (`TextHeader`) unless statically sensitive — a compile error at the type otherwise (`DECISIONS.md` N02 amendment, contract H10b); `ui/header_text_dual_use.rs` (mutation-checked), `native_headers.rs::dual_use_values_are_withheld_everywhere_or_are_text` |
+| F2 | P2 | `package-check.sh` read `target/package` although `CARGO_TARGET_DIR` moved it | FIXED | `d78e567`: the target directory comes from `cargo metadata`; re-run with a foreign `CARGO_TARGET_DIR` |
+| F3 | P2 | `migrate_via.py` turned `via codec::Text` into the built-in `text`, silently changing a downstream codec | FIXED | `d067cd7`: only `concord::`-qualified markers and bare names imported from `concord` become words; `--self-test` (9 cases, mutation-checked) in `verify.sh`; MIGRATION wording |
+| F4 | P3 | `PERF.md` claimed ±1% intervals for every row and rlibs within 0.5% | FIXED (records) | two rows marked † (±43%, ±8.6%); rlibs +0.03% to +1.15%; figures recomputed from the archived summaries and `sizes.tsv` |
+| cleanup | — | a reviewer documentation server (`127.0.0.1:44975`) outlived its session | RESOLVED | identity checked (started during the review, working directory the review snapshot, `http.server`), stopped by the coordinator |
+| receipt | — | `evidence/verify_66a4478.txt` was absent from the reviewed snapshot | NOTED | it was committed after `66a4478` (`5e6d244`), so the snapshot could not contain it |
