@@ -46,9 +46,9 @@ pub struct Body {
 pub struct Owner {
     pub kind: Kind,
     pub docs: Vec<Attribute>,
-    /// PROTO(D14): own and inherited `#[cfg]`s (applied to every generated item of the owner).
+    /// Own and inherited `#[cfg]`s (applied to every generated item of the owner).
     pub cfgs: Vec<Attribute>,
-    /// PROTO(D14): own `#[cfg]`s (applied to the parent's navigation method).
+    /// Own `#[cfg]`s (applied to the parent's navigation method).
     pub own_cfgs: Vec<Attribute>,
     pub deprecated: Option<Attribute>,
     pub name: Ident,
@@ -963,7 +963,7 @@ impl Model {
             slot: Slot,
             live: bool,
             last_writer: String,
-            /// PROTO(D04): the owner whose `remove` ended the key's ownership, if any.
+            /// The owner whose `remove` ended the key's ownership, if any (for diagnostics).
             removed_by: Option<String>,
             /// Every contribution applied to this key on the chain, surviving or not.
             history: Vec<ContribId>,
@@ -980,7 +980,7 @@ impl Model {
                 Family::Query => &self.owners[owner].query,
                 Family::Header => &self.owners[owner].headers,
             };
-            // PROTO(D04): an owner's `remove` statements act on what it inherits, before its own
+            // An owner's `remove` statements act on what it inherits, before its own
             // contributions (direct placements and block entries), so `remove "k"` + a direct
             // placement of `k` is an exact replacement.
             let order = (0..contribs.len())
@@ -1093,31 +1093,35 @@ impl Model {
     fn check_names(&self, errors: &mut Errors) {
         // Generated type names.
         let mut types: BTreeMap<String, &Ident> = BTreeMap::new();
+        let client = &self.owners[0];
+        let config = client
+            .values
+            .iter()
+            .any(Value::is_positional)
+            .then(|| client.config_name().to_string());
         for owner in &self.owners {
-            if let Some(first) = types.insert(plain(&owner.type_name), &owner.name) {
+            let key = plain(&owner.type_name);
+            if config.as_deref() == Some(key.as_str()) {
+                let mut e = syn::Error::new(
+                    owner.name.span(),
+                    format!(
+                        "generated type name `{key}` is also the struct of the client's required values; rename this owner"
+                    ),
+                );
+                e.combine(syn::Error::new(
+                    client.name.span(),
+                    "the client is declared here",
+                ));
+                errors.push(e);
+                continue;
+            }
+            if let Some(first) = types.insert(key, &owner.name) {
                 let mut e = syn::Error::new(
                     owner.name.span(),
                     format!("generated type name `{}` is used twice", owner.type_name),
                 );
                 e.combine(syn::Error::new(first.span(), "also generated here"));
                 errors.push(e);
-            }
-            let required = owner.values.iter().any(Value::is_positional);
-            if matches!(owner.kind, Kind::Client { .. }) && required {
-                let config = owner.config_name();
-                if let Some(first) = types.insert(config.to_string(), &owner.name) {
-                    let mut e = syn::Error::new(
-                        first.span(),
-                        format!(
-                            "generated type name `{config}` is also the struct of the client's required values; rename this owner"
-                        ),
-                    );
-                    e.combine(syn::Error::new(
-                        owner.name.span(),
-                        "the client is declared here",
-                    ));
-                    errors.push(e);
-                }
             }
         }
         // Methods per generated type.

@@ -1,6 +1,10 @@
-# Examples
+# Examples (historical: V4 alpha syntax)
 
-Compiled and wire-tested in `examples/shapes` (`cargo test -p concord-example-shapes`). The
+> **Historical.** This page records the V4 alpha (`8f7adc2`) syntax — `Json<T>` representations
+> and positional root constructors. For the current surface see `README.md`, `docs/` and the
+> maintained, compiled crates `examples/shapes` and `examples/quickstart`.
+
+At the alpha, compiled and wire-tested in `examples/shapes` (`cargo test -p concord-example-shapes`). The
 hand-written reqwest equivalents are in `benches/baselines`.
 
 ## S1 — simple

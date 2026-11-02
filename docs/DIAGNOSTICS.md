@@ -375,13 +375,13 @@ A scope named `config` under client `Api` would be called `ApiConfig`, the name 
 config struct. Excerpt of [`config_name_collision.stderr`](../crates/concord/tests/ui/config_name_collision.stderr):
 
 ```text
-error: generated type name `ApiConfig` is used twice
+error: generated type name `ApiConfig` is also the struct of the client's required values; rename this owner
  --> tests/ui/config_name_collision.rs:7:15
   |
 7 |         scope config() {
   |               ^^^^^^
 
-error: also generated here
+error: the client is declared here
  --> tests/ui/config_name_collision.rs:4:16
   |
 4 |     pub client Api(key: String) {

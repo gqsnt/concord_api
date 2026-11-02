@@ -1,0 +1,11 @@
+error: the response representation is written after the payload type: `Item via concord::Json`
+ --> tests/ui/representation_alpha_spelling.rs:6:23
+  |
+6 |         GET item() -> concord::Json<Item>;
+  |                       ^^^^^^^
+
+error: an endpoint without typed output has no `->`: remove `-> ()` (the body is drained)
+  --> tests/ui/representation_alpha_spelling.rs:12:28
+   |
+12 |         DELETE remove() -> ();
+   |                            ^^

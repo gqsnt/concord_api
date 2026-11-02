@@ -26,12 +26,17 @@ step test-no-default cargo test --locked -p concord --no-default-features
 step test-json-only cargo test --locked -p concord --no-default-features --features json
 step test-reqwest-defaults-only cargo test --locked -p concord --no-default-features --features reqwest-defaults
 step doc env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord --no-deps
+step doc-no-default env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord --no-deps --no-default-features
+step doc-json-only env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord --no-deps --no-default-features --features json
 
 if [[ "${1:-}" == "--msrv" ]]; then
+  # Every runtime suite; the UI suites (ui, oracle_ui) pin rustc 1.97.1 wording and are not run.
   step msrv-concord cargo +1.85 test --locked -p concord --lib \
     --test slice --test values --test composition --test bodies --test representations \
-    --test sensitivity --test hygiene --test tls
-  step msrv-examples cargo +1.85 test --locked -p concord-example-shapes -p concord-example-renamed -p concord-heap-check
+    --test sensitivity --test hygiene --test tls --test attributes --test display_errors \
+    --test native_limits --test d15_surfaces --test oracle_composition --test oracle_sensitivity
+  step msrv-examples cargo +1.85 test --locked -p concord-macros -p concord-example-shapes \
+    -p concord-example-renamed -p concord-example-native -p concord-example-quickstart -p concord-heap-check
 fi
 
 for log in target/verify-test*.log target/verify-msrv*.log; do

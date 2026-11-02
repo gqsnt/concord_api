@@ -50,17 +50,58 @@ pub struct Payload {
     pub repr: Type,
 }
 
+/// The diagnostic for a payload without `via`. Recognizes the V4-alpha spellings (`Json<T>`,
+/// `Text`, `Binary`) and `-> ()` only to suggest the replacement; no meaning is derived from them.
+fn missing_via(ty: &Type, what: &str) -> String {
+    let tokens = |t: &dyn quote::ToTokens| {
+        t.to_token_stream()
+            .to_string()
+            .replace(" < ", "<")
+            .replace("< ", "<")
+            .replace(" >", ">")
+            .replace(" :: ", "::")
+            .replace(" ,", ",")
+    };
+    if let Type::Tuple(t) = ty {
+        if t.elems.is_empty() && what == "response" {
+            return "an endpoint without typed output has no `->`: remove `-> ()` (the body is drained)".to_owned();
+        }
+    }
+    if let Type::Path(p) = ty {
+        if let Some(last) = p.path.segments.last() {
+            let prefix: String = p
+                .path
+                .segments
+                .iter()
+                .take(p.path.segments.len() - 1)
+                .map(|s| format!("{}::", s.ident))
+                .collect();
+            let hint = match (last.ident.to_string().as_str(), &last.arguments) {
+                ("Json", syn::PathArguments::AngleBracketed(args)) if args.args.len() == 1 => {
+                    Some(format!("{} via {prefix}Json", tokens(&args.args[0])))
+                }
+                ("Text", syn::PathArguments::None) => Some(format!("String via {prefix}Text")),
+                ("Binary", syn::PathArguments::None) => Some(format!("Bytes via {prefix}Binary")),
+                _ => None,
+            };
+            if let Some(hint) = hint {
+                return format!(
+                    "the {what} representation is written after the payload type: `{hint}`"
+                );
+            }
+        }
+    }
+    format!(
+        "the {what} representation is explicit: write `{} via Json` (or `via Text`, `via Binary`, or your own representation type)",
+        tokens(ty)
+    )
+}
+
 /// Parses `T via R` after a `->` or a body's `:`.
 fn parse_payload(input: ParseStream<'_>, what: &str) -> syn::Result<Payload> {
     let ty: Type = input.parse()?;
     if !input.peek(kw::via) {
-        return Err(syn::Error::new(
-            ty.span(),
-            format!(
-                "the {what} representation is explicit: write `{} via Json` (or `via Text`, `via Binary`, or your own representation type)",
-                quote::ToTokens::to_token_stream(&ty)
-            ),
-        ));
+        return Err(syn::Error::new(ty.span(), missing_via(&ty, what)));
     }
     input.parse::<kw::via>()?;
     let repr: Type = input.parse()?;
@@ -70,7 +111,7 @@ fn parse_payload(input: ParseStream<'_>, what: &str) -> syn::Result<Payload> {
 pub struct Owner {
     pub kind: OwnerKind,
     pub docs: Vec<Attribute>,
-    /// PROTO(D14): `#[cfg(..)]` and `#[deprecated..]` on scopes and endpoints.
+    /// `#[cfg(..)]` and `#[deprecated..]` on scopes and endpoints.
     pub cfgs: Vec<Attribute>,
     pub deprecated: Option<Attribute>,
     pub name: Ident,
@@ -132,7 +173,7 @@ pub struct Entry {
     pub op_span: Span,
     pub key: LitStr,
     pub value: Option<Rhs>,
-    /// PROTO(D04 Alt-Y): `override "k" = v else inherit;` (required when `v` can be absent).
+    /// `override "k" = v else inherit;` (required when `v` can be absent).
     pub else_inherit: bool,
 }
 
@@ -382,7 +423,7 @@ impl ParseAnyIdent for Ident {
     }
 }
 
-/// PROTO(D14): children accept docs, `#[cfg(..)]` (whole subtree) and `#[deprecated..]`
+/// Children accept docs, `#[cfg(..)]` (whole subtree) and `#[deprecated..]`
 /// (navigation method only); every other attribute is still rejected.
 fn child_attrs(
     attrs: Vec<Attribute>,
@@ -396,8 +437,13 @@ fn child_attrs(
                 return Err(syn::Error::new(attr.span(), "duplicate `#[deprecated]`"));
             }
             deprecated = Some(attr);
+        } else if attr.path().is_ident("doc") {
+            docs.push(attr);
         } else {
-            docs.extend(docs_only(vec![attr])?);
+            return Err(syn::Error::new(
+                attr.span(),
+                "unsupported attribute on a scope or endpoint; documentation comments, `#[cfg(..)]` and `#[deprecated]` are accepted",
+            ));
         }
     }
     Ok((docs, cfgs, deprecated))

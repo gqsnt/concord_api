@@ -6,7 +6,8 @@
 #        from row to row; each suite builds in its own target directory. Results: OUT/<row>.<suite>.json
 #        (hyperfine), OUT/sizes.tsv, OUT/env.txt. Summarize with benches/scale/ab_summary.py OUT.
 # Run alone on the machine (no concurrent builds). Environment: RUNS (3), WARMUP (1),
-# TOOLCHAIN (1.97.1), CARGO_BUILD_JOBS (6), ROWS (space-separated subset of row names).
+# TOOLCHAIN (1.97.1), CARGO_BUILD_JOBS (6), ROWS (space-separated subset of row names),
+# WARM (cargo package selection warmed before timing; default --workspace).
 set -euo pipefail
 out=$(realpath -m "$1"); shift
 suites=(); for s in "$@"; do suites+=("$(realpath "$s")"); done
@@ -40,9 +41,10 @@ ROWS_ALL=(
 )
 
 # Warm every suite (dependencies and all members, dev and release) outside timing.
+warm=(${WARM:---workspace})
 for s in "${suites[@]}"; do
-  CARGO_TARGET_DIR="$s/target" cargo "+$tc" build -q --offline --locked --manifest-path "$s/Cargo.toml" --workspace
-  CARGO_TARGET_DIR="$s/target" cargo "+$tc" build -q --offline --locked --manifest-path "$s/Cargo.toml" --workspace --release
+  CARGO_TARGET_DIR="$s/target" cargo "+$tc" build -q --offline --locked --manifest-path "$s/Cargo.toml" "${warm[@]}"
+  CARGO_TARGET_DIR="$s/target" cargo "+$tc" build -q --offline --locked --manifest-path "$s/Cargo.toml" "${warm[@]}" --release
 done
 
 r=0

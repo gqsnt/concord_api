@@ -26,6 +26,12 @@ jobs:
       - run: cargo doc --locked -p concord --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
+      - run: cargo doc --locked -p concord --no-deps --no-default-features
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - run: cargo doc --locked -p concord --no-deps --no-default-features --features json
+        env:
+          RUSTDOCFLAGS: -D warnings
 
   msrv:
     runs-on: ubuntu-latest
@@ -36,5 +42,9 @@ jobs:
       - run: >
           cargo +1.85 test --locked -p concord --lib
           --test slice --test values --test composition --test bodies --test representations
-          --test sensitivity --test hygiene --test tls
-      - run: cargo +1.85 test --locked -p concord-example-shapes -p concord-example-renamed -p concord-heap-check
+          --test sensitivity --test hygiene --test tls --test attributes --test display_errors
+          --test native_limits --test d15_surfaces --test oracle_composition --test oracle_sensitivity
+      - run: >
+          cargo +1.85 test --locked -p concord-macros -p concord-example-shapes
+          -p concord-example-renamed -p concord-example-native -p concord-example-quickstart
+          -p concord-heap-check

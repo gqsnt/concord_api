@@ -1,10 +1,10 @@
-error: generated type name `ApiConfig` is used twice
+error: generated type name `ApiConfig` is also the struct of the client's required values; rename this owner
  --> tests/ui/config_name_collision.rs:7:15
   |
 7 |         scope config() {
   |               ^^^^^^
 
-error: also generated here
+error: the client is declared here
  --> tests/ui/config_name_collision.rs:4:16
   |
 4 |     pub client Api(key: String) {
