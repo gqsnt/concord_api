@@ -1,0 +1,17 @@
+{
+  "origin": {
+    "schema": "concord-review-snapshot/1",
+    "original_commit": "6604a53be4e4c92d4e97ae2b71925902565e31fd",
+    "original_tree": "a84a014771a70dce4104472f9660f28163fe2731",
+    "object_format": "sha1",
+    "created_utc": "2026-11-02T00:28:33.432660+00:00",
+    "note": "Independent copy: its own HEAD differs from original_commit. No remote."
+  },
+  "snapshot_head": "a3b5407f92ac7d9b7f6cfd5cdf59de0ad0baec1f",
+  "snapshot_tree": "69161ff73a27946806ac3b2c7e3278b28dde33fa",
+  "manifest_file_count": 229,
+  "mismatches": [],
+  "git_status": "",
+  "cargo_lock_sha256": "f6782007719be5934dcf9e1d39012e7e659cd4e08cfdcba357d19852cb72a919",
+  "mode_mismatches": []
+}
