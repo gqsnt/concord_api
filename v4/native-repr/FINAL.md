@@ -7,13 +7,13 @@ into another branch. Untracked and untouched: `.claude/`, `concord_v4_handoff/`.
 `concord-v3-preserved`), `concord-v4-alpha1-baseline`. Side branches merged here:
 `native-repr-findings`, `native-repr-bench`, `native-repr-formats`.
 
-**Candidate:** `d6b209f` (code). Later commits change only `v4/` records.
+**Candidate:** `1d9ffe7` (code). Later commits change only `v4/` records.
 
 | | State |
 |---|---|
 | Implemented | native header values (N01–N05), formats (N06–N08), note deduplication (N09), `Clone` checks (N10), multipart recipe (N11), Criterion suite (N12), release preparation, doc fixes |
-| Tested | `scripts/verify.sh --msrv --nightly --package`: 22/22 PASS on `d6b209f`, clean tree, Linux x86_64, rustc 1.97.1 / 1.85.1 / nightly 1.101 (`evidence/verify_d6b209f.txt`; earlier receipts `verify_66a4478.txt`, `verify_1174d5d.txt`, `verify_d591fe7.txt`) |
-| Independently reviewed | Codex `gpt-6.1-sol` `xhigh`: blind design challenge, design pass 2, executable review of `66a4478` (REVISE: F1–F4), focused executable re-review of `1174d5d` (F1, F2, F4 resolved; F3a found), narrow checks of the migration fixes on `d591fe7` (F3a resolved; F3b–F3d found) and `d6b209f` — see `REVIEW_TRIAGE.md` and the end of this record |
+| Tested | `scripts/verify.sh --msrv --nightly --package`: 22/22 PASS on `1d9ffe7`, clean tree, Linux x86_64, rustc 1.97.1 / 1.85.1 / nightly 1.101; 537 workspace tests (`evidence/verify_1d9ffe7.txt`; earlier receipts `verify_66a4478.txt`, `verify_1174d5d.txt`, `verify_d591fe7.txt`, `verify_d6b209f.txt`) |
+| Independently reviewed | Codex `gpt-6.1-sol` `xhigh`: blind design challenge, design pass 2, executable review of `66a4478` (REVISE: F1–F4), focused executable re-review of `1174d5d` (F1, F2, F4 resolved; F3a found), narrow checks of the migration fixes on `d591fe7` (F3a resolved; F3b–F3d found), `d6b209f` (F3–F3d resolved; F3e found) and `1d9ffe7` — see `REVIEW_TRIAGE.md` and the end of this record |
 | Accepted | see "Acceptance" at the end |
 | Windows / macOS | NOT_RUN for this candidate (a push was not authorized; CI run `41379941540` is of `a40788c`, baseline evidence only) / not a requirement |
 
