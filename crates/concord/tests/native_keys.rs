@@ -152,6 +152,36 @@ concord::api! {
     }
 }
 
+const X_D: HeaderName = HeaderName::from_static("x-d");
+const X_D2: HeaderName = HeaderName::from_static("x-d");
+#[allow(dead_code)] // written only in a compiled-out endpoint
+const X_E: HeaderName = HeaderName::from_static("x-e");
+
+concord::api! {
+    /// Sensitive contributions under native keys that exist only in some `cfg`s.
+    pub client CfgKeys(header(X_D) v: String, #[sensitive] secret: String) {
+        base "http://cfg.invalid";
+        query { "s" = secret; }
+        /// Compiled out: its contribution does not exist, so it classifies nothing.
+        #[cfg(any())]
+        GET off() { headers { X_E = "{client.secret}"; } }
+        /// Compiled: `x-d` again, sensitive, so `v` (also `x-d`) is withheld.
+        #[cfg(all())]
+        GET on() { headers { X_D2 = "{client.secret}"; } }
+    }
+}
+
+concord::api! {
+    /// The same, with the only aliasing endpoint compiled out.
+    pub client CfgOff(header(X_D) v: String, #[sensitive] secret: String) {
+        base "http://cfg.invalid";
+        query { "s" = secret; }
+        #[cfg(any())]
+        GET off() { headers { X_D2 = "{client.secret}"; } }
+        GET on();
+    }
+}
+
 concord::api! {
     /// Reserved names and `content-type` through native constants.
     pub client Policy {
@@ -391,4 +421,28 @@ fn deep_native_chain_withholds_only_the_aliased_level() {
     let text = format!("{error} {error:?}");
     assert!(text.contains("`X_C2` on `Deep.l1.l2`"), "{text}");
     assert!(!text.contains("TWO") && !text.contains("KEY"), "{text}");
+}
+
+/// A condition naming a key written only in a compiled-out endpoint compiles and is false; one in
+/// a compiled endpoint applies.
+#[test]
+fn native_conditions_follow_cfg() {
+    let api = CfgKeys::new(
+        http(),
+        CfgKeysConfig {
+            v: "VVV".into(),
+            secret: "S".into(),
+        },
+    );
+    assert!(!format!("{api:?}").contains("VVV"), "{api:?}");
+    let api = CfgOff::new(
+        http(),
+        CfgOffConfig {
+            v: "VVV".into(),
+            secret: "S".into(),
+        },
+    );
+    assert!(format!("{api:?}").contains("\"VVV\""), "{api:?}");
+    let p = api.on().prepare().unwrap();
+    assert!(!p.request().headers()["x-d"].is_sensitive());
 }

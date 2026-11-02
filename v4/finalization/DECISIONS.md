@@ -149,6 +149,15 @@ by over-approximation and is now shown, as the generated docs and §7 always sai
 (`api-token`, `x-api-token`, `x-access-token`, `private-token`, `x-goog-api-key`,
 `ocp-apim-subscription-key`, `x-amz-security-token`); it remains a safety net.
 
+**Amended again (after re-measuring `d3e26e4`).** The conditions read only constants (the names
+key paths hold), but they were still written inline in every endpoint and every `Debug`. In the
+shared suite, 200 endpoints repeated them (16,452 comparisons). Each value's conditions are now
+one generated function with a `OnceLock<bool>`, evaluated once per process (252 comparisons). Each
+condition term is also gated by the `cfg` of its key's accessor. A key written only in compiled-out
+owners has no accessor, and a `Debug` that named it failed to compile (`cannot find function
+__concord_…_key_N`, a latent defect since F06; `native_keys::native_conditions_follow_cfg`). Such a
+contribution does not exist, so its term is `false`.
+
 ## F10 — The regex migration script is withdrawn (CHANGE)
 
 The script migrate_via.py corrupted string constants, comments and header literals and merged two

@@ -22,6 +22,7 @@ pub fn emit(model: &Model, krate: TokenStream) -> TokenStream {
         _ => unreachable!("the first owner is the client"),
     };
     let mut out = header_items;
+    out.extend(withheld_fns(k, model, &headers));
     out.extend(format_aliases(k, model));
     for (index, (owner, notes)) in model.owners.iter().zip(&notes).enumerate() {
         let cfgs = &owner.cfgs;
@@ -99,15 +100,7 @@ fn header_statics(k: &TokenStream, model: &Model) -> (TokenStream, Headers) {
     // One accessor per native key path, under the union of its declaring owners' `cfg`s: the
     // path is resolved (and type-checked, with Concord's message) once, where it is written.
     for (i, key) in model.key_paths.iter().enumerate() {
-        let users: Vec<usize> = (0..model.owners.len())
-            .filter(|&o| {
-                model.owners[o]
-                    .headers
-                    .iter()
-                    .any(|c| c.key == KeyName::Path(i))
-            })
-            .collect();
-        let cfg = owners_cfg(model, &users);
+        let cfg = owners_cfg(model, &key_users(model, i));
         let ident = key_fn(model, i);
         let path = &key.path;
         let check = quote_spanned!(path.span()=> #k::__private::NativeKey::native_key(&#path));
@@ -164,47 +157,127 @@ fn key_ref(model: &Model, headers: &Headers, key: &KeyName) -> TokenStream {
     }
 }
 
-/// A run-time withholding condition as a `bool` expression.
-fn cond_expr(k: &TokenStream, model: &Model, headers: &Headers, cond: &Cond) -> TokenStream {
-    match cond {
-        Cond::Name(i) => {
-            let name = key_ref(model, headers, &KeyName::Path(*i));
-            quote!(#k::__private::sensitive_name(#name))
-        }
-        Cond::Same(a, b) => {
-            let a = key_ref(model, headers, a);
-            let b = key_ref(model, headers, b);
-            quote!((#a == #b))
+/// Where `value` is declared (it is one of the model's values).
+fn value_ref(model: &Model, value: &Value) -> ValueRef {
+    for (owner, o) in model.owners.iter().enumerate() {
+        if let Some(index) = o.values.iter().position(|v| std::ptr::eq(v, value)) {
+            return ValueRef { owner, index };
         }
     }
+    unreachable!("a value of the model")
+}
+
+/// The function deciding at run time whether value `r` is withheld (its `debug_when` conditions).
+fn when_fn(model: &Model, r: ValueRef) -> Ident {
+    format_ident!(
+        "__concord_{}_withheld_{}_{}",
+        plain(&model.owners[0].type_name),
+        r.owner,
+        r.index
+    )
+}
+
+/// One function per value whose classification depends on native header names. Its conditions
+/// read only constants (the names the key paths hold), so it is computed once and cached; every
+/// `Debug` and every request built reads the cached answer instead of repeating the comparisons
+/// inline, which kept generated code proportional to endpoints × conditions.
+fn withheld_fns(k: &TokenStream, model: &Model, headers: &Headers) -> TokenStream {
+    let mut out = TokenStream::new();
+    for (o, owner) in model.owners.iter().enumerate() {
+        for (index, value) in owner.values.iter().enumerate() {
+            if value.debug_sensitive || value.debug_when.is_empty() {
+                continue;
+            }
+            let ident = when_fn(model, ValueRef { owner: o, index });
+            let conds = value
+                .debug_when
+                .iter()
+                .map(|c| cond_expr(k, model, headers, c));
+            out.extend(with_attrs(
+                quote! {
+                    #[doc(hidden)]
+                    #[allow(non_snake_case, dead_code)]
+                    fn #ident() -> bool {
+                        static __C: ::std::sync::OnceLock<bool> = ::std::sync::OnceLock::new();
+                        *__C.get_or_init(|| false #(|| #conds)*)
+                    }
+                },
+                &owner.cfgs,
+            ));
+        }
+    }
+    out
+}
+
+/// The owners whose headers name native key path `i`.
+fn key_users(model: &Model, i: usize) -> Vec<usize> {
+    (0..model.owners.len())
+        .filter(|&o| {
+            model.owners[o]
+                .headers
+                .iter()
+                .any(|c| c.key == KeyName::Path(i))
+        })
+        .collect()
+}
+
+/// A run-time withholding condition as a `bool` expression. A key path written only under
+/// `#[cfg]` owners has its accessor under the same `cfg`; where those owners are compiled out the
+/// contributions do not exist, so the condition is `false` there.
+fn cond_expr(k: &TokenStream, model: &Model, headers: &Headers, cond: &Cond) -> TokenStream {
+    let (expr, keys) = match cond {
+        Cond::Name(i) => {
+            let name = key_ref(model, headers, &KeyName::Path(*i));
+            (quote!(#k::__private::sensitive_name(#name)), vec![*i])
+        }
+        Cond::Same(a, b) => {
+            let keys = [a, b]
+                .into_iter()
+                .filter_map(|key| match key {
+                    KeyName::Path(i) => Some(*i),
+                    KeyName::Lit(_) => None,
+                })
+                .collect();
+            let a = key_ref(model, headers, a);
+            let b = key_ref(model, headers, b);
+            (quote!((#a == #b)), keys)
+        }
+    };
+    let present: Vec<TokenStream> = keys
+        .into_iter()
+        .filter_map(|i| owners_cfg_predicate(model, &key_users(model, i)))
+        .collect();
+    if present.is_empty() {
+        return expr;
+    }
+    quote!({
+        #[cfg(all(#(#present),*))]
+        let __r = #expr;
+        #[cfg(not(all(#(#present),*)))]
+        let __r = false;
+        __r
+    })
 }
 
 /// `static_flag || any run-time condition of a value read by `ids``.
-fn flag_expr(
-    k: &TokenStream,
-    model: &Model,
-    headers: &Headers,
-    static_flag: bool,
-    ids: &[ContribId],
-) -> TokenStream {
+fn flag_expr(model: &Model, static_flag: bool, ids: &[ContribId]) -> TokenStream {
     if static_flag {
         return quote!(true);
     }
-    let mut conds: Vec<&Cond> = Vec::new();
+    let mut reads: Vec<ValueRef> = Vec::new();
     for &id in ids {
         for r in contrib_reads(model, id) {
-            for c in &model.value(r).debug_when {
-                if !conds.contains(&c) {
-                    conds.push(c);
-                }
+            let value = model.value(r);
+            if !value.debug_sensitive && !value.debug_when.is_empty() && !reads.contains(&r) {
+                reads.push(r);
             }
         }
     }
-    if conds.is_empty() {
+    if reads.is_empty() {
         return quote!(false);
     }
-    let conds = conds.into_iter().map(|c| cond_expr(k, model, headers, c));
-    quote!((false #(|| #conds)*))
+    let calls = reads.into_iter().map(|r| when_fn(model, r));
+    quote!((false #(|| #calls())*))
 }
 
 fn contrib_reads(model: &Model, id: ContribId) -> Vec<ValueRef> {
@@ -292,6 +365,15 @@ fn consumers_cfg(model: &Model, d: &OwnerDefault) -> TokenStream {
 /// `#[cfg(any(all(..), ..))]` over `owners`' own and inherited `cfg` predicates; nothing when one
 /// of them is unconditional.
 fn owners_cfg(model: &Model, owners: &[usize]) -> TokenStream {
+    match owners_cfg_predicate(model, owners) {
+        Some(predicate) => quote!(#[cfg(#predicate)]),
+        None => quote!(),
+    }
+}
+
+/// The `cfg` predicate under which some of `owners` is compiled, or `None` when one of them is
+/// always compiled.
+fn owners_cfg_predicate(model: &Model, owners: &[usize]) -> Option<TokenStream> {
     let mut alternatives: Vec<TokenStream> = Vec::new();
     let mut seen = HashSet::new();
     for &e in owners {
@@ -304,14 +386,14 @@ fn owners_cfg(model: &Model, owners: &[usize]) -> TokenStream {
             })
             .collect();
         if predicates.is_empty() {
-            return quote!();
+            return None;
         }
         let all = quote!(all(#(#predicates),*));
         if seen.insert(all.to_string()) {
             alternatives.push(all);
         }
     }
-    quote!(#[cfg(any(#(#alternatives),*))])
+    Some(quote!(any(#(#alternatives),*)))
 }
 
 /// Puts `attrs` in front of every top-level item in `items`.
@@ -1054,7 +1136,6 @@ fn doc_text(docs: &[syn::Attribute]) -> String {
 fn debug_fields<'a>(
     k: &TokenStream,
     model: &Model,
-    headers: &Headers,
     values: impl IntoIterator<Item = &'a Value>,
     base: &TokenStream,
 ) -> TokenStream {
@@ -1094,14 +1175,12 @@ fn debug_fields<'a>(
             }
         };
         // A classification that depends on native header names is decided when rendering.
-        let shown = if value.debug_sensitive || value.debug_when.is_empty() {
+        let shown = if value.debug_sensitive || value.debug_when.is_empty() || value.usage.is_none()
+        {
             shown
         } else {
-            let conds = value
-                .debug_when
-                .iter()
-                .map(|c| cond_expr(k, model, headers, c));
-            quote_spanned!(span=> &#k::__private::Withheld(false #(|| #conds)*, #shown))
+            let when = when_fn(model, value_ref(model, value));
+            quote_spanned!(span=> &#k::__private::Withheld(#when(), #shown))
         };
         // One statement per field (not a method chain): thousands of values must not nest.
         out.extend(located(quote!(__d.field(#label, #shown);), span));
@@ -1144,7 +1223,7 @@ fn emit_owner(
                 "the client",
                 notes,
             );
-            let debug = debug_fields(k, model, headers, &owner.values, &quote!(__s));
+            let debug = debug_fields(k, model, &owner.values, &quote!(__s));
             let required: Vec<&Value> = owner.values.iter().filter(|v| v.is_positional()).collect();
             let (config_item, config_param, config_bind) = if required.is_empty() {
                 (quote!(), quote!(), quote!())
@@ -1176,8 +1255,7 @@ fn emit_owner(
                      `maybe_*` methods."
                 ));
                 let config_label = lit(&config.to_string());
-                let config_debug =
-                    debug_fields(k, model, headers, required.iter().copied(), &quote!(self));
+                let config_debug = debug_fields(k, model, required.iter().copied(), &quote!(self));
                 (
                     quote! {
                         #[doc = #config_doc]
@@ -1270,7 +1348,7 @@ fn emit_owner(
                 "this scope",
                 notes,
             );
-            let debug = debug_fields(k, model, headers, &owner.values, &quote!(__s));
+            let debug = debug_fields(k, model, &owner.values, &quote!(__s));
             quote! {
                 #docs
                 #[derive(::core::clone::Clone)]
@@ -1315,7 +1393,7 @@ fn emit_owner(
                 "this request",
                 notes,
             );
-            let mut debug = debug_fields(k, model, headers, &owner.values, &quote!(self));
+            let mut debug = debug_fields(k, model, &owner.values, &quote!(self));
             let body_field = body.as_ref().map(|b| {
                 let name = &b.name;
                 let vty = body_value_type(b);
@@ -1723,7 +1801,7 @@ fn items_code(
             collect_items(items, &mut ids);
             (
                 quote!(::core::clone::Clone::clone(#name)),
-                flag_expr(k, model, headers, slot.sensitive, &ids),
+                flag_expr(model, slot.sensitive, &ids),
             )
         }
         (Family::Query, _) => (quote!(), quote!()),
@@ -1814,7 +1892,7 @@ fn native_headers_code(
         } else {
             quote!(true)
         };
-        let marked = flag_expr(k, model, headers, c.sensitive, &[id]);
+        let marked = flag_expr(model, c.sensitive, &[id]);
         let label = lit(&format!(
             "`{}{}` on `{}`",
             match c.op {

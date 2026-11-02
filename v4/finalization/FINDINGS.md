@@ -34,6 +34,8 @@ found or reproduced here:
 | Id | Source | Observation | Disposition |
 |---|---|---|---|
 | P1 | compile-time measurement (`PERF.md` §3) | With native header keys, generated code grew with the square of the native keys on a chain. Every value's run-time sensitivity condition compared its key with every other native key (34,816 comparisons in the deep suite); release builds were 11× slower | FIXED `0e56a65` (F09 amended): only conditions not already implied are added; 1,088 comparisons. Re-measured on the frozen candidate (`PERF.md` §3) |
+| P2 | re-measurement of `d3e26e4` (`PERF.md` §4) | `scale_shared` with native keys still compiled 2.6× (release) and 4.1× (check) slower: per-value conditions were inlined in each of 200 endpoints | FIXED: one cached function per value (F09, amended again) |
+| P3 | coordinator, while fixing P2 | A sensitive contribution under a native key that only a `#[cfg]`-disabled owner writes made the client's `Debug` call an accessor removed by that `cfg`: E0425 `cannot find function __concord_Api_key_1`, a compile failure (present since F06) | FIXED: condition terms are gated by their keys' `cfg`; `native_keys::native_conditions_follow_cfg` |
 | R1 | pack D-REP-2/D-REP-5; Sonnet T2 and the 204 probe | A JSON decode failure on an empty body or a non-JSON body said only "unexpected end of input" or "syntax at line 1, column 1" | FIXED `0e56a65`: static hints; empty, whitespace and `null` stay distinct |
 | R2 | pack D-SURF-1 | Discarding a setter's result on a clone or temporary loses the change silently | FIXED `0e56a65`: `#[must_use]` |
 | R3 | pack D-SURF-2 | No borrowing access to a status error's response; a standalone `BodyError`'s source unreachable | FIXED `0e56a65` |
