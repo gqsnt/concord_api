@@ -1,13 +1,13 @@
-// 12a/12b with the `json` and `form` features off: one error at each word written in place, one at
-// each default that endpoints use (through its shared alias, whatever the number of users), and
+// 12a/12b with the `json` and `form` features off: one error at each word written on an endpoint,
+// one at each default that endpoints use (through its shared alias, whatever the number of users), and
 // nothing for a default used only by cfg-disabled endpoints or by no endpoint at all.
 pub struct Item;
 concord::api! {
     pub client InPlace {
         base "http://x.test";
-        GET a() -> json Item;
-        GET b() -> json Item;
-        POST login(form f: Item);
+        GET a() -> Item { response json; }
+        GET b() -> Item { response json; }
+        POST login(body f: Item) { request form; }
     }
 }
 concord::api! {

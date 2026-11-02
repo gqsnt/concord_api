@@ -2,9 +2,9 @@ error[E0277]: the format `Text` cannot decode a `Item` response
  --> tests/ui/format_inherited_unsupported.rs:9:23
   |
 9 |         GET item() -> Item;
-  |                       ^^^^ this output's format is `Text` (written here or inherited from a `response` default); it needs `Text: Decode<Item>`
+  |                       ^^^^ this output's format is `Text` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Text: Decode<Item>`
   |
-  = note: built in: `json` (any `DeserializeOwned`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `DeserializeOwned`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Decode<Item>`, written by its path in place or in a `response` default; an endpoint without typed output omits `->`
+  = note: built in: `json` (any `DeserializeOwned`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `DeserializeOwned`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Decode<Item>`, named by its path: `response Csv;`; an endpoint without typed output omits `->`
 help: the trait `Decode<Item>` is not implemented for `Text`
       but trait `Decode<String>` is implemented for it
  --> src/repr.rs
@@ -22,10 +22,10 @@ error[E0277]: the format `concord::Binary` cannot encode a `Item` request body
   --> tests/ui/format_inherited_unsupported.rs:10:32
    |
 10 |         POST create(body item: Item);
-   |                                ^^^^ this body's format is `concord::Binary` (written here or inherited from a `request` default); it needs `concord::Binary: Encode<Item>`
+   |                                ^^^^ this body's format is `concord::Binary` (the nearest `request` statement: on the endpoint, a scope or the client); it needs `concord::Binary: Encode<Item>`
    |
    = help: the trait `Encode<Item>` is not implemented for `concord::Binary`
-   = note: built in: `json` (any `Serialize`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `Serialize`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Encode<Item>`, written by its path in place or in a `request` default
+   = note: built in: `json` (any `Serialize`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `Serialize`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Encode<Item>`, named by its path: `request Ndjson;`
 help: `concord::Binary` implements trait `Encode<T>`
   --> src/repr.rs
    |

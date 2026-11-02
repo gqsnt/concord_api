@@ -1,7 +1,7 @@
 error: only endpoints can declare a body
  --> tests/ui/body_errors.rs:4:17
   |
-4 |         scope s(text b: String) { GET one(); }
+4 |         scope s(body b: String) { GET one(); }
   |                 ^^^^
 
 error: only endpoints can declare a body
@@ -13,8 +13,8 @@ error: only endpoints can declare a body
 error: an endpoint declares at most one body
   --> tests/ui/body_errors.rs:17:34
    |
-17 |         POST two(text a: String, bytes b: Vec<u8>);
-   |                                  ^^^^^
+17 |         POST two(body a: String, body b: Vec<u8>) { request text; }
+   |                                  ^^^^
 
 error: a body cannot have a default
   --> tests/ui/body_errors.rs:24:33

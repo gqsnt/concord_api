@@ -1,4 +1,5 @@
-// The format comes first, on outputs and on bodies.
+// A format written after the payload type (the swapped order of the removed in-place spelling) is
+// reported like the removed spelling itself: the message names the `request` / `response` statement.
 pub struct Item;
 concord::api! {
     pub client Output {

@@ -1,11 +1,11 @@
-error: the format comes first: `-> json Vec<Item>`
- --> tests/ui/format_swapped_order.rs:6:33
+error: removed output format: write `-> Vec<Item>` and `response json;` on this endpoint
+ --> tests/ui/format_swapped_order.rs:7:33
   |
-6 |         GET item() -> Vec<Item> json;
+7 |         GET item() -> Vec<Item> json;
   |                                 ^^^^
 
-error: a body's format comes first: `json item: Item`
-  --> tests/ui/format_swapped_order.rs:12:32
+error: removed body format: write `body item: Item` and `request json;` on this endpoint
+  --> tests/ui/format_swapped_order.rs:13:32
    |
-12 |         POST create(item: Item json);
+13 |         POST create(item: Item json);
    |                                ^^^^

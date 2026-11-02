@@ -1,7 +1,7 @@
 concord::api! {
     pub client Api {
         base "http://x.test";
-        scope s(text b: String) { GET one(); }
+        scope s(body b: String) { GET one(); }
     }
 }
 concord::api! {
@@ -14,7 +14,7 @@ concord::api! {
 concord::api! {
     pub client Twice {
         base "http://x.test";
-        POST two(text a: String, bytes b: Vec<u8>);
+        POST two(body a: String, body b: Vec<u8>) { request text; }
     }
 }
 concord::api! {

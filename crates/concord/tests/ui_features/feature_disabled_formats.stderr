@@ -1,8 +1,8 @@
 error[E0425]: cannot find type `Json` in crate `$crate`
- --> tests/ui_features/feature_disabled_formats.rs:8:20
+ --> tests/ui_features/feature_disabled_formats.rs:8:36
   |
-8 |         GET a() -> json Item;
-  |                    ^^^^ not found in `$crate`
+8 |         GET a() -> Item { response json; }
+  |                                    ^^^^ not found in `$crate`
   |
 note: found an item that was configured out
  --> src/lib.rs
@@ -14,10 +14,10 @@ note: found an item that was configured out
   = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0425]: cannot find type `Json` in crate `$crate`
- --> tests/ui_features/feature_disabled_formats.rs:9:20
+ --> tests/ui_features/feature_disabled_formats.rs:9:36
   |
-9 |         GET b() -> json Item;
-  |                    ^^^^ not found in `$crate`
+9 |         GET b() -> Item { response json; }
+  |                                    ^^^^ not found in `$crate`
   |
 note: found an item that was configured out
  --> src/lib.rs
@@ -29,10 +29,10 @@ note: found an item that was configured out
   = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0425]: cannot find type `Form` in crate `$crate`
-  --> tests/ui_features/feature_disabled_formats.rs:10:20
+  --> tests/ui_features/feature_disabled_formats.rs:10:44
    |
-10 |         POST login(form f: Item);
-   |                    ^^^^ not found in `$crate`
+10 |         POST login(body f: Item) { request form; }
+   |                                            ^^^^ not found in `$crate`
    |
 note: found an item that was configured out
   --> src/lib.rs
