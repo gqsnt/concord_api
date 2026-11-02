@@ -43,7 +43,8 @@ impl<T> Prepared<T> {
     }
 
     /// Executes the request once with the application's `reqwest::Client`, requires a 2xx status
-    /// and decodes the body with the declared representation.
+    /// and decodes the body with the declared representation (an endpoint without `->` drains it
+    /// and returns `()`). Never retries.
     pub async fn send(self) -> Result<T, Error> {
         let (client, request, decoder) = self.into_parts();
         decoder.finish(client.execute(request).await).await

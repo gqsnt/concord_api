@@ -1,0 +1,702 @@
+# Writing a declaration
+
+This guide is for the person who describes an HTTP API with `concord::api!`. It goes pattern by
+pattern; the complete grammar and the precise rules are in [`v4/SEMANTICS.md`](../v4/SEMANTICS.md).
+
+Every Rust block in this file is compiled and run as a doctest of `examples/quickstart`
+(`cargo test --doc -p concord-example-quickstart`); the assertions show what goes on the wire.
+
+## 1. Model the API as a tree
+
+A declaration is one **client**, any number of nested **scopes**, and **endpoints**:
+
+- the **client** is one API: its base URL and the values every request shares (a key, an API
+  version);
+- a **scope** is a level you navigate through — a tenant, a repository, a region — and owns what
+  its endpoints share: a path prefix, a subdomain label, query parameters, headers, values;
+- an **endpoint** is one operation: method, its own path, values, an optional body and a declared
+  output.
+
+```rust
+use concord::{Json, reqwest};
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+pub struct Issue {
+    pub number: u64,
+    pub title: String,
+}
+
+concord::api! {
+    /// A slice of a code-hosting API.
+    pub client Forge(#[sensitive] header("authorization") token: String) {
+        base "https://api.forge.example";
+        headers { "accept" = "application/json"; }
+
+        /// One repository.
+        scope repo(owner: String, name: String) {
+            path "repos/{owner}/{name}";
+
+            /// Lists issues.
+            GET issues(query state?: String) -> Vec<Issue> via Json { path "issues"; }
+            /// One issue.
+            GET issue(number: u64) -> Issue via Json { path "issues/{number}"; }
+        }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let forge = Forge::new(reqwest::Client::new(), ForgeConfig { token: "Bearer t".into() });
+    let repo = forge.repo("rust-lang", "rust");
+
+    let prepared = repo.issue(42).prepare()?;
+    let url = prepared.request().url().as_str();
+    assert_eq!(url, "https://api.forge.example/repos/rust-lang/rust/issues/42");
+    Ok(())
+}
+```
+
+The generated types are `Forge`, `ForgeConfig` (the client's required values), `ForgeRepo` (the
+scope) and one request type per endpoint, `ForgeRepoIssues` and `ForgeRepoIssue`. Navigation
+methods have the child's name: `forge.repo(..)`, `repo.issue(..)`.
+
+Rules of the structure:
+
+- One `api!` declares exactly one client, with exactly one `base`.
+- Each owner (client, scope, endpoint) has at most one `path`, `subdomain`, `query { }` and
+  `headers { }` statement, and they come before its child declarations.
+- Scopes may omit their parameter list (`scope admin { .. }`); endpoints always have one, possibly
+  empty (`GET ping();` or `GET ping() { path "ping"; }`).
+- Methods: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`.
+
+## 2. Values: required, optional, initialized
+
+Every input is a **value** declared in a parameter list. Its kind is decided by `?` and `= expr`,
+never by its Rust type:
+
+| Declaration | Starts as | Supplied / changed with |
+|---|---|---|
+| `x: T` | required | client: a field of `{Client}Config`; scope or endpoint: a positional argument; then `set_x(v)` |
+| `x: T = expr` | `expr` | `set_x(v)` |
+| `x?: T` | absent | `set_x(v)` (present), `maybe_x(o: Option<T>)` (exactly `o`) |
+| `x?: T = expr` | present, `expr` | `set_x(v)`, `maybe_x(o)` |
+| `body b: T via R` | required | positional argument; then `set_b(v)` |
+| `body b?: T via R` | absent (no body) | `set_b(v)`, `maybe_b(o)` |
+
+```rust
+use concord::reqwest;
+
+concord::api! {
+    pub client Shop(
+        #[sensitive] header("x-api-key") key: String, // required
+        header("accept-language") lang?: String = "en", // optional, present by default
+    ) {
+        base "https://shop.example.com";
+
+        GET search(
+            query q: String,       // required
+            query limit: u32 = 20, // initialized
+            query cursor?: String, // optional, absent by default
+        ) {
+            path "search";
+        }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    // The generated signatures, checked here by the compiler. Positional arguments and `set_*`
+    // take `impl IntoValue<T>`: the exact `T`, or `&str`/`&String` where `T` is `String`.
+    let _: fn(reqwest::Client, ShopConfig) -> Shop = Shop::new;
+    let _: fn(Shop, String) -> Shop = Shop::set_key;
+    let _: fn(Shop, String) -> Shop = Shop::set_lang;
+    let _: fn(Shop, Option<String>) -> Shop = Shop::maybe_lang;
+    let _: fn(&Shop, String) -> ShopSearch = Shop::search;
+    let _: fn(ShopSearch, String) -> ShopSearch = ShopSearch::set_q;
+    let _: fn(ShopSearch, u32) -> ShopSearch = ShopSearch::set_limit;
+    let _: fn(ShopSearch, String) -> ShopSearch = ShopSearch::set_cursor;
+    let _: fn(ShopSearch, Option<String>) -> ShopSearch = ShopSearch::maybe_cursor;
+
+    let shop = Shop::new(reqwest::Client::new(), ShopConfig { key: "k".into() });
+    let first = shop.search("lamp").prepare()?;
+    assert_eq!(first.request().url().query(), Some("q=lamp&limit=20"));
+    let next = shop.search("lamp").set_limit(5).set_cursor("c2").prepare()?;
+    assert_eq!(next.request().url().query(), Some("q=lamp&limit=5&cursor=c2"));
+    Ok(())
+}
+```
+
+What to know about values:
+
+- **`?` is Concord's presence marker.** `x: Option<T>` is a *required* value whose type happens
+  to be an `Option`; `x?: T` is an optional value. Concord never infers meaning from a type name.
+- **Required client values** are the fields of the generated `{Client}Config` struct, in
+  declaration order, with their documentation. Fields take exactly `T`, so a literal needs
+  `.into()`; a missing field is reported by name (`E0063`). A client without required values is
+  created with `Client::new(http)`.
+- **Scope and endpoint arguments** are positional, in declaration order (a required body takes its
+  place among them). Keep them few; give extra inputs a default or make them optional.
+- **Initializers** (`= expr`) are any Rust expression, evaluated once each time the owner is
+  created — `new` for the client, each scope entry, each endpoint call — even if a setter replaces
+  the value right after. Cloning, setters, `prepare` and `send` never evaluate them. The
+  expression is compiled in a nested function: it can use items of the module (constants,
+  functions), not other values or arguments.
+- **No reset.** `maybe_x(None)` on an initialized optional value makes it *absent*; it does not
+  bring back `expr`. Keep the original handle, or call the endpoint again, to start over.
+- **`Clone`.** Client and scope values must be `Clone` (handles are copy-on-write snapshots).
+  Endpoint values need not be: a request is `Clone` exactly when all its values and its body are.
+- **Every value must be used** — placed, or referenced from a template or a block. An unused value
+  is a compile error.
+
+An initializer that must be fresh per call, such as an idempotency key, is just an expression:
+
+```rust
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use concord::reqwest;
+
+static NEXT: AtomicU64 = AtomicU64::new(1);
+
+fn request_id() -> String {
+    format!("req-{}", NEXT.fetch_add(1, Ordering::Relaxed))
+}
+
+concord::api! {
+    pub client Payments {
+        base "https://pay.example.com";
+        POST charge(header("idempotency-key") key: String = request_id()) { path "charges"; }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let api = Payments::new(reqwest::Client::new());
+    let charge = api.charge(); // `request_id()` runs here, once
+    let retry = charge.clone(); // a clone keeps the same key
+    let key = |p: concord::Prepared<()>| p.request().headers()["idempotency-key"].clone();
+    assert_eq!(key(charge.prepare()?), "req-1");
+    assert_eq!(key(retry.prepare()?), "req-1");
+    assert_eq!(key(api.charge().prepare()?), "req-2"); // a new call evaluates it again
+    Ok(())
+}
+```
+
+## 3. Base, paths and subdomains
+
+**Base.** `base "https://api.example.com/v2";` is checked at compile time: `http` or `https`, an
+ASCII domain name or an IP address, an optional port, an optional path — no user information,
+query, fragment, `%` escapes or `xn--` labels. Callers replace it at runtime with
+`with_base_url(..)`, which accepts any `http`/`https` URL of that shape (including IDN hosts) and
+returns a `Result`.
+
+**Paths.** Each owner's `path` template is relative (no leading `/`) and is appended after the base
+path, root first. Literal text is sent verbatim; each `{value}` is formatted with `Display` and
+percent-encoded so that it is always exactly **one** segment (`a/b` becomes `a%2Fb`). A trailing
+`/` is allowed only on an endpoint's own path. Optional values cannot appear in a path.
+
+**Subdomains.** Each owner's `subdomain` template is split on `.` into labels that are prepended to
+the base host, the deepest owner's labels leftmost. Labels are lowercased and must be 1–63
+letters, digits or inner hyphens; the base host must then be a domain name, not an IP address.
+
+```rust
+use std::fmt;
+
+use concord::reqwest;
+
+#[derive(Clone, Copy)]
+pub enum Region {
+    Eu,
+    Us,
+}
+
+impl fmt::Display for Region {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Region::Eu => "eu",
+            Region::Us => "us",
+        })
+    }
+}
+
+concord::api! {
+    pub client Storage {
+        base "https://example.com/v2";
+        subdomain "storage";
+
+        scope region(region: Region) {
+            subdomain "{region}";
+
+            scope bucket(name: String) {
+                path "buckets/{name}";
+
+                GET object(key: String) { path "objects/{key}"; }
+                GET listing() { path "objects/"; }
+            }
+        }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let bucket = Storage::new(reqwest::Client::new()).region(Region::Eu).bucket("photos");
+
+    let object = bucket.object("2024/cat.jpg").prepare()?;
+    assert_eq!(
+        object.request().url().as_str(),
+        "https://eu.storage.example.com/v2/buckets/photos/objects/2024%2Fcat.jpg"
+    );
+    let listing = bucket.listing().prepare()?;
+    assert_eq!(
+        listing.request().url().as_str(),
+        "https://eu.storage.example.com/v2/buckets/photos/objects/"
+    );
+
+    // A value that is empty, `.` or `..` cannot be a segment: a build error, nothing is sent.
+    let error = bucket.object("..").prepare().unwrap_err();
+    assert_eq!(error.kind(), concord::ErrorKind::Build);
+    Ok(())
+}
+```
+
+## 4. Query parameters and headers
+
+### 4.1 Placing a value
+
+The shortest form places a value directly in its parameter list:
+
+| Placement | Sends |
+|---|---|
+| `query limit: u32` | `limit=<value>` |
+| `query("per-page") per_page: u32` | `per-page=<value>` |
+| `header("x-api-version") version: String` | `x-api-version: <value>` |
+| `query("tag") each tags: Vec<String>` | one `tag=<item>` per item (any `IntoIterator` whose items are `Display`) |
+
+### 4.2 Blocks, templates and references
+
+`query { .. }` and `headers { .. }` blocks set keys from literals, values or templates. A bare name
+refers to a value **of the current owner only**; a value of an enclosing owner is written
+`client.x` or `<scope>.x`.
+
+```rust
+use concord::reqwest;
+
+concord::api! {
+    pub client Notes(#[sensitive] token: String, account: String) {
+        base "https://notes.example.com";
+        headers { "authorization" = "Bearer {token}"; }
+
+        scope folder(folder: String) {
+            path "folders/{folder}";
+            query { "account" = client.account; }
+
+            GET list(query("page-size") size: u32 = 50) {
+                path "notes";
+                query { "scope" = "{client.account}/{folder.folder}"; "format" = "compact"; }
+            }
+        }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let config = NotesConfig { token: "t".into(), account: "acme".into() };
+    let notes = Notes::new(reqwest::Client::new(), config);
+    let prepared = notes.folder("inbox").list().prepare()?;
+    assert_eq!(
+        prepared.request().url().query(),
+        Some("account=acme&page-size=50&scope=acme%2Finbox&format=compact")
+    );
+    assert_eq!(prepared.request().headers()["authorization"], "Bearer t");
+    Ok(())
+}
+```
+
+Within one owner, direct placements (in parameter order) come before the block's statements (in
+source order). Header names are case-insensitive and sent in lowercase; query keys are
+case-sensitive.
+
+### 4.3 What an owner may do with an inherited key
+
+Each key is set at most once along the chain unless an operation says otherwise. The operations,
+written inside `query { }` or `headers { }`:
+
+| Statement | Requires the key to be set further up | Effect |
+|---|---|---|
+| `"k" = v;` or a direct placement | must **not** be set | sets `k` to `v` |
+| `append "k" = v;` | — | adds `v` after the existing occurrences |
+| `override "k" = v;` (`v` always present) | must be set | `k` becomes exactly `v` |
+| `override "k" = v else inherit;` (`v` can be absent) | must be set | `v` when present; otherwise the inherited occurrences stay |
+| `remove "k";` | must be set | drops the inherited occurrences; the key may then be set again |
+
+A source is *present* when every optional value it reads is present. Mistakes — setting an
+inherited key without an operation, overriding or removing a key nobody sets — are compile errors
+(see [Diagnostics](DIAGNOSTICS.md)).
+
+### 4.4 Overriding with an optional value: `else inherit`
+
+When an override reads an optional value, the declaration must say what absence means. `else
+inherit` keeps the inherited value; leaving it out is a compile error that names both choices.
+
+### 4.5 Exact replacement: `remove`, then set
+
+"Send my value, or nothing at all" is `remove "k";` plus a new `"k" = v` — or, shorter, `remove`
+plus a direct placement of the same key, because within one owner `remove` acts first, on what
+the owner inherits.
+
+### 4.6 Letting the caller choose: inherit, omit or replace
+
+`remove` is static. To let each call choose between the inherited value, no value, and its own
+value, declare an optional `Option<T>` and override with `each ... else inherit`: absent inherits,
+`None` sends nothing (zero items), `Some(v)` replaces.
+
+```rust
+use concord::reqwest;
+
+concord::api! {
+    pub client Docs(query locale: String = "en") {
+        base "https://docs.example.com";
+
+        // 4.4: the page's locale when given, otherwise the client's.
+        GET page(page_locale?: String) {
+            path "page";
+            query { override "locale" = page_locale else inherit; }
+        }
+
+        // 4.5: exactly the given locale, or none.
+        GET raw(query locale?: String) {
+            path "raw";
+            query { remove "locale"; }
+        }
+
+        // 4.6: the caller chooses per call.
+        GET search(locale?: Option<String>) {
+            path "search";
+            query { override "locale" = each locale else inherit; }
+        }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let docs = Docs::new(reqwest::Client::new());
+    let query = |p: concord::Prepared<()>| p.request().url().query().map(str::to_owned);
+
+    assert_eq!(query(docs.page().prepare()?).as_deref(), Some("locale=en"));
+    assert_eq!(query(docs.page().set_page_locale("fr").prepare()?).as_deref(), Some("locale=fr"));
+
+    assert_eq!(query(docs.raw().prepare()?), None);
+    assert_eq!(query(docs.raw().set_locale("fr").prepare()?).as_deref(), Some("locale=fr"));
+
+    let inherit = docs.search(); // `maybe_locale(None)`: absent, the default
+    let omit = docs.search().set_locale(None);
+    let replace = docs.search().set_locale(Some("fr".to_owned()));
+    assert_eq!(query(inherit.prepare()?).as_deref(), Some("locale=en"));
+    assert_eq!(query(omit.prepare()?), None);
+    assert_eq!(query(replace.prepare()?).as_deref(), Some("locale=fr"));
+    Ok(())
+}
+```
+
+### 4.7 Order on the wire
+
+- **Query:** each key keeps the position of its first appearance on the chain (root first), and
+  its occurrences are in contribution order. The query string is exactly that sequence.
+- **Headers:** the values of one name are sent in contribution order. The order *between*
+  different header names is not specified (the native `HeaderMap` groups by name, and reqwest and
+  hyper add their own headers).
+- Repeats interleaved across keys (`f=a&op=eq&f=b`) cannot be declared; append them to the native
+  URL instead — see the [interleaved-query recipe](RECIPES.md#interleaved-query-parameters).
+
+```rust
+use concord::reqwest;
+
+concord::api! {
+    pub client Feed(query("tag") each tags: Vec<String> = Vec::new()) {
+        base "https://feed.example.com";
+        query { "v" = "2"; }
+
+        GET items(query limit: u32 = 10, extra?: String) {
+            path "items";
+            query { append "tag" = extra; }
+        }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let tags = vec!["a".to_owned(), "b".to_owned()];
+    let feed = Feed::new(reqwest::Client::new()).set_tags(tags);
+    let prepared = feed.items().set_extra("c").prepare()?;
+    // `tag` keeps the client's position; the endpoint's occurrence follows the client's.
+    assert_eq!(prepared.request().url().query(), Some("tag=a&tag=b&tag=c&v=2&limit=10"));
+    Ok(())
+}
+```
+
+### 4.8 Header rules
+
+- Names must be valid header field names; `host`, `content-length`, `transfer-encoding`,
+  `connection`, `te`, `trailer`, `upgrade` and `keep-alive` are rejected (the transport owns them).
+  `authorization`, `cookie`, `accept` and `content-type` are ordinary.
+- Values must be visible ASCII, space or tab. Literal text is checked at compile time, formatted
+  values when the request is built (a build error names the header, never the value).
+- `remove` and an absent key concern Concord's own contributions: headers configured on the
+  `reqwest::Client` (default headers, user agent) are still added by reqwest.
+
+## 5. Bodies and responses: representations
+
+A body and a typed response name the payload type and its **representation**, separately:
+`body item: NewItem via Json`, `-> Item via Json`. There is no default representation and no
+inference from the type.
+
+| Representation | Body (`Encode<T>`) | Response (`Decode<T>`) |
+|---|---|---|
+| `Json` (feature `json`) | any `T: Serialize`; `Content-Type: application/json` | any `T: DeserializeOwned`; the response `Content-Type` is ignored |
+| `Text` | `String`; `text/plain; charset=utf-8` | `String`; invalid UTF-8 is a decode error |
+| `Binary` | `Bytes` or `Vec<u8>`; `application/octet-stream` | `Bytes` or `Vec<u8>`, unchanged |
+| no `->` | — | output `()`: any 2xx succeeds; the body is drained without buffering |
+
+- A body's `Content-Type` is added only if the declared headers do not set one. Concord never adds
+  `Accept`.
+- Any 2xx status is success; anything else is an error of kind `Status` with the unread response
+  (see the [caller guide](CALLER_GUIDE.md#6-errors)). `-> Option<T> via Json` gives no meaning to
+  404: `null` decodes to `None`, a 404 is still an error.
+
+For another format, implement `Encode<T>` and/or `Decode<T>` on your own marker type. Descriptions
+in `BodyError::new` must not contain body content: they are shown by Concord's `Display`. Attach
+the underlying error with `with_source`; it is reachable only through `Error::body_source`.
+
+```rust
+use concord::bytes::Bytes;
+use concord::{BodyError, Decode, Encode, reqwest};
+
+/// One item per line.
+pub struct Lines;
+
+impl Encode<Vec<String>> for Lines {
+    const CONTENT_TYPE: Option<&'static str> = Some("text/plain; charset=utf-8");
+
+    fn encode(value: Vec<String>) -> Result<reqwest::Body, BodyError> {
+        Ok(reqwest::Body::from(value.join("\n")))
+    }
+}
+
+impl Decode<Vec<String>> for Lines {
+    fn decode(body: Bytes) -> Result<Vec<String>, BodyError> {
+        let text = String::from_utf8(body.into())
+            .map_err(|e| BodyError::new("the response is not UTF-8").with_source(e))?;
+        Ok(text.lines().map(str::to_owned).collect())
+    }
+}
+
+concord::api! {
+    pub client Words {
+        base "https://words.example.com";
+        POST normalize(body words: Vec<String> via Lines) -> Vec<String> via Lines {
+            path "normalize";
+        }
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let words = vec!["b".to_owned(), "a".to_owned()];
+    let prepared = Words::new(reqwest::Client::new()).normalize(words).prepare()?;
+    let request = prepared.request();
+    assert_eq!(request.headers()["content-type"], "text/plain; charset=utf-8");
+    assert_eq!(request.body().and_then(|b| b.as_bytes()), Some(&b"b\na"[..]));
+
+    let decoded = <Lines as Decode<Vec<String>>>::decode(Bytes::from_static(b"x\ny\n"))?;
+    assert_eq!(decoded, ["x", "y"]);
+    Ok(())
+}
+```
+
+`examples/native` has NDJSON and form-encoded representations and a hand-built multipart body
+([recipes](RECIPES.md)).
+
+## 6. Wire formatting: `Display` and newtypes
+
+Every placed value — path segment, subdomain label, query value, header value, template hole — is
+written with its `Display` implementation, then encoded for its placement. Consequences:
+
+- `bool` is `true`/`false`; numbers use their `Display`.
+- `Option<T>` and `Vec<T>` have no `Display`: place them with `each` (zero or more occurrences) or
+  wrap them in a newtype that decides the spelling. Placing one directly is a compile error
+  pointing at the type.
+- A foreign type, or a type whose `Display` is meant for humans, gets a newtype with the wire
+  spelling.
+- A `Display` that returns `fmt::Error` makes the request a build error naming the placement;
+  nothing partial is sent.
+- Concord's generated `Debug` also shows values through `Display`, so a `u32` appears as `"20"`.
+
+```rust
+use std::fmt;
+
+use concord::reqwest;
+
+/// Sort order; `Display` is the wire spelling.
+#[derive(Clone, Copy)]
+pub enum Sort {
+    Newest,
+    PriceAsc,
+}
+
+impl fmt::Display for Sort {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Sort::Newest => "newest",
+            Sort::PriceAsc => "price_asc",
+        })
+    }
+}
+
+/// A comma-separated list in one query value.
+#[derive(Clone)]
+pub struct Csv(pub Vec<String>);
+
+impl fmt::Display for Csv {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0.join(","))
+    }
+}
+
+concord::api! {
+    pub client Store {
+        base "https://store.example.com";
+        GET products(query sort?: Sort, query fields?: Csv, query("id") each ids?: Vec<u64>) {
+            path "products";
+        }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let fields = Csv(vec!["id".to_owned(), "name".to_owned()]);
+    let request = Store::new(reqwest::Client::new())
+        .products()
+        .set_sort(Sort::PriceAsc)
+        .set_fields(fields)
+        .set_ids(vec![3, 5]);
+    let prepared = request.prepare()?;
+    assert_eq!(
+        prepared.request().url().query(),
+        Some("sort=price_asc&fields=id%2Cname&id=3&id=5")
+    );
+    Ok(())
+}
+```
+
+## 7. Sensitive values
+
+Mark a value `#[sensitive]` when Concord should never print it. It is still sent. Concord then
+withholds it — and every query or header key, path segment and host label it feeds — from the
+output Concord produces: the generated `Debug` of clients, scopes and requests, `Prepared`'s
+`Debug`, and `Error`'s `Display` and `Debug`. Sensitive header values are also flagged with
+`HeaderValue::set_sensitive`.
+
+- Keys named `authorization`, `proxy-authorization`, `cookie`, `set-cookie`, `x-api-key`,
+  `api-key`, `apikey`, `x-auth-token`, `auth-token`, `access-token`, `refresh-token`, `id-token`,
+  `token`, `client-secret`, `secret`, `password`, `signature` or `session` (compared lowercase,
+  `_` as `-`) are treated as sensitive without the marker.
+- Sensitivity is sticky along the chain: a later public override does not make a key public.
+- A value that feeds a sensitive key is itself withheld, everywhere it appears.
+- `#[sensitive]` applies to values, not bodies: Concord never renders bodies.
+
+```rust
+use concord::reqwest;
+
+concord::api! {
+    pub client Vault(#[sensitive] tenant: String, header("x-api-key") key: String) {
+        base "https://vault.example.com";
+
+        scope secret(name: String) {
+            path "tenants/{client.tenant}/secrets/{name}";
+            GET read();
+        }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let config = VaultConfig { tenant: "acme".into(), key: "k-9".into() };
+    let vault = Vault::new(reqwest::Client::new(), config);
+    let prepared = vault.secret("db").read().prepare()?;
+
+    let shown = format!("{prepared:?}");
+    assert!(shown.contains("/tenants/<redacted>/secrets/db"));
+    assert!(shown.contains("x-api-key: <redacted>")); // sensitive by name
+    assert!(!shown.contains("acme") && !shown.contains("k-9"));
+    assert!(!format!("{vault:?}").contains("acme"));
+    Ok(())
+}
+```
+
+What this does **not** cover — the native request and response `Debug`, errors of requests you
+execute yourself, redirects, logs and proxies — is listed in the
+[caller guide](CALLER_GUIDE.md#8-what-concord-redacts-and-what-it-does-not).
+
+## 8. Attributes
+
+| Attribute | Where | Effect |
+|---|---|---|
+| `///` documentation | everywhere | rendered on the generated items (types, navigation methods, config fields, setters) |
+| `#[sensitive]` | values | see §7 |
+| `#[cfg(..)]` | scopes, endpoints | applied to every generated item of that subtree and to the parent's navigation method |
+| `#[deprecated(..)]` | scopes, endpoints | applied to the navigation method, so the warning appears where callers navigate |
+
+Any other attribute is a compile error. Generated names are checked as if every `cfg` were
+enabled, so two cfg-exclusive endpoints cannot share a name.
+
+```rust
+use concord::reqwest;
+
+concord::api! {
+    pub client Api {
+        base "https://api.example.com";
+
+        /// Only in builds with the `beta` feature.
+        #[cfg(feature = "beta")]
+        GET preview() { path "preview"; }
+
+        /// The old listing.
+        #[deprecated(note = "use `items`")]
+        GET list() { path "list"; }
+
+        GET items() { path "items"; }
+    }
+}
+
+fn main() {
+    let api = Api::new(reqwest::Client::new());
+    #[allow(deprecated)]
+    let _old = api.list();
+    let _new = api.items();
+}
+```
+
+## 9. Generated names and collisions
+
+| Declared | Generated |
+|---|---|
+| `client Forge` | `Forge`; `ForgeConfig` when the client has a required value |
+| `scope repo` under `Forge` | `ForgeRepo`, reached with `forge.repo(..)` |
+| `GET list_issues` under `scope repo` | `ForgeRepoListIssues`, reached with `repo.list_issues(..)` |
+| value `x` | `set_x`; `maybe_x` when optional |
+
+- Within one generated type, navigation methods, value controls and the built-ins (`new`,
+  `with_base_url`, `send`, `prepare`, `clone`) must not collide; a collision is a compile error
+  naming both origins. Rename the endpoint or the value.
+- Value and body names may not start with `__`; a client value may not be named `http`; a scope
+  may not be named `client`; template holes cannot be `self`, `Self`, `super`, `crate` or `_`.
+- Two `api!` invocations in one module share its namespace. Generated names are concatenations,
+  so client `Shop` with scope `api` and a second client `ShopApi` both define `ShopApi` (rustc
+  `E0428`). Give each client its own module, or names that cannot concatenate to each other.
+- Naming a scope like its value (`scope tenant(tenant: String)`) is legal; references then read
+  `tenant.tenant`.
+
+## 10. Limits
+
+- **Depth.** Each scope level nests the generated types. With rustc 1.97.1 and the default
+  `recursion_limit`, a chain of 48 scopes compiled and 56 failed (`E0320`, overflow while adding
+  drop-check rules, reported on the whole invocation); `#![recursion_limit = "256"]` made 64
+  compile. Real APIs are far shallower.
+- **Very large declarations.** Generated code grows linearly with endpoints, inherited
+  contributions and override chains, and quadratically only for endpoints at every level of a deep
+  chain. Measured crash thresholds on rustc 1.97.1: 1,000 nested optional overrides of one key
+  (500 compiled). Evidence: `v4/refinement/evidence/tracks/compiler.md`.
+- **Hosts.** IDNA is not performed; a declared base cannot use punycode (`xn--`) labels or `%`
+  escapes in its path — pass such a URL to `with_base_url`.
+- **Interleaved query repeats** across keys and per-call removal through `remove` are not
+  declarable; see §4.6 and §4.7.
