@@ -3,8 +3,8 @@
 Single machine: Intel i5-13600K (20 threads), Linux 7.0.0-42, CPU governor `powersave`, rustc
 1.97.1, no `sccache`. The desktop was in use (load average 1.2–2.6 from it alone); measurements
 ran only while no build or agent was active. Differences under ~5% for sub-microsecond IDs are
-treated as noise. Raw data: `evidence/perf/` (Criterion `estimates.json`/`sample.json` of every
-run in `criterion/raw-a915c8d-cand-aaa5a3c-run3.tar.xz`, hyperfine JSON in `compile/`, allocation
+treated as noise. Raw data: `evidence/perf/` (Criterion estimates and samples of every run in
+`evidence/perf/criterion/raw-a915c8d-cand-aaa5a3c-run3.tar.xz`, hyperfine JSON in `compile/`, allocation
 tables, the attribution runs). A benchmark is not a correctness test: the suites' own tests
 (`cargo test -p concord-bench`) only check that each Concord request equals its hand-written
 counterpart.
@@ -112,7 +112,7 @@ Run `ab-20261102T063238` (`evidence/perf/compile/`): suite `a915c8d` generated w
 Release binaries and rlibs: within 0.5% (`sizes.tsv`). The declaring-crate and downstream costs
 are unchanged within noise; typed bodies with defaults cost +2–4% (longer generated rustdoc: format,
 origin, media type). The placement-note fix (`01774a9`): −15% on the 4,000-placement fanout; a
-preliminary, busier run at 16,000 placements (`compile/hf-16000.json`, 5 runs) gave 0.995 → 0.516 s
+preliminary, busier run at 16,000 placements (`evidence/perf/compile/hf-16000.json`, 5 runs) gave 0.995 → 0.516 s
 (the old scan's quadratic term), at 4,000 0.201 → 0.172 s. The fix does not explain any other
 change (no other row moved).
 
