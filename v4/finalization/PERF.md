@@ -14,10 +14,10 @@ header multiset, body), including the new `keys` group.
 | `3b5c5ed` | candidate measured (native header names, sealed values, representation statements, the `keys` benchmark group, the `--keys native` generator option, the fresh-use fixes) |
 
 Raw data (outside the repository, not copied into it):
-`/home/canarit/projects/concord_v4_finish_work/evidence/perf/` — `allocs_625ac49.{json,md}`,
-`allocs_389392f.{json,md}`, `allocs_diff.md`, and `timed-20261102T175423Z/` (Criterion estimates
+`/home/canarit/projects/concord_v4_finish_work/evidence/perf/` — allocs_625ac49.{json,md},
+allocs_389392f.{json,md}, allocs_diff.md, and timed-20261102T175423Z/ (Criterion estimates
 and samples of every run under `criterion/`, summaries, hyperfine JSON under `compile/`,
-`environment.txt`, `log.txt`).
+environment.txt, log.txt).
 
 ## How to reproduce
 
@@ -35,7 +35,7 @@ Allocation counts do not depend on load, so they were taken first (`625ac49` and
 runtime code measured by them is unchanged up to `3b5c5ed` apart from the conflict error path).
 
 - **All 84 benchmark IDs shared with the baseline: identical** allocation calls and bytes, inputs
-  and stages (`allocs_diff.md`: 0 differences). The representation statements are a macro-time
+  and stages (allocs_diff.md: 0 differences). The representation statements are a macro-time
   change; the sealed `ToHeaderValue`, the native `HeaderValue::from_str` path for text and
   `http`-based literal validation cost no allocation.
 - **Native names cost nothing over literal names**: the `HeaderPlan` that composes a chain with a
@@ -55,7 +55,7 @@ also formats its routed host (not attributed further).
 
 Three full runs on the idle machine, in sequence: `625ac49` (17:56–18:21Z), then `3b5c5ed` twice
 (18:23–18:51Z, 18:53–19:21Z); default Criterion settings, one shared `CRITERION_HOME`. Summaries:
-`summary-base.md`, `summary-cand{1,2}-vs-base.md`, `summary-cand2-vs-cand1.md`.
+summary-base.md, summary-cand{1,2}-vs-base.md, summary-cand2-vs-cand1.md.
 
 **Noise floor.** The hand-written (`manual`) benchmarks run identical code in every run, so their
 changes are noise: median +1.1 % / −0.3 % against the baseline, 14 and 17 of 86 beyond ±5 %, and
@@ -100,7 +100,7 @@ optimization (not done).
 (19:23–19:40Z): **base** is `625ac49` with its in-place format syntax. **stmt** is `3b5c5ed` with
 representation statements and literal header names. **native** is `3b5c5ed` with every
 `"x-..."` header key written as a native `HeaderName` constant (`--keys native`). Seconds, mean ±
-σ (`compile-summary.md`; artifact sizes in `compile/sizes.tsv`):
+σ (compile-summary.md; artifact sizes in compile/sizes.tsv):
 
 | row | base | stmt | native | stmt/base | native/base |
 |---|---|---|---|---|---|
