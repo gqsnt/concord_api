@@ -1,5 +1,7 @@
 //! Rust code generation from a resolved [`Model`].
 
+use std::collections::HashSet;
+
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned};
 use syn::spanned::Spanned;
@@ -76,16 +78,33 @@ fn with_attrs(items: TokenStream, attrs: &[syn::Attribute]) -> TokenStream {
     out
 }
 
+/// Distinct notes in first-seen order. Membership is a hash lookup, so a value feeding N distinct
+/// placements costs O(N) rather than a quadratic scan of the list.
+#[derive(Clone, Default)]
+struct Distinct {
+    order: Vec<String>,
+    seen: HashSet<String>,
+}
+
+impl Distinct {
+    fn add(&mut self, what: String) {
+        if !self.seen.contains(&what) {
+            self.seen.insert(what.clone());
+            self.order.push(what);
+        }
+    }
+}
+
 /// Generated notes for every owner's values (`notes[owner][value]`), computed in one pass over
 /// the model: where the value is sent (every placement, template and block on any chain), whether
 /// it is withheld from Concord's output, and what its absence means under a conditional
 /// `override`. One pass, so the cost is linear in the declaration, not owners × contributions.
 fn value_notes(model: &Model) -> Vec<Vec<Vec<String>>> {
     use crate::syntax::Op;
-    let mut places: Vec<Vec<Vec<String>>> = model
+    let mut places: Vec<Vec<Distinct>> = model
         .owners
         .iter()
-        .map(|o| vec![Vec::new(); o.values.len()])
+        .map(|o| vec![Distinct::default(); o.values.len()])
         .collect();
     let mut fallbacks = places.clone();
     let holes = |pieces: &[Piece]| -> Vec<ValueRef> {
@@ -97,11 +116,8 @@ fn value_notes(model: &Model) -> Vec<Vec<Vec<String>>> {
             })
             .collect()
     };
-    let add = |places: &mut Vec<Vec<Vec<String>>>, r: ValueRef, what: String| {
-        let list = &mut places[r.owner][r.index];
-        if !list.contains(&what) {
-            list.push(what);
-        }
+    let add = |places: &mut Vec<Vec<Distinct>>, r: ValueRef, what: String| {
+        places[r.owner][r.index].add(what);
     };
     for o in &model.owners {
         for c in &o.labels {
@@ -175,8 +191,8 @@ fn value_notes(model: &Model) -> Vec<Vec<Vec<String>>> {
                 .zip(places.into_iter().zip(fallbacks))
                 .map(|(value, (places, fallbacks))| {
                     let mut notes = Vec::new();
-                    if !places.is_empty() {
-                        notes.push(format!(" Sent as: {}.", places.join("; ")));
+                    if !places.order.is_empty() {
+                        notes.push(format!(" Sent as: {}.", places.order.join("; ")));
                     }
                     if value.debug_sensitive {
                         notes.push(
@@ -184,7 +200,7 @@ fn value_notes(model: &Model) -> Vec<Vec<Vec<String>>> {
                                 .to_owned(),
                         );
                     }
-                    notes.extend(fallbacks);
+                    notes.extend(fallbacks.order);
                     notes
                 })
                 .collect()
@@ -1354,6 +1370,22 @@ mod tests {
         let api: Api = syn::parse2(declaration).expect("declaration parses");
         let model = Model::build(api).unwrap_or_else(|e| panic!("model: {e}"));
         emit(&model, quote!(::concord)).to_string()
+    }
+
+    /// Placement notes are deduplicated (a label seen twice is listed once) and keep first-seen
+    /// order, whatever the number of distinct placements.
+    #[test]
+    fn placement_notes_are_distinct_in_first_seen_order() {
+        let docs = docs(quote! {
+            pub client Api(v: String = "x") {
+                base "http://x.test";
+                GET one() { query { "b" = client.v; "a" = client.v; } }
+                GET two() { query { "a" = client.v; "c" = client.v; } }
+            }
+        });
+        let expected = "Sent as: query parameter `b`; query parameter `a`; query parameter `c`.";
+        // Once: on `set_v`, the only control of a required value.
+        assert_eq!(docs.matches(expected).count(), 1, "{docs}");
     }
 
     /// Final review R1: the per-call note may call absence "the default" only when the value has

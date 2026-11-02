@@ -44,6 +44,9 @@ SHAPES (each varies one dimension; everything else is fixed)
   refs      --values M      One endpoint with M optional values placed through a
                             `query { "k_i" = v_i; }` block, so every placement is a resolved
                             reference (name-resolution stress; output size equals `optionals`).
+  fanout    --placements N  One endpoint whose single value feeds N distinct query keys
+                            (`query { "k_i" = v; }`): N distinct placement descriptions for one
+                            value in the generated documentation.
 
 SUITE (OUT/, one cargo workspace; member names are the package names)
 
@@ -204,6 +207,14 @@ def shape_refs(values):
                       "    }", "}"]) + "\n"
 
 
+def shape_fanout(placements):
+    block = " ".join(f'"k{i}" = v;' for i in range(placements))
+    return "\n".join(["#![allow(missing_docs)]", "concord::api! {",
+                      "    pub client Fan {", '        base "https://api.example.com/v1";',
+                      f'        GET e(v: String) {{ path "e"; query {{ {block} }} }}',
+                      "    }", "}"]) + "\n"
+
+
 def declaration(args):
     return {
         "rest": lambda: shape_rest(args.endpoints),
@@ -212,6 +223,7 @@ def declaration(args):
         "override": lambda: shape_override(args.levels, args.endpoints),
         "optionals": lambda: shape_optionals(args.values, args.endpoints),
         "refs": lambda: shape_refs(args.values),
+        "fanout": lambda: shape_fanout(args.placements),
     }[args.shape]()
 
 
@@ -395,7 +407,8 @@ def main(argv):
     s.add_argument("--no-lock", action="store_true", help="do not seed and settle Cargo.lock")
     a = sub.add_parser("api", help="one standalone API crate")
     a.add_argument("out")
-    a.add_argument("shape", choices=["rest", "deep", "shared", "override", "optionals", "refs"])
+    a.add_argument("shape", choices=["rest", "deep", "shared", "override", "optionals", "refs",
+                                          "fanout"])
     a.add_argument("--concord", default=DEFAULT_CONCORD)
     a.add_argument("--syntax", choices=["refined", "alpha"], default="refined")
     a.add_argument("--name")
@@ -406,6 +419,7 @@ def main(argv):
     a.add_argument("--contribs", type=int, default=16)
     a.add_argument("--levels", type=int, default=8)
     a.add_argument("--values", type=int, default=16)
+    a.add_argument("--placements", type=int, default=1000)
     args = p.parse_args(argv)
     global SYNTAX
     SYNTAX = args.syntax if not legacy else "refined"
