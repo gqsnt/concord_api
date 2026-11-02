@@ -93,7 +93,7 @@ fn main() -> Result<(), concord::Error> {
 | `format F;`, `request F;`, `request F "type/subtype";`, `response F;` | formats on a client, scope or endpoint; the nearest wins per direction; a media type comes with its format | [§5.2](AUTHOR_GUIDE.md#52-where-formats-come-from) |
 | `json`, `text`, `bytes`, `form`, or a path (`self::Csv`) | built-in formats, or a type implementing `Encode<T>`/`Decode<T>` | [§5.1](AUTHOR_GUIDE.md#51-the-formats), [§5.7](AUTHOR_GUIDE.md#57-custom-formats) |
 | `#[sensitive]` | never printed by Concord; also every key, segment and label it feeds | [§7](AUTHOR_GUIDE.md#7-sensitive-values) |
-| `#[cfg(..)]`, `#[deprecated]`, `///` on scopes and endpoints | applied to the subtree or the navigation method | [§8](AUTHOR_GUIDE.md#8-attributes) |
+| `#[cfg(..)]`, `#[deprecated]`, `///` on scopes and endpoints | applied to the subtree or the navigation method; names are checked as if every `cfg` were on, so cfg-exclusive siblings need distinct names | [§8](AUTHOR_GUIDE.md#8-attributes) |
 
 Usual order inside an owner: `base` (client), `path`, `subdomain`, `query { }`, `headers { }`,
 format statements, then children.

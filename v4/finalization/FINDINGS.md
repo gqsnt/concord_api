@@ -26,6 +26,8 @@ CONCORD DEFECT (harness, brief or fixture). Trial reports: `trials/terra-xhigh.m
 | U15 | Terra T3, Sonnet T1–T10 | Task ambiguities (PATCH response, bare or prefixed token, "change the default", which collision) | Preserved in the reports; no change |
 | U16 | coordinator, while triaging U1–U11 | Stale prose in `DIAGNOSTICS` rough edges ("written in place") and stale spellings (`json b: T` in the AUTHOR_GUIDE table, `form credentials: Login` in `Form`'s docs, "implement `ToHeaderValue`" in DIAGNOSTICS) | FIXED `4e01aa4`, `663dbe9`, `3b5c5ed` |
 
+| U17 | Terra (short trial on `ab3cb85`, `trials/terra-delta.md`) | Mutually exclusive `#[cfg]` siblings may not share a name; the participant did not find where this is said | DOCUMENTED: already in AUTHOR_GUIDE §8; repeated in the cheat sheet's `#[cfg]` row. The trial confirmed the decode hints, `Error::response` and the declaration-change table with no wrong prediction |
+
 ## Measurement and review-pack reconciliation (coordinator)
 
 The full item-by-item reconciliation of the owner's review pack is in `RECONCILIATION.md`. Items
@@ -42,6 +44,7 @@ found or reproduced here:
 | R4 | pack D-HDR-1 | A Rust constant on the right of `=` gave "not a value" without saying why; a typo gave no suggestion | FIXED: boundary and remedy in the message, did-you-mean |
 | R5 | pack D-ED-1 | A value declared before it is placed removed the whole client: unresolved names elsewhere (rustc), unknown types (rust-analyzer) | FIXED (narrow): reported next to the full expansion; other errors unchanged |
 | R6 | pack D-DIAG-2 | Two errors per missing `Display`/`ToHeaderValue`; the second, from `Debug`, names `DebugDisplay` | DEFERRED: reproduced; the first error carries Concord's notes at the value's type. Removing the second needs a dyn witness on measured runtime paths |
+| P4 | coordinator, rendering Riot's rustdoc for the final record | The request summary of `account.me` listed `X_RIOT_TOKEN`, which that endpoint removes through the same constant | FIXED `aa9819c`: a contribution a later `remove` of the provably same key drops is not listed (unit test `request_summary_omits_a_provably_removed_native_key`) |
 | R7 | pack D-SURF-3 | Generated `#[derive(Clone)]` needs the prelude; base-URL error said "request not built" | FIXED `0e56a65` |
 
 ## Independent final reviews

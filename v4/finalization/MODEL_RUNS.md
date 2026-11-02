@@ -52,6 +52,7 @@ were frozen; no designer or fresh-use participant saw it. Reconciliation: `RECON
 
 | Run | Role | Requested | Observed | Source scope | Status |
 |---|---|---|---|---|---|
+| fu-delta-terra | Fresh user, three tasks on the changed journeys (not exposed to the pack) | gpt-6.1-terra / xhigh | gpt-6.1-terra / xhigh (turn_context) | snapshot trial-delta-terra (`ab3cb85`); brief `/home/canarit/projects/concord_v4_finish_work/briefs/FRESH_USE_DELTA.md` | 21:15:27→21:17:04Z, tracked files unchanged; all tasks run on loopback, no wrong prediction; report `trials/terra-delta.md` |
 | compat | Fixture builder: the eight compatibility cases (not a designer or reviewer) | gpt-6.1-sol / medium | gpt-6.1-sol / medium, workspace-write, network on (turn_context) | snapshot compat-sol-medium (`0e56a65`); brief `/home/canarit/projects/concord_v4_finish_work/briefs/COMPAT_BUILD.md` (written by the coordinator, not the pack) | 19:50:37→19:52:55Z; wrote `examples/compat` + the workspace member and lock entry only; 8/8 cases, clippy, fmt, `+1.85` pass (its report); imported after the coordinator's review with one added case; report and receipt `/home/canarit/projects/concord_v4_finish_work/evidence/compat/` (SHA256SUMS) |
 
 Frozen outputs and their SHA-256 sums: `/home/canarit/projects/concord_v4_finish_work/proposals/r1/FROZEN.sha256`, `/home/canarit/projects/concord_v4_finish_work/proposals/r2/FROZEN-a.sha256`, `/home/canarit/projects/concord_v4_finish_work/proposals/r2/FROZEN-b.sha256`, `/home/canarit/projects/concord_v4_finish_work/proposals/r2/xreview/FROZEN.sha256`.
