@@ -1005,9 +1005,19 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
         }
         HeaderComposition::Dynamic(seq) => {
             let mut shown: Vec<String> = Vec::new();
-            for &id in seq {
+            for (i, &id) in seq.iter().enumerate() {
                 let c = model.contrib(id);
-                if c.op == crate::syntax::Op::Remove {
+                // Not listed: a `remove`, and a contribution a later `remove` of the provably
+                // same key drops (`remove X_RIOT_TOKEN;` under a client that sets it).
+                let removed_later = seq[i + 1..].iter().any(|&later| {
+                    let l = model.contrib(later);
+                    l.op == crate::syntax::Op::Remove
+                        && matches!(
+                            crate::model::relation(&c.key, &l.key),
+                            crate::model::Rel::Same
+                        )
+                });
+                if c.op == crate::syntax::Op::Remove || removed_later {
                     continue;
                 }
                 let text = format!("`{}`", model.key_text(&c.key));
@@ -2198,6 +2208,29 @@ mod tests {
 
     /// Placement notes are deduplicated (a label seen twice is listed once) and keep first-seen
     /// order, whatever the number of distinct placements.
+    /// A native key removed through the same path is not listed among the endpoint's headers.
+    #[test]
+    fn request_summary_omits_a_provably_removed_native_key() {
+        let docs = docs(quote! {
+            pub client Api(header(X_KEY) key: String) {
+                base "http://x.test";
+                headers { ACCEPT = "application/json"; }
+                GET me(token: String) {
+                    headers { remove X_KEY; AUTHORIZATION = "Bearer {token}"; }
+                }
+                GET other();
+            }
+        });
+        let line = |names: &str| {
+            format!(
+                "Headers (when present; native names are composed by identity when the request is built): {names}."
+            )
+        };
+        // Each summary is on the navigation method and on the request type.
+        assert_eq!(docs.matches(&line("`ACCEPT`, `AUTHORIZATION`")).count(), 2);
+        assert_eq!(docs.matches(&line("`X_KEY`, `ACCEPT`")).count(), 2);
+    }
+
     #[test]
     fn placement_notes_are_distinct_in_first_seen_order() {
         let docs = docs(quote! {
