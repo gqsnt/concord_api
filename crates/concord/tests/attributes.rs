@@ -15,7 +15,7 @@ concord::api! {
 
         /// Disabled: its output type does not even exist.
         #[cfg(any())]
-        GET gone() -> DoesNotExist via concord::Text { path "gone"; }
+        GET gone() -> text DoesNotExist { path "gone"; }
 
         /// Disabled scope with a disabled-only value type and children.
         #[cfg(any())]

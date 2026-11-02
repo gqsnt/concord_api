@@ -8,10 +8,10 @@ use syn::spanned::Spanned;
 use syn::{Ident, LitStr};
 
 use crate::model::{
-    Body, Composed, ContribId, Item, Kind, Model, Owner, Piece, Slot, Source, Usage, Value,
-    ValueRef,
+    Body, Composed, ContribId, Item, Kind, Model, Origin, Output, Owner, OwnerDefault, Piece, Slot,
+    Source, Usage, Value, ValueRef,
 };
-use crate::syntax::Family;
+use crate::syntax::{Family, Format, type_text};
 
 pub fn emit(model: &Model, krate: TokenStream) -> TokenStream {
     let k = &krate;
@@ -22,6 +22,7 @@ pub fn emit(model: &Model, krate: TokenStream) -> TokenStream {
         _ => unreachable!("the first owner is the client"),
     };
     let mut out = header_items;
+    out.extend(format_aliases(k, model));
     for (index, (owner, notes)) in model.owners.iter().zip(&notes).enumerate() {
         let cfgs = &owner.cfgs;
         if cfgs.is_empty() {
@@ -101,6 +102,93 @@ fn header_statics(k: &TokenStream, model: &Model) -> (TokenStream, Headers) {
         }
     }
     (items, headers)
+}
+
+/// The runtime type of a format written in place: a word is `$crate::{Json, Text, Binary, Form}`
+/// located at the word (hygiene kept), so a missing feature or an unsupported payload is reported
+/// there; a path is the user's tokens, resolved at the declaration like any type.
+fn format_type(k: &TokenStream, format: &Format) -> TokenStream {
+    match format {
+        Format::Word(word, span) => {
+            let marker = Ident::new(word.marker(), Span::call_site());
+            located(quote!(#k::#marker), *span)
+        }
+        Format::Path(path) => quote!(#path),
+    }
+}
+
+/// How an endpoint names its body's or output's format. An inherited default is named through
+/// its owner's hidden alias, located at the endpoint's payload type (`at`): the alias reports a
+/// missing format once, at the default, while an unsupported payload is reported at the endpoint
+/// that declares it.
+fn format_for(
+    k: &TokenStream,
+    model: &Model,
+    format: &Format,
+    origin: Origin,
+    request: bool,
+    at: Span,
+) -> TokenStream {
+    match origin {
+        Origin::InPlace => format_type(k, format),
+        Origin::Default(owner) => {
+            let o = &model.owners[owner];
+            let d = if request { &o.request } else { &o.response };
+            let alias = &d.as_ref().expect("an origin names a default").alias;
+            located(quote!(#alias), at)
+        }
+    }
+}
+
+/// One hidden alias per `request`/`response` default that has consumers:
+/// `type __Concord{Owner}{Request|Response}Format = <format>;`, located at the default. It carries
+/// `#[cfg(any(all(<cfgs of consumer 1>), ...))]`, the union of its consuming endpoints' effective
+/// `cfg`s, so a default used only by cfg-disabled endpoints is never referenced, and an unused
+/// default (no consumer) is not emitted at all.
+fn format_aliases(k: &TokenStream, model: &Model) -> TokenStream {
+    let mut out = TokenStream::new();
+    for owner in &model.owners {
+        for d in [&owner.request, &owner.response].into_iter().flatten() {
+            if d.consumers.is_empty() {
+                continue;
+            }
+            let alias = &d.alias;
+            let ty = format_type(k, &d.format);
+            let cfg = consumers_cfg(model, d);
+            out.extend(quote_spanned! {d.format.span()=>
+                #cfg
+                #[doc(hidden)]
+                #[allow(non_camel_case_types, dead_code)]
+                type #alias = #ty;
+            });
+        }
+    }
+    out
+}
+
+/// `#[cfg(any(all(..), ..))]` over the consumers' own and inherited `cfg` predicates; nothing when
+/// one consumer is unconditional.
+fn consumers_cfg(model: &Model, d: &OwnerDefault) -> TokenStream {
+    let mut alternatives: Vec<TokenStream> = Vec::new();
+    let mut seen = HashSet::new();
+    for &e in &d.consumers {
+        let predicates: Vec<TokenStream> = model.owners[e]
+            .cfgs
+            .iter()
+            .filter_map(|attr| match &attr.meta {
+                syn::Meta::List(list) => Some(list.tokens.clone()),
+                _ => None,
+            })
+            .collect();
+        if predicates.is_empty() {
+            return quote!();
+        }
+        let all = quote!(all(#(#predicates),*));
+        if seen.insert(all.to_string()) {
+            alternatives.push(all);
+        }
+    }
+    quote!(#[cfg(any(#(#alternatives),*))])
 }
 
 /// Puts `attrs` in front of every top-level item in `items`.
@@ -261,7 +349,7 @@ fn field_type(value: &Value) -> TokenStream {
     }
 }
 
-/// The payload type a body is supplied as (`body b: T via R` → `T`).
+/// The payload type a body is supplied as (`json b: T` / `body b: T` → `T`).
 fn body_value_type(body: &Body) -> TokenStream {
     let ty = &body.ty;
     quote!(#ty)
@@ -520,22 +608,78 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
     let mut lines = vec![lit(""), lit(&format!(" Request: `{method} {url}`."))];
     if let Kind::Endpoint { output, body, .. } = &model.owners[endpoint].kind {
         if let Some(b) = body {
-            let (ty, repr) = (&b.ty, &b.repr);
             let presence = if b.optional { "optional " } else { "" };
+            // 8b: a `content-type` header contribution surviving composition replaces the
+            // format's media type, and is sent with or without the body.
+            let header = composed
+                .headers
+                .iter()
+                .any(|s| s.key == "content-type" && !s.items.is_empty());
+            let media = match (&b.media, &b.format) {
+                (Some((m, origin)), _) => format!(
+                    " `Content-Type: {}` ({}) is sent with the body.",
+                    m.value(),
+                    match origin {
+                        Origin::InPlace => "declared on the body".to_owned(),
+                        Origin::Default(o) =>
+                            format!("from the `request` default of {}", model.describe(*o)),
+                    }
+                ),
+                (None, Format::Word(word, _)) if header => format!(
+                    " `Content-Type`: the declared `content-type` header when it is sent (with or without the body), otherwise `{}` with the body.",
+                    word.media_type()
+                ),
+                (None, Format::Word(word, _)) => format!(
+                    " `Content-Type: {}` is sent with the body.",
+                    word.media_type()
+                ),
+                (None, Format::Path(_)) if header => " `Content-Type`: the declared `content-type` header when it is sent (with or without the body), otherwise the format's `Encode::CONTENT_TYPE` with the body.".to_owned(),
+                (None, Format::Path(_)) => {
+                    " `Content-Type`: the format's `Encode::CONTENT_TYPE`, sent with the body."
+                        .to_owned()
+                }
+            };
+            let absent = if b.optional {
+                " Absent: no body, and the format adds no `Content-Type`."
+            } else {
+                ""
+            };
             lines.push(lit(&format!(
-                " Body ({presence}`{}`): `{}` via `{}`.",
+                " Body ({presence}`{}`): `{}`, encoded with the format {}.{media}{absent}",
                 plain(&b.name),
-                quote!(#ty),
-                quote!(#repr)
+                type_text(&b.ty),
+                format_origin(model, &b.format, b.origin, true),
             )));
         }
         lines.push(lit(&match output {
-            Some(p) => {
-                let (ty, repr) = (&p.ty, &p.repr);
-                format!(" Output: `{}` via `{}`.", quote!(#ty), quote!(#repr))
+            Some(o) => {
+                let unit = if matches!(&o.ty, syn::Type::Tuple(t) if t.elems.is_empty()) {
+                    match &o.format {
+                        Format::Word(crate::syntax::Word::Json, _) => " `()` is decoded like any output type: the response body must be JSON `null`, so an empty response (such as a 204) is a decode error. An endpoint without `->` decodes no output and accepts any 2xx.".to_owned(),
+                        f => format!(" `()` is decoded like any output type, with `{}`. An endpoint without `->` decodes no output and accepts any 2xx.", f.text()),
+                    }
+                } else {
+                    String::new()
+                };
+                format!(
+                    " Output: `{}`, decoded from a 2xx response with the format {}.{unit}",
+                    type_text(&o.ty),
+                    format_origin(model, &o.format, o.origin, false),
+                )
             }
-            None => " Output: none (`()`): any 2xx succeeds and the response body is drained."
-                .to_owned(),
+            None => {
+                let ignored = match model.nearest_default(endpoint, false) {
+                    Some(o) => format!(
+                        "; the `response` default `{}` of {} does not apply",
+                        model.owners[o].response.as_ref().expect("nearest").format.text(),
+                        model.describe(o)
+                    ),
+                    None => String::new(),
+                };
+                format!(
+                    " Output: none (`()`): any 2xx succeeds and the response body is drained{ignored}."
+                )
+            }
         }));
     }
     let query = keys(&composed.query);
@@ -547,6 +691,62 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
         lines.push(lit(&format!(" Headers (when present): {headers}.")));
     }
     quote!(#(#[doc = #lines])*)
+}
+
+/// "`json` (written in place)" / "`json` (the `request` default of the client `Shop`)".
+fn format_origin(model: &Model, format: &Format, origin: Origin, request: bool) -> String {
+    let origin = match origin {
+        Origin::InPlace => "written in place".to_owned(),
+        Origin::Default(o) => format!(
+            "the `{}` default of {}",
+            if request { "request" } else { "response" },
+            model.describe(o)
+        ),
+    };
+    format!("`{}` ({origin})", format.text())
+}
+
+/// The format defaults that reach the endpoints below a client or scope, for its documentation.
+fn defaults_line(model: &Model, index: usize) -> Option<LitStr> {
+    if model.owners[index].is_endpoint() {
+        return None;
+    }
+    let describe = |o: usize, request: bool| {
+        let owner = &model.owners[o];
+        let d = if request {
+            &owner.request
+        } else {
+            &owner.response
+        };
+        let d = d.as_ref().expect("nearest has a default");
+        let origin = if o == index {
+            "declared here".to_owned()
+        } else {
+            format!("the default of {}", model.describe(o))
+        };
+        let media = match &d.media {
+            Some(m) => format!(", media type `{}`", m.value()),
+            None => String::new(),
+        };
+        format!("`{}` ({origin}{media})", d.format.text())
+    };
+    let parts: Vec<String> = [
+        model
+            .nearest_default(index, true)
+            .map(|o| format!("request bodies {}", describe(o, true))),
+        model
+            .nearest_default(index, false)
+            .map(|o| format!("typed outputs {}", describe(o, false))),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    (!parts.is_empty()).then(|| {
+        lit(&format!(
+            " Formats of the endpoints below: {}. A format written on a body or after `->` replaces the default; an endpoint without `->` drains its response.",
+            parts.join("; ")
+        ))
+    })
 }
 
 /// A rustdoc list of an entry call's positional arguments with their documentation.
@@ -654,7 +854,7 @@ fn emit_owner(
     let owner = &model.owners[index];
     let ty = &owner.type_name;
     let state = &owner.state_name;
-    let docs = owner_docs(owner);
+    let docs = owner_docs(model, index);
     let fields: Vec<TokenStream> = owner
         .values
         .iter()
@@ -953,11 +1153,14 @@ fn endpoint_clone(ty: &Ident, values: &[Value], body: Option<&Body>) -> TokenStr
     }
 }
 
-/// The owner's documentation, or a generated line when it has none.
-fn owner_docs(owner: &Owner) -> TokenStream {
+/// The owner's documentation, or a generated line when it has none, and the format defaults that
+/// reach the endpoints below a client or scope.
+fn owner_docs(model: &Model, index: usize) -> TokenStream {
+    let owner = &model.owners[index];
+    let defaults = defaults_line(model, index).map(|l| quote!(#[doc = ""] #[doc = #l]));
     if !owner.docs.is_empty() {
         let docs = &owner.docs;
-        return quote!(#(#docs)*);
+        return quote!(#(#docs)* #defaults);
     }
     let line = match &owner.kind {
         Kind::Client { .. } => format!(
@@ -968,7 +1171,7 @@ fn owner_docs(owner: &Owner) -> TokenStream {
         Kind::Endpoint { method, .. } => format!(" `{method}` endpoint `{}`.", owner.dotted),
     };
     let line = lit(&line);
-    quote!(#[doc = #line])
+    quote!(#[doc = #line] #defaults)
 }
 
 /// Navigation methods on `index` for each of its children.
@@ -984,6 +1187,7 @@ fn navigation(k: &TokenStream, model: &Model, index: usize) -> TokenStream {
         let params = positional_params(k, &c.values, body);
         let (default_fns, inits) = value_inits(k, &c.values);
         let scope_line = lit(&format!(" Enters scope `{}`.", c.dotted));
+        let scope_defaults = defaults_line(model, child).map(|l| quote!(#[doc = ""] #[doc = #l]));
         let args = argument_docs(&c.values, body);
         // `#[cfg]` and `#[deprecated]` of a child apply to its navigation method.
         let nav_attrs: Vec<&syn::Attribute> =
@@ -998,6 +1202,7 @@ fn navigation(k: &TokenStream, model: &Model, index: usize) -> TokenStream {
                 #(#docs)*
                 #scope_sep
                 #[doc = #scope_line]
+                #scope_defaults
                 #args
                 #(#nav_attrs)*
                 #[inline] #[allow(clippy::too_many_arguments)] pub fn #name(&self, #params) -> #cty {
@@ -1286,7 +1491,7 @@ fn prepare_body(
     model: &Model,
     index: usize,
     method: &Ident,
-    output: Option<&crate::syntax::Payload>,
+    output: Option<&Output>,
     body: Option<&Body>,
 ) -> TokenStream {
     let owner: &Owner = &model.owners[index];
@@ -1357,34 +1562,68 @@ fn prepare_body(
         code.extend(items_code(k, headers, model, &places, &slot.items, slot));
     }
 
+    // The body's format and media type live in a `static`, evaluated when the crate is compiled:
+    // `Encode::CONTENT_TYPE` (or a declared media type) goes through `HeaderValue::from_static`,
+    // so an invalid one is a compile error, and a declared media type replaces the constant
+    // without reading it. Requests clone the validated value.
     let body_code = match body {
         None => quote!(::core::option::Option::None),
         Some(b) => {
             let name = &b.name;
             let ty = &b.ty;
-            let repr = &b.repr;
-            // Spanned at the declared representation, so an unsupported payload is reported there.
-            let encode = quote_spanned!(repr.span()=> #k::__private::encode_body::<#repr, #ty>);
+            let at = match b.origin {
+                Origin::InPlace => b.format.span(),
+                Origin::Default(_) => ty.span(),
+            };
+            let format = format_for(k, model, &b.format, b.origin, true, at);
+            let init = match &b.media {
+                None => quote!(#k::__private::BodyFormat::new::<#format>()),
+                Some((media, _)) => quote!(#k::__private::BodyFormat::with_media_type::<#format>(
+                    #k::reqwest::header::HeaderValue::from_static(#media)
+                )),
+            };
+            let init = located(init, at);
+            let encode = quote! {
+                static __FORMAT: #k::__private::BodyFormat<#ty> = #init;
+            };
             if b.optional {
-                quote!(match self.#name {
-                    ::core::option::Option::Some(__b) => ::core::option::Option::Some(#encode(__b, &__META)?),
-                    ::core::option::Option::None => ::core::option::Option::None,
+                quote!({
+                    #encode
+                    match self.#name {
+                        ::core::option::Option::Some(__b) => ::core::option::Option::Some(#k::__private::encode_body(&__FORMAT, __b, &__META)?),
+                        ::core::option::Option::None => ::core::option::Option::None,
+                    }
                 })
             } else {
-                quote!(::core::option::Option::Some(#encode(self.#name, &__META)?))
+                quote!({
+                    #encode
+                    ::core::option::Option::Some(#k::__private::encode_body(&__FORMAT, self.#name, &__META)?)
+                })
             }
         }
     };
+    // 8f: the inserted `Content-Type` carries the key's static classification on this endpoint
+    // (marker or sticky composition, also after a `remove`).
+    let sensitive_content_type = composed
+        .headers
+        .iter()
+        .any(|slot| slot.key == "content-type" && slot.sensitive);
 
     let name = lit(&owner.dotted);
     let method_str = lit(&method.to_string());
     let label_count = composed.labels.len();
     let segment_count = composed.segments.len() + usize::from(composed.trailing_slash);
     let root = format_ident!("__o0");
+    // No `->`: drained, whatever the defaults (a `response` default never applies).
     let decoder = match output {
-        Some(p) => {
-            let (t, r) = (&p.ty, &p.repr);
-            quote_spanned!(r.span()=> #k::__private::decoder::<#r, #t>(&__META))
+        Some(o) => {
+            let t = &o.ty;
+            let at = match o.origin {
+                Origin::InPlace => o.format.span(),
+                Origin::Default(_) => t.span(),
+            };
+            let r = format_for(k, model, &o.format, o.origin, false, at);
+            quote_spanned!(at=> #k::__private::decoder::<#r, #t>(&__META))
         }
         None => quote!(#k::__private::drain(&__META)),
     };
@@ -1397,6 +1636,7 @@ fn prepare_body(
             segments: #segment_count,
             sensitive_segments: &[#(#sensitive_segments),*],
             sensitive_query: &[#(#sensitive_query),*],
+            sensitive_content_type: #sensitive_content_type,
         };
         let __body = #body_code;
         #bindings
@@ -1435,6 +1675,64 @@ mod tests {
         let expected = "Sent as: query parameter `b`; query parameter `a`; query parameter `c`.";
         // Once: on `set_v`, the only control of a required value.
         assert_eq!(docs.matches(expected).count(), 1, "{docs}");
+    }
+
+    /// Format row 12e: every endpoint states its body and output format, the media type and where
+    /// an inherited format comes from; an endpoint without `->` says the response default does
+    /// not apply; `-> ()` says what is decoded; owners state their defaults.
+    #[test]
+    fn format_docs_state_format_media_type_and_origin() {
+        let docs = docs(quote! {
+            pub client Shop {
+                base "http://x.test";
+                request json;
+                response json;
+                POST create(body item: NewItem) -> Item;
+                PATCH patch(json("application/merge-patch+json") p: Patch) -> text String;
+                PUT maybe(body p?: NewItem);
+                DELETE remove();
+                GET unit() -> ();
+                scope csv {
+                    request crate::Csv("text/csv; header=present");
+                    response crate::Csv;
+                    POST import(body rows: Rows) -> Report;
+                }
+            }
+        });
+        for expected in [
+            " Formats of the endpoints below: request bodies `json` (declared here); typed outputs `json` (declared here).",
+            " Body (`item`): `NewItem`, encoded with the format `json` (the `request` default of the client `Shop`). `Content-Type: application/json` is sent with the body.",
+            " Output: `Item`, decoded from a 2xx response with the format `json` (the `response` default of the client `Shop`).",
+            " Body (`p`): `Patch`, encoded with the format `json` (written in place). `Content-Type: application/merge-patch+json` (declared on the body) is sent with the body.",
+            " Output: `String`, decoded from a 2xx response with the format `text` (written in place).",
+            " Absent: no body, and the format adds no `Content-Type`.",
+            " Output: none (`()`): any 2xx succeeds and the response body is drained; the `response` default `json` of the client `Shop` does not apply.",
+            " `()` is decoded like any output type: the response body must be JSON `null`, so an empty response (such as a 204) is a decode error. An endpoint without `->` decodes no output and accepts any 2xx.",
+            " Formats of the endpoints below: request bodies `crate::Csv` (declared here, media type `text/csv; header=present`); typed outputs `crate::Csv` (declared here).",
+            " Body (`rows`): `Rows`, encoded with the format `crate::Csv` (the `request` default of scope `Shop.csv`). `Content-Type: text/csv; header=present` (from the `request` default of scope `Shop.csv`) is sent with the body.",
+        ] {
+            // The expected text, escaped as in a doc literal of the token stream.
+            let quoted = format!("{expected:?}");
+            let escaped = &quoted[1..quoted.len() - 1];
+            assert!(docs.contains(escaped), "missing {expected:?}");
+        }
+    }
+
+    /// Format row 8b in the docs: a surviving `content-type` header replaces the format's media
+    /// type and is sent with or without the body.
+    #[test]
+    fn format_docs_state_the_header_rule() {
+        let docs = docs(quote! {
+            pub client Api(header("content-type") ct?: String) {
+                base "http://x.test";
+                POST up(bytes data: Vec<u8>);
+            }
+        });
+        let expected = " Body (`data`): `Vec<u8>`, encoded with the format `bytes` (written in place). `Content-Type`: the declared `content-type` header when it is sent (with or without the body), otherwise `application/octet-stream` with the body.";
+        assert!(
+            docs.contains(&format!("{expected:?}")),
+            "missing {expected:?}"
+        );
     }
 
     /// Final review R1: the per-call note may call absence "the default" only when the value has

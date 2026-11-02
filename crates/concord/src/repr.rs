@@ -1,10 +1,13 @@
-//! Body and response representations.
+//! Body and response formats.
 //!
-//! A declaration names the payload type and its wire representation separately:
-//! `body item: NewItem via Json`, `-> Item via Json`, `-> String via Text`. A representation is a
-//! marker type implementing [`Encode<T>`] and/or [`Decode<T>`] for the payload types it supports;
-//! Concord never chooses one by looking at a Rust type name. An endpoint without `->` has no typed
-//! output: any 2xx succeeds and the body is drained without being buffered.
+//! Every body and every typed output has a format. A declaration writes it in place —
+//! `json item: NewItem`, `-> text String`, `Csv rows: Vec<Row>` — or inherits it from the
+//! nearest client or scope that declares a default (`request json;`, `response json;`) with
+//! `body item: NewItem` and a bare `-> Item`. The words `json`, `text`, `bytes` and `form` name the
+//! built-in markers `Json`, `Text`, `Binary` and `Form`; any other format is a type implementing
+//! `Encode<T>` and/or `Decode<T>`, named by its path. Concord never chooses a
+//! format by looking at a Rust type name. An endpoint without `->` has no typed output: any 2xx
+//! succeeds and the body is drained without being buffered, whatever the defaults.
 
 use std::borrow::Cow;
 use std::error::Error as StdError;
@@ -12,33 +15,43 @@ use std::fmt;
 
 use bytes::Bytes;
 
-/// Encodes a request body of type `T` (`body b: T via Self`).
+/// Encodes a request body of type `T` with the format `Self`.
 ///
-/// Implement it on your own marker type for a custom format. The encoder runs when the request is
-/// prepared; it receives the payload by value. `CONTENT_TYPE` is a constant: a format whose
-/// content type varies per body (a multipart boundary) is better set on the native request
-/// after [`Prepared::into_parts`](crate::Prepared::into_parts).
+/// Implement it on your own marker type for a custom format, then name the type in place
+/// (`Csv rows: Vec<Row>`) or in a default (`request Csv;`). The encoder runs when the request is
+/// prepared; it receives the payload by value.
+///
+/// `CONTENT_TYPE` is the media type sent as `Content-Type` with the body, unless the body declares
+/// its own (`json("application/merge-patch+json") patch: Patch`, `body("…") p: T`, or a
+/// `request json("…");` default reached through `body`) or the endpoint sends a `content-type`
+/// header. It is validated when the declaration is compiled (visible ASCII, like
+/// `HeaderValue::from_static`): an invalid value is a compile error wherever it may be sent, and
+/// is not used at all where a declared media type replaces it. A media type that varies per body
+/// (a multipart boundary) is set on the native request after
+/// [`Prepared::into_parts`](crate::Prepared::into_parts).
 #[diagnostic::on_unimplemented(
-    message = "`{Self}` cannot encode a `{T}` request body",
-    label = "`body ...: {T} via {Self}` needs `{Self}: Encode<{T}>`",
-    note = "built in: `Json` (any `Serialize`, feature `json`), `Text` (`String`), `Binary` (`Bytes`, `Vec<u8>`); or implement `concord::Encode<{T}>` for your own marker type"
+    message = "the format `{Self}` cannot encode a `{T}` request body",
+    label = "this body's format is `{Self}` (written here or inherited from a `request` default); it needs `{Self}: Encode<{T}>`",
+    note = "built in: `json` (any `Serialize`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `Serialize`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Encode<{T}>`, written by its path in place or in a `request` default"
 )]
 pub trait Encode<T> {
-    /// The `Content-Type` sent with the body, unless the declared headers already set one.
+    /// The media type sent as `Content-Type` with the body (see the trait documentation).
     const CONTENT_TYPE: Option<&'static str>;
 
     /// Encodes the payload into a request body.
     fn encode(value: T) -> Result<reqwest::Body, BodyError>;
 }
 
-/// Decodes the complete body of a 2xx response into `T` (`-> T via Self`).
+/// Decodes the complete body of a 2xx response into `T` with the format `Self`.
 ///
-/// Implement it on your own marker type for a custom format. It is also usable directly, for
-/// example on the body of an error response: `<Json as Decode<Problem>>::decode(bytes)`.
+/// Implement it on your own marker type for a custom format, then name the type in place
+/// (`-> Csv Vec<Row>`) or in a default (`response Csv;`). It is also usable directly, for example
+/// on the body of an error response: `<Json as Decode<Problem>>::decode(bytes)`. Concord never
+/// checks the response `Content-Type` and sends no `Accept`.
 #[diagnostic::on_unimplemented(
-    message = "`{Self}` cannot decode a `{T}` response",
-    label = "`-> {T} via {Self}` needs `{Self}: Decode<{T}>`",
-    note = "built in: `Json` (any `DeserializeOwned`, feature `json`), `Text` (`String`), `Binary` (`Bytes`, `Vec<u8>`); or implement `concord::Decode<{T}>` for your own marker type"
+    message = "the format `{Self}` cannot decode a `{T}` response",
+    label = "this output's format is `{Self}` (written here or inherited from a `response` default); it needs `{Self}: Decode<{T}>`",
+    note = "built in: `json` (any `DeserializeOwned`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `DeserializeOwned`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Decode<{T}>`, written by its path in place or in a `response` default; an endpoint without typed output omits `->`"
 )]
 pub trait Decode<T> {
     /// Decodes a complete response body.
@@ -100,8 +113,9 @@ impl fmt::Display for BodyError {
 /// No `source()`: the underlying error may quote body content (see the type documentation).
 impl StdError for BodyError {}
 
-/// JSON via `serde_json`: `application/json` request bodies; responses are decoded regardless of
-/// their `Content-Type`. `-> Item via Json`, `body item: NewItem via Json`.
+/// JSON via `serde_json`, the format word `json` (feature `json`): `application/json` request
+/// bodies; responses are decoded regardless of their `Content-Type`. `json item: NewItem`,
+/// `-> json Item`, or `request json;` / `response json;` on a client or scope.
 #[cfg(feature = "json")]
 pub struct Json(());
 
@@ -144,8 +158,8 @@ fn json_description(action: &str, e: &serde_json::Error) -> String {
     }
 }
 
-/// UTF-8 text: `text/plain; charset=utf-8` request bodies; responses must be valid UTF-8.
-/// `-> String via Text`, `body note: String via Text`.
+/// UTF-8 text, the format word `text`: `text/plain; charset=utf-8` request bodies; responses must
+/// be valid UTF-8. `text note: String`, `-> text String`.
 pub struct Text(());
 
 impl Encode<String> for Text {
@@ -167,8 +181,8 @@ impl Decode<String> for Text {
     }
 }
 
-/// Raw bytes: `application/octet-stream` request bodies; responses are returned unchanged.
-/// `-> Bytes via Binary`, `body data: Vec<u8> via Binary`.
+/// Raw bytes, the format word `bytes`: `application/octet-stream` request bodies; responses are
+/// returned unchanged. `bytes data: Vec<u8>`, `bytes("image/png") png: Bytes`, `-> bytes Bytes`.
 pub struct Binary(());
 
 impl Encode<Bytes> for Binary {
@@ -196,5 +210,31 @@ impl Decode<Bytes> for Binary {
 impl Decode<Vec<u8>> for Binary {
     fn decode(body: Bytes) -> Result<Vec<u8>, BodyError> {
         Ok(body.into())
+    }
+}
+
+/// URL-encoded forms via `serde_urlencoded`, the format word `form` (feature `form`):
+/// `application/x-www-form-urlencoded` request bodies from any `Serialize` struct, map or
+/// sequence of pairs (flat values only: nested structures and sequences are an encoding error);
+/// responses decode into any `DeserializeOwned`. `form credentials: Login`, `-> form Token`.
+#[cfg(feature = "form")]
+pub struct Form(());
+
+#[cfg(feature = "form")]
+impl<T: serde::Serialize> Encode<T> for Form {
+    const CONTENT_TYPE: Option<&'static str> = Some("application/x-www-form-urlencoded");
+
+    fn encode(value: T) -> Result<reqwest::Body, BodyError> {
+        serde_urlencoded::to_string(&value)
+            .map(reqwest::Body::from)
+            .map_err(|e| BodyError::new("form encode error").with_source(e))
+    }
+}
+
+#[cfg(feature = "form")]
+impl<T: serde::de::DeserializeOwned> Decode<T> for Form {
+    fn decode(body: Bytes) -> Result<T, BodyError> {
+        serde_urlencoded::from_bytes(&body)
+            .map_err(|e| BodyError::new("form decode error").with_source(e))
     }
 }

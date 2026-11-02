@@ -8,8 +8,6 @@
 /// Realistic request: three path values, ten query values (eight optional), a scope chain and six
 /// inherited headers (one sensitive).
 pub mod tracker {
-    use concord::Json;
-
     use crate::payload::Issue;
 
     concord::api! {
@@ -39,7 +37,7 @@ pub mod tracker {
                         query include_closed?: bool,
                         query page: u32 = 1,
                         query per_page: u32 = 50,
-                    ) -> Vec<Issue> via Json {
+                    ) -> json Vec<Issue> {
                         path "milestones/{milestone}/issues";
                         headers { "x-request-kind" = "list"; }
                     }
@@ -174,10 +172,9 @@ pub mod compose {
     }
 }
 
-/// Request bodies (JSON, text, bytes) and typed responses of the same representations.
+/// Request bodies (JSON, text, bytes) and typed responses of the same formats.
 pub mod bodies {
     use concord::bytes::Bytes;
-    use concord::{Binary, Json, Text};
 
     use crate::payload::Payload;
 
@@ -186,13 +183,13 @@ pub mod bodies {
         pub client Bodies {
             base "https://api.example.com/v1";
 
-            POST post_json(body b: Payload via Json) { path "json"; }
-            POST post_text(body b: String via Text) { path "text"; }
-            POST post_bytes(body b: Bytes via Binary) { path "bytes"; }
+            POST post_json(json b: Payload) { path "json"; }
+            POST post_text(text b: String) { path "text"; }
+            POST post_bytes(bytes b: Bytes) { path "bytes"; }
 
-            GET get_json() -> Payload via Json { path "json"; }
-            GET get_text() -> String via Text { path "text"; }
-            GET get_bytes() -> Bytes via Binary { path "bytes"; }
+            GET get_json() -> json Payload { path "json"; }
+            GET get_text() -> text String { path "text"; }
+            GET get_bytes() -> bytes Bytes { path "bytes"; }
         }
     }
 }

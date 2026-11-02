@@ -1,6 +1,7 @@
-//! `concord` depended on as `concord4` (ADV-4): expansions refer to the crate through `$crate`.
-//! Native header values are named through a renamed `reqwest` and an alias: Concord recognizes
-//! types by trait, never by spelling.
+//! `concord` depended on as `concord4` (ADV-4): expansions refer to the crate through `$crate`,
+//! so the format words (`text`, `bytes`) need no import, and a format type path resolves like any
+//! type (`concord4::Text`). Native header values are named through a renamed `reqwest` and an
+//! alias: Concord recognizes types by trait, never by spelling.
 
 /// An alias of the native header value, through the renamed `reqwest` dependency.
 pub type Native = reqwest013::header::HeaderValue;
@@ -12,7 +13,8 @@ concord4::api! {
     /// A client declared through the renamed crate.
     pub client Renamed(query("v") version: u32 = 4) {
         base "http://renamed.invalid";
-        GET ping() -> String via concord4::Text { path "ping"; }
+        GET ping() -> text String { path "ping"; }
+        PUT upload(bytes data: Vec<u8>) -> concord4::Binary Vec<u8> { path "upload"; }
     }
 }
 
@@ -23,7 +25,10 @@ concord4::api! {
         header("x-tag") each tags?: Vec<concord4::reqwest::header::HeaderValue>,
     ) {
         base "http://renamed.invalid";
-        GET ping() -> String via concord4::Text { path "ping"; }
+        request text;
+        response text;
+        GET ping() -> String { path "ping"; }
+        POST note(body note: String) { path "note"; }
     }
 }
 
@@ -39,6 +44,23 @@ mod tests {
             p.request().url().as_str(),
             "http://renamed.invalid/ping?v=4"
         );
+    }
+
+    #[test]
+    fn formats_through_the_renamed_crate() {
+        let api = super::Renamed::new(concord4::reqwest::Client::new());
+        let p = api.upload(vec![1, 2]).prepare().unwrap();
+        assert_eq!(
+            p.request().headers()["content-type"],
+            "application/octet-stream"
+        );
+        let api = super::Headers::new(concord4::reqwest::Client::new());
+        let p = api.note("hi").prepare().unwrap();
+        assert_eq!(
+            p.request().headers()["content-type"],
+            "text/plain; charset=utf-8"
+        );
+        assert_eq!(p.request().body().unwrap().as_bytes(), Some(&b"hi"[..]));
     }
 
     #[test]

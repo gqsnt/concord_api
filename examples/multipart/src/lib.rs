@@ -8,7 +8,7 @@
 //! api.upload(folder).prepare()?.into_parts()          // (client, request, decoder)
 //!   → RequestBuilder::from_parts(client, request)
 //!       .multipart(form).send().await               // native body, boundary, Content-Type
-//!   → decoder.finish(result).await                  // declared 2xx policy + `Json` decoding
+//!   → decoder.finish(result).await                  // declared 2xx policy + `json` decoding
 //! ```
 //!
 //! Why `from_parts(..).multipart(..)` rather than setting the body on the `Request`: reqwest's
@@ -20,7 +20,6 @@
 //! This crate is the only one in the workspace that enables reqwest's `multipart` feature; the
 //! `concord` crate itself has no multipart policy and does not depend on it.
 
-use concord::Json;
 use reqwest::multipart::{Form, Part};
 use serde::Deserialize;
 
@@ -39,7 +38,7 @@ concord::api! {
         base "http://files.invalid/v1";
 
         /// Upload into a folder; the multipart body is attached natively (see [`upload`]).
-        POST upload(folder: String) -> Stored via Json { path "folders/{folder}/files"; }
+        POST upload(folder: String) -> json Stored { path "folders/{folder}/files"; }
     }
 }
 

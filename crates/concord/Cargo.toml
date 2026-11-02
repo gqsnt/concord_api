@@ -10,8 +10,11 @@ publish.workspace = true
 
 [features]
 default = ["json", "reqwest-defaults"]
-## The `Json` representation (`-> T via Json`, `body b: T via Json`), via serde/serde_json.
+## The `json` format (`json b: T`, `-> json T`, `request json;`), via serde/serde_json.
 json = ["dep:serde", "dep:serde_json"]
+## The `form` format (`form b: T`, `application/x-www-form-urlencoded`), via serde/serde_urlencoded.
+## Off by default, like reqwest's own `form` feature.
+form = ["dep:serde", "dep:serde_urlencoded"]
 ## Enables reqwest's own default features (TLS, HTTP/2, charset, system proxy).
 ## Disable it to choose reqwest features yourself in your own Cargo.toml.
 reqwest-defaults = ["reqwest/default"]
@@ -23,6 +26,7 @@ percent-encoding.workspace = true
 reqwest.workspace = true
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
+serde_urlencoded = { workspace = true, optional = true }
 url.workspace = true
 
 [dev-dependencies]

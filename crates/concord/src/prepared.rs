@@ -46,7 +46,7 @@ impl<T> Prepared<T> {
     }
 
     /// Executes the request once with the application's `reqwest::Client`, requires a 2xx status
-    /// and decodes the body with the declared representation (an endpoint without `->` drains it
+    /// and decodes the body with the declared format (an endpoint without `->` drains it
     /// and returns `()`). Never retries.
     pub async fn send(self) -> Result<T, Error> {
         let (client, request, decoder) = self.into_parts();
@@ -107,7 +107,7 @@ impl fmt::Debug for DebugHeaders<'_> {
 }
 
 /// An endpoint's declared response handling, applicable to any native response: requires a 2xx
-/// status, then reads the body and decodes it with the declared representation (or, for an
+/// status, then reads the body and decodes it with the declared format (or, for an
 /// endpoint without `->`, drains it without buffering).
 pub struct Decoder<T> {
     pub(crate) meta: &'static EndpointMeta,

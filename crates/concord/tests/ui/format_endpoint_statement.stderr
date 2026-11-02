@@ -1,0 +1,23 @@
+error: an endpoint has no `request` statement: write the format where the body is declared (`json item: NewItem`, `text note: String`, `form login: Login`); `request FORMAT;` is a default on a client or scope
+ --> tests/ui/format_endpoint_statement.rs:5:40
+  |
+5 |         POST note(body note: String) { request text; }
+  |                                        ^^^^^^^
+
+error: an endpoint has no `response` statement: write the format where the output is declared (`-> text String`, `-> bytes Bytes`); `response FORMAT;` is a default on a client or scope
+  --> tests/ui/format_endpoint_statement.rs:11:35
+   |
+11 |         GET version() -> String { response text; }
+   |                                   ^^^^^^^^
+
+error: duplicate `response` statement; each owner declares it at most once
+  --> tests/ui/format_endpoint_statement.rs:18:9
+   |
+18 |         response text;
+   |         ^^^^^^^^
+
+error: owner statements (`path`, `subdomain`, `query`, `headers`, `request`, `response`) must precede child declarations (first child: `version`)
+  --> tests/ui/format_endpoint_statement.rs:26:9
+   |
+26 |         response json;
+   |         ^^^^^^^^

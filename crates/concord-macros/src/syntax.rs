@@ -2,6 +2,7 @@
 //! structure; name resolution and composition happen in `model`.
 
 use proc_macro2::Span;
+use syn::ext::IdentExt;
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::{Attribute, Expr, Ident, LitStr, Token, Type, Visibility, braced, parenthesized};
@@ -21,6 +22,12 @@ mod kw {
     syn::custom_keyword!(remove);
     syn::custom_keyword!(via);
     syn::custom_keyword!(inherit);
+    syn::custom_keyword!(request);
+    syn::custom_keyword!(response);
+    syn::custom_keyword!(json);
+    syn::custom_keyword!(text);
+    syn::custom_keyword!(bytes);
+    syn::custom_keyword!(form);
 }
 
 /// HTTP methods accepted as endpoint keywords.
@@ -39,73 +46,398 @@ pub enum OwnerKind {
     Scope,
     Endpoint {
         method: Ident,
-        output: Option<Payload>,
+        output: Option<Output>,
         body: Option<BodyParam>,
     },
 }
 
-/// A payload type and its wire representation: `T via R`.
-pub struct Payload {
-    pub ty: Type,
-    pub repr: Type,
+/// A body or output format as written: a built-in word or a type path. It is chosen only by its
+/// spelling in format position, never by the payload type.
+#[derive(Clone)]
+pub enum Format {
+    Word(Word, Span),
+    Path(syn::Path),
 }
 
-/// The diagnostic for a payload without `via`. Recognizes the V4-alpha spellings (`Json<T>`,
-/// `Text`, `Binary`) and `-> ()` only to suggest the replacement; no meaning is derived from them.
-fn missing_via(ty: &Type, what: &str) -> String {
-    let tokens = |t: &dyn quote::ToTokens| {
-        t.to_token_stream()
-            .to_string()
-            .replace(" < ", "<")
-            .replace("< ", "<")
-            .replace(" >", ">")
-            .replace(" :: ", "::")
-            .replace(" ,", ",")
-    };
-    if let Type::Tuple(t) = ty {
-        if t.elems.is_empty() && what == "response" {
-            return "an endpoint without typed output has no `->`: remove `-> ()` (the body is drained)".to_owned();
+impl Format {
+    /// Where the format is written.
+    pub fn span(&self) -> Span {
+        match self {
+            Format::Word(_, span) => *span,
+            Format::Path(path) => path.span(),
         }
     }
-    if let Type::Path(p) = ty {
+
+    /// The format as written (`json`, `codecs::Csv`), for diagnostics and documentation.
+    pub fn text(&self) -> String {
+        match self {
+            Format::Word(word, _) => word.as_str().to_owned(),
+            Format::Path(path) => type_text(path),
+        }
+    }
+}
+
+/// The built-in format words. They resolve to `$crate::{Json, Text, Binary, Form}`, so they need
+/// no import and work under a renamed dependency.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Word {
+    Json,
+    Text,
+    Bytes,
+    Form,
+}
+
+impl Word {
+    const ALL: [Word; 4] = [Word::Json, Word::Text, Word::Bytes, Word::Form];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Word::Json => "json",
+            Word::Text => "text",
+            Word::Bytes => "bytes",
+            Word::Form => "form",
+        }
+    }
+
+    /// The runtime marker type in the `concord` crate.
+    pub fn marker(self) -> &'static str {
+        match self {
+            Word::Json => "Json",
+            Word::Text => "Text",
+            Word::Bytes => "Binary",
+            Word::Form => "Form",
+        }
+    }
+
+    /// The marker's `Encode::CONTENT_TYPE`, for generated documentation only (kept in sync with
+    /// `concord/src/repr.rs`; the request itself uses the marker's constant).
+    pub fn media_type(self) -> &'static str {
+        match self {
+            Word::Json => "application/json",
+            Word::Text => "text/plain; charset=utf-8",
+            Word::Bytes => "application/octet-stream",
+            Word::Form => "application/x-www-form-urlencoded",
+        }
+    }
+
+    /// A raw identifier (`r#json`) is never a word.
+    fn of(ident: &Ident) -> Option<Self> {
+        let text = ident.to_string();
+        Self::ALL.into_iter().find(|w| text == w.as_str())
+    }
+}
+
+const WORDS: &str = "`json`, `text`, `bytes` or `form`";
+
+/// A typed output: `-> T` (the inherited `response` default) or `-> FORMAT T`.
+pub struct Output {
+    pub ty: Type,
+    /// `None`: the nearest `response` default.
+    pub format: Option<Format>,
+}
+
+/// `request FORMAT;`, `request FORMAT("media/type");` or `response FORMAT;` on a client or scope.
+pub struct FormatDefault {
+    pub format: Format,
+    pub media: Option<LitStr>,
+}
+
+/// A type or path as written, without `quote`'s token spacing (`Vec<Item>`, not `Vec < Item >`).
+pub fn type_text(t: &dyn quote::ToTokens) -> String {
+    t.to_token_stream()
+        .to_string()
+        .replace(" < ", "<")
+        .replace("< ", "<")
+        .replace(" >", ">")
+        .replace(" :: ", "::")
+        .replace(":: ", "::")
+        .replace(" ,", ",")
+        .replace("& ", "&")
+}
+
+/// The format word a V4-alpha or `via` representation type corresponds to (`Json`, `Text`,
+/// `Binary` as the last segment, qualified or not); any other type is written as a path. Only used
+/// to word a diagnostic that is reported anyway.
+fn replacement(repr: &Type) -> String {
+    if let Type::Path(p) = repr {
         if let Some(last) = p.path.segments.last() {
-            let prefix: String = p
-                .path
-                .segments
-                .iter()
-                .take(p.path.segments.len() - 1)
-                .map(|s| format!("{}::", s.ident))
-                .collect();
-            let hint = match (last.ident.to_string().as_str(), &last.arguments) {
-                ("Json", syn::PathArguments::AngleBracketed(args)) if args.args.len() == 1 => {
-                    Some(format!("{} via {prefix}Json", tokens(&args.args[0])))
+            if last.arguments.is_none() {
+                match last.ident.to_string().as_str() {
+                    "Json" => return "json".to_owned(),
+                    "Text" => return "text".to_owned(),
+                    "Binary" => return "bytes".to_owned(),
+                    "Form" => return "form".to_owned(),
+                    _ => {}
                 }
-                ("Text", syn::PathArguments::None) => Some(format!("String via {prefix}Text")),
-                ("Binary", syn::PathArguments::None) => Some(format!("Bytes via {prefix}Binary")),
-                _ => None,
-            };
-            if let Some(hint) = hint {
-                return format!(
-                    "the {what} representation is written after the payload type: `{hint}`"
-                );
             }
         }
     }
-    format!(
-        "the {what} representation is explicit: write `{} via Json` (or `via Text`, `via Binary`, or your own representation type)",
-        tokens(ty)
+    type_text(repr)
+}
+
+/// `via R` after a payload type: the removed spelling, reported with its exact replacement.
+fn reject_via(input: ParseStream<'_>, ty: &Type, site: ViaSite<'_>) -> syn::Result<()> {
+    if !input.peek(kw::via) {
+        return Ok(());
+    }
+    let via: kw::via = input.parse()?;
+    let repr: Type = input.parse()?;
+    let format = replacement(&repr);
+    let ty = type_text(ty);
+    let message = match site {
+        ViaSite::Output => format!(
+            "`via` was removed: the format comes before the type, `-> {format} {ty}` (or `-> {ty}` under a `response {format};` default on the client or an enclosing scope)"
+        ),
+        ViaSite::Body { name, optional } => format!(
+            "`via` was removed: the format comes before the name, `{format} {name}{optional}: {ty}` (or `body {name}{optional}: {ty}` under a `request {format};` default on the client or an enclosing scope)"
+        ),
+    };
+    Err(syn::Error::new(via.span, message))
+}
+
+#[derive(Clone, Copy)]
+enum ViaSite<'a> {
+    Output,
+    Body { name: &'a Ident, optional: &'a str },
+}
+
+/// A built-in word in format position: the word not followed by `::` (`json::Codec` is a path).
+fn peek_word(input: ParseStream<'_>) -> bool {
+    (input.peek(kw::json) || input.peek(kw::text) || input.peek(kw::bytes) || input.peek(kw::form))
+        && !input.peek2(Token![::])
+}
+
+/// A word or a type path in format position. A bare lowercase identifier must be one of the
+/// words: a lowercase format type is written as a path (`self::csv`). In a parameter list the
+/// identifier may also be a misspelled placement (`qurey page: u32`), and the error says so.
+fn parse_format(input: ParseStream<'_>, in_params: bool) -> syn::Result<Format> {
+    if peek_word(input) {
+        let ident: Ident = input.parse()?;
+        let word = Word::of(&ident).expect("peeked a format word");
+        return Ok(Format::Word(word, ident.span()));
+    }
+    let path: syn::Path = input.parse()?;
+    if path.leading_colon.is_none() && path.segments.len() == 1 {
+        let segment = &path.segments[0];
+        let text = segment.ident.to_string();
+        if segment.arguments.is_none()
+            && text
+                .trim_start_matches("r#")
+                .starts_with(|c: char| c.is_ascii_lowercase())
+        {
+            let bare = text.trim_start_matches("r#");
+            let what = if in_params {
+                format!(
+                    "`{text}` is neither a placement (`query`, `header(\"..\")`) nor a body format: the built-in formats are {WORDS}; a format type is written as a path (`self::{bare}`)"
+                )
+            } else {
+                format!(
+                    "`{text}` is not a format: the built-in formats are {WORDS}; a format type is written as a path (`self::{bare}`)"
+                )
+            };
+            return Err(syn::Error::new(segment.ident.span(), what));
+        }
+    }
+    Ok(Format::Path(path))
+}
+
+/// `("media/type")` after a format or `body`: the body's media type, checked here.
+fn parse_media(input: ParseStream<'_>) -> syn::Result<LitStr> {
+    let content;
+    parenthesized!(content in input);
+    let lit: LitStr = content.parse().map_err(|e| {
+        syn::Error::new(
+            e.span(),
+            "expected the body's media type as a string, e.g. `json(\"application/merge-patch+json\") patch: Patch`",
+        )
+    })?;
+    if !content.is_empty() {
+        return Err(content.error("expected a single quoted media type"));
+    }
+    check_media_type(&lit)?;
+    Ok(lit)
+}
+
+/// Whether a parenthesized group holds exactly one string literal (a media type) rather than a
+/// tuple type (`-> json ()`, `-> codecs::Csv (A, B)`).
+fn peek_media(input: ParseStream<'_>) -> bool {
+    let media = |input: ParseStream<'_>| -> syn::Result<()> {
+        let content;
+        parenthesized!(content in input);
+        content.parse::<LitStr>()?;
+        if content.is_empty() {
+            Ok(())
+        } else {
+            Err(content.error("not a media type"))
+        }
+    };
+    media(&input.fork()).is_ok()
+}
+
+/// 8e: a media type written on an output (`-> json("…") T`, `response json("…");`), reported at
+/// the literal when there is one.
+fn output_media(input: ParseStream<'_>) -> syn::Error {
+    let literal = |input: ParseStream<'_>| -> syn::Result<LitStr> {
+        let content;
+        parenthesized!(content in input);
+        content.parse()
+    };
+    let span = literal(&input.fork()).map_or_else(|_| input.span(), |lit| lit.span());
+    syn::Error::new(
+        span,
+        "an output takes no media type: Concord sends no `Accept` and does not check the response `Content-Type`; to send an `Accept` header, declare it (`headers { \"accept\" = \"...\"; }`)",
     )
 }
 
-/// Parses `T via R` after a `->` or a body's `:`.
-fn parse_payload(input: ParseStream<'_>, what: &str) -> syn::Result<Payload> {
-    let ty: Type = input.parse()?;
-    if !input.peek(kw::via) {
-        return Err(syn::Error::new(ty.span(), missing_via(&ty, what)));
+/// RFC 9110 `token` characters.
+fn is_tchar(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b)
+}
+
+/// A body media type: `type/subtype` tokens with optional `; name=value` parameters (a token or a
+/// quoted string), in visible ASCII with no surrounding whitespace (RFC 9110 §8.3.1). It becomes a
+/// compile-time `HeaderValue::from_static`.
+fn check_media_type(lit: &LitStr) -> syn::Result<()> {
+    let text = lit.value();
+    let fail = |why: &str| {
+        Err(syn::Error::new(
+            lit.span(),
+            format!(
+                "{text:?} is not a media type: {why} (expected `type/subtype` with optional `; name=value` parameters, in visible ASCII, e.g. \"application/merge-patch+json\")"
+            ),
+        ))
+    };
+    let b = text.as_bytes();
+    if let Some(bad) = text
+        .chars()
+        .find(|c| !(*c == '\t' || (' '..='~').contains(c)))
+    {
+        return fail(&format!("{bad:?} is not visible ASCII"));
     }
-    input.parse::<kw::via>()?;
-    let repr: Type = input.parse()?;
-    Ok(Payload { ty, repr })
+    if b.first().is_some_and(|c| *c == b' ' || *c == b'\t')
+        || b.last().is_some_and(|c| *c == b' ' || *c == b'\t')
+    {
+        return fail("it starts or ends with whitespace");
+    }
+    let mut i = 0;
+    let token = |i: &mut usize| {
+        let start = *i;
+        while *i < b.len() && is_tchar(b[*i]) {
+            *i += 1;
+        }
+        *i > start
+    };
+    let ows = |i: &mut usize| {
+        while *i < b.len() && (b[*i] == b' ' || b[*i] == b'\t') {
+            *i += 1;
+        }
+    };
+    if !token(&mut i) || b.get(i) != Some(&b'/') {
+        return fail("the type is not a token followed by `/`");
+    }
+    i += 1;
+    if !token(&mut i) {
+        return fail("the subtype is not a token");
+    }
+    loop {
+        ows(&mut i);
+        if i == b.len() {
+            return Ok(());
+        }
+        if b[i] != b';' {
+            return fail("expected `;` before a parameter");
+        }
+        i += 1;
+        ows(&mut i);
+        if i == b.len() || b[i] == b';' {
+            continue; // an empty parameter is allowed by the grammar
+        }
+        if !token(&mut i) || b.get(i) != Some(&b'=') {
+            return fail("a parameter is not `name=value`");
+        }
+        i += 1;
+        if b.get(i) == Some(&b'"') {
+            i += 1;
+            loop {
+                match b.get(i) {
+                    None => return fail("unterminated quoted parameter value"),
+                    Some(b'"') => {
+                        i += 1;
+                        break;
+                    }
+                    Some(b'\\') if i + 1 < b.len() => i += 2,
+                    Some(_) => i += 1,
+                }
+            }
+        } else if !token(&mut i) {
+            return fail("a parameter value is not a token or a quoted string");
+        }
+    }
+}
+
+/// The payload of a typed output, after `->`: `T`, `FORMAT T`.
+fn parse_output(input: ParseStream<'_>) -> syn::Result<Output> {
+    let at_end = |input: ParseStream<'_>| {
+        input.peek(syn::token::Brace) || input.peek(Token![;]) || input.is_empty()
+    };
+    let explicit = if peek_word(input) {
+        let ident: Ident = input.parse()?;
+        let word = Word::of(&ident).expect("peeked a format word");
+        if at_end(input) {
+            return Err(syn::Error::new(
+                ident.span(),
+                format!(
+                    "the output type is missing after `{0}`: `-> {0} Item` (format words are reserved in format position; a payload type named `{0}` is written `r#{0}`)",
+                    word.as_str()
+                ),
+            ));
+        }
+        Some(Format::Word(word, ident.span()))
+    } else {
+        // A path followed by more type tokens is a format; a path that ends the output is the
+        // payload (inherited format); anything else (`()`, `[u8; 4]`, ...) is a payload.
+        let fork = input.fork();
+        match fork.parse::<syn::Path>() {
+            Ok(path) if !at_end(&fork) && !fork.peek(kw::via) => {
+                if let Ok(ident) = fork.fork().parse::<Ident>() {
+                    if let Some(word) = Word::of(&ident).filter(|_| !fork.peek2(Token![::])) {
+                        return Err(syn::Error::new(
+                            ident.span(),
+                            format!(
+                                "the format comes first: `-> {} {}`",
+                                word.as_str(),
+                                type_text(&path)
+                            ),
+                        ));
+                    }
+                }
+                Some(parse_format(input, false)?)
+            }
+            _ => None,
+        }
+    };
+    if explicit.is_some() && input.peek(syn::token::Paren) && peek_media(input) {
+        return Err(output_media(input));
+    }
+    let ty: Type = input.parse()?;
+    reject_via(input, &ty, ViaSite::Output)?;
+    // `-> () json`: a word after a payload that is not a path (paths are checked above).
+    if let Ok(ident) = input.fork().parse::<Ident>() {
+        if let Some(word) = Word::of(&ident).filter(|_| explicit.is_none()) {
+            return Err(syn::Error::new(
+                ident.span(),
+                format!(
+                    "the format comes first: `-> {} {}`",
+                    word.as_str(),
+                    type_text(&ty)
+                ),
+            ));
+        }
+    }
+    Ok(Output {
+        ty,
+        format: explicit,
+    })
 }
 
 pub struct Owner {
@@ -126,6 +458,10 @@ pub struct Stmts {
     pub subdomain: Option<LitStr>,
     pub query: Option<Vec<Entry>>,
     pub headers: Option<Vec<Entry>>,
+    /// `request FORMAT[("media")];` (clients and scopes only).
+    pub request: Option<FormatDefault>,
+    /// `response FORMAT;` (clients and scopes only).
+    pub response: Option<FormatDefault>,
 }
 
 pub struct Param {
@@ -157,7 +493,12 @@ pub struct BodyParam {
     pub docs: Vec<Attribute>,
     pub name: Ident,
     pub optional: bool,
-    pub payload: Payload,
+    pub ty: Type,
+    /// The format written in place (`json item: T`); `None` for `body item: T` (the nearest
+    /// `request` default).
+    pub format: Option<Format>,
+    /// A media type written on the body: `FORMAT("…")` or `body("…")`.
+    pub media: Option<LitStr>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -216,7 +557,7 @@ impl Parse for Api {
         let content;
         braced!(content in input);
         let mut base = None;
-        let (stmts, children) = parse_owner_body(&content, Some(&mut base))?;
+        let (stmts, children) = parse_owner_body(&content, Some(&mut base), Site::Owner)?;
         if !input.is_empty() {
             return Err(input.error("unexpected tokens after the client declaration; `api!` declares exactly one client"));
         }
@@ -251,9 +592,17 @@ fn docs_only(attrs: Vec<Attribute>) -> syn::Result<Vec<Attribute>> {
     Ok(docs)
 }
 
+/// Where an owner body is parsed: format defaults belong to clients and scopes only.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Site {
+    Owner,
+    Endpoint,
+}
+
 fn parse_owner_body(
     input: ParseStream<'_>,
     mut base: Option<&mut Option<LitStr>>,
+    site: Site,
 ) -> syn::Result<(Stmts, Vec<Owner>)> {
     let mut stmts = Stmts::default();
     let mut children = Vec::new();
@@ -275,23 +624,66 @@ fn parse_owner_body(
             || input.peek(kw::subdomain)
             || input.peek(kw::query)
             || input.peek(kw::headers)
+            || input.peek(kw::request)
+            || input.peek(kw::response)
         {
             if let Some(first) = children.first() {
                 let first: &Owner = first;
                 return Err(syn::Error::new(
                     input.span(),
                     format!(
-                        "owner statements (`path`, `subdomain`, `query`, `headers`) must precede child declarations (first child: `{}`)",
+                        "owner statements (`path`, `subdomain`, `query`, `headers`, `request`, `response`) must precede child declarations (first child: `{}`)",
                         first.name
                     ),
                 ));
             }
-            parse_stmt(input, &mut stmts)?;
+            if input.peek(kw::request) || input.peek(kw::response) {
+                parse_default(input, &mut stmts, site)?;
+            } else {
+                parse_stmt(input, &mut stmts)?;
+            }
             continue;
         }
         children.push(parse_child(input)?);
     }
     Ok((stmts, children))
+}
+
+/// `request FORMAT;`, `request FORMAT("media/type");`, `response FORMAT;`: the formats of the
+/// bodies and typed outputs below that do not write their own.
+fn parse_default(input: ParseStream<'_>, stmts: &mut Stmts, site: Site) -> syn::Result<()> {
+    let request = input.peek(kw::request);
+    let kw_span = if request {
+        input.parse::<kw::request>()?.span
+    } else {
+        input.parse::<kw::response>()?.span
+    };
+    if site == Site::Endpoint {
+        return Err(syn::Error::new(
+            kw_span,
+            if request {
+                "an endpoint has no `request` statement: write the format where the body is declared (`json item: NewItem`, `text note: String`, `form login: Login`); `request FORMAT;` is a default on a client or scope"
+            } else {
+                "an endpoint has no `response` statement: write the format where the output is declared (`-> text String`, `-> bytes Bytes`); `response FORMAT;` is a default on a client or scope"
+            },
+        ));
+    }
+    let format = parse_format(input, false)?;
+    let media = if input.peek(syn::token::Paren) {
+        if !request {
+            return Err(output_media(input));
+        }
+        Some(parse_media(input)?)
+    } else {
+        None
+    };
+    input.parse::<Token![;]>()?;
+    let default = FormatDefault { format, media };
+    if request {
+        set_once(&mut stmts.request, default, kw_span, "request")
+    } else {
+        set_once(&mut stmts.response, default, kw_span, "response")
+    }
 }
 
 fn set_once<T>(slot: &mut Option<T>, value: T, span: Span, what: &str) -> syn::Result<()> {
@@ -418,7 +810,6 @@ trait ParseAnyIdent {
 
 impl ParseAnyIdent for Ident {
     fn parse_any_ident(input: ParseStream<'_>) -> syn::Result<Ident> {
-        use syn::ext::IdentExt;
         Ident::parse_any(input)
     }
 }
@@ -462,7 +853,7 @@ fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
         };
         let content;
         braced!(content in input);
-        let (stmts, children) = parse_owner_body(&content, None)?;
+        let (stmts, children) = parse_owner_body(&content, None, Site::Owner)?;
         return Ok(Owner {
             kind: OwnerKind::Scope,
             docs,
@@ -484,7 +875,7 @@ fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
         return Err(syn::Error::new(
             method.span(),
             format!(
-                "expected `scope`, an HTTP method ({}) or an owner statement (`path`, `subdomain`, `query`, `headers`), found `{method}`",
+                "expected `scope`, an HTTP method ({}) or an owner statement (`path`, `subdomain`, `query`, `headers`, `request`, `response`), found `{method}`",
                 METHODS.join(", ")
             ),
         ));
@@ -493,7 +884,7 @@ fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
     let (params, body) = parse_params(input, true)?;
     let output = if input.peek(Token![->]) {
         input.parse::<Token![->]>()?;
-        Some(parse_payload(input, "response")?)
+        Some(parse_output(input)?)
     } else {
         None
     };
@@ -503,7 +894,7 @@ fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
     } else {
         let content;
         braced!(content in input);
-        let (stmts, children) = parse_owner_body(&content, None)?;
+        let (stmts, children) = parse_owner_body(&content, None, Site::Endpoint)?;
         if let Some(child) = children.first() {
             return Err(syn::Error::new(
                 child.name.span(),
@@ -555,39 +946,80 @@ fn parse_params(
                 ));
             }
         }
-        if content.peek(kw::body) && !content.peek2(Token![:]) && !content.peek2(Token![?]) {
-            let kw: kw::body = content.parse()?;
-            if !allow_body {
+        // `name: T` / `name?: T` is an ordinary value whatever its name (`json: T`, `body?: T`);
+        // `Token![:]` also peeks the first half of `::`, which starts a format path instead.
+        let named =
+            (content.peek2(Token![:]) && !content.peek2(Token![::])) || content.peek2(Token![?]);
+        let placement =
+            (content.peek(kw::query) || content.peek(kw::header) || content.peek(kw::each))
+                && !content.peek2(Token![::]);
+        let starts_path = content.peek(Ident::peek_any) || content.peek(Token![::]);
+        if !named && !placement && starts_path {
+            // A body: `body name: T`, `body("media") name: T`, `FORMAT name: T`,
+            // `FORMAT("media") name: T`.
+            let (format, at) = if content.peek(kw::body) && !content.peek2(Token![::]) {
+                (None, content.parse::<kw::body>()?.span)
+            } else if peek_word(&content) || allow_body {
+                let format = parse_format(&content, true)?;
+                let at = format.span();
+                (Some(format), at)
+            } else {
+                let what: Ident = content.call(Ident::parse_any)?;
                 return Err(syn::Error::new(
-                    kw.span,
-                    "only endpoints can declare a `body`",
+                    what.span(),
+                    format!(
+                        "expected a value (`name: T`) or a placement (`query`, `header(\"..\")`), found `{what}`"
+                    ),
                 ));
+            };
+            if !allow_body {
+                return Err(syn::Error::new(at, "only endpoints can declare a body"));
             }
             if sensitive {
                 return Err(syn::Error::new(
-                    kw.span,
+                    at,
                     "`#[sensitive]` applies to placed values, not bodies (Concord never renders bodies)",
                 ));
             }
-            let name: Ident = content.parse()?;
+            let media = if content.peek(syn::token::Paren) {
+                Some(parse_media(&content)?)
+            } else {
+                None
+            };
+            let name: Ident = content.parse().map_err(|e| {
+                let written = format.as_ref().map_or("body".to_owned(), Format::text);
+                syn::Error::new(
+                    e.span(),
+                    format!(
+                        "expected the body's name: `{written} item: NewItem` (a value is written `name: T`; a placement `query x: T` or `header(\"..\") x: T`)"
+                    ),
+                )
+            })?;
             let optional = parse_question(&content)?;
             content.parse::<Token![:]>()?;
-            let payload = parse_payload(&content, "body")?;
+            let ty: Type = content.parse()?;
+            reject_via(
+                &content,
+                &ty,
+                ViaSite::Body {
+                    name: &name,
+                    optional: if optional { "?" } else { "" },
+                },
+            )?;
             if content.peek(Token![=]) {
                 return Err(content.error("a body cannot have a default"));
             }
             if body.is_some() {
-                return Err(syn::Error::new(
-                    kw.span,
-                    "an endpoint declares at most one `body`",
-                ));
+                return Err(syn::Error::new(at, "an endpoint declares at most one body"));
             }
             body = Some(BodyParam {
                 position: params.len(),
                 docs,
                 name,
                 optional,
-                payload,
+                ty,
+                format,
+                media,
             });
         } else {
             let placement = parse_placement(&content)?;
@@ -595,6 +1027,32 @@ fn parse_params(
             let optional = parse_question(&content)?;
             content.parse::<Token![:]>()?;
             let ty: Type = content.parse()?;
+            if allow_body && placement.is_none() {
+                // `item: NewItem via Json` (the removed spelling without `body`) and
+                // `item: NewItem json` (a format after the type).
+                reject_via(
+                    &content,
+                    &ty,
+                    ViaSite::Body {
+                        name: &name,
+                        optional: if optional { "?" } else { "" },
+                    },
+                )?;
+                if let Ok(ident) = content.fork().parse::<Ident>() {
+                    if let Some(word) = Word::of(&ident) {
+                        return Err(syn::Error::new(
+                            ident.span(),
+                            format!(
+                                "a body's format comes first: `{} {}{}: {}`",
+                                word.as_str(),
+                                plain(&name),
+                                if optional { "?" } else { "" },
+                                type_text(&ty)
+                            ),
+                        ));
+                    }
+                }
+            }
             let default = if content.peek(Token![=]) {
                 content.parse::<Token![=]>()?;
                 Some(content.parse::<Expr>()?)
@@ -617,6 +1075,11 @@ fn parse_params(
         content.parse::<Token![,]>()?;
     }
     Ok((params, body))
+}
+
+fn plain(ident: &Ident) -> String {
+    let s = ident.to_string();
+    s.strip_prefix("r#").map(str::to_owned).unwrap_or(s)
 }
 
 fn parse_question(input: ParseStream<'_>) -> syn::Result<bool> {

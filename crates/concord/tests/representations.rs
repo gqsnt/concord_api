@@ -1,18 +1,18 @@
-//! Text, Binary and `()` representations, status handling and transport errors — without the
-//! `json` feature, so these run in every feature combination. Scenario IDs refer to
-//! `v4/TEST_MATRIX.md`.
+//! The `text` and `bytes` formats, custom formats, endpoints without output, status handling and
+//! transport errors — without the `json` feature, so these run in every feature combination.
+//! Scenario IDs refer to `v4/TEST_MATRIX.md`.
 
 mod support;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use concord::{Binary, ErrorKind, Text, bytes::Bytes, reqwest};
+use concord::{ErrorKind, bytes::Bytes, reqwest};
 use support::{Reply, Server};
 use tokio::io::AsyncWriteExt;
 
 static DECODED_LEN: AtomicUsize = AtomicUsize::new(usize::MAX);
 
-/// A user representation that measures the complete body it receives.
+/// A user format that measures the complete body it receives.
 pub struct Measured;
 
 impl concord::Decode<usize> for Measured {
@@ -22,7 +22,8 @@ impl concord::Decode<usize> for Measured {
     }
 }
 
-/// A user representation with an invalid content type.
+/// A user format with an invalid content type: usable only where a declared media type replaces
+/// it (otherwise the declaration does not compile, `tests/ui/format_invalid_content_type.rs`).
 pub struct BadType;
 
 impl concord::Encode<String> for BadType {
@@ -37,14 +38,14 @@ concord::api! {
     pub client Reps {
         base "http://reps.invalid";
 
-        PUT text(body value: String via Text) { path "text"; }
-        PUT binary(body value: concord::bytes::Bytes via Binary) { path "binary"; }
-        GET text_out() -> String via Text { path "text"; }
-        GET bytes_out() -> concord::bytes::Bytes via Binary { path "bytes"; }
+        PUT text(text value: String) { path "text"; }
+        PUT binary(bytes value: concord::bytes::Bytes) { path "binary"; }
+        GET text_out() -> text String { path "text"; }
+        GET bytes_out() -> bytes concord::bytes::Bytes { path "bytes"; }
         DELETE remove(id: u32) { path "items/{id}"; }
         HEAD exists(id: u32) { path "items/{id}"; }
-        GET measured() -> usize via Measured { path "big"; }
-        POST bad(body value: String via BadType) { path "bad"; }
+        GET measured() -> Measured usize { path "big"; }
+        POST bad(BadType("application/x-custom") value: String) { path "bad"; }
     }
 }
 
@@ -223,34 +224,16 @@ async fn transport_error_message() {
     );
 }
 
-/// ADV-7: an invalid content type from a representation is a build error, not a panic.
-#[test]
-fn invalid_content_type_is_a_build_error() {
-    let error = Reps::new(reqwest::Client::new())
-        .bad("x".to_owned())
-        .prepare()
-        .unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::Build);
-    assert!(error.to_string().contains("content-type"), "{error}");
-}
-
-concord::api! {
-    /// C4-R-015 fixture: a bad representation content type competing with a bad path value.
-    pub client Precede {
-        base "http://precede.invalid";
-        POST bad(id: String, body value: String via BadType) { path "items/{id}"; }
-    }
-}
-
-/// C4-R-015: the representation's content type is checked in the body stage, so it is reported
-/// before a later path error.
-#[test]
-fn content_type_error_precedes_path_error() {
-    let error = Precede::new(reqwest::Client::new())
-        .bad("..", "x".to_owned())
-        .prepare()
-        .unwrap_err();
-    assert!(error.to_string().contains("content-type"), "{error}");
+/// ADV-7 / 8g: a format's invalid `CONTENT_TYPE` is a compile error wherever it may be sent
+/// (`tests/ui/format_invalid_content_type.rs`), and is not read at all where a declared media type
+/// replaces it: this body is sent with the declared one.
+#[tokio::test]
+async fn declared_media_type_replaces_an_invalid_constant() {
+    let (server, api) = reps(Reply::new(204)).await;
+    api.bad("x".to_owned()).send().await.unwrap();
+    let r = server.single();
+    assert_eq!(r.header("content-type"), Some("application/x-custom"));
+    assert_eq!(r.body, b"x");
 }
 
 /// D13: `into_response` hands back the unread response of a status error and returns any other

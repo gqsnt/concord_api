@@ -24,12 +24,13 @@ concord::api! {
     /// A tiny API.
     pub client Tiny {
         base "http://tiny.invalid/v1";
+        response json;
 
-        GET health() -> Health via concord::Json {
+        GET health() -> Health {
             path "health";
         }
 
-        GET item(id: u64) -> Item via concord::Json {
+        GET item(id: u64) -> Item {
             path "items/{id}";
         }
     }

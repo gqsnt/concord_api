@@ -1,0 +1,23 @@
+error: `via` was removed: the format comes before the type, `-> json Item` (or `-> Item` under a `response json;` default on the client or an enclosing scope)
+ --> tests/ui/format_via_removed.rs:7:28
+  |
+7 |         GET item() -> Item via concord::Json;
+  |                            ^^^
+
+error: `via` was removed: the format comes before the type, `-> Csv Vec<Item>` (or `-> Vec<Item>` under a `response Csv;` default on the client or an enclosing scope)
+  --> tests/ui/format_via_removed.rs:13:33
+   |
+13 |         GET rows() -> Vec<Item> via Csv;
+   |                                 ^^^
+
+error: `via` was removed: the format comes before the name, `text note?: String` (or `body note?: String` under a `request text;` default on the client or an enclosing scope)
+  --> tests/ui/format_via_removed.rs:19:37
+   |
+19 |         PUT note(body note?: String via Text);
+   |                                     ^^^
+
+error: `via` was removed: the format comes before the name, `bytes data: Vec<u8>` (or `body data: Vec<u8>` under a `request bytes;` default on the client or an enclosing scope)
+  --> tests/ui/format_via_removed.rs:25:34
+   |
+25 |         PUT upload(data: Vec<u8> via concord::Binary);
+   |                                  ^^^

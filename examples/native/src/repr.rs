@@ -1,8 +1,9 @@
-//! U16 / U29: representations defined in this downstream crate.
+//! U16 / U29: formats defined in this downstream crate.
 //!
-//! A representation is a marker type implementing [`concord::Encode<T>`] (request bodies) and/or
-//! [`concord::Decode<T>`] (2xx response bodies). It is chosen only by naming it after `via` in the
-//! declaration. Error descriptions must stay content-free: they are shown by Concord's `Display`;
+//! A format is a marker type implementing [`concord::Encode<T>`] (request bodies) and/or
+//! [`concord::Decode<T>`] (2xx response bodies). It is chosen only by naming its path where the
+//! body or output is declared (`Ndjson rows: Vec<StockRow>`, `-> Ndjson Vec<StockRow>`) or in a
+//! `request`/`response` default. Error descriptions must stay content-free: they are shown by Concord's `Display`;
 //! the underlying error (which may quote the body) goes to `with_source` and is reachable only
 //! through `concord::Error::body_source`.
 
@@ -58,6 +59,10 @@ impl<T: DeserializeOwned> Decode<Vec<T>> for Ndjson {
 }
 
 /// `application/x-www-form-urlencoded` request bodies from ordered `(name, value)` pairs.
+///
+/// Concord's built-in `form` format (feature `form`, through serde) encodes the same pairs; this
+/// encoder shows the same thing downstream, without serde. Declarations name it by path,
+/// `repr::Form fields: Vec<(String, String)>`, so it is never confused with the word `form`.
 ///
 /// Encoding is `url::form_urlencoded` (space as `+`, everything outside `*-._` and
 /// alphanumerics percent-encoded), the same rules Concord and reqwest use for query strings.

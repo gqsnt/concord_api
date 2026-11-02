@@ -42,7 +42,7 @@ pub enum ErrorKind {
     Transport,
     /// The server answered with a non-2xx status.
     Status,
-    /// A 2xx response body could not be decoded with the declared representation.
+    /// A 2xx response body could not be decoded with the declared format.
     Decode,
 }
 
@@ -143,7 +143,7 @@ impl Error {
         }
     }
 
-    /// The underlying encoder/decoder error, if the representation supplied one.
+    /// The underlying encoder/decoder error, if the format supplied one.
     ///
     /// Unlike everything else on this type, it **may quote body content** (serde_json does), so it
     /// is not exposed through [`std::error::Error::source`].

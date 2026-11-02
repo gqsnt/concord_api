@@ -1,5 +1,23 @@
-error: only endpoints can declare a `body`
+error: only endpoints can declare a body
  --> tests/ui/body_errors.rs:4:17
   |
-4 |         scope s(body b: String via concord::Text) { GET one(); }
+4 |         scope s(text b: String) { GET one(); }
   |                 ^^^^
+
+error: only endpoints can declare a body
+  --> tests/ui/body_errors.rs:11:17
+   |
+11 |         scope s(body b: String) { GET one(); }
+   |                 ^^^^
+
+error: an endpoint declares at most one body
+  --> tests/ui/body_errors.rs:17:34
+   |
+17 |         POST two(text a: String, bytes b: Vec<u8>);
+   |                                  ^^^^^
+
+error: a body cannot have a default
+  --> tests/ui/body_errors.rs:24:33
+   |
+24 |         POST one(body b: String = String::new());
+   |                                 ^

@@ -4,7 +4,6 @@
 
 use std::fmt;
 
-use concord::Json;
 use serde::Deserialize;
 
 /// The default `X-Api-Version`.
@@ -57,20 +56,21 @@ concord::api! {
     ) {
         base "https://api.example.com/v2";
         headers { "accept" = "application/json"; }
+        response json;
 
         scope regional(region: Region) {
             subdomain "{region}";
 
-            GET status() -> Status via Json { path "status"; }
+            GET status() -> Status { path "status"; }
 
             scope org(org: String) {
                 path "orgs/{org}/catalog";
 
-                GET products(version?: String) -> Vec<Product> via Json {
+                GET products(version?: String) -> Vec<Product> {
                     path "products";
                     headers { override "x-api-version" = version else inherit; }
                 }
-                GET product(id: String, version?: String) -> Product via Json {
+                GET product(id: String, version?: String) -> Product {
                     path "products/{id}";
                     headers { override "x-api-version" = version else inherit; }
                 }

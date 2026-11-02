@@ -36,14 +36,16 @@ concord::api! {
     pub client Tasks(#[sensitive] token: String) {
         base "https://tasks.example.com/api";
         headers { "authorization" = "Bearer {token}"; }
+        request json;
+        response json;
 
         scope project(project: String) {
             path "projects/{project}";
 
-            GET tasks(query done?: bool, query limit: u32 = 20) -> Vec<Task> via Json {
+            GET tasks(query done?: bool, query limit: u32 = 20) -> Vec<Task> {
                 path "tasks";
             }
-            POST create(body task: NewTask via Json) -> Task via Json {
+            POST create(body task: NewTask) -> Task {
                 path "tasks";
             }
         }

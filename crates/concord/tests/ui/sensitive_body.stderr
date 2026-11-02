@@ -1,5 +1,5 @@
 error: `#[sensitive]` applies to placed values, not bodies (Concord never renders bodies)
  --> tests/ui/sensitive_body.rs:4:31
   |
-4 |         POST one(#[sensitive] body b: String via concord::Text);
+4 |         POST one(#[sensitive] text b: String);
   |                               ^^^^

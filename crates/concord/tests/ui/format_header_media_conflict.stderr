@@ -1,0 +1,23 @@
+error: body `p` has the media type "text/plain; charset=utf-8" (written on the body), and the `content-type` header set by `InPlace` reaches this endpoint: both would set `Content-Type`; keep one: remove the media type from the body, or add `remove "content-type";` to this endpoint's `headers` block
+ --> tests/ui/format_header_media_conflict.rs:9:24
+  |
+9 |         POST save(text("text/plain; charset=utf-8") p: String);
+  |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: body `p` has the media type "text/markdown" (written on the body), and the `content-type` header set by `BodyMedia` reaches this endpoint: both would set `Content-Type`; keep one: remove the media type from the body, or add `remove "content-type";` to this endpoint's `headers` block
+  --> tests/ui/format_header_media_conflict.rs:16:24
+   |
+16 |         POST save(body("text/markdown") p: String);
+   |                        ^^^^^^^^^^^^^^^
+
+error: body `p` has the media type "application/vnd.api+json" (from the `request` default of the client `FromDefault`), and the `content-type` header set by `FromDefault` reaches this endpoint: both would set `Content-Type`; keep one: write the body's format in place without a media type (`json p: ..`), or add `remove "content-type";` to this endpoint's `headers` block
+  --> tests/ui/format_header_media_conflict.rs:23:24
+   |
+23 |         POST save(body p: String);
+   |                        ^
+
+error: body `p` has the media type "text/plain" (written on the body), and the `content-type` header set by `Conditional.s.save` reaches this endpoint: both would set `Content-Type`; keep one: remove the media type from the body, or add `remove "content-type";` to this endpoint's `headers` block
+  --> tests/ui/format_header_media_conflict.rs:36:28
+   |
+36 |             POST save(text("text/plain") p: String) {
+   |                            ^^^^^^^^^^^^

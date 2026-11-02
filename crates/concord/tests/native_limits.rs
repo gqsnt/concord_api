@@ -39,6 +39,7 @@ mod header_map_capacity {
         segments: 0,
         sensitive_segments: &[],
         sensitive_query: &[],
+        sensitive_content_type: false,
     };
 
     /// Adds distinct header names until the native map refuses one; returns how many fit.

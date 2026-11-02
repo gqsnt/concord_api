@@ -1,11 +1,17 @@
-error: the response representation is written after the payload type: `Item via concord::Json`
- --> tests/ui/representation_alpha_spelling.rs:6:23
+error: `-> concord::Json<Item>` is the V4-alpha spelling: write the format before the payload type, `-> json Item` (or `-> Item` under a `response json;` default on the client or an enclosing scope)
+ --> tests/ui/representation_alpha_spelling.rs:8:23
   |
-6 |         GET item() -> concord::Json<Item>;
+8 |         GET item() -> concord::Json<Item>;
   |                       ^^^^^^^
 
-error: an endpoint without typed output has no `->`: remove `-> ()` (the body is drained)
-  --> tests/ui/representation_alpha_spelling.rs:12:28
+error: `Json<Item>` is the V4-alpha spelling of a body format: write `json item: Item` (or `body item: Item` under a `request json;` default on the client or an enclosing scope)
+  --> tests/ui/representation_alpha_spelling.rs:14:32
    |
-12 |         DELETE remove() -> ();
+14 |         POST create(body item: Json<Item>);
+   |                                ^^^^
+
+error: output `()` has no format, and no `response` default reaches this endpoint: write the format in place (`-> json ()`) or declare a default on the client or an enclosing scope (`response json;`); an endpoint without typed output omits `->`; `-> ()` is a typed unit, decoded with a format (with `json`, the body must be `null`): to accept any 2xx and drain the body, omit `-> ()`
+  --> tests/ui/representation_alpha_spelling.rs:20:28
+   |
+20 |         DELETE remove() -> ();
    |                            ^^

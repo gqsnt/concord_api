@@ -10,7 +10,7 @@ use reqwest::{Method, Url};
 use crate::error::Error;
 use crate::header::ToHeaderValue;
 use crate::prepared::{Decoder, Prepared};
-use crate::repr::{Decode, Encode};
+use crate::repr::{BodyError, Decode, Encode};
 
 pub use crate::value::IntoValue;
 pub use concord_macros::api as api_impl;
@@ -32,6 +32,10 @@ pub struct EndpointMeta {
     pub sensitive_segments: &'static [usize],
     /// Query keys whose values are withheld from Concord output.
     pub sensitive_query: &'static [&'static str],
+    /// Whether the `content-type` key is sensitive on this endpoint (marker or sticky
+    /// composition): the body's media type inserted by Concord is then flagged like a declared
+    /// `content-type` value would be.
+    pub sensitive_content_type: bool,
 }
 
 /// A value written as text: path segments, subdomain labels, query values and template holes
@@ -165,33 +169,46 @@ pub fn display_into<T: Text + ?Sized>(
     write!(out, "{value}").map_err(|_| unformattable(meta, what))
 }
 
-/// Encodes a body with its declared representation and validates the representation's content
-/// type, so both failures belong to the body stage (before any URL part is formatted).
-pub fn encode_body<E: Encode<T>, T>(
+/// An endpoint's body format and media type. The generated code holds one in a `static` per
+/// endpoint with a body, so the media type is a compile-time-validated `HeaderValue` (the format's
+/// `Encode::CONTENT_TYPE` or a declared media type, through `HeaderValue::from_static`: an invalid
+/// one fails the static's evaluation, a compile error) and each request only clones it.
+pub struct BodyFormat<T> {
+    encode: fn(T) -> Result<reqwest::Body, BodyError>,
+    content_type: Option<HeaderValue>,
+}
+
+impl<T> BodyFormat<T> {
+    /// The format `E` with its own media type, `E::CONTENT_TYPE`.
+    pub const fn new<E: Encode<T>>() -> Self {
+        Self {
+            encode: E::encode,
+            content_type: match E::CONTENT_TYPE {
+                Some(text) => Some(HeaderValue::from_static(text)),
+                None => None,
+            },
+        }
+    }
+
+    /// The format `E` with a declared media type (`json("…") b: T`, `body("…") b: T`, or a
+    /// `request json("…");` default reached through `body`). `E::CONTENT_TYPE` is not used.
+    pub const fn with_media_type<E: Encode<T>>(media_type: HeaderValue) -> Self {
+        Self {
+            encode: E::encode,
+            content_type: Some(media_type),
+        }
+    }
+}
+
+/// Encodes a body with its declared format and returns it with its media type. The media type
+/// was validated at compile time; a failing encoder is an `Encode` error.
+pub fn encode_body<T>(
+    format: &'static BodyFormat<T>,
     value: T,
     meta: &'static EndpointMeta,
 ) -> Result<(reqwest::Body, Option<HeaderValue>), Error> {
-    let content_type = match E::CONTENT_TYPE {
-        None => None,
-        Some(text) => {
-            let visible = text
-                .bytes()
-                .all(|b| b == b'\t' || (0x20..0x7f).contains(&b));
-            let value = HeaderValue::from_str(text)
-                .ok()
-                .filter(|_| visible)
-                .ok_or_else(|| {
-                    Error::build(
-                        Some(meta),
-                        "content-type",
-                        "from the body representation is not a valid header value",
-                    )
-                })?;
-            Some(value)
-        }
-    };
-    let body = E::encode(value).map_err(|e| Error::from_encode(meta, e))?;
-    Ok((body, content_type))
+    let body = (format.encode)(value).map_err(|e| Error::from_encode(meta, e))?;
+    Ok((body, format.content_type.clone()))
 }
 
 /// The request being composed by one endpoint's generated code.
@@ -394,9 +411,15 @@ impl<'a> Parts<'a> {
         }
         let mut request = reqwest::Request::new(method, url);
         let mut headers = self.headers;
+        // The body's media type is sent exactly when the body is, unless a `content-type` header
+        // contribution was sent (it wins, body or not; an empty value counts as sent). The
+        // inserted value carries the key's static classification, like a declared value would.
         if let Some((body, content_type)) = body {
-            if let Some(content_type) = content_type {
+            if let Some(mut content_type) = content_type {
                 if !headers.contains_key(CONTENT_TYPE) {
+                    if self.meta.sensitive_content_type {
+                        content_type.set_sensitive(true);
+                    }
                     headers
                         .try_insert(CONTENT_TYPE, content_type)
                         .map_err(|_| {
@@ -622,12 +645,14 @@ impl fmt::Debug for Redacted {
     }
 }
 
-/// The response handling of an endpoint declared `-> T via R`.
+/// The response handling of an endpoint declared `-> T` (format `R`, written in place or
+/// inherited).
 pub fn decoder<R: Decode<T>, T>(meta: &'static EndpointMeta) -> Decoder<T> {
     Decoder::new(meta, R::decode, false)
 }
 
-/// The response handling of an endpoint without `->`: any 2xx, body drained unbuffered.
+/// The response handling of an endpoint without `->`: any 2xx, body drained unbuffered (a
+/// `response` default does not apply).
 pub fn drain(meta: &'static EndpointMeta) -> Decoder<()> {
     Decoder::new(meta, |_| Ok(()), true)
 }

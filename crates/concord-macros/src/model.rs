@@ -8,9 +8,10 @@ use std::collections::{BTreeMap, HashMap};
 
 use proc_macro2::Span;
 use quote::format_ident;
+use syn::spanned::Spanned;
 use syn::{Attribute, Expr, Ident, LitStr, Type, Visibility};
 
-use crate::syntax::{self, Family, Op, OwnerKind, Rhs};
+use crate::syntax::{self, Family, Format, Op, OwnerKind, Rhs, type_text};
 use crate::template::{self, RawPiece};
 
 pub struct Model {
@@ -27,9 +28,18 @@ pub enum Kind {
     Scope,
     Endpoint {
         method: Ident,
-        output: Option<syntax::Payload>,
+        output: Option<Output>,
         body: Option<Body>,
     },
+}
+
+/// Where a body's or output's format (or a body's media type) comes from.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Origin {
+    /// Written on the body or after `->`.
+    InPlace,
+    /// The `request`/`response` default of this client or scope (the nearest on the chain).
+    Default(usize),
 }
 
 pub struct Body {
@@ -39,8 +49,32 @@ pub struct Body {
     pub optional: bool,
     /// The payload type the caller supplies.
     pub ty: Type,
-    /// Its representation (`Encode<ty>`).
-    pub repr: Type,
+    /// Its format (`Encode<ty>`) and where it comes from.
+    pub format: Format,
+    pub origin: Origin,
+    /// A declared media type (`FORMAT("…")`, `body("…")`, or a `request` default's, reached
+    /// through `body`) and where it is written; `None`: the format's `Encode::CONTENT_TYPE`.
+    pub media: Option<(LitStr, Origin)>,
+}
+
+/// A typed output `-> T`: its format (`Decode<ty>`) and where it comes from.
+pub struct Output {
+    pub ty: Type,
+    pub format: Format,
+    pub origin: Origin,
+}
+
+/// A `request`/`response` default declared on a client or scope.
+pub struct OwnerDefault {
+    pub format: Format,
+    /// `request FORMAT("…");`
+    pub media: Option<LitStr>,
+    /// The hidden type alias through which consuming endpoints name the format, so that a
+    /// missing or feature-disabled format is reported once, at the default.
+    pub alias: Ident,
+    /// Endpoints whose `body x: T` / bare `-> T` resolve to this default, in declaration order.
+    /// Without consumers no alias is emitted and the format is never referenced.
+    pub consumers: Vec<usize>,
 }
 
 pub struct Owner {
@@ -64,6 +98,10 @@ pub struct Owner {
     pub query: Vec<Contrib>,
     pub headers: Vec<Contrib>,
     pub composed: Option<Composed>,
+    /// `request FORMAT;` declared here (clients and scopes).
+    pub request: Option<OwnerDefault>,
+    /// `response FORMAT;` declared here (clients and scopes).
+    pub response: Option<OwnerDefault>,
 }
 
 impl Owner {
@@ -331,6 +369,7 @@ impl Model {
         for index in 0..model.owners.len() {
             let composed = model.compose(index, &mut errors, &mut Vec::new());
             if model.owners[index].is_endpoint() {
+                model.check_media_conflict(index, &composed, &mut errors);
                 model.owners[index].composed = Some(composed);
             }
         }
@@ -1107,6 +1146,66 @@ impl Model {
         states.into_iter().map(|s| s.slot).collect()
     }
 
+    /// The nearest owner from `owner` (inclusive) up to the client that declares a `request`
+    /// (`request == true`) or `response` default.
+    pub fn nearest_default(&self, owner: usize, request: bool) -> Option<usize> {
+        nearest(&self.owners, Some(owner), request)
+    }
+
+    /// "the client `Shop`" / "scope `Shop.catalog`".
+    pub fn describe(&self, owner: usize) -> String {
+        match self.owners[owner].kind {
+            Kind::Client { .. } => format!("the client `{}`", self.owners[owner].dotted),
+            _ => format!("scope `{}`", self.owners[owner].dotted),
+        }
+    }
+
+    /// 8c: a media type declared for the body and a `content-type` header contribution that
+    /// survives composition on the endpoint (conditional ones included) would both set
+    /// `Content-Type`. A `remove "content-type"` that drops every inherited contribution, or a
+    /// body format written in place without a media type, resolves it.
+    fn check_media_conflict(&self, endpoint: usize, composed: &Composed, errors: &mut Errors) {
+        let Some(body) = self.owners[endpoint].body() else {
+            return;
+        };
+        let Some((media, origin)) = &body.media else {
+            return;
+        };
+        let Some(slot) = composed
+            .headers
+            .iter()
+            .find(|s| s.key == "content-type" && !s.items.is_empty())
+        else {
+            return;
+        };
+        let writer = match &slot.items[0] {
+            Item::Emit(id) | Item::Override { src: id, .. } => &self.owners[id.owner].dotted,
+        };
+        let name = plain(&body.name);
+        let (span, from, fix) = match origin {
+            Origin::InPlace => (
+                media.span(),
+                "written on the body".to_owned(),
+                "remove the media type from the body".to_owned(),
+            ),
+            Origin::Default(o) => (
+                body.name.span(),
+                format!("from the `request` default of {}", self.describe(*o)),
+                format!(
+                    "write the body's format in place without a media type (`{} {name}: ..`)",
+                    body.format.text()
+                ),
+            ),
+        };
+        errors.push(syn::Error::new(
+            span,
+            format!(
+                "body `{name}` has the media type {:?} ({from}), and the `content-type` header set by `{writer}` reaches this endpoint: both would set `Content-Type`; keep one: {fix}, or add `remove \"content-type\";` to this endpoint's `headers` block",
+                media.value()
+            ),
+        ));
+    }
+
     fn check_names(&self, errors: &mut Errors) {
         // Generated type names.
         let mut types: BTreeMap<String, &Ident> = BTreeMap::new();
@@ -1366,7 +1465,7 @@ fn validate_base(lit: &LitStr) -> syn::Result<()> {
 }
 
 fn flatten(
-    owner: syntax::Owner,
+    mut owner: syntax::Owner,
     parent: Option<(usize, &str, &str)>,
     out: &mut Vec<Owner>,
     stmts: &mut Vec<syntax::Stmts>,
@@ -1387,6 +1486,24 @@ fn flatten(
         None => owner.name.clone(),
         Some(_) => Ident::new(&type_name, span),
     };
+    let default = |stmt: Option<syntax::FormatDefault>, direction: &str| {
+        stmt.map(|d| OwnerDefault {
+            // Spanned at the default (the user's context): an inheriting endpoint names it with
+            // the span moved to its payload type, and rustc then points an unsupported payload
+            // there (with the macro's own context it would point at the whole invocation).
+            alias: format_ident!(
+                "__Concord{}{}Format",
+                type_name,
+                direction,
+                span = d.format.span()
+            ),
+            format: d.format,
+            media: d.media,
+            consumers: Vec::new(),
+        })
+    };
+    let request = default(owner.stmts.request.take(), "Request");
+    let response = default(owner.stmts.response.take(), "Response");
     let kind = match owner.kind {
         OwnerKind::Client { vis, base } => match base {
             Some(base) => {
@@ -1411,18 +1528,14 @@ fn flatten(
             method,
             output,
             body,
-        } => Kind::Endpoint {
-            method,
-            output,
-            body: body.map(|b| Body {
-                position: b.position,
-                docs: b.docs,
-                name: b.name,
-                optional: b.optional,
-                ty: b.payload.ty,
-                repr: b.payload.repr,
-            }),
-        },
+        } => {
+            let ancestor = parent.map(|p| p.0);
+            Kind::Endpoint {
+                method,
+                body: body.and_then(|b| endpoint_body(b, index, ancestor, out, errors)),
+                output: output.and_then(|o| endpoint_output(o, index, ancestor, out, errors)),
+            }
+        }
     };
     if parent.is_some() && plain(&owner.name) == "client" {
         errors.push(syn::Error::new(
@@ -1475,6 +1588,8 @@ fn flatten(
         query: Vec::new(),
         headers: Vec::new(),
         composed: None,
+        request,
+        response,
     });
     stmts.push(owner.stmts);
 
@@ -1513,6 +1628,139 @@ fn flatten(
         out[index].children.push(child_index);
     }
     index
+}
+
+/// The nearest owner from `from` up to the client that declares a default for the direction.
+fn nearest(out: &[Owner], from: Option<usize>, request: bool) -> Option<usize> {
+    let mut cur = from;
+    while let Some(o) = cur {
+        let declared = if request {
+            out[o].request.is_some()
+        } else {
+            out[o].response.is_some()
+        };
+        if declared {
+            return Some(o);
+        }
+        cur = out[o].parent;
+    }
+    None
+}
+
+/// A V4-alpha payload spelling (`Json<T>`, `Text`, `Binary`, qualified or not) as a format word and
+/// the payload it wrapped, to word an error that is reported anyway (a missing format). Spellings
+/// never change behaviour or acceptance.
+fn alpha(ty: &Type) -> Option<(&'static str, String)> {
+    let Type::Path(p) = ty else { return None };
+    let last = p.path.segments.last()?;
+    match (last.ident.to_string().as_str(), &last.arguments) {
+        ("Json", syn::PathArguments::AngleBracketed(args)) if args.args.len() == 1 => {
+            Some(("json", type_text(&args.args[0])))
+        }
+        ("Text", syn::PathArguments::None) => Some(("text", "String".to_owned())),
+        ("Binary", syn::PathArguments::None) => Some(("bytes", "Bytes".to_owned())),
+        _ => None,
+    }
+}
+
+/// A body with its effective format and media type (8a): written in place, or the nearest
+/// `request` default (reached through `body`), whose media type comes along unless the body
+/// writes its own.
+fn endpoint_body(
+    b: syntax::BodyParam,
+    endpoint: usize,
+    ancestor: Option<usize>,
+    out: &mut [Owner],
+    errors: &mut Errors,
+) -> Option<Body> {
+    let local_media = b.media.map(|m| (m, Origin::InPlace));
+    let (format, origin, media) = match b.format {
+        // An in-place format replaces the default's format and its media type.
+        Some(format) => (format, Origin::InPlace, local_media),
+        None => match nearest(out, ancestor, true) {
+            Some(o) => {
+                let d = out[o].request.as_mut().expect("nearest has a default");
+                d.consumers.push(endpoint);
+                let inherited = d.media.clone().map(|m| (m, Origin::Default(o)));
+                (
+                    d.format.clone(),
+                    Origin::Default(o),
+                    local_media.or(inherited),
+                )
+            }
+            None => {
+                let name = plain(&b.name);
+                let optional = if b.optional { "?" } else { "" };
+                let ty = type_text(&b.ty);
+                let message = match alpha(&b.ty) {
+                    Some((word, payload)) => format!(
+                        "`{ty}` is the V4-alpha spelling of a body format: write `{word} {name}{optional}: {payload}` (or `body {name}{optional}: {payload}` under a `request {word};` default on the client or an enclosing scope)"
+                    ),
+                    None => format!(
+                        "body `{name}` has no format, and no `request` default reaches this endpoint: write the format in place (`json {name}{optional}: {ty}`) or declare a default on the client or an enclosing scope (`request json;`)"
+                    ),
+                };
+                errors.push(syn::Error::new(b.ty.span(), message));
+                return None;
+            }
+        },
+    };
+    Some(Body {
+        position: b.position,
+        docs: b.docs,
+        name: b.name,
+        optional: b.optional,
+        ty: b.ty,
+        format,
+        origin,
+        media,
+    })
+}
+
+/// A typed output with its effective format: written in place or the nearest `response` default.
+fn endpoint_output(
+    o: syntax::Output,
+    endpoint: usize,
+    ancestor: Option<usize>,
+    out: &mut [Owner],
+    errors: &mut Errors,
+) -> Option<Output> {
+    let (format, origin) = match o.format {
+        Some(format) => (format, Origin::InPlace),
+        None => match nearest(out, ancestor, false) {
+            Some(owner) => {
+                let d = out[owner].response.as_mut().expect("nearest has a default");
+                d.consumers.push(endpoint);
+                (d.format.clone(), Origin::Default(owner))
+            }
+            None => {
+                let ty = type_text(&o.ty);
+                let message = match alpha(&o.ty) {
+                    Some((word, payload)) => format!(
+                        "`-> {ty}` is the V4-alpha spelling: write the format before the payload type, `-> {word} {payload}` (or `-> {payload}` under a `response {word};` default on the client or an enclosing scope)"
+                    ),
+                    None => {
+                        let unit = matches!(&o.ty, Type::Tuple(t) if t.elems.is_empty());
+                        let hint = if unit {
+                            "; `-> ()` is a typed unit, decoded with a format (with `json`, the body must be `null`): to accept any 2xx and drain the body, omit `-> ()`"
+                        } else {
+                            ""
+                        };
+                        format!(
+                            "output `{ty}` has no format, and no `response` default reaches this endpoint: write the format in place (`-> json {ty}`) or declare a default on the client or an enclosing scope (`response json;`); an endpoint without typed output omits `->`{hint}"
+                        )
+                    }
+                };
+                errors.push(syn::Error::new(o.ty.span(), message));
+                return None;
+            }
+        },
+    };
+    Some(Output {
+        ty: o.ty,
+        format,
+        origin,
+    })
 }
 
 /// D11: the declared-base checker accepts a strict subset of what the runtime accepts, so the

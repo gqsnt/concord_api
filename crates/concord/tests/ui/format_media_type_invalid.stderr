@@ -1,0 +1,23 @@
+error: "application json" is not a media type: the type is not a token followed by `/` (expected `type/subtype` with optional `; name=value` parameters, in visible ASCII, e.g. "application/merge-patch+json")
+ --> tests/ui/format_media_type_invalid.rs:6:21
+  |
+6 |         POST a(json("application json") b: String);
+  |                     ^^^^^^^^^^^^^^^^^^
+
+error: "text/plain; charset" is not a media type: a parameter is not `name=value` (expected `type/subtype` with optional `; name=value` parameters, in visible ASCII, e.g. "application/merge-patch+json")
+  --> tests/ui/format_media_type_invalid.rs:12:21
+   |
+12 |         POST a(text("text/plain; charset") b: String);
+   |                     ^^^^^^^^^^^^^^^^^^^^^
+
+error: "application/vnd.café+json" is not a media type: 'é' is not visible ASCII (expected `type/subtype` with optional `; name=value` parameters, in visible ASCII, e.g. "application/merge-patch+json")
+  --> tests/ui/format_media_type_invalid.rs:19:21
+   |
+19 |         POST a(body("application/vnd.caf\u{e9}+json") b: String);
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: " application/json" is not a media type: it starts or ends with whitespace (expected `type/subtype` with optional `; name=value` parameters, in visible ASCII, e.g. "application/merge-patch+json")
+  --> tests/ui/format_media_type_invalid.rs:25:22
+   |
+25 |         request json(" application/json");
+   |                      ^^^^^^^^^^^^^^^^^^^

@@ -1,13 +1,14 @@
-//! U16 / U29 (R09): custom representations (NDJSON, form-encoded).
+//! U16 / U29 (R09): custom formats (NDJSON, form-encoded).
 
 use crate::api::{Inventory, StockRow};
 
-/// Imports stock rows; request and response are NDJSON via this crate's
-/// [`Ndjson`](crate::repr::Ndjson) representation (U16).
+/// Imports stock rows; request and response are NDJSON with this crate's
+/// [`Ndjson`](crate::repr::Ndjson) format (U16).
 ///
-/// Nothing here differs from a built-in representation: the declaration names
-/// `via Ndjson`, the generated method takes `Vec<StockRow>`, and a malformed response line is a
-/// [`concord::ErrorKind::Decode`] error whose `Display` names the line number, never its content.
+/// Nothing here differs from a built-in format: the declaration writes `Ndjson rows: ..` and
+/// `-> Ndjson ..` where it would write `json`, the generated method takes `Vec<StockRow>`, and a
+/// malformed response line is a [`concord::ErrorKind::Decode`] error whose `Display` names the
+/// line number, never its content.
 pub async fn import_stock(
     api: &Inventory,
     rows: Vec<StockRow>,
@@ -16,7 +17,7 @@ pub async fn import_stock(
 }
 
 /// Sends a form-encoded feedback submission through this crate's [`Form`](crate::repr::Form)
-/// representation (U29).
+/// format (U29).
 ///
 /// Pairs keep their order and repeated names. Use a custom `Encode` like this whenever the body
 /// is fully determined by the value and its content type is constant.

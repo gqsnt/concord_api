@@ -3,8 +3,8 @@
 //! One [`api!`] declaration describes an HTTP API as a tree — **client → scopes → endpoints** —
 //! and generates ordinary Rust types whose methods build native `reqwest::Request`s and decode
 //! typed responses. Concord owns the structure of the API, the meaning of required, optional and
-//! initialized values, how paths, subdomains, query parameters and headers compose, minimal body
-//! and response representations, and its own redacted output. You supply the `reqwest::Client`;
+//! initialized values, how paths, subdomains, query parameters and headers compose, the formats
+//! of bodies and typed responses, and its own redacted output. You supply the `reqwest::Client`;
 //! authentication flows, retries, rate limiting, pagination and transport configuration stay in
 //! your code.
 //!
@@ -12,7 +12,7 @@
 //!
 //! ```
 //! # #[cfg(feature = "json")] mod quick_start {
-//! use concord::{Json, reqwest};
+//! use concord::reqwest;
 //! use serde::{Deserialize, Serialize};
 //!
 //! #[derive(Debug, Deserialize)]
@@ -33,16 +33,20 @@
 //!         header("x-api-version") version: String = "2024-01-01",
 //!     ) {
 //!         base "https://api.forge.example";
+//!         request json;  // bodies declared `body x: T` are JSON
+//!         response json; // so are typed outputs `-> T`
 //!
 //!         scope repo(owner: String, name: String) {
 //!             path "repos/{owner}/{name}";
 //!
-//!             GET issues(query state?: String, query per_page: u32 = 30) -> Vec<Issue> via Json {
+//!             GET issues(query state?: String, query per_page: u32 = 30) -> Vec<Issue> {
 //!                 path "issues";
 //!             }
-//!             POST create_issue(body issue: NewIssue via Json) -> Issue via Json {
+//!             POST create_issue(body issue: NewIssue) -> Issue {
 //!                 path "issues";
 //!             }
+//!             GET readme() -> text String { path "readme"; } // an exception, written in place
+//!             DELETE lock() { path "lock"; } // no `->`: any 2xx, the body is drained
 //!         }
 //!     }
 //! }
@@ -96,7 +100,7 @@
 //! | [`Prepared<T>`](Prepared) | a built request, not yet sent: `request()`, `send()`, `send_raw()`, `into_parts()` |
 //! | [`Decoder<T>`](Decoder) | an endpoint's response handling, for a response you obtained natively: `decode`, `finish` |
 //! | [`Error`], [`ErrorKind`] | the one error type: `kind`, `endpoint`, `status`, `into_response`, `transport`, `body_source` |
-//! | [`Encode<T>`](Encode), [`Decode<T>`](Decode) | representation traits, named after `via`: `Json` (feature `json`), [`Text`], [`Binary`] or your own marker type |
+//! | [`Encode<T>`](Encode), [`Decode<T>`](Decode) | format traits: the words `json`, `text`, `bytes`, `form` name `Json` (feature `json`), [`Text`], [`Binary`], `Form` (feature `form`); any other format is your own type, named by its path |
 //! | [`BodyError`] | an encoding or decoding failure with a content-free description |
 //! | [`IntoValue<T>`](IntoValue) | the closed set of conversions accepted by arguments and setters |
 //! | [`ToHeaderValue`] | how a placed value becomes a header value: native `HeaderValue`, text, integers, `bool`, or your own type |
@@ -107,12 +111,17 @@
 //! ```text
 //! client Name(values) { base "https://..."; statements; children }
 //! scope name(values) { statements; children }
-//! GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS name(values) -> Payload via Repr { statements }
+//! GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS name(values) [-> output] { statements }
 //!
-//! values:      x: T  |  x: T = expr  |  x?: T  |  x?: T = expr  |  body b: T via Repr  |  body b?: ...
+//! values:      x: T  |  x: T = expr  |  x?: T  |  x?: T = expr
 //! placements:  query x  |  query("name") x  |  header("name") x  |  ... each x
+//! body:        body b: T  |  body("media/type") b: T  |  FORMAT b: T  |  FORMAT("media/type") b: T
+//!              (at most one, endpoints only; `b?: T` for an optional body)
+//! output:      -> T  |  -> FORMAT T  (no `->`: no typed output, any 2xx, the body is drained)
+//! FORMAT:      json  |  text  |  bytes  |  form  |  a type path implementing Encode/Decode
 //! attributes:  /// docs  |  #[sensitive] (values)  |  #[cfg(..)], #[deprecated] (scopes, endpoints)
 //! statements:  path "a/{x}";  subdomain "{x}";  query { .. }  headers { .. }
+//!              request FORMAT;  request FORMAT("media/type");  response FORMAT;  (clients, scopes)
 //!
 //! query / headers blocks:
 //!     "k" = v;                        set a key no enclosing owner sets
@@ -122,7 +131,9 @@
 //!     remove "k";                     drop the inherited occurrences (acts first in its owner)
 //! ```
 //!
-//! `?` is Concord's presence marker; no meaning is inferred from type names. Path segments,
+//! `?` is Concord's presence marker; no meaning is inferred from type names. Every body and typed
+//! output has a format: written in place (`json item: T`, `-> text String`) or, for `body b: T` and
+//! a bare `-> T`, the nearest `request`/`response` default of an enclosing scope or the client. Path segments,
 //! subdomain labels, query values and template holes are written with `Display`; a value placed
 //! directly as a header goes through [`ToHeaderValue`], so a native `HeaderValue` is sent as is.
 //! A bare name refers to the current owner; `client.x` or `scope.x` reaches an enclosing owner.
@@ -132,7 +143,7 @@
 //! # Native requests
 //!
 //! ```no_run
-//! # concord::api! { pub client Api { base "http://x.test"; GET item(id: u64) -> String via concord::Text { path "items/{id}"; } } }
+//! # concord::api! { pub client Api { base "http://x.test"; GET item(id: u64) -> text String { path "items/{id}"; } } }
 //! # async fn run(api: Api) -> Result<(), Box<dyn std::error::Error>> {
 //! let prepared = api.item(7).prepare()?; // no I/O
 //! println!("{prepared:?}"); // redacted rendering
@@ -168,16 +179,18 @@
 //! In the source repository:
 //!
 //! - `docs/QUICKSTART.md` — from a new crate to a call against a local server;
-//! - `docs/AUTHOR_GUIDE.md` — writing declarations: values, paths, composition, representations;
+//! - `docs/AUTHOR_GUIDE.md` — writing declarations: values, paths, composition, formats;
 //! - `docs/CALLER_GUIDE.md` — using a generated client: snapshots, options, errors, native requests;
 //! - `docs/RECIPES.md` — error documents, streaming, custom formats, retries, pagination;
 //! - `docs/DIAGNOSTICS.md` — the compile errors and how to fix them;
-//! - `docs/MIGRATION.md` — from the V4 alpha and from V3;
+//! - `docs/MIGRATION.md` — from `via` to formats, from the V4 alpha and from V3;
 //! - `v4/SEMANTICS.md` — the precise rules.
 //!
 //! # Features
 //!
-//! - `json` (default): the `Json` representation, via serde and serde_json.
+//! - `json` (default): the `json` format (`Json`), via serde and serde_json.
+//! - `form`: the `form` format (`Form`), `application/x-www-form-urlencoded` via serde and
+//!   serde_urlencoded. Off by default, like reqwest's own `form` feature.
 //! - `reqwest-defaults` (default): reqwest's default features (TLS, HTTP/2, system proxy).
 //!   Disable it to choose reqwest's features in your own `Cargo.toml`.
 
@@ -205,6 +218,8 @@ macro_rules! api {
 pub use error::{Error, ErrorKind};
 pub use header::ToHeaderValue;
 pub use prepared::{Decoder, Prepared};
+#[cfg(feature = "form")]
+pub use repr::Form;
 #[cfg(feature = "json")]
 pub use repr::Json;
 pub use repr::{Binary, BodyError, Decode, Encode, Text};

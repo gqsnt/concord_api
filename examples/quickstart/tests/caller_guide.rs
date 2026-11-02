@@ -40,6 +40,8 @@ concord::api! {
         header("accept-language") lang?: String = "en",
     ) {
         base "https://catalog.example.com/v1";
+        request json;
+        response json;
 
         /// One shop.
         scope shop(shop: String) {
@@ -50,16 +52,16 @@ concord::api! {
                 query category?: String,
                 query limit: u32 = 20,
                 language?: Option<String>,
-            ) -> Vec<Product> via Json {
+            ) -> Vec<Product> {
                 path "products";
                 headers { override "accept-language" = each language else inherit; }
             }
 
             /// One product.
-            GET product(id: u64) -> Product via Json { path "products/{id}"; }
+            GET product(id: u64) -> Product { path "products/{id}"; }
 
             /// Renames a product.
-            PUT rename(id: u64, body change: Rename via Json) -> Product via Json {
+            PUT rename(id: u64, body change: Rename) -> Product {
                 path "products/{id}";
             }
 

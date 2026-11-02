@@ -1,9 +1,8 @@
 //! The one Concord declaration every recipe uses: a small inventory API.
 
-use concord::{Binary, Json};
 use serde::{Deserialize, Serialize};
 
-use crate::repr::{Form, Ndjson};
+use crate::repr::{self, Ndjson};
 
 /// An inventory item.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,32 +42,34 @@ concord::api! {
     /// A small inventory API. `key` is the full `Authorization` value (e.g. `Bearer ...`).
     pub client Inventory(#[sensitive] header("authorization") key: String) {
         base "http://inventory.invalid/v1";
+        request json;
+        response json;
 
         /// One item.
-        GET item(id: u64) -> Item via Json { path "items/{id}"; }
+        GET item(id: u64) -> Item { path "items/{id}"; }
 
         /// Renames an item; a failure is answered with an RFC 9457 problem document.
-        PUT rename(id: u64, body change: Rename via Json) -> Item via Json { path "items/{id}"; }
+        PUT rename(id: u64, body change: Rename) -> Item { path "items/{id}"; }
 
         /// A cursor-paginated listing.
-        GET list(query limit: u32 = 2, query cursor?: String) -> Page via Json { path "items"; }
+        GET list(query limit: u32 = 2, query cursor?: String) -> Page { path "items"; }
 
         /// Search with an application-built filter sequence (see `query_edit`).
-        GET search() -> Vec<Item> via Json {
+        GET search() -> Vec<Item> {
             path "search";
             query { "limit" = "10"; }
         }
 
         /// Bulk stock import and its per-row result, both NDJSON.
-        POST import_stock(body rows: Vec<StockRow> via Ndjson) -> Vec<StockRow> via Ndjson {
+        POST import_stock(Ndjson rows: Vec<StockRow>) -> Ndjson Vec<StockRow> {
             path "stock/import";
         }
 
-        /// A form-encoded feedback submission.
-        POST feedback(body fields: Vec<(String, String)> via Form) { path "feedback"; }
+        /// A form-encoded feedback submission, with this crate's pair encoder.
+        POST feedback(repr::Form fields: Vec<(String, String)>) { path "feedback"; }
 
-        /// A long chunked event export. The declared `Binary` buffers everything; the streaming
+        /// A long chunked event export. The declared `bytes` buffers everything; the streaming
         /// recipe uses `send_raw` instead.
-        GET events() -> concord::bytes::Bytes via Binary { path "events"; }
+        GET events() -> bytes concord::bytes::Bytes { path "events"; }
     }
 }

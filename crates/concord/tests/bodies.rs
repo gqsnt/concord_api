@@ -1,9 +1,10 @@
-//! Request bodies, response representations, status handling and the native response path.
+//! Request bodies, response formats, status handling and the native response path. The fixture
+//! is a mostly-JSON client (`request json; response json;`) with in-place exceptions.
 //! Scenario IDs refer to `v4/TEST_MATRIX.md`.
 
 mod support;
 
-use concord::{Binary, ErrorKind, Json, Text, reqwest};
+use concord::{ErrorKind, reqwest};
 use serde::{Deserialize, Serialize};
 use support::{Reply, Server};
 
@@ -25,17 +26,19 @@ concord::api! {
     /// Body/response fixture.
     pub client Shop {
         base "http://shop.invalid";
+        request json;
+        response json;
 
-        POST create(body item: NewItem via Json) -> Item via Json { path "items"; }
-        PUT nullable(body value: Option<NewItem> via Json) { path "nullable"; }
-        PUT text(body value: String via Text) { path "text"; }
-        PUT binary(body value: concord::bytes::Bytes via Binary) { path "binary"; }
-        PATCH maybe(body value?: NewItem via Json) { path "maybe"; }
+        POST create(body item: NewItem) -> Item { path "items"; }
+        PUT nullable(body value: Option<NewItem>) { path "nullable"; }
+        PUT text(text value: String) { path "text"; }
+        PUT binary(bytes value: concord::bytes::Bytes) { path "binary"; }
+        PATCH maybe(body value?: NewItem) { path "maybe"; }
 
-        GET item(id: u64) -> Item via Json { path "items/{id}"; }
-        GET find(id: u64) -> Option<Item> via Json { path "find/{id}"; }
-        GET text_out() -> String via Text { path "text"; }
-        GET bytes_out() -> concord::bytes::Bytes via Binary { path "bytes"; }
+        GET item(id: u64) -> Item { path "items/{id}"; }
+        GET find(id: u64) -> Option<Item> { path "find/{id}"; }
+        GET text_out() -> text String { path "text"; }
+        GET bytes_out() -> bytes concord::bytes::Bytes { path "bytes"; }
         DELETE remove(id: u64) { path "items/{id}"; }
         HEAD exists(id: u64) { path "items/{id}"; }
     }
@@ -81,7 +84,7 @@ async fn r01_post_json() {
 
 /// R02: no body, a zero-length body and JSON `null` are three different requests. Observed: hyper
 /// sends neither `Content-Length` nor a body for a zero-length body, so on the wire "no body" and
-/// "empty text body" differ only by the representation's `Content-Type`.
+/// "empty text body" differ only by the format's `Content-Type`.
 #[tokio::test]
 async fn r02_no_body_vs_empty_vs_null() {
     let (server, api) = shop(Reply::new(204)).await;

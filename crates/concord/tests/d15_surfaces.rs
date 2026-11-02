@@ -3,14 +3,14 @@
 //! from Concord-produced output (`Display`, `Debug`, `source()`).
 //!
 //! Ported from the core track's `d15_surfaces.rs` (written against 8f7adc2) to the current
-//! syntax: `Client::new(http, Config { .. })`, `body b: T via R`, `Encode<T>`.
+//! syntax: `Client::new(http, Config { .. })`, formats (`Quoting b: T`, `json b: T`), `Encode<T>`.
 
 mod support;
 
 use std::error::Error as _;
 use std::sync::Arc;
 
-use concord::{BodyError, ErrorKind, Json, reqwest};
+use concord::{BodyError, ErrorKind, reqwest};
 use rustls_pki_types::pem::PemObject;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use support::{Reply, Server};
@@ -207,8 +207,8 @@ concord::api! {
     /// Encode-error fixtures.
     pub client Enc {
         base "http://enc.invalid";
-        POST quoting(body b: String via Quoting);
-        POST json(body b: FailsWith via Json);
+        POST quoting(Quoting b: String);
+        POST json(json b: FailsWith);
     }
 }
 

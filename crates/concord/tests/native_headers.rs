@@ -137,9 +137,9 @@ concord::api! {
         }
 
         /// A native `Content-Type` wins over the body representation's.
-        POST upload(header("content-type") ct: HeaderValue, body b: String via concord::Text);
+        POST upload(header("content-type") ct: HeaderValue, text b: String);
         /// An optional native header does not decide whether a body exists.
-        POST maybe_body(header("x-h") h?: HeaderValue, body b?: String via concord::Text);
+        POST maybe_body(header("x-h") h?: HeaderValue, text b?: String);
 
         /// Disabled: its value type does not exist; its literal is still a valid static.
         #[cfg(any())]
@@ -704,6 +704,7 @@ fn full_header_map_with_native_values() {
         segments: 0,
         sensitive_segments: &[],
         sensitive_query: &[],
+        sensitive_content_type: false,
     };
     let base = Base::parse("http://capacity.example.test").unwrap();
     let mut parts = Parts::new(&META, &base);

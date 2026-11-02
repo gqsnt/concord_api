@@ -3,7 +3,6 @@
 
 use std::fmt;
 
-use concord::Json;
 use serde::{Deserialize, Serialize};
 
 /// Sort order; its `Display` is the wire spelling.
@@ -66,6 +65,8 @@ concord::api! {
     pub client ShopApi(#[sensitive] token: String) {
         base "https://api.example.com/v1";
         headers { "authorization" = "Bearer {token}"; }
+        request json;
+        response json;
 
         GET search(
             query q?: String,
@@ -77,11 +78,11 @@ concord::api! {
             query sort?: Sort,
             query cursor?: String,
             query limit: u32 = 20,
-        ) -> SearchPage via Json {
+        ) -> SearchPage {
             path "items/search";
         }
 
-        POST create_item(body item: NewItem via Json) -> Item via Json { path "items"; }
+        POST create_item(body item: NewItem) -> Item { path "items"; }
 
         DELETE delete_item(id: String) { path "items/{id}"; }
     }
