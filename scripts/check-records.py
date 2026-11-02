@@ -7,7 +7,10 @@ matrix's convention), or (for a bare file name) to exactly one file of that name
 repository; a `::name` must be a `fn name` in that file. Prints one
 line per unresolved reference and exits 1 if there is any.
 
-Usage: python3 -I scripts/check-records.py [FILES...]   (default: v4/native-repr/*.md, v4/TEST_MATRIX.md)
+Usage: python3 -I scripts/check-records.py [FILES...]   (default: v4/finalization/*.md, v4/TEST_MATRIX.md)
+
+Earlier campaigns' records (`v4/native-repr/`, `v4/refinement/`) describe their own revision and are
+checked at it, not against the current tree.
 """
 
 import glob
@@ -46,7 +49,7 @@ def resolve(ref, record_dir, files, by_name):
 
 
 def main(argv):
-    records = argv or sorted(glob.glob(os.path.join(ROOT, "v4/native-repr/*.md"))) + [
+    records = argv or sorted(glob.glob(os.path.join(ROOT, "v4/finalization/*.md"))) + [
         os.path.join(ROOT, "v4/TEST_MATRIX.md")]
     files = tracked()
     by_name = {}

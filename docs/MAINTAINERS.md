@@ -35,19 +35,21 @@ concord::api! { .. }                                  crates/concord/src/lib.rs
        error.rs     Error, ErrorKind                   static Display, explicit raw accessors
        repr.rs      Encode<T>, Decode<T>, Json/Text/Binary/Form, BodyError
        value.rs     IntoValue<T>                       the sealed set of accepted conversions
-       header.rs    ToHeaderValue                      how a value placed as a header becomes one
+       header.rs    ToHeaderValue (sealed)             how a value placed as a header becomes one
 ```
 
-The generated code decides at runtime only whether optional values are present (`if let`); which
-contributions reach an endpoint's request is fixed by `model.rs`.
+The generated code decides at runtime whether optional values are present (`if let`). Which
+contributions reach an endpoint's request is fixed by `model.rs`, except for header chains that
+name a native `HeaderName` constant: there `__private::HeaderPlan` compares the native names when
+the request is built (names and presence only; no value is converted to find its header).
 
 ## Where each rule lives
 
 | Rule (SEMANTICS section) | Compile time | Runtime |
 |---|---|---|
 | Grammar, keywords, statement order (§1) | `syntax.rs`: `Parse for Api`, `parse_child`, `parse_params`, `parse_entries` | — |
-| Formats: words, paths, lexical precedence, media types, `via`/alpha hints (§7) | `syntax.rs`: `parse_format`, `parse_output`, `parse_default`, `check_media_type`, `reject_via`; `model.rs`: `alpha` | — |
-| Format defaults: nearest owner, consumers, 8c conflict (§7) | `model.rs`: `nearest`, `endpoint_body`, `endpoint_output`, `check_media_conflict` | — |
+| Formats: words, paths, statements, media types (`mime`), removed-form and `via`/alpha hints (§7) | `syntax.rs`: `parse_format`, `parse_output`, `parse_default`, `check_media_type`, `reject_via`; `model.rs`: `alpha` | — |
+| Format statements: nearest owner (endpoint first), consumers, statements with nothing to apply to, 8c conflict (§7) | `model.rs`: `nearest`, `endpoint_body`, `endpoint_output`, `flatten`, `check_media_conflict` | — |
 | Format codegen: hidden aliases gated by consumers' `cfg`s, body format statics (§7) | `emit.rs`: `format_aliases`, `consumers_cfg`, `format_for`, `prepare_body` | `__private.rs`: `BodyFormat`, `encode_body`, `Parts::finish` (`Content-Type` rule and flag) |
 | Accepted attributes (§1) | `syntax.rs`: `docs_only`, `child_attrs`, `parse_params` | — |
 | Templates and holes (§1) | `template.rs`: `parse` | `__private.rs`: `format_template` |
@@ -57,13 +59,14 @@ contributions reach an endpoint's request is fixed by `model.rs`.
 | Value kinds, controls, initializers (§3) | `emit.rs`: `controls`, `value_inits`, `navigation` | `value.rs`: `IntoValue` |
 | Declared base subset (§4) | `model.rs`: `validate_base` (+ the D11 consistency test at the end of the file) | `__private.rs`: `Base::parse`, `Base::from_static` |
 | Path and subdomain structure (§4) | `model.rs`: `structural`, `pieces` | `__private.rs`: `Parts::segment`, `Parts::label`, `Parts::host`, `encode_segment` |
-| Query/header keys, reserved headers, literal header values (§5) | `model.rs`: `key`, `RESERVED_HEADERS`, `resolve_owner`; `emit.rs`: `header_statics` (names and literal values as statics) | `__private.rs`: `Parts::query`, `Parts::header`, `Parts::finish` |
-| Header value routes: literal / formatted / `ToHeaderValue`, text policy (§5) | `model.rs`: `Value::text`; `emit.rs`: `source_code`, `debug_fields` | `header.rs`: `ToHeaderValue`; `__private.rs`: `Parts::header`, `Text`, `text` |
+| Query/header keys (literal names via `http::HeaderName::from_bytes`, native key paths), reserved headers, literal header values via `http::HeaderValue::from_bytes` (§5) | `model.rs`: `key`, `key_paths`, `RESERVED_HEADERS`, `rejected_value`, `resolve_owner`; `emit.rs`: `header_statics` (literal names and ASCII literal values as statics, one checked accessor per key path) | `__private.rs`: `Parts::query`, `Parts::header`, `header_literal`, `NativeKey`, `reserved_name`, `Parts::finish` |
+| Native header identity: three-valued relation, compile-time errors when provable, run-time plan (§5) | `model.rs`: `relation`, `compose_native`, `set_before`, `header_seq`; `emit.rs`: `native_headers_code` | `__private.rs`: `HeaderPlan`, `HeaderEntry`, `HeaderOp` |
+| Header value routes: literal / formatted / `ToHeaderValue` (sealed), text follows `http` (§5) | `model.rs`: `Value::text`; `emit.rs`: `source_code`, `debug_fields` | `header.rs`: `ToHeaderValue`; `__private.rs`: `Parts::header`, `Text`, `text` |
 | Composition: slots, `append`/`override`/`else inherit`/`remove` (§5) | `model.rs`: `resolve_owner`, `compose`, `compose_family` | generated `prepare` (`emit.rs`: `prepare_body`) |
 | Build-check order, failing `Display` (§6) | `emit.rs`: `prepare_body` | `__private.rs`: `display_into`, `encode_segment`, `Parts` |
 | Execution, decoding (§6, §7) | `emit.rs`: endpoint `send`/`prepare` | `prepared.rs`, `__private.rs`: `decoder`, `drain`, `encode_body`; `repr.rs` |
 | Errors (§8) | — | `error.rs` |
-| Sensitivity (§9) | `model.rs`: `SENSITIVE_NAMES`, `sensitive_name`, `refresh_sensitivity`, `propagate_sensitivity` | `__private.rs`: `redacted_url`, `DebugDisplay`, `DebugHeader`, `Redacted`, `Parts::header` (flag OR); `prepared.rs`: `Debug` |
+| Sensitivity (§9) | `model.rs`: `SENSITIVE_NAMES`, `sensitive_name`, `refresh_sensitivity`, `propagate_sensitivity`, `native_conditions` (run-time conditions for native keys); `emit.rs`: `cond_expr`, `flag_expr` | `__private.rs`: `SENSITIVE_NAMES` (kept equal to the macro's by a unit test), `sensitive_name`, `Withheld`, `redacted_url`, `DebugDisplay`, `DebugHeader`, `Redacted`, `Parts::header` (flag OR), `HeaderPlan` (flags); `prepared.rs`: `Debug` |
 | Generated documentation | `emit.rs`: `owner_docs`, `defaults_line`, `request_summary`, `controls`, `argument_docs`, `override_notes`, `initially` | — |
 
 ## Changing a semantic rule
@@ -75,7 +78,7 @@ contributions reach an endpoint's request is fixed by `model.rs`.
 4. Update the guides that teach it (`docs/AUTHOR_GUIDE.md`, `docs/CALLER_GUIDE.md`) and the crate
    documentation. Their code is compiled, so a stale example fails the build.
 5. A breaking change gets an old/new entry in `docs/MIGRATION.md` and, for a design decision, a
-   record in `v4/refinement/DECISIONS.md`.
+   record in `v4/finalization/DECISIONS.md`.
 6. Run `scripts/verify.sh` (below).
 
 ## Running the checks
@@ -87,8 +90,8 @@ scripts/verify.sh --msrv   # also the runtime suites and examples on Rust 1.85
 
 It prints one `PASS`/`FAIL` line per step (logs in `target/verify-*.log`) and fails if a tracked
 file changed while it ran (for example `Cargo.lock`). Every cargo command uses `--locked`. The
-steps match `.github/workflows/ci.yml`; CI declares Linux and Windows jobs, but this revision was
-verified on Linux x86_64 only.
+steps match `.github/workflows/ci.yml` (Linux and Windows jobs); which platforms ran for the
+current revision is recorded in `v4/finalization/STATUS.md`.
 
 Documentation checks run inside `cargo test --workspace`:
 

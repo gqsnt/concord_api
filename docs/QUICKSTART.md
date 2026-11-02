@@ -96,13 +96,16 @@ Read it top-down:
 - `base` — the URL every path is appended to; `with_base_url` replaces it at runtime.
 - `headers { "authorization" = "Bearer {token}"; }` — sent with every request of this client.
   `{token}` is a template hole that reads the client's value.
-- `request json; response json;` — the **formats** of the endpoints below: a body declared
-  `body x: T` is sent as JSON, a typed output `-> T` is decoded from JSON. An endpoint writes an
-  exception where it applies (`-> text String`, `bytes data: Vec<u8>`); one without `->` decodes
-  nothing and accepts any 2xx. A body's `Content-Type` is its format's (`application/json`, ...)
-  unless the body names another one in place: `json("application/merge-patch+json") patch: Patch`,
-  `bytes("image/png") png: Vec<u8>`. Nothing checks that the server agrees — the generated docs of
-  each endpoint state the `Content-Type` it sends.
+- `request json; response json;` — the **formats** of the endpoints below (`format json;` says
+  both at once): a body declared `body x: T` is sent as JSON, a typed output `-> T` is decoded from
+  JSON. An endpoint that differs says so with the same statements in its block —
+  `GET readme() -> String { path "readme"; response text; }`,
+  `PUT image(body png: Vec<u8>) { path "image"; request bytes "image/png"; }` — and the nearest
+  statement wins; one without `->` decodes nothing and accepts any 2xx. A body's `Content-Type` is
+  its format's (`application/json`, ...) unless its `request` statement names another
+  (`request json "application/merge-patch+json";`). Nothing checks that the server agrees — the
+  generated docs of each endpoint state the format and `Content-Type` it uses and where they come
+  from.
 - `scope project(project: String)` — a navigation level, `api.project("demo")`, that adds the path
   `projects/demo`. The value is formatted with `Display` and percent-encoded as one segment.
 - `GET tasks(query done?: bool, query limit: u32 = 20) -> Vec<Task>` — an endpoint with an
@@ -112,9 +115,12 @@ Read it top-down:
 - `POST create(body task: NewTask) -> Task` — a JSON request body supplied as an argument (the
   client's `request json;`, sent with `Content-Type: application/json`), and a JSON response.
 - Not shown: a value can also be placed as a header, `header("x-request-id") id: String`
-  (shorthand for `headers { "x-request-id" = id; }`), including a native
-  `reqwest::header::HeaderValue`, sent as is with its sensitivity flag. Concord adds no `Accept`
-  header: declare one (`headers { "accept" = "application/json"; }`) if the API needs it.
+  (shorthand for `headers { "x-request-id" = id; }`). A header name can be a native
+  `reqwest::header::HeaderName` constant instead of a literal — `header(AUTHORIZATION) token: String`,
+  `headers { ACCEPT = "application/json"; }`, or your own
+  `const X_API_KEY: HeaderName = HeaderName::from_static("x-api-key")`. A value can be a native
+  `HeaderValue`, sent as is with its sensitivity flag. Concord adds no `Accept` header: declare one
+  if the API needs it.
 
 The macro generates ordinary types: `Tasks`, `TasksConfig`, `TasksProject` (the scope) and one
 request type per endpoint, `TasksProjectTasks` and `TasksProjectCreate`. Their main signatures, as

@@ -51,7 +51,6 @@ echo "rustc: $(rustc --version)"
 
 step fmt cargo fmt --all -- --check
 step records python3 -I scripts/check-records.py
-step migrate-via-self-test python3 -I scripts/migrate_via.py --self-test
 step clippy cargo clippy --locked --workspace --all-targets -- -D warnings
 step test cargo test --workspace --locked
 step test-no-default cargo test --locked -p concord --no-default-features

@@ -35,7 +35,7 @@ feed that must not be buffered.
 - **Assumes:** the per-chunk deadline (`tokio::time::timeout`) and the chunk limit are the
   application's. Dropping a response before its end closes that connection instead of returning it
   to the pool.
-- **Note:** any declared typed output (`-> bytes Bytes`, `-> T`) buffers the whole body, as every
+- **Note:** any declared typed output (`-> Bytes` with `response bytes;`, `-> T`) buffers the whole body, as every
   `Decode` does; an endpoint without `->` drains it without buffering but discards it.
 
 ## Requests
@@ -96,24 +96,25 @@ pub async fn search_filters(
 [`bodies::import_stock`](../examples/native/src/bodies.rs) — line-delimited JSON in both
 directions.
 
-- **How:** a marker type implementing `Encode<Vec<T>>` and `Decode<Vec<T>>`; the declaration names
-  it by path where `json` would be written (`Ndjson rows: Vec<StockRow>`,
-  `-> Ndjson Vec<StockRow>`), or in a `request`/`response` default for a whole scope.
+- **How:** a marker type implementing `Encode<Vec<T>>` and `Decode<Vec<T>>`; a statement names it
+  by path where `json` would be written (`format Ndjson;` on the endpoint, or on a scope for all
+  its endpoints), with the payloads written as types (`body rows: Vec<StockRow>`,
+  `-> Vec<StockRow>`).
 - **Assumes:** error descriptions name the line and column, never its content; the underlying
   serde error (which may quote the body) is attached with `with_source`.
 
 ### Form-encoded bodies
 
 With the `form` feature, the built-in `form` format encodes any `Serialize` value with flat fields
-(`form login: Login`, or `request form;` on a scope) through `serde_urlencoded`, and decodes form
-responses (`-> form Token`); see the [author guide](AUTHOR_GUIDE.md#56-forms).
+(`request form;` on the endpoint or a scope) through `serde_urlencoded`, and decodes form
+responses (`response form;`); see the [author guide](AUTHOR_GUIDE.md#56-forms).
 
 Without the feature, or without serde: [`repr::Form`](../examples/native/src/repr.rs), used by
 [`bodies::send_feedback`](../examples/native/src/bodies.rs) —
 `application/x-www-form-urlencoded` from ordered `(name, value)` pairs.
 
 - **How:** a custom `Encode<Vec<(String, String)>>` with `url::form_urlencoded`, named by path
-  (`repr::Form fields: Vec<(String, String)>`) so it is not mistaken for the word `form`.
+  (`request repr::Form;`) so it is not mistaken for the word `form`.
 - **When:** the body is fully determined by the value and its content type is constant.
 
 ### Multipart uploads

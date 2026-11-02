@@ -8,11 +8,12 @@ Compared with a small handwritten reqwest client, the declaration replaces:
 - URL assembly for every endpoint: joining the base URL, percent-encoding each path value as
   exactly one segment, building subdomain labels;
 - the plumbing of shared query parameters and headers (an API version, an authorization header)
-  into every endpoint, with explicit rules for overriding or removing them further down;
+  into every endpoint, with explicit rules for overriding or removing them further down — header
+  names written as literals or as native `HeaderName` constants (`header(AUTHORIZATION)`, your own
+  `X_API_KEY`), composed by the header they name, and checked by `http` itself;
 - bookkeeping of which optional parameters are present;
-- body encoding (stated once for a mostly-JSON API: `request json; response json;`, with
-  exceptions such as `-> text String` written where they apply), the status check and response
-  decoding;
+- body encoding (stated once for a mostly-JSON API with `format json;`, and on an endpoint that
+  differs: `response text;`), the status check and response decoding;
 - keeping secrets out of the client's `Debug` output and out of error messages.
 
 Mistakes in the declaration — an unknown value, an invalid header name or base URL, a type without
@@ -21,7 +22,9 @@ a wire spelling — are compile errors that point at the declaration.
 Concord deliberately does **not** manage authentication flows (obtaining or refreshing
 credentials), retries, rate limiting, pagination or transport configuration (timeouts, proxies,
 TLS, redirects, connection pools). Those stay in your code and in the `reqwest::Client` you pass
-in; [`examples/native`](examples/native) shows how to compose them.
+in; [`examples/native`](examples/native) shows how to compose them, and
+[`examples/riot`](examples/riot) is a complete, sourced client for part of the Riot Games API,
+tested offline.
 
 ## Example
 
@@ -127,8 +130,7 @@ extra request. For anything the declaration does not cover there is a native exi
   [`docs/MIGRATION.md`](docs/MIGRATION.md).
 - Verified on Linux x86_64 with rustc 1.97.1, the toolchain pinned in `rust-toolchain.toml`. The
   minimum supported Rust version is 1.85 (`rust-version`, edition 2024), checked with rustc
-  1.85.1.
-- Windows and macOS are not verified for this revision.
+  1.85.1. The current state of each platform is in [`v4/finalization/STATUS.md`](v4/finalization/STATUS.md).
 
 ## Installation and features
 
@@ -141,8 +143,8 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 | Feature | Default | Effect |
 |---|---|---|
-| `json` | yes | the `json` format (`json b: T`, `-> json T`, `request json;`, `response json;`), using serde and serde_json |
-| `form` | no | the `form` format (`form b: T`, `application/x-www-form-urlencoded`), using serde and serde_urlencoded |
+| `json` | yes | the `json` format (`format json;`, `request json;`, `response json;`), using serde and serde_json |
+| `form` | no | the `form` format (`request form;`, `application/x-www-form-urlencoded`), using serde and serde_urlencoded |
 | `reqwest-defaults` | yes | reqwest's own default features (TLS, HTTP/2, system proxy) |
 
 With `default-features = false`, choose reqwest's features yourself: depend on `reqwest` (the
@@ -157,7 +159,8 @@ same major version that Concord re-exports as `concord::reqwest`) with the featu
 | Use a generated client: construction, options, errors, native requests | [Caller guide](docs/CALLER_GUIDE.md) |
 | Error documents, timeouts, streaming, custom formats, retries, pagination | [Recipes](docs/RECIPES.md) |
 | Read a compile error | [Diagnostics](docs/DIAGNOSTICS.md) |
-| Upgrade from `via`, from the V4 alpha or from V3 | [Migration](docs/MIGRATION.md) |
+| Upgrade from in-place formats, from `via`, from the V4 alpha or from V3 | [Migration](docs/MIGRATION.md) |
+| A complete real-world client (Riot Games), offline tests, sources | [`examples/riot`](examples/riot) |
 | The precise rules (truth tables, ordering, sensitivity) | [Semantics](v4/SEMANTICS.md) |
 | Work on Concord itself | [Maintainers](docs/MAINTAINERS.md) |
 

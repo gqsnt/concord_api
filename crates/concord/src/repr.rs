@@ -1,9 +1,8 @@
 //! Body and response formats.
 //!
-//! Every body and every typed output has a format. A declaration writes it in place —
-//! `json item: NewItem`, `-> text String`, `Csv rows: Vec<Row>` — or inherits it from the
-//! nearest client or scope that declares a default (`request json;`, `response json;`) with
-//! `body item: NewItem` and a bare `-> Item`. The words `json`, `text`, `bytes` and `form` name the
+//! Every body (`body item: NewItem`) and every typed output (`-> Item`) has a format, given by the
+//! nearest `request`/`response`/`format` statement of its endpoint, an enclosing scope or the
+//! client (`format json;`, `response text;`, `request Csv;`). The words `json`, `text`, `bytes` and `form` name the
 //! built-in markers `Json`, `Text`, `Binary` and `Form`; any other format is a type implementing
 //! `Encode<T>` and/or `Decode<T>`, named by its path. Concord never chooses a
 //! format by looking at a Rust type name. An endpoint without `->` has no typed output: any 2xx
@@ -17,14 +16,13 @@ use bytes::Bytes;
 
 /// Encodes a request body of type `T` with the format `Self`.
 ///
-/// Implement it on your own marker type for a custom format, then name the type in place
-/// (`Csv rows: Vec<Row>`) or in a default (`request Csv;`). The encoder runs when the request is
-/// prepared; it receives the payload by value.
+/// Implement it on your own marker type for a custom format, then name the type in a statement
+/// (`request Csv;`, `format Csv;`). The encoder runs when the request is prepared; it receives the
+/// payload by value.
 ///
-/// `CONTENT_TYPE` is the media type sent as `Content-Type` with the body, unless the body declares
-/// its own (`json("application/merge-patch+json") patch: Patch`, `body("…") p: T`, or a
-/// `request json("…");` default reached through `body`) or the endpoint sends a `content-type`
-/// header. It is validated when the declaration is compiled (visible ASCII, like
+/// `CONTENT_TYPE` is the media type sent as `Content-Type` with the body, unless the body's
+/// `request` statement declares its own (`request json "application/merge-patch+json";`) or the
+/// endpoint sends a `content-type` header. It is validated when the declaration is compiled (visible ASCII, like
 /// `HeaderValue::from_static`): an invalid value is a compile error wherever it may be sent, and
 /// is not used at all where a declared media type replaces it. A media type that varies per body
 /// (a multipart boundary) is set on the native request after
@@ -44,8 +42,8 @@ pub trait Encode<T> {
 
 /// Decodes the complete body of a 2xx response into `T` with the format `Self`.
 ///
-/// Implement it on your own marker type for a custom format, then name the type in place
-/// (`-> Csv Vec<Row>`) or in a default (`response Csv;`). It is also usable directly, for example
+/// Implement it on your own marker type for a custom format, then name the type in a statement
+/// (`response Csv;`). It is also usable directly, for example
 /// on the body of an error response: `<Json as Decode<Problem>>::decode(bytes)`. Concord never
 /// checks the response `Content-Type` and sends no `Accept`.
 #[diagnostic::on_unimplemented(
@@ -114,8 +112,8 @@ impl fmt::Display for BodyError {
 impl StdError for BodyError {}
 
 /// JSON via `serde_json`, the format word `json` (feature `json`): `application/json` request
-/// bodies; responses are decoded regardless of their `Content-Type`. `json item: NewItem`,
-/// `-> json Item`, or `request json;` / `response json;` on a client or scope.
+/// bodies; responses are decoded regardless of their `Content-Type`. `format json;`,
+/// `request json;`, `response json;` on a client, a scope or an endpoint.
 #[cfg(feature = "json")]
 pub struct Json(());
 
@@ -159,7 +157,7 @@ fn json_description(action: &str, e: &serde_json::Error) -> String {
 }
 
 /// UTF-8 text, the format word `text`: `text/plain; charset=utf-8` request bodies; responses must
-/// be valid UTF-8. `text note: String`, `-> text String`.
+/// be valid UTF-8. `request text;`, `response text;`.
 pub struct Text(());
 
 impl Encode<String> for Text {
@@ -182,7 +180,7 @@ impl Decode<String> for Text {
 }
 
 /// Raw bytes, the format word `bytes`: `application/octet-stream` request bodies; responses are
-/// returned unchanged. `bytes data: Vec<u8>`, `bytes("image/png") png: Bytes`, `-> bytes Bytes`.
+/// returned unchanged. `request bytes;`, `request bytes "image/png";`, `response bytes;`.
 pub struct Binary(());
 
 impl Encode<Bytes> for Binary {

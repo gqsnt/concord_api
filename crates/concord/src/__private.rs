@@ -190,8 +190,8 @@ impl<T> BodyFormat<T> {
         }
     }
 
-    /// The format `E` with a declared media type (`json("…") b: T`, `body("…") b: T`, or a
-    /// `request json("…");` default reached through `body`). `E::CONTENT_TYPE` is not used.
+    /// The format `E` with a declared media type (`request json "…";` on the endpoint, a scope
+    /// or the client). `E::CONTENT_TYPE` is not used.
     pub const fn with_media_type<E: Encode<T>>(media_type: HeaderValue) -> Self {
         Self {
             encode: E::encode,
@@ -826,8 +826,8 @@ impl fmt::Debug for Redacted {
     }
 }
 
-/// The response handling of an endpoint declared `-> T` (format `R`, written in place or
-/// inherited).
+/// The response handling of an endpoint declared `-> T` (format `R`, from the nearest `response`
+/// statement).
 pub fn decoder<R: Decode<T>, T>(meta: &'static EndpointMeta) -> Decoder<T> {
     Decoder::new(meta, R::decode, false)
 }

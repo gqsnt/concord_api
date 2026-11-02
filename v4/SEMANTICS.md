@@ -6,23 +6,22 @@ executable evidence is listed in `TEST_MATRIX.md`.
 ## 1. Declaration
 
 ```text
-api!       := doc* vis "client" Name params? "{" "base" STRING ";" (stmt | default)* child* "}"
-child      := cattr* "scope" name params? "{" (stmt | default)* child* "}"
-            | cattr* METHOD name params ("->" output)? (";" | "{" stmt* "}")
+api!       := doc* vis "client" Name params? "{" "base" STRING ";" stmt* child* "}"
+child      := cattr* "scope" name params? "{" stmt* child* "}"
+            | cattr* METHOD name params ("->" Type)? (";" | "{" stmt* "}")
 cattr      := doc | "#[cfg(..)]" | "#[deprecated..]"
 METHOD     := GET | POST | PUT | PATCH | DELETE | HEAD | OPTIONS
 params     := "(" (param ("," param)* ","?)? ")"
 param      := attr* placement? name "?"? ":" Type ("=" Expr)?
-            | doc* ("body" media? | format media?) name "?"? ":" Type  (endpoints only, at most one)
-output     := format? Type                   (no format: the nearest `response` default)
-default    := "request" format media? ";" | "response" format ";"   (clients and scopes, once each)
-format     := "json" | "text" | "bytes" | "form" | TypePath
-media      := "(" STRING ")"                 (a body media type: "type/subtype; params")
-placement  := "query" ("(" STRING ")")? "each"? | "header" "(" STRING ")" "each"?
+            | doc* "body" name "?"? ":" Type          (endpoints only, at most one)
+placement  := "query" ("(" STRING ")")? "each"? | "header" "(" key ")" "each"?
+key        := STRING | Path                   (a Path names a native `HeaderName`; headers only)
 attr       := doc | "#[sensitive]"
 stmt       := "path" STRING ";" | "subdomain" STRING ";"
             | "query" "{" entry* "}" | "headers" "{" entry* "}"
-entry      := op? STRING "=" rhs ("else" "inherit")? ";" | "remove" STRING ";"
+            | "format" fmt ";" | "request" fmt STRING? ";" | "response" fmt ";"
+fmt        := "json" | "text" | "bytes" | "form" | TypePath
+entry      := op? key "=" rhs ("else" "inherit")? ";" | "remove" key ";"
 op         := "append" | "override"
 rhs        := STRING                      (template)
             | "each"? reference
@@ -30,7 +29,8 @@ reference  := name | owner "." name       (owner = `client` or an enclosing scop
 ```
 
 - One `api!` declares exactly one client. Each owner (client, scope, endpoint) declares each
-  statement at most once, and statements precede child declarations.
+  statement at most once (`format` counts as `request` and `response`), and on clients and scopes
+  statements precede child declarations.
 - Attributes: documentation everywhere; `#[sensitive]` on values; on scopes and endpoints also
   `#[cfg(..)]` (applied to every generated item of that owner and its descendants, and to the
   parent's navigation method) and `#[deprecated..]` (applied to the navigation method, so the
@@ -39,7 +39,8 @@ reference  := name | owner "." name       (owner = `client` or an enclosing scop
 - Templates (`path`, `subdomain`, quoted query/header values) contain literal text and holes
   `{name}` / `{owner.name}`; `{{` and `}}` are literal braces (with or without holes).
 - No meaning is derived from Rust type spellings. `Option<T>` and `Vec<T>` are ordinary types.
-  Formats and their defaults are described in §7.
+  Formats and their statements are described in §7. A header key path is never read by its
+  identifier: it is resolved by rustc and used as the native `HeaderName` it names (§5).
 
 ## 2. Names
 
@@ -137,7 +138,9 @@ labels are checked at compile time; values at build time. IDNA is not performed.
 Query parameters and headers are two independent *families*. For one endpoint, contributions are
 collected along the chain root → scopes → endpoint; within one owner, direct placements (in
 parameter order) come before the owner's block statements (in source order). Keys compare
-case-sensitively for query and case-insensitively for headers (header names are emitted lowercase).
+case-sensitively for query and by native identity for headers: a header key is a literal name,
+normalized by `http::HeaderName::from_bytes` (lowercase), or a path to a native `HeaderName`
+constant or static; two keys name the same header when their `HeaderName`s are equal.
 
 Each key has one **slot**, positioned at the key's first appearance on the chain. The operations:
 
@@ -156,8 +159,19 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
   Within one owner, `remove` statements act first, on what the owner inherits; the owner's direct
   placements and other statements follow.
 - A removed and later reintroduced key keeps the slot position of its first appearance.
-- Liveness and slot positions are decided by the declaration, at compile time, never by which
-  optional values are present at runtime: an introduction that reads an absent optional value
+- **When composition is decided.** If every header key on an endpoint's chain is a literal, the
+  macro composes the headers and every rule violation is a compile error. If a native constant is
+  on the chain, the macro cannot evaluate it: two literals or two identical paths are known to be
+  the same header or not, any other pair is unknown. Violations that hold whatever the unknown
+  pairs turn out to be are compile errors; the others are checked when the request is built, by
+  `__private::HeaderPlan`, which applies the same rules to the native names (equality only, no
+  value converted or formatted) and reports a `Build` error naming the declaration. The result —
+  which contributions are sent, their order, their classification — is the same in both modes
+  (`tests/header_plan.rs` checks the run-time plan against the sequential rule on every chain of up
+  to four contributions). Only the order *between different header names* may differ, which is
+  not part of the contract.
+- Liveness and slot positions are decided by the declaration, never by which optional values are
+  present at runtime: an introduction that reads an absent optional value
   sends nothing, yet the key is live (so a descendant may `override` it, not introduce it) and
   keeps its slot position. (Confirmed by the independent composition oracle,
   `tests/oracle_composition.rs`.)
@@ -179,34 +193,33 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
   (`Prepared::into_parts`, then `Request::url_mut`).
 - Only surviving contributions are formatted or converted; a replaced or removed value's `Display`
   (or `ToHeaderValue`) never runs.
-- Header names must be valid field-name tokens; `host`, `content-length`, `transfer-encoding`,
-  `connection`, `te`, `trailer`, `upgrade` and `keep-alive` are rejected (transport-owned).
-  `Authorization`, `Cookie` and all other names are ordinary.
+- Header names: a literal must be accepted by `http::HeaderName::from_bytes` (a compile error
+  otherwise); a path must name a `HeaderName` (`__private::NativeKey` gives the compile error).
+  `host`, `content-length`, `transfer-encoding`, `connection`, `te`, `trailer`, `upgrade` and
+  `keep-alive` are rejected (transport-owned): at compile time for a literal, as a `Build` error
+  for a native constant. `Authorization`, `Cookie` and all other names are ordinary.
 - **Header values** enter the native header map by one of three routes, decided by the
   declaration and the value's type, never by a type's name:
-  - *literal text* (a template without holes, `"accept" = "application/json"`): checked at compile
-    time (visible ASCII, space or tab) and lowered to one generated
-    `static HeaderValue = HeaderValue::from_static(..)` per distinct literal; requests clone it
-    (static bytes: nothing is copied or allocated for the payload);
-  - *formatted text* (a template with holes): holes are formatted with `Display`; the result must
-    be visible ASCII, space or tab, else a build error naming the header, not the value;
-  - *a value placed directly* (`header("k") x: T`, `"k" = x`, `"k" = each xs`): converted with
-    `ToHeaderValue`, which reads the value by reference. A native `HeaderValue` is cloned and sent
-    byte for byte — any bytes `http` accepts (`0x20`–`0xFF` except `0x7F`, and tab), text or not —
-    with its sensitivity flag; `str`/`String` follow the visible-ASCII rule; integers and `bool`
-    use their decimal / `true`/`false` spelling; other types implement the trait (no `Display`
-    fallback). A conversion that returns `None` is a build error naming the header.
-  The visible-ASCII rule applies to text Concord produces or receives as text (policy: no
-  obs-text from Rust strings), not to native values, whose bytes the application chose explicitly.
-  `Encode::CONTENT_TYPE` follows the text rule.
+  - *literal text* (a template without holes, `ACCEPT = "application/json"`): checked when the
+    macro expands with `http::HeaderValue::from_bytes` (after Rust escapes and `{{ }}` are
+    decoded). A visible-ASCII literal is lowered to one generated
+    `static HeaderValue = HeaderValue::from_static(..)` per distinct literal (requests clone it);
+    any other accepted literal is built per request with the checked constructor.
+  - *formatted text* (a template with holes): each literal fragment is checked at expansion (a
+    rejected byte in a fragment is a compile error no hole can repair); holes are formatted with
+    `Display` and the result goes through `HeaderValue::from_str`, else a build error naming the
+    header, not the value;
+  - *a value placed directly* (`header(K) x: T`, `K = x`, `K = each xs`): converted with
+    `ToHeaderValue`, a sealed trait implemented for `HeaderValue` (cloned and sent byte for byte,
+    any bytes `http` accepts, with its sensitivity flag), `str`/`String` (`HeaderValue::from_str`:
+    UTF-8 beyond ASCII accepted, control bytes rejected), the integers and `bool`, and
+    `&T`/`Box`/`Rc`/`Arc`/`Cow` of these. A conversion that fails is a build error naming the header.
+  Concord keeps no validator of its own: `http` decides every name and value.
 - A native `HeaderValue` is never text: in a path, subdomain, query value or template hole it is a
   compile error at the value's type (Concord's note names the explicit conversion).
-- A value placed directly as a header value and also read as text, and not statically sensitive,
-  must implement Concord's (hidden) `TextHeader`: `str`, `String`, the integers, `bool` and
-  pointers to them, whose `ToHeaderValue` never sets the native flag. Any other type is a compile
-  error at the value's type: a runtime flag set by its own `ToHeaderValue` would protect the
-  header but not the path, query value or template formed from the same value. A statically
-  sensitive value (marker, sensitive key) is withheld in every placement and accepted.
+- Since `ToHeaderValue` is sealed, the only value type that can carry a native sensitivity flag is
+  `HeaderValue`, which is never text: no value can be protected in its header placement by a flag
+  its text placements would not see.
 - `remove` and the absence of a key concern Concord's contributions only: headers configured on the
   `reqwest::Client` (default headers, user agent) are added by reqwest when the request lacks them.
 
@@ -234,10 +247,10 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
 
 ## 7. Bodies and responses
 
-Every body and every typed output has a **format**: written in place, or inherited from the
-nearest owner that declares a default. `T` is the payload type the caller supplies or receives
-(generated signatures use it directly); the format's runtime is a marker type implementing
-`Encode<T>` (bodies) or `Decode<T>` (outputs). No format is chosen from the spelling of `T`.
+Every body and every typed output has a **format**, given by a statement. `T` is the payload type
+the caller supplies or receives (generated signatures use it directly); the format's runtime is a
+marker type implementing `Encode<T>` (bodies) or `Decode<T>` (outputs). No format is chosen from
+the spelling of `T`.
 
 | Format | Runtime | As body (`Encode<T>`) | As output (`Decode<T>`) |
 |---|---|---|---|
@@ -250,34 +263,29 @@ nearest owner that declares a default. `T` is the payload type the caller suppli
 
 **Resolution.**
 
+- `request F;`, `request F "m";`, `response F;` and `format F;` (both directions) may be written by
+  the client, a scope or an endpoint. For an endpoint's body, the nearest `request` on its chain
+  wins (the endpoint's own, then its scopes inside out, then the client); likewise `response` for
+  its typed output; the directions are independent. A statement replaces the format **and** the
+  media type. No statement reaching a body or typed output is a compile error at its type. On an
+  endpoint, `request` without a body or `response` without `->` is a compile error; `format`
+  needs one of the two. Statements on clients and scopes that nothing uses are allowed. A default
+  cannot be cleared.
 - The words resolve to `$crate::{Json, Text, Binary, Form}` (no import; renamed dependencies
-  work); a word whose feature is off is a compile error at the word (in place) or at the default
-  (once). A type path resolves at the declaration like any type.
-- `body b: T` / `body("m") b: T` and a bare `-> T` take the format of the nearest owner on the
-  endpoint's chain (the endpoint's scopes, then the client) that declares `request FORMAT;` or
-  `response FORMAT;` respectively; the directions are independent. Without one, it is a compile
-  error at the payload naming the in-place word and the owner statement. Endpoints have no
-  `request`/`response` statement; a default cannot be cleared.
-- `FORMAT b: T` and `-> FORMAT T` replace the default for that body or output — for a body, its
-  format **and** its media type.
-- A default is referenced through one hidden type alias, emitted only if some endpoint consumes it
-  and gated by the union of its consumers' effective `cfg`s: a default used by cfg-disabled
-  endpoints only, or by none, is never resolved.
-
-**Lexical precedence.** A parameter `name: T` / `name?: T` is a value whatever its name
-(`json: T`); `header("x") json: T` is a header value; `json query: T` a JSON body named `query`;
-`json::Codec`, `self::csv` are paths. After `->`, a path followed by more type tokens is a format
-(`-> codecs::Csv ()`), a path that ends the output is the payload (`-> Vec<Item> {`); in format
-position a bare lowercase identifier must be a word (`-> json {` is an error, `-> r#json` a
-payload named `json`). A parenthesized string after a format is a media type; any other
-parenthesized group is a tuple payload.
+  work); a word whose feature is off is a compile error at the statement that a live endpoint
+  uses. A type path resolves at the declaration like any type; in format position a bare lowercase
+  identifier must be a word (`self::csv` for a lowercase type).
+- A client or scope statement is referenced through one hidden type alias, emitted only if some
+  endpoint consumes it and gated by the union of its consumers' effective `cfg`s: a statement used
+  by cfg-disabled endpoints only, or by none, is never resolved.
+- An unsupported pair is reported as `the format F cannot encode a T request body` /
+  `cannot decode a T response` (`Encode<T>`/`Decode<T>` with Concord's message).
 
 **Content type.**
 
-- A body's media type is a declared one — `FORMAT("m")`, `body("m")`, or `request FORMAT("m");`
-  reached through `body` — or the format's `Encode::CONTENT_TYPE`. Declared media types are checked
-  by the macro (`type/subtype` tokens, optional `; name=value` parameters with token or quoted
-  values, visible ASCII, no surrounding whitespace); both kinds become compile-time
+- A body's media type is the one its `request F "m";` statement declares, or the format's
+  `Encode::CONTENT_TYPE`. Declared media types are parsed by the `mime` crate and must be static
+  header values for `http` (visible ASCII) — Concord keeps no media-type grammar; both kinds become compile-time
   `HeaderValue::from_static` values (an invalid `CONTENT_TYPE` is a compile error where it may be
   sent and is not evaluated where a declared media type replaces it).
 - The media type is sent exactly when the body is. A `content-type` header contribution that
@@ -287,9 +295,11 @@ parenthesized group is a tuple payload.
   counts as present; an `each` over no items contributes nothing; a conversion failure is a build
   error.
 - A declared body media type and a `content-type` contribution surviving on the same endpoint are
-  a compile error; a `remove "content-type"` that drops every inherited contribution resolves it.
-- The inserted `Content-Type` is flagged sensitive when the `content-type` key is statically
-  sensitive on the endpoint (marker or sticky composition, also after a `remove`).
+  a compile error (a `Build` error when only a native constant can be `content-type`); a
+  `remove CONTENT_TYPE` that drops every inherited contribution resolves it.
+- The inserted `Content-Type` is flagged sensitive when the `content-type` header is sensitive on
+  the endpoint (marker or sticky composition, also after a `remove`), decided at compile time for
+  literal chains and by the run-time plan otherwise.
 - Concord never adds `Accept` and never checks the response `Content-Type`; an output takes no media
   type. Concord does not enforce the field's cardinality (repeated declared `content-type` values
   are the author's choice).
@@ -299,8 +309,8 @@ parenthesized group is a tuple payload.
 - `body b?: T` absent sends no body and no format media type; a required `Option` body under `json`
   is `null`; an empty `text`/`bytes` body is present (with its media type). A body cannot be
   initialized.
-- Without `->` the output is `()`, any 2xx succeeds and the body is drained; a `response` default
-  does not apply. `-> ()` (or an alias of it) is a typed output decoded with its format: under
+- Without `->` the output is `()`, any 2xx succeeds and the body is drained; a `response`
+  statement does not apply. `-> ()` (or an alias of it) is a typed output decoded with its format: under
   `json` the body must be `null` and an empty 204 is a decode error.
 - Response handling: a non-2xx status is `ErrorKind::Status` carrying the **unread**
   `reqwest::Response` (`Error::into_response`); otherwise the body is read and decoded.
@@ -339,6 +349,16 @@ sent on the wire.
   `password`, `signature`, `session`. Sensitivity is sticky: a later public override, removal or
   reintroduction does not clear it.
 - A path segment or host label is sensitive if any of its holes reads a marked value.
+- **Native keys.** A key's name is its resolved `HeaderName`: a native constant on the list above
+  (`AUTHORIZATION`, an alias of it) classifies its values exactly as the literal does, and a
+  constant whose identifier looks sensitive but whose name is not on the list does not. Because
+  the macro cannot evaluate a constant, the compile-time fixpoint treats each native constant as a
+  header of its own, not on the list (a lower bound); a value it leaves unclassified that is sent
+  under a native constant is also withheld at run time — in the generated `Debug` (decided when
+  rendering) and in the outgoing flag (decided by the request's header plan) — when the resolved
+  name is on the list or names the same header as a sensitive contribution. Such a value that is
+  also written as text (path, subdomain, query, template) is withheld statically instead, since
+  URL redaction is static.
 - **Effective sensitivity** is computed to a fixpoint at compile time: a value is withheld if it is
   marked or feeds a sensitive key on any chain, and every key, path segment and host label that
   reads a withheld value is itself sensitive. Generated `Debug` withholds such values; `Prepared`

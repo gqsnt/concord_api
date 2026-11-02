@@ -1,0 +1,32 @@
+# Model runs (requested vs observed)
+
+Local harnesses: Claude Code subagents (Agent tool, `model` = opus/sonnet; transcripts under
+`~/.claude/projects/-home-canarit-projects-concord-api/<session>/subagents/`); Codex CLI
+`codex-cli 0.166.0` via `tools/run_codex_review.py` (explicit `--model`, `--effort`; the model
+must be in `~/.codex/models_cache.json`, which lists `gpt-6.1-sol` and `gpt-6.1-terra` with
+low/medium/high/xhigh). Observed settings: Codex — `turn_context` of the run's own session log
+(`tools/observe_settings.py`); Claude — `message.model` of every assistant record in the
+subagent transcript. Claude subagent effort is not separately configurable by the Agent tool and
+is not observable in the transcript (recorded as NOT_OBSERVABLE).
+
+| Run | Role | Requested | Observed | Source scope | Status |
+|---|---|---|---|---|---|
+| r1-opus | Designer O, blind | Claude Opus | claude-opus-5-5 (108/108 assistant records); tools used: Bash 60, Write 1, mark_chapter 1 | snapshot r1-opus (625ac49) + brief | completed 15:39:44→16:12:27Z, tracked sources unchanged (git status clean); 36 probe tests + 6 expected-failure crates; frozen `proposals/r1/opus.md` |
+| r1-sonnet | Designer N, blind | Claude Sonnet | claude-sonnet-5-5 (all assistant records so far); an `advisor` tool backed by claude-opus-5-5 is *available* in the session — invocation to be checked | snapshot r1-sonnet | running |
+| r1-sol-xhigh | Designer S, blind | gpt-6.1-sol / xhigh | gpt-6.1-sol / xhigh, workspace-write, network on (turn_context) | snapshot r1-sol-xhigh | completed 15:39:44→16:07:29Z, production source unchanged; frozen `proposals/r1/sol-xhigh.md` |
+| r1-terra-xhigh | Designer T, blind | gpt-6.1-terra / xhigh | gpt-6.1-terra / xhigh, workspace-write, network on (turn_context) | snapshot r1-terra-xhigh | completed 15:39:45→15:42:31Z, source unchanged; frozen `proposals/r1/terra-xhigh.md` |
+| r1-sol-medium | Builder M: pragmatic assessment, corpus, control | gpt-6.1-sol / medium | gpt-6.1-sol / medium, workspace-write, network on (turn_context) | snapshot r1-sol-medium | completed 15:39:45→15:51:38Z, production source unchanged; PRAGMATIC frozen 15:40:16Z; corpus 33/35 (18/18 operations); frozen `proposals/r1/sol-medium/` |
+
+Note (r1): the private registry lacked `criterion` and reqwest's multipart dependencies, so the Sol XHigh and builder runs could not run the full workspace suite or the multipart helper offline; refreshed with `cargo fetch --locked` from 625ac49 at 16:10Z for later rounds.
+
+## Round 2 — executable candidates and blind cross-review
+
+| Run | Role | Requested | Observed | Source scope | Status |
+|---|---|---|---|---|---|
+| r2-impl-a | Implement Candidate A (uniform statements; authors Opus/Sonnet/Terra) | gpt-6.1-sol / medium | gpt-6.1-sol / medium (turn_context) | snapshot r2-impl-a (625ac49 + corpus) | 16:19:07→16:29:38Z; patch +162/−113 in macro only; corpus 36/2 = control; frozen `proposals/r2/impl-a.*` |
+| r2-impl-b | Implement Candidate B (nodes; author Sol XHigh) | Claude Opus | claude-opus-5-5 (214/214 assistant records) | snapshot r2-impl-b | 16:19:07→16:47:31Z; patch +912/−608 (macro + repr.rs wording); corpus 36/2 = control; report delivered as message (file write refused by harness), frozen `proposals/r2/impl-b.*` |
+| xr-terra | Blind cross-review of X/Y/Z | gpt-6.1-terra / xhigh | gpt-6.1-terra / xhigh (turn_context) | snapshot of `review-r2-src` 429ba31 | 16:50:20→16:53:16Z, packet unchanged; ranking X > Z > Y (labelled taste); frozen `proposals/r2/xreview/terra.*` |
+| xr-sol | Blind cross-review of X/Y/Z | gpt-6.1-sol / xhigh | gpt-6.1-sol / xhigh (turn_context) | same packet | 16:50:20→16:59:59Z, packet unchanged (1,147 files hash-checked); ranking X > Z > Y (labelled taste); frozen `proposals/r2/xreview/sol.*` |
+| xr-sonnet | Blind cross-review (author/caller lens) | Claude Sonnet | claude-sonnet-5-5 (all assistant records) | same packet | completed 17:0xZ; ranking Z > Y > X with compiler-fact evidence; report delivered as message (file write refused); frozen `proposals/r2/xreview/sonnet.md` |
+
+Packet mapping (not given to reviewers): X = Candidate B, Y = control (current grammar), Z = Candidate A.

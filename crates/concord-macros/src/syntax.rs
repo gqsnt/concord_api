@@ -278,8 +278,8 @@ fn peek_media(input: ParseStream<'_>) -> bool {
     media(&input.fork()).is_ok()
 }
 
-/// 8e: a media type written on an output (`-> json("…") T`, `response json("…");`), reported at
-/// the literal when there is one.
+/// A media type written on an output (the removed `-> json("…") T`, or `response json("…");`),
+/// reported at the literal when there is one.
 fn output_media(input: ParseStream<'_>) -> syn::Error {
     let literal = |input: ParseStream<'_>| -> syn::Result<LitStr> {
         let content;
@@ -293,89 +293,25 @@ fn output_media(input: ParseStream<'_>) -> syn::Error {
     )
 }
 
-/// RFC 9110 `token` characters.
-fn is_tchar(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b)
-}
-
-/// A body media type: `type/subtype` tokens with optional `; name=value` parameters (a token or a
-/// quoted string), in visible ASCII with no surrounding whitespace (RFC 9110 §8.3.1). It becomes a
-/// compile-time `HeaderValue::from_static`.
+/// A declared body media type: parsed by the `mime` crate (Concord keeps no media-type grammar of
+/// its own) and checked by `http` as a static header value, since it becomes
+/// `HeaderValue::from_static` (visible ASCII).
 fn check_media_type(lit: &LitStr) -> syn::Result<()> {
     let text = lit.value();
     let fail = |why: &str| {
         Err(syn::Error::new(
             lit.span(),
             format!(
-                "{text:?} is not a media type: {why} (expected `type/subtype` with optional `; name=value` parameters, in visible ASCII, e.g. \"application/merge-patch+json\")"
+                "{text:?} is not a media type: {why} (expected `type/subtype` with optional `; name=value` parameters, e.g. \"application/merge-patch+json\")"
             ),
         ))
     };
-    let b = text.as_bytes();
-    if let Some(bad) = text
-        .chars()
-        .find(|c| !(*c == '\t' || (' '..='~').contains(c)))
-    {
-        return fail(&format!("{bad:?} is not visible ASCII"));
+    if text.parse::<mime::Mime>().is_err() {
+        return fail("rejected by the `mime` parser");
     }
-    if b.first().is_some_and(|c| *c == b' ' || *c == b'\t')
-        || b.last().is_some_and(|c| *c == b' ' || *c == b'\t')
-    {
-        return fail("it starts or ends with whitespace");
-    }
-    let mut i = 0;
-    let token = |i: &mut usize| {
-        let start = *i;
-        while *i < b.len() && is_tchar(b[*i]) {
-            *i += 1;
-        }
-        *i > start
-    };
-    let ows = |i: &mut usize| {
-        while *i < b.len() && (b[*i] == b' ' || b[*i] == b'\t') {
-            *i += 1;
-        }
-    };
-    if !token(&mut i) || b.get(i) != Some(&b'/') {
-        return fail("the type is not a token followed by `/`");
-    }
-    i += 1;
-    if !token(&mut i) {
-        return fail("the subtype is not a token");
-    }
-    loop {
-        ows(&mut i);
-        if i == b.len() {
-            return Ok(());
-        }
-        if b[i] != b';' {
-            return fail("expected `;` before a parameter");
-        }
-        i += 1;
-        ows(&mut i);
-        if i == b.len() || b[i] == b';' {
-            continue; // an empty parameter is allowed by the grammar
-        }
-        if !token(&mut i) || b.get(i) != Some(&b'=') {
-            return fail("a parameter is not `name=value`");
-        }
-        i += 1;
-        if b.get(i) == Some(&b'"') {
-            i += 1;
-            loop {
-                match b.get(i) {
-                    None => return fail("unterminated quoted parameter value"),
-                    Some(b'"') => {
-                        i += 1;
-                        break;
-                    }
-                    Some(b'\\') if i + 1 < b.len() => i += 2,
-                    Some(_) => i += 1,
-                }
-            }
-        } else if !token(&mut i) {
-            return fail("a parameter value is not a token or a quoted string");
-        }
+    match http::HeaderValue::from_str(&text) {
+        Ok(value) if value.to_str().is_ok() => Ok(()),
+        _ => fail("not a static header value (visible ASCII, checked by `http::HeaderValue`)"),
     }
 }
 
@@ -523,10 +459,10 @@ pub struct BodyParam {
     pub name: Ident,
     pub optional: bool,
     pub ty: Type,
-    /// The format written in place (`json item: T`); `None` for `body item: T` (the nearest
-    /// `request` default).
+    /// A format written in place (`json item: T`): a removed form, parsed only so the model can
+    /// report its replacement. `None` for `body item: T`.
     pub format: Option<Format>,
-    /// A media type written on the body: `FORMAT("…")` or `body("…")`.
+    /// A media type written on the body (`FORMAT("…")`, `body("…")`): removed, likewise.
     pub media: Option<LitStr>,
 }
 

@@ -18,7 +18,7 @@ A declaration is one **client**, any number of nested **scopes**, and **endpoint
   output.
 
 ```rust
-use concord::reqwest;
+use concord::reqwest::{self, header::{ACCEPT, AUTHORIZATION}};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -29,9 +29,9 @@ pub struct Issue {
 
 concord::api! {
     /// A slice of a code-hosting API.
-    pub client Forge(#[sensitive] header("authorization") token: String) {
+    pub client Forge(#[sensitive] header(AUTHORIZATION) token: String) {
         base "https://api.forge.example";
-        headers { "accept" = "application/json"; }
+        headers { ACCEPT = "application/json"; }
         response json;
 
         /// One repository.
@@ -64,10 +64,11 @@ methods have the child's name: `forge.repo(..)`, `repo.issue(..)`.
 Rules of the structure:
 
 - One `api!` declares exactly one client, with exactly one `base`.
-- Each owner (client, scope, endpoint) has at most one `path`, `subdomain`, `query { }` and
-  `headers { }` statement, and they come before its child declarations. Clients and scopes may
-  also declare the formats of the bodies and outputs below them, `request json;` and
-  `response json;` ([section 5](#5-bodies-and-responses-formats)).
+- Each owner (client, scope, endpoint) has at most one `path`, `subdomain`, `query { }`,
+  `headers { }`, `request` and `response` statement (`format F;` counts as both), and on clients
+  and scopes they come before the child declarations. `request`/`response`/`format` give the
+  formats of the bodies and outputs below, the nearest one winning
+  ([section 5](#5-bodies-and-responses-formats)).
 - Scopes may omit their parameter list (`scope admin { .. }`); endpoints always have one, possibly
   empty (`GET ping();` or `GET ping() { path "ping"; }`).
 - Methods: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`.
@@ -274,7 +275,8 @@ The shortest form places a value directly in its parameter list:
 | `query limit: u32` | `limit=<value>` |
 | `query("per-page") per_page: u32` | `per-page=<value>` |
 | `header("x-api-version") version: String` | `x-api-version: <value>` |
-| `header("accept") accept: HeaderValue` | `accept: <the native value, byte for byte>` |
+| `header(AUTHORIZATION) token: String` | `authorization: <value>` (a native `HeaderName` constant, §4.8) |
+| `header(ACCEPT) accept: HeaderValue` | `accept: <the native value, byte for byte>` |
 | `query("tag") each tags: Vec<String>` | one `tag=<item>` per item (any `IntoIterator` whose items are `Display`) |
 | `header("x-tag") each tags: Vec<HeaderValue>` | one `x-tag` line per item, in order |
 
@@ -336,7 +338,9 @@ written inside `query { }` or `headers { }`:
 
 A source is *present* when every optional value it reads is present. Mistakes — setting an
 inherited key without an operation, overriding or removing a key nobody sets — are compile errors
-(see [Diagnostics](DIAGNOSTICS.md)).
+(see [Diagnostics](DIAGNOSTICS.md)); with native header constants, the ones that depend on which
+header a constant holds are build errors from `prepare()` (§4.8). A header key in these statements
+is a literal or a native constant (`override AUTHORIZATION = token;`, `remove "accept";`).
 
 ### 4.4 Overriding with an optional value: `else inherit`
 
@@ -439,65 +443,117 @@ fn main() -> Result<(), concord::Error> {
 }
 ```
 
-### 4.8 Header rules
+### 4.8 Header names and values
 
-- Names must be valid header field names; `host`, `content-length`, `transfer-encoding`,
-  `connection`, `te`, `trailer`, `upgrade` and `keep-alive` are rejected (the transport owns them).
-  `authorization`, `cookie`, `accept` and `content-type` are ordinary.
-- A value placed directly (`header("k") x: T`, `"k" = x`, `"k" = each xs`) is converted with
-  `concord::ToHeaderValue`, not `Display`: a native `reqwest::header::HeaderValue` is sent byte
-  for byte with its sensitivity flag (it is cloned per request — for a `static` or
-  `HeaderValue::from_static` value that copies no bytes); `String`/`&str`, integers and `bool` are
-  accepted as they are; implement the trait for your own type.
-- Text — literal or formatted by a template, or a `String` value — must be visible ASCII, space or
-  tab. Literal text is checked at compile time (and becomes a static `HeaderValue`), other text
-  when the request is built (a build error names the header, never the value). Bytes outside that
-  set are sent only from a native value you built yourself (`HeaderValue::from_bytes`).
-- A native value is not text: it cannot fill a path, a query value or a template hole.
-- A value placed directly as a header **and** used as text (a path, subdomain, query value or
-  template) must be text itself — `String`, `&str`, an integer or `bool` — unless it is
-  `#[sensitive]`. A type's own `ToHeaderValue` may flag its header value sensitive, and that flag
-  cannot reach the value's text placements, so the combination is a compile error at the type;
-  send that header through a template (`"x-k" = "{x}"`, text everywhere), use a separate value,
-  or mark the value `#[sensitive]`.
+**Names.** A header key is a literal name or a Rust path to a native
+`reqwest::header::HeaderName` constant or static — a standard one or your own:
+
+```text
+header(AUTHORIZATION) token: String            headers { ACCEPT = "application/json"; }
+header(X_RIOT_TOKEN) key: String               headers { override AUTH = fresh; remove "accept"; }
+header("x-request-id") id: String              headers { header::ACCEPT_LANGUAGE = "en"; }
+```
+
+- A path is resolved by rustc where it is written (imports, aliases, re-exports, qualified and
+  absolute paths) and must name a `HeaderName`; a string constant is not converted ("`&str` is
+  not a native header name"). Concord never reads a constant's identifier: a local constant
+  named `AUTHORIZATION` that holds `x-other` is the header `x-other`.
+- A literal name is checked by `http::HeaderName::from_bytes` when the macro expands (invalid
+  names are compile errors) and normalized to lowercase. `host`, `content-length`,
+  `transfer-encoding`, `connection`, `te`, `trailer`, `upgrade` and `keep-alive` are rejected (the
+  transport owns them) — through a native constant too, as a build error when the request is
+  built.
+- **Composition follows the header, not its spelling** (§4.3): `"authorization"`, `AUTHORIZATION`
+  and an alias of it are one header, so `override "Authorization" = ..` replaces an inherited
+  `header(AUTHORIZATION)`. When every key of an endpoint's chain is a literal, the macro composes
+  it and every mistake is a compile error. When a chain names a native constant, the macro cannot
+  see which header the constant holds: it still reports the mistakes it can prove (the same
+  constant on both sides, literals on both sides), and the others — such as setting
+  `"authorization"` below `header(AUTHORIZATION)` without `override` — are a `Build` error from
+  `prepare()` naming the declaration. Which header each contribution names is decided on the names
+  alone, before any value is converted: a removed or replaced value is never formatted.
+
+**Values.** A value placed directly (`header(K) x: T`, `K = x`, `K = each xs`) goes through
+`concord::ToHeaderValue`, a closed set: a native `HeaderValue` (sent byte for byte with its
+sensitivity flag; a `static` or `from_static` value is cloned without copying), text (`String`,
+`&str`), the integers and `bool`, and `&T`/`Box`/`Rc`/`Arc`/`Cow` of these. Send another type's
+`Display` text with a template (`X_SORT = "{sort}"`), or build a `HeaderValue`.
+
+- Text — a literal, a template's result, a `String` value — is whatever
+  `http::HeaderValue::from_str` accepts (UTF-8 beyond ASCII included; no control bytes). Literal
+  text and each literal fragment of a template are checked when the macro expands, after Rust
+  escapes and `{{ }}` are decoded, so a line break in a literal fragment is a compile error that
+  no value can repair. Formatted text is checked when the request is built: a build error names
+  the header, never the value.
+- A native value is not text: it cannot fill a path, a query value or a template hole. So the
+  only value that can carry its own sensitivity flag is never written anywhere else, and a value's
+  header and text placements are classified alike.
 - `remove` and an absent key concern Concord's own contributions: headers configured on the
   `reqwest::Client` (default headers, user agent) are still added by reqwest.
 
 ```rust
-use concord::reqwest::{self, header::HeaderValue};
+use concord::reqwest::{self, header::{self, ACCEPT, AUTHORIZATION, HeaderName, HeaderValue}};
 
+/// A vendor header, declared the native way.
+pub const X_TRACE: HeaderName = HeaderName::from_static("x-trace");
 static ACCEPT_JSON: HeaderValue = HeaderValue::from_static("application/json");
 
 concord::api! {
     pub client Feed(
-        header("accept") accept: HeaderValue = &ACCEPT_JSON,
-        header("x-trace") trace?: HeaderValue,
+        header(AUTHORIZATION) token: String,
+        header(ACCEPT) accept: HeaderValue = &ACCEPT_JSON,
+        header(X_TRACE) trace?: HeaderValue,
     ) {
         base "https://feed.example.com";
         GET items(header("x-page") page: u32) { path "items"; }
+        GET public() {
+            path "public";
+            headers { remove "authorization"; }        // the header `AUTHORIZATION` names
+        }
+        GET localized() {
+            path "localized";
+            headers { header::ACCEPT_LANGUAGE = "fr, café"; }  // UTF-8 is a valid value
+        }
     }
 }
 
 fn main() -> Result<(), concord::Error> {
     let mut secret = HeaderValue::from_static("t-123");
     secret.set_sensitive(true); // kept: Concord's output shows `<redacted>`
-    let feed = Feed::new(reqwest::Client::new()).set_trace(secret);
+    let feed = Feed::new(reqwest::Client::new(), FeedConfig { token: "Bearer t".into() })
+        .set_trace(secret);
     let prepared = feed.items(2).prepare()?;
     let headers = prepared.request().headers();
     assert_eq!(headers["accept"], "application/json");
     assert!(headers["x-trace"].is_sensitive());
+    // `authorization` is on Concord's list of sensitive names, whatever the spelling.
+    assert!(headers["authorization"].is_sensitive());
     assert_eq!(headers["x-page"], "2");
     assert!(format!("{prepared:?}").contains("x-trace: <redacted>"));
+
+    let public = feed.public().prepare()?;
+    assert!(public.request().headers().get("authorization").is_none());
+    let localized = feed.localized().prepare()?;
+    assert_eq!(localized.request().headers()["accept-language"].as_bytes(), "fr, café".as_bytes());
     Ok(())
 }
 ```
 
 ## 5. Bodies and responses: formats
 
-Every body and every typed output has a **format**: how the payload becomes the request body, or
-how a 2xx response body becomes the output. Write it where the body or the output is declared, or
-once on the client or a scope as a **default**. A mostly-JSON API states JSON once and writes its
-exceptions on the endpoints they concern:
+A body and a typed output are declared with Rust types only — `body x: T` (or `body x?: T`) in the
+parameter list, `-> T` after it — exactly as the generated method takes and returns them. How
+they travel is their **format**, said by statements that any owner can write, with the same words
+on the client, a scope or an endpoint:
+
+```text
+format F;                 // both directions
+request F;                // how a body is encoded (its media type: F's own)
+request F "media/type";   // ... with that media type instead
+response F;               // how a typed output is decoded from a 2xx response
+```
+
+A mostly-JSON API says JSON once and writes each exception on the endpoint it concerns:
 
 ```rust
 use concord::bytes::Bytes;
@@ -522,16 +578,22 @@ pub struct ProductPatch {
 concord::api! {
     pub client Shop {
         base "https://shop.example.com/v1";
-        request json;  // a body declared `body x: T` is JSON
-        response json; // so is a typed output `-> T`
+        format json; // bodies and typed outputs below are JSON
 
         GET product(id: u64) -> Product { path "products/{id}"; }
         POST create(body product: NewProduct) -> Product { path "products"; }
-        PATCH patch(id: u64, json("application/merge-patch+json") patch: ProductPatch) -> Product {
+        PATCH patch(id: u64, body patch: ProductPatch) -> Product {
             path "products/{id}";
+            request json "application/merge-patch+json";
         }
-        GET description(id: u64) -> text String { path "products/{id}/description"; }
-        PUT image(id: u64, bytes("image/png") png: Bytes) { path "products/{id}/image"; }
+        GET description(id: u64) -> String {
+            path "products/{id}/description";
+            response text; // raw text, not a JSON string
+        }
+        PUT image(id: u64, body png: Bytes) {
+            path "products/{id}/image";
+            request bytes "image/png";
+        }
         DELETE delete(id: u64) { path "products/{id}"; }
     }
 }
@@ -557,9 +619,10 @@ fn main() -> Result<(), concord::Error> {
 }
 ```
 
-The generated signatures name the payloads only (`create(product: NewProduct)`,
-`send() -> Result<Product, Error>`); the format is in each endpoint's rustdoc, with the media type
-and where an inherited format comes from.
+The generated signatures are the declared ones (`create(product: NewProduct)`,
+`send() -> Result<Product, Error>`). Each endpoint's rustdoc — on its navigation method and on its
+request type, where `prepare` and `send` are — states the body's format and media type, the
+output's format, and which statement they come from.
 
 ### 5.1 The formats
 
@@ -572,45 +635,44 @@ and where an inherited format comes from.
 | a type path: `Csv`, `codecs::Csv` | your `Encode<T>` ([5.7](#57-custom-formats)) | your `Decode<T>` |
 
 The four words need no import and work under a renamed dependency; they name the types
-`concord::Json`, `Text`, `Binary` and `Form`. In format position a bare lowercase identifier must
-be one of them, so a lowercase format type is written as a path (`self::csv`). Everywhere else they
-are ordinary names: `json: String` is a value named `json`, `json query: Q` a JSON body named
-`query`.
+`concord::Json`, `Text`, `Binary` and `Form`. A format can also be any Rust path — an alias, a
+qualified, absolute or raw-identifier path — resolved by rustc; in format position a bare lowercase
+identifier must be one of the words, so a lowercase format type is written as a path (`self::csv`).
+Outside format position the words are ordinary names (a value may be called `json`).
 
-### 5.2 Defaults and exceptions
+### 5.2 Where formats come from
 
-- `request FORMAT;` and `response FORMAT;` are statements of the client or a scope (at most once
-  each, before its children). They give a format to every `body x: T` and every bare `-> T` below
-  them. The two directions are independent, and the nearest owner on an endpoint's chain wins: a
-  scope can declare `response text;` under a client's `response json;`.
-- An endpoint has no `request`/`response` statement: it writes its exception in place, on the body
-  (`text note: String`, `form login: Login`, `Csv rows: Vec<Row>`) or after `->`
-  (`-> text String`, `-> bytes Bytes`). A format written in place replaces the default's format
-  **and** its media type for that body or output.
-- `body x: T` or a bare `-> T` with no default on the chain is a compile error at the payload that
-  names both remedies.
-- A default cannot be cleared: under a client default, a scope cannot demand explicit formats. For
-  an API whose parts differ, put the defaults on the uniform scopes rather than the client, or
-  write every format in place (without defaults the language is purely local).
+- **One rule.** For each endpoint and each direction, the nearest statement wins: the endpoint's
+  own, then its scopes from the inside out, then the client. Siblings are unaffected by an
+  endpoint's statement. `format F;` counts as both `request F;` and `response F;`; an owner states
+  each direction at most once.
+- **A statement replaces format and media type together.** `request json;` on an endpoint under
+  `request json "application/vnd.api+json";` sends `application/json`; to keep a media type, restate
+  it (`request json "application/vnd.api+json";`).
+- **Mistakes are compile errors.** A body or typed output that no statement reaches is reported at
+  its type ("say `request json;` on this endpoint, a scope or the client"). On an endpoint, a
+  `request` without a body or a `response` without `->` has nothing to apply to and is an error;
+  `format` needs one of the two. Statements on clients and scopes that nothing uses are fine (and
+  resolve nothing, so a format behind a disabled feature costs nothing until used).
+- **No clearing.** A default cannot be cleared for a subtree. For an API whose parts differ, put
+  the defaults on the uniform scopes rather than on the client (or state the format on each
+  endpoint).
 
-Under a JSON default, `-> String` decodes a JSON string (`"2.4.1"`, not raw `2.4.1`) and
-`body note: String` sends a JSON string. Raw text is the exception `-> text String`,
-`text note: String`. Forgetting such an exception for a payload both formats accept is not a
-compile error but a decode error at runtime (or a rejection by the server): the rustdoc of every
-endpoint names its format and where it comes from.
+The format, not the Rust type, decides the wire: under `format json;`, `-> String` decodes a JSON
+string (`"2.4.1"`, not raw `2.4.1`) and `body note: String` sends one. Raw text is `response text;`
+/ `request text;`. Because a payload type such as `String` or `()` is accepted by several formats,
+moving an endpoint under another default can change its wire meaning without a compile error: when
+you move a group, state its formats on it (`response json;`) if they must not change, and check
+the endpoint rustdoc, which names each format and its origin.
 
 ### 5.3 Media types and `Content-Type`
 
-A body's `Content-Type` is its media type, sent exactly when the body is sent:
-
-- the format's own (`Encode::CONTENT_TYPE`: `application/json`, ...), or
-- a declared one: `json("application/merge-patch+json") patch: Patch` (in place),
-  `body("application/problem+json") p: Problem` (the inherited format, this media type), or
-  `request json("application/vnd.api+json");` (a default's, reached through `body`).
-
-Declared media types are checked by the macro (`type/subtype`, optional `; name=value`
-parameters, visible ASCII) and become compile-time constants; a format's `CONTENT_TYPE` is checked
-at compile time too, and not used at all where a declared media type replaces it.
+A body's `Content-Type` is its media type, sent exactly when the body is sent: the format's own
+(`Encode::CONTENT_TYPE`: `application/json`, ...) or the one its `request` statement declares
+(`request json "application/merge-patch+json";`). Declared media types are checked by the macro
+(`type/subtype`, optional `; name=value` parameters, visible ASCII) and become compile-time
+constants; a format's `CONTENT_TYPE` is checked at compile time too, and not used where a declared
+media type replaces it.
 
 A `content-type` header contribution that reaches the endpoint (placed or set in a `headers`
 block, conditional or not) is for values chosen at runtime. It replaces a format's own media type
@@ -625,23 +687,28 @@ and is sent whether or not there is a body:
 
 An empty header value counts as sent; an `each` over an empty collection sends nothing. A
 declared media type and a `content-type` header reaching the same endpoint are a compile error
-("keep one"); `remove "content-type";` in the endpoint or an enclosing scope resolves it. The
-`Content-Type` Concord inserts carries the `content-type` key's sensitivity (`#[sensitive]`, sticky
-composition). Concord never sends `Accept` and never checks the response `Content-Type`, so an
-output takes no media type; declare an `accept` header if the API needs one.
+("keep one"), or a build error when the header is named by a native constant the macro cannot
+see through; `remove CONTENT_TYPE;` in the endpoint or an enclosing scope resolves it. The
+`Content-Type` Concord inserts carries the `content-type` header's sensitivity (`#[sensitive]`,
+sticky composition). Concord never sends `Accept` and never checks the response `Content-Type`, so
+`response` takes no media type; declare an `ACCEPT` header if the API needs one.
 
 ```rust
 use concord::reqwest;
-use concord::reqwest::header::HeaderValue;
+use concord::reqwest::header::{CONTENT_TYPE, HeaderValue};
 
 concord::api! {
-    pub client Files(header("content-type") content_type?: HeaderValue) {
+    pub client Files(header(CONTENT_TYPE) content_type?: HeaderValue) {
         base "https://files.example.com";
+        request bytes;
 
-        PUT upload(name: String, bytes data: Vec<u8>) { path "files/{name}"; }
+        PUT upload(name: String, body data: Vec<u8>) { path "files/{name}"; }
         scope notes {
-            headers { remove "content-type"; }
-            PUT note(name: String, text("text/markdown") note: String) { path "notes/{name}"; }
+            headers { remove CONTENT_TYPE; }
+            PUT note(name: String, body note: String) {
+                path "notes/{name}";
+                request text "text/markdown";
+            }
         }
     }
 }
@@ -679,7 +746,7 @@ concord::api! {
 
         PUT discount(body discount: Option<Discount>) { path "discount"; }
         POST search(body filter?: Discount) { path "search"; }
-        PUT note(text note: String) { path "note"; }
+        PUT note(body note: String) { path "note"; request text; }
     }
 }
 
@@ -706,12 +773,14 @@ fn main() -> Result<(), concord::Error> {
 ```
 
 A body cannot have an initializer (`body b: T = ..` is a compile error): its presence is decided by
-`?` only.
+`?` only. An optional `Option<T>` body (`body b?: Option<T>`) has three states: absent
+(`maybe_b(None)`), `null` (`set_b(None)`) and a value (`set_b(Some(v))`).
 
 ### 5.5 No output versus `-> ()`
 
 - **No `->`**: the endpoint has no typed output. Any 2xx succeeds, the response body is drained
-  without being buffered, and the output is `()`. A `response` default does not apply.
+  without being buffered, and the output is `()`. A `response` statement does not apply (and is an
+  error on the endpoint itself).
 - **`-> ()`** is a typed output like any other, decoded with its format: under `response json;` the
   body must be JSON `null`, so an empty 204 is a decode error. `-> Unit` for `type Unit = ()`
   behaves the same. An endpoint that returns nothing omits `->`.
@@ -743,8 +812,8 @@ fn main() -> Result<(), concord::Error> {
 ### 5.6 Forms
 
 `form` is built in behind the `form` feature (`concord = { .., features = ["form"] }`), like
-reqwest's own `form` feature: `form login: Login` encodes any `Serialize` value with flat fields,
-`Vec<(String, String)>` keeps pair order and repeated names, and `-> form T` decodes a form
+reqwest's own `form` feature: `request form;` encodes any `Serialize` value with flat fields,
+`Vec<(String, String)>` keeps pair order and repeated names, and `response form;` decodes a form
 response. An OAuth token endpoint takes a form and returns JSON. Excerpt of
 [`crates/concord/tests/forms.rs`](../crates/concord/tests/forms.rs):
 
@@ -766,10 +835,10 @@ error before anything is sent.
 ### 5.7 Custom formats
 
 Any other format is a type of your own implementing `Encode<T>` and/or `Decode<T>`, named by its
-path in place (`Lines words: Vec<String>`, `-> Lines Vec<String>`) or in a default
-(`request Lines;`). There is no registry. Descriptions in `BodyError::new` must not contain body
-content: they are shown by Concord's `Display`. Attach the underlying error with `with_source`; it
-is reachable only through `Error::body_source`.
+path in a statement (`format Lines;`, `request codecs::Ndjson;`). There is no registry.
+Descriptions in `BodyError::new` must not contain body content: they are shown by Concord's
+`Display`. Attach the underlying error with `with_source`; it is reachable only through
+`Error::body_source`.
 
 ```rust
 use concord::bytes::Bytes;
@@ -797,8 +866,9 @@ impl Decode<Vec<String>> for Lines {
 concord::api! {
     pub client Words {
         base "https://words.example.com";
-        POST normalize(Lines words: Vec<String>) -> Lines Vec<String> {
+        POST normalize(body words: Vec<String>) -> Vec<String> {
             path "normalize";
+            format Lines;
         }
     }
 }
@@ -825,9 +895,9 @@ upload ([recipes](RECIPES.md)).
 
 Every value written as text — path segment, subdomain label, query value, template hole — is
 written with its `Display` implementation, then encoded for its placement. A value placed directly
-as a header is not formatted: it goes through `ToHeaderValue` (§4.8), so a type that only has
-`Display` is sent as a header through a template (`"x-sort" = "{sort}"`) or by implementing
-`ToHeaderValue`. Consequences:
+as a header is not formatted: it goes through `ToHeaderValue` (§4.8), a closed set, so a type
+that only has `Display` is sent as a header through a template (`X_SORT = "{sort}"`).
+Consequences:
 
 - `bool` is `true`/`false`; numbers use their `Display`.
 - `Option<T>` and `Vec<T>` have no `Display`: place them with `each` (zero or more occurrences) or

@@ -221,7 +221,7 @@ fn contrib_reads(model: &Model, id: ContribId) -> Vec<ValueRef> {
     }
 }
 
-/// The runtime type of a format written in place: a word is `$crate::{Json, Text, Binary, Form}`
+/// The runtime type of a format named by an endpoint statement: a word is `$crate::{Json, Text, Binary, Form}`
 /// located at the word (hygiene kept), so a missing feature or an unsupported payload is reported
 /// there; a path is the user's tokens, resolved at the declaration like any type.
 fn format_type(k: &TokenStream, format: &Format) -> TokenStream {
@@ -247,7 +247,7 @@ fn format_for(
     at: Span,
 ) -> TokenStream {
     match origin {
-        Origin::InPlace => format_type(k, format),
+        Origin::Endpoint => format_type(k, format),
         Origin::Default(owner) => {
             let o = &model.owners[owner];
             let d = if request { &o.request } else { &o.response };
@@ -846,7 +846,7 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
                     " `Content-Type: {}` ({}) is sent with the body.",
                     m.value(),
                     match origin {
-                        Origin::InPlace => "declared by the endpoint request statement".to_owned(),
+                        Origin::Endpoint => "declared by the endpoint request statement".to_owned(),
                         Origin::Default(o) =>
                             format!("from the `request` default of {}", model.describe(*o)),
                     }
@@ -945,7 +945,7 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
 /// "`json` (the endpoint statement)" / "`json` (the `request` default of the client `Shop`)".
 fn format_origin(model: &Model, format: &Format, origin: Origin, request: bool) -> String {
     let origin = match origin {
-        Origin::InPlace => "the endpoint statement".to_owned(),
+        Origin::Endpoint => "the endpoint statement".to_owned(),
         Origin::Default(o) => format!(
             "the `{}` default of {}",
             if request { "request" } else { "response" },
@@ -2004,7 +2004,7 @@ fn prepare_body(
             let name = &b.name;
             let ty = &b.ty;
             let at = match b.origin {
-                Origin::InPlace => b.format.span(),
+                Origin::Endpoint => b.format.span(),
                 Origin::Default(_) => ty.span(),
             };
             let format = format_for(k, model, &b.format, b.origin, true, at);
@@ -2058,7 +2058,7 @@ fn prepare_body(
         Some(o) => {
             let t = &o.ty;
             let at = match o.origin {
-                Origin::InPlace => o.format.span(),
+                Origin::Endpoint => o.format.span(),
                 Origin::Default(_) => t.span(),
             };
             let r = format_for(k, model, &o.format, o.origin, false, at);

@@ -15,6 +15,8 @@ proc-macro = true
 # Literal header names and values are checked with the native parser at expansion time; the
 # generated code builds them with the downstream `http` again, which stays authoritative.
 http.workspace = true
+# Declared body media types are parsed by `mime` (no Concord grammar).
+mime.workspace = true
 proc-macro2.workspace = true
 quote.workspace = true
 syn = { workspace = true, features = ["full", "parsing", "printing", "proc-macro", "clone-impls"] }

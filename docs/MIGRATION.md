@@ -1,54 +1,160 @@
 # Migration
 
-Three independent paths:
+Four independent paths:
 
-- [From `via` to formats](#from-via-to-formats) — the body and response syntax of the refined V4;
-  mechanical edits (a script), then optional defaults.
+- [From in-place formats to statements](#from-in-place-formats-to-statements) — the body and
+  response syntax and the header names of the final V4 (`concord-v4-final`), coming from
+  `concord-v4-native-repr`. Manual, guided by the compiler; callers need no change.
+- [From `via`](#from-via-to-statements) — the body and response syntax of the refined V4 up to
+  commit `c112845`.
 - [From the V4 alpha to the refined V4](#from-the-v4-alpha-400-alpha1-at-8f7adc2-to-the-refined-v4)
-  — a set of targeted syntax and API changes to the same design. Most declarations need
-  mechanical edits only.
+  — a set of targeted syntax and API changes to the same design.
 - [From V3 to V4](#from-concord-v3-to-v4) — a redesign; declarations are rewritten by hand.
 
 Code blocks marked "does not compile" show the old form. Every other Rust block in this file is
 compiled and run as a doctest of `examples/quickstart` (`cargo test --doc -p
 concord-example-quickstart`).
 
-## From `via` to formats
+## From in-place formats to statements
+
+A body or output no longer carries its format in place. Payload positions name Rust types only
+(`body b: T`, `-> T`), and the format comes from a `request`/`response`/`format` statement, which
+the client, a scope **or the endpoint** can write; the nearest one wins (decision F01,
+`v4/finalization/DECISIONS.md`). Generated signatures, `Encode<T>`/`Decode<T>`, status handling
+and the native exits are unchanged, so callers need no change.
+
+| In place (does not compile any more) | Statements |
+|---|---|
+| `json b: T` | `body b: T`, plus `request json;` on the endpoint unless the nearest statement already says `json` (without a media type) |
+| `json("application/merge-patch+json") b: T` | `body b: T` and `request json "application/merge-patch+json";` |
+| `body("application/problem+json") b: T` | `body b: T` and `request json "application/problem+json";` — a statement restates its format |
+| `Ndjson rows: Vec<Row>`, `text note: String` | `body rows: Vec<Row>` and `request Ndjson;`; `body note: String` and `request text;` |
+| `-> text String`, `-> Csv Rows` | `-> String` and `response text;`; `-> Rows` and `response Csv;` |
+| `request json("application/vnd.api+json");` | `request json "application/vnd.api+json";` |
+| `request json; response json;` | unchanged (or `format json;`) |
+| `GET health() -> text String;` | `GET health() -> String { response text; }` — a statement needs the endpoint's block |
+
+Migrate by hand: the compiler names the exact replacement at each old form, for example
+"removed in-place body format: write `body note: String` and `request text;` on this endpoint",
+"removed output format: write `-> String` and `response text;` on this endpoint" and
+"removed parenthesized media type: write `request json "application/vnd.api+json";`". A body or
+output that no statement reaches is "body `note` has no representation: say `request json;` on
+this endpoint, a scope or the client".
+
+Before (`concord-v4-native-repr`, does not compile any more):
+
+```rust,ignore
+concord::api! {
+    pub client Store {
+        base "https://store.example.com";
+        request json;
+        response json;
+        PATCH patch(id: u64, json("application/merge-patch+json") patch: Patch) -> Item {
+            path "items/{id}";
+        }
+        GET readme() -> text String { path "readme"; }
+        PUT upload(bytes data: Bytes) { path "upload"; }
+    }
+}
+```
+
+After:
+
+```rust
+use concord::bytes::Bytes;
+use concord::reqwest;
+use serde::{Deserialize, Serialize};
+
+#[derive(Deserialize)]
+pub struct Item {
+    pub id: u64,
+}
+
+#[derive(Serialize)]
+pub struct Patch {
+    pub name: Option<String>,
+}
+
+concord::api! {
+    pub client Store {
+        base "https://store.example.com";
+        format json;
+        PATCH patch(id: u64, body patch: Patch) -> Item {
+            path "items/{id}";
+            request json "application/merge-patch+json";
+        }
+        GET readme() -> String { path "readme"; response text; }
+        PUT upload(body data: Bytes) { path "upload"; request bytes; }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let store = Store::new(reqwest::Client::new());
+    let patch = store.patch(1, Patch { name: None }).prepare()?;
+    assert_eq!(patch.request().headers()["content-type"], "application/merge-patch+json");
+    let _: concord::Prepared<String> = store.readme().prepare()?;
+    let upload = store.upload(Bytes::from_static(b"\x00")).prepare()?;
+    assert_eq!(upload.request().headers()["content-type"], "application/octet-stream");
+    Ok(())
+}
+```
+
+**The automatic migration script is withdrawn.** `scripts/migrate_via.py` rewrote source with
+regular expressions. Run on the corpus of this campaign, it rewrote a string constant
+(`"-> Item via Json"`), a comment and a header literal, and merged two endpoints written on one
+line into invalid code. A tool that is safe has to work on tokens, scope its edits to `api!`
+invocations, show a diff and refuse ambiguous input; for a change this small the compiler's
+replacement messages are the safer route. The script and its check are removed from the repository.
+
+### Native header names
+
+Literal header names keep working. A key can also be a native `HeaderName` constant or static —
+standard (`header(AUTHORIZATION)`, `ACCEPT = "..."`), your own
+(`const X_RIOT_TOKEN: HeaderName = HeaderName::from_static("x-riot-token")`), imported, aliased
+or qualified. Replacing a literal by the equivalent constant changes nothing on the wire:
+composition (`override`, `append`, `remove`), the reserved names and the safety list of sensitive
+names follow the header a key names, whatever its spelling. The difference is when some mistakes
+are reported: in a chain with a native constant, a mistake that depends on which header the
+constant holds (setting `"authorization"` below `header(AUTHORIZATION)` without `override`) is a
+`Build` error from `prepare()` naming the declaration, not a compile error; mistakes the macro can
+prove remain compile errors ([author guide §4.8](AUTHOR_GUIDE.md#48-header-names-and-values)).
+
+### Header values: a closed `ToHeaderValue`
+
+`ToHeaderValue` is now implemented only by Concord: a native `HeaderValue`, `String`/`&str`, the
+integers, `bool`, and pointers to them. An `impl ToHeaderValue for MyType` no longer compiles;
+send the type's `Display` text with a template (`X_DETAIL = "{detail}"`) or build a `HeaderValue`.
+`concord::__private::TextHeader` and the rule "a value placed as a header and as text must be
+text" are gone: only a `HeaderValue` can carry its own sensitivity flag, and it is never text.
+
+Header text follows `http` (`HeaderValue::from_str`) instead of Concord's visible-ASCII rule:
+UTF-8 beyond ASCII (`café`) is now sent where it used to be a build error (or, as a literal, a
+compile error). Control bytes are still rejected — at compile time for a literal or a template's
+literal fragment, as a build error for formatted text.
+
+## From `via` to statements
 
 The body and response syntax of the refined V4 up to commit `c112845` (`body b: T via R`,
-`-> T via R`) is replaced by **formats** (decision N06, `v4/native-repr/DECISIONS.md`). Every body
-and typed output still has an explicit format; it is written before the payload, in place, or
-inherited from a `request`/`response` default of the client or an enclosing scope. Generated
-signatures, the `Encode<T>`/`Decode<T>` traits, status handling and the native exits are
-unchanged, so callers need no change.
+`-> T via R`) is replaced by representation statements (decision F01,
+`v4/finalization/DECISIONS.md`; the intermediate in-place formats are the previous section). Every
+body and typed output still has an explicit format, given by the nearest `request`/`response`
+statement of the endpoint, a scope or the client. Generated signatures, the `Encode<T>`/`Decode<T>`
+traits, status handling and the native exits are unchanged, so callers need no change.
 
-| `via` | Formats | Note |
+| `via` | Statements | Note |
 |---|---|---|
-| `-> T via Json` | `-> json T`, or `-> T` under `response json;` | the words `json`, `text`, `bytes`, `form` need no import |
-| `-> String via Text`, `-> Bytes via Binary` | `-> text String`, `-> bytes Bytes` | |
-| `body b: T via Json` | `json b: T`, or `body b: T` under `request json;` | the format replaces the word `body` |
-| `body b?: T via my::Csv` | `my::Csv b?: T` | any other format is its type path |
+| `-> T via Json` | `-> T` under `response json;` (or `format json;`) | the words `json`, `text`, `bytes`, `form` need no import |
+| `-> String via Text`, `-> Bytes via Binary` | `-> String` with `response text;`, `-> Bytes` with `response bytes;` | on the endpoint, or on a scope that is uniform |
+| `body b: T via Json` | `body b: T` under `request json;` | |
+| `body b?: T via my::Csv` | `body b?: T` with `request my::Csv;` | any other format is its type path |
 | `use concord::{Binary, Json, Text};` | — | remove: unused imports are reported by rustc |
-| `headers { "content-type" = "application/merge-patch+json"; }` for one body | `json("application/merge-patch+json") patch: Patch` | the media type belongs to the body: sent exactly when the body is |
-| a downstream form encoder | `form b: T` (feature `form`) | `serde_urlencoded`, `application/x-www-form-urlencoded` |
-| no `->` | no `->` | unchanged: any 2xx, the body is drained, whatever the defaults |
+| `headers { "content-type" = "application/merge-patch+json"; }` for one body | `request json "application/merge-patch+json";` | the media type belongs to the body: sent exactly when the body is |
+| a downstream form encoder | `request form;` (feature `form`) | `serde_urlencoded`, `application/x-www-form-urlencoded` |
+| no `->` | no `->` | unchanged: any 2xx, the body is drained, whatever the statements |
 
-Migrating takes up to three steps:
-
-1. **Mechanical.** `scripts/migrate_via.py FILE...` moves every `via R` before its payload and
-   keeps the path `R` exactly: `-> Item via Json` becomes `-> Json Item`, `body n: String via
-   concord::Text` becomes `concord::Text n: String`. The result names the same types as the input,
-   because which type a path means is decided by Rust's name resolution (imports, `cfg`, a local
-   module named `concord`), which a text rewrite cannot see; so no path is turned into a word. A
-   bare lowercase name (`via text`, a type of your own) is left unchanged and reported: in format
-   position it would read as a built-in word, so write `self::text`. The compiler finds what the
-   script leaves: every leftover `via` is an error naming the same path.
-2. **Optional, by hand.** Where a kept path is Concord's own `Json`, `Text` or `Binary`, the words
-   `json`, `text`, `bytes` are the short form (`-> json Item`); a downstream type keeps its path.
-3. **Optional.** Where most endpoints share a format, declare it once (`request json;
-   response json;` on the client, or on the scopes that are uniform) and write `body b: T` and
-   `-> T`; the exceptions stay on their endpoints. Under a JSON default `-> String` is a JSON
-   string: keep `-> text String` for raw text ([author guide](AUTHOR_GUIDE.md#52-defaults-and-exceptions)).
+Migrate by hand: a leftover `via` is a compile error naming its replacement. Where most endpoints
+share a format, state it once on the client (`format json;`) or on the uniform scopes, and write
+the exceptions as statements on their endpoints.
 
 Refined V4 with `via` (does not compile any more):
 
@@ -72,7 +178,7 @@ concord::api! {
 }
 ```
 
-Formats:
+Statements:
 
 ```rust
 use concord::bytes::Bytes;
@@ -97,16 +203,16 @@ pub struct Patch {
 concord::api! {
     pub client Store {
         base "https://store.example.com";
-        request json;
-        response json;
+        format json;
 
         GET item(id: u64) -> Item { path "items/{id}"; }
         POST create(body item: NewItem) -> Item { path "items"; }
-        PATCH patch(id: u64, json("application/merge-patch+json") patch: Patch) -> Item {
+        PATCH patch(id: u64, body patch: Patch) -> Item {
             path "items/{id}";
+            request json "application/merge-patch+json";
         }
-        GET readme() -> text String { path "readme"; }
-        PUT upload(bytes data: Bytes) { path "upload"; }
+        GET readme() -> String { path "readme"; response text; }
+        PUT upload(body data: Bytes) { path "upload"; request bytes; }
         DELETE remove(id: u64) { path "items/{id}"; }
     }
 }
@@ -121,22 +227,6 @@ fn main() -> Result<(), concord::Error> {
 }
 ```
 
-The compiler names each edit:
-
-- a leftover `via` (`crates/concord/tests/ui/format_via_removed.stderr`): "`via` was removed: the
-  format comes before the type, `-> json Item` (or `-> Item` under a `response json;` default on
-  the client or an enclosing scope)", and for a body "`via` was removed: the format comes before the
-  name, `text note?: String` (or `body note?: String` under a `request text;` default on the
-  client or an enclosing scope)";
-- a payload with neither a format nor a default
-  (`crates/concord/tests/ui/representation_missing_via.stderr`): "output `Item` has no format, and
-  no `response` default reaches this endpoint: write the format in place (`-> json Item`) or
-  declare a default on the client or an enclosing scope (`response json;`); an endpoint without
-  typed output omits `->`";
-- a format statement on an endpoint (`format_endpoint_statement.stderr`): "an endpoint has no
-  `response` statement: write the format where the output is declared (`-> text String`,
-  `-> bytes Bytes`); `response FORMAT;` is a default on a client or scope".
-
 Behaviour changes:
 
 - A format's `Encode::CONTENT_TYPE` that is not a valid header value is a **compile error** at the
@@ -149,19 +239,20 @@ Behaviour changes:
   (`#[sensitive]` or sticky composition); it was never flagged before.
 - A custom format with a lowercase single-word name is written as a path (`self::csv`): in format
   position a bare lowercase word must be `json`, `text`, `bytes` or `form`.
+- A leftover `via` is a compile error naming the replacement statement.
 
 ## From the V4 alpha (4.0.0-alpha.1 at 8f7adc2) to the refined V4
 
 The version number is unchanged (`4.0.0-alpha.1`); the refinement is the history after commit
 `8f7adc2` (tag `concord-v4-alpha1-baseline`). The reasons for each change are recorded in
 `v4/refinement/DECISIONS.md` (D01–D18). Breaking changes (the "Refined" column shows the current
-formats, which replaced the intermediate `T via R` spelling):
+statements, which replaced the intermediate `T via R` and in-place spellings):
 
 | Alpha | Refined | Fix |
 |---|---|---|
 | `Client::new(http, a, b)` | `Client::new(http, ClientConfig { a, b })` | name the required client values |
-| `-> Json<T>`, `body b: Json<T>` | `-> json T`, `json b: T` (or `-> T`, `body b: T` under `response json;`, `request json;`) | the format word, then the payload type |
-| `-> Text`, `-> Binary`, `body b: Binary` | `-> text String`, `-> bytes Bytes`, `bytes b: Bytes` | same |
+| `-> Json<T>`, `body b: Json<T>` | `-> T`, `body b: T` under `response json;`, `request json;` (or `format json;`) | the payload type, and a statement for its format |
+| `-> Text`, `-> Binary`, `body b: Binary` | `-> String` with `response text;`, `-> Bytes` with `response bytes;`, `body b: Bytes` with `request bytes;` | same |
 | `-> ()` | no `->` | delete it; the output is `()` and the body is drained |
 | `impl Encode for R { type Value = T; .. }` | `impl Encode<T> for R { .. }` | traits are generic over the payload; `Decode::DISCARD` is gone |
 | `Prepared<Json<T>>`, `Decoder<Json<T>>` | `Prepared<T>`, `Decoder<T>` | name the output type |
@@ -244,11 +335,12 @@ pub struct NewItem {
 concord::api! {
     pub client Store {
         base "https://store.example.com";
-        GET item(id: u64) -> json Item { path "items/{id}"; }
-        POST create(json item: NewItem) -> json Item { path "items"; }
-        GET readme() -> text String { path "readme"; }
-        GET archive() -> bytes Bytes { path "archive"; }
-        PUT upload(bytes data: Bytes) { path "upload"; }
+        format json;
+        GET item(id: u64) -> Item { path "items/{id}"; }
+        POST create(body item: NewItem) -> Item { path "items"; }
+        GET readme() -> String { path "readme"; response text; }
+        GET archive() -> Bytes { path "archive"; response bytes; }
+        PUT upload(body data: Bytes) { path "upload"; request bytes; }
         DELETE remove(id: u64) { path "items/{id}"; }
     }
 }
@@ -265,13 +357,8 @@ fn main() -> Result<(), concord::Error> {
 `bytes` also accepts `Vec<u8>` in both directions. Generated signatures now name the payload
 directly (`send(self) -> Result<Item, Error>`) instead of `<Json<Item> as Decode>::Output`.
 
-The compiler recognizes the old forms and names the edit
-(`crates/concord/tests/ui/representation_alpha_spelling.stderr`): `-> concord::Json<Item>` gets
-"`-> concord::Json<Item>` is the V4-alpha spelling: write the format before the payload type,
-`-> json Item` (or `-> Item` under a `response json;` default on the client or an enclosing
-scope)" (likewise `-> text String`, `-> bytes Bytes`, and `json item: Item` for a body), and
-`-> ()` without a format says that it is a typed unit and that an endpoint without typed output
-omits `->`.
+The compiler recognizes the alpha spellings (`-> concord::Json<Item>`, `body b: Json<T>`, `-> ()`
+without a format) and names the replacement.
 
 ### Custom `Encode` / `Decode`
 
@@ -323,8 +410,9 @@ impl Decode<Vec<String>> for Lines {
 concord::api! {
     pub client Words {
         base "https://words.example.com";
-        POST normalize(Lines words: Vec<String>) -> Lines Vec<String> {
+        POST normalize(body words: Vec<String>) -> Vec<String> {
             path "normalize";
+            format Lines;
         }
     }
 }

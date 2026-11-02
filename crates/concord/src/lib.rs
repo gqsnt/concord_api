@@ -13,8 +13,11 @@
 //!
 //! ```
 //! # #[cfg(feature = "json")] mod quick_start {
-//! use concord::reqwest;
+//! use concord::reqwest::{self, header::{AUTHORIZATION, HeaderName}};
 //! use serde::{Deserialize, Serialize};
+//!
+//! /// A header of this API, declared the native way.
+//! pub const X_API_VERSION: HeaderName = HeaderName::from_static("x-api-version");
 //!
 //! #[derive(Debug, Deserialize)]
 //! pub struct Issue {
@@ -30,12 +33,11 @@
 //! concord::api! {
 //!     /// A slice of a code-hosting API.
 //!     pub client Forge(
-//!         #[sensitive] header("authorization") token: String,
-//!         header("x-api-version") version: String = "2024-01-01",
+//!         #[sensitive] header(AUTHORIZATION) token: String,
+//!         header(X_API_VERSION) version: String = "2024-01-01",
 //!     ) {
 //!         base "https://api.forge.example";
-//!         request json;  // bodies declared `body x: T` are JSON
-//!         response json; // so are typed outputs `-> T`
+//!         format json; // bodies `body x: T` and typed outputs `-> T` are JSON
 //!
 //!         scope repo(owner: String, name: String) {
 //!             path "repos/{owner}/{name}";
@@ -46,7 +48,7 @@
 //!             POST create_issue(body issue: NewIssue) -> Issue {
 //!                 path "issues";
 //!             }
-//!             GET readme() -> text String { path "readme"; } // an exception, written in place
+//!             GET readme() -> String { path "readme"; response text; } // an exception, on its endpoint
 //!             DELETE lock() { path "lock"; } // no `->`: any 2xx, the body is drained
 //!         }
 //!     }
@@ -104,7 +106,7 @@
 //! | [`Encode<T>`](Encode), [`Decode<T>`](Decode) | format traits: the words `json`, `text`, `bytes`, `form` name `Json` (feature `json`), [`Text`], [`Binary`], `Form` (feature `form`); any other format is your own type, named by its path |
 //! | [`BodyError`] | an encoding or decoding failure with a content-free description |
 //! | [`IntoValue<T>`](IntoValue) | the closed set of conversions accepted by arguments and setters |
-//! | [`ToHeaderValue`] | how a placed value becomes a header value: native `HeaderValue`, text, integers, `bool`, or your own type |
+//! | [`ToHeaderValue`] | the closed set of header values: native `HeaderValue`, text, integers, `bool` (another type is sent through a template) |
 //! | `concord::reqwest`, `concord::bytes` | the re-exported [`reqwest`](https://docs.rs/reqwest/0.13) and [`bytes`](https://docs.rs/bytes/1) crates |
 //!
 //! # The declaration at a glance
@@ -112,39 +114,40 @@
 //! ```text
 //! client Name(values) { base "https://..."; statements; children }
 //! scope name(values) { statements; children }
-//! GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS name(values) [-> output] { statements }
+//! GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS name(values) [-> T] { statements }
 //!
 //! values:      x: T  |  x: T = expr  |  x?: T  |  x?: T = expr
-//! placements:  query x  |  query("name") x  |  header("name") x  |  ... each x
-//! body:        body b: T  |  body("media/type") b: T  |  FORMAT b: T  |  FORMAT("media/type") b: T
-//!              (at most one, endpoints only; `b?: T` for an optional body)
-//! output:      -> T  |  -> FORMAT T  (no `->`: no typed output, any 2xx, the body is drained)
+//! placements:  query x  |  query("name") x  |  header(KEY) x  |  ... each x
+//! KEY:         "x-name"  |  a native HeaderName constant or static: AUTHORIZATION, X_API_KEY, ...
+//! body:        body b: T  |  body b?: T   (at most one, endpoints only)
+//! output:      -> T  (no `->`: no typed output, any 2xx, the body is drained)
 //! FORMAT:      json  |  text  |  bytes  |  form  |  a type path implementing Encode/Decode
 //! attributes:  /// docs  |  #[sensitive] (values)  |  #[cfg(..)], #[deprecated] (scopes, endpoints)
 //! statements:  path "a/{x}";  subdomain "{x}";  query { .. }  headers { .. }
-//!              request FORMAT;  request FORMAT("media/type");  response FORMAT;  (clients, scopes)
+//!              format FORMAT;  request FORMAT;  request FORMAT "media/type";  response FORMAT;
+//!              (on clients, scopes and endpoints; the nearest one wins)
 //!
-//! query / headers blocks:
-//!     "k" = v;                        set a key no enclosing owner sets
-//!     append "k" = v;                 add occurrences after the inherited ones
-//!     override "k" = v;               replace the inherited occurrences (v always present)
-//!     override "k" = v else inherit;  v can be absent: replace when present, keep when absent
-//!     remove "k";                     drop the inherited occurrences (acts first in its owner)
+//! query / headers blocks (a header key is a literal or a native constant):
+//!     KEY = v;                        set a key no enclosing owner sets
+//!     append KEY = v;                 add occurrences after the inherited ones
+//!     override KEY = v;               replace the inherited occurrences (v always present)
+//!     override KEY = v else inherit;  v can be absent: replace when present, keep when absent
+//!     remove KEY;                     drop the inherited occurrences (acts first in its owner)
 //! ```
 //!
 //! `?` is Concord's presence marker; no meaning is inferred from type names. Every body and typed
-//! output has a format: written in place (`json item: T`, `-> text String`) or, for `body b: T` and
-//! a bare `-> T`, the nearest `request`/`response` default of an enclosing scope or the client. Path segments,
-//! subdomain labels, query values and template holes are written with `Display`; a value placed
-//! directly as a header goes through [`ToHeaderValue`], so a native `HeaderValue` is sent as is.
-//! A bare name refers to the current owner; `client.x` or `scope.x` reaches an enclosing owner.
-//! All composition is decided at compile time; generated code only checks whether optional values
-//! are present.
+//! output has a format: the nearest `request`/`response` (or `format`) statement of the endpoint,
+//! an enclosing scope or the client. Path segments, subdomain labels, query values and template
+//! holes are written with `Display`; a value placed directly as a header goes through
+//! [`ToHeaderValue`], so a native `HeaderValue` is sent as is. Header names and values are checked
+//! by `http` itself. A bare name refers to the current owner; `client.x` or `scope.x` reaches an
+//! enclosing owner. Composition is decided at compile time, except which header a native
+//! `HeaderName` constant names, compared by name when the request is built.
 //!
 //! # Native requests
 //!
 //! ```no_run
-//! # concord::api! { pub client Api { base "http://x.test"; GET item(id: u64) -> text String { path "items/{id}"; } } }
+//! # concord::api! { pub client Api { base "http://x.test"; GET item(id: u64) -> String { path "items/{id}"; response text; } } }
 //! # async fn run(api: Api) -> Result<(), Box<dyn std::error::Error>> {
 //! let prepared = api.item(7).prepare()?; // no I/O
 //! println!("{prepared:?}"); // redacted rendering

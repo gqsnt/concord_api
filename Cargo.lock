@@ -327,6 +327,7 @@ version = "4.0.0-alpha.1"
 dependencies = [
  "concord",
  "http",
+ "mime",
  "proc-macro2",
  "quote",
  "syn 3.0.9",

@@ -97,8 +97,8 @@ pub enum Kind {
 /// Where a body's or output's format (or a body's media type) comes from.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Origin {
-    /// Written in an endpoint representation statement.
-    InPlace,
+    /// The endpoint's own `request`/`response`/`format` statement.
+    Endpoint,
     /// The `request`/`response` statement of this client or scope (the nearest on the chain).
     Default(usize),
 }
@@ -1553,8 +1553,8 @@ impl Model {
 
     /// 8c: a media type declared for the body and a `content-type` header contribution that
     /// survives composition on the endpoint (conditional ones included) would both set
-    /// `Content-Type`. A `remove "content-type"` that drops every inherited contribution, or a
-    /// body format written in place without a media type, resolves it.
+    /// `Content-Type`. A `remove CONTENT_TYPE` that drops every inherited contribution, or a
+    /// `request` statement without a media type on the endpoint, resolves it.
     fn check_media_conflict(&self, endpoint: usize, composed: &Composed, errors: &mut Errors) {
         let Some(body) = self.owners[endpoint].body() else {
             return;
@@ -1598,7 +1598,7 @@ impl Model {
         };
         let name = plain(&body.name);
         let (span, from, fix) = match origin {
-            Origin::InPlace => (
+            Origin::Endpoint => (
                 media.span(),
                 "written in the endpoint request statement".to_owned(),
                 "remove the media type from the endpoint request statement".to_owned(),
@@ -2140,8 +2140,8 @@ fn endpoint_body(
     let (format, origin, media) = match own {
         Some(d) => (
             d.format.clone(),
-            Origin::InPlace,
-            d.media.clone().map(|m| (m, Origin::InPlace)),
+            Origin::Endpoint,
+            d.media.clone().map(|m| (m, Origin::Endpoint)),
         ),
         None => match nearest(out, ancestor, true) {
             Some(o) => {
@@ -2193,7 +2193,7 @@ fn endpoint_output(
         return None;
     }
     let (format, origin) = match own {
-        Some(d) => (d.format.clone(), Origin::InPlace),
+        Some(d) => (d.format.clone(), Origin::Endpoint),
         None => match nearest(out, ancestor, false) {
             Some(owner) => {
                 let d = out[owner].response.as_mut().expect("nearest has a default");
