@@ -36,12 +36,14 @@ unchanged, so callers need no change.
 Migrating takes two steps:
 
 1. **Mechanical.** `scripts/migrate_via.py FILE...` moves every `via R` before its payload.
-   Concord's markers become the words — `concord::Json`, `concord::Text`, `concord::Binary`, or a
-   bare `Json`/`Text`/`Binary` imported from `concord` in the same file. Any other type stays a
-   path: `codec::Text`, a bare `Text` not imported from `concord`, a renamed crate's `c4::Json`, a
-   downstream `Form`. Nothing else changes, so the result names the same types as the input. The
-   compiler finds what the script misses (multi-line declarations): every leftover `via` is an
-   error with the exact replacement.
+   Only `concord::Json`, `concord::Text` and `concord::Binary` written with their crate path become
+   the words `json`, `text`, `bytes`. Every other path stays a path — a bare `Json`, `codec::Text`,
+   a renamed crate's `c4::Json`, a downstream `Form` — because which type a bare name means is
+   decided by Rust's name resolution, not by the text: `-> Item via Json` becomes `-> Json Item`,
+   which still means `concord::Json` where that is what `Json` resolves to, and can be shortened
+   to `-> json Item` by hand. Nothing else changes, so the result names the same types as the
+   input. The compiler finds what the script misses (multi-line declarations): every leftover `via`
+   is an error with the exact replacement.
 2. **Optional.** Where most endpoints share a format, declare it once (`request json;
    response json;` on the client, or on the scopes that are uniform) and write `body b: T` and
    `-> T`; the exceptions stay on their endpoints. Under a JSON default `-> String` is a JSON

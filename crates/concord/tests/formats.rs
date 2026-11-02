@@ -344,6 +344,46 @@ async fn row5_aliases_follow_the_written_format() {
     );
 }
 
+/// What `scripts/migrate_via.py` leaves for a bare `via Json` / `via Text` (review F3a): the marker
+/// types named by path behave exactly like the words `json` / `text`.
+mod migrated {
+    use super::{Item, NewItem};
+    use concord::{Json, Text};
+
+    concord::api! {
+        pub client Migrated {
+            base "http://migrated.invalid";
+            POST by_path(Json item: NewItem) -> Json Item { path "p"; }
+            POST by_word(json item: NewItem) -> json Item { path "w"; }
+            PUT note(Text n: String) -> Text String { path "n"; }
+        }
+    }
+}
+
+#[tokio::test]
+async fn migrated_marker_paths_behave_like_the_words() {
+    let server = Server::start(|r| match r.path() {
+        "/n" => Reply::new(200).body("raw"),
+        _ => Reply::json(200, r#"{"id":3}"#),
+    })
+    .await;
+    let api = migrated::Migrated::new(http())
+        .with_base_url(server.url())
+        .unwrap();
+    let new = || NewItem { name: "n".into() };
+    assert_eq!(
+        api.by_path(new()).send().await.unwrap(),
+        api.by_word(new()).send().await.unwrap()
+    );
+    assert_eq!(api.note("x").send().await.unwrap(), "raw");
+    let r = server.requests();
+    assert_eq!(
+        (r[0].body.as_slice(), content_types(&r[0])),
+        (r[1].body.as_slice(), content_types(&r[1]))
+    );
+    assert_eq!(content_types(&r[2]), ct("text/plain; charset=utf-8"));
+}
+
 concord::api! {
     /// Row 6a: request and response defaults are independent; the nearest owner wins; a scope
     /// without its own default inherits (there is no clearing, row 6d).
