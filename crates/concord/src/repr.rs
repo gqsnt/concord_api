@@ -31,8 +31,8 @@ use bytes::Bytes;
 /// [`Prepared::into_parts`](crate::Prepared::into_parts).
 #[diagnostic::on_unimplemented(
     message = "the format `{Self}` cannot encode a `{T}` request body",
-    label = "this body's format is `{Self}` (written here or inherited from a `request` default); it needs `{Self}: Encode<{T}>`",
-    note = "built in: `json` (any `Serialize`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `Serialize`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Encode<{T}>`, written by its path in place or in a `request` default"
+    label = "this body's format is `{Self}` (the nearest `request` statement: on the endpoint, a scope or the client); it needs `{Self}: Encode<{T}>`",
+    note = "built in: `json` (any `Serialize`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `Serialize`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Encode<{T}>`, named by its path: `request Ndjson;`"
 )]
 pub trait Encode<T> {
     /// The media type sent as `Content-Type` with the body (see the trait documentation).
@@ -50,8 +50,8 @@ pub trait Encode<T> {
 /// checks the response `Content-Type` and sends no `Accept`.
 #[diagnostic::on_unimplemented(
     message = "the format `{Self}` cannot decode a `{T}` response",
-    label = "this output's format is `{Self}` (written here or inherited from a `response` default); it needs `{Self}: Decode<{T}>`",
-    note = "built in: `json` (any `DeserializeOwned`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `DeserializeOwned`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Decode<{T}>`, written by its path in place or in a `response` default; an endpoint without typed output omits `->`"
+    label = "this output's format is `{Self}` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `{Self}: Decode<{T}>`",
+    note = "built in: `json` (any `DeserializeOwned`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `DeserializeOwned`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Decode<{T}>`, named by its path: `response Csv;`; an endpoint without typed output omits `->`"
 )]
 pub trait Decode<T> {
     /// Decodes a complete response body.

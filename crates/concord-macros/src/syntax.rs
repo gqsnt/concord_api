@@ -24,6 +24,7 @@ mod kw {
     syn::custom_keyword!(inherit);
     syn::custom_keyword!(request);
     syn::custom_keyword!(response);
+    syn::custom_keyword!(format);
     syn::custom_keyword!(json);
     syn::custom_keyword!(text);
     syn::custom_keyword!(bytes);
@@ -129,17 +130,20 @@ impl Word {
 
 const WORDS: &str = "`json`, `text`, `bytes` or `form`";
 
-/// A typed output: `-> T` (the inherited `response` default) or `-> FORMAT T`.
+/// A typed output: `-> T`. Legacy format tokens are retained only for migration errors.
 pub struct Output {
     pub ty: Type,
     /// `None`: the nearest `response` default.
     pub format: Option<Format>,
 }
 
-/// `request FORMAT;`, `request FORMAT("media/type");` or `response FORMAT;` on a client or scope.
+/// A uniform representation statement on any owner.
+#[derive(Clone)]
 pub struct FormatDefault {
     pub format: Format,
     pub media: Option<LitStr>,
+    /// Written as `format F;` (both directions).
+    pub both: bool,
 }
 
 /// A type or path as written, without `quote`'s token spacing (`Vec<Item>`, not `Vec < Item >`).
@@ -185,11 +189,11 @@ fn reject_via(input: ParseStream<'_>, ty: &Type, site: ViaSite<'_>) -> syn::Resu
     let format = replacement(&repr);
     let ty = type_text(ty);
     let message = match site {
-        ViaSite::Output => format!(
-            "`via` was removed: the format comes before the type, `-> {format} {ty}` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> {ty}`"
-        ),
+        ViaSite::Output => {
+            format!("`via` was removed: write `-> {ty}` and `response {format};` on the endpoint")
+        }
         ViaSite::Body { name, optional } => format!(
-            "`via` was removed: the format comes before the name, `{format} {name}{optional}: {ty}` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body {name}{optional}: {ty}`"
+            "`via` was removed: write `body {name}{optional}: {ty}` and `request {format};` on the endpoint"
         ),
     };
     Err(syn::Error::new(via.span, message))
@@ -221,6 +225,7 @@ fn parse_format(input: ParseStream<'_>, in_params: bool) -> syn::Result<Format> 
         let segment = &path.segments[0];
         let text = segment.ident.to_string();
         if segment.arguments.is_none()
+            && !text.starts_with("r#")
             && text
                 .trim_start_matches("r#")
                 .starts_with(|c: char| c.is_ascii_lowercase())
@@ -383,13 +388,11 @@ fn parse_output(input: ParseStream<'_>) -> syn::Result<Output> {
         let ident: Ident = input.parse()?;
         let word = Word::of(&ident).expect("peeked a format word");
         if at_end(input) {
-            return Err(syn::Error::new(
-                ident.span(),
-                format!(
-                    "the output type is missing after `{0}`: `-> {0} Item` (format words are reserved in format position; a payload type named `{0}` is written `r#{0}`)",
-                    word.as_str()
-                ),
-            ));
+            // A single path is always a Rust payload type, even if spelled like a format word.
+            return Ok(Output {
+                ty: syn::parse_quote!(#ident),
+                format: None,
+            });
         }
         Some(Format::Word(word, ident.span()))
     } else {
@@ -403,7 +406,7 @@ fn parse_output(input: ParseStream<'_>) -> syn::Result<Output> {
                         return Err(syn::Error::new(
                             ident.span(),
                             format!(
-                                "the format comes first: `-> {} {}`",
+                                "removed output format: write `-> {1}` and `response {0};` on this endpoint",
                                 word.as_str(),
                                 type_text(&path)
                             ),
@@ -426,7 +429,7 @@ fn parse_output(input: ParseStream<'_>) -> syn::Result<Output> {
             return Err(syn::Error::new(
                 ident.span(),
                 format!(
-                    "the format comes first: `-> {} {}`",
+                    "removed output format: write `-> {1}` and `response {0};` on this endpoint",
                     word.as_str(),
                     type_text(&ty)
                 ),
@@ -457,9 +460,9 @@ pub struct Stmts {
     pub subdomain: Option<LitStr>,
     pub query: Option<Vec<Entry>>,
     pub headers: Option<Vec<Entry>>,
-    /// `request FORMAT[("media")];` (clients and scopes only).
+    /// `request FORMAT ["media"];` on any owner.
     pub request: Option<FormatDefault>,
-    /// `response FORMAT;` (clients and scopes only).
+    /// `response FORMAT;` on any owner.
     pub response: Option<FormatDefault>,
 }
 
@@ -652,6 +655,7 @@ fn parse_owner_body(
             || input.peek(kw::headers)
             || input.peek(kw::request)
             || input.peek(kw::response)
+            || input.peek(kw::format)
         {
             if let Some(first) = children.first() {
                 let first: &Owner = first;
@@ -663,7 +667,7 @@ fn parse_owner_body(
                     ),
                 ));
             }
-            if input.peek(kw::request) || input.peek(kw::response) {
+            if input.peek(kw::request) || input.peek(kw::response) || input.peek(kw::format) {
                 parse_default(input, &mut stmts, site)?;
             } else {
                 parse_stmt(input, &mut stmts)?;
@@ -677,38 +681,70 @@ fn parse_owner_body(
 
 /// `request FORMAT;`, `request FORMAT("media/type");`, `response FORMAT;`: the formats of the
 /// bodies and typed outputs below that do not write their own.
-fn parse_default(input: ParseStream<'_>, stmts: &mut Stmts, site: Site) -> syn::Result<()> {
-    let request = input.peek(kw::request);
-    let kw_span = if request {
+fn parse_default(input: ParseStream<'_>, stmts: &mut Stmts, _site: Site) -> syn::Result<()> {
+    let both = input.peek(kw::format);
+    let request = both || input.peek(kw::request);
+    let span = if both {
+        input.parse::<kw::format>()?.span
+    } else if request {
         input.parse::<kw::request>()?.span
     } else {
         input.parse::<kw::response>()?.span
     };
-    if site == Site::Endpoint {
-        return Err(syn::Error::new(
-            kw_span,
-            if request {
-                "an endpoint has no `request` statement: write the format where the body is declared (`json item: NewItem`, `text note: String`, `form login: Login`); `request FORMAT;` is a default on a client or scope"
-            } else {
-                "an endpoint has no `response` statement: write the format where the output is declared (`-> text String`, `-> bytes Bytes`); `response FORMAT;` is a default on a client or scope"
-            },
+    if input.peek(LitStr) {
+        return Err(input.error(
+            "a media type follows its format, which the statement restates: `request json \"application/merge-patch+json\";` (a statement replaces the inherited format and media type together)",
         ));
     }
     let format = parse_format(input, false)?;
-    let media = if input.peek(syn::token::Paren) {
-        if !request {
-            return Err(output_media(input));
+    if input.peek(syn::token::Paren) {
+        let media = parse_media(input)?;
+        return Err(syn::Error::new(
+            media.span(),
+            format!(
+                "removed parenthesized media type: write `request {} {:?};`",
+                format.text(),
+                media.value()
+            ),
+        ));
+    }
+    let media = if input.peek(LitStr) {
+        if both {
+            return Err(input.error(
+                "`format` sets both directions and takes no media type: write `request FORMAT \"media/type\";` (and `response FORMAT;`)",
+            ));
         }
-        Some(parse_media(input)?)
+        if !request {
+            return Err(input.error(
+                "an output takes no media type: Concord sends no `Accept` and does not check the response `Content-Type`; to send an `Accept` header, declare it (`headers { ACCEPT = \"...\"; }`)",
+            ));
+        }
+        let lit: LitStr = input.parse()?;
+        check_media_type(&lit)?;
+        Some(lit)
     } else {
         None
     };
     input.parse::<Token![;]>()?;
-    let default = FormatDefault { format, media };
-    if request {
-        set_once(&mut stmts.request, default, kw_span, "request")
+    let default = FormatDefault {
+        format,
+        media,
+        both,
+    };
+    if both {
+        if stmts.request.is_some() || stmts.response.is_some() {
+            return Err(syn::Error::new(
+                span,
+                "duplicate direction: `format` counts as both `request` and `response`",
+            ));
+        }
+        stmts.request = Some(default.clone());
+        stmts.response = Some(default);
+        Ok(())
+    } else if request {
+        set_once(&mut stmts.request, default, span, "request")
     } else {
-        set_once(&mut stmts.response, default, kw_span, "response")
+        set_once(&mut stmts.response, default, span, "response")
     }
 }
 
@@ -1072,7 +1108,7 @@ fn parse_params(
                         return Err(syn::Error::new(
                             ident.span(),
                             format!(
-                                "a body's format comes first: `{} {}{}: {}`",
+                                "removed body format: write `body {1}{2}: {3}` and `request {0};` on this endpoint",
                                 word.as_str(),
                                 plain(&name),
                                 if optional { "?" } else { "" },

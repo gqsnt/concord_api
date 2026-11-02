@@ -97,9 +97,9 @@ pub enum Kind {
 /// Where a body's or output's format (or a body's media type) comes from.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Origin {
-    /// Written on the body or after `->`.
+    /// Written in an endpoint representation statement.
     InPlace,
-    /// The `request`/`response` default of this client or scope (the nearest on the chain).
+    /// The `request`/`response` statement of this client or scope (the nearest on the chain).
     Default(usize),
 }
 
@@ -1600,14 +1600,14 @@ impl Model {
         let (span, from, fix) = match origin {
             Origin::InPlace => (
                 media.span(),
-                "written on the body".to_owned(),
-                "remove the media type from the body".to_owned(),
+                "written in the endpoint request statement".to_owned(),
+                "remove the media type from the endpoint request statement".to_owned(),
             ),
             Origin::Default(o) => (
                 body.name.span(),
                 format!("from the `request` default of {}", self.describe(*o)),
                 format!(
-                    "write the body's format in place without a media type (`{} {name}: ..`)",
+                    "write `request {};` on this endpoint without a media type",
                     body.format.text()
                 ),
             ),
@@ -1917,8 +1917,17 @@ fn flatten(
             consumers: Vec::new(),
         })
     };
-    let request = default(owner.stmts.request.take(), "Request");
-    let response = default(owner.stmts.response.take(), "Response");
+    let endpoint = matches!(owner.kind, OwnerKind::Endpoint { .. });
+    let request = if endpoint {
+        None
+    } else {
+        default(owner.stmts.request.take(), "Request")
+    };
+    let response = if endpoint {
+        None
+    } else {
+        default(owner.stmts.response.take(), "Response")
+    };
     let kind = match owner.kind {
         OwnerKind::Client { vis, base } => match base {
             Some(base) => {
@@ -1945,10 +1954,50 @@ fn flatten(
             body,
         } => {
             let ancestor = parent.map(|p| p.0);
+            // A statement with nothing to apply to is an error on an endpoint; `format` needs one
+            // of its two directions.
+            let paired = owner.stmts.request.as_ref().is_some_and(|d| d.both);
+            if paired && body.is_none() && output.is_none() {
+                errors.push(syn::Error::new(
+                    owner.stmts.request.as_ref().unwrap().format.span(),
+                    "`format` statement has neither a body nor a typed output (`-> T`) to apply to",
+                ));
+            } else if !paired {
+                if body.is_none() && owner.stmts.request.is_some() {
+                    errors.push(syn::Error::new(
+                        owner.stmts.request.as_ref().unwrap().format.span(),
+                        "`request` statement has no body to apply to",
+                    ));
+                }
+                if output.is_none() && owner.stmts.response.is_some() {
+                    errors.push(syn::Error::new(
+                        owner.stmts.response.as_ref().unwrap().format.span(),
+                        "`response` statement has no typed output (`-> T`) to apply to",
+                    ));
+                }
+            }
             Kind::Endpoint {
                 method,
-                body: body.and_then(|b| endpoint_body(b, index, ancestor, out, errors)),
-                output: output.and_then(|o| endpoint_output(o, index, ancestor, out, errors)),
+                body: body.and_then(|b| {
+                    endpoint_body(
+                        b,
+                        owner.stmts.request.as_ref(),
+                        index,
+                        ancestor,
+                        out,
+                        errors,
+                    )
+                }),
+                output: output.and_then(|o| {
+                    endpoint_output(
+                        o,
+                        owner.stmts.response.as_ref(),
+                        index,
+                        ancestor,
+                        out,
+                        errors,
+                    )
+                }),
             }
         }
     };
@@ -2056,59 +2105,52 @@ fn nearest(out: &[Owner], from: Option<usize>, request: bool) -> Option<usize> {
     None
 }
 
-/// A V4-alpha payload spelling (`Json<T>`, `Text`, `Binary`, qualified or not) as a format word and
-/// the payload it wrapped, to word an error that is reported anyway (a missing format). Spellings
-/// never change behaviour or acceptance.
-fn alpha(ty: &Type) -> Option<(&'static str, String)> {
-    let Type::Path(p) = ty else { return None };
-    let last = p.path.segments.last()?;
-    match (last.ident.to_string().as_str(), &last.arguments) {
-        ("Json", syn::PathArguments::AngleBracketed(args)) if args.args.len() == 1 => {
-            Some(("json", type_text(&args.args[0])))
-        }
-        ("Text", syn::PathArguments::None) => Some(("text", "String".to_owned())),
-        ("Binary", syn::PathArguments::None) => Some(("bytes", "Bytes".to_owned())),
-        _ => None,
-    }
-}
-
-/// A body with its effective format and media type (8a): written in place, or the nearest
-/// `request` default (reached through `body`), whose media type comes along unless the body
-/// writes its own.
+/// A body with its nearest request statement; the selected format and media travel together.
 fn endpoint_body(
     b: syntax::BodyParam,
+    own: Option<&syntax::FormatDefault>,
     endpoint: usize,
     ancestor: Option<usize>,
     out: &mut [Owner],
     errors: &mut Errors,
 ) -> Option<Body> {
-    let local_media = b.media.map(|m| (m, Origin::InPlace));
-    let (format, origin, media) = match b.format {
-        // An in-place format replaces the default's format and its media type.
-        Some(format) => (format, Origin::InPlace, local_media),
+    if b.format.is_some() || b.media.is_some() {
+        let format = b
+            .format
+            .as_ref()
+            .map(Format::text)
+            .or_else(|| own.map(|d| d.format.text()))
+            .or_else(|| {
+                nearest(out, ancestor, true).map(|i| out[i].request.as_ref().unwrap().format.text())
+            })
+            .unwrap_or("json".to_owned());
+        let media = b
+            .media
+            .as_ref()
+            .map_or(String::new(), |m| format!(" {:?}", m.value()));
+        errors.push(syn::Error::new(b.name.span(), format!(
+            "removed in-place body format: write `body {}{}: {}` and `request {format}{media};` on this endpoint",
+            b.name, if b.optional { "?" } else { "" }, type_text(&b.ty))));
+        return None;
+    }
+    let (format, origin, media) = match own {
+        Some(d) => (
+            d.format.clone(),
+            Origin::InPlace,
+            d.media.clone().map(|m| (m, Origin::InPlace)),
+        ),
         None => match nearest(out, ancestor, true) {
             Some(o) => {
                 let d = out[o].request.as_mut().expect("nearest has a default");
                 d.consumers.push(endpoint);
                 let inherited = d.media.clone().map(|m| (m, Origin::Default(o)));
-                (
-                    d.format.clone(),
-                    Origin::Default(o),
-                    local_media.or(inherited),
-                )
+                (d.format.clone(), Origin::Default(o), inherited)
             }
             None => {
                 let name = plain(&b.name);
-                let optional = if b.optional { "?" } else { "" };
-                let ty = type_text(&b.ty);
-                let message = match alpha(&b.ty) {
-                    Some((word, payload)) => format!(
-                        "`{ty}` is the V4-alpha spelling of a body format: write `{word} {name}{optional}: {payload}` (or `body {name}{optional}: {payload}` under a `request {word};` default on the client or an enclosing scope)"
-                    ),
-                    None => format!(
-                        "body `{name}` has no format, and no `request` default reaches this endpoint: write the format in place (`json {name}{optional}: {ty}`) or declare a default on the client or an enclosing scope (`request json;`)"
-                    ),
-                };
+                let message = format!(
+                    "body `{name}` has no representation: say `request json;` on this endpoint, a scope or the client"
+                );
                 errors.push(syn::Error::new(b.ty.span(), message));
                 return None;
             }
@@ -2126,16 +2168,28 @@ fn endpoint_body(
     })
 }
 
-/// A typed output with its effective format: written in place or the nearest `response` default.
+/// A typed output with its nearest response statement.
 fn endpoint_output(
     o: syntax::Output,
+    own: Option<&syntax::FormatDefault>,
     endpoint: usize,
     ancestor: Option<usize>,
     out: &mut [Owner],
     errors: &mut Errors,
 ) -> Option<Output> {
-    let (format, origin) = match o.format {
-        Some(format) => (format, Origin::InPlace),
+    if let Some(format) = &o.format {
+        errors.push(syn::Error::new(
+            o.ty.span(),
+            format!(
+                "removed in-place output format: write `-> {}` and `response {};` on this endpoint",
+                type_text(&o.ty),
+                format.text()
+            ),
+        ));
+        return None;
+    }
+    let (format, origin) = match own {
+        Some(d) => (d.format.clone(), Origin::InPlace),
         None => match nearest(out, ancestor, false) {
             Some(owner) => {
                 let d = out[owner].response.as_mut().expect("nearest has a default");
@@ -2144,22 +2198,9 @@ fn endpoint_output(
             }
             None => {
                 let ty = type_text(&o.ty);
-                let message = match alpha(&o.ty) {
-                    Some((word, payload)) => format!(
-                        "`-> {ty}` is the V4-alpha spelling: write the format before the payload type, `-> {word} {payload}` (or `-> {payload}` under a `response {word};` default on the client or an enclosing scope)"
-                    ),
-                    None => {
-                        let unit = matches!(&o.ty, Type::Tuple(t) if t.elems.is_empty());
-                        let hint = if unit {
-                            "; `-> ()` is a typed unit, decoded with a format (with `json`, the body must be `null`): to accept any 2xx and drain the body, omit `-> ()`"
-                        } else {
-                            ""
-                        };
-                        format!(
-                            "output `{ty}` has no format, and no `response` default reaches this endpoint: write the format in place (`-> json {ty}`) or declare a default on the client or an enclosing scope (`response json;`); an endpoint without typed output omits `->`{hint}"
-                        )
-                    }
-                };
+                let message = format!(
+                    "output `{ty}` has no representation: say `response json;` on this endpoint, a scope or the client; omit `->` to drain"
+                );
                 errors.push(syn::Error::new(o.ty.span(), message));
                 return None;
             }
