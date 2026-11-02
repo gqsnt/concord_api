@@ -152,6 +152,11 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
   Within one owner, `remove` statements act first, on what the owner inherits; the owner's direct
   placements and other statements follow.
 - A removed and later reintroduced key keeps the slot position of its first appearance.
+- Liveness and slot positions are decided by the declaration, at compile time, never by which
+  optional values are present at runtime: an introduction that reads an absent optional value
+  sends nothing, yet the key is live (so a descendant may `override` it, not introduce it) and
+  keeps its slot position. (Confirmed by the independent composition oracle,
+  `tests/oracle_composition.rs`.)
 - A source is **present** when every optional value it reads is present. A present `each` source
   with zero items is present and emits nothing — so it still replaces under `override`.
 - `each` iterates any `IntoIterator` (`&T: IntoIterator`, items `Display`). On a required
