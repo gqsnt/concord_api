@@ -128,8 +128,9 @@ comments (no runtime logic), which can affect compile cost a little.
   `const` header validation and quadratic doc-note generation were fixed.
 - **Remaining accepted cost** (`d1844be` vs alpha): in the declaring crate, `check` is +27% (1,000
   endpoints) and +42% (shared-contribution shape); release is +18–29%.
-- **Broadly similar for the measured workloads:** consumer rebuilds (0.94–1.06×, except +10–15% for
-  API-edit rebuilds through small consumers) and loopback execution.
+- **Consumers** (measured workloads): consumer-only rebuilds 0.94–1.06×. Rebuilding a consumer after
+  an API edit costs +10–15% in release (`use5`, `use100`, fanout; 1.00× for `use1000`) and +25% in
+  dev (`use100`), mostly the declaring crate's own extra cost. Loopback execution is broadly similar.
 - **Request construction:** +105 ns for nine query values, attributed to fallible formatting.
 - **Conditions:** one machine with the desktop in use, three samples per row; differences under ~5%
   are noise.
