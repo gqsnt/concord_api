@@ -15,7 +15,9 @@ use bytes::Bytes;
 /// Encodes a request body of type `T` (`body b: T via Self`).
 ///
 /// Implement it on your own marker type for a custom format. The encoder runs when the request is
-/// prepared; it receives the payload by value.
+/// prepared; it receives the payload by value. `CONTENT_TYPE` is a constant: a format whose
+/// content type varies per body (a multipart boundary) is better set on the native request
+/// after [`Prepared::into_parts`](crate::Prepared::into_parts).
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot encode a `{T}` request body",
     label = "`body ...: {T} via {Self}` needs `{Self}: Encode<{T}>`",

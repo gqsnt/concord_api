@@ -7,6 +7,10 @@ Concord itself is unchanged: everything below uses the public surface only
 (`Prepared::{send, send_raw, into_parts}`, `Decoder::finish`, `Error::into_response`,
 `Encode`/`Decode`, generated `set_*`/`maybe_*`).
 
+[`docs/RECIPES.md`](../../docs/RECIPES.md) indexes these recipes by task (when to use each one and
+what it assumes); [`docs/CALLER_GUIDE.md`](../../docs/CALLER_GUIDE.md) covers the surface they
+build on.
+
 | Task | Recipe (`src/`) | What it shows | Tests (`tests/`) |
 |---|---|---|---|
 | U14 | `errors::rename_item` | non-2xx → `into_response()?` → status + `<Json as Decode<Problem>>::decode(bytes)`; undecodable bodies keep the status and a content-free reason; non-status errors propagate unchanged | `errors.rs` |

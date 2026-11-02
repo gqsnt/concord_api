@@ -16,6 +16,10 @@ mod sealed {
 ///
 /// There are no other conversions: no numeric widening, no `Into`, no `Display` coercion and no
 /// wrapping into `Option`. Domain newtypes are constructed explicitly. The trait is sealed.
+///
+/// It applies to positional arguments, `set_*` methods and initializers. The fields of a
+/// generated `{Client}Config` struct take exactly `T` (a string literal needs `.into()`), and
+/// `maybe_*` takes exactly `Option<T>`.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not accepted for a value of type `{T}`",
     label = "expected `{T}`",
