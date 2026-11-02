@@ -9,7 +9,7 @@ the comparisons are like for like.
 
 | Path | Contents |
 |---|---|
-| `src/apis.rs` | Concord declarations used only here (tracker, headers, deep chain, header operations, bodies) |
+| `src/apis.rs` | Concord declarations used only here (tracker, headers, deep chain, header operations, bodies, native header names) |
 | `src/manual.rs` | their hand-written reqwest equivalents (S1–S3 equivalents are `benches/baselines`) |
 | `src/lib.rs` | the scenarios, defined once and driven by both runners |
 | `benches/runtime.rs` | the Criterion suite (wall time) |
@@ -33,7 +33,7 @@ Requires Rust ≥ 1.86 (criterion 0.8); the crate is outside the 1.85 MSRV gates
 | `send_prepared` | execute + decode of a request prepared in batch setup | async `iter_batched` (`SmallInput`) |
 | `get_bytes` | raw `client.get(url).send()` + `bytes()` (transport floor) | async `iter` |
 
-Groups and scenarios (180 IDs; 171 until the native and literal header variants were added; `cargo bench -p concord-bench --bench runtime -- --list`):
+Groups and scenarios (188 IDs; 180 until the `keys` group was added, 171 until the native and literal header variants were added; `cargo bench -p concord-bench --bench runtime -- --list`):
 
 - `construct`: `minimal` (S1 `GET health`), `s3_search_9_query`, `s2_product_scoped` (the
   `examples/shapes` / `benches/baselines` pairs measured by the former harness),
@@ -51,6 +51,12 @@ Groups and scenarios (180 IDs; 171 until the native and literal header variants 
   call), `deep8_reused_scope` (from a level-8 handle built once; the hand-written handle caches
   its URL prefix and header map), and from a reused scope handle: `inherit`, `override_present`,
   `override_absent` (`override .. else inherit`), `append`, `remove`.
+- `keys`: native header names (`header(AUTHORIZATION)`, custom `HeaderName` constants) against
+  literal names and hand-written reqwest, from a reused scope handle: `six_inherited` (six headers,
+  one sensitive) and `one_replaced` (the same with `x-a` replaced through a literal spelling of a
+  native key) as `{concord_literal,concord_native,manual}`, and `riot_match_ids/{concord,manual}`
+  (routed host, native sensitive key, one optional query). A chain with a native key is composed
+  when the request is built (`HeaderPlan`), a literal chain at compile time.
 - `body_encode`: `{json,text,bytes}/{100B,10KB,1MB}` with `Throughput::Bytes`.
 - `decode`: `{json,text,bytes}/{100B,10KB,1MB}` with `Throughput::Bytes`.
 - `roundtrip`: `{small,10KB}/{concord,manual,raw_reqwest}/{send,send_prepared,get_bytes}`;

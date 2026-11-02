@@ -138,6 +138,11 @@ pub struct Fixtures {
     pub compose_manual: manual::Compose,
     pub bodies: apis::bodies::Bodies,
     pub bodies_manual: manual::Bodies,
+    pub keys_literal: apis::keys::Literal,
+    pub keys_native: apis::keys::Native,
+    pub keys_manual: manual::Keys,
+    pub riot: apis::keys::Riot,
+    pub riot_manual: manual::Riot,
 }
 
 /// The client every fixture shares: no proxy lookup, so loopback and construction are
@@ -197,6 +202,28 @@ impl Fixtures {
             compose_manual: manual::Compose::new(http.clone()),
             bodies: apis::bodies::Bodies::new(http.clone()),
             bodies_manual: manual::Bodies::new(http.clone(), "https://api.example.com/v1"),
+            keys_literal: apis::keys::Literal::new(
+                http.clone(),
+                apis::keys::LiteralConfig {
+                    token: "Bearer t0ken".into(),
+                    a: "a".into(),
+                },
+            ),
+            keys_native: apis::keys::Native::new(
+                http.clone(),
+                apis::keys::NativeConfig {
+                    token: "Bearer t0ken".into(),
+                    a: "a".into(),
+                },
+            ),
+            keys_manual: manual::Keys::new(http.clone(), "Bearer t0ken", "a"),
+            riot: apis::keys::Riot::new(
+                http.clone(),
+                apis::keys::RiotConfig {
+                    key: "RGAPI-bench".into(),
+                },
+            ),
+            riot_manual: manual::Riot::new(http.clone(), "RGAPI-bench"),
             http,
         }
     }
@@ -748,8 +775,70 @@ pub fn decode(fx: &Fixtures, r: &mut impl Runner) {
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Group `keys`: native header names against literal names and hand-written reqwest.
+
+/// Six inherited headers from a reused scope handle (literal names, composed at compile time;
+/// native names, composed by `HeaderPlan` when the request is built; hand-written), the same with
+/// one header replaced through another spelling, and a Riot-shaped request from the client.
+pub fn keys(fx: &Fixtures, r: &mut impl Runner) {
+    let literal = fx.keys_literal.team("rocket");
+    let native = fx.keys_native.team("rocket");
+    r.case(
+        Case::new("six_inherited/concord_literal", "prepare").total(),
+        || literal.get(),
+        |i| i.prepare().expect("valid"),
+    );
+    r.case(
+        Case::new("six_inherited/concord_native", "prepare").total(),
+        || native.get(),
+        |i| i.prepare().expect("valid"),
+    );
+    r.case(
+        Case::new("six_inherited/manual", "prepare").trivial_input(),
+        || (),
+        |()| fx.keys_manual.items("rocket", None).expect("valid"),
+    );
+    r.case(
+        Case::new("one_replaced/concord_literal", "prepare").total(),
+        || literal.replaced(s("v")),
+        |i| i.prepare().expect("valid"),
+    );
+    r.case(
+        Case::new("one_replaced/concord_native", "prepare").total(),
+        || native.replaced(s("v")),
+        |i| i.prepare().expect("valid"),
+    );
+    r.case(
+        Case::new("one_replaced/manual", "prepare").trivial_input(),
+        || (),
+        |()| fx.keys_manual.items("rocket", Some("v")).expect("valid"),
+    );
+    r.case(
+        Case::new("riot_match_ids/concord", "prepare").total(),
+        || fx.riot.matches(s("europe")).ids(s(PUUID)).set_count(5),
+        |i| i.prepare().expect("valid"),
+    );
+    r.case(
+        Case::new("riot_match_ids/manual", "prepare").trivial_input(),
+        || (),
+        |()| fx.riot_manual.ids("europe", PUUID, Some(5)).expect("valid"),
+    );
+}
+
+/// A PUUID-shaped value (78 characters).
+pub const PUUID: &str =
+    "SYNTHETIC-218020e66304e3a79839e7c707074ffa757f3e6537eb19c3d676d50a55d6c89f151e";
+
 /// Every synchronous group, in suite order, with its Criterion group name.
-pub const GROUPS: [&str; 5] = ["construct", "headers", "compose", "body_encode", "decode"];
+pub const GROUPS: [&str; 6] = [
+    "construct",
+    "headers",
+    "compose",
+    "body_encode",
+    "decode",
+    "keys",
+];
 
 /// Runs the synchronous group `name`.
 pub fn run_group(name: &str, fx: &Fixtures, r: &mut impl Runner) {
@@ -759,6 +848,7 @@ pub fn run_group(name: &str, fx: &Fixtures, r: &mut impl Runner) {
         "compose" => compose(fx, r),
         "body_encode" => body_encode(fx, r),
         "decode" => decode(fx, r),
+        "keys" => keys(fx, r),
         _ => panic!("unknown group {name}"),
     }
 }

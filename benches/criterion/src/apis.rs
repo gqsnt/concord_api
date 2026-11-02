@@ -254,3 +254,59 @@ pub mod bodies {
         }
     }
 }
+
+/// Native header names (`header(AUTHORIZATION)`, a custom `HeaderName` constant) against the same
+/// six inherited headers written as literals, and a Riot-shaped request (routed host, native
+/// sensitive key, optional query). A chain with a native constant is composed when the request is
+/// built (`HeaderPlan`); a literal chain at compile time.
+pub mod keys {
+    use concord::reqwest::header::{ACCEPT, AUTHORIZATION, HeaderName, USER_AGENT};
+
+    /// A vendor header, declared the native way.
+    pub const X_RIOT_TOKEN: HeaderName = HeaderName::from_static("x-riot-token");
+    /// Custom headers of the six-header scenario.
+    pub const X_A: HeaderName = HeaderName::from_static("x-a");
+    /// Custom header.
+    pub const X_B: HeaderName = HeaderName::from_static("x-b");
+    /// Custom header.
+    pub const X_C: HeaderName = HeaderName::from_static("x-c");
+
+    concord::api! {
+        /// Six inherited headers with literal names.
+        pub client Literal(#[sensitive] header("authorization") token: String, header("x-a") a: String) {
+            base "https://api.example.com";
+            headers { "accept" = "application/json"; "user-agent" = "concord-bench/1"; "x-b" = "b"; "x-c" = "c"; }
+            scope team(team: String) {
+                path "teams/{team}";
+                GET get() { path "items"; }
+                GET replaced(v: String) { path "items"; headers { override "x-a" = v; } }
+            }
+        }
+    }
+
+    concord::api! {
+        /// The same six headers with native names.
+        pub client Native(#[sensitive] header(AUTHORIZATION) token: String, header(X_A) a: String) {
+            base "https://api.example.com";
+            headers { ACCEPT = "application/json"; USER_AGENT = "concord-bench/1"; X_B = "b"; X_C = "c"; }
+            scope team(team: String) {
+                path "teams/{team}";
+                GET get() { path "items"; }
+                GET replaced(v: String) { path "items"; headers { override "x-a" = v; } }
+            }
+        }
+    }
+
+    concord::api! {
+        /// A Riot-shaped client: routed host, native sensitive key, optional query.
+        pub client Riot(#[sensitive] header(X_RIOT_TOKEN) key: String) {
+            base "https://api.riotgames.com";
+            headers { ACCEPT = "application/json"; }
+            scope matches(route: String) {
+                subdomain "{route}";
+                path "lol/match/v5/matches";
+                GET ids(puuid: String, query start?: u32, query count?: u32) { path "by-puuid/{puuid}/ids"; }
+            }
+        }
+    }
+}

@@ -566,3 +566,84 @@ pub mod decode {
         response.error_for_status()?.bytes().await
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Native header names: six inherited headers, a replaced one, and a Riot-shaped request.
+
+static KEY_A: HeaderName = HeaderName::from_static("x-a");
+static KEY_B: HeaderName = HeaderName::from_static("x-b");
+static KEY_C: HeaderName = HeaderName::from_static("x-c");
+static X_RIOT_TOKEN: HeaderName = HeaderName::from_static("x-riot-token");
+
+/// Hand-written six-header client: client values validated once.
+#[derive(Clone, Debug)]
+pub struct Keys {
+    http: Client,
+    base: Url,
+    token: HeaderValue,
+    a: HeaderValue,
+}
+
+impl Keys {
+    /// Validates the client values once.
+    pub fn new(http: Client, token: &str, a: &str) -> Self {
+        let mut token = HeaderValue::from_str(token).expect("valid");
+        token.set_sensitive(true);
+        Self {
+            http,
+            base: Url::parse("https://api.example.com").expect("valid"),
+            token,
+            a: HeaderValue::from_str(a).expect("valid"),
+        }
+    }
+
+    /// `GET teams/{team}/items`, with `x-a` replaced when `v` is given.
+    pub fn items(&self, team: &str, v: Option<&str>) -> reqwest::Result<Request> {
+        let a = match v {
+            Some(v) => HeaderValue::from_str(v).expect("valid"),
+            None => self.a.clone(),
+        };
+        self.http
+            .get(with_segments(&self.base, &["teams", team, "items"]))
+            .header(AUTHORIZATION, self.token.clone())
+            .header(KEY_A.clone(), a)
+            .header(ACCEPT, HeaderValue::from_static("application/json"))
+            .header(USER_AGENT, HeaderValue::from_static("concord-bench/1"))
+            .header(KEY_B.clone(), HeaderValue::from_static("b"))
+            .header(KEY_C.clone(), HeaderValue::from_static("c"))
+            .build()
+    }
+}
+
+/// Hand-written Riot-shaped client.
+#[derive(Clone, Debug)]
+pub struct Riot {
+    http: Client,
+    key: HeaderValue,
+}
+
+impl Riot {
+    /// Validates the key once.
+    pub fn new(http: Client, key: &str) -> Self {
+        let mut key = HeaderValue::from_str(key).expect("valid");
+        key.set_sensitive(true);
+        Self { http, key }
+    }
+
+    /// `GET https://{route}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?count=..`.
+    pub fn ids(&self, route: &str, puuid: &str, count: Option<u32>) -> reqwest::Result<Request> {
+        let mut url = Url::parse(&format!("https://{route}.api.riotgames.com")).expect("valid");
+        url.path_segments_mut()
+            .expect("http(s) base")
+            .pop_if_empty()
+            .extend(["lol", "match", "v5", "matches", "by-puuid", puuid, "ids"]);
+        if let Some(count) = count {
+            url.query_pairs_mut()
+                .append_pair("count", &count.to_string());
+        }
+        RequestBuilder::from_parts(self.http.clone(), Request::new(Method::GET, url))
+            .header(X_RIOT_TOKEN.clone(), self.key.clone())
+            .header(ACCEPT, HeaderValue::from_static("application/json"))
+            .build()
+    }
+}

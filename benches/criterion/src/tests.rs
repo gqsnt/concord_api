@@ -237,7 +237,7 @@ fn every_case_runs() {
     assert_eq!(ids.len(), once.0.len(), "benchmark IDs are unique");
     assert_eq!(
         ids.len(),
-        84,
+        92,
         "the suite's case list changed: update README.md"
     );
 }
@@ -265,4 +265,32 @@ fn loopback_round_trip_matches() {
         assert_eq!(large, manual.get_json().await.unwrap());
         assert_eq!(large, payload::payload(ROUNDTRIP_LARGE.target));
     });
+}
+
+#[test]
+fn native_key_requests_match() {
+    let fx = fx();
+    let literal = fx.keys_literal.team("rocket");
+    let native = fx.keys_native.team("rocket");
+    for concord in [
+        literal.get().prepare().unwrap(),
+        native.get().prepare().unwrap(),
+    ] {
+        same(concord, fx.keys_manual.items("rocket", None).unwrap());
+    }
+    for concord in [
+        literal.replaced("v").prepare().unwrap(),
+        native.replaced("v").prepare().unwrap(),
+    ] {
+        same(concord, fx.keys_manual.items("rocket", Some("v")).unwrap());
+    }
+    let riot = fx
+        .riot
+        .matches("europe")
+        .ids(PUUID)
+        .set_count(5)
+        .prepare()
+        .unwrap();
+    assert!(riot.request().headers()["x-riot-token"].is_sensitive());
+    same(riot, fx.riot_manual.ids("europe", PUUID, Some(5)).unwrap());
 }
