@@ -38,6 +38,8 @@ ROWS_ALL=(
   "rel-scale_deep|scale_deep/src/lib.rs|build --release -p scale_deep"
   "check-scale_shared|scale_shared/src/lib.rs|check -p scale_shared"
   "rel-scale_shared|scale_shared/src/lib.rs|build --release -p scale_shared"
+  "check-scale_typed|scale_typed/src/lib.rs|check -p scale_typed"
+  "rel-scale_typed|scale_typed/src/lib.rs|build --release -p scale_typed"
 )
 
 # Warm every suite (dependencies and all members, dev and release) outside timing.
@@ -71,7 +73,7 @@ for s in "${suites[@]}"; do
     syms=$(nm -C "$f" 2>/dev/null | grep -c '::prepare$' || true)
     printf '%s\t%s\t%s\t%s\n' "$(basename "$s")" "$b" "$(stat -c %s "$f")" "$syms" >> "$out/sizes.tsv"
   done
-  for l in scale1000 scale_deep scale_shared; do
+  for l in scale1000 scale_deep scale_shared scale_typed; do
     f=$(ls "$s"/target/release/lib"$l".rlib 2>/dev/null | head -1 || true)
     [[ -n "$f" ]] && printf '%s\t%s\t%s\t-\n' "$(basename "$s")" "lib$l.rlib" "$(stat -c %s "$f")" >> "$out/sizes.tsv"
   done

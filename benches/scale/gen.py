@@ -47,12 +47,20 @@ SHAPES (each varies one dimension; everything else is fixed)
   fanout    --placements N  One endpoint whose single value feeds N distinct query keys
                             (`query { "k_i" = v; }`): N distinct placement descriptions for one
                             value in the generated documentation.
+  typed     --endpoints N   Typed bodies and outputs: N/10 scopes, 10 endpoints each. The client
+                            declares `request text; response text;`; per scope six `-> String`
+                            and two `body note: String` + `-> String` endpoints inherit them, and
+                            two are in-place exceptions (`-> bytes Vec<u8>`, `bytes data:
+                            Vec<u8>` without output). Text and bytes only, so the suite needs no
+                            `json` feature.
 
 SUITE (OUT/, one cargo workspace; member names are the package names)
 
   scale50, scale200, scale1000   `rest` API crates (libraries) with 50 / 200 / 1,000 endpoints
   scale_deep                     `deep`: depth 32, 2 endpoints per level (64 endpoints)
   scale_shared                   `shared`: 200 endpoints, C = 16 (56 inherited contributions each)
+  scale_typed                    `typed`: 200 endpoints (160 inheriting a format default, 40
+                                 in-place exceptions)
   use5, use100, use1000          binaries calling 5 / 100 / 1,000 of scale1000's endpoints
   fan_a, fan_b                   libraries calling 100 endpoints of scale1000 each (50 in common)
   fan_app                        binary depending on fan_a and fan_b (two-crate fanout)
@@ -75,12 +83,17 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONCORD = os.path.normpath(os.path.join(HERE, "..", "..", "crates", "concord"))
-GENERATOR_VERSION = 3
+GENERATOR_VERSION = 4
 
-# Declaration/caller syntax: "refined" (current) or "alpha" (V4 alpha 8f7adc2), so that the same
-# workload can be generated for an A/B comparison of the two versions. The workloads have no
-# typed outputs, so only the root constructor and optional `override` differ.
-SYNTAX = "refined"
+# Declaration/caller syntax, so that the same workload can be generated for an A/B comparison of
+# Concord versions:
+#   "formats" (current): body/output formats in place or as `request`/`response` defaults;
+#   "via"     (refined V4 up to a915c8d, before formats): `body b: T via R`, `-> T via R`;
+#   "alpha"   (V4 alpha 8f7adc2): positional root constructor, no `else inherit`, `-> Text`.
+# "refined" is accepted as the former name of "via". Only the `typed` shape has bodies and
+# outputs; for the others "formats" and "via" produce the same bytes.
+SYNTAX = "formats"
+SYNTAXES = ["formats", "via", "alpha", "refined"]
 
 
 def new_scale(path):
@@ -93,6 +106,26 @@ def new_scale(path):
 
 def else_inherit():
     return "" if SYNTAX == "alpha" else " else inherit"
+
+
+def typed_output(fmt, ty):
+    """An output of `ty` with format `fmt` (`text`/`bytes`); `fmt` None inherits the default."""
+    marker = {"text": "concord::Text", "bytes": "concord::Binary"}
+    if SYNTAX == "alpha":
+        return f"-> {marker[fmt or 'text']}"
+    if SYNTAX in ("via", "refined"):
+        return f"-> {ty} via {marker[fmt or 'text']}"
+    return f"-> {fmt} {ty}" if fmt else f"-> {ty}"
+
+
+def typed_body(fmt, name, ty):
+    """A body; `fmt` None inherits the `request` default."""
+    marker = {"text": "concord::Text", "bytes": "concord::Binary"}
+    if SYNTAX == "alpha":
+        return f"body {name}: {marker[fmt or 'text']}"
+    if SYNTAX in ("via", "refined"):
+        return f"body {name}: {ty} via {marker[fmt or 'text']}"
+    return f"{fmt} {name}: {ty}" if fmt else f"body {name}: {ty}"
 
 
 def write(path, text):
@@ -215,6 +248,32 @@ def shape_fanout(placements):
                       "    }", "}"]) + "\n"
 
 
+def shape_typed(n):
+    lines = ["#![allow(missing_docs)]", "concord::api! {",
+             '    pub client Typed(#[sensitive] header("x-api-key") key: String) {',
+             '        base "https://api.example.com/v1";']
+    if SYNTAX == "formats":
+        lines += ["        request text;", "        response text;"]
+    scopes = max(1, n // 10)
+    for s in range(scopes):
+        lines.append(f'        scope s{s}(owner: String) {{')
+        lines.append(f'            path "s{s}/{{owner}}";')
+        for e in range(n // scopes):
+            kind = e % 10
+            if kind < 6:
+                sig = f"GET e{e}(id: u64) {typed_output(None, 'String')}"
+            elif kind < 8:
+                sig = f"PUT e{e}(id: u64, {typed_body(None, 'note', 'String')}) {typed_output(None, 'String')}"
+            elif kind == 8:
+                sig = f"GET e{e}(id: u64) {typed_output('bytes', 'Vec<u8>')}"
+            else:
+                sig = f"PUT e{e}(id: u64, {typed_body('bytes', 'data', 'Vec<u8>')})"
+            lines.append(f'            {sig} {{ path "items/{{id}}"; }}')
+        lines.append("        }")
+    lines += ["    }", "}"]
+    return "\n".join(lines) + "\n"
+
+
 def declaration(args):
     return {
         "rest": lambda: shape_rest(args.endpoints),
@@ -224,6 +283,7 @@ def declaration(args):
         "optionals": lambda: shape_optionals(args.values, args.endpoints),
         "refs": lambda: shape_refs(args.values),
         "fanout": lambda: shape_fanout(args.placements),
+        "typed": lambda: shape_typed(args.endpoints),
     }[args.shape]()
 
 
@@ -337,6 +397,8 @@ def cmd_suite(args):
         {"shape": "deep", "depth": 32, "per_level": 2, "endpoints": 64})
     api("scale_shared", shape_shared(200, 16),
         {"shape": "shared", "endpoints": 200, "contribs": 16, "inherited_per_endpoint": 56})
+    api("scale_typed", shape_typed(200),
+        {"shape": "typed", "endpoints": 200, "inheriting": 160, "in_place": 40})
 
     deps = ["concord = { workspace = true }", 'scale1000 = { path = "../scale1000" }']
     for k in (5, 100, 1000):
@@ -403,14 +465,14 @@ def main(argv):
     s = sub.add_parser("suite", help="the measurement workspace")
     s.add_argument("out")
     s.add_argument("--concord", default=DEFAULT_CONCORD)
-    s.add_argument("--syntax", choices=["refined", "alpha"], default="refined")
+    s.add_argument("--syntax", choices=SYNTAXES, default="formats")
     s.add_argument("--no-lock", action="store_true", help="do not seed and settle Cargo.lock")
     a = sub.add_parser("api", help="one standalone API crate")
     a.add_argument("out")
     a.add_argument("shape", choices=["rest", "deep", "shared", "override", "optionals", "refs",
-                                          "fanout"])
+                                          "fanout", "typed"])
     a.add_argument("--concord", default=DEFAULT_CONCORD)
-    a.add_argument("--syntax", choices=["refined", "alpha"], default="refined")
+    a.add_argument("--syntax", choices=SYNTAXES, default="formats")
     a.add_argument("--name")
     a.add_argument("--endpoints", type=int, default=10)
     a.add_argument("--depth", type=int, default=8)
@@ -422,7 +484,7 @@ def main(argv):
     a.add_argument("--placements", type=int, default=1000)
     args = p.parse_args(argv)
     global SYNTAX
-    SYNTAX = args.syntax if not legacy else "refined"
+    SYNTAX = args.syntax if not legacy else "formats"
     if args.cmd == "suite":
         cmd_suite(args)
     else:

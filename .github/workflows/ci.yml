@@ -26,6 +26,9 @@ jobs:
       - run: cargo test --locked -p concord --no-default-features
       - run: cargo test --locked -p concord --no-default-features --features json
       - run: cargo test --locked -p concord --no-default-features --features reqwest-defaults
+      # `form` is off by default: alone, and with the defaults for form in / JSON out.
+      - run: cargo test --locked -p concord --no-default-features --features form
+      - run: cargo test --locked -p concord --features form --test forms
       # reqwest's `multipart` feature must reach examples/multipart only (cargo tree, no build).
       - name: feature isolation (reqwest multipart)
         shell: bash
@@ -44,6 +47,12 @@ jobs:
       - run: cargo doc --locked -p concord --no-deps --no-default-features --features json
         env:
           RUSTDOCFLAGS: -D warnings
+      - run: cargo doc --locked -p concord --no-deps --no-default-features --features form
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - run: cargo doc --locked -p concord --no-deps --features form
+        env:
+          RUSTDOCFLAGS: -D warnings
 
   msrv:
     runs-on: ubuntu-latest
@@ -52,10 +61,11 @@ jobs:
       - run: rustup toolchain install 1.85 --profile minimal
       # UI (trybuild) expectations are pinned to the toolchain in rust-toolchain.toml.
       - run: >
-          cargo +1.85 test --locked -p concord --lib
+          cargo +1.85 test --locked -p concord --features form --lib
           --test slice --test values --test composition --test bodies --test representations
           --test sensitivity --test hygiene --test tls --test attributes --test display_errors
-          --test native_limits --test d15_surfaces --test oracle_composition --test oracle_sensitivity
+          --test native_limits --test native_headers --test d15_surfaces --test oracle_composition
+          --test oracle_sensitivity --test formats --test forms
       - run: >
           cargo +1.85 test --locked -p concord-macros -p concord-example-shapes
           -p concord-example-renamed -p concord-example-native -p concord-example-quickstart
