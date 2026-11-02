@@ -46,3 +46,34 @@ REJECTED_WITH_EVIDENCE, DESIGN_TRADEOFF, OUT_OF_SCOPE, BLOCKED.
 Contract-case rows reported FAIL by the reviewer (R09, T02, U29, U36) map to F-01, F-02, F-04;
 NOT_RUN rows (C16, S10, T10, U20, U34, U35) and BLOCKED rows (T06 rendered QA, T08 Windows) are
 carried into the acceptance record.
+
+## Codex final acceptance review of `0fe60e1`
+
+- Reviewer: `gpt-6.1-sol`, effort `xhigh` (session `turn_context`), execute mode: workspace-write in
+  snapshot `321a032`, network for loopback, private `CARGO_HOME` outside the snapshot (extra writable
+  root), fresh `target/review-build`. 2026-11-02 02:21–02:30 UTC. All 410 origin files unchanged.
+- Report: `final_0fe60e1_report.md` (+ `final_0fe60e1_final_message.md`, receipt, selected
+  evidence in `final_0fe60e1_evidence/`).
+- Personally executed by the reviewer: fresh locked build; `verify.sh --msrv` (11/11 PASS);
+  independent renamed no-default and JSON-only consumers on 1.97.1 and 1.85.1; six one-error
+  compile-fail cases on both compilers; feature trees; oracle freshness; five mutations (all
+  killed); bounded 1,000-endpoint/fanout/deep/shared builds; package listings. Performance timings
+  inspected (provenance audited), not re-measured. Rendered rustdoc BLOCKED (Chrome sandbox
+  helper). Windows/macOS NOT_RUN. Previous findings F-01, F-02, F-03 and the header-map capacity
+  panic independently confirmed resolved. Verdict: REVISE (R1–R3); no new high-severity runtime
+  defect.
+
+| ID | Severity / impact | Evidence | Disposition | Fix / test | Re-review |
+|---|---|---|---|---|---|
+| R1 | P2 — generated docs called `maybe_x(None)` "the default" for an initialized optional `each … else inherit` value (it starts present) | reviewer's `generated-default-excerpt.txt` | FIXED | `b0fe26e`; `crates/concord-macros` `emit::tests::per_call_note_names_the_actual_default` | RESOLVED (focused re-review of `b0fe26e`; the reviewer reverted the wording and the test failed) |
+| R2 | P2 — `v4/TEST_MATRIX.md` asserted alpha behaviour, cited a deleted UI test, stale counts, alpha receipts | reviewer's matrix audit | FIXED in two steps | `b0fe26e` (rows corrected, refinement rows, all references checked); then receipt binding and the G2 exemption (re-review point 1–2) in the follow-up record commit | `b0fe26e`: NOT RESOLVED (binding to a not-yet-existing FINAL/receipt; G2 overclaimed the 7 exempt old-syntax blocks) → second focused re-review |
+| R3 | P3 — MIGRATION/DIAGNOSTICS described two diagnostics as they were before `d1844be` | reviewer's diagnostic probes | FIXED | `b0fe26e` | RESOLVED |
+
+## Codex focused re-review of `b0fe26e`
+
+- Same reviewer settings (session `turn_context`: `gpt-6.1-sol`, `xhigh`, workspace-write,
+  network). Snapshot `5807d4b`, 423 origin files unchanged. Fresh build; `verify.sh --msrv` 11/11
+  PASS; independent renamed no-default/JSON-only consumers on both toolchains; generated-doc
+  wording mutation (killed); audit of all 76 PASS rows of the matrix.
+- Report: `rereview_b0fe26e_report.md`. Verdict: REVISE only for R2's two remaining points
+  (above); R1 and R3 RESOLVED; no regression in the delta; Linux only.

@@ -26,16 +26,16 @@ historical.
 
 | Gate | Status | Evidence |
 |---|---|---|
-| M0 Baseline | PASS | `scripts/verify.sh --msrv` at 8f7adc2, clean tree, all 9 steps PASS (warm cache): `evidence/m0_baseline_verify_8f7adc2.txt` |
+| M0 Baseline | PASS | `evidence/m0_baseline_verify_8f7adc2.txt` |
 | M1 Boundary fixes | PASS | L1 `650a174`, L2+L5 `4f3ff85`, header-map capacity `ab0278c`, failing `Display` `b4ce491` |
-| M2 Design decisions | PASS | `DECISIONS.md`; four tracks, fresh-use control, Codex design passes 1–2 |
-| M3 Implementation | PASS | D08 `c2871f9`, D01 `2720d67`, D06/D13 `f29e9ba`, D04/D14 `0864d38`, `433abf9`, D16 `8628622`, D11 `f0e203b`, docs/diagnostics `d1844be` |
-| M4 Boundaries/adversarial | PASS | `refine-m4-tests` merged `f2968e8` (oracles, surfaces, 9/9 mutations killed), `refine-m4-native` merged `5ee0d96` (29 recipe tests) |
-| M5 Performance | IN PROGRESS | paired runs `concord_v4_refine_work/perf/ab-*`, `attr-*`, `final-*`; regression attributed and reduced `79a0faf`; final candidate run pending |
-| M6 Docs/fresh use | IN PROGRESS | `refine-m6-docs` merged `e43c9ed`; fresh-use trial of the refined surface pending |
-| Milestone review | DONE, triaged | Codex `6604a53`: F-01..F-04 fixed (`e05d2f1`, docs) — `REVIEW_TRIAGE.md` |
-| M7 Independent acceptance | NOT_RUN | final frozen candidate review pending |
-| Platforms | Linux only; Windows BLOCKED for new commits (no Windows host/VM/wine; CI needs a push, not authorized) | |
+| M2 Design decisions | PASS | `DECISIONS.md` |
+| M3 Implementation | PASS | see `FINAL.md` |
+| M4 Boundaries/adversarial | PASS | oracles, surfaces, mutations (`evidence/m4_mutations.md`), native recipes |
+| M5 Performance | PASS (trade-offs accepted and named) | `PERF.md`, `evidence/perf/` |
+| M6 Docs/fresh use | PASS | docs merged `e43c9ed`; fresh-use trials `evidence/tracks/fresh_{control,candidate}.md`; fixes `0fe60e1` |
+| M7 Independent acceptance | Linux: final review + focused re-review done; R1/R3 resolved, R2 corrected in the record commit (focused check in `REVIEW_TRIAGE.md`) | `REVIEW_TRIAGE.md`, `reviews/codex/` |
+| Verification | PASS on Linux x86_64 (1.97.1, MSRV 1.85.1) at code revision `b0fe26e` | `evidence/verify_b0fe26e.txt` |
+| Platforms | Windows BLOCKED (no host/VM/wine; CI needs a push, not authorized); macOS NOT_RUN | |
 
 ## Leads (handoff `guides/02_BASELINE.md`)
 
@@ -51,8 +51,9 @@ historical.
 
 ## Active work
 
-- M5 final paired compile-time run (alpha vs `d1844be`), then the runtime benchmark.
-- Fresh-use candidate trial prepared at `concord_v4_refine_work/fresh/candidate` (lib = `d1844be`).
+None besides the focused check of the R2 record correction. Work directories under
+`/home/canarit/projects/concord_v4_refine_work/` (snapshots, experiments, perf suites) are
+disposable inputs to the archived evidence and are kept for reproduction.
 
 ## Process events
 
@@ -64,9 +65,8 @@ historical.
 
 ## Next action
 
-Finish M5 (record results); fresh-use trial of the refined surface and fixes; frozen candidate for
-the Codex final acceptance review (execution mode, loopback, `CARGO_HOME` outside the snapshot);
-triage, fix, re-review; final `verify.sh --msrv`; FINAL.md.
+Owner decisions only: push a branch to run the CI Windows/MSRV jobs on the refined code; decide
+whether to merge into `concord-v4` / `main`. See `FINAL.md`.
 
 ## Resume instructions
 

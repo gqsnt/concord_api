@@ -2,10 +2,12 @@
 
 Classification: **required** (executable test exists), **unsupported** (deliberately not offered;
 how to do it instead), **deferred**. Test paths are relative to `crates/concord/tests/` unless they
-start with another directory. **Status** is bound to the refinement's final verification receipt
-(`refinement/evidence/verify_<sha>.txt`, `scripts/verify.sh --msrv`, Linux x86_64, rustc 1.97.1 and
-1.85.1; the SHA is the one named in `refinement/FINAL.md`). Earlier alpha receipts in
-`evidence/GATES.md` are historical. Rows added or changed by the refinement are in the last section
+start with another directory. **Status** is bound to the verification receipt
+[`refinement/evidence/verify_b0fe26e.txt`](refinement/evidence/verify_b0fe26e.txt): `scripts/verify.sh
+--msrv` on code revision `b0fe26e4ec3d0c2ac7e1ebb4216d05a38a4aff4e`, clean tree, Linux x86_64, rustc
+1.97.1 and 1.85.1, all 11 steps PASS. Commits after `b0fe26e` change only records under `v4/` (this
+file, `refinement/`), which no build or test reads; `refinement/FINAL.md` lists them and shows the
+code is identical. Earlier alpha receipts in `evidence/GATES.md` are historical. Rows added or changed by the refinement are in the last section
 or marked *(refined)*.
 
 ## Minimal surface
@@ -95,7 +97,7 @@ or marked *(refined)*.
 | L01 | required | actionable diagnostics: unknown method/value/owner, duplicates, malformed templates, missing base, representations, `else inherit`, attributes | `tests/ui/*.rs` (53 cases) and `tests/oracle_ui/*.rs` (6 generated rejections), `.stderr` reviewed; gallery `docs/DIAGNOSTICS.md`. Cases asserting rustc's own trait-error wording are pinned to 1.97.1 | PASS on 1.97.1 |
 | L02 | required | header names validated at compile time (all 8 transport-owned names rejected); literal values at compile time; formatted values at build time | `ui/invalid_header_name.rs`, `ui/reserved_header.rs`, `ui/reserved_headers_all.rs`, `ui/header_literal_value.rs`, `composition.rs::l02_invalid_header_value_is_a_build_error`, `header_value_policy` | PASS |
 | L03 | required | minimal and nested examples compile and run as downstream crates (incl. a renamed dependency) | `examples/shapes/tests/wire.rs` (S1–S3 on the wire), `examples/renamed` | PASS |
-| L04 | required | fmt, clippy (`-D warnings`, all targets), tests, strict rustdoc (default, no-default, json-only) on the recorded SHA | `scripts/verify.sh`; `refinement/evidence/verify_<sha>.txt` | PASS |
+| L04 | required | fmt, clippy (`-D warnings`, all targets), tests, strict rustdoc (default, no-default, json-only) on the recorded SHA | `scripts/verify.sh`; `refinement/evidence/verify_b0fe26e.txt` | PASS |
 | L05 | required | feature combinations, package-isolated; JSON and TLS suites declare `required-features` and are reported as skipped, not passed | `scripts/verify.sh` feature steps; independent separate-manifest consumers in the Codex reviews (`refinement/reviews/codex/`) | PASS |
 | L06 | required | no auth/rate/retry/pagination concepts in source | source scan; independent confirmation in the refinement's Codex milestone and final reviews; application-owned policies only in `examples/native` | PASS |
 | L07 | required | declared MSRV 1.85 builds and passes all runtime suites and every example crate | `scripts/verify.sh --msrv` steps `msrv-concord`, `msrv-examples` (UI suites pinned to 1.97.1 are not run on 1.85) | PASS on 1.85.1 |
@@ -120,7 +122,7 @@ or marked *(refined)*.
 | S07–S09 | required | runtime base visible but not echoed; custom encoder text trusted; JSON encode errors content-free; classification without printing; TLS name-mismatch leak with a positive control | `d15_surfaces.rs` (all) | PASS |
 | R09/U28–U32 | required | application-owned recipes: error document, native edit + finish, streaming early drop, form/multipart, cursor loop, bounded retry, admission, key rotation, interleaved query | `examples/native/tests/*.rs` (29 tests) | PASS |
 | G1 | required | generated docs name the actual default of a per-call override (final review R1) | `crates/concord-macros` `emit::tests::per_call_note_names_the_actual_default` | PASS |
-| G2 | required | every Rust block in the maintained docs is compiled or a verbatim, checked excerpt | `examples/quickstart/tests/doc_excerpts.rs`, quickstart doctests | PASS |
+| G2 | required | every current-syntax Rust block in README, `docs/*.md` and `examples/native/README.md` is compiled (doctest) or a verbatim, checked excerpt of compiled code. **Exempt:** blocks marked `rust,ignore` and labelled as old (V3/alpha) syntax that does not compile, in `docs/MIGRATION.md` — neither compiled nor checked (the final re-review showed an invalid edit to one is not detected) | `examples/quickstart/tests/doc_excerpts.rs`, quickstart doctests | PASS (with the stated exemption) |
 | M1 | evidence | targeted mutations are killed by these tests | `refinement/evidence/m4_mutations.md` (9/9), Codex final review (5/5) | recorded |
 
 Windows and macOS: **NOT_RUN** for the refined code (no such environment was available; the
