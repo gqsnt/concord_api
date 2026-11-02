@@ -1,8 +1,9 @@
 # Final record — native header values and body/response formats
 
 Branch `concord-v4-native-repr`, worktree `/home/canarit/projects/concord_api_v4`. Started from
-`a915c8d` (`concord-v4-refine`, code identical to `b0fe26e`). Nothing pushed, published or merged
-into another branch. Untracked and untouched: `.claude/`, `concord_v4_handoff/`. Preserved:
+`a915c8d` (`concord-v4-refine`, code identical to `b0fe26e`). Pushed to `origin` once, on the
+owner's authorization, to run CI (`6bc5032`); nothing published or merged into another branch.
+Untracked and untouched: `.claude/`, `concord_v4_handoff/`. Preserved:
 `concord-v4-refine` (`a915c8d`), `concord-v4` (`8f7adc2`), V3 (`concord-v3`,
 `concord-v3-preserved`), `concord-v4-alpha1-baseline`. Side branches merged here:
 `native-repr-findings`, `native-repr-bench`, `native-repr-formats`.
@@ -15,7 +16,7 @@ into another branch. Untracked and untouched: `.claude/`, `concord_v4_handoff/`.
 | Tested | `scripts/verify.sh --msrv --nightly --package`: 22/22 PASS on `1d9ffe7`, clean tree, Linux x86_64, rustc 1.97.1 / 1.85.1 / nightly 1.101; 537 workspace tests (`evidence/verify_1d9ffe7.txt`; earlier receipts `verify_66a4478.txt`, `verify_1174d5d.txt`, `verify_d591fe7.txt`, `verify_d6b209f.txt`) |
 | Independently reviewed | Codex `gpt-6.1-sol` `xhigh`: blind design challenge, design pass 2, executable review of `66a4478` (REVISE: F1–F4), focused executable re-review of `1174d5d` (F1, F2, F4 resolved; F3a found), narrow checks of the migration fixes on `d591fe7` (F3a resolved; F3b–F3d found), `d6b209f` (F3–F3d resolved; F3e found) and `1d9ffe7` — see `REVIEW_TRIAGE.md` and the end of this record |
 | Accepted | see "Acceptance" at the end |
-| Windows / macOS | NOT_RUN for this candidate (a push was not authorized; CI run `41379941540` is of `a40788c`, baseline evidence only) / not a requirement |
+| Windows / macOS | Windows x86_64 (MSVC, rustc 1.97.1): CI run `41459582303` on `6bc5032` (code `1d9ffe7`), the `test` job passes — fmt, clippy, 537 workspace tests, the four `concord` feature lanes, `forms`, feature isolation, five rustdoc builds; the `msrv` and `nightly-clone` jobs ran on Ubuntu (`evidence/ci_41459582303.txt`) / macOS NOT_RUN, not a requirement |
 
 ## 1. A mostly-JSON API
 
@@ -214,7 +215,8 @@ binaries within 0.12%, rlibs up to +1.15%. `#[inline]` unchanged.
 - A `///` comment directly before an owner statement is still rejected (pre-existing parser wart).
 - The ~8 ns small-body cost is unattributed; HTTP/2/TLS, allocation counts in round trips and
   profiles were not measured.
-- Windows and macOS were not executed for this candidate.
+- Windows ran CI's `test` job only (no MSRV, nightly or packaged-source lane on Windows); macOS was
+  not executed.
 - Agent trials and reviews are simulations; no human study was run.
 
 ## Acceptance
@@ -229,12 +231,17 @@ revision `1d9ffe7`:
   `1d9ffe7`); the design-review findings are dispositioned (`REVIEW_TRIAGE.md`);
 - performance is measured against the `a915c8d` baseline, with one documented cost (`PERF.md`).
 
+Windows x86_64 (MSVC, rustc 1.97.1) is tested by CI's `test` job at the same code, run
+`41459582303`, all steps passing with the same 537 workspace tests as Linux
+(`evidence/ci_41459582303.txt`); the reviews and the MSRV, nightly and package lanes are Linux
+evidence.
+
 Scope of the independent review: the full executable audit ran on `66a4478`; the changes made
 since (the dual-use header rule, the package check, the migration script and hint, an absolute
 path in the parser, records) were each reviewed by focused or narrow executable Codex checks of
 those areas, not by a second full audit. Implemented, tested, reviewed and accepted are therefore
 distinct for the final delta only in that sense.
 
-**Not established:** Windows (NOT_RUN for this candidate: a push was not authorized), macOS
-(NOT_RUN), human usability (agent simulations only), HTTP/2 and TLS performance, universal safety
-of any kind beyond the tested properties.
+**Not established:** the MSRV, nightly and packaged-source lanes on Windows, macOS (NOT_RUN), human
+usability (agent simulations only), HTTP/2 and TLS performance, universal safety of any kind beyond
+the tested properties.
