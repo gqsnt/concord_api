@@ -43,6 +43,7 @@ no_reqwest_multipart() {
 }
 
 mkdir -p target
+rm -f target/verify-*.log  # the summary below reads only this run's logs
 echo "head: $(git rev-parse HEAD)  dirty: $(git status --porcelain --untracked-files=no | wc -l) file(s)"
 echo "rustc: $(rustc --version)"
 
