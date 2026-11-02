@@ -6,7 +6,9 @@
 //! host label, path segment, query and header placements, with and without `#[sensitive]`
 //! and under safety-list / near-miss key names. Expected redaction is computed by the
 //! generator; every case also checks the raw value on the native request (wire side).
-//! Domain: 252 cases (182 withheld, 70 shown).
+//! Domain: 252 cases (182 withheld, 70 shown);
+//! 120 of them also check stickiness under a public
+//! `override` and under `remove` + public reintroduction of the same key.
 #![allow(missing_docs, clippy::all)]
 
 use concord::reqwest;
@@ -21,6 +23,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "x-h" = "pubo"; } }
+        GET reint() { headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -50,6 +54,15 @@ fn case_000() {
     assert!(!debug.contains("<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-h: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-h: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=False query=None header=Authorization
@@ -59,6 +72,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "Authorization" = "pubo"; } }
+        GET reint() { headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -88,6 +103,16 @@ fn case_001() {
     }
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=False query=None header=x-token
@@ -97,6 +122,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "x-token" = "pubo"; } }
+        GET reint() { headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -126,6 +153,15 @@ fn case_002() {
     assert!(!debug.contains("<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-token: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-token: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=False query=q header=None
@@ -135,6 +171,8 @@ concord::api! {
         query { "q" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } }
     }
 }
 #[test]
@@ -161,6 +199,12 @@ fn case_003() {
     assert!(!debug.contains("<redacted>"), "{case}: {debug}");
     assert!(debug.contains("q=zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q={public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=False query=q header=x-h
@@ -171,6 +215,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -201,6 +247,16 @@ fn case_004() {
     assert!(debug.contains("q=zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("x-h: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q={public}")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-h: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=False query=q header=Authorization
@@ -211,6 +267,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -241,6 +299,17 @@ fn case_005() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("q=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=False query=q header=x-token
@@ -251,6 +320,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -281,6 +352,16 @@ fn case_006() {
     assert!(debug.contains("q=zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("x-token: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q={public}")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-token: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=False query=Access_Token header=None
@@ -290,6 +371,8 @@ concord::api! {
         query { "Access_Token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } }
     }
 }
 #[test]
@@ -316,6 +399,13 @@ fn case_007() {
     }
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=False query=Access_Token header=x-h
@@ -326,6 +416,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -356,6 +448,17 @@ fn case_008() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-h: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-h: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=False query=Access_Token header=Authorization
@@ -366,6 +469,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -396,6 +501,17 @@ fn case_009() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=False query=Access_Token header=x-token
@@ -406,6 +522,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -436,6 +554,17 @@ fn case_010() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-token: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-token: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=False query=tokens header=None
@@ -445,6 +574,8 @@ concord::api! {
         query { "tokens" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } }
     }
 }
 #[test]
@@ -471,6 +602,12 @@ fn case_011() {
     assert!(!debug.contains("<redacted>"), "{case}: {debug}");
     assert!(debug.contains("tokens=zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens={public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=False query=tokens header=x-h
@@ -481,6 +618,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -511,6 +650,16 @@ fn case_012() {
     assert!(debug.contains("tokens=zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("x-h: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens={public}")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-h: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=False query=tokens header=Authorization
@@ -521,6 +670,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -551,6 +702,17 @@ fn case_013() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("tokens=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=False query=tokens header=x-token
@@ -561,6 +723,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -591,6 +755,16 @@ fn case_014() {
     assert!(debug.contains("tokens=zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("x-token: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens={public}")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-token: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=True query=None header=None
@@ -637,6 +811,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "x-h" = "pubo"; } }
+        GET reint() { headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -668,6 +844,15 @@ fn case_016() {
     assert!(debug.contains("sens.example.test/zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("x-h: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-h: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=True query=None header=Authorization
@@ -678,6 +863,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "Authorization" = "pubo"; } }
+        GET reint() { headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -709,6 +896,16 @@ fn case_017() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=True query=None header=x-token
@@ -719,6 +916,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "x-token" = "pubo"; } }
+        GET reint() { headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -750,6 +949,15 @@ fn case_018() {
     assert!(debug.contains("sens.example.test/zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("x-token: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-token: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=True query=q header=None
@@ -760,6 +968,8 @@ concord::api! {
         query { "q" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } }
     }
 }
 #[test]
@@ -788,6 +998,12 @@ fn case_019() {
     assert!(debug.contains("sens.example.test/zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("q=zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q={public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=True query=q header=x-h
@@ -799,6 +1015,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -831,6 +1049,16 @@ fn case_020() {
     assert!(debug.contains("q=zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("x-h: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q={public}")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-h: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=True query=q header=Authorization
@@ -842,6 +1070,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -874,6 +1104,17 @@ fn case_021() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("q=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=True query=q header=x-token
@@ -885,6 +1126,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -917,6 +1160,16 @@ fn case_022() {
     assert!(debug.contains("q=zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("x-token: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q={public}")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-token: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=True query=Access_Token header=None
@@ -927,6 +1180,8 @@ concord::api! {
         query { "Access_Token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } }
     }
 }
 #[test]
@@ -955,6 +1210,13 @@ fn case_023() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=True query=Access_Token header=x-h
@@ -966,6 +1228,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -998,6 +1262,17 @@ fn case_024() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-h: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-h: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=True query=Access_Token header=Authorization
@@ -1009,6 +1284,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -1041,6 +1318,17 @@ fn case_025() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=True query=Access_Token header=x-token
@@ -1052,6 +1340,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -1084,6 +1374,17 @@ fn case_026() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-token: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-token: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=True query=tokens header=None
@@ -1094,6 +1395,8 @@ concord::api! {
         query { "tokens" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } }
     }
 }
 #[test]
@@ -1122,6 +1425,12 @@ fn case_027() {
     assert!(debug.contains("sens.example.test/zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("tokens=zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens={public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=True query=tokens header=x-h
@@ -1133,6 +1442,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -1165,6 +1476,16 @@ fn case_028() {
     assert!(debug.contains("tokens=zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("x-h: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens={public}")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-h: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=True query=tokens header=Authorization
@@ -1176,6 +1497,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -1208,6 +1531,17 @@ fn case_029() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("tokens=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=False path=True query=tokens header=x-token
@@ -1219,6 +1553,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -1251,6 +1587,16 @@ fn case_030() {
     assert!(debug.contains("tokens=zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("x-token: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens={public}")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-token: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=False query=None header=None
@@ -1297,6 +1643,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "x-h" = "pubo"; } }
+        GET reint() { headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -1328,6 +1676,15 @@ fn case_032() {
     assert!(debug.contains("://zq7secretv.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("x-h: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-h: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=False query=None header=Authorization
@@ -1338,6 +1695,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "Authorization" = "pubo"; } }
+        GET reint() { headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -1369,6 +1728,16 @@ fn case_033() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=False query=None header=x-token
@@ -1379,6 +1748,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "x-token" = "pubo"; } }
+        GET reint() { headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -1410,6 +1781,15 @@ fn case_034() {
     assert!(debug.contains("://zq7secretv.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("x-token: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-token: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=False query=q header=None
@@ -1420,6 +1800,8 @@ concord::api! {
         query { "q" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } }
     }
 }
 #[test]
@@ -1448,6 +1830,12 @@ fn case_035() {
     assert!(debug.contains("://zq7secretv.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("q=zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q={public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=False query=q header=x-h
@@ -1459,6 +1847,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -1491,6 +1881,16 @@ fn case_036() {
     assert!(debug.contains("q=zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("x-h: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q={public}")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-h: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=False query=q header=Authorization
@@ -1502,6 +1902,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -1534,6 +1936,17 @@ fn case_037() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("q=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=False query=q header=x-token
@@ -1545,6 +1958,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -1577,6 +1992,16 @@ fn case_038() {
     assert!(debug.contains("q=zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("x-token: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q={public}")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-token: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=False query=Access_Token header=None
@@ -1587,6 +2012,8 @@ concord::api! {
         query { "Access_Token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } }
     }
 }
 #[test]
@@ -1615,6 +2042,13 @@ fn case_039() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=False query=Access_Token header=x-h
@@ -1626,6 +2060,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -1658,6 +2094,17 @@ fn case_040() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-h: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-h: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=False query=Access_Token header=Authorization
@@ -1669,6 +2116,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -1701,6 +2150,17 @@ fn case_041() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=False query=Access_Token header=x-token
@@ -1712,6 +2172,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -1744,6 +2206,17 @@ fn case_042() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-token: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-token: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=False query=tokens header=None
@@ -1754,6 +2227,8 @@ concord::api! {
         query { "tokens" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } }
     }
 }
 #[test]
@@ -1782,6 +2257,12 @@ fn case_043() {
     assert!(debug.contains("://zq7secretv.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("tokens=zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens={public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=False query=tokens header=x-h
@@ -1793,6 +2274,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -1825,6 +2308,16 @@ fn case_044() {
     assert!(debug.contains("tokens=zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("x-h: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens={public}")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-h: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=False query=tokens header=Authorization
@@ -1836,6 +2329,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -1868,6 +2363,17 @@ fn case_045() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("tokens=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=False query=tokens header=x-token
@@ -1879,6 +2385,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -1911,6 +2419,16 @@ fn case_046() {
     assert!(debug.contains("tokens=zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("x-token: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens={public}")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-token: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=True query=None header=None
@@ -1961,6 +2479,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "x-h" = "pubo"; } }
+        GET reint() { headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -1994,6 +2514,15 @@ fn case_048() {
     assert!(debug.contains("sens.example.test/zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("x-h: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-h: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=True query=None header=Authorization
@@ -2005,6 +2534,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "Authorization" = "pubo"; } }
+        GET reint() { headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -2038,6 +2569,16 @@ fn case_049() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=True query=None header=x-token
@@ -2049,6 +2590,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "x-token" = "pubo"; } }
+        GET reint() { headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -2082,6 +2625,15 @@ fn case_050() {
     assert!(debug.contains("sens.example.test/zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("x-token: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-token: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=True query=q header=None
@@ -2093,6 +2645,8 @@ concord::api! {
         query { "q" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } }
     }
 }
 #[test]
@@ -2123,6 +2677,12 @@ fn case_051() {
     assert!(debug.contains("sens.example.test/zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("q=zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q={public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=True query=q header=x-h
@@ -2135,6 +2695,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -2169,6 +2731,16 @@ fn case_052() {
     assert!(debug.contains("q=zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("x-h: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q={public}")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-h: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=True query=q header=Authorization
@@ -2181,6 +2753,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -2215,6 +2789,17 @@ fn case_053() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("q=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=True query=q header=x-token
@@ -2227,6 +2812,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -2261,6 +2848,16 @@ fn case_054() {
     assert!(debug.contains("q=zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("x-token: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q={public}")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-token: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=True query=Access_Token header=None
@@ -2272,6 +2869,8 @@ concord::api! {
         query { "Access_Token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } }
     }
 }
 #[test]
@@ -2302,6 +2901,13 @@ fn case_055() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=True query=Access_Token header=x-h
@@ -2314,6 +2920,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -2348,6 +2956,17 @@ fn case_056() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-h: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-h: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=True query=Access_Token header=Authorization
@@ -2360,6 +2979,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -2394,6 +3015,17 @@ fn case_057() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=True query=Access_Token header=x-token
@@ -2406,6 +3038,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -2440,6 +3074,17 @@ fn case_058() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-token: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-token: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=True query=tokens header=None
@@ -2451,6 +3096,8 @@ concord::api! {
         query { "tokens" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } }
     }
 }
 #[test]
@@ -2481,6 +3128,12 @@ fn case_059() {
     assert!(debug.contains("sens.example.test/zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("tokens=zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens={public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=True query=tokens header=x-h
@@ -2493,6 +3146,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -2527,6 +3182,16 @@ fn case_060() {
     assert!(debug.contains("tokens=zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("x-h: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens={public}")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-h: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=True query=tokens header=Authorization
@@ -2539,6 +3204,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -2573,6 +3240,17 @@ fn case_061() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("tokens=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=False site=client host=True path=True query=tokens header=x-token
@@ -2585,6 +3263,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -2619,6 +3299,16 @@ fn case_062() {
     assert!(debug.contains("tokens=zq7secretv"), "{case}: {debug}");
     assert!(debug.contains("x-token: zq7secretv"), "{case}: {debug}");
     assert!(!shown.contains(V), "error Display/Debug is static text, {case}: {shown}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens={public}")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), false, "{case}");
+        assert!(debug.contains(&format!("x-token: {public}")), "{case}: {debug}");
+    }
 }
 
 // marked=False site=endpoint host=False path=False query=None header=x-h
@@ -5075,6 +5765,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "x-h" = "pubo"; } }
+        GET reint() { headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -5104,6 +5796,16 @@ fn case_126() {
     }
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("x-h: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-h: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=False query=None header=Authorization
@@ -5113,6 +5815,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "Authorization" = "pubo"; } }
+        GET reint() { headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -5142,6 +5846,16 @@ fn case_127() {
     }
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=False query=None header=x-token
@@ -5151,6 +5865,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "x-token" = "pubo"; } }
+        GET reint() { headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -5180,6 +5896,16 @@ fn case_128() {
     }
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("x-token: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-token: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=False query=q header=None
@@ -5189,6 +5915,8 @@ concord::api! {
         query { "q" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } }
     }
 }
 #[test]
@@ -5215,6 +5943,13 @@ fn case_129() {
     }
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("q=<redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q=<redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=False query=q header=x-h
@@ -5225,6 +5960,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -5255,6 +5992,17 @@ fn case_130() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("q=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-h: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-h: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=False query=q header=Authorization
@@ -5265,6 +6013,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -5295,6 +6045,17 @@ fn case_131() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("q=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=False query=q header=x-token
@@ -5305,6 +6066,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -5335,6 +6098,17 @@ fn case_132() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("q=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-token: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-token: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=False query=Access_Token header=None
@@ -5344,6 +6118,8 @@ concord::api! {
         query { "Access_Token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } }
     }
 }
 #[test]
@@ -5370,6 +6146,13 @@ fn case_133() {
     }
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=False query=Access_Token header=x-h
@@ -5380,6 +6163,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -5410,6 +6195,17 @@ fn case_134() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-h: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-h: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=False query=Access_Token header=Authorization
@@ -5420,6 +6216,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -5450,6 +6248,17 @@ fn case_135() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=False query=Access_Token header=x-token
@@ -5460,6 +6269,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -5490,6 +6301,17 @@ fn case_136() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-token: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-token: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=False query=tokens header=None
@@ -5499,6 +6321,8 @@ concord::api! {
         query { "tokens" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } }
     }
 }
 #[test]
@@ -5525,6 +6349,13 @@ fn case_137() {
     }
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("tokens=<redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens=<redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=False query=tokens header=x-h
@@ -5535,6 +6366,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -5565,6 +6398,17 @@ fn case_138() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("tokens=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-h: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-h: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=False query=tokens header=Authorization
@@ -5575,6 +6419,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -5605,6 +6451,17 @@ fn case_139() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("tokens=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=False query=tokens header=x-token
@@ -5615,6 +6472,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -5645,6 +6504,17 @@ fn case_140() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("tokens=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-token: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-token: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=True query=None header=None
@@ -5691,6 +6561,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "x-h" = "pubo"; } }
+        GET reint() { headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -5722,6 +6594,16 @@ fn case_142() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-h: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-h: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=True query=None header=Authorization
@@ -5732,6 +6614,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "Authorization" = "pubo"; } }
+        GET reint() { headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -5763,6 +6647,16 @@ fn case_143() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=True query=None header=x-token
@@ -5773,6 +6667,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "x-token" = "pubo"; } }
+        GET reint() { headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -5804,6 +6700,16 @@ fn case_144() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-token: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-token: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=True query=q header=None
@@ -5814,6 +6720,8 @@ concord::api! {
         query { "q" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } }
     }
 }
 #[test]
@@ -5842,6 +6750,13 @@ fn case_145() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("q=<redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q=<redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=True query=q header=x-h
@@ -5853,6 +6768,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -5885,6 +6802,17 @@ fn case_146() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("q=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-h: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-h: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=True query=q header=Authorization
@@ -5896,6 +6824,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -5928,6 +6858,17 @@ fn case_147() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("q=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=True query=q header=x-token
@@ -5939,6 +6880,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -5971,6 +6914,17 @@ fn case_148() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("q=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-token: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-token: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=True query=Access_Token header=None
@@ -5981,6 +6935,8 @@ concord::api! {
         query { "Access_Token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } }
     }
 }
 #[test]
@@ -6009,6 +6965,13 @@ fn case_149() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=True query=Access_Token header=x-h
@@ -6020,6 +6983,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -6052,6 +7017,17 @@ fn case_150() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-h: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-h: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=True query=Access_Token header=Authorization
@@ -6063,6 +7039,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -6095,6 +7073,17 @@ fn case_151() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=True query=Access_Token header=x-token
@@ -6106,6 +7095,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -6138,6 +7129,17 @@ fn case_152() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-token: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-token: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=True query=tokens header=None
@@ -6148,6 +7150,8 @@ concord::api! {
         query { "tokens" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } }
     }
 }
 #[test]
@@ -6176,6 +7180,13 @@ fn case_153() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("tokens=<redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens=<redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=True query=tokens header=x-h
@@ -6187,6 +7198,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -6219,6 +7232,17 @@ fn case_154() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("tokens=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-h: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-h: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=True query=tokens header=Authorization
@@ -6230,6 +7254,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -6262,6 +7288,17 @@ fn case_155() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("tokens=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=False path=True query=tokens header=x-token
@@ -6273,6 +7310,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -6305,6 +7344,17 @@ fn case_156() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("tokens=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-token: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-token: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=False query=None header=None
@@ -6351,6 +7401,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "x-h" = "pubo"; } }
+        GET reint() { headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -6382,6 +7434,16 @@ fn case_158() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("x-h: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-h: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=False query=None header=Authorization
@@ -6392,6 +7454,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "Authorization" = "pubo"; } }
+        GET reint() { headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -6423,6 +7487,16 @@ fn case_159() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=False query=None header=x-token
@@ -6433,6 +7507,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "x-token" = "pubo"; } }
+        GET reint() { headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -6464,6 +7540,16 @@ fn case_160() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("x-token: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-token: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=False query=q header=None
@@ -6474,6 +7560,8 @@ concord::api! {
         query { "q" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } }
     }
 }
 #[test]
@@ -6502,6 +7590,13 @@ fn case_161() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("q=<redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q=<redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=False query=q header=x-h
@@ -6513,6 +7608,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -6545,6 +7642,17 @@ fn case_162() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("q=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-h: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-h: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=False query=q header=Authorization
@@ -6556,6 +7664,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -6588,6 +7698,17 @@ fn case_163() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("q=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=False query=q header=x-token
@@ -6599,6 +7720,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -6631,6 +7754,17 @@ fn case_164() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("q=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-token: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-token: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=False query=Access_Token header=None
@@ -6641,6 +7775,8 @@ concord::api! {
         query { "Access_Token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } }
     }
 }
 #[test]
@@ -6669,6 +7805,13 @@ fn case_165() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=False query=Access_Token header=x-h
@@ -6680,6 +7823,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -6712,6 +7857,17 @@ fn case_166() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-h: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-h: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=False query=Access_Token header=Authorization
@@ -6723,6 +7879,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -6755,6 +7913,17 @@ fn case_167() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=False query=Access_Token header=x-token
@@ -6766,6 +7935,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -6798,6 +7969,17 @@ fn case_168() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-token: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-token: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=False query=tokens header=None
@@ -6808,6 +7990,8 @@ concord::api! {
         query { "tokens" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } }
     }
 }
 #[test]
@@ -6836,6 +8020,13 @@ fn case_169() {
     assert!(client_debug.contains("v: <redacted>"), "{case}: {client_debug}");
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("tokens=<redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens=<redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=False query=tokens header=x-h
@@ -6847,6 +8038,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -6879,6 +8072,17 @@ fn case_170() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("tokens=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-h: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-h: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=False query=tokens header=Authorization
@@ -6890,6 +8094,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -6922,6 +8128,17 @@ fn case_171() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("tokens=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=False query=tokens header=x-token
@@ -6933,6 +8150,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -6965,6 +8184,17 @@ fn case_172() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("tokens=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-token: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-token: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=True query=None header=None
@@ -7015,6 +8245,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "x-h" = "pubo"; } }
+        GET reint() { headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -7048,6 +8280,16 @@ fn case_174() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-h: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-h: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=True query=None header=Authorization
@@ -7059,6 +8301,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "Authorization" = "pubo"; } }
+        GET reint() { headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -7092,6 +8336,16 @@ fn case_175() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=True query=None header=x-token
@@ -7103,6 +8357,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { headers { override "x-token" = "pubo"; } }
+        GET reint() { headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -7136,6 +8392,16 @@ fn case_176() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-token: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), None, "{case}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-token: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=True query=q header=None
@@ -7147,6 +8413,8 @@ concord::api! {
         query { "q" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } }
     }
 }
 #[test]
@@ -7177,6 +8445,13 @@ fn case_177() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("q=<redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q=<redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=True query=q header=x-h
@@ -7189,6 +8464,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -7223,6 +8500,17 @@ fn case_178() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("q=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-h: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-h: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=True query=q header=Authorization
@@ -7235,6 +8523,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -7269,6 +8559,17 @@ fn case_179() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("q=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=True query=q header=x-token
@@ -7281,6 +8582,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "q" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "q"; "q" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -7315,6 +8618,17 @@ fn case_180() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("q=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-token: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("q={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("q=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-token: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=True query=Access_Token header=None
@@ -7326,6 +8640,8 @@ concord::api! {
         query { "Access_Token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } }
     }
 }
 #[test]
@@ -7356,6 +8672,13 @@ fn case_181() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=True query=Access_Token header=x-h
@@ -7368,6 +8691,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -7402,6 +8727,17 @@ fn case_182() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-h: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-h: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=True query=Access_Token header=Authorization
@@ -7414,6 +8750,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -7448,6 +8786,17 @@ fn case_183() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=True query=Access_Token header=x-token
@@ -7460,6 +8809,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "Access_Token" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "Access_Token"; "Access_Token" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -7494,6 +8845,17 @@ fn case_184() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("Access_Token=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-token: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("Access_Token={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("Access_Token=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-token: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=True query=tokens header=None
@@ -7505,6 +8867,8 @@ concord::api! {
         query { "tokens" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } }
     }
 }
 #[test]
@@ -7535,6 +8899,13 @@ fn case_185() {
     assert!(debug.contains("://<redacted>.sens.example.test"), "{case}: {debug}");
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("tokens=<redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens=<redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=True query=tokens header=x-h
@@ -7547,6 +8918,8 @@ concord::api! {
         headers { "x-h" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "x-h" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "x-h"; "x-h" = "pubr"; } }
     }
 }
 #[test]
@@ -7581,6 +8954,17 @@ fn case_186() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("tokens=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-h: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-h"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-h: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=True query=tokens header=Authorization
@@ -7593,6 +8977,8 @@ concord::api! {
         headers { "Authorization" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "Authorization" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "Authorization"; "Authorization" = "pubr"; } }
     }
 }
 #[test]
@@ -7627,6 +9013,17 @@ fn case_187() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("tokens=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("authorization: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["authorization"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("authorization: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=client host=True path=True query=tokens header=x-token
@@ -7639,6 +9036,8 @@ concord::api! {
         headers { "x-token" = v; }
         GET ok(w: String) { query { "p" = w; } }
         GET fail(bad: String) { headers { "x-bad" = bad; } }
+        GET over() { query { override "tokens" = "pubo"; } headers { override "x-token" = "pubo"; } }
+        GET reint() { query { remove "tokens"; "tokens" = "pubr"; } headers { remove "x-token"; "x-token" = "pubr"; } }
     }
 }
 #[test]
@@ -7673,6 +9072,17 @@ fn case_188() {
     assert!(debug.contains("sens.example.test/<redacted>"), "{case}: {debug}");
     assert!(debug.contains("tokens=<redacted>"), "{case}: {debug}");
     assert!(debug.contains("x-token: <redacted>"), "{case}: {debug}");
+    // Sticky: the public replacement is on the wire; the key stays as sensitive as before.
+    for (p, public) in [(api.clone().over().prepare().unwrap(), "pubo"), (api.clone().reint().prepare().unwrap(), "pubr")] {
+        let debug = format!("{p:?}");
+        assert_eq!(p.request().url().query(), Some(format!("tokens={public}").as_str()), "{case}");
+        assert!(debug.contains(&format!("tokens=<redacted>")), "{case}: {debug}");
+        let hv = &p.request().headers()["x-token"];
+        assert_eq!(hv, public, "{case}");
+        assert_eq!(hv.is_sensitive(), true, "{case}");
+        assert!(debug.contains(&format!("x-token: <redacted>")), "{case}: {debug}");
+        assert!(!debug.contains(public) && !debug.contains(V), "{case}: {debug}");
+    }
 }
 
 // marked=True site=endpoint host=False path=False query=None header=x-h
