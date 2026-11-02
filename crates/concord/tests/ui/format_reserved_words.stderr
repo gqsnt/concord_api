@@ -1,4 +1,4 @@
-error: expected identifier
+error: expected a format: `json`, `text`, `bytes` or `form`, or a type path (`request Ndjson;`)
  --> tests/ui/format_reserved_words.rs:7:38
   |
 7 |         GET item() -> Rows { response; }
@@ -10,7 +10,7 @@ error: `csv` is not a format: the built-in formats are `json`, `text`, `bytes` o
 13 |         GET rows() -> Rows { response csv; }
    |                                       ^^^
 
-error: `qurey` is neither a placement (`query`, `header("..")`) nor a body format: the built-in formats are `json`, `text`, `bytes` or `form`; a format type is written as a path (`self::qurey`)
+error: `qurey` is not a placement: a parameter is `name: T`, `query name: T`, `query("key") name: T`, `header(KEY) name: T` or `body name: T` (formats are statements: `request json;`)
   --> tests/ui/format_reserved_words.rs:19:20
    |
 19 |         GET search(qurey page: u32);

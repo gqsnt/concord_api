@@ -8,7 +8,10 @@ start with another directory. **Status** is bound to the verification receipt
 1.97.1 and 1.85.1, all 11 steps PASS. Commits after `b0fe26e` change only records under `v4/` (this
 file, `refinement/`), which no build or test reads; `refinement/FINAL.md` lists them and shows the
 code is identical. Earlier alpha receipts in `evidence/GATES.md` are historical. Rows added or changed by the refinement are in the last section
-or marked *(refined)*.
+or marked *(refined)*. The final campaign's rows (native header names, representation statements,
+the Riot example) are in the last three sections; their status is bound to the receipt named in
+`finalization/STATUS.md`, and rows of earlier sections that the final campaign changed are marked
+*(final)*.
 
 ## Minimal surface
 
@@ -143,9 +146,9 @@ tree (rustc 1.97.1 and 1.85); receipt `native-repr/evidence/track_h/verify-msrv-
 | H6 | required | native sensitive flag kept without a marker on an unlisted name; OR with the declaration; withheld from every Concord output; secret reaches the server | `native_headers.rs::h6_native_sensitivity_without_marker`, `h6_native_and_declared_sensitivity_combine`, `declaration_classification_is_added` | prototype |
 | H7 | required | flagged inherited value through `append`/`override`/`remove`/`else inherit`/exact replacement; flags per value | `native_headers.rs::h7_inherited_composition` | prototype |
 | H8 | required | aliases, qualified paths, renamed import, renamed `concord` and `reqwest` dependencies | `native_headers.rs` (fixture), `examples/renamed/src/lib.rs::native_headers_through_renamed_dependencies`, `native-repr/evidence/track_h/coherence/out/summary.txt` | prototype |
-| H9 | required | integers/`bool`/text/domain type/`Display` through a template; text keeps the visible-ASCII rule; non-header types are compile errors with a migration note | `native_headers.rs::h9_scalars`, `forwarded_forms`, `ui/header_value_type.rs`, `display_errors.rs` | prototype |
+| H9 | required | integers/`bool`/text; domain types through a template; *(final)* text follows `HeaderValue::from_str` (UTF-8 accepted, control bytes rejected); non-header types are compile errors | `native_headers.rs::h9_scalars`, `forwarded_forms`, `ui/header_value_type.rs`, `display_errors.rs` | final |
 | H10 | required | a native value in a query, path or template is a compile error at its type naming the explicit conversion | `ui/native_header_cross_placement.rs` | prototype |
-| H10b | required | a value placed as a header and as text must be text itself unless `#[sensitive]`; a marked custom value is withheld in the header, the template header, the path and the query; a `String` may be both and stays visible | `ui/header_text_dual_use.rs`, `native_headers.rs::dual_use_values_are_withheld_everywhere_or_are_text` | prototype |
+| H10b | required | *(final)* `ToHeaderValue` is sealed, so no flag-carrying value can be text; a marked value is withheld in the header, the template header, the path and the query; a `String` may be both and stays visible | `ui/to_header_value_sealed.rs`, `native_headers.rs::dual_use_values_are_withheld_everywhere_or_are_text` | final |
 | H11 | required | generated `Debug` of config/client/scope/request with native values; `Prepared` `Debug` for sensitive / text / non-text values | `native_headers.rs::generated_debug_of_every_owner`, `h5_non_text_bytes`, `h6_*`, `h7_*` | prototype |
 | H12 | required | native `Content-Type` wins over a representation's; an optional native header does not affect body presence; full header map is a build error | `native_headers.rs::native_headers_and_bodies`, `full_header_map_with_native_values` | prototype |
 | H13 | evidence | payload allocations per route (static/shared native 0, text 1, integer 2, formatted 2 per value) | `checks/heap/tests/headers.rs`, `native-repr/evidence/track_h/alloc/prototype.txt` | recorded |
@@ -167,10 +170,10 @@ in `formats.rs` unless stated; `ui/`, `ui_json/`, `ui_features/` are trybuild ca
 | F4 | required | `-> String` under `response json;` is a JSON string; `-> text String` raw text | `row4_json_string_versus_raw_text` | track |
 | F5 | required | aliases of payloads and formats follow the written format and the defaults only | `row5_aliases_follow_the_written_format` | track |
 | F6a/6d | required | request and response defaults independent, nearest owner wins, no clearing | `row6a_nearest_owner_per_direction` | track |
-| F6b | required | an in-place format (and media type) replaces the default for that body/output | `row6b_in_place_exception_with_media_type`, `row8a_body_media_types` | track |
-| F6c | required | `request`/`response` on an endpoint is a compile error | `ui/format_endpoint_statement.rs` | track |
-| F7 | required | no format and no default: compile error at the payload naming both remedies (alpha spellings hinted) | `ui/representation_missing_via.rs`, `ui/representation_alpha_spelling.rs` | track |
-| F8a | required | body media type: declared (`FORMAT("…")`, `body("…")`, default's) or the format's; sent exactly with the body | `row8a_body_media_types`, `forms.rs::pairs_and_form_default` | track |
+| F6b | required | *(final)* an endpoint statement (format and media type together) replaces the inherited one for that direction | `row6b_in_place_exception_with_media_type`, `row8a_body_media_types` | final |
+| F6c | required | *(final)* statements on an endpoint need something to apply to; endpoint `format` with one direction is accepted | `ui/format_endpoint_statement.rs`, `row6c_endpoint_format_sets_both_directions`, `row6c_endpoint_statements_override_per_direction` | final |
+| F7 | required | no statement reaches a body/output: compile error at the payload naming the statements | `ui/representation_missing_via.rs`, `ui/representation_alpha_spelling.rs` | final |
+| F8a | required | body media type: declared by the `request` statement (`request F "m";`) or the format's; sent exactly with the body | `row8a_body_media_types`, `forms.rs::pairs_and_form_default` | final |
 | F8b | required | four runtime cases with a `content-type` contribution; empty native value present; empty `each` absent; conversion failure is a build error | `row8b_four_runtime_cases`, `row8b_empty_value_empty_each_and_conversion_failure`, `native_headers.rs::native_headers_and_bodies` | track |
 | F8c | required | declared body media type + surviving `content-type` contribution (conditional included) rejected; `remove` resolves it | `ui/format_header_media_conflict.rs`, `row8c_remove_resolves_the_conflict` | track |
 | F8d/8e | required | no `Accept`, response `Content-Type` unchecked; an output takes no media type | `row8d_no_accept_and_no_response_type_check`, `ui/format_output_media_type.rs` | track |
@@ -181,8 +184,49 @@ in `formats.rs` unless stated; `ui/`, `ui_json/`, `ui_features/` are trybuild ca
 | F12a | required | `json`/`form` off: one error per in-place word, one per used default | `ui_features/feature_disabled_formats.rs` (no-default lanes) | track |
 | F12b | required | defaults reached only through aliases gated by consumers' `cfg`s; unused defaults never referenced | `row12b_unused_and_cfg_disabled_defaults_are_never_referenced`, `attributes.rs::cfg_and_deprecated`, `ui_features/feature_disabled_formats.rs` | track |
 | F12c | required | words need no import under a renamed dependency; paths resolve normally | `examples/renamed/src/lib.rs::formats_through_the_renamed_crate` | track |
-| F12d | required | leftover `via` → exact replacement; `scripts/migrate_via.py` | `ui/format_via_removed.rs` | track |
+| F12d | required | leftover `via` → exact replacement statement *(final: the migration script is withdrawn)* | `ui/format_via_removed.rs` | final |
 | F12e | required | rustdoc states format, media type and origin per endpoint, defaults per owner | `concord-macros` `emit::tests::format_docs_*` | track |
 | FL | required | lexical precedence table (values named like words, word-prefixed paths, `-> r#json`, reserved words, swapped order) | `lexical_precedence`, `lexical_raw_identifier_is_a_payload`, `ui/format_reserved_words.rs`, `ui/format_swapped_order.rs` | track |
 | FX | required | CHARTER §7 cross-feature: optional native headers vs body presence (H11), defaults vs header presence/inheritance (H12), natively sensitive header under defaults | `h11_*`, `h12_*`, `native_sensitive_header_stays_protected_under_defaults` | track |
 | FF | required | built-in `form` (feature `form`): encoding, pairs, defaults, responses, encode errors, form in / JSON out | `forms.rs` | track |
+
+## Final: native header names (F06–F09)
+
+| ID | Class | Expected | Test | Status |
+|---|---|---|---|---|
+| K1 | required | `header(AUTHORIZATION)`, a custom constant, an alias, a re-export, qualified/absolute paths and a `static` send their names | `native_keys.rs::h01_h03_native_keys_send_their_names` | final |
+| K2 | required | composition by resolved identity across spellings: `override "Authorization"`, `remove AUTH`, absolute `append`, `static` override, `else inherit` | `native_keys.rs::h05_composition_follows_identity_not_spelling` | final |
+| K3 | required | a local constant named `AUTHORIZATION` holding `x-other` is `x-other`; identity errors that depend on a constant are `Build` errors at `prepare()` naming the declaration | `native_keys.rs::identity_errors_are_deferred_build_errors` | final |
+| K4 | required | errors provable at expansion stay compile errors with native keys (same constant twice, literal twice, optional override without `else inherit`) | `ui/native_key_static_errors.rs` | final |
+| K5 | required | removed or replaced native contributions are never formatted | `native_keys.rs::h15_suppressed_values_are_never_formatted` | final |
+| K6 | required | classification by resolved name: `header(AUTHORIZATION)` unmarked is withheld and flagged; a shadowing `x-other` is not; a marked native contribution makes a later literal spelling sensitive; a conditional value that is also text is withheld from the URL | `native_keys.rs::h14_classification_by_resolved_name`, `marked_native_contribution_is_sticky_across_spellings` | final |
+| K7 | required | reserved names through native constants are `Build` errors; a native `CONTENT_TYPE` wins over the format's media type and conflicts with a declared one | `native_keys.rs::reserved_and_content_type_through_native_constants` | final |
+| K8 | required | a key path that is not a `HeaderName` is one compile error at the path; a query key cannot be a path | `ui/native_key_type.rs` | final |
+| K9 | required | the run-time header plan equals the sequential composition rule on every chain of up to four contributions; sensitivity sticky per header and by name | `header_plan.rs::plan_equals_the_sequential_rule`, `sensitivity_is_sticky_per_header_and_by_name` | final |
+| K10 | required | literal names, literal values and template fragments checked by `http` at expansion (control bytes, NUL, DEL, a fragment no hole can repair, over-long names); UTF-8 literals accepted | `ui/invalid_header_name.rs`, `ui/header_literal_value.rs`, `ui/header_name_exceeds_native_limit.rs`, `composition.rs::header_value_policy` | final |
+| K11 | required | the macro's and the runtime's sensitive and reserved name lists are equal | `concord-macros` `model::tests::name_lists_match_the_runtime` | final |
+| K12 | required | `ToHeaderValue` cannot be implemented downstream | `ui/to_header_value_sealed.rs` | final |
+
+## Final: representation statements (F01–F05)
+
+| ID | Class | Expected | Test | Status |
+|---|---|---|---|---|
+| S1 | required | `format`/`request`/`response` on client, scope and endpoint; nearest per direction; endpoint `format` with one direction | `formats.rs::row6a_nearest_owner_per_direction`, `row6c_endpoint_format_sets_both_directions`, `row6c_endpoint_statements_override_per_direction` | final |
+| S2 | required | every removed in-place spelling is a compile error naming the replacement statement | `ui/format_removed_spellings.rs`, `ui/format_swapped_order.rs` | final |
+| S3 | required | a media type without a format, on a response or on `format` is a compile error with the reason | `ui/format_media_type_needs_format.rs`, `ui/format_output_media_type.rs` | final |
+| S4 | required | an unsupported payload is reported with Concord's `Encode<T>`/`Decode<T>` message (not a `BodyFormat` mismatch), on the endpoint, a scope or the client | `ui/representation_unsupported_payload.rs`, `ui/format_inherited_unsupported.rs` | final |
+| S5 | required | declared media types parsed by the `mime` crate | `ui/format_media_type_invalid.rs` | final |
+| S6 | required | the 38-test common corpus (A01–A20) behaves identically under the control and the selected surface | external: `corpus_master/` in the campaign work directory (`v4/finalization/MODEL_RUNS.md`) | recorded |
+
+## Final: the Riot example (F11)
+
+| ID | Class | Expected | Test | Status |
+|---|---|---|---|---|
+| R1 | required | account-v1 on the regional host; Riot ID path encoding; key in `x-riot-token`, no `Authorization`; optional account fields | `examples/riot/tests/wire.rs::account_by_riot_id_is_regional_and_path_encoded`, `optional_account_fields_may_be_omitted` | final |
+| R2 | required | summoner-v4, champion-mastery-v4, champion-v3 on the platform host; omitted zero fields | `examples/riot/tests/wire.rs::platform_operations_use_the_platform_host` | final |
+| R3 | required | match-v5 ids send only the filters that are set | `examples/riot/tests/wire.rs::match_ids_send_only_the_filters_that_are_set` | final |
+| R4 | required | tournament-stub bodies: exact JSON bytes, query, `Content-Type`; optional fields omitted | `examples/riot/tests/wire.rs::tournament_codes_send_the_documented_body`, `optional_tournament_fields_are_omitted_not_null` | final |
+| R5 | required | RSO `/accounts/me`: `AUTHORIZATION` replaces the API key (native `remove`) | `examples/riot/tests/wire.rs::rso_access_token_replaces_the_api_key` | final |
+| R6 | required | Data Dragon: credential-free host, JSON and PNG bytes, never the key | `examples/riot/tests/wire.rs::data_dragon_is_credential_free_json_and_bytes` | final |
+| R7 | required | bounded read workflow on routed hosts; history capped; tournament codes workflow | `examples/riot/tests/workflows.rs::player_summary_reads_a_bounded_history`, `history_is_capped_whatever_the_caller_asks`, `tournament_codes_workflow` | final |
+| R8 | required | non-200 JSON/empty/HTML bodies kept unread; 429 stops with `Retry-After`, no retry; malformed 200 is a decode error; key and access token withheld, positive control on the wire | `examples/riot/tests/errors.rs::non_success_bodies_are_kept_unread`, `a_429_stops_the_workflow_with_retry_after`, `a_429_without_retry_after_still_stops`, `malformed_success_body_is_a_decode_error`, `the_key_and_access_tokens_are_withheld_from_debug` | final |

@@ -1,20 +1,20 @@
 error: `request` statement has no body to apply to
- --> tests/ui/format_endpoint_statement.rs:7:43
+ --> tests/ui/format_endpoint_statement.rs:7:35
   |
 7 |         GET version() -> String { request text; response text; }
-  |                                           ^^^^
+  |                                   ^^^^^^^
 
 error: `response` statement has no typed output (`-> T`) to apply to
-  --> tests/ui/format_endpoint_statement.rs:13:63
+  --> tests/ui/format_endpoint_statement.rs:13:54
    |
 13 |         POST note(body note: String) { request text; response text; }
-   |                                                               ^^^^
+   |                                                      ^^^^^^^^
 
 error: `format` statement has neither a body nor a typed output (`-> T`) to apply to
-  --> tests/ui/format_endpoint_statement.rs:19:34
+  --> tests/ui/format_endpoint_statement.rs:19:27
    |
 19 |         DELETE remove() { format json; }
-   |                                  ^^^^
+   |                           ^^^^^^
 
 error: duplicate `request` statement; each owner declares it at most once
   --> tests/ui/format_endpoint_statement.rs:27:13
@@ -22,13 +22,13 @@ error: duplicate `request` statement; each owner declares it at most once
 27 |             request bytes;
    |             ^^^^^^^
 
-error: duplicate `request` statement; each owner declares it at most once
+error: duplicate `request` direction: `format` counts as both `request` and `response`, at most once each per owner
   --> tests/ui/format_endpoint_statement.rs:36:13
    |
 36 |             request text;
    |             ^^^^^^^
 
-error: duplicate direction: `format` counts as both `request` and `response`
+error: duplicate `request` direction: `format` counts as both `request` and `response`, at most once each per owner
   --> tests/ui/format_endpoint_statement.rs:45:13
    |
 45 |             format text;

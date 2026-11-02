@@ -1,0 +1,1 @@
+Prepared { endpoint: "Api.item", method: "GET", url: "http://x.test/item?s=NATIVE-SECRET", headers: [], body: None }

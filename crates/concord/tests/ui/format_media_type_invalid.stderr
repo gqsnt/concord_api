@@ -1,22 +1,22 @@
-error: "application json" is not a media type: the type is not a token followed by `/` (expected `type/subtype` with optional `; name=value` parameters, in visible ASCII, e.g. "application/merge-patch+json")
+error: "application json" is not a media type: mime parse error: an invalid token was encountered, 20 at position 11 (expected `type/subtype` with optional `; name=value` parameters, e.g. "application/merge-patch+json")
  --> tests/ui/format_media_type_invalid.rs:6:47
   |
 6 |         POST a(body b: String) { request json "application json"; }
   |                                               ^^^^^^^^^^^^^^^^^^
 
-error: "text/plain; charset" is not a media type: a parameter is not `name=value` (expected `type/subtype` with optional `; name=value` parameters, in visible ASCII, e.g. "application/merge-patch+json")
+error: "text/plain; charset" is not a media type: mime parse error: an equals sign (=) was missing between a parameter and its value (expected `type/subtype` with optional `; name=value` parameters, e.g. "application/merge-patch+json")
   --> tests/ui/format_media_type_invalid.rs:12:47
    |
 12 |         POST a(body b: String) { request text "text/plain; charset"; }
    |                                               ^^^^^^^^^^^^^^^^^^^^^
 
-error: "application/vnd.café+json" is not a media type: 'é' is not visible ASCII (expected `type/subtype` with optional `; name=value` parameters, in visible ASCII, e.g. "application/merge-patch+json")
+error: "application/vnd.café+json" is not a media type: mime parse error: an invalid token was encountered, C3 at position 19 (expected `type/subtype` with optional `; name=value` parameters, e.g. "application/merge-patch+json")
   --> tests/ui/format_media_type_invalid.rs:18:47
    |
 18 |         POST a(body b: String) { request json "application/vnd.caf\u{e9}+json"; }
    |                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: " application/json" is not a media type: it starts or ends with whitespace (expected `type/subtype` with optional `; name=value` parameters, in visible ASCII, e.g. "application/merge-patch+json")
+error: " application/json" is not a media type: mime parse error: an invalid token was encountered, 20 at position 0 (expected `type/subtype` with optional `; name=value` parameters, e.g. "application/merge-patch+json")
   --> tests/ui/format_media_type_invalid.rs:24:22
    |
 24 |         request json " application/json";

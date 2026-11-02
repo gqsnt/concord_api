@@ -136,7 +136,7 @@ in the macro and the runtime, kept equal by a unit test.
 
 ## F10 — The regex migration script is withdrawn (CHANGE)
 
-`scripts/migrate_via.py` corrupted string constants, comments and header literals and merged two
+The script migrate_via.py corrupted string constants, comments and header literals and merged two
 endpoints on one line (reproduced on the campaign corpus). Migration is manual, guided by the
 compiler's exact replacement messages (`docs/MIGRATION.md`). A future tool would have to work on
 tokens inside `api!` only, show a diff and refuse ambiguity.

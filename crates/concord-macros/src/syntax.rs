@@ -144,6 +144,8 @@ pub struct FormatDefault {
     pub media: Option<LitStr>,
     /// Written as `format F;` (both directions).
     pub both: bool,
+    /// The statement's keyword (`request`, `response`, `format`), for diagnostics.
+    pub span: Span,
 }
 
 /// A type or path as written, without `quote`'s token spacing (`Vec<Item>`, not `Vec < Item >`).
@@ -232,7 +234,7 @@ fn parse_format(input: ParseStream<'_>, in_params: bool) -> syn::Result<Format> 
         {
             let what = if in_params {
                 format!(
-                    "`{text}` is neither a placement (`query`, `header(\"..\")`) nor a body format: the built-in formats are {WORDS}; a format type is written as a path (`self::{text}`)"
+                    "`{text}` is not a placement: a parameter is `name: T`, `query name: T`, `query(\"key\") name: T`, `header(KEY) name: T` or `body name: T` (formats are statements: `request json;`)"
                 )
             } else {
                 format!(
@@ -306,8 +308,8 @@ fn check_media_type(lit: &LitStr) -> syn::Result<()> {
             ),
         ))
     };
-    if text.parse::<mime::Mime>().is_err() {
-        return fail("rejected by the `mime` parser");
+    if let Err(e) = text.parse::<mime::Mime>() {
+        return fail(&e.to_string());
     }
     match http::HeaderValue::from_str(&text) {
         Ok(value) if value.to_str().is_ok() => Ok(()),
@@ -627,6 +629,11 @@ fn parse_default(input: ParseStream<'_>, stmts: &mut Stmts, _site: Site) -> syn:
     } else {
         input.parse::<kw::response>()?.span
     };
+    if input.peek(Token![;]) {
+        return Err(input.error(format!(
+            "expected a format: {WORDS}, or a type path (`request Ndjson;`)"
+        )));
+    }
     if input.peek(LitStr) {
         return Err(input.error(
             "a media type follows its format, which the statement restates: `request json \"application/merge-patch+json\";` (a statement replaces the inherited format and media type together)",
@@ -652,7 +659,7 @@ fn parse_default(input: ParseStream<'_>, stmts: &mut Stmts, _site: Site) -> syn:
         }
         if !request {
             return Err(input.error(
-                "an output takes no media type: Concord sends no `Accept` and does not check the response `Content-Type`; to send an `Accept` header, declare it (`headers { ACCEPT = \"...\"; }`)",
+                "an output takes no media type: Concord sends no `Accept` and does not check the response `Content-Type`; to send an `Accept` header, declare it (`headers { \"accept\" = \"...\"; }`)",
             ));
         }
         let lit: LitStr = input.parse()?;
@@ -666,14 +673,27 @@ fn parse_default(input: ParseStream<'_>, stmts: &mut Stmts, _site: Site) -> syn:
         format,
         media,
         both,
+        span,
     };
-    if both {
-        if stmts.request.is_some() || stmts.response.is_some() {
-            return Err(syn::Error::new(
+    // One message for a direction set twice, whichever statement came first.
+    let taken = |slot: &Option<FormatDefault>, direction: &str| -> syn::Result<()> {
+        match slot {
+            Some(first) if first.both || both => Err(syn::Error::new(
                 span,
-                "duplicate direction: `format` counts as both `request` and `response`",
-            ));
+                format!(
+                    "duplicate `{direction}` direction: `format` counts as both `request` and `response`, at most once each per owner"
+                ),
+            )),
+            _ => Ok(()),
         }
+    };
+    if request {
+        taken(&stmts.request, "request")?;
+    }
+    if both || !request {
+        taken(&stmts.response, "response")?;
+    }
+    if both {
         stmts.request = Some(default.clone());
         stmts.response = Some(default);
         Ok(())

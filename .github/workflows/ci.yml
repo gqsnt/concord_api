@@ -65,10 +65,10 @@ jobs:
           --test slice --test values --test composition --test bodies --test representations
           --test sensitivity --test hygiene --test tls --test attributes --test display_errors
           --test native_limits --test native_headers --test d15_surfaces --test oracle_composition
-          --test oracle_sensitivity --test formats --test forms
+          --test oracle_sensitivity --test formats --test forms --test native_keys --test header_plan
       - run: >
           cargo +1.85 test --locked -p concord-macros -p concord-example-shapes
-          -p concord-example-renamed -p concord-example-native -p concord-example-quickstart
+          -p concord-example-renamed -p concord-example-native -p concord-example-quickstart -p concord-example-riot
           -p concord-heap-check -p concord-clone-compat
       # A separate consumer: built and tested alone, so workspace feature unification cannot help.
       - run: cargo +1.85 test --locked -p concord-example-multipart

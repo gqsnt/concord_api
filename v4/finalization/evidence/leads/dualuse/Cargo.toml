@@ -1,0 +1,9 @@
+[package]
+name = "lead-dualuse"
+version = "0.0.0"
+edition = "2024"
+publish = false
+[workspace]
+[dependencies]
+concord = { path = "/home/canarit/projects/concord_v4_final/crates/concord" }
+reqwest = { version = "0.13", default-features = false }

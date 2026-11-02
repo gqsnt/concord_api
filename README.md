@@ -32,7 +32,8 @@ Excerpt of [`examples/quickstart/src/lib.rs`](examples/quickstart/src/lib.rs), c
 against a local stand-in server by `cargo test -p concord-example-quickstart`:
 
 ```rust
-use concord::{Decode, Json, reqwest};
+use concord::reqwest::{self, header::AUTHORIZATION};
+use concord::{Decode, Json};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -57,9 +58,8 @@ concord::api! {
     /// A small task-tracking API.
     pub client Tasks(#[sensitive] token: String) {
         base "https://tasks.example.com/api";
-        headers { "authorization" = "Bearer {token}"; }
-        request json;
-        response json;
+        headers { AUTHORIZATION = "Bearer {token}"; }
+        format json;
 
         scope project(project: String) {
             path "projects/{project}";

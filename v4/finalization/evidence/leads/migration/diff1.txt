@@ -1,0 +1,14 @@
+1,2c1,2
+< const MESSAGE: &str = "-> Item via Json";
+< // body b: String via Text is historical prose, not an active declaration.
+---
+> const MESSAGE: &str = "-> Json Item";
+> // Text b: String is historical prose, not an active declaration.
+6,8c6,8
+<         headers { "x-note" = "body a: String via Text"; }
+<         GET ready() -> text String;  GET old() -> Item via Json;
+<         POST raw(body r: String via Text) { path "r"; }
+---
+>         headers { "x-note" = "Text a: String"; }
+>         GET ready() -> Json text String;  GET old() -> Item;
+>         POST raw(Text r: String) { path "r"; }

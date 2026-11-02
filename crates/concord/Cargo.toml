@@ -14,9 +14,9 @@ include = ["/src/**/*.rs", "/Cargo.toml", "/LICENSE-APACHE", "/LICENSE-MIT"]
 
 [features]
 default = ["json", "reqwest-defaults"]
-## The `json` format (`json b: T`, `-> json T`, `request json;`), via serde/serde_json.
+## The `json` format (`format json;`, `request json;`, `response json;`), via serde/serde_json.
 json = ["dep:serde", "dep:serde_json"]
-## The `form` format (`form b: T`, `application/x-www-form-urlencoded`), via serde/serde_urlencoded.
+## The `form` format (`request form;`, `application/x-www-form-urlencoded`), via serde/serde_urlencoded.
 ## Off by default, like reqwest's own `form` feature.
 form = ["dep:serde", "dep:serde_urlencoded"]
 ## Enables reqwest's own default features (TLS, HTTP/2, charset, system proxy).

@@ -1960,7 +1960,7 @@ fn flatten(
                 (Some(d), _) if d.both => {
                     if body.is_none() && output.is_none() {
                         errors.push(syn::Error::new(
-                            d.format.span(),
+                            d.span,
                             "`format` statement has neither a body nor a typed output (`-> T`) to apply to",
                         ));
                     }
@@ -1968,13 +1968,13 @@ fn flatten(
                 (request, response) => {
                     if let (None, Some(d)) = (&body, request) {
                         errors.push(syn::Error::new(
-                            d.format.span(),
+                            d.span,
                             "`request` statement has no body to apply to",
                         ));
                     }
                     if let (None, Some(d)) = (&output, response) {
                         errors.push(syn::Error::new(
-                            d.format.span(),
+                            d.span,
                             "`response` statement has no typed output (`-> T`) to apply to",
                         ));
                     }
@@ -2202,8 +2202,13 @@ fn endpoint_output(
             }
             None => {
                 let ty = type_text(&o.ty);
+                let unit = if matches!(&o.ty, syn::Type::Tuple(t) if t.elems.is_empty()) {
+                    " (`-> ()` is a typed output decoded with a format, such as JSON `null`; an endpoint that returns nothing omits `->`)"
+                } else {
+                    "; omit `->` to drain"
+                };
                 let message = format!(
-                    "output `{ty}` has no representation: say `response json;` on this endpoint, a scope or the client; omit `->` to drain"
+                    "output `{ty}` has no representation: say `response json;` on this endpoint, a scope or the client{unit}"
                 );
                 errors.push(syn::Error::new(o.ty.span(), message));
                 return None;
