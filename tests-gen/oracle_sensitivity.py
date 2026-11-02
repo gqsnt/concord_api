@@ -122,6 +122,7 @@ def render_test(i, name, c):
     w(f"    let api = {name}::new(reqwest::Client::new(), {name}Config {{ v: V.into() }});")
     w("    let endpoint = api.clone().ok(W);")
     w("    let endpoint_debug = format!(\"{endpoint:?}\");")
+    w(f'    assert!(endpoint_debug.contains(r#"w: "{W}""#), "{{case}}: {{endpoint_debug}}");')
     w("    let p = endpoint.prepare().unwrap();")
     w("    let url = p.request().url().clone();")
     w("    let debug = format!(\"{p:?}\");")

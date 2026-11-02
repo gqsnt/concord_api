@@ -30,6 +30,7 @@ fn case_000() {
     let api = S000::new(reqwest::Client::new(), S000Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -67,6 +68,7 @@ fn case_001() {
     let api = S001::new(reqwest::Client::new(), S001Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -104,6 +106,7 @@ fn case_002() {
     let api = S002::new(reqwest::Client::new(), S002Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -141,6 +144,7 @@ fn case_003() {
     let api = S003::new(reqwest::Client::new(), S003Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -176,6 +180,7 @@ fn case_004() {
     let api = S004::new(reqwest::Client::new(), S004Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -215,6 +220,7 @@ fn case_005() {
     let api = S005::new(reqwest::Client::new(), S005Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -254,6 +260,7 @@ fn case_006() {
     let api = S006::new(reqwest::Client::new(), S006Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -292,6 +299,7 @@ fn case_007() {
     let api = S007::new(reqwest::Client::new(), S007Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -327,6 +335,7 @@ fn case_008() {
     let api = S008::new(reqwest::Client::new(), S008Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -366,6 +375,7 @@ fn case_009() {
     let api = S009::new(reqwest::Client::new(), S009Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -405,6 +415,7 @@ fn case_010() {
     let api = S010::new(reqwest::Client::new(), S010Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -443,6 +454,7 @@ fn case_011() {
     let api = S011::new(reqwest::Client::new(), S011Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -478,6 +490,7 @@ fn case_012() {
     let api = S012::new(reqwest::Client::new(), S012Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -517,6 +530,7 @@ fn case_013() {
     let api = S013::new(reqwest::Client::new(), S013Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -556,6 +570,7 @@ fn case_014() {
     let api = S014::new(reqwest::Client::new(), S014Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -594,6 +609,7 @@ fn case_015() {
     let api = S015::new(reqwest::Client::new(), S015Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -630,6 +646,7 @@ fn case_016() {
     let api = S016::new(reqwest::Client::new(), S016Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -670,6 +687,7 @@ fn case_017() {
     let api = S017::new(reqwest::Client::new(), S017Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -710,6 +728,7 @@ fn case_018() {
     let api = S018::new(reqwest::Client::new(), S018Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -750,6 +769,7 @@ fn case_019() {
     let api = S019::new(reqwest::Client::new(), S019Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -788,6 +808,7 @@ fn case_020() {
     let api = S020::new(reqwest::Client::new(), S020Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -830,6 +851,7 @@ fn case_021() {
     let api = S021::new(reqwest::Client::new(), S021Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -872,6 +894,7 @@ fn case_022() {
     let api = S022::new(reqwest::Client::new(), S022Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -913,6 +936,7 @@ fn case_023() {
     let api = S023::new(reqwest::Client::new(), S023Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -951,6 +975,7 @@ fn case_024() {
     let api = S024::new(reqwest::Client::new(), S024Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -993,6 +1018,7 @@ fn case_025() {
     let api = S025::new(reqwest::Client::new(), S025Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1035,6 +1061,7 @@ fn case_026() {
     let api = S026::new(reqwest::Client::new(), S026Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1076,6 +1103,7 @@ fn case_027() {
     let api = S027::new(reqwest::Client::new(), S027Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1114,6 +1142,7 @@ fn case_028() {
     let api = S028::new(reqwest::Client::new(), S028Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1156,6 +1185,7 @@ fn case_029() {
     let api = S029::new(reqwest::Client::new(), S029Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1198,6 +1228,7 @@ fn case_030() {
     let api = S030::new(reqwest::Client::new(), S030Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1238,6 +1269,7 @@ fn case_031() {
     let api = S031::new(reqwest::Client::new(), S031Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1274,6 +1306,7 @@ fn case_032() {
     let api = S032::new(reqwest::Client::new(), S032Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1314,6 +1347,7 @@ fn case_033() {
     let api = S033::new(reqwest::Client::new(), S033Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1354,6 +1388,7 @@ fn case_034() {
     let api = S034::new(reqwest::Client::new(), S034Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1394,6 +1429,7 @@ fn case_035() {
     let api = S035::new(reqwest::Client::new(), S035Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1432,6 +1468,7 @@ fn case_036() {
     let api = S036::new(reqwest::Client::new(), S036Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1474,6 +1511,7 @@ fn case_037() {
     let api = S037::new(reqwest::Client::new(), S037Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1516,6 +1554,7 @@ fn case_038() {
     let api = S038::new(reqwest::Client::new(), S038Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1557,6 +1596,7 @@ fn case_039() {
     let api = S039::new(reqwest::Client::new(), S039Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1595,6 +1635,7 @@ fn case_040() {
     let api = S040::new(reqwest::Client::new(), S040Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1637,6 +1678,7 @@ fn case_041() {
     let api = S041::new(reqwest::Client::new(), S041Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1679,6 +1721,7 @@ fn case_042() {
     let api = S042::new(reqwest::Client::new(), S042Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1720,6 +1763,7 @@ fn case_043() {
     let api = S043::new(reqwest::Client::new(), S043Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1758,6 +1802,7 @@ fn case_044() {
     let api = S044::new(reqwest::Client::new(), S044Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1800,6 +1845,7 @@ fn case_045() {
     let api = S045::new(reqwest::Client::new(), S045Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1842,6 +1888,7 @@ fn case_046() {
     let api = S046::new(reqwest::Client::new(), S046Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1883,6 +1930,7 @@ fn case_047() {
     let api = S047::new(reqwest::Client::new(), S047Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1922,6 +1970,7 @@ fn case_048() {
     let api = S048::new(reqwest::Client::new(), S048Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -1965,6 +2014,7 @@ fn case_049() {
     let api = S049::new(reqwest::Client::new(), S049Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2008,6 +2058,7 @@ fn case_050() {
     let api = S050::new(reqwest::Client::new(), S050Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2051,6 +2102,7 @@ fn case_051() {
     let api = S051::new(reqwest::Client::new(), S051Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2092,6 +2144,7 @@ fn case_052() {
     let api = S052::new(reqwest::Client::new(), S052Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2137,6 +2190,7 @@ fn case_053() {
     let api = S053::new(reqwest::Client::new(), S053Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2182,6 +2236,7 @@ fn case_054() {
     let api = S054::new(reqwest::Client::new(), S054Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2226,6 +2281,7 @@ fn case_055() {
     let api = S055::new(reqwest::Client::new(), S055Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2267,6 +2323,7 @@ fn case_056() {
     let api = S056::new(reqwest::Client::new(), S056Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2312,6 +2369,7 @@ fn case_057() {
     let api = S057::new(reqwest::Client::new(), S057Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2357,6 +2415,7 @@ fn case_058() {
     let api = S058::new(reqwest::Client::new(), S058Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2401,6 +2460,7 @@ fn case_059() {
     let api = S059::new(reqwest::Client::new(), S059Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2442,6 +2502,7 @@ fn case_060() {
     let api = S060::new(reqwest::Client::new(), S060Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2487,6 +2548,7 @@ fn case_061() {
     let api = S061::new(reqwest::Client::new(), S061Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2532,6 +2594,7 @@ fn case_062() {
     let api = S062::new(reqwest::Client::new(), S062Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2573,6 +2636,7 @@ fn case_063() {
     let api = S063::new(reqwest::Client::new(), S063Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2609,6 +2673,7 @@ fn case_064() {
     let api = S064::new(reqwest::Client::new(), S064Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2645,6 +2710,7 @@ fn case_065() {
     let api = S065::new(reqwest::Client::new(), S065Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2681,6 +2747,7 @@ fn case_066() {
     let api = S066::new(reqwest::Client::new(), S066Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2714,6 +2781,7 @@ fn case_067() {
     let api = S067::new(reqwest::Client::new(), S067Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2751,6 +2819,7 @@ fn case_068() {
     let api = S068::new(reqwest::Client::new(), S068Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2788,6 +2857,7 @@ fn case_069() {
     let api = S069::new(reqwest::Client::new(), S069Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2825,6 +2895,7 @@ fn case_070() {
     let api = S070::new(reqwest::Client::new(), S070Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2858,6 +2929,7 @@ fn case_071() {
     let api = S071::new(reqwest::Client::new(), S071Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2895,6 +2967,7 @@ fn case_072() {
     let api = S072::new(reqwest::Client::new(), S072Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2932,6 +3005,7 @@ fn case_073() {
     let api = S073::new(reqwest::Client::new(), S073Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -2969,6 +3043,7 @@ fn case_074() {
     let api = S074::new(reqwest::Client::new(), S074Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3002,6 +3077,7 @@ fn case_075() {
     let api = S075::new(reqwest::Client::new(), S075Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3039,6 +3115,7 @@ fn case_076() {
     let api = S076::new(reqwest::Client::new(), S076Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3076,6 +3153,7 @@ fn case_077() {
     let api = S077::new(reqwest::Client::new(), S077Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3113,6 +3191,7 @@ fn case_078() {
     let api = S078::new(reqwest::Client::new(), S078Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3147,6 +3226,7 @@ fn case_079() {
     let api = S079::new(reqwest::Client::new(), S079Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3185,6 +3265,7 @@ fn case_080() {
     let api = S080::new(reqwest::Client::new(), S080Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3223,6 +3304,7 @@ fn case_081() {
     let api = S081::new(reqwest::Client::new(), S081Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3261,6 +3343,7 @@ fn case_082() {
     let api = S082::new(reqwest::Client::new(), S082Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3296,6 +3379,7 @@ fn case_083() {
     let api = S083::new(reqwest::Client::new(), S083Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3335,6 +3419,7 @@ fn case_084() {
     let api = S084::new(reqwest::Client::new(), S084Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3374,6 +3459,7 @@ fn case_085() {
     let api = S085::new(reqwest::Client::new(), S085Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3413,6 +3499,7 @@ fn case_086() {
     let api = S086::new(reqwest::Client::new(), S086Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3448,6 +3535,7 @@ fn case_087() {
     let api = S087::new(reqwest::Client::new(), S087Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3487,6 +3575,7 @@ fn case_088() {
     let api = S088::new(reqwest::Client::new(), S088Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3526,6 +3615,7 @@ fn case_089() {
     let api = S089::new(reqwest::Client::new(), S089Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3565,6 +3655,7 @@ fn case_090() {
     let api = S090::new(reqwest::Client::new(), S090Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3600,6 +3691,7 @@ fn case_091() {
     let api = S091::new(reqwest::Client::new(), S091Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3639,6 +3731,7 @@ fn case_092() {
     let api = S092::new(reqwest::Client::new(), S092Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3678,6 +3771,7 @@ fn case_093() {
     let api = S093::new(reqwest::Client::new(), S093Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3717,6 +3811,7 @@ fn case_094() {
     let api = S094::new(reqwest::Client::new(), S094Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3751,6 +3846,7 @@ fn case_095() {
     let api = S095::new(reqwest::Client::new(), S095Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3789,6 +3885,7 @@ fn case_096() {
     let api = S096::new(reqwest::Client::new(), S096Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3827,6 +3924,7 @@ fn case_097() {
     let api = S097::new(reqwest::Client::new(), S097Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3865,6 +3963,7 @@ fn case_098() {
     let api = S098::new(reqwest::Client::new(), S098Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3900,6 +3999,7 @@ fn case_099() {
     let api = S099::new(reqwest::Client::new(), S099Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3939,6 +4039,7 @@ fn case_100() {
     let api = S100::new(reqwest::Client::new(), S100Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -3978,6 +4079,7 @@ fn case_101() {
     let api = S101::new(reqwest::Client::new(), S101Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4017,6 +4119,7 @@ fn case_102() {
     let api = S102::new(reqwest::Client::new(), S102Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4052,6 +4155,7 @@ fn case_103() {
     let api = S103::new(reqwest::Client::new(), S103Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4091,6 +4195,7 @@ fn case_104() {
     let api = S104::new(reqwest::Client::new(), S104Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4130,6 +4235,7 @@ fn case_105() {
     let api = S105::new(reqwest::Client::new(), S105Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4169,6 +4275,7 @@ fn case_106() {
     let api = S106::new(reqwest::Client::new(), S106Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4204,6 +4311,7 @@ fn case_107() {
     let api = S107::new(reqwest::Client::new(), S107Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4243,6 +4351,7 @@ fn case_108() {
     let api = S108::new(reqwest::Client::new(), S108Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4282,6 +4391,7 @@ fn case_109() {
     let api = S109::new(reqwest::Client::new(), S109Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4321,6 +4431,7 @@ fn case_110() {
     let api = S110::new(reqwest::Client::new(), S110Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4357,6 +4468,7 @@ fn case_111() {
     let api = S111::new(reqwest::Client::new(), S111Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4397,6 +4509,7 @@ fn case_112() {
     let api = S112::new(reqwest::Client::new(), S112Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4437,6 +4550,7 @@ fn case_113() {
     let api = S113::new(reqwest::Client::new(), S113Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4477,6 +4591,7 @@ fn case_114() {
     let api = S114::new(reqwest::Client::new(), S114Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4514,6 +4629,7 @@ fn case_115() {
     let api = S115::new(reqwest::Client::new(), S115Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4555,6 +4671,7 @@ fn case_116() {
     let api = S116::new(reqwest::Client::new(), S116Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4596,6 +4713,7 @@ fn case_117() {
     let api = S117::new(reqwest::Client::new(), S117Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4637,6 +4755,7 @@ fn case_118() {
     let api = S118::new(reqwest::Client::new(), S118Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4674,6 +4793,7 @@ fn case_119() {
     let api = S119::new(reqwest::Client::new(), S119Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4715,6 +4835,7 @@ fn case_120() {
     let api = S120::new(reqwest::Client::new(), S120Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4756,6 +4877,7 @@ fn case_121() {
     let api = S121::new(reqwest::Client::new(), S121Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4797,6 +4919,7 @@ fn case_122() {
     let api = S122::new(reqwest::Client::new(), S122Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4834,6 +4957,7 @@ fn case_123() {
     let api = S123::new(reqwest::Client::new(), S123Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4875,6 +4999,7 @@ fn case_124() {
     let api = S124::new(reqwest::Client::new(), S124Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4916,6 +5041,7 @@ fn case_125() {
     let api = S125::new(reqwest::Client::new(), S125Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4958,6 +5084,7 @@ fn case_126() {
     let api = S126::new(reqwest::Client::new(), S126Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -4995,6 +5122,7 @@ fn case_127() {
     let api = S127::new(reqwest::Client::new(), S127Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5032,6 +5160,7 @@ fn case_128() {
     let api = S128::new(reqwest::Client::new(), S128Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5069,6 +5198,7 @@ fn case_129() {
     let api = S129::new(reqwest::Client::new(), S129Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5104,6 +5234,7 @@ fn case_130() {
     let api = S130::new(reqwest::Client::new(), S130Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5143,6 +5274,7 @@ fn case_131() {
     let api = S131::new(reqwest::Client::new(), S131Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5182,6 +5314,7 @@ fn case_132() {
     let api = S132::new(reqwest::Client::new(), S132Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5220,6 +5353,7 @@ fn case_133() {
     let api = S133::new(reqwest::Client::new(), S133Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5255,6 +5389,7 @@ fn case_134() {
     let api = S134::new(reqwest::Client::new(), S134Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5294,6 +5429,7 @@ fn case_135() {
     let api = S135::new(reqwest::Client::new(), S135Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5333,6 +5469,7 @@ fn case_136() {
     let api = S136::new(reqwest::Client::new(), S136Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5371,6 +5508,7 @@ fn case_137() {
     let api = S137::new(reqwest::Client::new(), S137Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5406,6 +5544,7 @@ fn case_138() {
     let api = S138::new(reqwest::Client::new(), S138Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5445,6 +5584,7 @@ fn case_139() {
     let api = S139::new(reqwest::Client::new(), S139Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5484,6 +5624,7 @@ fn case_140() {
     let api = S140::new(reqwest::Client::new(), S140Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5522,6 +5663,7 @@ fn case_141() {
     let api = S141::new(reqwest::Client::new(), S141Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5558,6 +5700,7 @@ fn case_142() {
     let api = S142::new(reqwest::Client::new(), S142Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5598,6 +5741,7 @@ fn case_143() {
     let api = S143::new(reqwest::Client::new(), S143Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5638,6 +5782,7 @@ fn case_144() {
     let api = S144::new(reqwest::Client::new(), S144Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5678,6 +5823,7 @@ fn case_145() {
     let api = S145::new(reqwest::Client::new(), S145Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5716,6 +5862,7 @@ fn case_146() {
     let api = S146::new(reqwest::Client::new(), S146Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5758,6 +5905,7 @@ fn case_147() {
     let api = S147::new(reqwest::Client::new(), S147Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5800,6 +5948,7 @@ fn case_148() {
     let api = S148::new(reqwest::Client::new(), S148Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5841,6 +5990,7 @@ fn case_149() {
     let api = S149::new(reqwest::Client::new(), S149Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5879,6 +6029,7 @@ fn case_150() {
     let api = S150::new(reqwest::Client::new(), S150Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5921,6 +6072,7 @@ fn case_151() {
     let api = S151::new(reqwest::Client::new(), S151Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -5963,6 +6115,7 @@ fn case_152() {
     let api = S152::new(reqwest::Client::new(), S152Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6004,6 +6157,7 @@ fn case_153() {
     let api = S153::new(reqwest::Client::new(), S153Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6042,6 +6196,7 @@ fn case_154() {
     let api = S154::new(reqwest::Client::new(), S154Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6084,6 +6239,7 @@ fn case_155() {
     let api = S155::new(reqwest::Client::new(), S155Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6126,6 +6282,7 @@ fn case_156() {
     let api = S156::new(reqwest::Client::new(), S156Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6166,6 +6323,7 @@ fn case_157() {
     let api = S157::new(reqwest::Client::new(), S157Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6202,6 +6360,7 @@ fn case_158() {
     let api = S158::new(reqwest::Client::new(), S158Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6242,6 +6401,7 @@ fn case_159() {
     let api = S159::new(reqwest::Client::new(), S159Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6282,6 +6442,7 @@ fn case_160() {
     let api = S160::new(reqwest::Client::new(), S160Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6322,6 +6483,7 @@ fn case_161() {
     let api = S161::new(reqwest::Client::new(), S161Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6360,6 +6522,7 @@ fn case_162() {
     let api = S162::new(reqwest::Client::new(), S162Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6402,6 +6565,7 @@ fn case_163() {
     let api = S163::new(reqwest::Client::new(), S163Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6444,6 +6608,7 @@ fn case_164() {
     let api = S164::new(reqwest::Client::new(), S164Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6485,6 +6650,7 @@ fn case_165() {
     let api = S165::new(reqwest::Client::new(), S165Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6523,6 +6689,7 @@ fn case_166() {
     let api = S166::new(reqwest::Client::new(), S166Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6565,6 +6732,7 @@ fn case_167() {
     let api = S167::new(reqwest::Client::new(), S167Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6607,6 +6775,7 @@ fn case_168() {
     let api = S168::new(reqwest::Client::new(), S168Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6648,6 +6817,7 @@ fn case_169() {
     let api = S169::new(reqwest::Client::new(), S169Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6686,6 +6856,7 @@ fn case_170() {
     let api = S170::new(reqwest::Client::new(), S170Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6728,6 +6899,7 @@ fn case_171() {
     let api = S171::new(reqwest::Client::new(), S171Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6770,6 +6942,7 @@ fn case_172() {
     let api = S172::new(reqwest::Client::new(), S172Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6811,6 +6984,7 @@ fn case_173() {
     let api = S173::new(reqwest::Client::new(), S173Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6850,6 +7024,7 @@ fn case_174() {
     let api = S174::new(reqwest::Client::new(), S174Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6893,6 +7068,7 @@ fn case_175() {
     let api = S175::new(reqwest::Client::new(), S175Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6936,6 +7112,7 @@ fn case_176() {
     let api = S176::new(reqwest::Client::new(), S176Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -6979,6 +7156,7 @@ fn case_177() {
     let api = S177::new(reqwest::Client::new(), S177Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7020,6 +7198,7 @@ fn case_178() {
     let api = S178::new(reqwest::Client::new(), S178Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7065,6 +7244,7 @@ fn case_179() {
     let api = S179::new(reqwest::Client::new(), S179Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7110,6 +7290,7 @@ fn case_180() {
     let api = S180::new(reqwest::Client::new(), S180Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7154,6 +7335,7 @@ fn case_181() {
     let api = S181::new(reqwest::Client::new(), S181Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7195,6 +7377,7 @@ fn case_182() {
     let api = S182::new(reqwest::Client::new(), S182Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7240,6 +7423,7 @@ fn case_183() {
     let api = S183::new(reqwest::Client::new(), S183Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7285,6 +7469,7 @@ fn case_184() {
     let api = S184::new(reqwest::Client::new(), S184Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7329,6 +7514,7 @@ fn case_185() {
     let api = S185::new(reqwest::Client::new(), S185Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7370,6 +7556,7 @@ fn case_186() {
     let api = S186::new(reqwest::Client::new(), S186Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7415,6 +7602,7 @@ fn case_187() {
     let api = S187::new(reqwest::Client::new(), S187Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7460,6 +7648,7 @@ fn case_188() {
     let api = S188::new(reqwest::Client::new(), S188Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7501,6 +7690,7 @@ fn case_189() {
     let api = S189::new(reqwest::Client::new(), S189Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7537,6 +7727,7 @@ fn case_190() {
     let api = S190::new(reqwest::Client::new(), S190Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7573,6 +7764,7 @@ fn case_191() {
     let api = S191::new(reqwest::Client::new(), S191Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7609,6 +7801,7 @@ fn case_192() {
     let api = S192::new(reqwest::Client::new(), S192Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7642,6 +7835,7 @@ fn case_193() {
     let api = S193::new(reqwest::Client::new(), S193Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7679,6 +7873,7 @@ fn case_194() {
     let api = S194::new(reqwest::Client::new(), S194Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7716,6 +7911,7 @@ fn case_195() {
     let api = S195::new(reqwest::Client::new(), S195Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7753,6 +7949,7 @@ fn case_196() {
     let api = S196::new(reqwest::Client::new(), S196Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7786,6 +7983,7 @@ fn case_197() {
     let api = S197::new(reqwest::Client::new(), S197Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7823,6 +8021,7 @@ fn case_198() {
     let api = S198::new(reqwest::Client::new(), S198Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7860,6 +8059,7 @@ fn case_199() {
     let api = S199::new(reqwest::Client::new(), S199Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7897,6 +8097,7 @@ fn case_200() {
     let api = S200::new(reqwest::Client::new(), S200Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7930,6 +8131,7 @@ fn case_201() {
     let api = S201::new(reqwest::Client::new(), S201Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -7967,6 +8169,7 @@ fn case_202() {
     let api = S202::new(reqwest::Client::new(), S202Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8004,6 +8207,7 @@ fn case_203() {
     let api = S203::new(reqwest::Client::new(), S203Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8041,6 +8245,7 @@ fn case_204() {
     let api = S204::new(reqwest::Client::new(), S204Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8075,6 +8280,7 @@ fn case_205() {
     let api = S205::new(reqwest::Client::new(), S205Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8113,6 +8319,7 @@ fn case_206() {
     let api = S206::new(reqwest::Client::new(), S206Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8151,6 +8358,7 @@ fn case_207() {
     let api = S207::new(reqwest::Client::new(), S207Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8189,6 +8397,7 @@ fn case_208() {
     let api = S208::new(reqwest::Client::new(), S208Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8224,6 +8433,7 @@ fn case_209() {
     let api = S209::new(reqwest::Client::new(), S209Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8263,6 +8473,7 @@ fn case_210() {
     let api = S210::new(reqwest::Client::new(), S210Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8302,6 +8513,7 @@ fn case_211() {
     let api = S211::new(reqwest::Client::new(), S211Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8341,6 +8553,7 @@ fn case_212() {
     let api = S212::new(reqwest::Client::new(), S212Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8376,6 +8589,7 @@ fn case_213() {
     let api = S213::new(reqwest::Client::new(), S213Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8415,6 +8629,7 @@ fn case_214() {
     let api = S214::new(reqwest::Client::new(), S214Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8454,6 +8669,7 @@ fn case_215() {
     let api = S215::new(reqwest::Client::new(), S215Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8493,6 +8709,7 @@ fn case_216() {
     let api = S216::new(reqwest::Client::new(), S216Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8528,6 +8745,7 @@ fn case_217() {
     let api = S217::new(reqwest::Client::new(), S217Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8567,6 +8785,7 @@ fn case_218() {
     let api = S218::new(reqwest::Client::new(), S218Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8606,6 +8825,7 @@ fn case_219() {
     let api = S219::new(reqwest::Client::new(), S219Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8645,6 +8865,7 @@ fn case_220() {
     let api = S220::new(reqwest::Client::new(), S220Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8679,6 +8900,7 @@ fn case_221() {
     let api = S221::new(reqwest::Client::new(), S221Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8717,6 +8939,7 @@ fn case_222() {
     let api = S222::new(reqwest::Client::new(), S222Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8755,6 +8978,7 @@ fn case_223() {
     let api = S223::new(reqwest::Client::new(), S223Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8793,6 +9017,7 @@ fn case_224() {
     let api = S224::new(reqwest::Client::new(), S224Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8828,6 +9053,7 @@ fn case_225() {
     let api = S225::new(reqwest::Client::new(), S225Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8867,6 +9093,7 @@ fn case_226() {
     let api = S226::new(reqwest::Client::new(), S226Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8906,6 +9133,7 @@ fn case_227() {
     let api = S227::new(reqwest::Client::new(), S227Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8945,6 +9173,7 @@ fn case_228() {
     let api = S228::new(reqwest::Client::new(), S228Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -8980,6 +9209,7 @@ fn case_229() {
     let api = S229::new(reqwest::Client::new(), S229Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9019,6 +9249,7 @@ fn case_230() {
     let api = S230::new(reqwest::Client::new(), S230Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9058,6 +9289,7 @@ fn case_231() {
     let api = S231::new(reqwest::Client::new(), S231Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9097,6 +9329,7 @@ fn case_232() {
     let api = S232::new(reqwest::Client::new(), S232Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9132,6 +9365,7 @@ fn case_233() {
     let api = S233::new(reqwest::Client::new(), S233Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9171,6 +9405,7 @@ fn case_234() {
     let api = S234::new(reqwest::Client::new(), S234Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9210,6 +9445,7 @@ fn case_235() {
     let api = S235::new(reqwest::Client::new(), S235Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9249,6 +9485,7 @@ fn case_236() {
     let api = S236::new(reqwest::Client::new(), S236Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9285,6 +9522,7 @@ fn case_237() {
     let api = S237::new(reqwest::Client::new(), S237Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9325,6 +9563,7 @@ fn case_238() {
     let api = S238::new(reqwest::Client::new(), S238Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9365,6 +9604,7 @@ fn case_239() {
     let api = S239::new(reqwest::Client::new(), S239Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9405,6 +9645,7 @@ fn case_240() {
     let api = S240::new(reqwest::Client::new(), S240Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9442,6 +9683,7 @@ fn case_241() {
     let api = S241::new(reqwest::Client::new(), S241Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9483,6 +9725,7 @@ fn case_242() {
     let api = S242::new(reqwest::Client::new(), S242Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9524,6 +9767,7 @@ fn case_243() {
     let api = S243::new(reqwest::Client::new(), S243Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9565,6 +9809,7 @@ fn case_244() {
     let api = S244::new(reqwest::Client::new(), S244Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9602,6 +9847,7 @@ fn case_245() {
     let api = S245::new(reqwest::Client::new(), S245Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9643,6 +9889,7 @@ fn case_246() {
     let api = S246::new(reqwest::Client::new(), S246Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9684,6 +9931,7 @@ fn case_247() {
     let api = S247::new(reqwest::Client::new(), S247Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9725,6 +9973,7 @@ fn case_248() {
     let api = S248::new(reqwest::Client::new(), S248Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9762,6 +10011,7 @@ fn case_249() {
     let api = S249::new(reqwest::Client::new(), S249Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9803,6 +10053,7 @@ fn case_250() {
     let api = S250::new(reqwest::Client::new(), S250Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
@@ -9844,6 +10095,7 @@ fn case_251() {
     let api = S251::new(reqwest::Client::new(), S251Config { v: V.into() });
     let endpoint = api.clone().ok(W);
     let endpoint_debug = format!("{endpoint:?}");
+    assert!(endpoint_debug.contains(r#"w: "pubw9""#), "{case}: {endpoint_debug}");
     let p = endpoint.prepare().unwrap();
     let url = p.request().url().clone();
     let debug = format!("{p:?}");
