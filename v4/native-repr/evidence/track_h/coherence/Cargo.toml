@@ -1,0 +1,10 @@
+# Coherence lab for native header values (Track H). Its own workspace: nothing here is part of the
+# Concord build. Run `./run.sh` (compiles every probe on 1.97.1 and 1.85 and records the output).
+[workspace]
+members = ["design_a", "design_b", "design_c", "design_d", "user"]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.85"
+publish = false

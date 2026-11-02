@@ -131,7 +131,7 @@ Windows: **PASS** — GitHub Actions run 41379941540 (`x86_64-pc-windows-msvc`, 
 ## Native header values (Track H prototype)
 
 Status: **prototype** — passing in `scripts/verify.sh --msrv` on the uncommitted Track H working
-tree (rustc 1.97.1 and 1.85); receipt `exp/verify-msrv.txt`, not bound to a commit.
+tree (rustc 1.97.1 and 1.85); receipt `native-repr/evidence/track_h/verify-msrv-prototype.txt`, not bound to a commit.
 
 | ID | Class | Expected | Test | Status |
 |---|---|---|---|---|
@@ -142,19 +142,19 @@ tree (rustc 1.97.1 and 1.85); receipt `exp/verify-msrv.txt`, not bound to a comm
 | H5 | required | bytes valid for `HeaderValue` but not text reach the wire exactly (raw-byte server); Concord output escapes them | `native_headers.rs::h5_non_text_bytes` | prototype |
 | H6 | required | native sensitive flag kept without a marker on an unlisted name; OR with the declaration; withheld from every Concord output; secret reaches the server | `native_headers.rs::h6_native_sensitivity_without_marker`, `h6_native_and_declared_sensitivity_combine`, `declaration_classification_is_added` | prototype |
 | H7 | required | flagged inherited value through `append`/`override`/`remove`/`else inherit`/exact replacement; flags per value | `native_headers.rs::h7_inherited_composition` | prototype |
-| H8 | required | aliases, qualified paths, renamed import, renamed `concord` and `reqwest` dependencies | `native_headers.rs` (fixture), `examples/renamed/src/lib.rs::native_headers_through_renamed_dependencies`, `exp/coherence` | prototype |
+| H8 | required | aliases, qualified paths, renamed import, renamed `concord` and `reqwest` dependencies | `native_headers.rs` (fixture), `examples/renamed/src/lib.rs::native_headers_through_renamed_dependencies`, `native-repr/evidence/track_h/coherence/out/summary.txt` | prototype |
 | H9 | required | integers/`bool`/text/domain type/`Display` through a template; text keeps the visible-ASCII rule; non-header types are compile errors with a migration note | `native_headers.rs::h9_scalars`, `forwarded_forms`, `ui/header_value_type.rs`, `display_errors.rs` | prototype |
 | H10 | required | a native value in a query, path or template is a compile error at its type naming the explicit conversion | `ui/native_header_cross_placement.rs` | prototype |
 | H11 | required | generated `Debug` of config/client/scope/request with native values; `Prepared` `Debug` for sensitive / text / non-text values | `native_headers.rs::generated_debug_of_every_owner`, `h5_non_text_bytes`, `h6_*`, `h7_*` | prototype |
 | H12 | required | native `Content-Type` wins over a representation's; an optional native header does not affect body presence; full header map is a build error | `native_headers.rs::native_headers_and_bodies`, `full_header_map_with_native_values` | prototype |
-| H13 | evidence | payload allocations per route (static/shared native 0, text 1, integer 2, formatted 2 per value) | `checks/heap/tests/headers.rs`, `exp/alloc/` | recorded |
-| H14 | evidence | mutants (flag cleared, Debug ignores flag, obs-text text, literal not lowered, `Prepared` prints secrets) killed | `exp/mutants/run.py`, `exp/mutants/result.txt` (5/5) | recorded |
+| H13 | evidence | payload allocations per route (static/shared native 0, text 1, integer 2, formatted 2 per value) | `checks/heap/tests/headers.rs`, `native-repr/evidence/track_h/alloc/prototype.txt` | recorded |
+| H14 | evidence | mutants (flag cleared, Debug ignores flag, obs-text text, literal not lowered, `Prepared` prints secrets) killed | `native-repr/evidence/track_h/mutants/run.py`, `native-repr/evidence/track_h/mutants/result.txt` (5/5) | recorded |
 
 ## Body and response formats (track I)
 
 Status: **track** — the implementation of `native-repr/CONTRACT.md` on branch
 `native-repr-formats`, passing `scripts/verify.sh --msrv` there (rustc 1.97.1 and 1.85; report
-`reports/track_i_formats.md` of the campaign), not yet bound to a reviewed receipt. Runtime tests are
+`native-repr/evidence/tracks/track_i_formats.md`), not yet bound to a reviewed receipt. Runtime tests are
 in `formats.rs` unless stated; `ui/`, `ui_json/`, `ui_features/` are trybuild cases.
 
 | ID | Class | Expected | Test | Status |

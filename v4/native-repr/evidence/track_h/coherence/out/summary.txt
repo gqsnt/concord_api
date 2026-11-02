@@ -1,0 +1,36 @@
+PASS  1.97.1 positive (cargo test)
+fails-as-probed  1.97.1 design_a/neg_display_blanket: error[E0119]: conflicting implementations of trait `ToHeaderValue` for type `HeaderValue`
+fails-as-probed  1.97.1 design_a/neg_display_blanket_str: error[E0119]: conflicting implementations of trait `TextFirst` for type `str`
+fails-as-probed  1.97.1 design_a/neg_from_blanket: error[E0119]: conflicting implementations of trait `Bridge` for type `str`
+fails-as-probed  1.97.1 design_a/neg_marker: error[E0119]: conflicting implementations of trait `ToHeaderValue` for type `&_`
+fails-as-probed  1.97.1 user/neg_a_foreign_display: error[E0277]: `IpAddr` cannot be sent as a header value
+fails-as-probed  1.97.1 user/neg_a_option: error[E0277]: `Option<HeaderValue>` cannot be sent as a header value
+fails-as-probed  1.97.1 user/neg_a_orphan: error[E0117]: only traits defined in the current crate can be implemented for types defined outside of the crate
+fails-as-probed  1.97.1 user/neg_a_float: error[E0277]: `f64` cannot be sent as a header value
+fails-as-probed  1.97.1 user/neg_a_query: error[E0277]: `HeaderValue` doesn't implement `std::fmt::Display`
+fails-as-probed  1.97.1 user/neg_a_literal_infer: error[E0277]: `{float}` cannot be sent as a header value
+fails-as-probed  1.97.1 user/neg_b_int_ref: error[E0277]: the trait bound `HeaderValue: TryFrom<&u64>` is not satisfied
+fails-as-probed  1.97.1 user/neg_b_local_display: error[E0277]: the trait bound `for<'a> HeaderValue: TryFrom<&'a Region>` is not satisfied
+fails-as-probed  1.97.1 user/neg_b_orphan: error[E0117]: only traits defined in the current crate can be implemented for types defined outside of the crate
+fails-as-probed  1.97.1 user/neg_c_neither: error[E0599]: the method `__header` exists for reference `&Probe<'_, Option<HeaderValue>>`, but its trait bounds were not satisfied
+fails-as-probed  1.97.1 user/neg_c_generic: error[E0599]: the method `__header` exists for reference `&Probe<'_, T>`, but its trait bounds were not satisfied
+fails-as-probed  1.97.1 user/neg_d_missing_keyword: error[E0277]: `HeaderValue` is not formatted header text
+fails-as-probed  1.97.1 user/neg_d_missing_keyword_plain: error[E0277]: `HeaderValue` doesn't implement `std::fmt::Display`
+PASS  1.85 positive (cargo test)
+fails-as-probed  1.85 design_a/neg_display_blanket: error[E0119]: conflicting implementations of trait `ToHeaderValue` for type `HeaderValue`
+fails-as-probed  1.85 design_a/neg_display_blanket_str: error[E0119]: conflicting implementations of trait `TextFirst` for type `str`
+fails-as-probed  1.85 design_a/neg_from_blanket: error[E0119]: conflicting implementations of trait `Bridge` for type `str`
+fails-as-probed  1.85 design_a/neg_marker: error[E0119]: conflicting implementations of trait `ToHeaderValue` for type `&_`
+fails-as-probed  1.85 user/neg_a_foreign_display: error[E0277]: `IpAddr` cannot be sent as a header value
+fails-as-probed  1.85 user/neg_a_option: error[E0277]: `Option<HeaderValue>` cannot be sent as a header value
+fails-as-probed  1.85 user/neg_a_orphan: error[E0117]: only traits defined in the current crate can be implemented for types defined outside of the crate
+fails-as-probed  1.85 user/neg_a_float: error[E0277]: `f64` cannot be sent as a header value
+fails-as-probed  1.85 user/neg_a_query: error[E0277]: `HeaderValue` doesn't implement `std::fmt::Display`
+fails-as-probed  1.85 user/neg_a_literal_infer: error[E0277]: `{float}` cannot be sent as a header value
+fails-as-probed  1.85 user/neg_b_int_ref: error[E0277]: the trait bound `HeaderValue: TryFrom<&u64>` is not satisfied
+fails-as-probed  1.85 user/neg_b_local_display: error[E0277]: the trait bound `for<'a> HeaderValue: TryFrom<&'a Region>` is not satisfied
+fails-as-probed  1.85 user/neg_b_orphan: error[E0117]: only traits defined in the current crate can be implemented for types defined outside of the crate
+fails-as-probed  1.85 user/neg_c_neither: error[E0599]: the method `__header` exists for reference `&Probe<'_, Option<HeaderValue>>`, but its trait bounds were not satisfied
+fails-as-probed  1.85 user/neg_c_generic: error[E0599]: the method `__header` exists for reference `&Probe<'_, T>`, but its trait bounds were not satisfied
+fails-as-probed  1.85 user/neg_d_missing_keyword: error[E0277]: `HeaderValue` is not formatted header text
+fails-as-probed  1.85 user/neg_d_missing_keyword_plain: error[E0277]: `HeaderValue` doesn't implement `std::fmt::Display`

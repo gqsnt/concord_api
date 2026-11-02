@@ -1,0 +1,141 @@
+== M2-ct-without-body   cmd: cargo test --offline --locked -p concord --test formats   head: ef0de89
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running tests/formats.rs (target/debug/deps/formats-d2d1b8835ccc4f74)
+
+running 26 tests
+test compile_time_rows_have_ui_cases ... ok
+test decode_is_usable_directly ... ok
+test row12b_unused_and_cfg_disabled_defaults_are_never_referenced ... ok
+test lexical_raw_identifier_is_a_payload ... ok
+test native_sensitive_header_stays_protected_under_defaults ... ok
+test row1_no_body_under_a_request_default ... ok
+test row2c_empty_text_and_bytes_bodies_are_present ... ok
+test row2a_required_option_body_is_json_null ... ok
+test row8b_four_runtime_cases ... ok
+test row8a_body_media_types ... ok
+test row6b_in_place_exception_with_media_type ... ok
+test row8c_remove_resolves_the_conflict ... ok
+test h12_format_defaults_do_not_affect_header_presence_or_inheritance ... ok
+test row8d_no_accept_and_no_response_type_check ... ok
+test row11_status_and_native_decoder_unchanged ... ok
+test row8b_empty_value_empty_each_and_conversion_failure ... ok
+test row8f_inserted_content_type_is_classified ... ok
+test row3a_no_output_drains_under_a_response_default ... ok
+test h11_optional_native_headers_do_not_affect_body_presence ... ok
+test row3b_3c_typed_unit_is_decoded ... ok
+test row2b_absent_optional_body_sends_nothing ... ok
+test row4_json_string_versus_raw_text ... ok
+test row9_custom_codec_in_place_and_as_default ... ok
+test row6a_nearest_owner_per_direction ... ok
+test row5_aliases_follow_the_written_format ... ok
+test lexical_precedence ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+
+baseline: PASS
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+   Compiling concord-macros v4.0.0-alpha.1 (/home/canarit/projects/concord_v4_native_work/wt/formats/crates/concord-macros)
+   Compiling concord v4.0.0-alpha.1 (/home/canarit/projects/concord_v4_native_work/wt/formats/crates/concord)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.84s
+     Running tests/formats.rs (target/debug/deps/formats-d2d1b8835ccc4f74)
+
+running 26 tests
+test decode_is_usable_directly ... ok
+test compile_time_rows_have_ui_cases ... ok
+test row12b_unused_and_cfg_disabled_defaults_are_never_referenced ... ok
+test row1_no_body_under_a_request_default ... ok
+test row2a_required_option_body_is_json_null ... ok
+test lexical_raw_identifier_is_a_payload ... ok
+test native_sensitive_header_stays_protected_under_defaults ... ok
+test row8b_four_runtime_cases ... FAILED
+test row2c_empty_text_and_bytes_bodies_are_present ... ok
+test row8a_body_media_types ... FAILED
+test row8c_remove_resolves_the_conflict ... ok
+test row8d_no_accept_and_no_response_type_check ... ok
+test h12_format_defaults_do_not_affect_header_presence_or_inheritance ... FAILED
+test row6b_in_place_exception_with_media_type ... ok
+test row11_status_and_native_decoder_unchanged ... ok
+test row8f_inserted_content_type_is_classified ... ok
+test row8b_empty_value_empty_each_and_conversion_failure ... ok
+test row3a_no_output_drains_under_a_response_default ... ok
+test h11_optional_native_headers_do_not_affect_body_presence ... ok
+test row3b_3c_typed_unit_is_decoded ... ok
+test row2b_absent_optional_body_sends_nothing ... FAILED
+test row9_custom_codec_in_place_and_as_default ... ok
+test row4_json_string_versus_raw_text ... ok
+test row6a_nearest_owner_per_direction ... ok
+test row5_aliases_follow_the_written_format ... ok
+test lexical_precedence ... ok
+
+failures:
+
+---- row8b_four_runtime_cases stdout ----
+
+thread 'row8b_four_runtime_cases' (1378466) panicked at crates/concord/tests/formats.rs:474:5:
+assertion failed: content_types(&r[0]).is_empty() && r[0].body.is_empty()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- row8a_body_media_types stdout ----
+
+thread 'row8a_body_media_types' (1378464) panicked at crates/concord/tests/formats.rs:429:5:
+assertion failed: content_types(&r[4]).is_empty() && r[4].body.is_empty()
+
+---- h12_format_defaults_do_not_affect_header_presence_or_inheritance stdout ----
+
+thread 'h12_format_defaults_do_not_affect_header_presence_or_inheritance' (1378448) panicked at crates/concord/tests/formats.rs:921:5:
+no body, no media type: ["x-static", "x-opt", "x-literal", "content-type"]
+
+---- row2b_absent_optional_body_sends_nothing stdout ----
+
+thread 'row2b_absent_optional_body_sends_nothing' (1378456) panicked at crates/concord/tests/formats.rs:207:9:
+Recorded { method: "POST", target: "/search", headers: [("content-type", "application/json"), ("accept", "*/*"), ("host", "127.0.0.1:41971")], raw_headers: [("content-type", [97, 112, 112, 108, 105, 99, 97, 116, 105, 111, 110, 47, 106, 115, 111, 110]), ("accept", [42, 47, 42]), ("host", [49, 50, 55, 46, 48, 46, 48, 46, 49, 58, 52, 49, 57, 55, 49])], body: [] }
+
+
+failures:
+    h12_format_defaults_do_not_affect_header_presence_or_inheritance
+    row2b_absent_optional_body_sends_nothing
+    row8a_body_media_types
+    row8b_four_runtime_cases
+
+test result: FAILED. 22 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+
+error: test failed, to rerun pass `-p concord --test formats`
+error: 1 target failed:
+    `-p concord --test formats`
+mutant:   FAIL
+   Compiling concord-macros v4.0.0-alpha.1 (/home/canarit/projects/concord_v4_native_work/wt/formats/crates/concord-macros)
+   Compiling concord v4.0.0-alpha.1 (/home/canarit/projects/concord_v4_native_work/wt/formats/crates/concord)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.84s
+     Running tests/formats.rs (target/debug/deps/formats-d2d1b8835ccc4f74)
+
+running 26 tests
+test decode_is_usable_directly ... ok
+test compile_time_rows_have_ui_cases ... ok
+test native_sensitive_header_stays_protected_under_defaults ... ok
+test row2a_required_option_body_is_json_null ... ok
+test row2c_empty_text_and_bytes_bodies_are_present ... ok
+test row12b_unused_and_cfg_disabled_defaults_are_never_referenced ... ok
+test row1_no_body_under_a_request_default ... ok
+test lexical_raw_identifier_is_a_payload ... ok
+test row8b_four_runtime_cases ... ok
+test row8a_body_media_types ... ok
+test row6b_in_place_exception_with_media_type ... ok
+test row8b_empty_value_empty_each_and_conversion_failure ... ok
+test h12_format_defaults_do_not_affect_header_presence_or_inheritance ... ok
+test row8c_remove_resolves_the_conflict ... ok
+test row8d_no_accept_and_no_response_type_check ... ok
+test row11_status_and_native_decoder_unchanged ... ok
+test row8f_inserted_content_type_is_classified ... ok
+test row3a_no_output_drains_under_a_response_default ... ok
+test h11_optional_native_headers_do_not_affect_body_presence ... ok
+test row3b_3c_typed_unit_is_decoded ... ok
+test row2b_absent_optional_body_sends_nothing ... ok
+test row9_custom_codec_in_place_and_as_default ... ok
+test row4_json_string_versus_raw_text ... ok
+test row6a_nearest_owner_per_direction ... ok
+test row5_aliases_follow_the_written_format ... ok
+test lexical_precedence ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+
+restored: PASS  (dirty: 0)

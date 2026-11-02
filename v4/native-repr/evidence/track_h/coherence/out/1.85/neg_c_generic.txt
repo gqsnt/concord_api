@@ -1,0 +1,17 @@
+    Checking user v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/headers-a915c8d/exp/coherence/user)
+error[E0599]: the method `__header` exists for reference `&Probe<'_, T>`, but its trait bounds were not satisfied
+   --> user/src/lib.rs:394:21
+    |
+394 |         (&Probe(v)).__header()
+    |                     ^^^^^^^^ method cannot be called on `&Probe<'_, T>` due to unsatisfied trait bounds
+    |
+    = note: the following trait bounds were not satisfied:
+            `T: std::fmt::Display`
+            which is required by `&Probe<'_, T>: DisplayRoute`
+help: consider restricting the type parameter to satisfy the trait bound
+    |
+393 |     pub fn generic<T>(v: &T) -> Option<hyperium::HeaderValue> where T: std::fmt::Display {
+    |                                                               ++++++++++++++++++++++++++
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `user` (lib) due to 1 previous error

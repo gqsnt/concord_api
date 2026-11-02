@@ -1,0 +1,10 @@
+[package]
+name = "design_d"
+description = "D: syntax-directed choice: a `native` keyword selects `Borrow<HeaderValue>`, otherwise `Display`."
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+http = "1.4"
