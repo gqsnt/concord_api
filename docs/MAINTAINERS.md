@@ -11,8 +11,10 @@ For people changing Concord itself. Users start at the [README](../README.md).
 | `examples/quickstart` | the quick start; its tests also run the caller guide, doctest the author guide and the migration guide, and check every quoted excerpt in the documentation |
 | `examples/shapes` | three realistic API shapes with wire tests |
 | `examples/native` | application-owned native recipes (errors, timeouts, streaming, formats, policies) |
+| `examples/multipart` | multipart upload via reqwest's `multipart` feature (enabled only there; tested alone in `verify.sh`) |
 | `examples/renamed` | Concord depended on under another name (`$crate` paths) |
 | `checks/heap` | peak-heap check that `()` outputs drain without buffering (own crate: global allocator) |
+| `checks/clone-compat` | conditional request `Clone` (D08) on 1.85, current stable and nightly (non-blocking lane) |
 | `benches/baselines` | hand-written reqwest wrappers for the `examples/shapes` APIs |
 | `benches/perf` | request-construction and loopback timing, Concord vs baselines |
 | `benches/scale` | synthetic-declaration generator and compile-time plan |
