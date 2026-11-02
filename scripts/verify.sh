@@ -50,6 +50,7 @@ echo "head: $(git rev-parse HEAD)  dirty: $(git status --porcelain --untracked-f
 echo "rustc: $(rustc --version)"
 
 step fmt cargo fmt --all -- --check
+step records python3 -I scripts/check-records.py
 step clippy cargo clippy --locked --workspace --all-targets -- -D warnings
 step test cargo test --workspace --locked
 step test-no-default cargo test --locked -p concord --no-default-features
