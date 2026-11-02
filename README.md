@@ -17,10 +17,10 @@ concord::api! {
             scope org(org: String) {
                 path "orgs/{org}";
 
-                GET products(query cursor?: String, query limit: u32 = 20) -> Json<Page> {
+                GET products(query cursor?: String, query limit: u32 = 20) -> Page via Json {
                     path "products";
                 }
-                POST create(body product: Json<NewProduct>) -> Json<Product> { path "products"; }
+                POST create(body product: NewProduct via Json) -> Product via Json { path "products"; }
             }
         }
     }

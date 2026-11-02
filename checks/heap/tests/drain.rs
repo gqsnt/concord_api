@@ -75,7 +75,7 @@ concord::api! {
     pub client Big {
         base "http://big.invalid";
         GET drained() { path "big"; }
-        GET buffered() -> concord::Binary { path "big"; }
+        GET buffered() -> concord::bytes::Bytes via concord::Binary { path "big"; }
     }
 }
 

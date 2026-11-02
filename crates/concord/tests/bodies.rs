@@ -26,16 +26,16 @@ concord::api! {
     pub client Shop {
         base "http://shop.invalid";
 
-        POST create(body item: Json<NewItem>) -> Json<Item> { path "items"; }
-        PUT nullable(body value: Json<Option<NewItem>>) { path "nullable"; }
-        PUT text(body value: Text) { path "text"; }
-        PUT binary(body value: Binary) { path "binary"; }
-        PATCH maybe(body value?: Json<NewItem>) { path "maybe"; }
+        POST create(body item: NewItem via Json) -> Item via Json { path "items"; }
+        PUT nullable(body value: Option<NewItem> via Json) { path "nullable"; }
+        PUT text(body value: String via Text) { path "text"; }
+        PUT binary(body value: concord::bytes::Bytes via Binary) { path "binary"; }
+        PATCH maybe(body value?: NewItem via Json) { path "maybe"; }
 
-        GET item(id: u64) -> Json<Item> { path "items/{id}"; }
-        GET find(id: u64) -> Json<Option<Item>> { path "find/{id}"; }
-        GET text_out() -> Text { path "text"; }
-        GET bytes_out() -> Binary { path "bytes"; }
+        GET item(id: u64) -> Item via Json { path "items/{id}"; }
+        GET find(id: u64) -> Option<Item> via Json { path "find/{id}"; }
+        GET text_out() -> String via Text { path "text"; }
+        GET bytes_out() -> concord::bytes::Bytes via Binary { path "bytes"; }
         DELETE remove(id: u64) { path "items/{id}"; }
         HEAD exists(id: u64) { path "items/{id}"; }
     }

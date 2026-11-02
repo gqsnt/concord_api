@@ -24,7 +24,7 @@ concord::api! {
     pub client SimpleApi {
         base "https://api.example.com/v1";
 
-        GET health() -> Json<Health> { path "health"; }
-        GET item(id: String) -> Json<Item> { path "items/{id}"; }
+        GET health() -> Health via Json { path "health"; }
+        GET item(id: String) -> Item via Json { path "items/{id}"; }
     }
 }

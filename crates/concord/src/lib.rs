@@ -31,11 +31,11 @@
 //!         scope repo(owner: String, name: String) {
 //!             path "repos/{owner}/{name}";
 //!
-//!             GET issues(query state?: String, query per_page: u32 = 30) -> Json<Vec<Issue>> {
+//!             GET issues(query state?: String, query per_page: u32 = 30) -> Vec<Issue> via Json {
 //!                 path "issues";
 //!             }
-//!             GET issue(number: u64) -> Json<Issue> { path "issues/{number}"; }
-//!             POST create_issue(body issue: Json<NewIssue>) -> Json<Issue> { path "issues"; }
+//!             GET issue(number: u64) -> Issue via Json { path "issues/{number}"; }
+//!             POST create_issue(body issue: NewIssue via Json) -> Issue via Json { path "issues"; }
 //!         }
 //!     }
 //! }
@@ -113,7 +113,7 @@
 //! # Native escape hatches
 //!
 //! ```no_run
-//! # concord::api! { pub client Api { base "http://x.test"; GET item(id: u64) -> concord::Text { path "items/{id}"; } } }
+//! # concord::api! { pub client Api { base "http://x.test"; GET item(id: u64) -> String via concord::Text { path "items/{id}"; } } }
 //! # async fn run(api: Api) -> Result<(), Box<dyn std::error::Error>> {
 //! let prepared = api.item(7).prepare()?;            // no I/O
 //! println!("{prepared:?}");                         // redacted rendering
@@ -130,9 +130,11 @@
 //!
 //! # Bodies, responses and errors
 //!
-//! `Json<T>` (feature `json`), [`Text`], [`Binary`] and `()` (no output; the body is drained) are
-//! built in; [`Encode`] and [`Decode`] are public for your own formats. `send()` accepts any 2xx
-//! status. A non-2xx status is an [`Error`] of kind [`ErrorKind::Status`] that keeps the unread
+//! A body and a typed response name their payload type and its representation:
+//! `body item: NewItem via Json`, `-> Item via Json`. [`Json`] (feature `json`), [`Text`]
+//! (`String`) and [`Binary`] (`Bytes`, `Vec<u8>`) are built in; implement [`Encode<T>`] /
+//! [`Decode<T>`] on your own marker type for another format. An endpoint without `->` has no
+//! typed output and drains the body without buffering it. `send()` accepts any 2xx status. A non-2xx status is an [`Error`] of kind [`ErrorKind::Status`] that keeps the unread
 //! response ([`Error::into_response`]) so you can decode the API's error document. `Option<T>`
 //! outputs carry no status meaning: a 404 is an error, JSON `null` is `None`.
 //!
@@ -172,7 +174,7 @@
 //!
 //! # Features
 //!
-//! - `json` (default): `Json<T>` via serde/serde_json.
+//! - `json` (default): the [`Json`] representation, via serde/serde_json.
 //! - `reqwest-defaults` (default): enables reqwest's default features (TLS, HTTP/2, system proxy).
 //!   Disable it to choose reqwest features in your own `Cargo.toml`.
 

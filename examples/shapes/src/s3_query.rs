@@ -77,11 +77,11 @@ concord::api! {
             query sort?: Sort,
             query cursor?: String,
             query limit: u32 = 20,
-        ) -> Json<SearchPage> {
+        ) -> SearchPage via Json {
             path "items/search";
         }
 
-        POST create_item(body item: Json<NewItem>) -> Json<Item> { path "items"; }
+        POST create_item(body item: NewItem via Json) -> Item via Json { path "items"; }
 
         DELETE delete_item(id: String) { path "items/{id}"; }
     }

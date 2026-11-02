@@ -51,10 +51,10 @@ fn field_type(value: &Value) -> TokenStream {
     }
 }
 
+/// The payload type a body is supplied as (`body b: T via R` → `T`).
 fn body_value_type(body: &Body) -> TokenStream {
-    let k = krate();
     let ty = &body.ty;
-    quote!(<#ty as #k::Encode>::Value)
+    quote!(#ty)
 }
 
 /// The struct literal fields initializing an owner's values, in declaration order, with default
@@ -500,11 +500,14 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
                 }
             });
             let clone_impl = endpoint_clone(ty, &owner.values, body.as_ref());
-            let repr = match output {
-                Some(t) => quote!(#t),
+            let out = match output {
+                Some(p) => {
+                    let t = &p.ty;
+                    quote!(#t)
+                }
                 None => quote!(()),
             };
-            let prepare = prepare_body(model, index, method, &repr, body.as_ref());
+            let prepare = prepare_body(model, index, method, output.as_ref(), body.as_ref());
             quote! {
                 #docs
                 #[must_use = "an endpoint request does nothing until `send` or `prepare` is called"]
@@ -520,12 +523,12 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
                     #controls
 
                     /// Builds the native request without sending it.
-                    #[inline] pub fn prepare(self) -> ::core::result::Result<#k::Prepared<#repr>, #k::Error> {
+                    #[inline] pub fn prepare(self) -> ::core::result::Result<#k::Prepared<#out>, #k::Error> {
                         #prepare
                     }
 
                     /// Sends the request once and decodes a 2xx response.
-                    #[inline] pub async fn send(self) -> ::core::result::Result<<#repr as #k::Decode>::Output, #k::Error> {
+                    #[inline] pub async fn send(self) -> ::core::result::Result<#out, #k::Error> {
                         self.prepare()?.send().await
                     }
                 }
@@ -866,7 +869,7 @@ fn prepare_body(
     model: &Model,
     index: usize,
     method: &Ident,
-    repr: &TokenStream,
+    output: Option<&crate::syntax::Payload>,
     body: Option<&Body>,
 ) -> TokenStream {
     let k = krate();
@@ -943,13 +946,16 @@ fn prepare_body(
         Some(b) => {
             let name = &b.name;
             let ty = &b.ty;
+            let repr = &b.repr;
+            // Spanned at the declared representation, so an unsupported payload is reported there.
+            let encode = quote_spanned!(repr.span()=> #k::__private::encode_body::<#repr, #ty>);
             if b.optional {
                 quote!(match self.#name {
-                    ::core::option::Option::Some(__b) => ::core::option::Option::Some(#k::__private::encode_body::<#ty>(__b, &__META)?),
+                    ::core::option::Option::Some(__b) => ::core::option::Option::Some(#encode(__b, &__META)?),
                     ::core::option::Option::None => ::core::option::Option::None,
                 })
             } else {
-                quote!(::core::option::Option::Some(#k::__private::encode_body::<#ty>(self.#name, &__META)?))
+                quote!(::core::option::Option::Some(#encode(self.#name, &__META)?))
             }
         }
     };
@@ -959,6 +965,13 @@ fn prepare_body(
     let label_count = composed.labels.len();
     let segment_count = composed.segments.len() + usize::from(composed.trailing_slash);
     let root = format_ident!("__o0");
+    let decoder = match output {
+        Some(p) => {
+            let (t, r) = (&p.ty, &p.repr);
+            quote_spanned!(r.span()=> #k::__private::decoder::<#r, #t>(&__META))
+        }
+        None => quote!(#k::__private::drain(&__META)),
+    };
     quote! {
         static __META: #k::__private::EndpointMeta = #k::__private::EndpointMeta {
             name: #name,
@@ -973,6 +986,6 @@ fn prepare_body(
         #bindings
         let mut __p = #k::__private::Parts::new(&__META, &#root.__base);
         #code
-        __p.finish::<#repr>(#k::reqwest::Method::#method, &#root.__http, __body)
+        __p.finish(#k::reqwest::Method::#method, &#root.__http, __body, #decoder)
     }
 }

@@ -19,6 +19,7 @@ mod kw {
     syn::custom_keyword!(body);
     syn::custom_keyword!(append);
     syn::custom_keyword!(remove);
+    syn::custom_keyword!(via);
 }
 
 /// HTTP methods accepted as endpoint keywords.
@@ -37,9 +38,32 @@ pub enum OwnerKind {
     Scope,
     Endpoint {
         method: Ident,
-        output: Option<Type>,
+        output: Option<Payload>,
         body: Option<BodyParam>,
     },
+}
+
+/// A payload type and its wire representation: `T via R`.
+pub struct Payload {
+    pub ty: Type,
+    pub repr: Type,
+}
+
+/// Parses `T via R` after a `->` or a body's `:`.
+fn parse_payload(input: ParseStream<'_>, what: &str) -> syn::Result<Payload> {
+    let ty: Type = input.parse()?;
+    if !input.peek(kw::via) {
+        return Err(syn::Error::new(
+            ty.span(),
+            format!(
+                "the {what} representation is explicit: write `{} via Json` (or `via Text`, `via Binary`, or your own representation type)",
+                quote::ToTokens::to_token_stream(&ty)
+            ),
+        ));
+    }
+    input.parse::<kw::via>()?;
+    let repr: Type = input.parse()?;
+    Ok(Payload { ty, repr })
 }
 
 pub struct Owner {
@@ -88,7 +112,7 @@ pub struct BodyParam {
     pub docs: Vec<Attribute>,
     pub name: Ident,
     pub optional: bool,
-    pub ty: Type,
+    pub payload: Payload,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -378,7 +402,7 @@ fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
     let (params, body) = parse_params(input, true)?;
     let output = if input.peek(Token![->]) {
         input.parse::<Token![->]>()?;
-        Some(input.parse::<Type>()?)
+        Some(parse_payload(input, "response")?)
     } else {
         None
     };
@@ -455,7 +479,7 @@ fn parse_params(
             let name: Ident = content.parse()?;
             let optional = parse_question(&content)?;
             content.parse::<Token![:]>()?;
-            let ty: Type = content.parse()?;
+            let payload = parse_payload(&content, "body")?;
             if content.peek(Token![=]) {
                 return Err(content.error("a body cannot have a default"));
             }
@@ -470,7 +494,7 @@ fn parse_params(
                 docs,
                 name,
                 optional,
-                ty,
+                payload,
             });
         } else {
             let placement = parse_placement(&content)?;

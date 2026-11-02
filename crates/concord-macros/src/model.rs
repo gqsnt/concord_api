@@ -27,7 +27,7 @@ pub enum Kind {
     Scope,
     Endpoint {
         method: Ident,
-        output: Option<Type>,
+        output: Option<syntax::Payload>,
         body: Option<Body>,
     },
 }
@@ -37,7 +37,10 @@ pub struct Body {
     pub docs: Vec<Attribute>,
     pub name: Ident,
     pub optional: bool,
+    /// The payload type the caller supplies.
     pub ty: Type,
+    /// Its representation (`Encode<ty>`).
+    pub repr: Type,
 }
 
 pub struct Owner {
@@ -1346,7 +1349,8 @@ fn flatten(
                 docs: b.docs,
                 name: b.name,
                 optional: b.optional,
-                ty: b.ty,
+                ty: b.payload.ty,
+                repr: b.payload.repr,
             }),
         },
     };

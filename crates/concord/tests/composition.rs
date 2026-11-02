@@ -13,7 +13,7 @@ fn http() -> reqwest::Client {
     reqwest::Client::new()
 }
 
-fn url<R: concord::Decode>(p: &concord::Prepared<R>) -> String {
+fn url<T>(p: &concord::Prepared<T>) -> String {
     p.request().url().as_str().to_owned()
 }
 
@@ -277,7 +277,7 @@ concord::api! {
     }
 }
 
-fn q<R: concord::Decode>(p: &concord::Prepared<R>) -> String {
+fn q<T>(p: &concord::Prepared<T>) -> String {
     p.request().url().query().unwrap_or("<none>").to_owned()
 }
 
@@ -446,7 +446,7 @@ concord::api! {
         GET appended() { headers { append "x-tag" = "b"; } }
         GET overridden() { headers { override "X-TAG" = "c"; } }
         GET removed() { headers { remove "Authorization"; } }
-        GET content_type(body payload: concord::Text) { headers { "content-type" = "text/csv"; } }
+        GET content_type(body payload: String via concord::Text) { headers { "content-type" = "text/csv"; } }
     }
 }
 
@@ -585,7 +585,7 @@ concord::api! {
         scope repo(x: String) {
             GET repo() { path "{repo.x}"; }
         }
-        POST ordered(id: u64, body payload: concord::Text, tag: String) {
+        POST ordered(id: u64, body payload: String via concord::Text, tag: String) {
             path "o/{id}";
             query { "tag" = tag; }
         }

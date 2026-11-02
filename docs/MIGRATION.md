@@ -17,7 +17,7 @@ There is no converter; declarations are short enough to rewrite by hand.
 | built-in base URL only | `base "..."` plus `with_base_url(..)` at runtime. |
 | `Client::builder()...build()?` | `Client::new(http, ClientConfig { .. })` — required values are fields of the generated config struct, checked by the compiler. |
 | `.await` on a request | `.send().await` (explicit verb). |
-| `response Json;` defaults, `via Json` | name the representation on each endpoint: `-> Json<T>`, `body b: Json<T>`. |
+| `response Json;` defaults, `via Json` | name the representation on each endpoint: `-> T via Json`, `body b: T via Json`. |
 | `absent on 404` | `match e.status()` on the error, or `send_raw()`. |
 | `status [...]` | any 2xx is success; other statuses are `ErrorKind::Status` with the unread response. |
 | `plan()` | `prepare()` gives a native `reqwest::Request`; its `Debug` is redacted. |
@@ -59,8 +59,8 @@ concord::api! {
         base "https://api.example.com/v1";
         headers { "authorization" = "Bearer {token}"; }
 
-        GET search(query q?: String, query limit: u32 = 20) -> Json<SearchPage> { path "items/search"; }
-        POST create(body item: Json<NewItem>) -> Json<Item> { path "items"; }
+        GET search(query q?: String, query limit: u32 = 20) -> SearchPage via Json { path "items/search"; }
+        POST create(body item: NewItem via Json) -> Item via Json { path "items"; }
     }
 }
 

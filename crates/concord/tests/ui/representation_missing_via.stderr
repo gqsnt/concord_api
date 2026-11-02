@@ -1,0 +1,5 @@
+error: the response representation is explicit: write `Item via Json` (or `via Text`, `via Binary`, or your own representation type)
+ --> tests/ui/representation_missing_via.rs:6:23
+  |
+6 |         GET item() -> Item;
+  |                       ^^^^

@@ -75,7 +75,12 @@ mod header_map_capacity {
             Some(HeaderValue::from_static("text/plain")),
         ));
         let e = parts
-            .finish::<()>(reqwest::Method::POST, &reqwest::Client::new(), body)
+            .finish(
+                reqwest::Method::POST,
+                &reqwest::Client::new(),
+                body,
+                concord::__private::drain(&META),
+            )
             .unwrap_err();
         assert_eq!(e.kind(), ErrorKind::Build);
         assert!(e.to_string().contains("content-type"), "{e}");

@@ -8,11 +8,12 @@ executable evidence is listed in `TEST_MATRIX.md`.
 ```text
 api!       := doc* vis "client" Name params? "{" "base" STRING ";" stmt* child* "}"
 child      := doc* "scope" name params? "{" stmt* child* "}"
-            | doc* METHOD name params ("->" Type)? (";" | "{" stmt* "}")
+            | doc* METHOD name params ("->" payload)? (";" | "{" stmt* "}")
 METHOD     := GET | POST | PUT | PATCH | DELETE | HEAD | OPTIONS
 params     := "(" (param ("," param)* ","?)? ")"
 param      := attr* placement? name "?"? ":" Type ("=" Expr)?
-            | doc* "body" name "?"? ":" Type                     (endpoints only, at most one)
+            | doc* "body" name "?"? ":" payload                  (endpoints only, at most one)
+payload    := Type "via" Type                (payload type, representation)
 placement  := "query" ("(" STRING ")")? "each"? | "header" "(" STRING ")" "each"?
 attr       := doc | "#[sensitive]"
 stmt       := "path" STRING ";" | "subdomain" STRING ";"
@@ -162,13 +163,16 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
 
 ## 6. Requests and execution
 
-- `endpoint.prepare()` builds a `Prepared<R>` holding the application's `reqwest::Client`, a native
-  `reqwest::Request` and the response representation. No I/O happens.
+- `endpoint.prepare()` builds a `Prepared<T>` (`T` = the declared output type, `()` without `->`)
+  holding the application's `reqwest::Client`, a native `reqwest::Request` and the response
+  handling. No I/O happens.
 - `Prepared::send()` executes once with `Client::execute`, then applies the endpoint's response
   handling; `endpoint.send()` is `prepare()?.send()`. `Prepared::send_raw()` executes once and
   returns the native response unchecked. `Prepared::into_parts()` returns
-  `(reqwest::Client, reqwest::Request, Decoder<R>)`; `Decoder::decode(response)` applies the same
-  response handling to any native response. `Prepared::request()` gives read-only access.
+  `(reqwest::Client, reqwest::Request, Decoder<T>)`; `Decoder::decode(response)` applies the same
+  response handling to any native response, and `Decoder::finish(client.execute(request).await)`
+  also converts a native transport error into Concord's `ErrorKind::Transport` (same redaction
+  as `send`). `Prepared::request()` gives read-only access.
 - Concord performs no retries, no authentication, no rate limiting, no pagination and has no
   transport settings. One `send` is one `Client::execute` call; redirects, proxies, timeouts,
   compression and default headers are whatever the reqwest client does.
@@ -178,19 +182,26 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
 
 ## 7. Bodies and responses
 
-| Representation | As body (`Encode`) | As response (`Decode`) |
+A body is declared `body b: T via R` and a typed response `-> T via R`: `T` is the payload type
+the caller supplies or receives, `R` a representation marker implementing `Encode<T>` (bodies) or
+`Decode<T>` (responses). Generated signatures use `T` directly. There is no default
+representation and no inference from `T`.
+
+| Representation | As body (`Encode<T>`) | As response (`Decode<T>`) |
 |---|---|---|
-| `Json<T>` (feature `json`) | `serde_json` bytes, `Content-Type: application/json` | `serde_json` from the body; `Content-Type` ignored |
+| `Json` (feature `json`) | any `T: Serialize`, `serde_json` bytes, `Content-Type: application/json` | any `T: DeserializeOwned`, `serde_json` from the body; `Content-Type` ignored |
 | `Text` | `String`, `text/plain; charset=utf-8` | `String`; invalid UTF-8 is a decode error |
-| `Binary` | `bytes::Bytes`, `application/octet-stream` | `bytes::Bytes` unchanged |
-| `()` | — | any body is drained chunk by chunk without buffering |
+| `Binary` | `bytes::Bytes` or `Vec<u8>`, `application/octet-stream` | `bytes::Bytes` or `Vec<u8>`, unchanged |
+| *(no `->`)* | — | output `()`: any body is drained chunk by chunk without buffering |
 
 - An endpoint without `->` has output `()`. A body's `Content-Type` is added only if the composed
   headers have none. Concord never adds `Accept`.
 - Response handling: a non-2xx status is `ErrorKind::Status` carrying the **unread**
   `reqwest::Response` (`Error::into_response`); otherwise the body is read and decoded.
   `Option<T>` outputs have no status meaning: a 404 is a status error, JSON `null` is `None`.
-- `Encode` and `Decode` are public traits; a representation is chosen only by naming its type.
+- `Encode<T>` and `Decode<T>` are public traits; a representation is chosen only by naming it
+  after `via`. `<R as Decode<T>>::decode(bytes)` can also be called directly (for example on the
+  body of an error response).
 - Observed transport detail: hyper sends a zero-length body without `Content-Length`, so "no body"
   and "empty `Text` body" differ on the wire only by `Content-Type`.
 

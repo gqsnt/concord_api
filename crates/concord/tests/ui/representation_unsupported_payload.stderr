@@ -1,0 +1,41 @@
+error[E0277]: `Text` cannot decode a `Item` response
+ --> tests/ui/representation_unsupported_payload.rs:7:32
+  |
+7 |         GET item() -> Item via concord::Text;
+  |                                ^^^^^^^^^^^^^ `-> Item via Text` needs `Text: Decode<Item>`
+  |
+  = note: built in: `Json` (any `DeserializeOwned`, feature `json`), `Text` (`String`), `Binary` (`Bytes`, `Vec<u8>`); or implement `concord::Decode<Item>` for your own marker type
+help: the trait `Decode<Item>` is not implemented for `Text`
+      but trait `Decode<String>` is implemented for it
+ --> src/repr.rs
+  |
+  | impl Decode<String> for Text {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = help: for that trait implementation, expected `String`, found `Item`
+note: required by a bound in `concord::__private::decoder`
+ --> src/__private.rs
+  |
+  | pub fn decoder<R: Decode<T>, T>(meta: &'static EndpointMeta) -> Decoder<T> {
+  |                   ^^^^^^^^^ required by this bound in `decoder`
+
+error[E0277]: `concord::Binary` cannot encode a `Item` request body
+ --> tests/ui/representation_unsupported_payload.rs:8:41
+  |
+8 |         POST create(body item: Item via concord::Binary);
+  |                                         ^^^^^^^^^^^^^^^ `body ...: Item via concord::Binary` needs `concord::Binary: Encode<Item>`
+  |
+  = help: the trait `Encode<Item>` is not implemented for `concord::Binary`
+  = note: built in: `Json` (any `Serialize`, feature `json`), `Text` (`String`), `Binary` (`Bytes`, `Vec<u8>`); or implement `concord::Encode<Item>` for your own marker type
+help: `concord::Binary` implements trait `Encode<T>`
+ --> src/repr.rs
+  |
+  | impl Encode<Bytes> for Binary {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Encode<concord::bytes::Bytes>`
+...
+  | impl Encode<Vec<u8>> for Binary {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Encode<Vec<u8>>`
+note: required by a bound in `concord::__private::encode_body`
+ --> src/__private.rs
+  |
+  | pub fn encode_body<E: Encode<T>, T>(
+  |                       ^^^^^^^^^ required by this bound in `encode_body`

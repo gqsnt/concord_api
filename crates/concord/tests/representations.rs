@@ -12,23 +12,20 @@ use tokio::io::AsyncWriteExt;
 
 static DECODED_LEN: AtomicUsize = AtomicUsize::new(usize::MAX);
 
-/// A user representation that asks for the body to be drained.
-pub struct Drained;
+/// A user representation that measures the complete body it receives.
+pub struct Measured;
 
-impl concord::Decode for Drained {
-    type Output = ();
-    const DISCARD: bool = true;
-    fn decode(body: Bytes) -> Result<(), concord::BodyError> {
+impl concord::Decode<usize> for Measured {
+    fn decode(body: Bytes) -> Result<usize, concord::BodyError> {
         DECODED_LEN.store(body.len(), Ordering::SeqCst);
-        Ok(())
+        Ok(body.len())
     }
 }
 
 /// A user representation with an invalid content type.
 pub struct BadType;
 
-impl concord::Encode for BadType {
-    type Value = String;
+impl concord::Encode<String> for BadType {
     const CONTENT_TYPE: Option<&'static str> = Some("application/x\u{2011}custom");
     fn encode(value: String) -> Result<reqwest::Body, concord::BodyError> {
         Ok(value.into())
@@ -40,14 +37,14 @@ concord::api! {
     pub client Reps {
         base "http://reps.invalid";
 
-        PUT text(body value: Text) { path "text"; }
-        PUT binary(body value: Binary) { path "binary"; }
-        GET text_out() -> Text { path "text"; }
-        GET bytes_out() -> Binary { path "bytes"; }
+        PUT text(body value: String via Text) { path "text"; }
+        PUT binary(body value: concord::bytes::Bytes via Binary) { path "binary"; }
+        GET text_out() -> String via Text { path "text"; }
+        GET bytes_out() -> concord::bytes::Bytes via Binary { path "bytes"; }
         DELETE remove(id: u32) { path "items/{id}"; }
         HEAD exists(id: u32) { path "items/{id}"; }
-        GET drained() -> Drained { path "big"; }
-        POST bad(body value: BadType) { path "bad"; }
+        GET measured() -> usize via Measured { path "big"; }
+        POST bad(body value: String via BadType) { path "bad"; }
     }
 }
 
@@ -114,14 +111,13 @@ async fn r04_unit_accepts_any_2xx_body() {
     assert_eq!(server.single().method, "HEAD");
 }
 
-/// C4-R-010: `()` is configured to drain (not buffer) and a `DISCARD` representation never
-/// receives body bytes, even for a 1 MB body.
+/// C4-R-010: a custom decoder receives the complete body; an endpoint without `->` succeeds on any
+/// 2xx and drains the body (that it is not buffered is checked by `checks/heap`).
 #[tokio::test]
-async fn unit_and_discard_representations_drain() {
-    const { assert!(<() as concord::Decode>::DISCARD) };
+async fn custom_decoder_gets_the_body_and_no_output_drains() {
     let (_server, api) = reps(Reply::new(200).body(vec![9u8; 1_000_000])).await;
-    api.clone().drained().send().await.unwrap();
-    assert_eq!(DECODED_LEN.load(Ordering::SeqCst), 0);
+    assert_eq!(api.clone().measured().send().await.unwrap(), 1_000_000);
+    assert_eq!(DECODED_LEN.load(Ordering::SeqCst), 1_000_000);
     api.remove(1).send().await.unwrap();
 }
 
@@ -242,7 +238,7 @@ concord::api! {
     /// C4-R-015 fixture: a bad representation content type competing with a bad path value.
     pub client Precede {
         base "http://precede.invalid";
-        POST bad(id: String, body value: BadType) { path "items/{id}"; }
+        POST bad(id: String, body value: String via BadType) { path "items/{id}"; }
     }
 }
 

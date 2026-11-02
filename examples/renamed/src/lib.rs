@@ -4,7 +4,7 @@ concord4::api! {
     /// A client declared through the renamed crate.
     pub client Renamed(query("v") version: u32 = 4) {
         base "http://renamed.invalid";
-        GET ping() -> concord4::Text { path "ping"; }
+        GET ping() -> String via concord4::Text { path "ping"; }
     }
 }
 

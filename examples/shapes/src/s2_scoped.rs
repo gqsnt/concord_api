@@ -61,16 +61,16 @@ concord::api! {
         scope regional(region: Region) {
             subdomain "{region}";
 
-            GET status() -> Json<Status> { path "status"; }
+            GET status() -> Status via Json { path "status"; }
 
             scope org(org: String) {
                 path "orgs/{org}/catalog";
 
-                GET products(version?: String) -> Json<Vec<Product>> {
+                GET products(version?: String) -> Vec<Product> via Json {
                     path "products";
                     headers { override "x-api-version" = version; }
                 }
-                GET product(id: String, version?: String) -> Json<Product> {
+                GET product(id: String, version?: String) -> Product via Json {
                     path "products/{id}";
                     headers { override "x-api-version" = version; }
                 }

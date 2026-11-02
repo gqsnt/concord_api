@@ -1,7 +1,10 @@
 //! Body and response representations.
 //!
-//! A representation is a type named in the declaration: `body item: Json<NewItem>` or
-//! `-> Json<Item>`. Concord never chooses one by looking at a Rust type name.
+//! A declaration names the payload type and its wire representation separately:
+//! `body item: NewItem via Json`, `-> Item via Json`, `-> String via Text`. A representation is a
+//! marker type implementing [`Encode<T>`] and/or [`Decode<T>`] for the payload types it supports;
+//! Concord never chooses one by looking at a Rust type name. An endpoint without `->` has no typed
+//! output: any 2xx succeeds and the body is drained without being buffered.
 
 use std::borrow::Cow;
 use std::error::Error as StdError;
@@ -9,37 +12,44 @@ use std::fmt;
 
 use bytes::Bytes;
 
-/// A request body representation.
-pub trait Encode {
-    /// The Rust value the generated endpoint method accepts.
-    type Value;
-
+/// Encodes a request body of type `T` (`body b: T via Self`).
+///
+/// Implement it on your own marker type for a custom format. The encoder runs when the request is
+/// prepared; it receives the payload by value.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot encode a `{T}` request body",
+    label = "`body ...: {T} via {Self}` needs `{Self}: Encode<{T}>`",
+    note = "built in: `Json` (any `Serialize`, feature `json`), `Text` (`String`), `Binary` (`Bytes`, `Vec<u8>`); or implement `concord::Encode<{T}>` for your own marker type"
+)]
+pub trait Encode<T> {
     /// The `Content-Type` sent with the body, unless the declared headers already set one.
     const CONTENT_TYPE: Option<&'static str>;
 
-    /// Encodes the value into a request body.
-    fn encode(value: Self::Value) -> Result<reqwest::Body, BodyError>;
+    /// Encodes the payload into a request body.
+    fn encode(value: T) -> Result<reqwest::Body, BodyError>;
 }
 
-/// A response representation, applied to the complete body of a 2xx response.
-pub trait Decode {
-    /// The Rust value `send()` returns.
-    type Output;
-
-    /// When `true`, the body is drained chunk by chunk without being buffered, and `decode`
-    /// receives an empty buffer. Used by `()`.
-    const DISCARD: bool = false;
-
+/// Decodes the complete body of a 2xx response into `T` (`-> T via Self`).
+///
+/// Implement it on your own marker type for a custom format. It is also usable directly, for
+/// example on the body of an error response: `<Json as Decode<Problem>>::decode(bytes)`.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot decode a `{T}` response",
+    label = "`-> {T} via {Self}` needs `{Self}: Decode<{T}>`",
+    note = "built in: `Json` (any `DeserializeOwned`, feature `json`), `Text` (`String`), `Binary` (`Bytes`, `Vec<u8>`); or implement `concord::Decode<{T}>` for your own marker type"
+)]
+pub trait Decode<T> {
     /// Decodes a complete response body.
-    fn decode(body: Bytes) -> Result<Self::Output, BodyError>;
+    fn decode(body: Bytes) -> Result<T, BodyError>;
 }
 
 /// A body could not be encoded or decoded.
 ///
 /// `description` must not contain body content or request values: it is shown by
-/// [`Error`](crate::Error)'s `Display`. The optional `source` is reachable only through
-/// [`Error::body_source`](crate::Error::body_source), because decoder messages often quote the
-/// input (for example serde's `invalid type: string "..."`).
+/// [`Error`](crate::Error)'s `Display`, and it is this type's own `Display`. The optional underlying
+/// error is reachable only through [`Error::body_source`](crate::Error::body_source), never through
+/// [`std::error::Error::source`], because decoder messages often quote the input (for example
+/// serde's `invalid type: string "..."`).
 pub struct BodyError {
     description: Cow<'static, str>,
     source: Option<Box<dyn StdError + Send + Sync>>,
@@ -79,14 +89,22 @@ impl fmt::Debug for BodyError {
     }
 }
 
+impl fmt::Display for BodyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.description)
+    }
+}
+
+/// No `source()`: the underlying error may quote body content (see the type documentation).
+impl StdError for BodyError {}
+
 /// JSON via `serde_json`: `application/json` request bodies; responses are decoded regardless of
-/// their `Content-Type`.
+/// their `Content-Type`. `-> Item via Json`, `body item: NewItem via Json`.
 #[cfg(feature = "json")]
-pub struct Json<T>(std::marker::PhantomData<fn() -> T>);
+pub struct Json(());
 
 #[cfg(feature = "json")]
-impl<T: serde::Serialize> Encode for Json<T> {
-    type Value = T;
+impl<T: serde::Serialize> Encode<T> for Json {
     const CONTENT_TYPE: Option<&'static str> = Some("application/json");
 
     fn encode(value: T) -> Result<reqwest::Body, BodyError> {
@@ -97,9 +115,7 @@ impl<T: serde::Serialize> Encode for Json<T> {
 }
 
 #[cfg(feature = "json")]
-impl<T: serde::de::DeserializeOwned> Decode for Json<T> {
-    type Output = T;
-
+impl<T: serde::de::DeserializeOwned> Decode<T> for Json {
     fn decode(body: Bytes) -> Result<T, BodyError> {
         serde_json::from_slice(&body)
             .map_err(|e| BodyError::new(json_description("decode", &e)).with_source(e))
@@ -127,10 +143,10 @@ fn json_description(action: &str, e: &serde_json::Error) -> String {
 }
 
 /// UTF-8 text: `text/plain; charset=utf-8` request bodies; responses must be valid UTF-8.
+/// `-> String via Text`, `body note: String via Text`.
 pub struct Text(());
 
-impl Encode for Text {
-    type Value = String;
+impl Encode<String> for Text {
     const CONTENT_TYPE: Option<&'static str> = Some("text/plain; charset=utf-8");
 
     fn encode(value: String) -> Result<reqwest::Body, BodyError> {
@@ -138,9 +154,7 @@ impl Encode for Text {
     }
 }
 
-impl Decode for Text {
-    type Output = String;
-
+impl Decode<String> for Text {
     fn decode(body: Bytes) -> Result<String, BodyError> {
         String::from_utf8(body.into()).map_err(|e| {
             BodyError::new(format!(
@@ -152,10 +166,10 @@ impl Decode for Text {
 }
 
 /// Raw bytes: `application/octet-stream` request bodies; responses are returned unchanged.
+/// `-> Bytes via Binary`, `body data: Vec<u8> via Binary`.
 pub struct Binary(());
 
-impl Encode for Binary {
-    type Value = Bytes;
+impl Encode<Bytes> for Binary {
     const CONTENT_TYPE: Option<&'static str> = Some("application/octet-stream");
 
     fn encode(value: Bytes) -> Result<reqwest::Body, BodyError> {
@@ -163,20 +177,22 @@ impl Encode for Binary {
     }
 }
 
-impl Decode for Binary {
-    type Output = Bytes;
+impl Encode<Vec<u8>> for Binary {
+    const CONTENT_TYPE: Option<&'static str> = Some("application/octet-stream");
 
+    fn encode(value: Vec<u8>) -> Result<reqwest::Body, BodyError> {
+        Ok(reqwest::Body::from(value))
+    }
+}
+
+impl Decode<Bytes> for Binary {
     fn decode(body: Bytes) -> Result<Bytes, BodyError> {
         Ok(body)
     }
 }
 
-/// No typed output: any 2xx succeeds; the body (empty or not) is drained without being buffered.
-impl Decode for () {
-    type Output = ();
-    const DISCARD: bool = true;
-
-    fn decode(_body: Bytes) -> Result<(), BodyError> {
-        Ok(())
+impl Decode<Vec<u8>> for Binary {
+    fn decode(body: Bytes) -> Result<Vec<u8>, BodyError> {
+        Ok(body.into())
     }
 }

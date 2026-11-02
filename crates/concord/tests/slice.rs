@@ -25,11 +25,11 @@ concord::api! {
     pub client Tiny {
         base "http://tiny.invalid/v1";
 
-        GET health() -> concord::Json<Health> {
+        GET health() -> Health via concord::Json {
             path "health";
         }
 
-        GET item(id: u64) -> concord::Json<Item> {
+        GET item(id: u64) -> Item via concord::Json {
             path "items/{id}";
         }
     }

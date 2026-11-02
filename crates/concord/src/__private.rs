@@ -8,7 +8,7 @@ use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use reqwest::{Method, Url};
 
 use crate::error::Error;
-use crate::prepared::Prepared;
+use crate::prepared::{Decoder, Prepared};
 use crate::repr::{Decode, Encode};
 
 pub use crate::value::IntoValue;
@@ -116,11 +116,10 @@ pub fn display_into<T: Display + ?Sized>(out: &mut String, value: &T) {
     let _ = write!(out, "{value}");
 }
 
-/// Encodes a body with its declared representation.
 /// Encodes a body with its declared representation and validates the representation's content
 /// type, so both failures belong to the body stage (before any URL part is formatted).
-pub fn encode_body<E: Encode>(
-    value: E::Value,
+pub fn encode_body<E: Encode<T>, T>(
+    value: T,
     meta: &'static EndpointMeta,
 ) -> Result<(reqwest::Body, Option<HeaderValue>), Error> {
     let content_type = match E::CONTENT_TYPE {
@@ -307,12 +306,13 @@ impl<'a> Parts<'a> {
     }
 
     /// Assembles the native request.
-    pub fn finish<R: Decode>(
+    pub fn finish<T>(
         self,
         method: Method,
         client: &reqwest::Client,
         body: Option<(reqwest::Body, Option<HeaderValue>)>,
-    ) -> Result<Prepared<R>, Error> {
+        decoder: Decoder<T>,
+    ) -> Result<Prepared<T>, Error> {
         let mut url = self.url;
         if !self.segments.is_empty() || self.trailing_slash {
             let mut path = self.base.prefix.clone();
@@ -350,7 +350,7 @@ impl<'a> Parts<'a> {
             *request.body_mut() = Some(body);
         }
         *request.headers_mut() = headers;
-        Ok(Prepared::new(client.clone(), request, self.meta))
+        Ok(Prepared::new(client.clone(), request, decoder))
     }
 }
 
@@ -449,4 +449,14 @@ impl fmt::Debug for Redacted {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("<redacted>")
     }
+}
+
+/// The response handling of an endpoint declared `-> T via R`.
+pub fn decoder<R: Decode<T>, T>(meta: &'static EndpointMeta) -> Decoder<T> {
+    Decoder::new(meta, R::decode, false)
+}
+
+/// The response handling of an endpoint without `->`: any 2xx, body drained unbuffered.
+pub fn drain(meta: &'static EndpointMeta) -> Decoder<()> {
+    Decoder::new(meta, |_| Ok(()), true)
 }
