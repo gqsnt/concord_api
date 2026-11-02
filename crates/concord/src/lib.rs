@@ -42,7 +42,7 @@
 //!
 //! # async fn run() -> Result<(), concord::Error> {
 //! let http = reqwest::Client::new(); // configure timeouts, proxies, TLS... here
-//! let gh = GitHub::new(http, "Bearer ghp_...");
+//! let gh = GitHub::new(http, GitHubConfig { token: "Bearer ghp_...".into() });
 //! let rust = gh.repo("rust-lang", "rust");
 //!
 //! let open = rust.issues().set_state("open").set_per_page(50).send().await?;
@@ -58,9 +58,10 @@
 //!
 //! # The declaration
 //!
-//! - `client Name(values) { base "..."; ... }` — the root. `Name::new(http, required...)` creates
-//!   it from **your** `reqwest::Client`; `with_base_url(..)` points it elsewhere (staging, a test
-//!   server).
+//! - `client Name(values) { base "..."; ... }` — the root. `Name::new(http, NameConfig { .. })`
+//!   creates it from **your** `reqwest::Client`; the generated `NameConfig` struct names each
+//!   required value (a client without required values is `Name::new(http)`). `with_base_url(..)`
+//!   points it elsewhere (staging, a test server).
 //! - `scope name(values) { ... }` — a navigation level: `parent.name(required...)`.
 //! - `GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS name(values) -> Repr { ... }` — an endpoint:
 //!   `parent.name(required...)` returns a request value with `send()` and `prepare()`.
@@ -71,17 +72,19 @@
 //!
 //! | Declaration | Meaning | Generated |
 //! |---|---|---|
-//! | `x: T` | required | positional argument of the owner's entry call |
+//! | `x: T` | required | a field of `NameConfig` (client) or a positional argument of the entry call (scope, endpoint); `set_x(v)` replaces it |
 //! | `x: T = expr` | initialized | `set_x(v)` |
 //! | `x?: T` | optional, absent by default | `set_x(v)`, `maybe_x(Option<T>)` (`None` = absent) |
 //! | `x?: T = expr` | optional, present by default | `set_x(v)`, `maybe_x(Option<T>)` |
-//! | `body b: Repr` / `body b?: Repr` | request body | positional / `set_b`, `maybe_b` |
+//! | `body b: Repr` / `body b?: Repr` | request body | positional and `set_b` / `set_b`, `maybe_b` |
 //!
 //! `?` is Concord's own presence marker: `x: Option<T>` is a *required* value whose payload happens
 //! to be an `Option`. Concord never infers meaning from type names. Values are passed as the exact
 //! type, or `&str`/`&String` for `String` ([`IntoValue`]). `expr` runs once each time its owner is
-//! created (`new`, a scope entry, an endpoint call) — never on clone or send. Handles are immutable
-//! snapshots: setters return a new handle, and requests already created keep their values.
+//! created (`new`, a scope entry, an endpoint call) — never on clone or send. Setters return a new
+//! handle; handles and requests already created keep the values they hold. This is a structural
+//! snapshot: a value with interior mutability (`Arc<Mutex<_>>`, an atomic) is shared, and it is
+//! formatted when the request is prepared.
 //!
 //! A value is placed directly (`query x`, `query("per-page") x`, `header("x-key") x`, adding
 //! `each` to repeat the key per item) or referenced from templates and blocks: `{x}` for the

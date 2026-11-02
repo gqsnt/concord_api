@@ -104,7 +104,7 @@ fn chain(error: Option<&(dyn std::error::Error + 'static)>) -> String {
 #[tokio::test]
 async fn c4_r_008_redirect_error_chain_does_not_leak() {
     let port = https_redirect_to_http().await;
-    let api = Secure::new(https_only_client(), SECRET)
+    let api = Secure::new(https_only_client(), SecureConfig { sig: SECRET.into() })
         .with_base_url(format!("https://localhost:{port}"))
         .unwrap();
 
@@ -142,9 +142,14 @@ concord::api! {
 async fn c4_r_008_header_reflected_into_redirect_does_not_leak() {
     const HEADER_SECRET: &str = "Bearer hdr-S3CR3T/+=";
     let port = https_redirect_to_http().await;
-    let api = HeaderOnly::new(https_only_client(), HEADER_SECRET)
-        .with_base_url(format!("https://localhost:{port}"))
-        .unwrap();
+    let api = HeaderOnly::new(
+        https_only_client(),
+        HeaderOnlyConfig {
+            token: HEADER_SECRET.into(),
+        },
+    )
+    .with_base_url(format!("https://localhost:{port}"))
+    .unwrap();
 
     let error = api.ping().send().await.unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Transport);

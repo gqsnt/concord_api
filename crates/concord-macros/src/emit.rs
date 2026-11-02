@@ -114,19 +114,45 @@ fn positional_params(values: &[Value], body: Option<&Body>) -> TokenStream {
     params
 }
 
-fn controls(values: &[Value], body: Option<&Body>, target: &TokenStream) -> TokenStream {
+/// Where an owner's required values are supplied, for generated documentation.
+fn supplied_by(owner: &str) -> String {
+    format!("supplied when {owner} is created")
+}
+
+/// One line describing a value's starting state, for generated documentation.
+fn initially(value: &Value, owner: &str) -> String {
+    match (&value.default, value.optional) {
+        (Some(expr), _) => format!(
+            " Initially `{}`, evaluated once when {owner} is created.",
+            quote!(#expr)
+        ),
+        (None, true) => " Initially absent.".to_owned(),
+        (None, false) => format!(" Required: {}.", supplied_by(owner)),
+    }
+}
+
+/// `set_x` for every value and body; `maybe_x` for optional ones. `owner` names the receiver in
+/// docs ("the client", "this scope", "this request").
+fn controls(
+    values: &[Value],
+    body: Option<&Body>,
+    target: &TokenStream,
+    owner: &str,
+) -> TokenStream {
     let k = krate();
     let mut out = TokenStream::new();
-    for value in values.iter().filter(|v| !v.is_positional()) {
+    for value in values {
         let name = &value.name;
         let ty = &value.ty;
         let docs = &value.docs;
-        let set = format_ident!("set_{}", plain(name));
-        let set_doc = lit(&format!(
-            " Sets `{}`{}.",
-            plain(name),
-            if value.optional { " (present)" } else { "" }
-        ));
+        let shown = plain(name);
+        let set = format_ident!("set_{}", shown);
+        let set_doc = lit(&if value.optional {
+            format!(" Sets `{shown}` (present).")
+        } else {
+            format!(" Replaces `{shown}`.")
+        });
+        let initially = lit(&initially(value, owner));
         let assign = if value.optional {
             quote!(::core::option::Option::Some(
                 #k::IntoValue::into_value(value)
@@ -138,21 +164,28 @@ fn controls(values: &[Value], body: Option<&Body>, target: &TokenStream) -> Toke
             #(#docs)*
             #[doc = ""]
             #[doc = #set_doc]
+            #[doc = #initially]
             #[inline] pub fn #set(mut self, value: impl #k::IntoValue<#ty>) -> Self {
                 #target.#name = #assign;
                 self
             }
         });
         if value.optional {
-            let maybe = format_ident!("maybe_{}", plain(name));
+            let maybe = format_ident!("maybe_{}", shown);
             let maybe_doc = lit(&format!(
-                " Sets `{}` to exactly `value`: `None` leaves it absent.",
-                plain(name)
+                " Sets whether `{shown}` is present: `Some(v)` is `set_{shown}(v)`; `None` makes it \
+                 absent{}.",
+                if value.default.is_some() {
+                    " (the initial value is not used)"
+                } else {
+                    ""
+                }
             ));
             out.extend(quote! {
                 #(#docs)*
                 #[doc = ""]
                 #[doc = #maybe_doc]
+                #[doc = #initially]
                 #[inline] pub fn #maybe(mut self, value: ::core::option::Option<#ty>) -> Self {
                     #target.#name = value;
                     self
@@ -160,33 +193,99 @@ fn controls(values: &[Value], body: Option<&Body>, target: &TokenStream) -> Toke
             });
         }
     }
-    if let Some(body) = body.filter(|b| b.optional) {
+    if let Some(body) = body {
         let name = &body.name;
         let ty = body_value_type(body);
         let docs = &body.docs;
         let set = format_ident!("set_{}", plain(name));
-        let maybe = format_ident!("maybe_{}", plain(name));
-        out.extend(quote! {
-            #(#docs)*
-            #[doc = ""]
-            #[doc = " Sets the request body."]
-            #[inline] pub fn #set(mut self, value: impl #k::IntoValue<#ty>) -> Self {
-                #target.#name = ::core::option::Option::Some(#k::IntoValue::into_value(value));
-                self
-            }
-            #(#docs)*
-            #[doc = ""]
-            #[doc = " Sets the request body to exactly `value`: `None` sends no body."]
-            #[inline] pub fn #maybe(mut self, value: ::core::option::Option<#ty>) -> Self {
-                #target.#name = value;
-                self
-            }
-        });
+        if body.optional {
+            let maybe = format_ident!("maybe_{}", plain(name));
+            out.extend(quote! {
+                #(#docs)*
+                #[doc = ""]
+                #[doc = " Sets the request body. Initially absent: no body is sent."]
+                #[inline] pub fn #set(mut self, value: impl #k::IntoValue<#ty>) -> Self {
+                    #target.#name = ::core::option::Option::Some(#k::IntoValue::into_value(value));
+                    self
+                }
+                #(#docs)*
+                #[doc = ""]
+                #[doc = " Sets the request body to exactly `value`: `None` sends no body."]
+                #[inline] pub fn #maybe(mut self, value: ::core::option::Option<#ty>) -> Self {
+                    #target.#name = value;
+                    self
+                }
+            });
+        } else {
+            out.extend(quote! {
+                #(#docs)*
+                #[doc = ""]
+                #[doc = " Replaces the request body supplied when this request was created."]
+                #[inline] pub fn #set(mut self, value: impl #k::IntoValue<#ty>) -> Self {
+                    #target.#name = #k::IntoValue::into_value(value);
+                    self
+                }
+            });
+        }
     }
     out
 }
 
-fn debug_fields(values: &[Value], base: &TokenStream) -> TokenStream {
+/// A rustdoc list of an entry call's positional arguments with their documentation.
+fn argument_docs(values: &[Value], body: Option<&Body>) -> TokenStream {
+    let mut lines = Vec::new();
+    let mut item = |name: &Ident, docs: &[syn::Attribute], what: &str| {
+        let text = doc_text(docs);
+        let text = if text.is_empty() {
+            what.to_owned()
+        } else {
+            text
+        };
+        lines.push(lit(&format!(" - `{}`: {text}", plain(name))));
+    };
+    let required_body = body.filter(|b| !b.optional);
+    for (i, value) in values.iter().enumerate() {
+        if let Some(b) = required_body.filter(|b| b.position == i) {
+            item(&b.name, &b.docs, "the request body.");
+        }
+        if value.is_positional() {
+            item(&value.name, &value.docs, "required value.");
+        }
+    }
+    if let Some(b) = required_body.filter(|b| b.position >= values.len()) {
+        item(&b.name, &b.docs, "the request body.");
+    }
+    if lines.is_empty() {
+        return quote!();
+    }
+    quote!(#[doc = ""] #[doc = " Arguments:"] #(#[doc = #lines])*)
+}
+
+/// The text of `///` doc attributes, joined into one line.
+fn doc_text(docs: &[syn::Attribute]) -> String {
+    let mut out = Vec::new();
+    for attr in docs {
+        if let syn::Meta::NameValue(nv) = &attr.meta {
+            if let syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(s),
+                ..
+            }) = &nv.value
+            {
+                let line = s.value();
+                let line = line.trim();
+                if !line.is_empty() {
+                    out.push(line.to_owned());
+                }
+            }
+        }
+    }
+    out.join(" ")
+}
+
+fn debug_fields<'a>(
+    values: impl IntoIterator<Item = &'a Value>,
+    base: &TokenStream,
+) -> TokenStream {
     let k = krate();
     let mut out = TokenStream::new();
     for value in values {
@@ -237,15 +336,60 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
 
     match &owner.kind {
         Kind::Client { base, .. } => {
-            let params = positional_params(&owner.values, None);
             let (default_fns, inits) = value_inits(&owner.values);
             let controls = controls(
                 &owner.values,
                 None,
                 &quote!(::std::sync::Arc::make_mut(&mut self.__s)),
+                "the client",
             );
             let debug = debug_fields(&owner.values, &quote!(__s));
+            let required: Vec<&Value> = owner.values.iter().filter(|v| v.is_positional()).collect();
+            let (config_item, config_param, config_bind) = if required.is_empty() {
+                (quote!(), quote!(), quote!())
+            } else {
+                let config = owner.config_name();
+                let names: Vec<&Ident> = required.iter().map(|v| &v.name).collect();
+                let config_fields = required.iter().map(|v| {
+                    let name = &v.name;
+                    let fty = &v.ty;
+                    let docs = if v.docs.is_empty() {
+                        let line = lit(&format!(" The client's required value `{}`.", plain(name)));
+                        quote!(#[doc = #line])
+                    } else {
+                        let docs = &v.docs;
+                        quote!(#(#docs)*)
+                    };
+                    quote!(#docs pub #name: #fty,)
+                });
+                let config_doc = lit(&format!(
+                    " The required values of [`{ty}`], passed to [`{ty}::new`]. Optional and \
+                     initialized values are set afterwards with the client's `set_*` and \
+                     `maybe_*` methods."
+                ));
+                let config_label = lit(&config.to_string());
+                let config_debug = debug_fields(required.iter().copied(), &quote!(self));
+                (
+                    quote! {
+                        #[doc = #config_doc]
+                        #[derive(Clone)]
+                        #vis struct #config {
+                            #(#config_fields)*
+                        }
+
+                        impl ::core::fmt::Debug for #config {
+                            #[inline] fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                                f.debug_struct(#config_label) #config_debug .finish()
+                            }
+                        }
+                    },
+                    quote!(, config: #config),
+                    quote!(let #config { #(#names),* } = config;),
+                )
+            };
             quote! {
+                #config_item
+
                 #docs
                 #[derive(Clone)]
                 #vis struct #ty {
@@ -264,7 +408,9 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
                 impl #ty {
                     /// Creates the client. `http` is used for every request; configure timeouts,
                     /// redirects, proxies, TLS and default headers on it. Builds no connection.
-                    #[inline] #[allow(clippy::too_many_arguments)] pub fn new(http: #k::reqwest::Client, #params) -> Self {
+                    /// Initializers of the client's values are evaluated here, once.
+                    #[inline] pub fn new(http: #k::reqwest::Client #config_param) -> Self {
+                        #config_bind
                         #default_fns
                         Self {
                             __s: ::std::sync::Arc::new(#state {
@@ -302,6 +448,7 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
                 &owner.values,
                 None,
                 &quote!(::std::sync::Arc::make_mut(&mut self.__s)),
+                "this scope",
             );
             let debug = debug_fields(&owner.values, &quote!(__s));
             quote! {
@@ -338,7 +485,7 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
             body,
         } => {
             let parent_ty = &model.owners[owner.parent.unwrap()].type_name;
-            let controls = controls(&owner.values, body.as_ref(), &quote!(self));
+            let controls = controls(&owner.values, body.as_ref(), &quote!(self), "this request");
             let mut debug = debug_fields(&owner.values, &quote!(self));
             let body_field = body.as_ref().map(|b| {
                 let name = &b.name;
@@ -461,10 +608,12 @@ fn navigation(model: &Model, index: usize) -> TokenStream {
         let params = positional_params(&c.values, body);
         let (default_fns, inits) = value_inits(&c.values);
         let scope_line = lit(&format!(" Enters scope `{}`.", c.dotted));
+        let args = argument_docs(&c.values, body);
         match &c.kind {
             Kind::Scope => out.extend(quote! {
                 #(#docs)*
                 #[doc = #scope_line]
+                #args
                 #[inline] #[allow(clippy::too_many_arguments)] pub fn #name(&self, #params) -> #cty {
                     #default_fns
                     #cty {
@@ -494,6 +643,7 @@ fn navigation(model: &Model, index: usize) -> TokenStream {
                     #(#docs)*
                     #sep
                     #[doc = #line]
+                    #args
                     #[inline] #[allow(clippy::too_many_arguments)] pub fn #name(&self, #params) -> #cty {
                         #default_fns
                         #cty {

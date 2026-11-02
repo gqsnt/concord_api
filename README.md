@@ -26,7 +26,7 @@ concord::api! {
     }
 }
 
-let api = Catalog::new(reqwest::Client::new(), key);
+let api = Catalog::new(reqwest::Client::new(), CatalogConfig { key });
 let page = api.region(Region::Eu).org("acme").products().set_limit(50).send().await?;
 ```
 

@@ -1,0 +1,11 @@
+error: generated type name `ApiConfig` is used twice
+ --> tests/ui/config_name_collision.rs:7:15
+  |
+7 |         scope config() {
+  |               ^^^^^^
+
+error: also generated here
+ --> tests/ui/config_name_collision.rs:4:16
+  |
+4 |     pub client Api(key: String) {
+  |                ^^^

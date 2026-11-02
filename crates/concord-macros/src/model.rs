@@ -59,6 +59,11 @@ pub struct Owner {
 }
 
 impl Owner {
+    /// The generated struct holding a client's required values (`{Client}Config`).
+    pub fn config_name(&self) -> Ident {
+        format_ident!("{}Config", self.type_name, span = self.type_name.span())
+    }
+
     pub fn is_endpoint(&self) -> bool {
         matches!(self.kind, Kind::Endpoint { .. })
     }
@@ -1051,6 +1056,23 @@ impl Model {
                 e.combine(syn::Error::new(first.span(), "also generated here"));
                 errors.push(e);
             }
+            let required = owner.values.iter().any(Value::is_positional);
+            if matches!(owner.kind, Kind::Client { .. }) && required {
+                let config = owner.config_name();
+                if let Some(first) = types.insert(config.to_string(), &owner.name) {
+                    let mut e = syn::Error::new(
+                        first.span(),
+                        format!(
+                            "generated type name `{config}` is also the struct of the client's required values; rename this owner"
+                        ),
+                    );
+                    e.combine(syn::Error::new(
+                        owner.name.span(),
+                        "the client is declared here",
+                    ));
+                    errors.push(e);
+                }
+            }
         }
         // Methods per generated type.
         for owner in &self.owners {
@@ -1102,7 +1124,7 @@ impl Model {
                 }
                 Kind::Scope => {}
             }
-            for value in owner.values.iter().filter(|v| !v.is_positional()) {
+            for value in &owner.values {
                 let name = plain(&value.name);
                 add(
                     format!("set_{name}"),
@@ -1119,7 +1141,7 @@ impl Model {
                     );
                 }
             }
-            if let Some(body) = owner.body().filter(|b| b.optional) {
+            if let Some(body) = owner.body() {
                 let name = plain(&body.name);
                 add(
                     format!("set_{name}"),
@@ -1127,12 +1149,14 @@ impl Model {
                     format!("the control for body `{name}`"),
                     errors,
                 );
-                add(
-                    format!("maybe_{name}"),
-                    Some(body.name.span()),
-                    format!("the control for body `{name}`"),
-                    errors,
-                );
+                if body.optional {
+                    add(
+                        format!("maybe_{name}"),
+                        Some(body.name.span()),
+                        format!("the control for body `{name}`"),
+                        errors,
+                    );
+                }
             }
             for &child in &owner.children {
                 let c = &self.owners[child];

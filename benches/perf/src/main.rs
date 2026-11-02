@@ -101,7 +101,12 @@ async fn main() {
     let http = reqwest::Client::new();
     println!("== request construction (no I/O)");
 
-    let shop_v4 = v4::s3_query::ShopApi::new(http.clone(), "token");
+    let shop_v4 = v4::s3_query::ShopApi::new(
+        http.clone(),
+        v4::s3_query::ShopApiConfig {
+            token: "token".into(),
+        },
+    );
     let shop_base = base::s3_query::ShopApi::new(
         http.clone(),
         url::Url::parse("https://api.example.com/v1/").unwrap(),
@@ -143,7 +148,12 @@ async fn main() {
         black_box(r);
     });
 
-    let cat_v4 = v4::s2_scoped::CatalogApi::new(http.clone(), "key");
+    let cat_v4 = v4::s2_scoped::CatalogApi::new(
+        http.clone(),
+        v4::s2_scoped::CatalogApiConfig {
+            api_key: "key".into(),
+        },
+    );
     let cat_base = base::s2_scoped::CatalogApi::with_client(
         http.clone(),
         "https://api.example.com/v2/",

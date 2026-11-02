@@ -49,17 +49,20 @@ reference  := name | owner "." name       (owner = `client` or an enclosing scop
 
 | Declaration | Stored | Initial | Supplied / changed by |
 |---|---|---|---|
-| `x: T` | `T` | — | positional argument of the owner's entry call |
+| `x: T` | `T` | — | client: field of `{Client}Config`; scope/endpoint: positional argument of the entry call; then `set_x(v)` |
 | `x: T = E` | `T` | `E` | `set_x(v)` |
 | `x?: T` | `Option<T>` | absent | `set_x(v)` (present), `maybe_x(o)` (exactly `o`) |
 | `x?: T = E` | `Option<T>` | present `E` | `set_x(v)`, `maybe_x(o)` |
-| `body b: R` | `R::Value` | — | positional argument |
+| `body b: R` | `R::Value` | — | positional argument; then `set_b(v)` |
 | `body b?: R` | `Option<R::Value>` | absent | `set_b(v)`, `maybe_b(o)` |
 
-- Entry calls: `Client::new(http: reqwest::Client, ...)`, `parent.scope(...)`,
-  `parent.endpoint(...)`. Positional arguments are the required values and a required body, **in
-  declaration order**.
-- Positional arguments, `set_*` and initializers accept `impl IntoValue<T>`: exactly `T`, or
+- Entry calls: `Client::new(http: reqwest::Client, config: {Client}Config)` when the client has
+  required values (`Client::new(http)` otherwise); `parent.scope(...)`, `parent.endpoint(...)`.
+  `{Client}Config` is a generated struct with one public field per required client value, in
+  declaration order; its `Debug` redacts like the client's. Scope and endpoint positional
+  arguments are the required values and a required body, **in declaration order**.
+- Positional arguments, `set_*` and initializers accept `impl IntoValue<T>` (config fields are
+  exactly `T`): exactly `T`, or
   `&str`/`&String` for `String`. Nothing else converts (no `Into`, no numeric widening, no
   wrapping into `Option`). `maybe_*` takes exactly `Option<T>`, so that `None` needs no type
   annotation (`maybe_x(Some("a"))` for a `String` value is a type error; write
@@ -72,7 +75,11 @@ reference  := name | owner "." name       (owner = `client` or an enclosing scop
 - **Snapshots.** Client and scope handles are immutable `Arc` snapshots; setters consume the handle
   and return a new one (copy-on-write). A child captures a clone of its parent at entry, so later
   changes to the parent produce new handles and never alter existing children or requests.
-  Endpoint requests are plain structs.
+  Endpoint requests are plain structs. The snapshot is **structural**: it fixes which value each
+  handle holds, not the inside of a value — an `Arc<Mutex<T>>`, an atomic or a custom `Display`
+  is shared, and values are formatted when a request is prepared. A setter on a shared client or
+  scope handle copies that owner's values once (copy-on-write); setters on a unique handle, scope
+  entry, endpoint calls, `prepare` and `send` copy none.
 - No `reset`: to return to an initializer, use the original handle or a fresh entry call.
 - `x?: Option<U>` has three states: absent (`maybe_x(None)`), present `None` (`set_x(None)`),
   present `Some(u)`.

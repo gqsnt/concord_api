@@ -47,9 +47,14 @@ async fn s2_regional_scopes_headers_and_versions() {
     })
     .await;
     let port = server.addr.port();
-    let api = s2_scoped::CatalogApi::new(regional_client(port), "k-123")
-        .with_base_url(format!("http://api.example.test:{port}/v2"))
-        .unwrap();
+    let api = s2_scoped::CatalogApi::new(
+        regional_client(port),
+        s2_scoped::CatalogApiConfig {
+            api_key: "k-123".into(),
+        },
+    )
+    .with_base_url(format!("http://api.example.test:{port}/v2"))
+    .unwrap();
 
     let eu = api.regional(s2_scoped::Region::Eu);
     assert!(eu.status().send().await.unwrap().healthy);
@@ -94,9 +99,14 @@ async fn s3_search_create_delete() {
         _ => Reply::new(204),
     })
     .await;
-    let api = s3_query::ShopApi::new(reqwest::Client::new(), "t0k")
-        .with_base_url(server.url() + "/v1")
-        .unwrap();
+    let api = s3_query::ShopApi::new(
+        reqwest::Client::new(),
+        s3_query::ShopApiConfig {
+            token: "t0k".into(),
+        },
+    )
+    .with_base_url(server.url() + "/v1")
+    .unwrap();
 
     api.search()
         .set_q("red shoe")

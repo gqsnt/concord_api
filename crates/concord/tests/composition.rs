@@ -800,9 +800,25 @@ concord::api! {
 /// naming the header but not the value.
 #[test]
 fn header_value_policy() {
-    let p = Hv::new(http(), "a\tb c").e().prepare().unwrap();
+    let p = Hv::new(
+        http(),
+        HvConfig {
+            note: "a\tb c".into(),
+        },
+    )
+    .e()
+    .prepare()
+    .unwrap();
     assert_eq!(p.request().headers()["x-note"].as_bytes(), b"a\tb c");
-    let error = Hv::new(http(), "café").e().prepare().unwrap_err();
+    let error = Hv::new(
+        http(),
+        HvConfig {
+            note: "café".into(),
+        },
+    )
+    .e()
+    .prepare()
+    .unwrap_err();
     assert_eq!(error.kind(), concord::ErrorKind::Build);
     let text = error.to_string();
     assert!(text.contains("x-note") && !text.contains("caf"), "{text}");

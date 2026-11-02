@@ -40,7 +40,7 @@ concord::api! {
 }
 
 fn vault(base: &str) -> Vault {
-    Vault::new(reqwest::Client::new(), SECRET)
+    Vault::new(reqwest::Client::new(), VaultConfig { key: SECRET.into() })
         .set_sig(SECRET)
         .with_base_url(base)
         .unwrap()
@@ -142,7 +142,12 @@ fn generated_debug_redacts() {
 /// S05: a build error caused by a sensitive value does not show it.
 #[test]
 fn s05_build_error_does_not_leak() {
-    let api = Vault::new(reqwest::Client::new(), format!("{SECRET}\n"));
+    let api = Vault::new(
+        reqwest::Client::new(),
+        VaultConfig {
+            key: format!("{SECRET}\n"),
+        },
+    );
     let error = api.replaced().prepare().unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Build);
     assert_no_secret(&format!("{error} {error:?}"));
@@ -211,7 +216,12 @@ concord::api! {
 /// sensitive elsewhere on the chain, even without `#[sensitive]`.
 #[test]
 fn c4_r_001_debug_uses_effective_sensitivity() {
-    let api = Effective::new(reqwest::Client::new(), SECRET);
+    let api = Effective::new(
+        reqwest::Client::new(),
+        EffectiveConfig {
+            token: SECRET.into(),
+        },
+    );
     let shown = format!("{api:?}");
     assert_no_secret(&shown);
     assert!(shown.contains("token: <redacted>"), "{shown}");
@@ -248,9 +258,14 @@ async fn adv_1_sensitive_host_hides_transport_source() {
         )
         .build()
         .unwrap();
-    let api = Hidden::new(http, "t0psecret")
-        .with_base_url(format!("http://hidden.example.test:{port}"))
-        .unwrap();
+    let api = Hidden::new(
+        http,
+        HiddenConfig {
+            tenant: "t0psecret".into(),
+        },
+    )
+    .with_base_url(format!("http://hidden.example.test:{port}"))
+    .unwrap();
     let error = api.ping().send().await.unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Transport);
     assert!(error.source().is_none());
@@ -270,7 +285,12 @@ concord::api! {
 /// ADV-2: a value Concord withholds anywhere is withheld everywhere it is placed.
 #[test]
 fn adv_2_effective_sensitivity_reaches_every_placement() {
-    let api = Spread::new(reqwest::Client::new(), SECRET);
+    let api = Spread::new(
+        reqwest::Client::new(),
+        SpreadConfig {
+            token: SECRET.into(),
+        },
+    );
     let shown = format!("{:?}", api.keys().get().prepare().unwrap());
     assert_no_secret(&shown);
     assert!(shown.contains("/v1/keys/<redacted>"), "{shown}");
@@ -294,10 +314,15 @@ concord::api! {
 /// exactly (`secret_id` is not `secret`).
 #[test]
 fn safety_list_normalization_is_exact() {
-    let p = Names::new(reqwest::Client::new(), "k-123")
-        .e("A-VALUE", "B-VALUE")
-        .prepare()
-        .unwrap();
+    let p = Names::new(
+        reqwest::Client::new(),
+        NamesConfig {
+            key: "k-123".into(),
+        },
+    )
+    .e("A-VALUE", "B-VALUE")
+    .prepare()
+    .unwrap();
     let shown = format!("{p:?}");
     assert!(shown.contains("Client_Secret=<redacted>"), "{shown}");
     assert!(shown.contains("secret_id=B-VALUE"), "{shown}");

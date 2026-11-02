@@ -80,7 +80,12 @@ concord::api! {
 }
 
 fn api() -> Vals {
-    Vals::new(reqwest::Client::new(), "acme")
+    Vals::new(
+        reqwest::Client::new(),
+        ValsConfig {
+            tenant: "acme".into(),
+        },
+    )
 }
 
 fn query(prepared: &concord::Prepared<()>) -> String {
@@ -108,11 +113,16 @@ fn get<'a>(pairs: &'a [(String, String)], key: &str) -> Vec<&'a str> {
 /// V01: a required root value is a positional argument; an empty string is a valid value.
 #[test]
 fn v01_required_root_value_empty_string_is_valid() {
-    let p = Vals::new(reqwest::Client::new(), "")
-        .region("eu")
-        .items(Nullable(None))
-        .prepare()
-        .unwrap();
+    let p = Vals::new(
+        reqwest::Client::new(),
+        ValsConfig {
+            tenant: String::new(),
+        },
+    )
+    .region("eu")
+    .items(Nullable(None))
+    .prepare()
+    .unwrap();
     assert_eq!(get(&pairs(&query(&p)), "tenant"), vec![""]);
 }
 
@@ -266,8 +276,8 @@ fn v10_snapshots_are_not_changed_by_later_parent_changes() {
 #[test]
 fn c12_no_shared_state_between_clients() {
     let http = reqwest::Client::new();
-    let a = Vals::new(http.clone(), "a");
-    let b = Vals::new(http, "b").set_version(5);
+    let a = Vals::new(http.clone(), ValsConfig { tenant: "a".into() });
+    let b = Vals::new(http, ValsConfig { tenant: "b".into() }).set_version(5);
     let qa = pairs(&query(
         &a.region("eu").items(Nullable(None)).prepare().unwrap(),
     ));
@@ -409,4 +419,45 @@ fn v10_request_clone_follows_the_data() {
     }
     let once = api.once(Nonce("n-1".into())).prepare().unwrap();
     assert_eq!(once.request().url().query(), Some("nonce=n-1"));
+}
+
+concord::api! {
+    /// Key rotation through the setter of a required value.
+    pub client Rotating(#[sensitive] header("x-api-key") key: String) {
+        base "http://rotating.invalid";
+        scope tenant(tenant: String) {
+            path "t/{tenant}";
+            GET item(id: u32, body note: concord::Text) { path "items/{id}"; }
+        }
+    }
+}
+
+/// D01 + fresh-use friction: every value has `set_x`, including required ones. Replacing the key
+/// keeps the runtime base URL and every other choice; handles and requests created before keep
+/// the old key (snapshots).
+#[tokio::test]
+async fn required_values_have_setters() {
+    let server = support::Server::reply(support::Reply::new(204)).await;
+    let api = Rotating::new(reqwest::Client::new(), RotatingConfig { key: "old".into() })
+        .with_base_url(server.url())
+        .unwrap();
+    let before = api.tenant("acme").item(1, "a".to_owned());
+
+    let api = api.set_key("new");
+    api.tenant("acme")
+        .set_tenant("beta")
+        .item(1, "a".to_owned())
+        .set_id(2)
+        .set_note("b".to_owned())
+        .send()
+        .await
+        .unwrap();
+    before.send().await.unwrap();
+
+    let requests = server.requests();
+    assert_eq!(requests[0].target, "/t/beta/items/2");
+    assert_eq!(requests[0].header("x-api-key"), Some("new"));
+    assert_eq!(requests[0].body, b"b");
+    assert_eq!(requests[1].target, "/t/acme/items/1");
+    assert_eq!(requests[1].header("x-api-key"), Some("old"));
 }

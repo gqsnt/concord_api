@@ -15,7 +15,7 @@ There is no converter; declarations are short enough to rewrite by hand.
 | `paginate`, `.pages()`, `.collect_all()` | call the endpoint again with the next cursor (`maybe_cursor(next)`). |
 | `configure_http`, `configure_runtime`, `timeout` | configure the `reqwest::Client` you pass to `new`; per request: `prepare()?.into_parts()` + `timeout_mut()`. |
 | built-in base URL only | `base "..."` plus `with_base_url(..)` at runtime. |
-| `Client::builder()...build()?` | `Client::new(http, required...)` — required values are positional and checked by the compiler. |
+| `Client::builder()...build()?` | `Client::new(http, ClientConfig { .. })` — required values are fields of the generated config struct, checked by the compiler. |
 | `.await` on a request | `.send().await` (explicit verb). |
 | `response Json;` defaults, `via Json` | name the representation on each endpoint: `-> Json<T>`, `body b: Json<T>`. |
 | `absent on 404` | `match e.status()` on the error, or `send_raw()`. |
