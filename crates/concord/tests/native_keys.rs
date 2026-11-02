@@ -178,7 +178,10 @@ fn identity_errors_are_deferred_build_errors() {
         text.contains("`authorization` on `Keys.duplicate`"),
         "{text}"
     );
-    assert!(text.contains("already sets"), "{text}");
+    assert!(
+        text.contains("sets a header that `AUTHORIZATION` on `Keys` already sets"),
+        "{text}"
+    );
     assert!(!text.contains("tok"), "{text}");
 
     // H04: the shadowing constant is `x-other`, which nothing sets.

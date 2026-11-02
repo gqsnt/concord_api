@@ -470,7 +470,7 @@ header("x-request-id") id: String              headers { header::ACCEPT_LANGUAGE
   see which header the constant holds: it still reports the mistakes it can prove (the same
   constant on both sides, literals on both sides), and the others — such as setting
   `"authorization"` below `header(AUTHORIZATION)` without `override` — are a `Build` error from
-  `prepare()` naming the declaration. Which header each contribution names is decided on the names
+  `prepare()` naming the declaration (and, for a header set twice, the earlier one). Which header each contribution names is decided on the names
   alone, before any value is converted: a removed or replaced value is never formatted.
 
 **Values.** A value placed directly (`header(K) x: T`, `K = x`, `K = each xs`) goes through

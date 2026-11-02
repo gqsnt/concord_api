@@ -25,6 +25,12 @@ enum Repr {
         what: &'static str,
         reason: &'static str,
     },
+    /// A header set twice under two spellings the macro could not prove equal (`what` is the
+    /// later declaration).
+    HeaderConflict {
+        what: &'static str,
+        earlier: &'static str,
+    },
     Encode(BodyError),
     Transport(reqwest::Error),
     Status(reqwest::Response),
@@ -55,6 +61,14 @@ impl Error {
         Self::new(endpoint, Repr::Build { what, reason })
     }
 
+    pub(crate) fn header_conflict(
+        endpoint: &'static EndpointMeta,
+        what: &'static str,
+        earlier: &'static str,
+    ) -> Self {
+        Self::new(Some(endpoint), Repr::HeaderConflict { what, earlier })
+    }
+
     pub(crate) fn from_encode(endpoint: &'static EndpointMeta, error: BodyError) -> Self {
         Self::new(Some(endpoint), Repr::Encode(error))
     }
@@ -83,7 +97,7 @@ impl Error {
     /// The stage at which the call failed.
     pub fn kind(&self) -> ErrorKind {
         match self.inner.repr {
-            Repr::Build { .. } | Repr::Encode(_) => ErrorKind::Build,
+            Repr::Build { .. } | Repr::HeaderConflict { .. } | Repr::Encode(_) => ErrorKind::Build,
             Repr::Transport(_) => ErrorKind::Transport,
             Repr::Status(_) => ErrorKind::Status,
             Repr::Decode(_) => ErrorKind::Decode,
@@ -162,6 +176,10 @@ impl fmt::Display for Error {
         }
         match &self.inner.repr {
             Repr::Build { what, reason } => write!(f, "request not built: {what} {reason}"),
+            Repr::HeaderConflict { what, earlier } => write!(
+                f,
+                "request not built: {what} sets a header that {earlier} already sets (the same header name, written differently); use `override` or `append`, or `remove` it first"
+            ),
             Repr::Encode(e) => write!(f, "request not built: body: {}", e.description()),
             Repr::Transport(e) => {
                 f.write_str("transport error")?;

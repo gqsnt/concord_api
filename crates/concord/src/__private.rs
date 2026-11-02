@@ -727,7 +727,8 @@ pub struct HeaderEntry {
 /// What a header contribution does to the header it names.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum HeaderOp {
-    /// Introduces the header; an error if an enclosing owner already sets it.
+    /// Introduces the header; an error if an earlier contribution (on this owner or an enclosing
+    /// one) already sets it.
     Set,
     /// Adds a value after the inherited ones.
     Append,
@@ -775,17 +776,13 @@ impl<const N: usize> HeaderPlan<N> {
             }
             // Whether the header is set when this contribution applies: the latest earlier
             // contribution to the same header was not a `remove`.
-            let set_before = (0..i)
-                .rev()
-                .find(|&j| names[j] == names[i])
-                .is_some_and(|j| entries[j].op != HeaderOp::Remove);
-            match entry.op {
-                HeaderOp::Set if set_before => {
-                    return fail(
-                        "sets a header that an enclosing owner already sets (possibly with another spelling of the same name); use `override` or `append`, or `remove` it first",
-                    );
+            let earlier = (0..i).rev().find(|&j| names[j] == names[i]);
+            let set_before = earlier.is_some_and(|j| entries[j].op != HeaderOp::Remove);
+            match (entry.op, earlier) {
+                (HeaderOp::Set, Some(j)) if set_before => {
+                    return Err(Error::header_conflict(meta, entry.label, entries[j].label));
                 }
-                HeaderOp::Override | HeaderOp::OverrideElseInherit | HeaderOp::Remove
+                (HeaderOp::Override | HeaderOp::OverrideElseInherit | HeaderOp::Remove, _)
                     if !set_before =>
                 {
                     return fail("changes a header that no enclosing owner sets");
