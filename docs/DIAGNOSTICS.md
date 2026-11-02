@@ -233,10 +233,11 @@ error[E0277]: `IpAddr` cannot be sent as a header value
    |                                        ^^^ not a header value
 ```
 
-**Fix:** a native `HeaderValue`, text, integers and `bool` are accepted as they are. For your own
-type, implement `ToHeaderValue` (it can return a `HeaderValue::from_static` per variant); to send
-a type's `Display` text, use a template: `headers { "x-ip" = "{ip}"; }` (text: visible ASCII,
-checked when the request is built). `Option` and lists take `?` and `each`.
+**Fix:** a native `HeaderValue`, text, integers and `bool` are accepted as they are
+(`ToHeaderValue` is sealed: it cannot be implemented for other types). To send a type's `Display`
+text, use a template: `headers { "x-ip" = "{ip}"; }` (the text is checked by
+`HeaderValue::from_str` when the request is built); for another encoding, build a `HeaderValue`
+and declare the value as one. `Option` and lists take `?` and `each`.
 
 ## Bodies and responses
 
