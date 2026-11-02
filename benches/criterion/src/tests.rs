@@ -108,6 +108,34 @@ fn header_requests_match() {
 }
 
 #[test]
+fn native_and_literal_header_requests_match() {
+    let fx = fx();
+    let h = &fx.headers;
+    let m = &fx.headers_manual;
+    let v = &m.prebuilt;
+    same(h.native_1(&v[0]).prepare().unwrap(), m.prebuilt(1).unwrap());
+    same(
+        h.native_4(&v[0], &v[1], &v[2], &v[3]).prepare().unwrap(),
+        m.prebuilt(4).unwrap(),
+    );
+    same(
+        h.native_16(
+            &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7], &v[8], &v[9], &v[10], &v[11],
+            &v[12], &v[13], &v[14], &v[15],
+        )
+        .prepare()
+        .unwrap(),
+        m.prebuilt(16).unwrap(),
+    );
+    same(h.literal_1().prepare().unwrap(), m.from_static(1).unwrap());
+    same(h.literal_4().prepare().unwrap(), m.from_static(4).unwrap());
+    same(
+        h.literal_16().prepare().unwrap(),
+        m.from_static(16).unwrap(),
+    );
+}
+
+#[test]
 fn composition_requests_match() {
     let fx = fx();
     let [a, b, c, d, e, f, g, h] = deep_values();
@@ -209,7 +237,7 @@ fn every_case_runs() {
     assert_eq!(ids.len(), once.0.len(), "benchmark IDs are unique");
     assert_eq!(
         ids.len(),
-        78,
+        84,
         "the suite's case list changed: update README.md"
     );
 }

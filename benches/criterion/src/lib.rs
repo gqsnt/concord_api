@@ -361,12 +361,13 @@ fn header_case(n: usize, variant: &str) -> Case {
     Case::new(format!("{n}/{variant}"), "prepare").throughput(Throughput::Elements(n as u64))
 }
 
-/// Every header variant, for each count. A variant is one function; add a native-`HeaderValue`
-/// Concord variant as `concord_native` once the DSL has one.
+/// Every header variant, for each count. A variant is one function.
 pub fn headers(fx: &Fixtures, r: &mut impl Runner) {
     for n in HEADER_COUNTS {
         headers_concord_text(fx, r, n);
         headers_concord_numeric(fx, r, n);
+        headers_concord_native(fx, r, n);
+        headers_concord_literal(fx, r, n);
         headers_manual_from_str(fx, r, n);
         headers_manual_numeric(fx, r, n);
         headers_manual_prebuilt(fx, r, n);
@@ -426,6 +427,46 @@ pub fn headers_concord_numeric(fx: &Fixtures, r: &mut impl Runner, n: usize) {
             },
             |i| i.prepare().expect("valid"),
         ),
+        _ => unreachable!("header count"),
+    }
+}
+
+/// Concord, native `HeaderValue`s passed per call as `&HeaderValue` (cloned: payload reuse, no
+/// formatting or validation), the counterpart of `manual_prebuilt_clone`.
+pub fn headers_concord_native(fx: &Fixtures, r: &mut impl Runner, n: usize) {
+    let h = &fx.headers;
+    let v = &fx.headers_manual.prebuilt;
+    let case = header_case(n, "concord_native");
+    match n {
+        1 => r.case(case, || h.native_1(&v[0]), |i| i.prepare().expect("valid")),
+        4 => r.case(
+            case,
+            || h.native_4(&v[0], &v[1], &v[2], &v[3]),
+            |i| i.prepare().expect("valid"),
+        ),
+        16 => r.case(
+            case,
+            || {
+                h.native_16(
+                    &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7], &v[8], &v[9], &v[10],
+                    &v[11], &v[12], &v[13], &v[14], &v[15],
+                )
+            },
+            |i| i.prepare().expect("valid"),
+        ),
+        _ => unreachable!("header count"),
+    }
+}
+
+/// Concord, literal header values (`headers { "x-h00" = "..."; }`), lowered to compile-time
+/// statics: the counterpart of `manual_from_static`.
+pub fn headers_concord_literal(fx: &Fixtures, r: &mut impl Runner, n: usize) {
+    let h = &fx.headers;
+    let case = header_case(n, "concord_literal").trivial_input();
+    match n {
+        1 => r.case(case, || h.literal_1(), |i| i.prepare().expect("valid")),
+        4 => r.case(case, || h.literal_4(), |i| i.prepare().expect("valid")),
+        16 => r.case(case, || h.literal_16(), |i| i.prepare().expect("valid")),
         _ => unreachable!("header count"),
     }
 }

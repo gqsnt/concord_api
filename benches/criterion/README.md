@@ -33,7 +33,7 @@ Requires Rust ≥ 1.86 (criterion 0.8); the crate is outside the 1.85 MSRV gates
 | `send_prepared` | execute + decode of a request prepared in batch setup | async `iter_batched` (`SmallInput`) |
 | `get_bytes` | raw `client.get(url).send()` + `bytes()` (transport floor) | async `iter` |
 
-Groups and scenarios (171 IDs; `cargo bench -p concord-bench --bench runtime -- --list`):
+Groups and scenarios (180 IDs; 171 until the native and literal header variants were added; `cargo bench -p concord-bench --bench runtime -- --list`):
 
 - `construct`: `minimal` (S1 `GET health`), `s3_search_9_query`, `s2_product_scoped` (the
   `examples/shapes` / `benches/baselines` pairs measured by the former harness),
@@ -41,10 +41,12 @@ Groups and scenarios (171 IDs; `cargo bench -p concord-bench --bench runtime -- 
   6 inherited headers incl. a sensitive one) and `realistic_optional_absent` (same endpoint, only
   the 2 initialized query values).
 - `headers`: `{1,4,16}/{variant}` with `Throughput::Elements(n)`; variants `concord_text`
-  (`String`, `Display`), `concord_numeric` (`u64`), `manual_from_str`, `manual_numeric`
-  (`HeaderValue::from(u64)`), `manual_prebuilt_clone` (clones of `HeaderValue`s validated once),
-  `manual_from_static`. A future `concord_native` variant is one function in `src/lib.rs`
-  (`headers_*`) plus endpoints in `src/apis.rs`.
+  (owned `String`s), `concord_numeric` (`u64`), `concord_native` (`&HeaderValue` per call,
+  cloned), `concord_literal` (literal values, lowered to statics), `manual_from_str`,
+  `manual_numeric` (`HeaderValue::from(u64)`), `manual_prebuilt_clone` (clones of `HeaderValue`s
+  validated once; the counterpart of `concord_native`) and `manual_from_static` (the counterpart
+  of `concord_literal`). A variant is one function in `src/lib.rs` (`headers_*`) plus endpoints in
+  `src/apis.rs`.
 - `compose`: `deep8_navigate` (8 nested scopes, each a path value and a header, navigated per
   call), `deep8_reused_scope` (from a level-8 handle built once; the hand-written handle caches
   its URL prefix and header map), and from a reused scope handle: `inherit`, `override_present`,

@@ -47,11 +47,11 @@ pub mod tracker {
     }
 }
 
-/// Header-value scenarios: 1, 4 and 16 endpoint header values, formatted text and numeric.
-///
-/// A future native-`HeaderValue` variant adds endpoints here (`native_1`, `native_4`,
-/// `native_16`) and one function in `scenarios::headers`.
+/// Header-value scenarios: 1, 4 and 16 endpoint header values — owned text, numeric, native
+/// `HeaderValue`s and literal values (lowered to compile-time statics).
 pub mod headers {
+    use concord::reqwest::header::HeaderValue;
+
     concord::api! {
         /// Endpoints differing only in their header values.
         pub client Headers {
@@ -88,6 +88,48 @@ pub mod headers {
                 header("x-h12") h12: u64, header("x-h13") h13: u64,
                 header("x-h14") h14: u64, header("x-h15") h15: u64,
             ) { path "h"; }
+
+            GET native_1(header("x-h00") h00: HeaderValue) { path "h"; }
+
+            GET native_4(
+                header("x-h00") h00: HeaderValue, header("x-h01") h01: HeaderValue,
+                header("x-h02") h02: HeaderValue, header("x-h03") h03: HeaderValue,
+            ) { path "h"; }
+
+            GET native_16(
+                header("x-h00") h00: HeaderValue, header("x-h01") h01: HeaderValue,
+                header("x-h02") h02: HeaderValue, header("x-h03") h03: HeaderValue,
+                header("x-h04") h04: HeaderValue, header("x-h05") h05: HeaderValue,
+                header("x-h06") h06: HeaderValue, header("x-h07") h07: HeaderValue,
+                header("x-h08") h08: HeaderValue, header("x-h09") h09: HeaderValue,
+                header("x-h10") h10: HeaderValue, header("x-h11") h11: HeaderValue,
+                header("x-h12") h12: HeaderValue, header("x-h13") h13: HeaderValue,
+                header("x-h14") h14: HeaderValue, header("x-h15") h15: HeaderValue,
+            ) { path "h"; }
+
+            GET literal_1() { path "h"; headers { "x-h00" = "v00-header-value"; } }
+
+            GET literal_4() {
+                path "h";
+                headers {
+                    "x-h00" = "v00-header-value"; "x-h01" = "v01-header-value";
+                    "x-h02" = "v02-header-value"; "x-h03" = "v03-header-value";
+                }
+            }
+
+            GET literal_16() {
+                path "h";
+                headers {
+                    "x-h00" = "v00-header-value"; "x-h01" = "v01-header-value";
+                    "x-h02" = "v02-header-value"; "x-h03" = "v03-header-value";
+                    "x-h04" = "v04-header-value"; "x-h05" = "v05-header-value";
+                    "x-h06" = "v06-header-value"; "x-h07" = "v07-header-value";
+                    "x-h08" = "v08-header-value"; "x-h09" = "v09-header-value";
+                    "x-h10" = "v10-header-value"; "x-h11" = "v11-header-value";
+                    "x-h12" = "v12-header-value"; "x-h13" = "v13-header-value";
+                    "x-h14" = "v14-header-value"; "x-h15" = "v15-header-value";
+                }
+            }
         }
     }
 }
