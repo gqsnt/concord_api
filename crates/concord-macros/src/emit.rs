@@ -19,9 +19,64 @@ pub fn emit(model: &Model, krate: TokenStream) -> TokenStream {
     };
     let mut out = TokenStream::new();
     for index in 0..model.owners.len() {
-        out.extend(emit_owner(model, index, &vis));
+        let cfgs = &model.owners[index].cfgs;
+        if cfgs.is_empty() {
+            out.extend(emit_owner(model, index, &vis));
+        } else {
+            // Every item of a `#[cfg]` owner carries its own and its ancestors' `cfg`s.
+            out.extend(with_attrs(emit_owner(model, index, &vis), cfgs));
+        }
     }
     out
+}
+
+/// Puts `attrs` in front of every top-level item in `items`.
+fn with_attrs(items: TokenStream, attrs: &[syn::Attribute]) -> TokenStream {
+    let file: syn::File = syn::parse2(items).expect("generated items parse");
+    let mut out = TokenStream::new();
+    for item in file.items {
+        out.extend(quote!(#(#attrs)* #item));
+    }
+    out
+}
+
+/// For each value of `owner`: notes for its controls when it feeds a conditional `override`
+/// (its absence keeps what the chain inherits).
+fn override_notes(model: &Model, owner: usize) -> Vec<Vec<String>> {
+    use crate::syntax::Op;
+    let mut notes = vec![Vec::new(); model.owners[owner].values.len()];
+    for o in &model.owners {
+        for (family, list) in [(Family::Query, &o.query), (Family::Header, &o.headers)] {
+            for c in list.iter().filter(|c| c.op == Op::Override) {
+                let reads: Vec<ValueRef> = match &c.source {
+                    Some(Source::Ref { value, .. }) => vec![*value],
+                    Some(Source::Template { pieces }) => pieces
+                        .iter()
+                        .filter_map(|p| match p {
+                            Piece::Hole(r) => Some(*r),
+                            Piece::Lit(_) => None,
+                        })
+                        .collect(),
+                    None => Vec::new(),
+                };
+                let what = match family {
+                    Family::Query => "query parameter",
+                    Family::Header => "header",
+                };
+                for r in reads.into_iter().filter(|r| r.owner == owner) {
+                    if model.value(r).optional {
+                        notes[r.index].push(format!(
+                            " When `{}` is absent, the inherited `{}` {what} is sent unchanged (`override ... else inherit` in `{}`).",
+                            plain(&model.value(r).name),
+                            c.key,
+                            o.dotted
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    notes
 }
 
 thread_local! {
@@ -138,10 +193,12 @@ fn controls(
     body: Option<&Body>,
     target: &TokenStream,
     owner: &str,
+    notes: &[Vec<String>],
 ) -> TokenStream {
     let k = krate();
     let mut out = TokenStream::new();
-    for value in values {
+    for (value, notes) in values.iter().zip(notes) {
+        let notes: Vec<LitStr> = notes.iter().map(|n| lit(n)).collect();
         let name = &value.name;
         let ty = &value.ty;
         let docs = &value.docs;
@@ -165,6 +222,7 @@ fn controls(
             #[doc = ""]
             #[doc = #set_doc]
             #[doc = #initially]
+            #(#[doc = #notes])*
             #[inline] pub fn #set(mut self, value: impl #k::IntoValue<#ty>) -> Self {
                 #target.#name = #assign;
                 self
@@ -186,6 +244,7 @@ fn controls(
                 #[doc = ""]
                 #[doc = #maybe_doc]
                 #[doc = #initially]
+                #(#[doc = #notes])*
                 #[inline] pub fn #maybe(mut self, value: ::core::option::Option<#ty>) -> Self {
                     #target.#name = value;
                     self
@@ -342,6 +401,7 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
                 None,
                 &quote!(::std::sync::Arc::make_mut(&mut self.__s)),
                 "the client",
+                &override_notes(model, index),
             );
             let debug = debug_fields(&owner.values, &quote!(__s));
             let required: Vec<&Value> = owner.values.iter().filter(|v| v.is_positional()).collect();
@@ -449,6 +509,7 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
                 None,
                 &quote!(::std::sync::Arc::make_mut(&mut self.__s)),
                 "this scope",
+                &override_notes(model, index),
             );
             let debug = debug_fields(&owner.values, &quote!(__s));
             quote! {
@@ -485,7 +546,13 @@ fn emit_owner(model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream
             body,
         } => {
             let parent_ty = &model.owners[owner.parent.unwrap()].type_name;
-            let controls = controls(&owner.values, body.as_ref(), &quote!(self), "this request");
+            let controls = controls(
+                &owner.values,
+                body.as_ref(),
+                &quote!(self),
+                "this request",
+                &override_notes(model, index),
+            );
             let mut debug = debug_fields(&owner.values, &quote!(self));
             let body_field = body.as_ref().map(|b| {
                 let name = &b.name;
@@ -612,11 +679,15 @@ fn navigation(model: &Model, index: usize) -> TokenStream {
         let (default_fns, inits) = value_inits(&c.values);
         let scope_line = lit(&format!(" Enters scope `{}`.", c.dotted));
         let args = argument_docs(&c.values, body);
+        // `#[cfg]` and `#[deprecated]` of a child apply to its navigation method.
+        let nav_attrs: Vec<&syn::Attribute> =
+            c.own_cfgs.iter().chain(c.deprecated.iter()).collect();
         match &c.kind {
             Kind::Scope => out.extend(quote! {
                 #(#docs)*
                 #[doc = #scope_line]
                 #args
+                #(#nav_attrs)*
                 #[inline] #[allow(clippy::too_many_arguments)] pub fn #name(&self, #params) -> #cty {
                     #default_fns
                     #cty {
@@ -647,6 +718,7 @@ fn navigation(model: &Model, index: usize) -> TokenStream {
                     #sep
                     #[doc = #line]
                     #args
+                    #(#nav_attrs)*
                     #[inline] #[allow(clippy::too_many_arguments)] pub fn #name(&self, #params) -> #cty {
                         #default_fns
                         #cty {

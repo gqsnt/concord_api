@@ -100,12 +100,19 @@
 //!
 //! ```text
 //! query {
-//!     "k" = v;            // introduce (error if an enclosing owner already sets "k")
-//!     append "k" = v;     // add occurrences
-//!     override "k" = v;   // replace inherited occurrences when v is present; keep them when absent
-//!     remove "k";         // drop inherited occurrences
+//!     "k" = v;                       // introduce (error if an enclosing owner already sets "k")
+//!     append "k" = v;                // add occurrences after the inherited ones
+//!     override "k" = v;              // replace the inherited occurrences (v always present)
+//!     override "k" = v else inherit; // v optional: replace when present, keep when absent
+//!     remove "k";                    // drop the inherited occurrences
 //! }
 //! ```
+//!
+//! Exact replacement — absent means absent — is `remove "k"; "k" = v;` (`remove` acts first, so
+//! `v` may also be a direct placement such as `query k?: String`). For a per-call choice between
+//! inheriting, omitting and replacing, declare `k?: Option<T>` and write
+//! `override "k" = each k else inherit;`: `maybe_k(None)` inherits, `set_k(None)` omits,
+//! `set_k(Some(v))` replaces. A reintroduced key keeps its original position in the query.
 //!
 //! All of this is decided at compile time; generated code only checks whether optional values are
 //! present, and a replaced or removed value is never formatted.

@@ -68,11 +68,11 @@ concord::api! {
 
                 GET products(version?: String) -> Vec<Product> via Json {
                     path "products";
-                    headers { override "x-api-version" = version; }
+                    headers { override "x-api-version" = version else inherit; }
                 }
                 GET product(id: String, version?: String) -> Product via Json {
                     path "products/{id}";
-                    headers { override "x-api-version" = version; }
+                    headers { override "x-api-version" = version else inherit; }
                 }
             }
         }

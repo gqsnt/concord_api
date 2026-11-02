@@ -46,6 +46,11 @@ pub struct Body {
 pub struct Owner {
     pub kind: Kind,
     pub docs: Vec<Attribute>,
+    /// PROTO(D14): own and inherited `#[cfg]`s (applied to every generated item of the owner).
+    pub cfgs: Vec<Attribute>,
+    /// PROTO(D14): own `#[cfg]`s (applied to the parent's navigation method).
+    pub own_cfgs: Vec<Attribute>,
+    pub deprecated: Option<Attribute>,
     pub name: Ident,
     pub type_name: Ident,
     pub state_name: Ident,
@@ -139,6 +144,8 @@ pub struct Contrib {
     pub sensitive: bool,
     /// Every value it reads is always present.
     pub total: bool,
+    /// `override ... else inherit`: absence keeps the inherited occurrences.
+    pub else_inherit: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -649,6 +656,7 @@ impl Model {
                     span: key_span,
                     sensitive: v.sensitive,
                     total: !v.optional,
+                    else_inherit: false,
                     source: Some(Source::Ref { value, each }),
                 };
                 self.push_contrib(at, family, contrib);
@@ -726,6 +734,13 @@ impl Model {
                 } else {
                     entry.op_span
                 };
+                // (A missing `else inherit` is reported during composition, after the target check.)
+                if entry.else_inherit && total {
+                    errors.push(syn::Error::new(
+                        op_span,
+                        "`else inherit` never applies: this source is always present",
+                    ));
+                }
                 let contrib = Contrib {
                     op: entry.op,
                     key,
@@ -733,6 +748,7 @@ impl Model {
                     source,
                     sensitive,
                     total,
+                    else_inherit: entry.else_inherit,
                 };
                 self.push_contrib(at, family, contrib);
             }
@@ -947,6 +963,8 @@ impl Model {
             slot: Slot,
             live: bool,
             last_writer: String,
+            /// PROTO(D04): the owner whose `remove` ended the key's ownership, if any.
+            removed_by: Option<String>,
             /// Every contribution applied to this key on the chain, surviving or not.
             history: Vec<ContribId>,
         }
@@ -962,7 +980,14 @@ impl Model {
                 Family::Query => &self.owners[owner].query,
                 Family::Header => &self.owners[owner].headers,
             };
-            for (index, c) in contribs.iter().enumerate() {
+            // PROTO(D04): an owner's `remove` statements act on what it inherits, before its own
+            // contributions (direct placements and block entries), so `remove "k"` + a direct
+            // placement of `k` is an exact replacement.
+            let order = (0..contribs.len())
+                .filter(|&i| contribs[i].op == Op::Remove)
+                .chain((0..contribs.len()).filter(|&i| contribs[i].op != Op::Remove));
+            for index in order {
+                let c = &contribs[index];
                 let id = ContribId {
                     owner,
                     family,
@@ -977,8 +1002,8 @@ impl Model {
                             errors.push(syn::Error::new(
                                 c.span,
                                 format!(
-                                    "{noun} `{}` is already set by `{}`; use `override`, `append` or `remove` to change an inherited {noun}",
-                                    c.key, states[p].last_writer
+                                    "{noun} `{}` is already set by `{}`; use `override` or `append` to change an inherited {noun}, or add `remove \"{}\";` to this owner's block to replace it exactly",
+                                    c.key, states[p].last_writer, c.key
                                 ),
                             ));
                         }
@@ -992,6 +1017,7 @@ impl Model {
                         s.slot.sensitive |= c.sensitive;
                         s.live = true;
                         s.last_writer = writer;
+                        s.removed_by = None;
                         s.history.push(id);
                     }
                     (Op::Introduce | Op::Append, None) => {
@@ -1004,6 +1030,7 @@ impl Model {
                             },
                             live: true,
                             last_writer: writer,
+                            removed_by: None,
                             history: vec![id],
                         })
                     }
@@ -1015,9 +1042,20 @@ impl Model {
                         if c.op == Op::Remove {
                             s.slot.items.clear();
                             s.live = false;
+                            s.removed_by = Some(self.owners[owner].dotted.clone());
                         } else if c.total {
                             s.slot.items = vec![Item::Emit(id)];
                         } else {
+                            // An `override` whose source can be absent says what absence means.
+                            if report && !c.else_inherit {
+                                let k = &c.key;
+                                errors.push(syn::Error::new(
+                                    c.span,
+                                    format!(
+                                        "this `override` reads an optional value, so it can be absent; say what absence means: `override \"{k}\" = ... else inherit;` keeps the inherited value, `remove \"{k}\"; \"{k}\" = ...;` sends nothing"
+                                    ),
+                                ));
+                            }
                             let fallback = std::mem::take(&mut s.slot.items);
                             s.slot.items = vec![Item::Override { src: id, fallback }];
                         }
@@ -1029,13 +1067,18 @@ impl Model {
                             } else {
                                 "override"
                             };
-                            errors.push(syn::Error::new(
-                                c.span,
-                                format!(
+                            let removed = pos.and_then(|p| states[p].removed_by.clone());
+                            let msg = match removed {
+                                Some(by) => format!(
+                                    "cannot {verb} {noun} `{}`: `{by}` removes it; introduce it again with `\"{}\" = ...`",
+                                    c.key, c.key
+                                ),
+                                None => format!(
                                     "cannot {verb} {noun} `{}`: no enclosing owner sets it",
                                     c.key
                                 ),
-                            ));
+                            };
+                            errors.push(syn::Error::new(c.span, msg));
                         }
                     }
                 }
@@ -1382,9 +1425,14 @@ fn flatten(
             usage: None,
         });
     }
+    let mut cfgs: Vec<Attribute> = parent.map(|p| out[p.0].cfgs.clone()).unwrap_or_default();
+    cfgs.extend(owner.cfgs.iter().cloned());
     out.push(Owner {
         kind,
         docs: owner.docs,
+        cfgs,
+        own_cfgs: owner.cfgs,
+        deprecated: owner.deprecated,
         type_name: Ident::new(&type_name, span),
         state_name: format_ident!("__Concord{}State", type_name, span = span),
         name: owner.name,

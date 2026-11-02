@@ -1,0 +1,5 @@
+error: this `override` reads an optional value, so it can be absent; say what absence means: `override "locale" = ... else inherit;` keeps the inherited value, `remove "locale"; "locale" = ...;` sends nothing
+ --> tests/ui/override_needs_else_inherit.rs:5:50
+  |
+5 |         GET page(page_locale?: String) { query { override "locale" = page_locale; } }
+  |                                                  ^^^^^^^^

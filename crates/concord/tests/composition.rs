@@ -245,10 +245,10 @@ concord::api! {
         GET q2() { query { override "k" = "b"; } }
 
         scope opt(over?: String) {
-            query { override "k" = over; }
+            query { override "k" = over else inherit; }
             // Q5: nested optional overrides fall back outward.
             scope opt2(over2?: String) {
-                query { override "k" = over2; }
+                query { override "k" = over2 else inherit; }
                 GET q5();
             }
             // Q4: an absent optional override keeps the inherited occurrences.
@@ -822,4 +822,60 @@ fn header_value_policy() {
     assert_eq!(error.kind(), concord::ErrorKind::Build);
     let text = error.to_string();
     assert!(text.contains("x-note") && !text.contains("caf"), "{text}");
+}
+
+concord::api! {
+    /// D04: per-call inherit / replace / omit, exact replacement through a direct placement, and
+    /// the slot position of a reintroduced key.
+    pub client Locale(query locale: String = "en") {
+        base "http://locale.invalid";
+        query { "v" = "1"; }
+
+        GET inherit_or_set(page_locale?: String) {
+            query { override "locale" = page_locale else inherit; }
+        }
+        GET exact(query locale?: String) { query { remove "locale"; } }
+        GET tri(locale?: Option<String>) { query { override "locale" = each locale else inherit; } }
+        GET reintroduced() { query { remove "locale"; "locale" = "nl"; } }
+    }
+}
+
+/// D04 truth table: `else inherit` keeps the inherited value when the source is absent; `remove`
+/// plus a direct placement is exact replacement (absence sends nothing); `x?: Option<T>` with
+/// `each ... else inherit` gives the caller all three choices; a reintroduced key keeps the slot
+/// position of its first appearance.
+#[test]
+fn d04_override_truth_table() {
+    let api = Locale::new(http());
+    assert_eq!(q(&api.inherit_or_set().prepare().unwrap()), "locale=en&v=1");
+    let p = api
+        .inherit_or_set()
+        .set_page_locale("de")
+        .prepare()
+        .unwrap();
+    assert_eq!(q(&p), "locale=de&v=1");
+
+    assert_eq!(q(&api.exact().prepare().unwrap()), "v=1");
+    assert_eq!(
+        q(&api.exact().set_locale("de").prepare().unwrap()),
+        "locale=de&v=1"
+    );
+
+    assert_eq!(q(&api.tri().prepare().unwrap()), "locale=en&v=1");
+    let p = api
+        .tri()
+        .set_locale(Some("fr".to_owned()))
+        .prepare()
+        .unwrap();
+    assert_eq!(q(&p), "locale=fr&v=1");
+    assert_eq!(q(&api.tri().set_locale(None).prepare().unwrap()), "v=1");
+    let p = api
+        .tri()
+        .set_locale(None)
+        .maybe_locale(None)
+        .prepare()
+        .unwrap();
+    assert_eq!(q(&p), "locale=en&v=1");
+
+    assert_eq!(q(&api.reintroduced().prepare().unwrap()), "locale=nl&v=1");
 }

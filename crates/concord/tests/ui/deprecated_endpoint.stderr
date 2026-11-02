@@ -1,0 +1,11 @@
+error: use of deprecated method `Api::list`: use `items`
+  --> tests/ui/deprecated_endpoint.rs:14:17
+   |
+14 |     let _ = api.list();
+   |                 ^^^^
+   |
+note: the lint level is defined here
+  --> tests/ui/deprecated_endpoint.rs:2:9
+   |
+ 2 | #![deny(deprecated)]
+   |         ^^^^^^^^^^

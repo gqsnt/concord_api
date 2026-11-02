@@ -1,4 +1,4 @@
-error: query key `page` is already set by `Api`; use `override`, `append` or `remove` to change an inherited query key
+error: query key `page` is already set by `Api`; use `override` or `append` to change an inherited query key, or add `remove "page";` to this owner's block to replace it exactly
  --> tests/ui/duplicate_inherited_key.rs:6:43
   |
 6 |             GET list(page: u32) { query { "page" = page; } }

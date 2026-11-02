@@ -7,8 +7,9 @@ executable evidence is listed in `TEST_MATRIX.md`.
 
 ```text
 api!       := doc* vis "client" Name params? "{" "base" STRING ";" stmt* child* "}"
-child      := doc* "scope" name params? "{" stmt* child* "}"
-            | doc* METHOD name params ("->" payload)? (";" | "{" stmt* "}")
+child      := cattr* "scope" name params? "{" stmt* child* "}"
+            | cattr* METHOD name params ("->" payload)? (";" | "{" stmt* "}")
+cattr      := doc | "#[cfg(..)]" | "#[deprecated..]"
 METHOD     := GET | POST | PUT | PATCH | DELETE | HEAD | OPTIONS
 params     := "(" (param ("," param)* ","?)? ")"
 param      := attr* placement? name "?"? ":" Type ("=" Expr)?
@@ -18,7 +19,7 @@ placement  := "query" ("(" STRING ")")? "each"? | "header" "(" STRING ")" "each"
 attr       := doc | "#[sensitive]"
 stmt       := "path" STRING ";" | "subdomain" STRING ";"
             | "query" "{" entry* "}" | "headers" "{" entry* "}"
-entry      := op? STRING "=" rhs ";" | "remove" STRING ";"
+entry      := op? STRING "=" rhs ("else" "inherit")? ";" | "remove" STRING ";"
 op         := "append" | "override"
 rhs        := STRING                      (template)
             | "each"? reference
@@ -27,6 +28,11 @@ reference  := name | owner "." name       (owner = `client` or an enclosing scop
 
 - One `api!` declares exactly one client. Each owner (client, scope, endpoint) declares each
   statement at most once, and statements precede child declarations.
+- Attributes: documentation everywhere; `#[sensitive]` on values; on scopes and endpoints also
+  `#[cfg(..)]` (applied to every generated item of that owner and its descendants, and to the
+  parent's navigation method) and `#[deprecated..]` (applied to the navigation method, so the
+  warning appears where callers navigate). Other attributes are rejected. Generated names are
+  still checked as if every `cfg` were enabled: two cfg-exclusive endpoints cannot share a name.
 - Templates (`path`, `subdomain`, quoted query/header values) contain literal text and holes
   `{name}` / `{owner.name}`; `{{` and `}}` are literal braces (with or without holes).
 - No meaning is derived from Rust type spellings. `Option<T>` and `Vec<T>` are ordinary types.
@@ -135,15 +141,25 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
 |---|---|---|
 | `"k" = v`, direct placement | must **not** exist | becomes live with `v` |
 | `append "k" = v` | — | `v` is added after the existing occurrences; slot becomes live |
-| `override "k" = v` | must exist | if `v` is present: the slot holds exactly `v`; if `v` is an absent optional: unchanged |
+| `override "k" = v` (`v` always present) | must exist | the slot holds exactly `v` |
+| `override "k" = v else inherit` (`v` can be absent) | must exist | if `v` is present: the slot holds exactly `v`; if absent: unchanged |
 | `remove "k"` | must exist | emptied; no longer live, so a later `"k" = v` is legal |
 
-- Exact replacement ("absent means absent") is written `remove "k"; "k" = v`.
+- An `override` whose source reads an optional value must end with `else inherit`, and only such
+  an override may: the declaration states what absence means. (An error names both choices.)
+- Exact replacement ("absent means absent") is written `remove "k"; "k" = v` — `v` may be a
+  direct placement of the same owner (`GET g(query k?: String) { query { remove "k"; } }`).
+  Within one owner, `remove` statements act first, on what the owner inherits; the owner's direct
+  placements and other statements follow.
+- A removed and later reintroduced key keeps the slot position of its first appearance.
 - A source is **present** when every optional value it reads is present. A present `each` source
   with zero items is present and emits nothing — so it still replaces under `override`.
 - `each` iterates any `IntoIterator` (`&T: IntoIterator`, items `Display`). On a required
   `Option<T>` that means zero or one occurrence, so `override "k" = each opt` with `None` clears
-  `k` — chosen explicitly by writing `each`; Concord does not inspect the type.
+  `k` — chosen explicitly by writing `each`; Concord does not inspect the type. Declared as
+  `opt?: Option<T>` with `override "k" = each opt else inherit`, the caller gets all three
+  choices: inherit (`maybe_opt(None)`, the default), omit (`set_opt(None)`), replace
+  (`set_opt(Some(v))`).
 - **Order on the wire.** Query: slots in first-appearance order, and within a slot the occurrences
   in contribution order — the query string is exactly that sequence. Headers: the values of one
   name are sent in contribution order. The order *between different header names* is not part of

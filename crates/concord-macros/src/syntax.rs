@@ -20,6 +20,7 @@ mod kw {
     syn::custom_keyword!(append);
     syn::custom_keyword!(remove);
     syn::custom_keyword!(via);
+    syn::custom_keyword!(inherit);
 }
 
 /// HTTP methods accepted as endpoint keywords.
@@ -69,6 +70,9 @@ fn parse_payload(input: ParseStream<'_>, what: &str) -> syn::Result<Payload> {
 pub struct Owner {
     pub kind: OwnerKind,
     pub docs: Vec<Attribute>,
+    /// PROTO(D14): `#[cfg(..)]` and `#[deprecated..]` on scopes and endpoints.
+    pub cfgs: Vec<Attribute>,
+    pub deprecated: Option<Attribute>,
     pub name: Ident,
     pub params: Vec<Param>,
     pub stmts: Stmts,
@@ -128,6 +132,8 @@ pub struct Entry {
     pub op_span: Span,
     pub key: LitStr,
     pub value: Option<Rhs>,
+    /// PROTO(D04 Alt-Y): `override "k" = v else inherit;` (required when `v` can be absent).
+    pub else_inherit: bool,
 }
 
 pub enum Rhs {
@@ -177,6 +183,8 @@ impl Parse for Api {
             client: Owner {
                 kind: OwnerKind::Client { vis, base },
                 docs,
+                cfgs: Vec::new(),
+                deprecated: None,
                 name,
                 params,
                 stmts,
@@ -305,12 +313,26 @@ fn parse_entries(input: ParseStream<'_>) -> syn::Result<Vec<Entry>> {
             content.parse::<Token![=]>()?;
             Some(parse_rhs(&content)?)
         };
+        let else_inherit = if content.peek(Token![else]) {
+            let e: Token![else] = content.parse()?;
+            content.parse::<kw::inherit>()?;
+            if op != Op::Override {
+                return Err(syn::Error::new(
+                    e.span,
+                    "`else inherit` only follows `override`",
+                ));
+            }
+            true
+        } else {
+            false
+        };
         content.parse::<Token![;]>()?;
         entries.push(Entry {
             op,
             op_span,
             key,
             value,
+            else_inherit,
         });
     }
     Ok(entries)
@@ -360,9 +382,30 @@ impl ParseAnyIdent for Ident {
     }
 }
 
+/// PROTO(D14): children accept docs, `#[cfg(..)]` (whole subtree) and `#[deprecated..]`
+/// (navigation method only); every other attribute is still rejected.
+fn child_attrs(
+    attrs: Vec<Attribute>,
+) -> syn::Result<(Vec<Attribute>, Vec<Attribute>, Option<Attribute>)> {
+    let (mut docs, mut cfgs, mut deprecated) = (Vec::new(), Vec::new(), None);
+    for attr in attrs {
+        if attr.path().is_ident("cfg") {
+            cfgs.push(attr);
+        } else if attr.path().is_ident("deprecated") {
+            if deprecated.is_some() {
+                return Err(syn::Error::new(attr.span(), "duplicate `#[deprecated]`"));
+            }
+            deprecated = Some(attr);
+        } else {
+            docs.extend(docs_only(vec![attr])?);
+        }
+    }
+    Ok((docs, cfgs, deprecated))
+}
+
 fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
     let attrs = input.call(Attribute::parse_outer)?;
-    let docs = docs_only(attrs)?;
+    let (docs, cfgs, deprecated) = child_attrs(attrs)?;
     if input.peek(kw::scope) {
         input.parse::<kw::scope>()?;
         let name: Ident = input.parse()?;
@@ -377,6 +420,8 @@ fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
         return Ok(Owner {
             kind: OwnerKind::Scope,
             docs,
+            cfgs,
+            deprecated,
             name,
             params,
             stmts,
@@ -428,6 +473,8 @@ fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
             body,
         },
         docs,
+        cfgs,
+        deprecated,
         name,
         params,
         stmts,

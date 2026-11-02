@@ -25,7 +25,7 @@ There is no converter; declarations are short enough to rewrite by hand.
 | `values { ... }` block | client parameters: `client Name(values) { ... }`. |
 | `subdomain [region, "api"]` | `subdomain "{region}.api"` (a template). |
 | `concat [...]`, `RequestAtom`, `via Adapter` | templates (`"Bearer {token}"`) and `Display` (use a newtype for a custom spelling). |
-| `replace "k" = v`, `when_present "k" = v` | `override "k" = v` (absent keeps the inherited value); exact replacement is `remove "k"; "k" = v;`. |
+| `replace "k" = v`, `when_present "k" = v` | `override "k" = v else inherit` (absent keeps the inherited value); exact replacement is `remove "k"; "k" = v;`. |
 | `query off`, `path replace/off`, `subdomain replace/off` | not available; restructure scopes. |
 | `#[default] x: T` | `x: T = Default::default()`. Initializers may be any expression. |
 | Authorization/Cookie/Accept/Content-Type forbidden as public headers | ordinary headers (a declared `Content-Type` wins over the body's). |
