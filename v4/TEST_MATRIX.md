@@ -125,5 +125,5 @@ or marked *(refined)*.
 | G2 | required | every current-syntax Rust block in README, `docs/*.md` and `examples/native/README.md` is compiled (doctest) or a verbatim, checked excerpt of compiled code. **Exempt:** blocks marked `rust,ignore` and labelled as old (V3/alpha) syntax that does not compile, in `docs/MIGRATION.md` — neither compiled nor checked (the final re-review showed an invalid edit to one is not detected) | `examples/quickstart/tests/doc_excerpts.rs`, quickstart doctests | PASS (with the stated exemption) |
 | M1 | evidence | targeted mutations are killed by these tests | `refinement/evidence/m4_mutations.md` (9/9), Codex final review (5/5) | recorded |
 
-Windows and macOS: **NOT_RUN** for the refined code (no such environment was available; the
-CI workflow has a Windows job but was not executed for these commits).
+Windows: **PASS** — GitHub Actions run 41379941540 (`x86_64-pc-windows-msvc`, rustc 1.97.1) on
+`a40788c`, code-identical to `b0fe26e`; see `refinement/evidence/ci_41379941540.md`. macOS: **NOT_RUN**.

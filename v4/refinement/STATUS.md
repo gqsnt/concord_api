@@ -35,7 +35,7 @@ historical.
 | M6 Docs/fresh use | PASS | docs merged `e43c9ed`; fresh-use trials `evidence/tracks/fresh_{control,candidate}.md`; fixes `0fe60e1` |
 | M7 Independent acceptance | PASS on Linux: final review (`0fe60e1`) R1–R3 fixed; focused re-review (`b0fe26e`) R1/R3 resolved; R2 check (`bbbeca1`) resolved; no-change confirmation CONFIRMED (`6fed3aa`); no review pending | `REVIEW_TRIAGE.md`, `reviews/codex/` |
 | Verification | PASS on Linux x86_64 (1.97.1, MSRV 1.85.1) at code revision `b0fe26e` | `evidence/verify_b0fe26e.txt` |
-| Platforms | Windows BLOCKED (no host/VM/wine; CI needs a push, not authorized); macOS NOT_RUN | |
+| Platforms | Linux PASS (local + CI); Windows PASS (CI run 41379941540 on `a40788c`, code-identical to `b0fe26e`); macOS NOT_RUN | `evidence/ci_41379941540.md` |
 
 ## Leads (handoff `guides/02_BASELINE.md`)
 
@@ -65,8 +65,8 @@ disposable inputs to the archived evidence and are kept for reproduction.
 
 ## Next action
 
-Owner decisions only: push a branch to run the CI Windows/MSRV jobs on the refined code; decide
-whether to merge into `concord-v4` / `main`. See `FINAL.md`.
+Owner decision only: whether to merge `concord-v4-refine` (pushed, CI green) into `concord-v4` /
+`main`. See `FINAL.md`.
 
 ## Resume instructions
 

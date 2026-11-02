@@ -1,7 +1,7 @@
 # Concord V4 refinement — final report
 
-**The refinement is implemented and verified on Linux x86_64 at code revision
-`b0fe26e4ec3d0c2ac7e1ebb4216d05a38a4aff4e`** (branch `concord-v4-refine`, worktree
+**The refinement is implemented and verified on Linux x86_64 and Windows (x86_64-pc-windows-msvc)
+at code revision `b0fe26e4ec3d0c2ac7e1ebb4216d05a38a4aff4e`** (branch `concord-v4-refine`, worktree
 `/home/canarit/projects/concord_api_v4`). Fresh locked verification (`scripts/verify.sh --msrv`:
 fmt, clippy `-D warnings`, four test configurations, three strict rustdoc configurations, MSRV
 1.85.1 runtime and example suites) passed on `b0fe26e` for the coordinator and, independently, for
@@ -9,9 +9,10 @@ the Codex focused re-review; the Codex final review ran the same gates, also pas
 predecessor `0fe60e1`. The independent reviews found no blocker or high-severity defect. Their last
 open point, the claim-to-test matrix (R2), was corrected in record-only commits and confirmed
 RESOLVED by a focused read-only Codex check of `bbbeca1`; the record wording that check flagged is
-corrected in the commit that follows it (all recorded in `REVIEW_TRIAGE.md`). **Windows and macOS were not run** for any refined commit: there is no Windows
-host, VM or wine here, and CI needs a push, which was not authorized. Nothing was pushed or
-published.
+corrected in the commit that follows it (all recorded in `REVIEW_TRIAGE.md`). **Windows** was verified afterwards by the repository's GitHub Actions CI
+([run 41379941540](evidence/ci_41379941540.md)): on the owner's authorization the branch was pushed,
+and the Linux, Windows and MSRV jobs all passed on `a40788c`, which is code-identical to `b0fe26e`.
+**macOS was not run.** Nothing was published, and no tag or other branch was pushed.
 
 ## Identity
 
@@ -102,7 +103,7 @@ Other user-visible changes:
 | Linux x86_64, rustc 1.97.1 | PASS | `evidence/verify_b0fe26e.txt`; Codex re-review `reviews/codex/rereview_b0fe26e_evidence/verify.log` |
 | MSRV 1.85.1 | PASS (runtime and example suites; UI snapshots pinned to 1.97.1) | same receipts |
 | Feature isolation | PASS | script feature steps; independent separate-manifest consumers in the Codex final review and re-review |
-| Windows | **BLOCKED / NOT_RUN** | no host, VM or wine; CI not executed (push not authorized) |
+| Windows (x86_64-pc-windows-msvc, rustc 1.97.1) | PASS (CI) | [CI run 41379941540](evidence/ci_41379941540.md) on `a40788c` (code-identical to `b0fe26e`): fmt, clippy, workspace + three feature sets (1,508 tests passed, 0 failed), strict rustdoc ×3 |
 | macOS | NOT_RUN | — |
 | Rendered rustdoc visual QA | BLOCKED | generated HTML text inspected; browser rendering failed in the reviewer sandbox |
 | Packaging | PASS (listings only) | `cargo package --list`: licenses, exact `=4.0.0-alpha.1` macro pin; nothing published. The `concord` package includes its test fixtures, including the self-signed test TLS key material: exclude before any publication |
@@ -184,7 +185,7 @@ The compiler names most of these edits. No second legacy parser was kept.
 | The conditional `Clone` relies on rustc accepting trivially-false bounds under a binder (1.85.1–1.101 checked) | accepted risk (rust-lang/rust#48214 moves toward accepting such bounds) |
 | Over-long header name diagnostic spans the whole invocation; rustc-origin trait-error wording varies by compiler | diagnostic limit |
 | Deep scope chains (> ~48) and ~1,000 nested overrides hit rustc limits; a declaration with ~24,575 distinct header names reaches a hyper-util panic at send | resource boundary, documented |
-| Windows, macOS, HTTP/2, TLS variants, allocation counts, rust-analyzer, LTO, rendered docs QA | unmeasured / not run |
+| macOS, HTTP/2, TLS variants, allocation counts, rust-analyzer, LTO, rendered docs QA; Windows *performance* | unmeasured / not run |
 
 No known defect is open. Remaining findings were record wording, corrected as listed in `REVIEW_TRIAGE.md`.
 
@@ -198,5 +199,5 @@ python3 -I benches/scale/gen.py suite OUT && benches/scale/ab.sh RESULTS OUT ...
 ```
 
 Start with `README.md` and `docs/QUICKSTART.md`, and for maintenance `docs/MAINTAINERS.md`. Live status
-is in `v4/refinement/STATUS.md`. The next owner-only steps are pushing a branch so the CI Windows and
-MSRV jobs run on the refined code, then deciding whether to merge into `concord-v4` or `main`.
+is in `v4/refinement/STATUS.md`. The branch `concord-v4-refine` is pushed (CI green); the remaining
+owner decision is whether to merge it into `concord-v4` or `main`.
