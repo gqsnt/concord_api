@@ -1420,6 +1420,15 @@ fn endpoint_clone(ty: &Ident, values: &[Value], body: Option<&Body>) -> TokenStr
 fn owner_docs(model: &Model, index: usize) -> TokenStream {
     let owner = &model.owners[index];
     let defaults = defaults_line(model, index).map(|l| quote!(#[doc = ""] #[doc = #l]));
+    // An endpoint's own type (where `prepare` and `send` live) states the request it builds, as
+    // its navigation method does: method, URL, body format and media type, output format, origins.
+    let defaults = match &owner.kind {
+        Kind::Endpoint { method, .. } => {
+            let summary = request_summary(model, index, method);
+            quote!(#defaults #summary)
+        }
+        _ => quote!(#defaults),
+    };
     if !owner.docs.is_empty() {
         let docs = &owner.docs;
         return quote!(#(#docs)* #defaults);

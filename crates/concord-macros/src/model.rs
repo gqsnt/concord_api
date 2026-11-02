@@ -1956,24 +1956,28 @@ fn flatten(
             let ancestor = parent.map(|p| p.0);
             // A statement with nothing to apply to is an error on an endpoint; `format` needs one
             // of its two directions.
-            let paired = owner.stmts.request.as_ref().is_some_and(|d| d.both);
-            if paired && body.is_none() && output.is_none() {
-                errors.push(syn::Error::new(
-                    owner.stmts.request.as_ref().unwrap().format.span(),
-                    "`format` statement has neither a body nor a typed output (`-> T`) to apply to",
-                ));
-            } else if !paired {
-                if body.is_none() && owner.stmts.request.is_some() {
-                    errors.push(syn::Error::new(
-                        owner.stmts.request.as_ref().unwrap().format.span(),
-                        "`request` statement has no body to apply to",
-                    ));
+            match (&owner.stmts.request, &owner.stmts.response) {
+                (Some(d), _) if d.both => {
+                    if body.is_none() && output.is_none() {
+                        errors.push(syn::Error::new(
+                            d.format.span(),
+                            "`format` statement has neither a body nor a typed output (`-> T`) to apply to",
+                        ));
+                    }
                 }
-                if output.is_none() && owner.stmts.response.is_some() {
-                    errors.push(syn::Error::new(
-                        owner.stmts.response.as_ref().unwrap().format.span(),
-                        "`response` statement has no typed output (`-> T`) to apply to",
-                    ));
+                (request, response) => {
+                    if let (None, Some(d)) = (&body, request) {
+                        errors.push(syn::Error::new(
+                            d.format.span(),
+                            "`request` statement has no body to apply to",
+                        ));
+                    }
+                    if let (None, Some(d)) = (&output, response) {
+                        errors.push(syn::Error::new(
+                            d.format.span(),
+                            "`response` statement has no typed output (`-> T`) to apply to",
+                        ));
+                    }
                 }
             }
             Kind::Endpoint {

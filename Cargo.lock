@@ -294,6 +294,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-example-riot"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "concord-example-shapes"
 version = "0.0.0"
 dependencies = [
