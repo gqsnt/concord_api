@@ -95,3 +95,16 @@ carried into the acceptance record.
 | Q4 | P3 | `FINAL.md` said F-04 was confirmed in the final review (it was carried into R2/R3) | FIXED: attribution corrected |
 
 These corrections touch only `v4/refinement/FINAL.md` and this file.
+
+## Codex no-change confirmation of `7b819cb` (static)
+
+- Reviewer: `gpt-6.1-sol`, `xhigh` (session `turn_context`), read-only. Report:
+  `confirm_7b819cb_report.md`. Personally executed (static): blob/mode/tree checks (all 223 files
+  outside `v4/` identical to `b0fe26e`), recomputation of all 114 hyperfine means, archive and
+  receipt comparisons. Q1–Q4 confirmed corrected; R2 remains resolved.
+
+| ID | Severity | Finding | Disposition |
+|---|---|---|---|
+| C1 | P2 | inline summary "1.4–3.6× slower / 25–33% faster" was partly computed against the alpha column | FIXED `cd3ea1b`: refined vs noinline recomputed — 1.43–2.29× (`use1000` 0.98×) and 12–25%; correction noted in `PERF.md` |
+| C2 | P3 | fresh-use summary said the control's frictions "did not recur" | FIXED `cd3ea1b`: improvements stated with the difficulties still reported (doubled-`Option`, IP base + subdomain) |
+| — | note | "three samples per row" applies to hyperfine only | FIXED `cd3ea1b` |
