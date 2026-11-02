@@ -1,0 +1,102 @@
+//! Typed client for the Atelier API (fresh-use trial of Concord).
+use concord::bytes::Bytes;
+use concord::reqwest::header::HeaderValue;
+use concord::{BodyError, Decode};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct Artwork {
+    pub id: u64,
+    pub title: String,
+    pub artist: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct NewArtwork {
+    pub title: String,
+    pub artist: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SearchQuery {
+    pub text: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct Login {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TokenResponse {
+    pub token: String,
+}
+
+/// RFC 9457 problem document.
+#[derive(Debug, Deserialize)]
+pub struct Problem {
+    pub title: String,
+    pub status: u16,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Row {
+    pub id: u64,
+    pub title: String,
+}
+
+/// Our own tiny CSV format: header line, then `id,title` rows.
+pub struct Csv;
+
+impl Decode<Vec<Row>> for Csv {
+    fn decode(body: Bytes) -> Result<Vec<Row>, BodyError> {
+        let text = std::str::from_utf8(&body)
+            .map_err(|e| BodyError::new("the CSV export is not UTF-8").with_source(e))?;
+        text.lines()
+            .skip(1)
+            .filter(|l| !l.is_empty())
+            .map(|line| {
+                let (id, title) = line
+                    .split_once(',')
+                    .ok_or_else(|| BodyError::new("a CSV row has no comma"))?;
+                let id = id
+                    .parse()
+                    .map_err(|e| BodyError::new("a CSV id is not a number").with_source(e))?;
+                Ok(Row { id, title: title.to_owned() })
+            })
+            .collect()
+    }
+}
+
+concord::api! {
+    /// The Atelier artwork API.
+    pub client Atelier(#[sensitive] token: String, header("accept") accept: HeaderValue) {
+        base "https://atelier.example.test/v3";
+        headers { "authorization" = "Bearer {token}"; }
+        request json;
+        response json;
+
+        GET list_artworks(query artist?: String, query page?: u32) -> Vec<Artwork> {
+            path "artworks";
+        }
+        POST create(body artwork: NewArtwork, header("x-signature") signature?: HeaderValue) -> Artwork {
+            path "artworks";
+        }
+
+        scope artwork(id: u64) {
+            path "artworks/{id}";
+
+            GET get() -> Artwork {}
+            DELETE delete(header("x-signature") signature: HeaderValue) {}
+            PATCH patch(json("application/merge-patch+json") patch: serde_json::Value) -> Artwork {}
+            GET notes() -> text String { path "notes"; }
+            PUT upload_image(bytes("image/png") png: Vec<u8>) { path "image"; }
+            GET image() -> bytes Vec<u8> { path "image"; }
+        }
+
+        POST search(body query?: SearchQuery) -> Vec<Artwork> { path "search"; }
+        POST login(form credentials: Login) -> TokenResponse { path "session"; }
+        GET export() -> Csv Vec<Row> { path "export"; }
+    }
+}

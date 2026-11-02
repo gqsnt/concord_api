@@ -1,4 +1,5 @@
-//! Typed HTTP API clients over [`reqwest`], generated from one declaration.
+//! Typed HTTP API clients over [`reqwest`](https://docs.rs/reqwest/0.13), generated from one
+//! declaration.
 //!
 //! One [`api!`] declaration describes an HTTP API as a tree — **client → scopes → endpoints** —
 //! and generates ordinary Rust types whose methods build native `reqwest::Request`s and decode
@@ -104,7 +105,7 @@
 //! | [`BodyError`] | an encoding or decoding failure with a content-free description |
 //! | [`IntoValue<T>`](IntoValue) | the closed set of conversions accepted by arguments and setters |
 //! | [`ToHeaderValue`] | how a placed value becomes a header value: native `HeaderValue`, text, integers, `bool`, or your own type |
-//! | [`reqwest`], [`bytes`] | re-exported dependencies |
+//! | `concord::reqwest`, `concord::bytes` | the re-exported [`reqwest`](https://docs.rs/reqwest/0.13) and [`bytes`](https://docs.rs/bytes/1) crates |
 //!
 //! # The declaration at a glance
 //!

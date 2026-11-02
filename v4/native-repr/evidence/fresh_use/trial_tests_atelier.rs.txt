@@ -1,0 +1,315 @@
+use atelier_client::*;
+use concord::reqwest::{self, header::HeaderValue};
+use concord::{Decode, ErrorKind, Json};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+
+const TOKEN: &str = "s3cret-token";
+
+fn accept() -> HeaderValue {
+    HeaderValue::from_static("application/json")
+}
+
+fn client() -> Atelier {
+    Atelier::new(
+        reqwest::Client::new(),
+        AtelierConfig { token: TOKEN.into(), accept: accept() },
+    )
+}
+
+fn signature() -> HeaderValue {
+    let mut v = HeaderValue::from_static("sig-abcdef");
+    v.set_sensitive(true);
+    v
+}
+
+#[derive(Debug, Clone)]
+struct Seen {
+    method: String,
+    target: String,
+    headers: Vec<(String, String)>,
+    body: Vec<u8>,
+}
+impl Seen {
+    fn header(&self, name: &str) -> Option<&str> {
+        self.headers.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+    }
+}
+
+/// One-request-per-connection loopback server with canned responses.
+async fn server() -> (String, Arc<Mutex<Vec<Seen>>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let log = seen.clone();
+    tokio::spawn(async move {
+        loop {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let log = log.clone();
+            tokio::spawn(async move {
+                let mut buf = Vec::new();
+                let mut tmp = [0u8; 4096];
+                let head_end = loop {
+                    let n = sock.read(&mut tmp).await.unwrap();
+                    if n == 0 { return; }
+                    buf.extend_from_slice(&tmp[..n]);
+                    if let Some(i) = buf.windows(4).position(|w| w == b"\r\n\r\n") { break i + 4; }
+                };
+                let head = String::from_utf8_lossy(&buf[..head_end]).to_string();
+                let mut lines = head.split("\r\n");
+                let mut first = lines.next().unwrap().split(' ');
+                let method = first.next().unwrap().to_owned();
+                let target = first.next().unwrap().to_owned();
+                let headers: Vec<(String, String)> = lines
+                    .filter_map(|l| l.split_once(": "))
+                    .map(|(k, v)| (k.to_ascii_lowercase(), v.to_owned()))
+                    .collect();
+                let len: usize = headers.iter().find(|(k, _)| k == "content-length")
+                    .map(|(_, v)| v.parse().unwrap()).unwrap_or(0);
+                while buf.len() < head_end + len {
+                    let n = sock.read(&mut tmp).await.unwrap();
+                    if n == 0 { break; }
+                    buf.extend_from_slice(&tmp[..n]);
+                }
+                let body = buf[head_end..head_end + len].to_vec();
+                let path = target.split('?').next().unwrap().to_owned();
+                let art = br#"{"id":7,"title":"Dawn","artist":"Ada"}"#.to_vec();
+                let (status, ctype, resp): (&str, &str, Vec<u8>) = match (method.as_str(), path.as_str()) {
+                    (_, "/v3/slow") => unreachable!(),
+                    ("GET", "/v3/artworks") => ("200 OK", "application/json", format!("[{}]", String::from_utf8(art).unwrap()).into_bytes()),
+                    ("GET", "/v3/artworks/404") => ("404 Not Found", "application/problem+json", br#"{"title":"no such artwork","status":404}"#.to_vec()),
+                    ("GET", "/v3/artworks/9") => {
+                        tokio::time::sleep(Duration::from_millis(1500)).await;
+                        ("200 OK", "application/json", art)
+                    }
+                    ("GET", "/v3/artworks/7") | ("POST", "/v3/artworks") | ("PATCH", "/v3/artworks/7") => ("200 OK", "application/json", art),
+                    ("DELETE", _) | ("PUT", _) => ("204 No Content", "", Vec::new()),
+                    ("GET", "/v3/artworks/7/notes") => ("200 OK", "text/plain", b"hand-painted, \"oil\"".to_vec()),
+                    ("GET", "/v3/artworks/7/image") => ("200 OK", "image/png", vec![0x89, b'P', b'N', b'G', 0, 255]),
+                    ("POST", "/v3/search") => ("200 OK", "application/json", b"[]".to_vec()),
+                    ("POST", "/v3/session") => ("200 OK", "application/json", br#"{"token":"new"}"#.to_vec()),
+                    ("GET", "/v3/export") => ("200 OK", "text/csv", b"id,title\n1,Dawn\n2,Dusk, late\n".to_vec()),
+                    _ => ("500 Internal Server Error", "text/plain", b"unexpected".to_vec()),
+                };
+                log.lock().unwrap().push(Seen { method, target, headers, body });
+                let mut out = format!("HTTP/1.1 {status}\r\nconnection: close\r\n");
+                if !ctype.is_empty() { out += &format!("content-type: {ctype}\r\n"); }
+                if !status.starts_with("204") { out += &format!("content-length: {}\r\n", resp.len()); }
+                out += "\r\n";
+                let mut bytes = out.into_bytes();
+                bytes.extend_from_slice(&resp);
+                let _ = sock.write_all(&bytes).await;
+                let _ = sock.shutdown().await;
+            });
+        }
+    });
+    (format!("http://{addr}/v3"), seen)
+}
+
+fn last(seen: &Arc<Mutex<Vec<Seen>>>) -> Seen {
+    seen.lock().unwrap().last().unwrap().clone()
+}
+
+// ---- T1
+#[test]
+fn t1_client_headers_and_debug() {
+    let api = client();
+    let p = api.artwork(7u64).get().prepare().unwrap();
+    let r = p.request();
+    assert_eq!(r.url().as_str(), "https://atelier.example.test/v3/artworks/7");
+    assert_eq!(r.headers()["authorization"], "Bearer s3cret-token");
+    assert!(r.headers()["authorization"].is_sensitive());
+    assert_eq!(r.headers()["accept"], "application/json");
+    assert!(!format!("{api:?}").contains(TOKEN));
+    assert!(!format!("{p:?}").contains(TOKEN));
+    let local = client().with_base_url("http://127.0.0.1:1/v3").unwrap();
+    assert_eq!(local.export().prepare().unwrap().request().url().as_str(), "http://127.0.0.1:1/v3/export");
+}
+
+#[tokio::test]
+async fn t1_wire_headers() {
+    let (base, seen) = server().await;
+    let api = client().with_base_url(&base).unwrap();
+    api.artwork(7u64).get().send().await.unwrap();
+    let s = last(&seen);
+    assert_eq!(s.header("authorization"), Some("Bearer s3cret-token"));
+    assert_eq!(s.header("accept"), Some("application/json"));
+}
+
+// ---- T2
+#[test]
+fn t2_query_optional() {
+    let api = client();
+    assert_eq!(api.list_artworks().prepare().unwrap().request().url().query(), None);
+    let p = api.list_artworks().set_artist("Ada Lovelace").set_page(2u32).prepare().unwrap();
+    assert_eq!(p.request().url().query(), Some("artist=Ada+Lovelace&page=2"));
+    let p = api.list_artworks().maybe_artist(None).set_page(3u32).prepare().unwrap();
+    assert_eq!(p.request().url().query(), Some("page=3"));
+}
+
+#[tokio::test]
+async fn t2_wire() {
+    let (base, seen) = server().await;
+    let api = client().with_base_url(&base).unwrap();
+    let list = api.list_artworks().set_artist("Ada").send().await.unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(last(&seen).target, "/v3/artworks?artist=Ada");
+    let art = api.artwork(7u64).get().send().await.unwrap();
+    assert_eq!(art.title, "Dawn");
+}
+
+// ---- T3
+#[test]
+fn t3_prepare() {
+    let api = client();
+    let p = api.create(NewArtwork { title: "Dawn".into(), artist: "Ada".into() }).prepare().unwrap();
+    assert_eq!(p.request().method(), "POST");
+    assert_eq!(p.request().headers()["content-type"], "application/json");
+    assert_eq!(p.request().body().and_then(|b| b.as_bytes()), Some(&br#"{"title":"Dawn","artist":"Ada"}"#[..]));
+
+    let p = api.artwork(7u64).patch(serde_json::json!({"title": null})).prepare().unwrap();
+    assert_eq!(p.request().method(), "PATCH");
+    assert_eq!(p.request().headers()["content-type"], "application/merge-patch+json");
+    assert_eq!(p.request().body().and_then(|b| b.as_bytes()), Some(&br#"{"title":null}"#[..]));
+
+    let p = api.artwork(7u64).delete(signature()).prepare().unwrap();
+    assert_eq!(p.request().method(), "DELETE");
+    assert!(p.request().body().is_none());
+}
+
+#[tokio::test]
+async fn t3_wire() {
+    let (base, seen) = server().await;
+    let api = client().with_base_url(&base).unwrap();
+    let a = api.create(NewArtwork { title: "Dawn".into(), artist: "Ada".into() }).send().await.unwrap();
+    assert_eq!(a.id, 7);
+    api.artwork(7u64).patch(serde_json::json!({"title":"Dusk"})).send().await.unwrap();
+    assert_eq!(last(&seen).header("content-type"), Some("application/merge-patch+json"));
+    api.artwork(7u64).delete(signature()).send().await.unwrap(); // 204, no output
+    assert_eq!(last(&seen).method, "DELETE");
+}
+
+// ---- T4
+#[test]
+fn t4_prepare() {
+    let p = client().artwork(7u64).upload_image(vec![0x89, b'P']).prepare().unwrap();
+    assert_eq!(p.request().headers()["content-type"], "image/png");
+    assert_eq!(p.request().body().and_then(|b| b.as_bytes()), Some(&[0x89, b'P'][..]));
+    assert_eq!(p.request().method(), "PUT");
+}
+
+#[tokio::test]
+async fn t4_wire() {
+    let (base, seen) = server().await;
+    let api = client().with_base_url(&base).unwrap();
+    let notes: String = api.artwork(7u64).notes().send().await.unwrap();
+    assert_eq!(notes, "hand-painted, \"oil\"");
+    api.artwork(7u64).upload_image(vec![0x89, b'P', b'N', b'G']).send().await.unwrap();
+    let s = last(&seen);
+    assert_eq!(s.body, vec![0x89, b'P', b'N', b'G']);
+    assert_eq!(s.header("content-type"), Some("image/png"));
+    let img: Vec<u8> = api.artwork(7u64).image().send().await.unwrap();
+    assert_eq!(img, vec![0x89, b'P', b'N', b'G', 0, 255]);
+}
+
+// ---- T5
+#[test]
+fn t5_prepare() {
+    let p = client().search().prepare().unwrap();
+    assert!(p.request().body().is_none());
+    assert!(p.request().headers().get("content-type").is_none());
+    let p = client().search().set_query(SearchQuery { text: "sun".into() }).prepare().unwrap();
+    assert_eq!(p.request().body().and_then(|b| b.as_bytes()), Some(&br#"{"text":"sun"}"#[..]));
+    assert_eq!(p.request().headers()["content-type"], "application/json");
+}
+
+#[tokio::test]
+async fn t5_wire() {
+    let (base, seen) = server().await;
+    let api = client().with_base_url(&base).unwrap();
+    api.search().send().await.unwrap();
+    let s = last(&seen);
+    assert!(s.body.is_empty());
+    assert_eq!(s.header("content-type"), None);
+    api.search().set_query(SearchQuery { text: "sun".into() }).send().await.unwrap();
+    assert_eq!(last(&seen).body, br#"{"text":"sun"}"#);
+}
+
+// ---- T6
+#[tokio::test]
+async fn t6_login_form() {
+    let login = Login { username: "ada".into(), password: "p&w=1".into() };
+    let p = client().login(login.clone()).prepare().unwrap();
+    assert_eq!(p.request().headers()["content-type"], "application/x-www-form-urlencoded");
+    assert_eq!(p.request().body().and_then(|b| b.as_bytes()), Some(&b"username=ada&password=p%26w%3D1"[..]));
+    let (base, seen) = server().await;
+    let t = client().with_base_url(&base).unwrap().login(login).send().await.unwrap();
+    assert_eq!(t.token, "new");
+    assert_eq!(last(&seen).body, b"username=ada&password=p%26w%3D1");
+}
+
+// ---- T7
+#[tokio::test]
+async fn t7_export_csv() {
+    let (base, _seen) = server().await;
+    let rows = client().with_base_url(&base).unwrap().export().send().await.unwrap();
+    assert_eq!(rows, vec![Row { id: 1, title: "Dawn".into() }, Row { id: 2, title: "Dusk, late".into() }]);
+}
+
+// ---- T8
+#[tokio::test]
+async fn t8_signature() {
+    let api = client();
+    let req = api.artwork(7u64).delete(signature());
+    assert!(!format!("{req:?}").contains("sig-abcdef"), "{req:?}");
+    let p = req.prepare().unwrap();
+    assert_eq!(p.request().headers()["x-signature"], "sig-abcdef");
+    assert!(p.request().headers()["x-signature"].is_sensitive());
+    let shown = format!("{p:?}");
+    assert!(!shown.contains("sig-abcdef"), "{shown}");
+    // the native request Debug also hides flagged header values
+    assert!(!format!("{:?}", p.request()).contains("sig-abcdef"));
+    // optional per-request on create: absent unless set
+    let c = api.create(NewArtwork { title: "a".into(), artist: "b".into() });
+    assert!(c.clone().prepare().unwrap().request().headers().get("x-signature").is_none());
+    let c = c.set_signature(signature());
+    assert!(!format!("{c:?}").contains("sig-abcdef"));
+    assert!(c.prepare().unwrap().request().headers()["x-signature"].is_sensitive());
+
+    let (base, seen) = server().await;
+    client().with_base_url(&base).unwrap().artwork(7u64).delete(signature()).send().await.unwrap();
+    assert_eq!(last(&seen).header("x-signature"), Some("sig-abcdef"));
+}
+
+// ---- T9
+#[tokio::test]
+async fn t9_per_request_timeout() {
+    let (base, _seen) = server().await;
+    let api = client().with_base_url(&base).unwrap();
+    let (http, mut request, decoder) = api.artwork(9u64).get().prepare().unwrap().into_parts();
+    *request.timeout_mut() = Some(Duration::from_millis(200));
+    let err = decoder.finish(http.execute(request).await).await.unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::Transport);
+    assert!(err.transport().unwrap().is_timeout());
+    // other calls are unaffected: the same slow endpoint succeeds without the override
+    let ok = api.artwork(9u64).get().send().await.unwrap();
+    assert_eq!(ok.id, 7);
+}
+
+// ---- T10
+#[tokio::test]
+async fn t10_problem_on_404() {
+    let (base, _seen) = server().await;
+    let api = client().with_base_url(&base).unwrap();
+    let err = api.artwork(404u64).get().send().await.unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::Status);
+    assert_eq!(err.status(), Some(reqwest::StatusCode::NOT_FOUND));
+    assert!(!format!("{err:?}").contains(TOKEN));
+    let response = err.into_response().unwrap();
+    assert_eq!(response.status(), 404);
+    let problem = <Json as Decode<Problem>>::decode(response.bytes().await.unwrap()).unwrap();
+    assert_eq!(problem.title, "no such artwork");
+    assert_eq!(problem.status, 404);
+}

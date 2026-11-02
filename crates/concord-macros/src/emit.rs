@@ -317,6 +317,12 @@ fn value_notes(model: &Model) -> Vec<Vec<Vec<String>>> {
                     if !places.order.is_empty() {
                         notes.push(format!(" Sent as: {}.", places.order.join("; ")));
                     }
+                    if value.header {
+                        notes.push(
+                            " As a header value it goes through `concord::ToHeaderValue`: a native `HeaderValue` is sent byte for byte and keeps its sensitivity flag; text must be visible ASCII, space or tab; integers and `bool` are written in decimal / `true`/`false`."
+                                .to_owned(),
+                        );
+                    }
                     if value.debug_sensitive {
                         notes.push(
                             " Sensitive: sent normally, withheld from Concord's `Debug` output and errors."
@@ -420,11 +426,97 @@ fn initially(value: &Value, owner: &str) -> String {
     match (&value.default, value.optional) {
         (Some(expr), _) => format!(
             " Initially `{}`, evaluated once when {owner} is created.",
-            quote!(#expr)
+            expr_text(quote!(#expr))
         ),
         (None, true) => " Initially absent.".to_owned(),
         (None, false) => format!(" Required: {}.", supplied_by(owner)),
     }
+}
+
+/// An expression's text for documentation, spaced as Rust is usually written (`&ACCEPT`,
+/// `HeaderValue::from_static("x")`, `vec![1, 2]`) rather than as a token stream
+/// (`& ACCEPT`, `HeaderValue :: from_static ("x")`). Only the spacing differs from the tokens.
+fn expr_text(tokens: TokenStream) -> String {
+    use proc_macro2::{Delimiter, Spacing, TokenTree};
+
+    #[derive(Clone, Copy, PartialEq)]
+    enum Prev {
+        Start,
+        Word,
+        Group,
+        /// A punctuation character; `true` when it is unary or joined to the next one.
+        Punct(char, bool),
+    }
+
+    fn walk(tokens: TokenStream, out: &mut String) {
+        let mut prev = Prev::Start;
+        // Open turbofish generics (`::<`): their `>` closes without a space.
+        let mut generics = 0usize;
+        for tt in tokens {
+            let space = match (&tt, prev) {
+                (_, Prev::Start) => false,
+                (TokenTree::Punct(p), _) if p.as_char() == '>' && generics > 0 => false,
+                (_, Prev::Punct(_, true)) => false,
+                (_, Prev::Punct('.', _)) => false,
+                (TokenTree::Punct(p), _) if matches!(p.as_char(), '.' | ',' | ';' | '?' | ':') => {
+                    false
+                }
+                (TokenTree::Punct(p), _) if p.as_char() == '!' && prev == Prev::Word => false,
+                (TokenTree::Group(g), Prev::Word | Prev::Group | Prev::Punct('!' | '>', _))
+                    if g.delimiter() != Delimiter::Brace =>
+                {
+                    false
+                }
+                _ => true,
+            };
+            if space {
+                out.push(' ');
+            }
+            prev = match tt {
+                TokenTree::Group(g) => {
+                    let (open, close) = match g.delimiter() {
+                        Delimiter::Parenthesis => ("(", ")"),
+                        Delimiter::Bracket => ("[", "]"),
+                        Delimiter::Brace => ("{ ", " }"),
+                        Delimiter::None => ("", ""),
+                    };
+                    out.push_str(open);
+                    walk(g.stream(), out);
+                    out.push_str(close);
+                    Prev::Group
+                }
+                TokenTree::Punct(p) => {
+                    let c = p.as_char();
+                    out.push(c);
+                    // `&x`, `-1`, `*p`, `!b` at the start or after an operator or `,` are unary.
+                    let unary = matches!(c, '&' | '-' | '*' | '!')
+                        && matches!(prev, Prev::Start | Prev::Punct(..));
+                    // Both colons of `::` count as joined (no space after the path separator).
+                    let path = c == ':' && prev == Prev::Punct(':', true);
+                    // The end of a range operator (`..=`) binds like `.`.
+                    let range = matches!(prev, Prev::Punct('.', _));
+                    let turbofish = c == '<' && prev == Prev::Punct(':', true);
+                    if turbofish {
+                        generics += 1;
+                    } else if c == '>' && generics > 0 {
+                        generics -= 1;
+                    }
+                    Prev::Punct(
+                        c,
+                        p.spacing() == Spacing::Joint || unary || turbofish || path || range,
+                    )
+                }
+                other => {
+                    out.push_str(&other.to_string());
+                    Prev::Word
+                }
+            };
+        }
+    }
+
+    let mut out = String::new();
+    walk(tokens, &mut out);
+    out
 }
 
 /// `set_x` for every value and body; `maybe_x` for optional ones. `owner` names the receiver in
@@ -1735,6 +1827,32 @@ mod tests {
         );
     }
 
+    /// Initializers are documented as Rust is usually written, not as spaced tokens.
+    #[test]
+    fn initializer_text_is_spaced_like_rust() {
+        let text = |t: proc_macro2::TokenStream| super::expr_text(t);
+        assert_eq!(text(quote!(&ACCEPT)), "&ACCEPT");
+        assert_eq!(
+            text(quote!(HeaderValue::from_static("init"))),
+            "HeaderValue::from_static(\"init\")"
+        );
+        assert_eq!(
+            text(quote!(Some("fr".to_owned()))),
+            "Some(\"fr\".to_owned())"
+        );
+        assert_eq!(text(quote!(vec![1, 2])), "vec![1, 2]");
+        assert_eq!(text(quote!(-1)), "-1");
+        assert_eq!(text(quote!(a - 1)), "a - 1");
+        assert_eq!(text(quote!(Vec::<u8>::new())), "Vec::<u8>::new()");
+        assert_eq!(text(quote!(x.y().z)), "x.y().z");
+        assert_eq!(
+            text(quote!(Config { a: 1, b: !c })),
+            "Config { a: 1, b: !c }"
+        );
+        assert_eq!(text(quote!(f(&x, &mut y)?)), "f(&x, &mut y)?");
+        assert_eq!(text(quote!(1..=3)), "1..=3");
+    }
+
     /// Final review R1: the per-call note may call absence "the default" only when the value has
     /// no initializer; an initialized optional value starts present.
     #[test]
@@ -1766,7 +1884,7 @@ mod tests {
         );
         assert!(!initialized.contains("(the default)"), "{initialized}");
         assert!(
-            initialized.contains("Initially `Some (\\\"fr\\\" . to_owned ())`"),
+            initialized.contains("Initially `Some(\\\"fr\\\".to_owned())`"),
             "{initialized}"
         );
     }

@@ -46,8 +46,8 @@ feed that must not be buffered.
 transport setting or a header the declaration does not carry (a request id, a tighter timeout).
 
 - **How:** `prepare()?.into_parts()`, edit the native request (`timeout_mut()`, `headers_mut()`),
-  `decoder.finish(client.execute(request).await)`. A timeout becomes `ErrorKind::Transport` with
-  `transport().is_timeout()`.
+  `decoder.finish(client.execute(request).await).await` (`finish` is async: it reads the body). A
+  timeout becomes `ErrorKind::Transport` with `transport().is_timeout()`.
 - **Assumes:** after `into_parts` the request is native — its `Debug` prints the full URL
   (sensitive query values and path segments included) and every header value not flagged
   sensitive. Mark a secret extra header with `HeaderValue::set_sensitive(true)` yourself.

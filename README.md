@@ -113,8 +113,10 @@ extra request. For anything the declaration does not cover there is a native exi
 
 - `prepare()` builds the native `reqwest::Request` without any I/O;
 - `prepare()?.into_parts()` returns your client, that request and the endpoint's decoder, so you
-  can change the request (a per-request timeout, an extra header, another body), execute it
-  yourself and still decode the response as declared (`Decoder::finish`);
+  can change the request (a per-request timeout with `*request.timeout_mut() = Some(..)`, an extra
+  header, another body), execute it yourself and still decode the response as declared
+  (`decoder.finish(client.execute(request).await).await`). The native request's `Debug` is
+  reqwest's: it prints the full URL and every header value not flagged sensitive;
 - `prepare()?.send_raw()` returns the native `reqwest::Response`, unchecked and unread.
 
 ## Status

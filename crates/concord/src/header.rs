@@ -11,9 +11,9 @@ use reqwest::header::HeaderValue;
 ///
 /// Implemented for:
 ///
-/// - [`HeaderValue`] itself: the value is cloned (a reference-count increment, or nothing for
-///   `HeaderValue::from_static`) and sent byte for byte — including bytes that are not text — with
-///   its sensitivity flag;
+/// - [`HeaderValue`](reqwest::header::HeaderValue) itself: the value is cloned (a reference-count
+///   increment, or nothing for `HeaderValue::from_static`) and sent byte for byte — including
+///   bytes that are not text — with its sensitivity flag;
 /// - text, `str` and `String`: it must be visible ASCII, space or tab, otherwise the request is a
 ///   build error naming the header;
 /// - the integers `u8`–`u64`, `usize`, `i8`–`i64`, `isize` (decimal) and `bool`
