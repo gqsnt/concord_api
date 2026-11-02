@@ -1,0 +1,21 @@
+[package]
+name = "concord-example-multipart"
+description = "Downstream example: a multipart upload through reqwest's own `multipart` feature, attached to a declared Concord endpoint and finished with its decoder."
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord" }
+# The application's own reqwest (the same version Concord re-exports): reqwest's `multipart`
+# feature is enabled here and nowhere else, so Concord never depends on it.
+reqwest = { workspace = true, features = ["multipart"] }
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "net", "io-util"] }
+
+[lints]
+workspace = true

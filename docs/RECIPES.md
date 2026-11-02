@@ -109,14 +109,18 @@ directions.
 
 ### Multipart uploads
 
-[`bodies::upload_file`](../examples/native/src/bodies.rs) — `multipart/form-data`.
+[`concord_example_multipart::upload`](../examples/multipart/src/lib.rs) — `multipart/form-data`
+through reqwest's own `multipart` feature, enabled in that example crate only.
 
-- **How:** declare the endpoint without a body, then set the body and its `Content-Type` (with a
-  per-body boundary) on the native request; the declared path, headers and decoder still apply.
+- **How:** declare the endpoint without a body; `prepare()?.into_parts()`, then
+  `reqwest::RequestBuilder::from_parts(client, request).multipart(form).send().await` and
+  `decoder.finish(result).await`. The declared path, headers and decoder still apply; reqwest
+  writes the boundary, `Content-Type` and (for parts of known length) `Content-Length`.
 - **Why native:** `Encode::CONTENT_TYPE` is a constant, while a multipart boundary is chosen per
-  body.
-- **Assumes:** the body is built in memory (reqwest's own `multipart` feature is not enabled in
-  this workspace, so streamed file parts are not shown).
+  body; Concord has no multipart policy.
+- **Assumes:** field names use `Form::percent_encode_attr_chars()` (reqwest's default leaves `\`
+  raw inside `name="..."`); file names with CR/LF are escaped by reqwest in a form a strict
+  RFC 9110 recipient may reject, so sanitize them if the server is unknown.
 
 ## Application policies
 

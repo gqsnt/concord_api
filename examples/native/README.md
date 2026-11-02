@@ -18,7 +18,6 @@ build on.
 | U32 | `native_edit::search_filters` | interleaved repeated keys `f=..&op=..&v=..` appended with `url_mut().query_pairs_mut()` after the declared `limit=10` | `native_edit.rs` |
 | U16 | `repr::Ndjson`, `bodies::import_stock` | a downstream `Encode<Vec<T>>`/`Decode<Vec<T>>` representation; decode errors name the line, never its content | `bodies.rs` |
 | U29, R09 | `repr::Form`, `bodies::send_feedback` | `application/x-www-form-urlencoded` via a custom `Encode` (`url::form_urlencoded`) | `bodies.rs` |
-| U29, R09 | `bodies::upload_file` | `multipart/form-data` assembled by the application and set as the native body, with a per-body boundary | `bodies.rs` |
 | U28, R08 | `streaming::first_event_chunks` | `send_raw()` on a real `Transfer-Encoding: chunked` response, application-owned per-chunk `tokio::time::timeout`, early stop by dropping (the server observes the close) | `streaming.rs` |
 | U30, R12 | `policies::collect_items` | finite cursor loop with an application bound; exact query strings asserted; the unused cursor is returned | `policies.rs` |
 | U30, R11, R12 | `policies::retry_bounded`, `policies::item_with_retry` | bounded retry around a request **factory** for a read-only GET; status/decode errors and timeouts are not retried; one `send()` is one execute | `policies.rs` |
@@ -38,11 +37,11 @@ build on.
 
 ## Not exercised here
 
-- reqwest's own `multipart`, `form`, `json` and `stream` features are not enabled in this
-  workspace (this example adds no dependency or feature beyond it), so the multipart body is hand-built and buffered (no streamed file
-  parts), and streaming uses `Response::chunk()` rather than `bytes_stream()`.
-- A multipart `Encode` with a fixed boundary is possible (`Encode::CONTENT_TYPE` is a constant)
-  but not shown; the native body route is.
+- reqwest's own `form`, `json` and `stream` features are not enabled in this example (it adds
+  no dependency or feature beyond Concord's), so streaming uses `Response::chunk()` rather than
+  `bytes_stream()`.
+- Multipart uploads live in [`examples/multipart`](../multipart), the only crate that enables
+  reqwest's `multipart` feature.
 - No HTTP/2, TLS, proxy or redirect behaviour: all fixtures are plain HTTP/1.1 on loopback.
 
 ## Run

@@ -67,9 +67,6 @@ concord::api! {
         /// A form-encoded feedback submission.
         POST feedback(body fields: Vec<(String, String)> via Form) { path "feedback"; }
 
-        /// A file upload: the multipart body is attached natively (see `bodies::upload_file`).
-        POST upload() -> Item via Json { path "uploads"; }
-
         /// A long chunked event export. The declared `Binary` buffers everything; the streaming
         /// recipe uses `send_raw` instead.
         GET events() -> concord::bytes::Bytes via Binary { path "events"; }
