@@ -7,6 +7,10 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
+readme = "../../README.md"
+# The release artifact is the library. Tests, UI fixtures, generated oracles and the test CA
+# (key material) stay in the repository, where `tests-gen/` regenerates the oracles.
+include = ["/src/**/*.rs", "/Cargo.toml", "/LICENSE-APACHE", "/LICENSE-MIT"]
 
 [features]
 default = ["json", "reqwest-defaults"]
