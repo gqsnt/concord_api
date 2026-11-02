@@ -155,20 +155,19 @@ pub fn type_text(t: &dyn quote::ToTokens) -> String {
         .replace("& ", "&")
 }
 
-/// The format word a V4-alpha or `via` representation type corresponds to (`Json`, `Text`,
-/// `Binary` as the last segment, qualified or not); any other type is written as a path. Only used
-/// to word a diagnostic that is reported anyway.
+/// A `via` representation written as a format path naming the same type: the path as written,
+/// except a bare lowercase identifier (a type named `text`, say), which becomes `self::text`
+/// because a bare word in format position is a built-in format. Which type a path names is
+/// decided by name resolution, so no path is turned into a word here (`codec::Text` and a local
+/// module named `concord` keep their meaning). Only used to word a diagnostic reported anyway.
 fn replacement(repr: &Type) -> String {
     if let Type::Path(p) = repr {
-        if let Some(last) = p.path.segments.last() {
-            if last.arguments.is_none() {
-                match last.ident.to_string().as_str() {
-                    "Json" => return "json".to_owned(),
-                    "Text" => return "text".to_owned(),
-                    "Binary" => return "bytes".to_owned(),
-                    "Form" => return "form".to_owned(),
-                    _ => {}
-                }
+        if p.qself.is_none() && p.path.leading_colon.is_none() && p.path.segments.len() == 1 {
+            let segment = &p.path.segments[0];
+            let name = segment.ident.to_string();
+            let bare = name.trim_start_matches("r#");
+            if segment.arguments.is_none() && bare.starts_with(|c: char| c.is_ascii_lowercase()) {
+                return format!("self::{bare}");
             }
         }
     }
@@ -186,10 +185,10 @@ fn reject_via(input: ParseStream<'_>, ty: &Type, site: ViaSite<'_>) -> syn::Resu
     let ty = type_text(ty);
     let message = match site {
         ViaSite::Output => format!(
-            "`via` was removed: the format comes before the type, `-> {format} {ty}` (or `-> {ty}` under a `response {format};` default on the client or an enclosing scope)"
+            "`via` was removed: the format comes before the type, `-> {format} {ty}` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> {ty}`"
         ),
         ViaSite::Body { name, optional } => format!(
-            "`via` was removed: the format comes before the name, `{format} {name}{optional}: {ty}` (or `body {name}{optional}: {ty}` under a `request {format};` default on the client or an enclosing scope)"
+            "`via` was removed: the format comes before the name, `{format} {name}{optional}: {ty}` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body {name}{optional}: {ty}`"
         ),
     };
     Err(syn::Error::new(via.span, message))
@@ -948,8 +947,10 @@ fn parse_params(
         }
         // `name: T` / `name?: T` is an ordinary value whatever its name (`json: T`, `body?: T`);
         // `Token![:]` also peeks the first half of `::`, which starts a format path instead.
-        let named =
-            (content.peek2(Token![:]) && !content.peek2(Token![::])) || content.peek2(Token![?]);
+        // A leading `::` (an absolute format path, `::c4::Text b: T`) is never a value name.
+        let named = content.peek(Ident::peek_any)
+            && ((content.peek2(Token![:]) && !content.peek2(Token![::]))
+                || content.peek2(Token![?]));
         let placement =
             (content.peek(kw::query) || content.peek(kw::header) || content.peek(kw::each))
                 && !content.peek2(Token![::]);

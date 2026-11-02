@@ -33,18 +33,19 @@ unchanged, so callers need no change.
 | a downstream form encoder | `form b: T` (feature `form`) | `serde_urlencoded`, `application/x-www-form-urlencoded` |
 | no `->` | no `->` | unchanged: any 2xx, the body is drained, whatever the defaults |
 
-Migrating takes two steps:
+Migrating takes up to three steps:
 
-1. **Mechanical.** `scripts/migrate_via.py FILE...` moves every `via R` before its payload.
-   Only `concord::Json`, `concord::Text` and `concord::Binary` written with their crate path become
-   the words `json`, `text`, `bytes`. Every other path stays a path — a bare `Json`, `codec::Text`,
-   a renamed crate's `c4::Json`, a downstream `Form` — because which type a bare name means is
-   decided by Rust's name resolution, not by the text: `-> Item via Json` becomes `-> Json Item`,
-   which still means `concord::Json` where that is what `Json` resolves to, and can be shortened
-   to `-> json Item` by hand. Nothing else changes, so the result names the same types as the
-   input. The compiler finds what the script misses (multi-line declarations): every leftover `via`
-   is an error with the exact replacement.
-2. **Optional.** Where most endpoints share a format, declare it once (`request json;
+1. **Mechanical.** `scripts/migrate_via.py FILE...` moves every `via R` before its payload and
+   keeps the path `R` exactly: `-> Item via Json` becomes `-> Json Item`, `body n: String via
+   concord::Text` becomes `concord::Text n: String`. The result names the same types as the input,
+   because which type a path means is decided by Rust's name resolution (imports, `cfg`, a local
+   module named `concord`), which a text rewrite cannot see; so no path is turned into a word. A
+   bare lowercase name (`via text`, a type of your own) is left unchanged and reported: in format
+   position it would read as a built-in word, so write `self::text`. The compiler finds what the
+   script leaves: every leftover `via` is an error naming the same path.
+2. **Optional, by hand.** Where a kept path is Concord's own `Json`, `Text` or `Binary`, the words
+   `json`, `text`, `bytes` are the short form (`-> json Item`); a downstream type keeps its path.
+3. **Optional.** Where most endpoints share a format, declare it once (`request json;
    response json;` on the client, or on the scopes that are uniform) and write `body b: T` and
    `-> T`; the exceptions stay on their endpoints. Under a JSON default `-> String` is a JSON
    string: keep `-> text String` for raw text ([author guide](AUTHOR_GUIDE.md#52-defaults-and-exceptions)).

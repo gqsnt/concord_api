@@ -1,0 +1,66 @@
+[
+  {
+    "case": "absolute_body",
+    "command": [
+      "cargo",
+      "check",
+      "--locked",
+      "--offline",
+      "--manifest-path",
+      "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probes/renamed/Cargo.toml",
+      "--bin",
+      "absolute_body"
+    ],
+    "lane": "stable",
+    "exit_code": 101,
+    "expected_compile_failure": true
+  },
+  {
+    "case": "absolute_output",
+    "command": [
+      "cargo",
+      "check",
+      "--locked",
+      "--offline",
+      "--manifest-path",
+      "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probes/renamed/Cargo.toml",
+      "--bin",
+      "absolute_output"
+    ],
+    "lane": "stable",
+    "exit_code": 0,
+    "expected_compile_failure": false
+  },
+  {
+    "case": "absolute_custom_body",
+    "command": [
+      "cargo",
+      "check",
+      "--locked",
+      "--offline",
+      "--manifest-path",
+      "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probes/renamed/Cargo.toml",
+      "--bin",
+      "absolute_custom_body"
+    ],
+    "lane": "stable",
+    "exit_code": 101,
+    "expected_compile_failure": true
+  },
+  {
+    "case": "absolute_alias_output",
+    "command": [
+      "cargo",
+      "check",
+      "--locked",
+      "--offline",
+      "--manifest-path",
+      "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probes/renamed/Cargo.toml",
+      "--bin",
+      "absolute_alias_output"
+    ],
+    "lane": "stable",
+    "exit_code": 0,
+    "expected_compile_failure": false
+  }
+]

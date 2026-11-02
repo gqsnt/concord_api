@@ -7,13 +7,14 @@ into another branch. Untracked and untouched: `.claude/`, `concord_v4_handoff/`.
 `concord-v3-preserved`), `concord-v4-alpha1-baseline`. Side branches merged here:
 `native-repr-findings`, `native-repr-bench`, `native-repr-formats`.
 
-**Candidate:** `1174d5d` (code). Later commits change only `v4/` records.
+**Candidate:** `b77084a` (code). Later commits change only `v4/` records (`d591fe7` is
+code-identical and is the verified tree).
 
 | | State |
 |---|---|
 | Implemented | native header values (N01–N05), formats (N06–N08), note deduplication (N09), `Clone` checks (N10), multipart recipe (N11), Criterion suite (N12), release preparation, doc fixes |
-| Tested | `scripts/verify.sh --msrv --nightly --package`: 22/22 PASS on `1174d5d`, clean tree, Linux x86_64, rustc 1.97.1 / 1.85.1 / nightly 1.101 (`evidence/verify_1174d5d.txt`) |
-| Independently reviewed | Codex `gpt-6.1-sol` `xhigh`: blind design challenge, design pass 2, executable review of `66a4478` (REVISE, F1–F4), focused executable re-review of `1174d5d` — see the end of this record |
+| Tested | `scripts/verify.sh --msrv --nightly --package`: 22/22 PASS on `d591fe7` (code = `b77084a`), clean tree, Linux x86_64, rustc 1.97.1 / 1.85.1 / nightly 1.101 (`evidence/verify_d591fe7.txt`; earlier receipts `verify_66a4478.txt`, `verify_1174d5d.txt`) |
+| Independently reviewed | Codex `gpt-6.1-sol` `xhigh`: blind design challenge, design pass 2, executable review of `66a4478` (REVISE: F1–F4), focused executable re-review of `1174d5d` (F1, F2, F4 resolved; F3a found), narrow executable check of the F3a fix — see `REVIEW_TRIAGE.md` and the end of this record |
 | Accepted | see "Acceptance" at the end |
 | Windows / macOS | NOT_RUN for this candidate (a push was not authorized; CI run `41379941540` is of `a40788c`, baseline evidence only) / not a requirement |
 
@@ -157,7 +158,8 @@ pub async fn upload(api: &Files, folder: &str, form: Form) -> Result<Stored, con
   integers fail, Unicode text silently becomes obs-text), autoref dispatch, a `native` keyword, a
   `Format<T>` wrapper in caller signatures.
 - **N02** outgoing flag = native flag OR Concord's classification, per value; never cleared. A value
-  placed as a header and as text must be text itself unless `#[sensitive]` (review F1).
+  placed as a header and as text must be text itself (`String`, `&str`, integers, `bool`) unless
+  `#[sensitive]` (review F1: a custom conversion's runtime flag cannot reach text placements).
 - **N03–N05** visible ASCII for Rust text only; literal statics; native values are not text.
 - **N06** one rule, two positions: formats in place or inherited from `request`/`response`
   owner defaults; no endpoint statements; `via` removed. Rejected: `via` (control), endpoint
@@ -195,9 +197,10 @@ binaries within 0.12%, rlibs up to +1.15%. `#[inline]` unchanged.
 
 ## 8. Migration (`docs/MIGRATION.md`)
 
-1. `scripts/migrate_via.py FILE...` moves `via R` before the payload (Concord's markers become
-   `json`/`text`/`bytes`; any other path stays a path); leftover `via` is a compile error with the
-   exact replacement.
+1. `scripts/migrate_via.py FILE...` moves `via R` before the payload and keeps the path `R`, so the
+   result names the same types (`-> Item via Json` → `-> Json Item`); a bare lowercase name is left
+   for the author (`self::name`). A leftover `via` is a compile error naming the same path.
+   Writing Concord's own markers as the words `json`/`text`/`bytes` is a manual, optional step.
 2. Optionally hoist a shared format to `request json; response json;` on the client or uniform
    scopes, and write `body x: T` / `-> T`.
 3. Move static `content-type` headers to the body: `json("application/merge-patch+json") p: T`.

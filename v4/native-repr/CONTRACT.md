@@ -35,7 +35,7 @@ Lexical precedence (each pinned by a test):
 | `json: T`, `json?: T` | an ordinary value named `json` |
 | `header("x") json: T` | a header value named `json` |
 | `json query: T` | a JSON body named `query` |
-| `self::csv rows: T`, `json::Codec rows: T` | a custom format path (not the word `json`) |
+| `self::csv rows: T`, `json::Codec rows: T`, `::c4::Text rows: T` | a custom format path (not the word `json`; an absolute path in body position too, re-check F3d) |
 | `-> Vec<Item> {` / `-> Vec<Item>;` | the inherited format |
 | `-> codecs::Csv Vec<Item>`, `-> codecs::Csv ()` | an explicit custom format |
 | `-> json {` | error: the payload type is missing (words are reserved in format position) |

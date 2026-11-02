@@ -1,22 +1,22 @@
-error: `via` was removed: the format comes before the type, `-> json Item` (or `-> Item` under a `response json;` default on the client or an enclosing scope)
+error: `via` was removed: the format comes before the type, `-> concord::Json Item` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> Item`
  --> tests/ui/format_via_removed.rs:7:28
   |
 7 |         GET item() -> Item via concord::Json;
   |                            ^^^
 
-error: `via` was removed: the format comes before the type, `-> Csv Vec<Item>` (or `-> Vec<Item>` under a `response Csv;` default on the client or an enclosing scope)
+error: `via` was removed: the format comes before the type, `-> Csv Vec<Item>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> Vec<Item>`
   --> tests/ui/format_via_removed.rs:13:33
    |
 13 |         GET rows() -> Vec<Item> via Csv;
    |                                 ^^^
 
-error: `via` was removed: the format comes before the name, `text note?: String` (or `body note?: String` under a `request text;` default on the client or an enclosing scope)
+error: `via` was removed: the format comes before the name, `Text note?: String` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body note?: String`
   --> tests/ui/format_via_removed.rs:19:37
    |
 19 |         PUT note(body note?: String via Text);
    |                                     ^^^
 
-error: `via` was removed: the format comes before the name, `bytes data: Vec<u8>` (or `body data: Vec<u8>` under a `request bytes;` default on the client or an enclosing scope)
+error: `via` was removed: the format comes before the name, `concord::Binary data: Vec<u8>` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `request` default on the client or an enclosing scope the body is `body data: Vec<u8>`
   --> tests/ui/format_via_removed.rs:25:34
    |
 25 |         PUT upload(data: Vec<u8> via concord::Binary);

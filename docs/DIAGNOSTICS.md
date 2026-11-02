@@ -293,14 +293,14 @@ concord::api! {
 Excerpt of [`format_via_removed.stderr`](../crates/concord/tests/ui/format_via_removed.stderr):
 
 ```text
-error: `via` was removed: the format comes before the type, `-> json Item` (or `-> Item` under a `response json;` default on the client or an enclosing scope)
+error: `via` was removed: the format comes before the type, `-> concord::Json Item` (the same type); Concord's own `Json`, `Text` and `Binary` are also the words `json`, `text` and `bytes`, and under a `response` default on the client or an enclosing scope the endpoint writes `-> Item`
  --> tests/ui/format_via_removed.rs:7:28
   |
 7 |         GET item() -> Item via concord::Json;
   |                            ^^^
 ```
 
-**Fix:** move the format before the payload as the message says (`scripts/migrate_via.py` does it for a whole file), or rely on a default; see [From `via` to formats](MIGRATION.md#from-via-to-formats). A body is written `text note?: String` (or `body note?: String` under `request text;`).
+**Fix:** move the format before the payload as the message says (`scripts/migrate_via.py` does it for a whole file), keeping the path so it names the same type; where that type is Concord's own `Json`, `Text` or `Binary`, the word is the short form (`-> json Item`). Or rely on a default; see [From `via` to formats](MIGRATION.md#from-via-to-formats). A body is written `concord::Text note?: String` or `text note?: String` (or `body note?: String` under `request text;`).
 
 ### A V4-alpha spelling
 

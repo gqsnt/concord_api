@@ -1,0 +1,62 @@
+[
+  {
+    "probe": "migration",
+    "lane": "stable",
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "--manifest-path",
+      "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probes/migration/Cargo.toml",
+      "--lib",
+      "--",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "cargo_target_dir": "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probe-stable",
+    "exit_code": 0,
+    "elapsed_seconds": 5.74756716399861,
+    "log": "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probes/migration-stable.txt"
+  },
+  {
+    "probe": "matrix",
+    "lane": "stable",
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "--manifest-path",
+      "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probes/matrix/Cargo.toml",
+      "--lib",
+      "--",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "cargo_target_dir": "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probe-stable",
+    "exit_code": 101,
+    "elapsed_seconds": 3.6455600490007782,
+    "log": "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probes/matrix-stable.txt"
+  },
+  {
+    "probe": "renamed",
+    "lane": "stable",
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "--manifest-path",
+      "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probes/renamed/Cargo.toml",
+      "--lib",
+      "--",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "cargo_target_dir": "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probe-stable",
+    "exit_code": 101,
+    "elapsed_seconds": 0.12433910200343234,
+    "log": "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probes/renamed-stable.txt"
+  }
+]

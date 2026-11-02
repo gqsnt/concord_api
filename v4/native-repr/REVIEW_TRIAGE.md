@@ -103,3 +103,19 @@ by Codex.
 | F4 | RESOLVED | intervals 43.24% / 8.56%, rlibs +0.0306% to +1.1543%, consistent with the corrected record |
 | F3 / F3a (P2) | NOT RESOLVED → FIXED in `b77084a` | the file-wide import scan ignored Rust scope, `cfg` and comments (`use concord::Text` in another module or a comment still mapped a downstream `Text`). Now only `concord::`-qualified markers become words; every other path is kept (same type). `migrate_via.py --self-test` includes the reviewer's scoped and commented imports (mutation-checked: mapping bare names again fails it); `formats.rs::migrated_marker_paths_behave_like_the_words` |
 
+## Codex narrow executable check of the F3a fix (`d591fe7`)
+
+- Reviewer: `gpt-6.1-sol`, `xhigh` (session `turn_context`; the report says it could not see
+  them from inside), execute mode in the fresh snapshot `f3check-d591fe7`, loopback only, private
+  `CARGO_HOME`; 2026-11-02 07:38–07:47 UTC; all 984 origin files unchanged; no server left.
+  Report `f3check_d591fe7_report.md`; probes in `f3check_d591fe7_evidence/`. Executed on 1.97.1 and
+  1.85.1: the four F3/F3a reproducers (pass), 38 paired wire checks of migrated declarations (30
+  pass, 8 semantic failures), renamed-crate and re-export cases, absolute-path compiler checks,
+  the self-test, the `formats` suite once. Verdict: **REVISE** — F3a RESOLVED, F3 not resolved.
+
+| ID | Severity | Finding | Disposition | Fix / test |
+|---|---|---|---|---|
+| F3b | P2 | `concord::Text` was turned into the word even where `concord` is a local module or alias | FIXED | the script no longer turns any path into a word: it only moves the path (`migrate_via.py --self-test`, case with a local `mod concord`) |
+| F3c | P2 | a downstream type named `text`/`json`/`bytes` kept verbatim lands in format position as the built-in word | FIXED | a bare lowercase name is left unmigrated and reported (self-test cases `via text`, `via r#json`); the compiler's leftover-`via` hint now names the path as written and `self::name` for a bare lowercase name, never a word (`ui/format_via_removed.stderr`, DIAGNOSTICS excerpt) |
+| F3d | P3 | an absolute body format path (`::c4::Text b: T`) was rejected by the parameter lookahead | FIXED | `named` requires an identifier first; `formats.rs::migrated_marker_paths_behave_like_the_words` (`::concord::Text` in both positions; mutation: the old lookahead reproduces "expected identifier") |
+

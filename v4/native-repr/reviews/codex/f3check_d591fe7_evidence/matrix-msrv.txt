@@ -1,0 +1,138 @@
+   Compiling f3check-matrix v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probes/matrix)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.06s
+     Running unittests src/lib.rs (target/probe-msrv/debug/deps/f3check_matrix-727fd790079ac43b)
+
+running 38 tests
+test tests::absolute_builtin_binary ... absolute_builtin_binary: expected Observation { body: [118, 97, 108, 117, 101], content_types: ["application/octet-stream"], decoded: Ok([114, 101, 112, 108, 121]) }; migrated Observation { body: [118, 97, 108, 117, 101], content_types: ["application/octet-stream"], decoded: Ok([114, 101, 112, 108, 121]) }
+ok
+test tests::absolute_builtin_json ... absolute_builtin_json: expected Observation { body: [34, 118, 97, 108, 117, 101, 34], content_types: ["application/json"], decoded: Ok("reply") }; migrated Observation { body: [34, 118, 97, 108, 117, 101, 34], content_types: ["application/json"], decoded: Ok("reply") }
+ok
+test tests::absolute_builtin_text ... absolute_builtin_text: expected Observation { body: [118, 97, 108, 117, 101], content_types: ["text/plain; charset=utf-8"], decoded: Ok("reply") }; migrated Observation { body: [118, 97, 108, 117, 101], content_types: ["text/plain; charset=utf-8"], decoded: Ok("reply") }
+ok
+test tests::absolute_under_shadow_binary ... absolute_under_shadow_binary: expected Observation { body: [118, 97, 108, 117, 101], content_types: ["application/octet-stream"], decoded: Ok([114, 101, 112, 108, 121]) }; migrated Observation { body: [118, 97, 108, 117, 101], content_types: ["application/octet-stream"], decoded: Ok([114, 101, 112, 108, 121]) }
+ok
+test tests::absolute_under_shadow_json ... absolute_under_shadow_json: expected Observation { body: [34, 118, 97, 108, 117, 101, 34], content_types: ["application/json"], decoded: Ok("reply") }; migrated Observation { body: [34, 118, 97, 108, 117, 101, 34], content_types: ["application/json"], decoded: Ok("reply") }
+ok
+test tests::absolute_under_shadow_text ... absolute_under_shadow_text: expected Observation { body: [118, 97, 108, 117, 101], content_types: ["text/plain; charset=utf-8"], decoded: Ok("reply") }; migrated Observation { body: [118, 97, 108, 117, 101], content_types: ["text/plain; charset=utf-8"], decoded: Ok("reply") }
+ok
+test tests::alias_named_concord ... alias_named_concord: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }; migrated Observation { body: [118, 97, 108, 117, 101], content_types: ["text/plain; charset=utf-8"], decoded: Ok("reply") }
+
+thread 'tests::alias_named_concord' panicked at src/lib.rs:427:5:
+assertion `left == right` failed: migration changed the selected codec
+  left: Observation { body: [118, 97, 108, 117, 101], content_types: ["text/plain; charset=utf-8"], decoded: Ok("reply") }
+ right: Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test tests::aliased_import ... aliased_import: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }; migrated Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }
+ok
+test tests::bare_builtin_binary ... bare_builtin_binary: expected Observation { body: [118, 97, 108, 117, 101], content_types: ["application/octet-stream"], decoded: Ok([114, 101, 112, 108, 121]) }; migrated Observation { body: [118, 97, 108, 117, 101], content_types: ["application/octet-stream"], decoded: Ok([114, 101, 112, 108, 121]) }
+ok
+test tests::bare_builtin_json ... bare_builtin_json: expected Observation { body: [34, 118, 97, 108, 117, 101, 34], content_types: ["application/json"], decoded: Ok("reply") }; migrated Observation { body: [34, 118, 97, 108, 117, 101, 34], content_types: ["application/json"], decoded: Ok("reply") }
+ok
+test tests::bare_builtin_text ... bare_builtin_text: expected Observation { body: [118, 97, 108, 117, 101], content_types: ["text/plain; charset=utf-8"], decoded: Ok("reply") }; migrated Observation { body: [118, 97, 108, 117, 101], content_types: ["text/plain; charset=utf-8"], decoded: Ok("reply") }
+ok
+test tests::bare_lowercase_bytes ... bare_lowercase_bytes: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok([67, 85, 83, 84, 79, 77, 58, 114, 101, 112, 108, 121]) }; migrated Observation { body: [118, 97, 108, 117, 101], content_types: ["application/octet-stream"], decoded: Ok([114, 101, 112, 108, 121]) }
+
+thread 'tests::bare_lowercase_bytes' panicked at src/lib.rs:511:5:
+assertion `left == right` failed: migration changed the selected codec
+  left: Observation { body: [118, 97, 108, 117, 101], content_types: ["application/octet-stream"], decoded: Ok([114, 101, 112, 108, 121]) }
+ right: Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok([67, 85, 83, 84, 79, 77, 58, 114, 101, 112, 108, 121]) }
+FAILED
+test tests::bare_lowercase_json ... bare_lowercase_json: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:\"reply\"") }; migrated Observation { body: [34, 118, 97, 108, 117, 101, 34], content_types: ["application/json"], decoded: Ok("reply") }
+
+thread 'tests::bare_lowercase_json' panicked at src/lib.rs:499:5:
+assertion `left == right` failed: migration changed the selected codec
+  left: Observation { body: [34, 118, 97, 108, 117, 101, 34], content_types: ["application/json"], decoded: Ok("reply") }
+ right: Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:\"reply\"") }
+FAILED
+test tests::bare_lowercase_text ... bare_lowercase_text: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }; migrated Observation { body: [118, 97, 108, 117, 101], content_types: ["text/plain; charset=utf-8"], decoded: Ok("reply") }
+
+thread 'tests::bare_lowercase_text' panicked at src/lib.rs:487:5:
+assertion `left == right` failed: migration changed the selected codec
+  left: Observation { body: [118, 97, 108, 117, 101], content_types: ["text/plain; charset=utf-8"], decoded: Ok("reply") }
+ right: Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }
+FAILED
+test tests::cfg_selected_custom ... cfg_selected_custom: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }; migrated Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }
+ok
+test tests::crate_path ... crate_path: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }; migrated Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }
+ok
+test tests::downstream_form ... downstream_form: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }; migrated Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }
+ok
+test tests::f3_qualified ... f3_qualified: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }; migrated Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }
+ok
+test tests::f3a_block_comment ... f3a_block_comment: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }; migrated Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }
+ok
+test tests::f3a_cfg_disabled ... f3a_cfg_disabled: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }; migrated Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }
+ok
+test tests::f3a_line_comment ... f3a_line_comment: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }; migrated Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }
+ok
+test tests::f3a_scoped_import ... f3a_scoped_import: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }; migrated Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }
+ok
+test tests::glob_custom ... glob_custom: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }; migrated Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }
+ok
+test tests::local_concord_binary ... local_concord_binary: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok([67, 85, 83, 84, 79, 77, 58, 114, 101, 112, 108, 121]) }; migrated Observation { body: [118, 97, 108, 117, 101], content_types: ["application/octet-stream"], decoded: Ok([114, 101, 112, 108, 121]) }
+
+thread 'tests::local_concord_binary' panicked at src/lib.rs:403:5:
+assertion `left == right` failed: migration changed the selected codec
+  left: Observation { body: [118, 97, 108, 117, 101], content_types: ["application/octet-stream"], decoded: Ok([114, 101, 112, 108, 121]) }
+ right: Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok([67, 85, 83, 84, 79, 77, 58, 114, 101, 112, 108, 121]) }
+FAILED
+test tests::local_concord_json ... local_concord_json: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:\"reply\"") }; migrated Observation { body: [34, 118, 97, 108, 117, 101, 34], content_types: ["application/json"], decoded: Ok("reply") }
+
+thread 'tests::local_concord_json' panicked at src/lib.rs:343:5:
+assertion `left == right` failed: migration changed the selected codec
+  left: Observation { body: [34, 118, 97, 108, 117, 101, 34], content_types: ["application/json"], decoded: Ok("reply") }
+ right: Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:\"reply\"") }
+FAILED
+test tests::local_concord_text ... local_concord_text: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }; migrated Observation { body: [118, 97, 108, 117, 101], content_types: ["text/plain; charset=utf-8"], decoded: Ok("reply") }
+
+thread 'tests::local_concord_text' panicked at src/lib.rs:283:5:
+assertion `left == right` failed: migration changed the selected codec
+  left: Observation { body: [118, 97, 108, 117, 101], content_types: ["text/plain; charset=utf-8"], decoded: Ok("reply") }
+ right: Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }
+FAILED
+test tests::macro_reexport_custom ... macro_reexport_custom: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }; migrated Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }
+ok
+test tests::macro_reexport_safe ... macro_reexport_safe: expected Observation { body: [118, 97, 108, 117, 101], content_types: ["text/plain; charset=utf-8"], decoded: Ok("reply") }; migrated Observation { body: [118, 97, 108, 117, 101], content_types: ["text/plain; charset=utf-8"], decoded: Ok("reply") }
+ok
+test tests::macro_reexport_shadow ... macro_reexport_shadow: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:\"reply\"") }; migrated Observation { body: [34, 118, 97, 108, 117, 101, 34], content_types: ["application/json"], decoded: Ok("reply") }
+
+thread 'tests::macro_reexport_shadow' panicked at src/lib.rs:463:5:
+assertion `left == right` failed: migration changed the selected codec
+  left: Observation { body: [34, 118, 97, 108, 117, 101, 34], content_types: ["application/json"], decoded: Ok("reply") }
+ right: Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:\"reply\"") }
+FAILED
+test tests::nested_module ... nested_module: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }; migrated Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }
+ok
+test tests::nested_shadow_path ... nested_shadow_path: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }; migrated Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }
+ok
+test tests::nested_super ... nested_super: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }; migrated Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }
+ok
+test tests::qualified_builtin_binary ... qualified_builtin_binary: expected Observation { body: [118, 97, 108, 117, 101], content_types: ["application/octet-stream"], decoded: Ok([114, 101, 112, 108, 121]) }; migrated Observation { body: [118, 97, 108, 117, 101], content_types: ["application/octet-stream"], decoded: Ok([114, 101, 112, 108, 121]) }
+ok
+test tests::qualified_builtin_json ... qualified_builtin_json: expected Observation { body: [34, 118, 97, 108, 117, 101, 34], content_types: ["application/json"], decoded: Ok("reply") }; migrated Observation { body: [34, 118, 97, 108, 117, 101, 34], content_types: ["application/json"], decoded: Ok("reply") }
+ok
+test tests::qualified_builtin_text ... qualified_builtin_text: expected Observation { body: [118, 97, 108, 117, 101], content_types: ["text/plain; charset=utf-8"], decoded: Ok("reply") }; migrated Observation { body: [118, 97, 108, 117, 101], content_types: ["text/plain; charset=utf-8"], decoded: Ok("reply") }
+ok
+test tests::qualified_lowercase ... qualified_lowercase: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }; migrated Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }
+ok
+test tests::self_path ... self_path: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }; migrated Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }
+ok
+test tests::super_path ... super_path: expected Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }; migrated Observation { body: [67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101], content_types: ["application/x-custom"], decoded: Ok("CUSTOM:reply") }
+ok
+
+failures:
+
+failures:
+    tests::alias_named_concord
+    tests::bare_lowercase_bytes
+    tests::bare_lowercase_json
+    tests::bare_lowercase_text
+    tests::local_concord_binary
+    tests::local_concord_json
+    tests::local_concord_text
+    tests::macro_reexport_shadow
+
+test result: FAILED. 30 passed; 8 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+error: test failed, to rerun pass `--lib`

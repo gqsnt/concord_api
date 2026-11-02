@@ -1,0 +1,21 @@
+   Compiling f3check-renamed v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probes/renamed)
+error: expected identifier
+ --> src/lib.rs:7:23
+  |
+7 |         POST absolute(::c4::Text b: String) -> ::c4::Text String;
+  |                       ^
+
+error[E0433]: failed to resolve: use of undeclared type `Renamed`
+  --> src/lib.rs:14:32
+   |
+14 |     let a = wire::exchange(|u| Renamed::new(wire::http()).with_base_url(u).unwrap().p("value").prepare().unwrap(), br#""reply""#).await;
+   |                                ^^^^^^^ use of undeclared type `Renamed`
+
+error[E0433]: failed to resolve: use of undeclared type `Renamed`
+  --> src/lib.rs:21:32
+   |
+21 |     let c = wire::exchange(|u| Renamed::new(wire::http()).with_base_url(u).unwrap().absolute("value").prepare().unwrap(), b"reply").await;
+   |                                ^^^^^^^ use of undeclared type `Renamed`
+
+For more information about this error, try `rustc --explain E0433`.
+error: could not compile `f3check-renamed` (lib test) due to 3 previous errors

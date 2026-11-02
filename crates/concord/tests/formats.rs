@@ -356,6 +356,8 @@ mod migrated {
             POST by_path(Json item: NewItem) -> Json Item { path "p"; }
             POST by_word(json item: NewItem) -> json Item { path "w"; }
             PUT note(Text n: String) -> Text String { path "n"; }
+            // An absolute path in either position (review F3d: the body form was rejected).
+            PUT absolute(::concord::Text n: String) -> ::concord::Text String { path "n"; }
         }
     }
 }
@@ -376,12 +378,17 @@ async fn migrated_marker_paths_behave_like_the_words() {
         api.by_word(new()).send().await.unwrap()
     );
     assert_eq!(api.note("x").send().await.unwrap(), "raw");
+    assert_eq!(api.absolute("y").send().await.unwrap(), "raw");
     let r = server.requests();
     assert_eq!(
         (r[0].body.as_slice(), content_types(&r[0])),
         (r[1].body.as_slice(), content_types(&r[1]))
     );
     assert_eq!(content_types(&r[2]), ct("text/plain; charset=utf-8"));
+    assert_eq!(
+        (r[3].body.as_slice(), content_types(&r[3])),
+        (&b"y"[..], ct("text/plain; charset=utf-8"))
+    );
 }
 
 concord::api! {
