@@ -42,9 +42,13 @@ Run `ab-20261102T015701` (RUNS=3), seconds, mean:
 | release, edit `fan_a` (fanout) | 2.82 | 2.54 | 1.90 |
 | release `scale_shared` / `scale_deep` | 2.73 / 0.78 | 4.36 / 1.23 | 9.52 / 2.81 |
 
-Without `#[inline]`, every `prepare` is code-generated in the declaring crate whether used or not:
-API-edit release rebuilds cost 1.4–3.6× more; consumer-only rebuilds get 25–33% cheaper (the code is
-no longer generated per consumer — `fan_app` carries 200 out-of-line `prepare` copies for 150
+Without `#[inline]`, every `prepare` is code-generated in the declaring crate whether used or not.
+Compared with `refined` (the same code with `#[inline]`): release builds of the declaring crate and
+release rebuilds after an API edit cost 1.43–2.29× more (`use1000`: 0.98×); consumer-only release
+rebuilds get 12–25% cheaper (`use5` −12%, `use1000` −17%, `use100` and the fanout −25%); `check`
+and dev builds are within ~1–6%. *Correction (final no-change check):* an earlier version of this
+paragraph quoted "1.4–3.6× / 25–33%", partly computed against the alpha column, which does not
+isolate the attribute. (Consumer savings come from code no longer generated per consumer — `fan_app` carries 200 out-of-line `prepare` copies for 150
 distinct endpoints with `#[inline]`, 150 without). The trade-off favours the blanket attribute for
 APIs larger than what any one consumer uses; a consumer that calls nearly every endpoint of a huge
 API (`use1000`) is the case it does not help. Revisit trigger: a real downstream dominated by

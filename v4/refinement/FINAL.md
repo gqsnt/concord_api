@@ -122,8 +122,9 @@ inline experiment; `d1844be` for the final comparison and the runtime benchmark.
 `b0fe26e` was **not re-timed**: it differs from `d1844be` in generated documentation notes and doc
 comments (no runtime logic), which can affect compile cost a little.
 
-- **`#[inline]` kept** (measured on `de6471f`). Removing it from `prepare` made API-edit release
-  rebuilds 1.4–3.6× slower and consumer-only rebuilds 25–33% faster.
+- **`#[inline]` kept** (measured on `de6471f`). Removing it from `prepare` made release builds of
+  the declaring crate and API-edit rebuilds 1.43–2.29× slower (`use1000`: 0.98×) and consumer-only
+  release rebuilds 12–25% faster.
 - **A regression versus the alpha was found, attributed and reduced, not hidden.** Per-contribution
   `const` header validation and quadratic doc-note generation were fixed.
 - **Remaining accepted cost** (`d1844be` vs alpha): in the declaring crate, `check` is +27% (1,000
@@ -132,8 +133,8 @@ comments (no runtime logic), which can affect compile cost a little.
   an API edit costs +10–15% in release (`use5`, `use100`, fanout; 1.00× for `use1000`) and +25% in
   dev (`use100`), mostly the declaring crate's own extra cost. Loopback execution is broadly similar.
 - **Request construction:** +105 ns for nine query values, attributed to fallible formatting.
-- **Conditions:** one machine with the desktop in use, three samples per row; differences under ~5%
-  are noise.
+- **Conditions:** one machine with the desktop in use; compile timings are three hyperfine samples
+  per row (runtime: medians of nine runs, two rounds); differences under ~5% are noise.
 
 ## Reviews (details: [`REVIEW_TRIAGE.md`](REVIEW_TRIAGE.md); raw reports in `reviews/codex/`)
 
@@ -150,8 +151,11 @@ Also used:
 - **Implementation branches at medium effort:** tests and native recipes.
 - **Docs at `xhigh`.**
 - **Two fresh-use trials (agent simulations, not human studies):** the control (alpha) and the
-  refined surface, on the same neutral task. All of the refined surface's predictions matched, and
-  the control's three main frictions did not recur.
+  refined surface, on the same neutral task. All of the refined surface's predictions matched and 9
+  of 10 tasks compiled first time. Key rotation now works, and the participant found the
+  inherit/omit/replace pattern in the guides rather than only in SEMANTICS. Still reported: the
+  doubled-`Option` (`set_x(None)` versus `maybe_x(None)`) remains surprising to read, and the
+  documented IP-base/subdomain rule caught the participant once.
 
 ## Migration
 
