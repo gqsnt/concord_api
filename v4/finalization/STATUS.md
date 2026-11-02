@@ -21,6 +21,6 @@ campaign. Work directory (snapshots, proposals, reviews, raw measurements):
 | Docs, migration guide, script withdrawal (F10) | done | `c11c476` and later |
 | Full verification of the frozen candidate | pending | — |
 | Performance (Criterion, compile, allocations) | pending | `PERF.md` |
-| Fresh-use trials | pending | — |
+| Fresh-use trials (docs first, ten tasks, author + caller) | Terra XHigh and Sonnet, both completed on `389392f`; every actual problem fixed or documented in `23c21d6`, `4e01aa4`, `663dbe9`, `3b5c5ed` | `trials/terra-xhigh.md`, `trials/sonnet.md`, `MODEL_RUNS.md` |
 | Independent final reviews | pending | — |
 | Windows | NOT_RUN for this campaign (no push authorized) | — |
