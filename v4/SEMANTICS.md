@@ -195,6 +195,9 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
 - Order of build checks: body encoding (including the representation's content type), then
   subdomain labels and the assembled host (IP base, 253-byte limit), path segments, query and
   headers; the first failure is returned and later values are not formatted.
+- A value whose `Display` returns `fmt::Error` (a broken `Display`) is a build error naming the
+  placement, in every placement; no partial text is sent. Concord's generated `Debug` shows it as
+  `<Display failed>`.
 
 ## 7. Bodies and responses
 

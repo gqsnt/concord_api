@@ -106,14 +106,44 @@ impl fmt::Write for EncodeInto<'_> {
     }
 }
 
+/// The build error for a value whose `Display` implementation returned an error.
+fn unformattable(meta: &'static EndpointMeta, what: &'static str) -> Error {
+    Error::build(
+        Some(meta),
+        what,
+        "could not be formatted: a `Display` implementation returned an error",
+    )
+}
+
+/// A value's `Display` text, or the build error if its implementation fails.
+fn display<T: Display + ?Sized>(
+    value: &T,
+    meta: &'static EndpointMeta,
+    what: &'static str,
+) -> Result<String, Error> {
+    let mut out = String::new();
+    write!(out, "{value}").map_err(|_| unformattable(meta, what))?;
+    Ok(out)
+}
+
 /// Appends a value to a path segment, percent-encoding everything but unreserved characters.
-pub fn encode_segment<T: Display + ?Sized>(out: &mut String, value: &T) {
-    let _ = write!(EncodeInto(out), "{value}");
+pub fn encode_segment<T: Display + ?Sized>(
+    out: &mut String,
+    value: &T,
+    meta: &'static EndpointMeta,
+    what: &'static str,
+) -> Result<(), Error> {
+    write!(EncodeInto(out), "{value}").map_err(|_| unformattable(meta, what))
 }
 
 /// Appends a value's `Display` text.
-pub fn display_into<T: Display + ?Sized>(out: &mut String, value: &T) {
-    let _ = write!(out, "{value}");
+pub fn display_into<T: Display + ?Sized>(
+    out: &mut String,
+    value: &T,
+    meta: &'static EndpointMeta,
+    what: &'static str,
+) -> Result<(), Error> {
+    write!(out, "{value}").map_err(|_| unformattable(meta, what))
 }
 
 /// Encodes a body with its declared representation and validates the representation's content
@@ -213,24 +243,37 @@ impl<'a> Parts<'a> {
         self.trailing_slash = true;
     }
 
-    /// Adds one query occurrence.
-    pub fn query<T: Display + ?Sized>(&mut self, key: &'static str, value: &T) {
-        self.query.push((key, value.to_string()));
+    /// Adds one query occurrence. `what` names the parameter for errors.
+    pub fn query<T: Display + ?Sized>(
+        &mut self,
+        key: &'static str,
+        value: &T,
+        what: &'static str,
+    ) -> Result<(), Error> {
+        let text = display(value, self.meta, what)?;
+        self.query.push((key, text));
+        Ok(())
     }
 
     /// Adds one query occurrence per item, in iteration order.
-    pub fn query_each<I>(&mut self, key: &'static str, values: I)
+    pub fn query_each<I>(
+        &mut self,
+        key: &'static str,
+        values: I,
+        what: &'static str,
+    ) -> Result<(), Error>
     where
         I: IntoIterator,
         I::Item: Display,
     {
         for value in values {
-            self.query.push((key, value.to_string()));
+            self.query(key, &value, what)?;
         }
+        Ok(())
     }
 
     /// Adds one header line. The expansion builds `name` in a `const` block, so the native
-    /// `HeaderName` validator has accepted it at compile time; `what` is the same text.
+    /// `HeaderName` validator has accepted it at compile time; `what` names it for errors.
     pub fn header<T: Display + ?Sized>(
         &mut self,
         name: HeaderName,
@@ -238,7 +281,7 @@ impl<'a> Parts<'a> {
         value: &T,
         sensitive: bool,
     ) -> Result<(), Error> {
-        let text = value.to_string();
+        let text = display(value, self.meta, what)?;
         if !text
             .bytes()
             .all(|b| b == b'\t' || (0x20..0x7f).contains(&b))
@@ -246,11 +289,11 @@ impl<'a> Parts<'a> {
             return Err(Error::build(
                 Some(self.meta),
                 what,
-                "header value contains a control or non-ASCII character",
+                "value contains a control or non-ASCII character",
             ));
         }
         let mut value = HeaderValue::from_str(&text)
-            .map_err(|_| Error::build(Some(self.meta), what, "header value is invalid"))?;
+            .map_err(|_| Error::build(Some(self.meta), what, "value is invalid"))?;
         value.set_sensitive(sensitive);
         self.headers
             .try_append(name, value)
@@ -423,7 +466,27 @@ pub struct DebugDisplay<'a, T: ?Sized>(pub &'a T);
 
 impl<T: Display + ?Sized> fmt::Debug for DebugDisplay<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.0.to_string(), f)
+        fmt::Debug::fmt(&Shown::of(self.0), f)
+    }
+}
+
+/// A value's `Display` text for `Debug`; a failing `Display` is shown as `<Display failed>`
+/// rather than propagated (propagating would make `format!` panic).
+struct Shown(Option<String>);
+
+impl Shown {
+    fn of<T: Display + ?Sized>(value: &T) -> Self {
+        let mut text = String::new();
+        Self(write!(text, "{value}").ok().map(|()| text))
+    }
+}
+
+impl fmt::Debug for Shown {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            Some(text) => fmt::Debug::fmt(text, f),
+            None => f.write_str("<Display failed>"),
+        }
     }
 }
 
@@ -437,7 +500,7 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list()
-            .entries(self.0.into_iter().map(|item| item.to_string()))
+            .entries(self.0.into_iter().map(|item| Shown::of(&item)))
             .finish()
     }
 }
@@ -459,4 +522,15 @@ pub fn decoder<R: Decode<T>, T>(meta: &'static EndpointMeta) -> Decoder<T> {
 /// The response handling of an endpoint without `->`: any 2xx, body drained unbuffered.
 pub fn drain(meta: &'static EndpointMeta) -> Decoder<()> {
     Decoder::new(meta, |_| Ok(()), true)
+}
+
+/// Formats a query or header template; a failing `Display` is a build error naming the placement.
+pub fn format_template(
+    args: fmt::Arguments<'_>,
+    meta: &'static EndpointMeta,
+    what: &'static str,
+) -> Result<String, Error> {
+    let mut out = String::new();
+    out.write_fmt(args).map_err(|_| unformattable(meta, what))?;
+    Ok(out)
 }

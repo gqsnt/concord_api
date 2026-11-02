@@ -290,6 +290,33 @@ fn controls(
     out
 }
 
+/// `tokens` with every span moved to `at`'s location, keeping each token's own hygiene, so a
+/// trait-bound error in generated code points at the declaration that caused it.
+fn located(tokens: TokenStream, at: Span) -> TokenStream {
+    tokens
+        .into_iter()
+        .map(|tt| match tt {
+            proc_macro2::TokenTree::Group(g) => {
+                let mut group = proc_macro2::Group::new(g.delimiter(), located(g.stream(), at));
+                group.set_span(g.span().located_at(at));
+                proc_macro2::TokenTree::Group(group)
+            }
+            mut tt => {
+                tt.set_span(tt.span().located_at(at));
+                tt
+            }
+        })
+        .collect()
+}
+
+/// How build errors name a query parameter or header.
+fn placement_label(family: Family, key: &str) -> LitStr {
+    lit(&match family {
+        Family::Query => format!("query parameter `{key}`"),
+        Family::Header => format!("header `{key}`"),
+    })
+}
+
 /// A rustdoc list of an entry call's positional arguments with their documentation.
 fn argument_docs(values: &[Value], body: Option<&Body>) -> TokenStream {
     let mut lines = Vec::new();
@@ -370,7 +397,7 @@ fn debug_fields<'a>(
                 quote_spanned!(span=> &#place.as_ref().map(#k::__private::DebugDisplay))
             }
         };
-        out.extend(quote_spanned!(span=> .field(#label, #shown)));
+        out.extend(located(quote!(.field(#label, #shown)), span));
     }
     out
 }
@@ -794,6 +821,7 @@ fn source_code(
     key: &str,
     sensitive: bool,
 ) -> (Bound, TokenStream) {
+    let k = krate();
     let contrib = model.contrib(id);
     let mut bound = Bound {
         patterns: Vec::new(),
@@ -801,7 +829,7 @@ fn source_code(
     };
     let key = lit(key);
     let source = contrib.source.as_ref().expect("emitting sources only");
-    let (arg, each) = match source {
+    let (arg, each, at) = match source {
         Source::Ref { value, each } => {
             let place = places.value(model, *value);
             let span = model.value(*value).ty.span();
@@ -811,9 +839,9 @@ fn source_code(
                     .patterns
                     .push(quote!(::core::option::Option::Some(__v)));
                 bound.scrutinees.push(quote!(&#place));
-                (quote_spanned!(span=> &*#bound_v), *each)
+                (quote_spanned!(span=> &*#bound_v), *each, Some(span))
             } else {
-                (quote_spanned!(span=> &#place), *each)
+                (quote_spanned!(span=> &#place), *each, Some(span))
             }
         }
         Source::Template { pieces } => {
@@ -829,15 +857,16 @@ fn source_code(
                     Piece::Hole(r) => {
                         fmt.push_str("{}");
                         let place = places.value(model, *r);
+                        let at = model.value(*r).ty.span();
                         if model.value(*r).optional {
                             let b = format_ident!("__h{}", bound.patterns.len());
                             bound
                                 .patterns
                                 .push(quote!(::core::option::Option::Some(#b)));
                             bound.scrutinees.push(quote!(&#place));
-                            args.push(quote!(#b));
+                            args.push(located(quote!(#b), at));
                         } else {
-                            args.push(quote!(&#place));
+                            args.push(located(quote!(&#place), at));
                         }
                     }
                 }
@@ -845,10 +874,15 @@ fn source_code(
             if args.is_empty() {
                 // No holes: the decoded literal itself (`{{` already became `{`).
                 let literal = lit(&literal);
-                (quote!(#literal), false)
+                (quote!(#literal), false, None)
             } else {
                 let fmt = lit(&fmt);
-                (quote!(&::std::format!(#fmt, #(#args),*)), false)
+                let what = placement_label(id.family, key.value().as_str());
+                (
+                    quote!(&#k::__private::format_template(::core::format_args!(#fmt, #(#args),*), &__META, #what)?),
+                    false,
+                    None,
+                )
             }
         }
     };
@@ -859,11 +893,17 @@ fn source_code(
     let k = krate();
     let name = quote!(const { #k::reqwest::header::HeaderName::from_static(#key) });
     let guard = quote_spanned!(contrib.span=> const _: () = ::core::mem::forget(#k::reqwest::header::HeaderName::from_static(#key)););
+    let what = placement_label(id.family, key.value().as_str());
     let call = match (id.family, each) {
-        (Family::Query, false) => quote!(__p.query(#key, #arg);),
-        (Family::Query, true) => quote!(__p.query_each(#key, #arg);),
-        (Family::Header, false) => quote!(#guard __p.header(#name, #key, #arg, #sensitive)?;),
-        (Family::Header, true) => quote!(#guard __p.header_each(#name, #key, #arg, #sensitive)?;),
+        (Family::Query, false) => quote!(__p.query(#key, #arg, #what)?;),
+        (Family::Query, true) => quote!(__p.query_each(#key, #arg, #what)?;),
+        (Family::Header, false) => quote!(#guard __p.header(#name, #what, #arg, #sensitive)?;),
+        (Family::Header, true) => quote!(#guard __p.header_each(#name, #what, #arg, #sensitive)?;),
+    };
+    // A value placed directly: trait errors (no `Display`, not iterable) point at its type.
+    let call = match at {
+        Some(at) => located(call, at),
+        None => call,
     };
     (bound, call)
 }
@@ -915,13 +955,13 @@ fn component_code(
             Piece::Hole(r) => {
                 let place = places.value(model, *r);
                 let span = model.value(*r).ty.span();
-                if label {
-                    let arg = quote_spanned!(span=> &#place);
-                    build.extend(quote!(#k::__private::display_into(&mut __c, #arg);));
+                // Located at the value's type, so a missing `Display` is reported there.
+                let call = if label {
+                    quote!(#k::__private::display_into(&mut __c, &#place, &__META, #what)?;)
                 } else {
-                    let arg = quote_spanned!(span=> &#place);
-                    build.extend(quote!(#k::__private::encode_segment(&mut __c, #arg);));
-                }
+                    quote!(#k::__private::encode_segment(&mut __c, &#place, &__META, #what)?;)
+                };
+                build.extend(located(call, span));
             }
         }
     }

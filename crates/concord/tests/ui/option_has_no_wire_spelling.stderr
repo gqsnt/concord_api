@@ -1,31 +1,21 @@
 error[E0277]: `Option<String>` doesn't implement `std::fmt::Display`
- --> tests/ui/option_has_no_wire_spelling.rs:1:1
+ --> tests/ui/option_has_no_wire_spelling.rs:4:32
   |
-1 | / concord::api! {
-2 | |     pub client Api {
-3 | |         base "http://x.test";
-4 | |         GET list(query filter: Option<String>);
-5 | |     }
-6 | | }
-  | |_^ the trait `std::fmt::Display` is not implemented for `Option<String>`
+4 |         GET list(query filter: Option<String>);
+  |                                ^^^^^^ the trait `std::fmt::Display` is not implemented for `Option<String>`
   |
 note: required by a bound in `concord::__private::Parts::<'a>::query`
  --> src/__private.rs
   |
-  |     pub fn query<T: Display + ?Sized>(&mut self, key: &'static str, value: &T) {
+  |     pub fn query<T: Display + ?Sized>(
   |                     ^^^^^^^ required by this bound in `Parts::<'a>::query`
   = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `Option<String>` doesn't implement `std::fmt::Display`
- --> tests/ui/option_has_no_wire_spelling.rs:1:1
+ --> tests/ui/option_has_no_wire_spelling.rs:4:32
   |
-1 | / concord::api! {
-2 | |     pub client Api {
-3 | |         base "http://x.test";
-4 | |         GET list(query filter: Option<String>);
-5 | |     }
-6 | | }
-  | |_^ the trait `std::fmt::Display` is not implemented for `Option<String>`
+4 |         GET list(query filter: Option<String>);
+  |                                ^^^^^^ the trait `std::fmt::Display` is not implemented for `Option<String>`
   |
 help: the trait `Debug` is implemented for `concord::__private::DebugDisplay<'_, T>`
  --> src/__private.rs
