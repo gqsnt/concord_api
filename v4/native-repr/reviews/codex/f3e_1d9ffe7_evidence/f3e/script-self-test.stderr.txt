@@ -1,0 +1,2 @@
+kept: `via text` (write `self::text` or the word yourself)
+kept: `via r#json` (write `self::r#json` or the word yourself)

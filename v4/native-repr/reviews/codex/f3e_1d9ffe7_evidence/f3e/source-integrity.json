@@ -1,0 +1,17 @@
+{
+  "original_files_checked": 1480,
+  "tracked_files_checked": 1481,
+  "tracked_content_or_mode_changes": [],
+  "original_manifest_blob_mismatches": [],
+  "snapshot_head": "9fa9229024288ec61774ebdffec09a3fec23c537",
+  "head_unchanged": true,
+  "git_status_short": "",
+  "global_settings_hash_changes": [],
+  "remaining_review_processes": [],
+  "servers_started": false,
+  "all_cargo_builds_locked_and_offline": true,
+  "probe_lock_generated_offline": true,
+  "external_services_contacted": false,
+  "push_or_publish": false,
+  "sandbox_bypass": false
+}

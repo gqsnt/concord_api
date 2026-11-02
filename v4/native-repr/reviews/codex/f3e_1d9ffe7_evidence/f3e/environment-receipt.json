@@ -1,0 +1,72 @@
+{
+  "requested": {
+    "mode": "execute",
+    "model": "gpt-6.1-sol",
+    "effort": "xhigh"
+  },
+  "session_meta": [
+    {
+      "timestamp": "2026-11-02T08:00:39.426Z",
+      "id": "01a19b46-503a-7820-b6df-368b13f51399",
+      "cwd": "/home/canarit/projects/concord_v4_native_work/snapshots/f3e-1d9ffe7",
+      "originator": "codex_exec",
+      "cli_version": "0.166.0",
+      "source": "exec",
+      "model_provider": "openai"
+    }
+  ],
+  "observed_turn_context": [
+    {
+      "timestamp": "2026-11-02T08:00:40.338Z",
+      "cwd": "/home/canarit/projects/concord_v4_native_work/snapshots/f3e-1d9ffe7",
+      "approval_policy": "never",
+      "sandbox_policy": {
+        "type": "workspace-write",
+        "writable_roots": [
+          "/home/canarit/projects/concord_v4_native_work/codex/f3e/cargo-home"
+        ],
+        "network_access": true,
+        "exclude_tmpdir_env_var": false,
+        "exclude_slash_tmp": false
+      },
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "collaboration_mode": {
+        "mode": "default",
+        "settings": {
+          "model": "gpt-6.1-sol",
+          "reasoning_effort": "xhigh",
+          "developer_instructions": null
+        }
+      }
+    }
+  ],
+  "runtime_metadata_paths": [
+    "/home/canarit/.codex/sessions/2026/11/02/rollout-2026-11-02T09-00-39-01a19b46-503a-7820-b6df-368b13f51399.jsonl"
+  ],
+  "environment": {
+    "CARGO_HOME": "/home/canarit/projects/concord_v4_native_work/codex/f3e/cargo-home",
+    "CARGO_TARGET_DIR": "/home/canarit/projects/concord_v4_native_work/snapshots/f3e-1d9ffe7/target/review-build",
+    "RUSTUP_HOME": null,
+    "RUSTUP_TOOLCHAIN": null,
+    "CODEX_THREAD_ID": "01a19b46-503a-7820-b6df-368b13f51399",
+    "CODEX_MODEL": null,
+    "CODEX_MODEL_REASONING_EFFORT": null
+  },
+  "toolchain_versions": {
+    "stable": {
+      "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)"
+    },
+    "1.85": {
+      "rustc": "rustc 1.85.1 (4eb161250 2025-03-15)",
+      "cargo": "cargo 1.85.1 (d73d2caf9 2024-12-31)"
+    }
+  },
+  "settings_file_hashes": {
+    "/home/canarit/.codex/config.toml": "846dfd666860b6dac1988865496e5c5fdcfd1261fb9314d0db5be043fe93c421",
+    "/home/canarit/.rustup/settings.toml": "46d451a6b8ea2bed375971c34fee742235e1cd143e34368c6f9211802126de45",
+    "/home/canarit/projects/concord_v4_native_work/codex/f3e/cargo-home/config.toml": null
+  },
+  "execution_policy": "All cargo commands --offline; checks/tests --locked. All probes in target/probes. No external services, global-setting changes, push, publish, or sandbox bypass. No agents delegated."
+}

@@ -25,7 +25,8 @@ measurement on this branch), **reviewed** (an independent Codex review of that c
 | Performance (runtime, allocations, compile time) | measured | `PERF.md` |
 | Release preparation (package contents, packaged-source consumer, rendered rustdoc) | done | `6e60ba2`, `34bc6b6`, `2c4ce3b`; `scripts/package-check.sh` |
 | Fresh-use trial (agent simulation) | done; doc fixes applied | `evidence/fresh_use/`; `2c4ce3b` |
-| Full verification of the frozen candidate | done: 22/22 on `66a4478`, `1174d5d`, `d591fe7` | `evidence/verify_*.txt` |
-| Codex executable review of the candidate | `66a4478` REVISE (F1–F4) → fixed; re-review of `1174d5d`: F1, F2, F4 resolved, F3a → fixed in `b77084a`; narrow check of F3a | `REVIEW_TRIAGE.md` |
+| Full verification of the frozen candidate | done: 22/22 on `66a4478`, `1174d5d`, `d591fe7`, `d6b209f`, `1d9ffe7` | `evidence/verify_*.txt` |
+| Codex executable reviews | `66a4478` REVISE (F1–F4) → fixed; `1174d5d`: F1, F2, F4 resolved, F3a found → fixed; `d591fe7`: F3a resolved, F3b–F3d found → fixed; `d6b209f`: F3–F3d resolved, F3e found → fixed; `1d9ffe7`: F3e resolved, ACCEPT, no review pending | `REVIEW_TRIAGE.md` |
+| Acceptance | Linux x86_64 at `1d9ffe7` | `FINAL.md` |
 | Windows (CI) | NOT_RUN for this campaign: a push was not authorized; the earlier green Windows run (`41379941540`) is of `a40788c` and is baseline evidence only | — |
 | macOS | NOT_RUN (not a requirement) | — |

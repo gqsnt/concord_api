@@ -219,4 +219,22 @@ binaries within 0.12%, rlibs up to +1.15%. `#[inline]` unchanged.
 
 ## Acceptance
 
-Pending the focused re-review.
+**Accepted for Linux x86_64** (rustc 1.97.1; MSRV 1.85.1; nightly as a non-blocking lane) at code
+revision `1d9ffe7`:
+
+- every charter requirement in §1–§6 above is implemented and covered by executable tests
+  (`verify.sh --msrv --nightly --package` 22/22 on a clean tree, `evidence/verify_1d9ffe7.txt`);
+- every finding of the independent executable reviews is fixed and was confirmed resolved by a
+  later executable Codex review (F1, F2, F4 on `1174d5d`; F3 and F3a–F3d on `d6b209f`; F3e on
+  `1d9ffe7`); the design-review findings are dispositioned (`REVIEW_TRIAGE.md`);
+- performance is measured against the `a915c8d` baseline, with one documented cost (`PERF.md`).
+
+Scope of the independent review: the full executable audit ran on `66a4478`; the changes made
+since (the dual-use header rule, the package check, the migration script and hint, an absolute
+path in the parser, records) were each reviewed by focused or narrow executable Codex checks of
+those areas, not by a second full audit. Implemented, tested, reviewed and accepted are therefore
+distinct for the final delta only in that sense.
+
+**Not established:** Windows (NOT_RUN for this candidate: a push was not authorized), macOS
+(NOT_RUN), human usability (agent simulations only), HTTP/2 and TLS performance, universal safety
+of any kind beyond the tested properties.

@@ -134,3 +134,21 @@ by Codex.
 |---|---|---|---|---|
 | F3e | P3 | for `type r#type = …`, the script and the compiler suggested `self::type`, which does not parse | FIXED | the suggestion keeps the identifier as written (`self::r#type`), also in the lowercase-format error; `syntax::tests::via_replacement_names_the_same_path` (mutation: dropping `r#` fails it); `migrate_via.py --self-test` asserts the suggestion |
 
+## Codex narrow executable confirmation of F3e (`1d9ffe7`)
+
+- Reviewer: `gpt-6.1-sol`, `xhigh` (session `turn_context`), execute mode in the fresh snapshot
+  `f3e-1d9ffe7`, loopback only, private `CARGO_HOME`; 2026-11-02 08:00–08:04 UTC; all 1,481 files
+  unchanged; no server left. Report `f3e_1d9ffe7_report.md`; evidence in `f3e_1d9ffe7_evidence/`.
+  Executed on 1.99.0 and 1.85.1: the raw-keyword reproducer with the live suggestion applied
+  verbatim (compiles), 33 leftover-`via` diagnostics per toolchain (every suggestion compiles),
+  the lowercase-format errors in body and output position, the macro unit tests (8 per
+  toolchain), the script's self-test and its printed suggestion. **F3e RESOLVED; verdict ACCEPT
+  for this check; no new finding.**
+
+## Review status
+
+Every finding of the executable reviews is fixed and confirmed resolved by a later executable
+review: F1, F2, F4 (re-review of `1174d5d`), F3, F3a–F3d (re-check of `d6b209f`), F3e
+(confirmation on `1d9ffe7`). The design-review findings are dispositioned above. No review is
+pending.
+

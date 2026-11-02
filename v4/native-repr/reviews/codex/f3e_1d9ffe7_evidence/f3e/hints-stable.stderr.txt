@@ -1,0 +1,2 @@
+    Checking f3e-raw-keyword v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/f3e-1d9ffe7/target/probes/f3e/raw-keyword)
+error: could not compile `f3e-raw-keyword` (bin "hints") due to 33 previous errors
