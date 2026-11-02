@@ -38,7 +38,7 @@ concord::api! {
         base "http://files.invalid/v1";
 
         /// Upload into a folder; the multipart body is attached natively (see [`upload`]).
-        POST upload(folder: String) -> json Stored { path "folders/{folder}/files"; }
+        POST upload(folder: String) -> Stored { response json; path "folders/{folder}/files"; }
     }
 }
 

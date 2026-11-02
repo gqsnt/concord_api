@@ -1,6 +1,6 @@
-// Every body and typed output has a format, written in place or inherited from the nearest
-// `request`/`response` default: without either it is an error at the payload, naming both. The
-// two directions are independent: a `request` default does not give outputs a format.
+// Every body and typed output has a format, from the nearest `request`/`response` statement (the
+// endpoint, a scope or the client): without one it is an error at the payload. The two directions
+// are independent: a `request` statement does not give outputs a format.
 pub struct Item;
 concord::api! {
     pub client Api {

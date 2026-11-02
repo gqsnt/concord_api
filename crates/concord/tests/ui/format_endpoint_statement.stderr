@@ -1,23 +1,47 @@
-error: an endpoint has no `request` statement: write the format where the body is declared (`json item: NewItem`, `text note: String`, `form login: Login`); `request FORMAT;` is a default on a client or scope
- --> tests/ui/format_endpoint_statement.rs:5:40
+error: `request` statement has no body to apply to
+ --> tests/ui/format_endpoint_statement.rs:7:43
   |
-5 |         POST note(body note: String) { request text; }
-  |                                        ^^^^^^^
+7 |         GET version() -> String { request text; response text; }
+  |                                           ^^^^
 
-error: an endpoint has no `response` statement: write the format where the output is declared (`-> text String`, `-> bytes Bytes`); `response FORMAT;` is a default on a client or scope
-  --> tests/ui/format_endpoint_statement.rs:11:35
+error: `response` statement has no typed output (`-> T`) to apply to
+  --> tests/ui/format_endpoint_statement.rs:13:63
    |
-11 |         GET version() -> String { response text; }
-   |                                   ^^^^^^^^
+13 |         POST note(body note: String) { request text; response text; }
+   |                                                               ^^^^
+
+error: `format` statement has neither a body nor a typed output (`-> T`) to apply to
+  --> tests/ui/format_endpoint_statement.rs:19:34
+   |
+19 |         DELETE remove() { format json; }
+   |                                  ^^^^
+
+error: duplicate `request` statement; each owner declares it at most once
+  --> tests/ui/format_endpoint_statement.rs:27:13
+   |
+27 |             request bytes;
+   |             ^^^^^^^
+
+error: duplicate `request` statement; each owner declares it at most once
+  --> tests/ui/format_endpoint_statement.rs:36:13
+   |
+36 |             request text;
+   |             ^^^^^^^
+
+error: duplicate direction: `format` counts as both `request` and `response`
+  --> tests/ui/format_endpoint_statement.rs:45:13
+   |
+45 |             format text;
+   |             ^^^^^^
 
 error: duplicate `response` statement; each owner declares it at most once
-  --> tests/ui/format_endpoint_statement.rs:18:9
+  --> tests/ui/format_endpoint_statement.rs:53:9
    |
-18 |         response text;
+53 |         response text;
    |         ^^^^^^^^
 
 error: owner statements (`path`, `subdomain`, `query`, `headers`, `request`, `response`) must precede child declarations (first child: `version`)
-  --> tests/ui/format_endpoint_statement.rs:26:9
+  --> tests/ui/format_endpoint_statement.rs:61:9
    |
-26 |         response json;
+61 |         response json;
    |         ^^^^^^^^

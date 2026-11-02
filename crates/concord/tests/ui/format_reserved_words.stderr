@@ -1,23 +1,35 @@
-error: the output type is missing after `json`: `-> json Item` (format words are reserved in format position; a payload type named `json` is written `r#json`)
- --> tests/ui/format_reserved_words.rs:6:23
+error: expected identifier
+ --> tests/ui/format_reserved_words.rs:7:38
   |
-6 |         GET item() -> json { path "x"; }
-  |                       ^^^^
+7 |         GET item() -> Rows { response; }
+  |                                      ^
 
 error: `csv` is not a format: the built-in formats are `json`, `text`, `bytes` or `form`; a format type is written as a path (`self::csv`)
-  --> tests/ui/format_reserved_words.rs:12:23
+  --> tests/ui/format_reserved_words.rs:13:39
    |
-12 |         GET rows() -> csv Rows;
-   |                       ^^^
+13 |         GET rows() -> Rows { response csv; }
+   |                                       ^^^
 
 error: `qurey` is neither a placement (`query`, `header("..")`) nor a body format: the built-in formats are `json`, `text`, `bytes` or `form`; a format type is written as a path (`self::qurey`)
-  --> tests/ui/format_reserved_words.rs:18:20
+  --> tests/ui/format_reserved_words.rs:19:20
    |
-18 |         GET search(qurey page: u32);
+19 |         GET search(qurey page: u32);
    |                    ^^^^^
 
 error: `jsn` is not a format: the built-in formats are `json`, `text`, `bytes` or `form`; a format type is written as a path (`self::jsn`)
-  --> tests/ui/format_reserved_words.rs:24:17
+  --> tests/ui/format_reserved_words.rs:25:17
    |
-24 |         request jsn;
+25 |         request jsn;
    |                 ^^^
+
+error: `jsn` is not a format: the built-in formats are `json`, `text`, `bytes` or `form`; a format type is written as a path (`self::jsn`)
+  --> tests/ui/format_reserved_words.rs:32:48
+   |
+32 |         POST create(body item: Rows) { request jsn; }
+   |                                                ^^^
+
+error: `jsn` is not a format: the built-in formats are `json`, `text`, `bytes` or `form`; a format type is written as a path (`self::jsn`)
+  --> tests/ui/format_reserved_words.rs:38:47
+   |
+38 |         POST create(body item: Rows) { format jsn; }
+   |                                               ^^^

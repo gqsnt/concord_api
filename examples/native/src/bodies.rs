@@ -5,9 +5,9 @@ use crate::api::{Inventory, StockRow};
 /// Imports stock rows; request and response are NDJSON with this crate's
 /// [`Ndjson`](crate::repr::Ndjson) format (U16).
 ///
-/// Nothing here differs from a built-in format: the declaration writes `Ndjson rows: ..` and
-/// `-> Ndjson ..` where it would write `json`, the generated method takes `Vec<StockRow>`, and a
-/// malformed response line is a [`concord::ErrorKind::Decode`] error whose `Display` names the
+/// Nothing here differs from a built-in format: the declaration writes `format Ndjson;` where it
+/// would write `format json;`, the generated method takes `Vec<StockRow>`, and a malformed
+/// response line is a [`concord::ErrorKind::Decode`] error whose `Display` names the
 /// line number, never its content.
 pub async fn import_stock(
     api: &Inventory,

@@ -1,5 +1,6 @@
 //! Request bodies, response formats, status handling and the native response path. The fixture
-//! is a mostly-JSON client (`request json; response json;`) with in-place exceptions.
+//! is a mostly-JSON client (`request json; response json;`) with exceptions written as endpoint
+//! statements.
 //! Scenario IDs refer to `v4/TEST_MATRIX.md`.
 
 mod support;
@@ -31,14 +32,26 @@ concord::api! {
 
         POST create(body item: NewItem) -> Item { path "items"; }
         PUT nullable(body value: Option<NewItem>) { path "nullable"; }
-        PUT text(text value: String) { path "text"; }
-        PUT binary(bytes value: concord::bytes::Bytes) { path "binary"; }
+        PUT text(body value: String) {
+            request text;
+            path "text";
+        }
+        PUT binary(body value: concord::bytes::Bytes) {
+            request bytes;
+            path "binary";
+        }
         PATCH maybe(body value?: NewItem) { path "maybe"; }
 
         GET item(id: u64) -> Item { path "items/{id}"; }
         GET find(id: u64) -> Option<Item> { path "find/{id}"; }
-        GET text_out() -> text String { path "text"; }
-        GET bytes_out() -> bytes concord::bytes::Bytes { path "bytes"; }
+        GET text_out() -> String {
+            response text;
+            path "text";
+        }
+        GET bytes_out() -> concord::bytes::Bytes {
+            response bytes;
+            path "bytes";
+        }
         DELETE remove(id: u64) { path "items/{id}"; }
         HEAD exists(id: u64) { path "items/{id}"; }
     }

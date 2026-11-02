@@ -1,10 +1,10 @@
 error[E0277]: the format `Text` cannot decode a `Item` response
- --> tests/ui/representation_unsupported_payload.rs:7:23
+ --> tests/ui/representation_unsupported_payload.rs:8:39
   |
-7 |         GET item() -> text Item;
-  |                       ^^^^ this output's format is `Text` (written here or inherited from a `response` default); it needs `Text: Decode<Item>`
+8 |         GET item() -> Item { response text; }
+  |                                       ^^^^ this output's format is `Text` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Text: Decode<Item>`
   |
-  = note: built in: `json` (any `DeserializeOwned`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `DeserializeOwned`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Decode<Item>`, written by its path in place or in a `response` default; an endpoint without typed output omits `->`
+  = note: built in: `json` (any `DeserializeOwned`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `DeserializeOwned`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Decode<Item>`, named by its path: `response Csv;`; an endpoint without typed output omits `->`
 help: the trait `Decode<Item>` is not implemented for `Text`
       but trait `Decode<String>` is implemented for it
  --> src/repr.rs
@@ -20,13 +20,13 @@ note: required by a bound in `concord::__private::decoder`
   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the format `concord::Binary` cannot encode a `Item` request body
- --> tests/ui/representation_unsupported_payload.rs:8:21
+ --> tests/ui/representation_unsupported_payload.rs:9:48
   |
-8 |         POST create(bytes item: Item);
-  |                     ^^^^^ this body's format is `concord::Binary` (written here or inherited from a `request` default); it needs `concord::Binary: Encode<Item>`
+9 |         POST create(body item: Item) { request bytes; }
+  |                                                ^^^^^ this body's format is `concord::Binary` (the nearest `request` statement: on the endpoint, a scope or the client); it needs `concord::Binary: Encode<Item>`
   |
   = help: the trait `Encode<Item>` is not implemented for `concord::Binary`
-  = note: built in: `json` (any `Serialize`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `Serialize`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Encode<Item>`, written by its path in place or in a `request` default
+  = note: built in: `json` (any `Serialize`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `Serialize`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Encode<Item>`, named by its path: `request Ndjson;`
 help: `concord::Binary` implements trait `Encode<T>`
  --> src/repr.rs
   |
@@ -41,3 +41,89 @@ note: required by a bound in `concord::__private::BodyFormat::<T>::new`
   |     pub const fn new<E: Encode<T>>() -> Self {
   |                         ^^^^^^^^^ required by this bound in `BodyFormat::<T>::new`
   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the format `Text` cannot encode a `u64` request body
+  --> tests/ui/representation_unsupported_payload.rs:15:43
+   |
+15 |         POST count(body n: u64) { request text; }
+   |                                           ^^^^ this body's format is `Text` (the nearest `request` statement: on the endpoint, a scope or the client); it needs `Text: Encode<u64>`
+   |
+   = note: built in: `json` (any `Serialize`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `Serialize`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Encode<u64>`, named by its path: `request Ndjson;`
+help: the trait `Encode<u64>` is not implemented for `Text`
+      but trait `Encode<String>` is implemented for it
+  --> src/repr.rs
+   |
+   | impl Encode<String> for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `String`, found `u64`
+note: required by a bound in `concord::__private::BodyFormat::<T>::new`
+  --> src/__private.rs
+   |
+   |     pub const fn new<E: Encode<T>>() -> Self {
+   |                         ^^^^^^^^^ required by this bound in `BodyFormat::<T>::new`
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the format `concord::Binary` cannot decode a `u64` response
+  --> tests/ui/representation_unsupported_payload.rs:16:39
+   |
+16 |         GET total() -> u64 { response bytes; }
+   |                                       ^^^^^ this output's format is `concord::Binary` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `concord::Binary: Decode<u64>`
+   |
+   = help: the trait `concord::Decode<u64>` is not implemented for `concord::Binary`
+   = note: built in: `json` (any `DeserializeOwned`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `DeserializeOwned`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Decode<u64>`, named by its path: `response Csv;`; an endpoint without typed output omits `->`
+help: `concord::Binary` implements trait `concord::Decode<T>`
+  --> src/repr.rs
+   |
+   | impl Decode<Bytes> for Binary {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Decode<concord::bytes::Bytes>`
+...
+   | impl Decode<Vec<u8>> for Binary {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Decode<Vec<u8>>`
+note: required by a bound in `concord::__private::decoder`
+  --> src/__private.rs
+   |
+   | pub fn decoder<R: Decode<T>, T>(meta: &'static EndpointMeta) -> Decoder<T> {
+   |                   ^^^^^^^^^ required by this bound in `decoder`
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the format `concord::Binary` cannot decode a `Item` response
+  --> tests/ui/representation_unsupported_payload.rs:25:41
+   |
+25 |             POST create(body n: u64) -> Item;
+   |                                         ^^^^ this output's format is `concord::Binary` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `concord::Binary: Decode<Item>`
+   |
+   = help: the trait `concord::Decode<Item>` is not implemented for `concord::Binary`
+   = note: built in: `json` (any `DeserializeOwned`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `DeserializeOwned`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Decode<Item>`, named by its path: `response Csv;`; an endpoint without typed output omits `->`
+help: `concord::Binary` implements trait `concord::Decode<T>`
+  --> src/repr.rs
+   |
+   | impl Decode<Bytes> for Binary {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Decode<concord::bytes::Bytes>`
+...
+   | impl Decode<Vec<u8>> for Binary {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::Decode<Vec<u8>>`
+note: required by a bound in `concord::__private::decoder`
+  --> src/__private.rs
+   |
+   | pub fn decoder<R: Decode<T>, T>(meta: &'static EndpointMeta) -> Decoder<T> {
+   |                   ^^^^^^^^^ required by this bound in `decoder`
+
+error[E0277]: the format `Text` cannot encode a `u64` request body
+  --> tests/ui/representation_unsupported_payload.rs:25:33
+   |
+25 |             POST create(body n: u64) -> Item;
+   |                                 ^^^ this body's format is `Text` (the nearest `request` statement: on the endpoint, a scope or the client); it needs `Text: Encode<u64>`
+   |
+   = note: built in: `json` (any `Serialize`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `Serialize`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Encode<u64>`, named by its path: `request Ndjson;`
+help: the trait `Encode<u64>` is not implemented for `Text`
+      but trait `Encode<String>` is implemented for it
+  --> src/repr.rs
+   |
+   | impl Encode<String> for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `String`, found `u64`
+note: required by a bound in `concord::__private::BodyFormat::<T>::new`
+  --> src/__private.rs
+   |
+   |     pub const fn new<E: Encode<T>>() -> Self {
+   |                         ^^^^^^^^^ required by this bound in `BodyFormat::<T>::new`

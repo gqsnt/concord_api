@@ -61,15 +61,19 @@ concord::api! {
         }
 
         /// Bulk stock import and its per-row result, both NDJSON.
-        POST import_stock(Ndjson rows: Vec<StockRow>) -> Ndjson Vec<StockRow> {
+        POST import_stock(body rows: Vec<StockRow>) -> Vec<StockRow> {
+            format Ndjson;
             path "stock/import";
         }
 
         /// A form-encoded feedback submission, with this crate's pair encoder.
-        POST feedback(repr::Form fields: Vec<(String, String)>) { path "feedback"; }
+        POST feedback(body fields: Vec<(String, String)>) {
+            request repr::Form;
+            path "feedback";
+        }
 
         /// A long chunked event export. The declared `bytes` buffers everything; the streaming
         /// recipe uses `send_raw` instead.
-        GET events() -> bytes concord::bytes::Bytes { path "events"; }
+        GET events() -> concord::bytes::Bytes { response bytes; path "events"; }
     }
 }

@@ -75,7 +75,10 @@ concord::api! {
     pub client Big {
         base "http://big.invalid";
         GET drained() { path "big"; }
-        GET buffered() -> bytes concord::bytes::Bytes { path "big"; }
+        GET buffered() -> concord::bytes::Bytes {
+            response bytes;
+            path "big";
+        }
     }
 }
 

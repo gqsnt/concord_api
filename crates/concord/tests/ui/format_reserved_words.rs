@@ -1,15 +1,16 @@
-// Format words are reserved in format position; a lowercase format type is written as a path.
+// Format words are reserved in a representation statement; a lowercase format type is written as
+// a path. A statement without a format is an error, and so is a typo.
 pub struct Rows;
 concord::api! {
-    pub client MissingType {
+    pub client MissingFormat {
         base "http://x.test";
-        GET item() -> json { path "x"; }
+        GET item() -> Rows { response; }
     }
 }
 concord::api! {
     pub client Lowercase {
         base "http://x.test";
-        GET rows() -> csv Rows;
+        GET rows() -> Rows { response csv; }
     }
 }
 concord::api! {
@@ -23,6 +24,18 @@ concord::api! {
         base "http://x.test";
         request jsn;
         POST create(body item: Rows);
+    }
+}
+concord::api! {
+    pub client EndpointTypo {
+        base "http://x.test";
+        POST create(body item: Rows) { request jsn; }
+    }
+}
+concord::api! {
+    pub client FormatTypo {
+        base "http://x.test";
+        POST create(body item: Rows) { format jsn; }
     }
 }
 fn main() {}

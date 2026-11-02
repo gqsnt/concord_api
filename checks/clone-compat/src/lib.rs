@@ -90,14 +90,14 @@
 //! ```compile_fail,E0599
 //! use concord_clone_compat::{MoveOnly as V, Raw};
 //! concord::api! { pub client Api { base "http://x.invalid";
-//!     POST put(Raw payload: V) { path "items"; } } }
+//!     POST put(body payload: V) { request Raw; path "items"; } } }
 //! let request = Api::new(concord::reqwest::Client::new()).put(V::new("a"));
 //! let _ = request.clone();
 //! ```
 //! ```
 //! use concord_clone_compat::{Cloneable as V, Raw};
 //! concord::api! { pub client Api { base "http://x.invalid";
-//!     POST put(Raw payload: V) { path "items"; } } }
+//!     POST put(body payload: V) { request Raw; path "items"; } } }
 //! let request = Api::new(concord::reqwest::Client::new()).put(V::new("a"));
 //! let _ = request.clone();
 //! ```
@@ -107,8 +107,8 @@
 //! ```compile_fail,E0599
 //! use concord_clone_compat::{Cloneable as C, MoveOnly as V, Raw};
 //! concord::api! { pub client Api { base "http://x.invalid";
-//!     POST put(id: C, query note?: C, nonce: V, Raw payload: C) {
-//!         path "items/{id}"; headers { "x-nonce" = "{nonce}"; }
+//!     POST put(id: C, query note?: C, nonce: V, body payload: C) {
+//!         request Raw; path "items/{id}"; headers { "x-nonce" = "{nonce}"; }
 //!     } } }
 //! let request = Api::new(concord::reqwest::Client::new()).put(C::new("1"), V::new("n"), C::new("p"));
 //! let _ = request.clone();
@@ -116,8 +116,8 @@
 //! ```
 //! use concord_clone_compat::{Cloneable as C, Cloneable as V, Raw};
 //! concord::api! { pub client Api { base "http://x.invalid";
-//!     POST put(id: C, query note?: C, nonce: V, Raw payload: C) {
-//!         path "items/{id}"; headers { "x-nonce" = "{nonce}"; }
+//!     POST put(id: C, query note?: C, nonce: V, body payload: C) {
+//!         request Raw; path "items/{id}"; headers { "x-nonce" = "{nonce}"; }
 //!     } } }
 //! let request = Api::new(concord::reqwest::Client::new()).put(C::new("1"), V::new("n"), C::new("p"));
 //! let _ = request.clone();

@@ -1,0 +1,47 @@
+error: removed in-place body format: write `body b: Item` and `request json;` on this endpoint
+ --> tests/ui/format_removed_spellings.rs:9:21
+  |
+9 |         POST a(json b: Item);
+  |                     ^
+
+error: removed in-place body format: write `body b: Item` and `request json "application/merge-patch+json";` on this endpoint
+  --> tests/ui/format_removed_spellings.rs:15:53
+   |
+15 |         POST a(json("application/merge-patch+json") b: Item);
+   |                                                     ^
+
+error: removed in-place body format: write `body b: Item` and `request json "application/problem+json";` on this endpoint
+  --> tests/ui/format_removed_spellings.rs:22:49
+   |
+22 |         POST a(body("application/problem+json") b: Item);
+   |                                                 ^
+
+error: removed in-place body format: write `body b: Item` and `request Csv;` on this endpoint
+  --> tests/ui/format_removed_spellings.rs:28:20
+   |
+28 |         POST a(Csv b: Item);
+   |                    ^
+
+error: removed in-place output format: write `-> Item` and `response json;` on this endpoint
+  --> tests/ui/format_removed_spellings.rs:34:25
+   |
+34 |         GET a() -> json Item;
+   |                         ^^^^
+
+error: removed in-place output format: write `-> Item` and `response Csv;` on this endpoint
+  --> tests/ui/format_removed_spellings.rs:40:24
+   |
+40 |         GET a() -> Csv Item;
+   |                        ^^^^
+
+error: removed parenthesized media type: write `request json "application/vnd.api+json";`
+  --> tests/ui/format_removed_spellings.rs:46:22
+   |
+46 |         request json("application/vnd.api+json");
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: removed parenthesized media type: write `request text "text/markdown";`
+  --> tests/ui/format_removed_spellings.rs:53:45
+   |
+53 |         POST a(body b: Item) { request text("text/markdown"); }
+   |                                             ^^^^^^^^^^^^^^^

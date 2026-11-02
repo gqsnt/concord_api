@@ -22,8 +22,9 @@ concord::api! {
     /// The simple API.
     pub client SimpleApi {
         base "https://api.example.com/v1";
+        response json;
 
-        GET health() -> json Health { path "health"; }
-        GET item(id: String) -> json Item { path "items/{id}"; }
+        GET health() -> Health { path "health"; }
+        GET item(id: String) -> Item { path "items/{id}"; }
     }
 }

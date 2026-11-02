@@ -43,7 +43,7 @@ impl std::error::Error for StreamError {}
 /// Reads at most `max_chunks` chunks of the event export, waiting at most `per_chunk` for each,
 /// then drops the response.
 ///
-/// Use it for large or unbounded bodies: the declared `-> bytes Bytes` buffers the whole
+/// Use it for large or unbounded bodies: the declared `-> Bytes` (`response bytes;`) buffers the whole
 /// body, while [`concord::Prepared::send_raw`] returns the unread native response. Dropping it
 /// before the end abandons the body; reqwest/hyper then close that connection instead of
 /// returning it to the pool (the server observes the close). The deadline is the

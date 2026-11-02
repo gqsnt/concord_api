@@ -136,9 +136,9 @@ concord::api! {
         }
 
         /// A native `Content-Type` wins over the body representation's.
-        POST upload(header("content-type") ct: HeaderValue, text b: String);
+        POST upload(header("content-type") ct: HeaderValue, body b: String) { request text; }
         /// An optional native header does not decide whether a body exists.
-        POST maybe_body(header("x-h") h?: HeaderValue, text b?: String);
+        POST maybe_body(header("x-h") h?: HeaderValue, body b?: String) { request text; }
 
         /// Disabled: its value type does not exist; its literal is still a valid static.
         #[cfg(any())]

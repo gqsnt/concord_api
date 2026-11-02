@@ -10,7 +10,7 @@ impl concord::Encode<String> for Odd {
 concord::api! {
     pub client Api {
         base "http://x.test";
-        POST odd(Odd b: String);
+        POST odd(body b: String) { request Odd; }
     }
 }
 fn main() {}

@@ -394,7 +394,8 @@ concord::api! {
     pub client Cloning {
         base "http://cloning.invalid";
         /// Body + Clone values: `Clone`; the clone keeps the evaluated idempotency key.
-        POST submit(header("idempotency-key") key: u32 = clone_key(), text text: String) {
+        POST submit(header("idempotency-key") key: u32 = clone_key(), body text: String) {
+            request text;
             path "submit";
         }
         /// A move-only value: accepted, the request is simply not `Clone`.
@@ -427,7 +428,10 @@ concord::api! {
         base "http://rotating.invalid";
         scope tenant(tenant: String) {
             path "t/{tenant}";
-            GET item(id: u32, text note: String) { path "items/{id}"; }
+            GET item(id: u32, body note: String) {
+                request text;
+                path "items/{id}";
+            }
         }
     }
 }

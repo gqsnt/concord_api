@@ -25,10 +25,10 @@ note: required by a bound in `concord::__private::decoder`
   |                   ^^^^^^^^^ required by this bound in `decoder`
 
 error[E0277]: the trait bound `concord::bytes::Bytes: serde::Deserialize<'de>` is not satisfied
- --> tests/ui_json/format_serde_bound.rs:9:28
+ --> tests/ui_json/format_serde_bound.rs:9:61
   |
-9 |         GET thumbnail() -> json concord::bytes::Bytes;
-  |                            ^^^^ the trait `for<'de> serde_core::de::Deserialize<'de>` is not implemented for `concord::bytes::Bytes`
+9 |         GET thumbnail() -> concord::bytes::Bytes { response json; }
+  |                                                             ^^^^ the trait `for<'de> serde_core::de::Deserialize<'de>` is not implemented for `concord::bytes::Bytes`
   |
   = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `concord::bytes::Bytes` type
   = note: for types from other crates check whether the crate offers a `serde` feature flag
