@@ -35,6 +35,7 @@ concord::api! { .. }                                  crates/concord/src/lib.rs
        error.rs     Error, ErrorKind                   static Display, explicit raw accessors
        repr.rs      Encode<T>, Decode<T>, Json/Text/Binary, BodyError
        value.rs     IntoValue<T>                       the sealed set of accepted conversions
+       header.rs    ToHeaderValue                      how a value placed as a header becomes one
 ```
 
 The generated code decides at runtime only whether optional values are present (`if let`); which
@@ -53,12 +54,13 @@ contributions reach an endpoint's request is fixed by `model.rs`.
 | Value kinds, controls, initializers (§3) | `emit.rs`: `controls`, `value_inits`, `navigation` | `value.rs`: `IntoValue` |
 | Declared base subset (§4) | `model.rs`: `validate_base` (+ the D11 consistency test at the end of the file) | `__private.rs`: `Base::parse`, `Base::from_static` |
 | Path and subdomain structure (§4) | `model.rs`: `structural`, `pieces` | `__private.rs`: `Parts::segment`, `Parts::label`, `Parts::host`, `encode_segment` |
-| Query/header keys, reserved headers, literal header values (§5) | `model.rs`: `key`, `RESERVED_HEADERS`, `resolve_owner` | `__private.rs`: `Parts::query`, `Parts::header`, `Parts::finish` |
+| Query/header keys, reserved headers, literal header values (§5) | `model.rs`: `key`, `RESERVED_HEADERS`, `resolve_owner`; `emit.rs`: `header_statics` (names and literal values as statics) | `__private.rs`: `Parts::query`, `Parts::header`, `Parts::finish` |
+| Header value routes: literal / formatted / `ToHeaderValue`, text policy (§5) | `model.rs`: `Value::text`; `emit.rs`: `source_code`, `debug_fields` | `header.rs`: `ToHeaderValue`; `__private.rs`: `Parts::header`, `Text`, `text` |
 | Composition: slots, `append`/`override`/`else inherit`/`remove` (§5) | `model.rs`: `resolve_owner`, `compose`, `compose_family` | generated `prepare` (`emit.rs`: `prepare_body`) |
 | Build-check order, failing `Display` (§6) | `emit.rs`: `prepare_body` | `__private.rs`: `display_into`, `encode_segment`, `Parts` |
 | Execution, decoding (§6, §7) | `emit.rs`: endpoint `send`/`prepare` | `prepared.rs`, `__private.rs`: `decoder`, `drain`, `encode_body`; `repr.rs` |
 | Errors (§8) | — | `error.rs` |
-| Sensitivity (§9) | `model.rs`: `SENSITIVE_NAMES`, `sensitive_name`, `refresh_sensitivity`, `propagate_sensitivity` | `__private.rs`: `redacted_url`, `DebugDisplay`, `Redacted`; `prepared.rs`: `Debug` |
+| Sensitivity (§9) | `model.rs`: `SENSITIVE_NAMES`, `sensitive_name`, `refresh_sensitivity`, `propagate_sensitivity` | `__private.rs`: `redacted_url`, `DebugDisplay`, `DebugHeader`, `Redacted`, `Parts::header` (flag OR); `prepared.rs`: `Debug` |
 | Generated documentation | `emit.rs`: `owner_docs`, `controls`, `argument_docs`, `override_notes`, `initially` | — |
 
 ## Changing a semantic rule

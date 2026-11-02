@@ -271,7 +271,9 @@ The shortest form places a value directly in its parameter list:
 | `query limit: u32` | `limit=<value>` |
 | `query("per-page") per_page: u32` | `per-page=<value>` |
 | `header("x-api-version") version: String` | `x-api-version: <value>` |
+| `header("accept") accept: HeaderValue` | `accept: <the native value, byte for byte>` |
 | `query("tag") each tags: Vec<String>` | one `tag=<item>` per item (any `IntoIterator` whose items are `Display`) |
+| `header("x-tag") each tags: Vec<HeaderValue>` | one `x-tag` line per item, in order |
 
 ### 4.2 Blocks, templates and references
 
@@ -439,10 +441,47 @@ fn main() -> Result<(), concord::Error> {
 - Names must be valid header field names; `host`, `content-length`, `transfer-encoding`,
   `connection`, `te`, `trailer`, `upgrade` and `keep-alive` are rejected (the transport owns them).
   `authorization`, `cookie`, `accept` and `content-type` are ordinary.
-- Values must be visible ASCII, space or tab. Literal text is checked at compile time, formatted
-  values when the request is built (a build error names the header, never the value).
+- A value placed directly (`header("k") x: T`, `"k" = x`, `"k" = each xs`) is converted with
+  `concord::ToHeaderValue`, not `Display`: a native `reqwest::header::HeaderValue` is sent byte
+  for byte with its sensitivity flag (it is cloned per request — for a `static` or
+  `HeaderValue::from_static` value that copies no bytes); `String`/`&str`, integers and `bool` are
+  accepted as they are; implement the trait for your own type.
+- Text — literal or formatted by a template, or a `String` value — must be visible ASCII, space or
+  tab. Literal text is checked at compile time (and becomes a static `HeaderValue`), other text
+  when the request is built (a build error names the header, never the value). Bytes outside that
+  set are sent only from a native value you built yourself (`HeaderValue::from_bytes`).
+- A native value is not text: it cannot fill a path, a query value or a template hole.
 - `remove` and an absent key concern Concord's own contributions: headers configured on the
   `reqwest::Client` (default headers, user agent) are still added by reqwest.
+
+```rust
+use concord::reqwest::{self, header::HeaderValue};
+
+static ACCEPT_JSON: HeaderValue = HeaderValue::from_static("application/json");
+
+concord::api! {
+    pub client Feed(
+        header("accept") accept: HeaderValue = &ACCEPT_JSON,
+        header("x-trace") trace?: HeaderValue,
+    ) {
+        base "https://feed.example.com";
+        GET items(header("x-page") page: u32) { path "items"; }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let mut secret = HeaderValue::from_static("t-123");
+    secret.set_sensitive(true); // kept: Concord's output shows `<redacted>`
+    let feed = Feed::new(reqwest::Client::new()).set_trace(secret);
+    let prepared = feed.items(2).prepare()?;
+    let headers = prepared.request().headers();
+    assert_eq!(headers["accept"], "application/json");
+    assert!(headers["x-trace"].is_sensitive());
+    assert_eq!(headers["x-page"], "2");
+    assert!(format!("{prepared:?}").contains("x-trace: <redacted>"));
+    Ok(())
+}
+```
 
 ## 5. Bodies and responses: representations
 
@@ -517,8 +556,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## 6. Wire formatting: `Display` and newtypes
 
-Every placed value — path segment, subdomain label, query value, header value, template hole — is
-written with its `Display` implementation, then encoded for its placement. Consequences:
+Every value written as text — path segment, subdomain label, query value, template hole — is
+written with its `Display` implementation, then encoded for its placement. A value placed directly
+as a header is not formatted: it goes through `ToHeaderValue` (§4.8), so a type that only has
+`Display` is sent as a header through a template (`"x-sort" = "{sort}"`) or by implementing
+`ToHeaderValue`. Consequences:
 
 - `bool` is `true`/`false`; numbers use their `Display`.
 - `Option<T>` and `Vec<T>` have no `Display`: place them with `each` (zero or more occurrences) or
@@ -528,7 +570,9 @@ written with its `Display` implementation, then encoded for its placement. Conse
   spelling.
 - A `Display` that returns `fmt::Error` makes the request a build error naming the placement;
   nothing partial is sent.
-- Concord's generated `Debug` also shows values through `Display`, so a `u32` appears as `"20"`.
+- Concord's generated `Debug` also shows values through `Display`, so a `u32` appears as `"20"`;
+  a value placed only as a header is shown as its header value (`"caf\xe9"` for bytes that are
+  not text, `<redacted>` for a natively sensitive one).
 
 ```rust
 use std::fmt;
@@ -603,6 +647,8 @@ output Concord produces: the generated `Debug` of clients, scopes and requests, 
   while the marker follows the value.
 - Sensitivity is sticky along the chain: a later public override does not make a key public.
 - A value that feeds a sensitive key is itself withheld, everywhere it appears.
+- A native `HeaderValue` that is already flagged (`set_sensitive(true)`) stays flagged and is
+  withheld from Concord's output, marker or not; Concord only ever adds the flag, per value.
 - `#[sensitive]` applies to values, not bodies: Concord never renders bodies.
 
 ```rust

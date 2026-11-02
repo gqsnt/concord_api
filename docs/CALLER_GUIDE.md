@@ -378,8 +378,10 @@ More: the [recipes](RECIPES.md) (streaming, multipart, interleaved query paramet
 Covered — output produced by Concord:
 
 - the generated `Debug` of clients, config structs, scopes and requests (they show values through
-  `Display`, so numbers appear quoted: `limit: "20"`). Each shows only its own values — a request
-  does not repeat its scope's or client's; for the whole request use `Prepared`'s `Debug`;
+  `Display`, so numbers appear quoted: `limit: "20"`; a value placed only as a header shows its
+  header value, `<redacted>` if it is a natively sensitive `HeaderValue`). Each shows only its own
+  values — a request does not repeat its scope's or client's; for the whole request use
+  `Prepared`'s `Debug`;
 - `Prepared`'s `Debug`: sensitive query values, path segments and host labels appear as
   `<redacted>`, sensitive headers as `name: <redacted>`;
 - `Error`'s `Display` and `Debug`.
@@ -387,7 +389,8 @@ Covered — output produced by Concord:
 Sensitive values are those marked `#[sensitive]`, those feeding a key with a well-known secret
 name (`authorization`, `cookie`, `x-api-key`, `token`, `password`, ... — full list in the
 [author guide](AUTHOR_GUIDE.md#7-sensitive-values)), and every key, segment or label they feed.
-They are always sent.
+They are always sent. A `HeaderValue` you pass with `set_sensitive(true)` stays flagged on the
+request (Concord never clears the flag) and is shown as `<redacted>`.
 
 Not covered:
 

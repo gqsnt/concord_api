@@ -98,6 +98,13 @@ pub struct Value {
     /// sensitive on some chain (marked contribution or safety-list name). Withheld from every
     /// Concord-produced output, and makes every placement that reads it sensitive.
     pub debug_sensitive: bool,
+    /// Read as text somewhere (path, subdomain, query, or a template hole), so it must be
+    /// `Display`. A value read only as whole header values needs `ToHeaderValue` instead, and its
+    /// generated `Debug` shows its header value.
+    pub text: bool,
+    /// Placed directly as a whole header value somewhere (`ToHeaderValue`). When it is also read
+    /// as text, its generated `Debug` still withholds it if its header value is flagged sensitive.
+    pub header: bool,
 }
 
 impl Value {
@@ -466,6 +473,7 @@ impl Model {
                 RawPiece::Hole(r) => match self.resolve_ref(at, &r) {
                     Ok(value) => {
                         self.mark(value, Usage::Scalar, usage_span, errors);
+                        self.owners[value.owner].values[value.index].text = true;
                         out.push(Piece::Hole(value));
                     }
                     Err(e) => {
@@ -648,6 +656,10 @@ impl Model {
                 key_span,
                 errors,
             );
+            match family {
+                Family::Query => self.owners[at].values[index].text = true,
+                Family::Header => self.owners[at].values[index].header = true,
+            }
             if let Some(key) = self.key(family, &key_lit, key_span, errors) {
                 let v = self.value(value);
                 let contrib = Contrib {
@@ -687,6 +699,11 @@ impl Model {
                                 reference.span(),
                                 errors,
                             );
+                            let v = &mut self.owners[value.owner].values[value.index];
+                            match family {
+                                Family::Query => v.text = true,
+                                Family::Header => v.header = true,
+                            }
                             let v = self.value(value);
                             (Some(Source::Ref { value, each }), v.sensitive, !v.optional)
                         }
@@ -1433,6 +1450,8 @@ fn flatten(
             sensitive: p.sensitive,
             debug_sensitive: p.sensitive,
             usage: None,
+            text: false,
+            header: false,
         });
     }
     let mut cfgs: Vec<Attribute> = parent.map(|p| out[p.0].cfgs.clone()).unwrap_or_default();

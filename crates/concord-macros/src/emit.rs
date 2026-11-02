@@ -37,32 +37,67 @@ pub fn emit(model: &Model, krate: TokenStream) -> TokenStream {
     out
 }
 
-/// Header name -> the generated `static` holding its native `HeaderName`.
-type Headers = std::collections::BTreeMap<String, Ident>;
+/// The generated `static`s holding native header names and literal header values.
+struct Headers {
+    /// Header name -> its `HeaderName`.
+    names: std::collections::BTreeMap<String, Ident>,
+    /// Literal header value (a template without holes, decoded) -> its `HeaderValue`.
+    values: std::collections::BTreeMap<String, Ident>,
+}
 
-/// One `static` per distinct header name of the declaration. Statics are always evaluated at
-/// compile time, so the native `HeaderName` validator rejects an invalid literal (e.g. longer than
-/// `http` allows) as a compile error even when no endpoint using it is called; requests clone the
-/// validated name instead of checking it again. One per name keeps compile-time evaluation linear in
-/// the distinct names, not in endpoints x inherited headers.
+/// One `static` per distinct header name of the declaration, and one per distinct literal header
+/// value. Statics are always evaluated at compile time, so the native validators
+/// (`HeaderName::from_static`, `HeaderValue::from_static`) reject an invalid literal (e.g. a name
+/// longer than `http` allows) as a compile error even when no endpoint using it is called;
+/// requests clone the validated statics instead of checking them again (a literal value's bytes
+/// are static: cloning it allocates nothing). One per distinct text keeps compile-time evaluation
+/// linear in the distinct literals, not in endpoints x inherited headers. Only literal text is
+/// lowered: values and initializers are never evaluated here.
 fn header_statics(k: &TokenStream, model: &Model) -> (TokenStream, Headers) {
     let client = plain(&model.owners[0].type_name);
-    let mut headers = Headers::new();
+    let mut headers = Headers {
+        names: Default::default(),
+        values: Default::default(),
+    };
     let mut items = TokenStream::new();
     for owner in &model.owners {
         for c in &owner.headers {
-            if headers.contains_key(&c.key) {
+            if !headers.names.contains_key(&c.key) {
+                let ident = format_ident!("__CONCORD_{}_HEADER_{}", client, headers.names.len());
+                let key = lit(&c.key);
+                items.extend(quote_spanned! {c.span=>
+                    #[doc(hidden)]
+                    #[allow(non_upper_case_globals, dead_code)]
+                    static #ident: #k::reqwest::header::HeaderName =
+                        #k::reqwest::header::HeaderName::from_static(#key);
+                });
+                headers.names.insert(c.key.clone(), ident);
+            }
+            let Some(Source::Template { pieces }) = &c.source else {
+                continue;
+            };
+            if pieces.iter().any(|p| matches!(p, Piece::Hole(_))) {
                 continue;
             }
-            let ident = format_ident!("__CONCORD_{}_HEADER_{}", client, headers.len());
-            let key = lit(&c.key);
+            let literal: String = pieces
+                .iter()
+                .map(|p| match p {
+                    Piece::Lit(s) => s.as_str(),
+                    Piece::Hole(_) => "",
+                })
+                .collect();
+            if headers.values.contains_key(&literal) {
+                continue;
+            }
+            let ident = format_ident!("__CONCORD_{}_HEADER_VALUE_{}", client, headers.values.len());
+            let value = lit(&literal);
             items.extend(quote_spanned! {c.span=>
                 #[doc(hidden)]
                 #[allow(non_upper_case_globals, dead_code)]
-                static #ident: #k::reqwest::header::HeaderName =
-                    #k::reqwest::header::HeaderName::from_static(#key);
+                static #ident: #k::reqwest::header::HeaderValue =
+                    #k::reqwest::header::HeaderValue::from_static(#value);
             });
-            headers.insert(c.key.clone(), ident);
+            headers.values.insert(literal, ident);
         }
     }
     (items, headers)
@@ -576,22 +611,30 @@ fn debug_fields<'a>(
         let label = lit(&plain(name));
         let place = quote!(#base.#name);
         let span = value.ty.span();
+        // A value read as text is shown through `Display`; one read only as whole header values
+        // through its header value (no `Display` needed). Either way a value whose header value
+        // carries the native sensitivity flag is withheld.
+        let (scalar, each) = match (value.text, value.header) {
+            (true, true) => (quote!(DebugTextHeader), quote!(DebugTextHeaderEach)),
+            (true, false) => (quote!(DebugDisplay), quote!(DebugEach)),
+            (false, _) => (quote!(DebugHeader), quote!(DebugHeaderEach)),
+        };
         let shown = match (value.debug_sensitive, value.optional, value.usage) {
             (true, false, _) => quote_spanned!(span=> &#k::__private::Redacted),
             (true, true, _) => {
                 quote_spanned!(span=> &#place.as_ref().map(|_| #k::__private::Redacted))
             }
             (false, false, Some(Usage::Each)) => {
-                quote_spanned!(span=> &#k::__private::DebugEach(&#place))
+                quote_spanned!(span=> &#k::__private::#each(&#place))
             }
             (false, true, Some(Usage::Each)) => {
-                quote_spanned!(span=> &#place.as_ref().map(#k::__private::DebugEach))
+                quote_spanned!(span=> &#place.as_ref().map(#k::__private::#each))
             }
             (false, false, _) => {
-                quote_spanned!(span=> &#k::__private::DebugDisplay(&#place))
+                quote_spanned!(span=> &#k::__private::#scalar(&#place))
             }
             (false, true, _) => {
-                quote_spanned!(span=> &#place.as_ref().map(#k::__private::DebugDisplay))
+                quote_spanned!(span=> &#place.as_ref().map(#k::__private::#scalar))
             }
         };
         // One statement per field (not a method chain): thousands of values must not nest.
@@ -1103,20 +1146,26 @@ fn source_code(
                         fmt.push_str("{}");
                         let place = places.value(model, *r);
                         let at = model.value(*r).ty.span();
+                        // Through `__private::text`, so a value without `Display` gets
+                        // Concord's diagnostic, at its type.
                         if model.value(*r).optional {
                             let b = format_ident!("__h{}", bound.patterns.len());
                             bound
                                 .patterns
                                 .push(quote!(::core::option::Option::Some(#b)));
                             bound.scrutinees.push(quote!(&#place));
-                            args.push(located(quote!(#b), at));
+                            args.push(located(quote!(#k::__private::text(#b)), at));
                         } else {
-                            args.push(located(quote!(&#place), at));
+                            args.push(located(quote!(#k::__private::text(&#place)), at));
                         }
                     }
                 }
             }
-            if args.is_empty() {
+            if args.is_empty() && id.family == Family::Header {
+                // No holes: the validated static `HeaderValue` of the decoded literal.
+                let value = &headers.values[&literal];
+                (quote!(&#value), false, None)
+            } else if args.is_empty() {
                 // No holes: the decoded literal itself (`{{` already became `{`).
                 let literal = lit(&literal);
                 (quote!(#literal), false, None)
@@ -1135,7 +1184,7 @@ fn source_code(
     // the request clones the validated name.
     let name = match id.family {
         Family::Header => {
-            let header = &headers[&key.value()];
+            let header = &headers.names[&key.value()];
             quote!(::core::clone::Clone::clone(&#header))
         }
         Family::Query => quote!(),

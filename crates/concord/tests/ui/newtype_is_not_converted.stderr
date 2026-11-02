@@ -7,15 +7,18 @@ error[E0277]: `u64` is not accepted for a value of type `UserId`
    |                 required by a bound introduced by this call
    |
    = help: the trait `IntoValue<UserId>` is not implemented for `u64`
-   = note: Concord accepts the exact declared type, or `&str`/`&String` for `String`; construct newtypes and `Option`s explicitly
+   = note: Concord accepts the exact declared type, `&str`/`&String` for `String`, or `&HeaderValue` for `HeaderValue`; construct newtypes and `Option`s explicitly
 help: the following other types implement trait `IntoValue<T>`
   --> src/value.rs
    |
    | impl IntoValue<String> for &str {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&str`
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&str` implements `IntoValue<String>`
 ...
    | impl IntoValue<String> for &String {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&String`
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&String` implements `IntoValue<String>`
+...
+   | impl IntoValue<HeaderValue> for &HeaderValue {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&HeaderValue` implements `IntoValue<HeaderValue>`
 note: required by a bound in `Api::user`
   --> tests/ui/newtype_is_not_converted.rs:6:1
    |

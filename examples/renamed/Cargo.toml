@@ -9,6 +9,8 @@ publish = false
 
 [dependencies]
 concord4 = { package = "concord", path = "../../crates/concord", default-features = false }
+# reqwest under another name too: its `HeaderValue` is the same type as `concord4::reqwest`'s.
+reqwest013 = { package = "reqwest", version = "0.13.4", default-features = false }
 
 [lints]
 workspace = true

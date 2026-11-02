@@ -39,8 +39,8 @@ impl<T> Prepared<T> {
     }
 
     /// The native request, for inspection. Its `Debug` output is **not** Concord's: it prints the full
-    /// URL, sensitive query values and path segments included; only header values Concord flagged
-    /// sensitive are masked (reqwest prints them as `Sensitive`).
+    /// URL, sensitive query values and path segments included; only header values flagged sensitive
+    /// (by Concord or already on a native value) are masked (reqwest prints them as `Sensitive`).
     pub fn request(&self) -> &reqwest::Request {
         &self.request
     }
@@ -95,12 +95,11 @@ impl fmt::Debug for DebugHeaders<'_> {
         for (name, value) in self.0 {
             if value.is_sensitive() {
                 list.entry(&format_args!("{name}: <redacted>"));
+            } else if let Ok(text) = value.to_str() {
+                list.entry(&format_args!("{name}: {text}"));
             } else {
-                // Values were validated as visible ASCII when built.
-                list.entry(&format_args!(
-                    "{name}: {}",
-                    value.to_str().unwrap_or("<non-ASCII>")
-                ));
+                // A native value that is not text: its escaped bytes (`"caf\xe9"`).
+                list.entry(&format_args!("{name}: {value:?}"));
             }
         }
         list.finish()

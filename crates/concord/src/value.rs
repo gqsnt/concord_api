@@ -1,10 +1,15 @@
 //! The closed set of conversions accepted wherever a declared value is supplied.
 
+use reqwest::header::HeaderValue;
+
 mod sealed {
+    use reqwest::header::HeaderValue;
+
     pub trait Sealed<T> {}
     impl<T> Sealed<T> for T {}
     impl Sealed<String> for &str {}
     impl Sealed<String> for &String {}
+    impl Sealed<HeaderValue> for &HeaderValue {}
 }
 
 /// A value accepted for a declared input of type `T`.
@@ -12,7 +17,9 @@ mod sealed {
 /// Implemented exactly for:
 ///
 /// - `T` itself (so integer and float literals infer, e.g. `set_limit(7)` for a `u64`),
-/// - `&str` and `&String` when `T` is `String`.
+/// - `&str` and `&String` when `T` is `String`,
+/// - `&HeaderValue` when `T` is `HeaderValue` (cloned: a `static` built with
+///   `HeaderValue::from_static` is passed as `&ACCEPT`).
 ///
 /// There are no other conversions: no numeric widening, no `Into`, no `Display` coercion and no
 /// wrapping into `Option`. Domain newtypes are constructed explicitly. The trait is sealed.
@@ -23,7 +30,7 @@ mod sealed {
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not accepted for a value of type `{T}`",
     label = "expected `{T}`",
-    note = "Concord accepts the exact declared type, or `&str`/`&String` for `String`; construct newtypes and `Option`s explicitly"
+    note = "Concord accepts the exact declared type, `&str`/`&String` for `String`, or `&HeaderValue` for `HeaderValue`; construct newtypes and `Option`s explicitly"
 )]
 pub trait IntoValue<T>: sealed::Sealed<T> {
     /// Performs the conversion.
@@ -47,6 +54,13 @@ impl IntoValue<String> for &str {
 impl IntoValue<String> for &String {
     #[inline]
     fn into_value(self) -> String {
+        self.clone()
+    }
+}
+
+impl IntoValue<HeaderValue> for &HeaderValue {
+    #[inline]
+    fn into_value(self) -> HeaderValue {
         self.clone()
     }
 }

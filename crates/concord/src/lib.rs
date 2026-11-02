@@ -99,6 +99,7 @@
 //! | [`Encode<T>`](Encode), [`Decode<T>`](Decode) | representation traits, named after `via`: `Json` (feature `json`), [`Text`], [`Binary`] or your own marker type |
 //! | [`BodyError`] | an encoding or decoding failure with a content-free description |
 //! | [`IntoValue<T>`](IntoValue) | the closed set of conversions accepted by arguments and setters |
+//! | [`ToHeaderValue`] | how a placed value becomes a header value: native `HeaderValue`, text, integers, `bool`, or your own type |
 //! | [`reqwest`], [`bytes`] | re-exported dependencies |
 //!
 //! # The declaration at a glance
@@ -121,10 +122,12 @@
 //!     remove "k";                     drop the inherited occurrences (acts first in its owner)
 //! ```
 //!
-//! `?` is Concord's presence marker; no meaning is inferred from type names. Values are written
-//! with `Display`. A bare name refers to the current owner; `client.x` or `scope.x` reaches an
-//! enclosing owner. All composition is decided at compile time; generated code only checks
-//! whether optional values are present.
+//! `?` is Concord's presence marker; no meaning is inferred from type names. Path segments,
+//! subdomain labels, query values and template holes are written with `Display`; a value placed
+//! directly as a header goes through [`ToHeaderValue`], so a native `HeaderValue` is sent as is.
+//! A bare name refers to the current owner; `client.x` or `scope.x` reaches an enclosing owner.
+//! All composition is decided at compile time; generated code only checks whether optional values
+//! are present.
 //!
 //! # Native requests
 //!
@@ -150,8 +153,9 @@
 //! segment or host label it feeds — from the output **Concord itself produces**: the generated
 //! `Debug` of clients, config structs, scopes and requests, [`Prepared`]'s `Debug`, and
 //! [`Error`]'s `Display` and `Debug`. Keys named `authorization`, `cookie`, `x-api-key`, `token`,
-//! `password` and a few more are treated as sensitive without the marker. `Error` has no
-//! `source()` chain: the underlying reqwest or decoder error is reachable only through
+//! `password` and a few more are treated as sensitive without the marker. A native `HeaderValue`
+//! whose own sensitivity flag is set stays flagged and is withheld the same way, marker or not.
+//! `Error` has no `source()` chain: the underlying reqwest or decoder error is reachable only through
 //! [`Error::transport`] and [`Error::body_source`], which are not redacted.
 //!
 //! **Not covered:** the native `reqwest::Request`, `Url` and `Response` `Debug` output (it prints
@@ -180,6 +184,7 @@
 pub use {bytes, reqwest};
 
 mod error;
+mod header;
 mod prepared;
 mod repr;
 mod value;
@@ -198,6 +203,7 @@ macro_rules! api {
 }
 
 pub use error::{Error, ErrorKind};
+pub use header::ToHeaderValue;
 pub use prepared::{Decoder, Prepared};
 #[cfg(feature = "json")]
 pub use repr::Json;

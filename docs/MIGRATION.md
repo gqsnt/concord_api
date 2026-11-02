@@ -285,6 +285,82 @@ async fn problem_title(error: concord::Error) -> Result<String, Box<dyn std::err
 }
 ```
 
+### Header values: `ToHeaderValue`, not `Display`
+
+A value placed directly as a header (`header("k") x: T`, `"k" = x`, `"k" = each xs`) is converted
+with `concord::ToHeaderValue` instead of being formatted with `Display`. A native
+`reqwest::header::HeaderValue` is now accepted and sent byte for byte with its sensitivity flag.
+`String`, `&str`, the integers `u8`–`u64`/`usize`/`i8`–`i64`/`isize` and `bool` work as before,
+with the same spelling. Path segments, labels, query values and templates are unchanged.
+
+A header value of another `Display` type (a domain enum, `Uuid`, `IpAddr`, a float) is now a
+compile error at its type: "`T` cannot be sent as a header value". Two explicit fixes:
+
+- send its `Display` text with a template (same spelling and visible-ASCII check as before);
+- implement `ToHeaderValue` for your own type (no formatting; `from_static` per variant).
+
+Before (does not compile any more):
+
+```rust,ignore
+GET search(header("x-sort") sort: Sort);
+```
+
+After:
+
+```rust
+use std::fmt;
+
+use concord::reqwest::{self, header::HeaderValue};
+use concord::ToHeaderValue;
+
+#[derive(Clone, Copy)]
+pub enum Sort {
+    Newest,
+    PriceAsc,
+}
+
+impl fmt::Display for Sort {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Sort::Newest => "newest",
+            Sort::PriceAsc => "price_asc",
+        })
+    }
+}
+
+/// Or skip `Display`: the header spelling, without formatting.
+impl ToHeaderValue for Sort {
+    fn to_header_value(&self) -> Option<HeaderValue> {
+        Some(HeaderValue::from_static(match self {
+            Sort::Newest => "newest",
+            Sort::PriceAsc => "price_asc",
+        }))
+    }
+}
+
+concord::api! {
+    pub client Shop {
+        base "https://shop.example.com";
+        // A template formats with `Display`, as before:
+        GET search(sort: Sort) { path "search"; headers { "x-sort" = "{sort}"; } }
+        // `ToHeaderValue` places it directly:
+        GET browse(header("x-sort") sort: Sort) { path "browse"; }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let shop = Shop::new(reqwest::Client::new());
+    let a = shop.search(Sort::PriceAsc).prepare()?;
+    let b = shop.browse(Sort::PriceAsc).prepare()?;
+    assert_eq!(a.request().headers()["x-sort"], "price_asc");
+    assert_eq!(b.request().headers()["x-sort"], "price_asc");
+    Ok(())
+}
+```
+
+The generated `Debug` of a value placed only as a header shows its header value rather than its
+`Display` text (the same text for strings, integers and `bool`).
+
 ### Behaviour changes without a syntax change
 
 - A value whose `Display` fails is a build error naming its placement, in every placement (the

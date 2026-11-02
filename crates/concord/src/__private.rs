@@ -8,6 +8,7 @@ use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use reqwest::{Method, Url};
 
 use crate::error::Error;
+use crate::header::ToHeaderValue;
 use crate::prepared::{Decoder, Prepared};
 use crate::repr::{Decode, Encode};
 
@@ -31,6 +32,24 @@ pub struct EndpointMeta {
     pub sensitive_segments: &'static [usize],
     /// Query keys whose values are withheld from Concord output.
     pub sensitive_query: &'static [&'static str],
+}
+
+/// A value written as text: path segments, subdomain labels, query values and template holes
+/// (`Display`). The trait only carries the diagnostic; every `Display` type implements it.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is written as text here and has no `Display`",
+    label = "used in a path, subdomain, query value or template",
+    note = "path segments, subdomain labels, query values and template holes are written with `Display`; a value that may be absent is declared `x?: T`, and a list is placed with `each`",
+    note = "a native `HeaderValue` is not text: it can only be placed as a whole header value; to reuse its text elsewhere, convert it explicitly (for example `to_str()`) into a `String` value"
+)]
+pub trait Text: Display {}
+
+impl<T: Display + ?Sized> Text for T {}
+
+/// A template hole: checks [`Text`] (for its diagnostic) and returns the value unchanged.
+#[inline]
+pub fn text<T: Text + ?Sized>(value: &T) -> &T {
+    value
 }
 
 /// A validated base URL: `http`/`https`, a host, an optional port and path, nothing else.
@@ -127,7 +146,7 @@ fn display<T: Display + ?Sized>(
 }
 
 /// Appends a value to a path segment, percent-encoding everything but unreserved characters.
-pub fn encode_segment<T: Display + ?Sized>(
+pub fn encode_segment<T: Text + ?Sized>(
     out: &mut String,
     value: &T,
     meta: &'static EndpointMeta,
@@ -137,7 +156,7 @@ pub fn encode_segment<T: Display + ?Sized>(
 }
 
 /// Appends a value's `Display` text.
-pub fn display_into<T: Display + ?Sized>(
+pub fn display_into<T: Text + ?Sized>(
     out: &mut String,
     value: &T,
     meta: &'static EndpointMeta,
@@ -244,7 +263,7 @@ impl<'a> Parts<'a> {
     }
 
     /// Adds one query occurrence. `what` names the parameter for errors.
-    pub fn query<T: Display + ?Sized>(
+    pub fn query<T: Text + ?Sized>(
         &mut self,
         key: &'static str,
         value: &T,
@@ -264,7 +283,7 @@ impl<'a> Parts<'a> {
     ) -> Result<(), Error>
     where
         I: IntoIterator,
-        I::Item: Display,
+        I::Item: Text,
     {
         for value in values {
             self.query(key, &value, what)?;
@@ -274,27 +293,26 @@ impl<'a> Parts<'a> {
 
     /// Adds one header line. The expansion passes a `HeaderName` from a generated `static`, so the
     /// native validator accepted it at compile time; `what` names the header for errors.
-    pub fn header<T: Display + ?Sized>(
+    ///
+    /// The outgoing sensitivity flag is the value's own flag OR the declaration's classification
+    /// (`sensitive`): a flag already set on a native value is never cleared.
+    pub fn header<T: ToHeaderValue + ?Sized>(
         &mut self,
         name: HeaderName,
         what: &'static str,
         value: &T,
         sensitive: bool,
     ) -> Result<(), Error> {
-        let text = display(value, self.meta, what)?;
-        if !text
-            .bytes()
-            .all(|b| b == b'\t' || (0x20..0x7f).contains(&b))
-        {
-            return Err(Error::build(
+        let mut value = value.to_header_value().ok_or_else(|| {
+            Error::build(
                 Some(self.meta),
                 what,
-                "value contains a control or non-ASCII character",
-            ));
+                "value is not a valid header value (text must be visible ASCII, space or tab)",
+            )
+        })?;
+        if sensitive {
+            value.set_sensitive(true);
         }
-        let mut value = HeaderValue::from_str(&text)
-            .map_err(|_| Error::build(Some(self.meta), what, "value is invalid"))?;
-        value.set_sensitive(sensitive);
         self.headers
             .try_append(name, value)
             .map_err(|_| Error::build(Some(self.meta), what, "does not fit in the header map"))?;
@@ -311,7 +329,7 @@ impl<'a> Parts<'a> {
     ) -> Result<(), Error>
     where
         I: IntoIterator,
-        I::Item: Display,
+        I::Item: ToHeaderValue,
     {
         for value in values {
             self.header(name.clone(), what, &value, sensitive)?;
@@ -464,7 +482,7 @@ pub(crate) fn redacted_url(url: &Url, meta: &EndpointMeta) -> String {
 /// `Debug` through `Display`, for generated `Debug` impls.
 pub struct DebugDisplay<'a, T: ?Sized>(pub &'a T);
 
-impl<T: Display + ?Sized> fmt::Debug for DebugDisplay<'_, T> {
+impl<T: Text + ?Sized> fmt::Debug for DebugDisplay<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&Shown::of(self.0), f)
     }
@@ -496,12 +514,102 @@ pub struct DebugEach<'a, T: ?Sized>(pub &'a T);
 impl<'a, T: ?Sized> fmt::Debug for DebugEach<'a, T>
 where
     &'a T: IntoIterator,
-    <&'a T as IntoIterator>::Item: Display,
+    <&'a T as IntoIterator>::Item: Text,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list()
             .entries(self.0.into_iter().map(|item| Shown::of(&item)))
             .finish()
+    }
+}
+
+/// `Debug` of a value placed only as a header (no `Display` needed): its header value, or
+/// `<redacted>` when that value carries the native sensitivity flag.
+pub struct DebugHeader<'a, T: ?Sized>(pub &'a T);
+
+impl<T: ToHeaderValue + ?Sized> fmt::Debug for DebugHeader<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&ShownHeader::of(self.0), f)
+    }
+}
+
+/// `Debug` of an `each` value placed only as a header: every item's header value.
+pub struct DebugHeaderEach<'a, T: ?Sized>(pub &'a T);
+
+impl<'a, T: ?Sized> fmt::Debug for DebugHeaderEach<'a, T>
+where
+    &'a T: IntoIterator,
+    <&'a T as IntoIterator>::Item: ToHeaderValue,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list()
+            .entries(self.0.into_iter().map(|item| ShownHeader::of(&item)))
+            .finish()
+    }
+}
+
+/// `Debug` of a value placed both as a header and as text: `<redacted>` when its header value
+/// carries the native sensitivity flag, its `Display` text otherwise.
+pub struct DebugTextHeader<'a, T: ?Sized>(pub &'a T);
+
+impl<T: Text + ToHeaderValue + ?Sized> fmt::Debug for DebugTextHeader<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if flagged(self.0) {
+            f.write_str("<redacted>")
+        } else {
+            fmt::Debug::fmt(&Shown::of(self.0), f)
+        }
+    }
+}
+
+/// `Debug` of an `each` value placed both as headers and as text, item by item as
+/// [`DebugTextHeader`].
+pub struct DebugTextHeaderEach<'a, T: ?Sized>(pub &'a T);
+
+impl<'a, T: ?Sized> fmt::Debug for DebugTextHeaderEach<'a, T>
+where
+    &'a T: IntoIterator,
+    <&'a T as IntoIterator>::Item: Text + ToHeaderValue,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut list = f.debug_list();
+        for item in self.0 {
+            if flagged(&item) {
+                list.entry(&Redacted);
+            } else {
+                list.entry(&Shown::of(&item));
+            }
+        }
+        list.finish()
+    }
+}
+
+/// Whether a value's header value carries the native sensitivity flag.
+fn flagged<T: ToHeaderValue + ?Sized>(value: &T) -> bool {
+    value.to_header_value().is_some_and(|v| v.is_sensitive())
+}
+
+/// A value's header value for `Debug`: `<redacted>` when flagged sensitive, the text when it is
+/// visible ASCII, the escaped bytes otherwise (`"caf\xe9"`), `<invalid header value>` when the
+/// value has none.
+struct ShownHeader(Option<HeaderValue>);
+
+impl ShownHeader {
+    fn of<T: ToHeaderValue + ?Sized>(value: &T) -> Self {
+        Self(value.to_header_value())
+    }
+}
+
+impl fmt::Debug for ShownHeader {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            None => f.write_str("<invalid header value>"),
+            Some(value) if value.is_sensitive() => f.write_str("<redacted>"),
+            Some(value) => match value.to_str() {
+                Ok(text) => fmt::Debug::fmt(text, f),
+                Err(_) => fmt::Debug::fmt(value, f),
+            },
+        }
     }
 }
 

@@ -125,7 +125,8 @@
 
 use std::fmt;
 
-use concord::{BodyError, Encode};
+use concord::reqwest::header::HeaderValue;
+use concord::{BodyError, Encode, ToHeaderValue};
 
 /// A value that is never `Clone` (otherwise identical to [`Cloneable`]).
 #[derive(Debug, PartialEq, Eq)]
@@ -151,6 +152,13 @@ macro_rules! value {
         impl fmt::Display for $t {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str(&self.0)
+            }
+        }
+
+        /// Header values use the text rule (`ToHeaderValue`), path and query values `Display`.
+        impl ToHeaderValue for $t {
+            fn to_header_value(&self) -> Option<HeaderValue> {
+                self.0.to_header_value()
             }
         }
 

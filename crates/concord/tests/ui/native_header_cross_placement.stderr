@@ -1,0 +1,124 @@
+error[E0277]: `HeaderValue` is written as text here and has no `Display`
+ --> tests/ui/native_header_cross_placement.rs:8:38
+  |
+8 |         GET query(query("accept") a: HeaderValue);
+  |                                      ^^^^^^^^^^^ used in a path, subdomain, query value or template
+  |
+  = help: the trait `std::fmt::Display` is not implemented for `HeaderValue`
+  = note: path segments, subdomain labels, query values and template holes are written with `Display`; a value that may be absent is declared `x?: T`, and a list is placed with `each`
+  = note: a native `HeaderValue` is not text: it can only be placed as a whole header value; to reuse its text elsewhere, convert it explicitly (for example `to_str()`) into a `String` value
+  = note: required for `HeaderValue` to implement `concord::__private::Text`
+note: required by a bound in `concord::__private::Parts::<'a>::query`
+ --> src/__private.rs
+  |
+  |     pub fn query<T: Text + ?Sized>(
+  |                     ^^^^ required by this bound in `Parts::<'a>::query`
+  = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `HeaderValue` doesn't implement `std::fmt::Display`
+ --> tests/ui/native_header_cross_placement.rs:8:38
+  |
+8 |         GET query(query("accept") a: HeaderValue);
+  |                                      ^^^^^^^^^^^ the trait `std::fmt::Display` is not implemented for `HeaderValue`
+  |
+help: the trait `Debug` is implemented for `concord::__private::DebugDisplay<'_, T>`
+ --> src/__private.rs
+  |
+  | impl<T: Text + ?Sized> fmt::Debug for DebugDisplay<'_, T> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = note: required for `HeaderValue` to implement `concord::__private::Text`
+  = note: required for `concord::__private::DebugDisplay<'_, HeaderValue>` to implement `Debug`
+  = note: required for the cast from `&concord::__private::DebugDisplay<'_, HeaderValue>` to `&dyn Debug`
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `HeaderValue` is written as text here and has no `Display`
+  --> tests/ui/native_header_cross_placement.rs:5:1
+   |
+ 5 | / concord::api! {
+ 6 | |     pub client Api(header("accept") accept: HeaderValue) {
+ 7 | |         base "http://x.test";
+ 8 | |         GET query(query("accept") a: HeaderValue);
+ 9 | |         GET path(a: HeaderValue) { path "items/{a}"; }
+   | |                     ----------- required by a bound introduced by this call
+...  |
+12 | | }
+   | |_^ used in a path, subdomain, query value or template
+   |
+   = help: the trait `std::fmt::Display` is not implemented for `HeaderValue`
+   = note: path segments, subdomain labels, query values and template holes are written with `Display`; a value that may be absent is declared `x?: T`, and a list is placed with `each`
+   = note: a native `HeaderValue` is not text: it can only be placed as a whole header value; to reuse its text elsewhere, convert it explicitly (for example `to_str()`) into a `String` value
+   = note: required for `HeaderValue` to implement `concord::__private::Text`
+note: required by a bound in `concord::__private::encode_segment`
+  --> src/__private.rs
+   |
+   | pub fn encode_segment<T: Text + ?Sized>(
+   |                          ^^^^ required by this bound in `encode_segment`
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `HeaderValue` doesn't implement `std::fmt::Display`
+ --> tests/ui/native_header_cross_placement.rs:9:21
+  |
+9 |         GET path(a: HeaderValue) { path "items/{a}"; }
+  |                     ^^^^^^^^^^^ the trait `std::fmt::Display` is not implemented for `HeaderValue`
+  |
+help: the trait `Debug` is implemented for `concord::__private::DebugDisplay<'_, T>`
+ --> src/__private.rs
+  |
+  | impl<T: Text + ?Sized> fmt::Debug for DebugDisplay<'_, T> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = note: required for `HeaderValue` to implement `concord::__private::Text`
+  = note: required for `concord::__private::DebugDisplay<'_, HeaderValue>` to implement `Debug`
+  = note: required for the cast from `&concord::__private::DebugDisplay<'_, HeaderValue>` to `&dyn Debug`
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `HeaderValue` is written as text here and has no `Display`
+  --> tests/ui/native_header_cross_placement.rs:5:1
+   |
+ 5 | / concord::api! {
+ 6 | |     pub client Api(header("accept") accept: HeaderValue) {
+ 7 | |         base "http://x.test";
+ 8 | |         GET query(query("accept") a: HeaderValue);
+ 9 | |         GET path(a: HeaderValue) { path "items/{a}"; }
+10 | |         GET template(a: HeaderValue) { headers { "x-a" = "v={a}"; } }
+   | |                         ----------- required by a bound introduced by this call
+11 | |     }
+12 | | }
+   | |_^ used in a path, subdomain, query value or template
+   |
+   = help: the trait `std::fmt::Display` is not implemented for `HeaderValue`
+   = note: path segments, subdomain labels, query values and template holes are written with `Display`; a value that may be absent is declared `x?: T`, and a list is placed with `each`
+   = note: a native `HeaderValue` is not text: it can only be placed as a whole header value; to reuse its text elsewhere, convert it explicitly (for example `to_str()`) into a `String` value
+   = note: required for `HeaderValue` to implement `concord::__private::Text`
+note: required by a bound in `concord::__private::text`
+  --> src/__private.rs
+   |
+   | pub fn text<T: Text + ?Sized>(value: &T) -> &T {
+   |                ^^^^ required by this bound in `text`
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `HeaderValue` doesn't implement `std::fmt::Display`
+  --> tests/ui/native_header_cross_placement.rs:10:25
+   |
+10 |         GET template(a: HeaderValue) { headers { "x-a" = "v={a}"; } }
+   |                         ^^^^^^^^^^^ `HeaderValue` cannot be formatted with the default formatter
+   |
+   = help: the trait `std::fmt::Display` is not implemented for `HeaderValue`
+   = note: in format strings you may be able to use `{:?}` (or {:#?} for pretty-print) instead
+   = note: required for `&HeaderValue` to implement `std::fmt::Display`
+   = note: this error originates in the macro `::core::format_args` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `HeaderValue` doesn't implement `std::fmt::Display`
+  --> tests/ui/native_header_cross_placement.rs:10:25
+   |
+10 |         GET template(a: HeaderValue) { headers { "x-a" = "v={a}"; } }
+   |                         ^^^^^^^^^^^ the trait `std::fmt::Display` is not implemented for `HeaderValue`
+   |
+help: the trait `Debug` is implemented for `concord::__private::DebugDisplay<'_, T>`
+  --> src/__private.rs
+   |
+   | impl<T: Text + ?Sized> fmt::Debug for DebugDisplay<'_, T> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `HeaderValue` to implement `concord::__private::Text`
+   = note: required for `concord::__private::DebugDisplay<'_, HeaderValue>` to implement `Debug`
+   = note: required for the cast from `&concord::__private::DebugDisplay<'_, HeaderValue>` to `&dyn Debug`
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

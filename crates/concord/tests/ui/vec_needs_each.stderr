@@ -1,14 +1,18 @@
-error[E0277]: `Vec<String>` doesn't implement `std::fmt::Display`
+error[E0277]: `Vec<String>` is written as text here and has no `Display`
  --> tests/ui/vec_needs_each.rs:4:30
   |
 4 |         GET list(query tags: Vec<String>);
-  |                              ^^^ the trait `std::fmt::Display` is not implemented for `Vec<String>`
+  |                              ^^^ used in a path, subdomain, query value or template
   |
+  = help: the trait `std::fmt::Display` is not implemented for `Vec<String>`
+  = note: path segments, subdomain labels, query values and template holes are written with `Display`; a value that may be absent is declared `x?: T`, and a list is placed with `each`
+  = note: a native `HeaderValue` is not text: it can only be placed as a whole header value; to reuse its text elsewhere, convert it explicitly (for example `to_str()`) into a `String` value
+  = note: required for `Vec<String>` to implement `concord::__private::Text`
 note: required by a bound in `concord::__private::Parts::<'a>::query`
  --> src/__private.rs
   |
-  |     pub fn query<T: Display + ?Sized>(
-  |                     ^^^^^^^ required by this bound in `Parts::<'a>::query`
+  |     pub fn query<T: Text + ?Sized>(
+  |                     ^^^^ required by this bound in `Parts::<'a>::query`
   = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `Vec<String>` doesn't implement `std::fmt::Display`
@@ -20,8 +24,9 @@ error[E0277]: `Vec<String>` doesn't implement `std::fmt::Display`
 help: the trait `Debug` is implemented for `concord::__private::DebugDisplay<'_, T>`
  --> src/__private.rs
   |
-  | impl<T: Display + ?Sized> fmt::Debug for DebugDisplay<'_, T> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  | impl<T: Text + ?Sized> fmt::Debug for DebugDisplay<'_, T> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = note: required for `Vec<String>` to implement `concord::__private::Text`
   = note: required for `concord::__private::DebugDisplay<'_, Vec<String>>` to implement `Debug`
   = note: required for the cast from `&concord::__private::DebugDisplay<'_, Vec<String>>` to `&dyn Debug`
   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

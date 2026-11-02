@@ -101,7 +101,8 @@ type `ApiConfig` is missing"; [`missing_required_argument.stderr`](../crates/con
 
 ### A value of the wrong type
 
-Arguments and setters accept exactly the declared type, or `&str`/`&String` for `String`.
+Arguments and setters accept exactly the declared type, `&str`/`&String` for `String`, or
+`&HeaderValue` for `HeaderValue`.
 Excerpt of [`newtype_is_not_converted.stderr`](../crates/concord/tests/ui/newtype_is_not_converted.stderr)
 (compiler message with Concord's text), for `api.user(42u64)` where `user` is declared
 `user: UserId`:
@@ -116,7 +117,7 @@ error[E0277]: `u64` is not accepted for a value of type `UserId`
    |                 required by a bound introduced by this call
    |
    = help: the trait `IntoValue<UserId>` is not implemented for `u64`
-   = note: Concord accepts the exact declared type, or `&str`/`&String` for `String`; construct newtypes and `Option`s explicitly
+   = note: Concord accepts the exact declared type, `&str`/`&String` for `String`, or `&HeaderValue` for `HeaderValue`; construct newtypes and `Option`s explicitly
 ```
 
 **Fix:** construct the value: `api.user(UserId(42))`. For an optional value, `maybe_x` takes
@@ -182,8 +183,8 @@ formatted at runtime that breaks the rule is a build error from `prepare()`, nam
 
 ### A type without `Display`
 
-Placed values are written with `Display`. Excerpt of
-[`option_has_no_wire_spelling.rs`](../crates/concord/tests/ui/option_has_no_wire_spelling.rs):
+Path segments, subdomain labels, query values and template holes are written with `Display`.
+Excerpt of [`option_has_no_wire_spelling.rs`](../crates/concord/tests/ui/option_has_no_wire_spelling.rs):
 
 ```rust
 concord::api! {
@@ -198,16 +199,40 @@ Excerpt of [`option_has_no_wire_spelling.stderr`](../crates/concord/tests/ui/opt
 (compiler message; it is reported twice, once for the request and once for the generated `Debug`):
 
 ```text
-error[E0277]: `Option<String>` doesn't implement `std::fmt::Display`
+error[E0277]: `Option<String>` is written as text here and has no `Display`
  --> tests/ui/option_has_no_wire_spelling.rs:4:32
   |
 4 |         GET list(query filter: Option<String>);
-  |                                ^^^^^^ the trait `std::fmt::Display` is not implemented for `Option<String>`
+  |                                ^^^^^^ used in a path, subdomain, query value or template
 ```
 
 **Fix:** for "maybe absent", declare the value optional (`query filter?: String`); for a list, use
 `each` ([`vec_needs_each.rs`](../crates/concord/tests/ui/vec_needs_each.rs)); for another spelling,
 a newtype with the `Display` you need.
+
+A native `HeaderValue` is not text either: in a query, a path or a template it is the same error
+([`native_header_cross_placement.stderr`](../crates/concord/tests/ui/native_header_cross_placement.stderr)),
+whose note says so. Concord never decodes header bytes into text implicitly; convert explicitly
+(for example `value.to_str()`) into a `String` value if that is what you mean.
+
+### A value that is not a header value
+
+A value placed directly as a header (`header("..") x: T`, `"name" = x`, `"name" = each xs`) needs
+`concord::ToHeaderValue`, not `Display`. Excerpt of
+[`header_value_type.stderr`](../crates/concord/tests/ui/header_value_type.stderr):
+
+```text
+error[E0277]: `IpAddr` cannot be sent as a header value
+  --> tests/ui/header_value_type.rs:14:40
+   |
+14 |         GET foreign(header("x-ip") ip: std::net::IpAddr);
+   |                                        ^^^ not a header value
+```
+
+**Fix:** a native `HeaderValue`, text, integers and `bool` are accepted as they are. For your own
+type, implement `ToHeaderValue` (it can return a `HeaderValue::from_static` per variant); to send
+a type's `Display` text, use a template: `headers { "x-ip" = "{ip}"; }` (text: visible ASCII,
+checked when the request is built). `Option` and lists take `?` and `each`.
 
 ## Bodies and responses
 

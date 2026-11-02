@@ -30,8 +30,8 @@ concord::api! {
         GET query(query v: Faulty);
         /// Repeated query value.
         GET query_each(query each v: Vec<Faulty>);
-        /// Header value.
-        GET header(header("x-v") v: Faulty);
+        /// Header template (a header value placed directly is not formatted: `ToHeaderValue`).
+        GET header(v: Faulty) { headers { "x-v" = "{v}"; } }
         /// Template text.
         GET template(v: Faulty) { query { "t" = "x-{v}"; } }
     }

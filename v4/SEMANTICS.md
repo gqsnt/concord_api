@@ -69,8 +69,8 @@ reference  := name | owner "." name       (owner = `client` or an enclosing scop
   declaration order; its `Debug` redacts like the client's. Scope and endpoint positional
   arguments are the required values and a required body, **in declaration order**.
 - Positional arguments, `set_*` and initializers accept `impl IntoValue<T>` (config fields are
-  exactly `T`): exactly `T`, or
-  `&str`/`&String` for `String`. Nothing else converts (no `Into`, no numeric widening, no
+  exactly `T`): exactly `T`, `&str`/`&String` for `String`, or `&HeaderValue` for `HeaderValue`
+  (cloned). Nothing else converts (no `Into`, no numeric widening, no
   wrapping into `Option`). `maybe_*` takes exactly `Option<T>`, so that `None` needs no type
   annotation (`maybe_x(Some("a"))` for a `String` value is a type error; write
   `set_x("a")`).
@@ -159,7 +159,8 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
   `tests/oracle_composition.rs`.)
 - A source is **present** when every optional value it reads is present. A present `each` source
   with zero items is present and emits nothing — so it still replaces under `override`.
-- `each` iterates any `IntoIterator` (`&T: IntoIterator`, items `Display`). On a required
+- `each` iterates any `IntoIterator` (`&T: IntoIterator`; items `Display` for query keys,
+  `ToHeaderValue` for headers). On a required
   `Option<T>` that means zero or one occurrence, so `override "k" = each opt` with `None` clears
   `k` — chosen explicitly by writing `each`; Concord does not inspect the type. Declared as
   `opt?: Option<T>` with `override "k" = each opt else inherit`, the caller gets all three
@@ -172,13 +173,30 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
   promise an order across names, and reqwest/hyper add their own headers. Interleaved repeats
   across query keys (`f=a&op=eq&f=b`) cannot be declared; edit the native URL instead
   (`Prepared::into_parts`, then `Request::url_mut`).
-- Only surviving contributions are formatted; a replaced or removed value's `Display` never runs.
+- Only surviving contributions are formatted or converted; a replaced or removed value's `Display`
+  (or `ToHeaderValue`) never runs.
 - Header names must be valid field-name tokens; `host`, `content-length`, `transfer-encoding`,
   `connection`, `te`, `trailer`, `upgrade` and `keep-alive` are rejected (transport-owned).
   `Authorization`, `Cookie` and all other names are ordinary.
-- Header values must be visible ASCII, space or tab (policy: no obs-text). Literal text is checked
-  at compile time; formatted values at build time, as a build error naming the header, not the
-  value. The same applies to an `Encode::CONTENT_TYPE`.
+- **Header values** enter the native header map by one of three routes, decided by the
+  declaration and the value's type, never by a type's name:
+  - *literal text* (a template without holes, `"accept" = "application/json"`): checked at compile
+    time (visible ASCII, space or tab) and lowered to one generated
+    `static HeaderValue = HeaderValue::from_static(..)` per distinct literal; requests clone it
+    (static bytes: nothing is copied or allocated for the payload);
+  - *formatted text* (a template with holes): holes are formatted with `Display`; the result must
+    be visible ASCII, space or tab, else a build error naming the header, not the value;
+  - *a value placed directly* (`header("k") x: T`, `"k" = x`, `"k" = each xs`): converted with
+    `ToHeaderValue`, which reads the value by reference. A native `HeaderValue` is cloned and sent
+    byte for byte — any bytes `http` accepts (`0x20`–`0xFF` except `0x7F`, and tab), text or not —
+    with its sensitivity flag; `str`/`String` follow the visible-ASCII rule; integers and `bool`
+    use their decimal / `true`/`false` spelling; other types implement the trait (no `Display`
+    fallback). A conversion that returns `None` is a build error naming the header.
+  The visible-ASCII rule applies to text Concord produces or receives as text (policy: no
+  obs-text from Rust strings), not to native values, whose bytes the application chose explicitly.
+  `Encode::CONTENT_TYPE` follows the text rule.
+- A native `HeaderValue` is never text: in a path, subdomain, query value or template hole it is a
+  compile error at the value's type (Concord's note names the explicit conversion).
 - `remove` and the absence of a key concern Concord's contributions only: headers configured on the
   `reqwest::Client` (default headers, user agent) are added by reqwest when the request lacks them.
 
@@ -201,7 +219,7 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
   subdomain labels and the assembled host (IP base, 253-byte limit), path segments, query and
   headers; the first failure is returned and later values are not formatted.
 - A value whose `Display` returns `fmt::Error` (a broken `Display`) is a build error naming the
-  placement, in every placement; no partial text is sent. Concord's generated `Debug` shows it as
+  placement, in every placement that formats (paths, labels, query values, templates); no partial text is sent. Concord's generated `Debug` shows it as
   `<Display failed>`.
 
 ## 7. Bodies and responses
@@ -263,6 +281,18 @@ sent on the wire.
   reads a withheld value is itself sensitive. Generated `Debug` withholds such values; `Prepared`
   shows sensitive keys' values, segments and labels as `<redacted>`; sensitive header values are
   additionally flagged with `HeaderValue::set_sensitive`.
+- **Native sensitivity** is part of a `HeaderValue`. Each outgoing header value's flag is
+  *its own native flag OR the key's classification above*: Concord sets the flag, never clears it,
+  and sets it on its own clone (a caller's or a `static`'s value is never mutated). The rule is per
+  value: in an `each` list each item keeps its own flag; an `append`ed value does not flag its
+  siblings, and a value removed or replaced by `override`/`remove` is simply not sent. Runtime
+  flags never change the compile-time classification (no runtime propagation to other keys,
+  segments or values). Concord's output honours the flag wherever a header value is shown:
+  `Prepared`'s `Debug` prints `name: <redacted>`, and the generated `Debug` of a value placed only
+  as a header shows `<redacted>` for a flagged value (per item for `each`).
+- An application that extracts the bytes of a native value into another value (for example
+  `value.to_str()` into a `String`) creates new data: its protection is the declaration's
+  (`#[sensitive]`, key name), not the original flag.
 - **Outside the guarantee:** the native `reqwest::Request`/`Url`/`Response` `Debug` (it prints the
   full URL), reqwest errors from requests the application executes itself, redirects forwarding
   custom headers and `Referer` with the query, tracing, middleware, proxies and server logs, and the

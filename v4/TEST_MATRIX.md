@@ -127,3 +127,25 @@ or marked *(refined)*.
 
 Windows: **PASS** — GitHub Actions run 41379941540 (`x86_64-pc-windows-msvc`, rustc 1.97.1) on
 `a40788c`, code-identical to `b0fe26e`; see `refinement/evidence/ci_41379941540.md`. macOS: **NOT_RUN**.
+
+## Native header values (Track H prototype)
+
+Status: **prototype** — passing in `scripts/verify.sh --msrv` on the uncommitted Track H working
+tree (rustc 1.97.1 and 1.85); receipt `exp/verify-msrv.txt`, not bound to a commit.
+
+| ID | Class | Expected | Test | Status |
+|---|---|---|---|---|
+| H1 | required | owned native value from config and setter; setters make a new handle, earlier scopes/requests keep theirs | `native_headers.rs::h1_h4_client_values_on_the_wire`, `h1_setter_and_snapshots` | prototype |
+| H2 | required | a `static` `from_static` value as initializer (`.clone()` or `&STATIC`), per-call and setter value; bytes reused, not copied (pointer equality) | `native_headers.rs::h2_static_reused`, `h1_h4_client_values_on_the_wire`, `initializers_run_per_client` | prototype |
+| H3 | required | optional and initialized native values; absent sends nothing; empty is not absent | `native_headers.rs::h3_optional_and_initialized`, `empty_versus_absent` | prototype |
+| H4 | required | `each` over native values keeps order and each item's own flag | `native_headers.rs::h4_each_order_and_flags` | prototype |
+| H5 | required | bytes valid for `HeaderValue` but not text reach the wire exactly (raw-byte server); Concord output escapes them | `native_headers.rs::h5_non_text_bytes` | prototype |
+| H6 | required | native sensitive flag kept without a marker on an unlisted name; OR with the declaration; withheld from every Concord output; secret reaches the server | `native_headers.rs::h6_native_sensitivity_without_marker`, `h6_native_and_declared_sensitivity_combine`, `declaration_classification_is_added` | prototype |
+| H7 | required | flagged inherited value through `append`/`override`/`remove`/`else inherit`/exact replacement; flags per value | `native_headers.rs::h7_inherited_composition` | prototype |
+| H8 | required | aliases, qualified paths, renamed import, renamed `concord` and `reqwest` dependencies | `native_headers.rs` (fixture), `examples/renamed/src/lib.rs::native_headers_through_renamed_dependencies`, `exp/coherence` | prototype |
+| H9 | required | integers/`bool`/text/domain type/`Display` through a template; text keeps the visible-ASCII rule; non-header types are compile errors with a migration note | `native_headers.rs::h9_scalars`, `forwarded_forms`, `ui/header_value_type.rs`, `display_errors.rs` | prototype |
+| H10 | required | a native value in a query, path or template is a compile error at its type naming the explicit conversion | `ui/native_header_cross_placement.rs` | prototype |
+| H11 | required | generated `Debug` of config/client/scope/request with native values; `Prepared` `Debug` for sensitive / text / non-text values | `native_headers.rs::generated_debug_of_every_owner`, `h5_non_text_bytes`, `h6_*`, `h7_*` | prototype |
+| H12 | required | native `Content-Type` wins over a representation's; an optional native header does not affect body presence; full header map is a build error | `native_headers.rs::native_headers_and_bodies`, `full_header_map_with_native_values` | prototype |
+| H13 | evidence | payload allocations per route (static/shared native 0, text 1, integer 2, formatted 2 per value) | `checks/heap/tests/headers.rs`, `exp/alloc/` | recorded |
+| H14 | evidence | mutants (flag cleared, Debug ignores flag, obs-text text, literal not lowered, `Prepared` prints secrets) killed | `exp/mutants/run.py`, `exp/mutants/result.txt` (5/5) | recorded |

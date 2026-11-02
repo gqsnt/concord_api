@@ -16,8 +16,10 @@ pub struct Recorded {
     pub method: String,
     /// The raw request target, e.g. `/v1/items/a%2Fb?tag=x&tag=y`.
     pub target: String,
-    /// Header lines in wire order, names lowercased.
+    /// Header lines in wire order, names lowercased (values decoded lossily as UTF-8).
     pub headers: Vec<(String, String)>,
+    /// The same header lines with the value bytes exactly as received.
+    pub raw_headers: Vec<(String, Vec<u8>)>,
     pub body: Vec<u8>,
 }
 
@@ -44,6 +46,16 @@ impl Recorded {
         let all = self.header_all(name);
         assert!(all.len() <= 1, "header {name} occurs {} times", all.len());
         all.first().copied()
+    }
+
+    /// All values of a header as raw bytes, in wire order.
+    pub fn header_bytes_all(&self, name: &str) -> Vec<&[u8]> {
+        let name = name.to_ascii_lowercase();
+        self.raw_headers
+            .iter()
+            .filter(|(n, _)| *n == name)
+            .map(|(_, v)| v.as_slice())
+            .collect()
     }
 }
 
@@ -173,6 +185,19 @@ async fn serve_connection(
             buf.extend_from_slice(&chunk[..n]);
         };
         let head = String::from_utf8_lossy(&buf[..head_end]).into_owned();
+        let raw_headers: Vec<(String, Vec<u8>)> = buf[..head_end]
+            .split(|&b| b == b'\n')
+            .skip(1)
+            .filter_map(|line| {
+                let line = line.strip_suffix(b"\r").unwrap_or(line);
+                let colon = line.iter().position(|&b| b == b':')?;
+                let name = String::from_utf8_lossy(&line[..colon])
+                    .trim()
+                    .to_ascii_lowercase();
+                let value = line[colon + 1..].trim_ascii().to_vec();
+                Some((name, value))
+            })
+            .collect();
         buf.drain(..head_end + 4);
         let mut lines = head.split("\r\n");
         let request_line = lines.next().unwrap_or_default();
@@ -201,6 +226,7 @@ async fn serve_connection(
             method,
             target,
             headers,
+            raw_headers,
             body,
         };
         let reply = respond(&recorded);
