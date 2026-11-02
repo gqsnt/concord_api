@@ -8,8 +8,8 @@ use syn::spanned::Spanned;
 use syn::{Ident, LitStr};
 
 use crate::model::{
-    Body, Composed, ContribId, Item, Kind, Model, Origin, Output, Owner, OwnerDefault, Piece, Slot,
-    Source, Usage, Value, ValueRef,
+    Body, Composed, Cond, ContribId, HeaderComposition, Item, KeyName, Kind, Model, Origin, Output,
+    Owner, OwnerDefault, Piece, Slot, Source, Usage, Value, ValueRef,
 };
 use crate::syntax::{Family, Format, type_text};
 
@@ -38,22 +38,22 @@ pub fn emit(model: &Model, krate: TokenStream) -> TokenStream {
     out
 }
 
-/// The generated `static`s holding native header names and literal header values.
+/// The generated `static`s holding literal header names and literal header values.
 struct Headers {
-    /// Header name -> its `HeaderName`.
+    /// Literal header name (normalised by `http`) -> its `HeaderName` static.
     names: std::collections::BTreeMap<String, Ident>,
-    /// Literal header value (a template without holes, decoded) -> its `HeaderValue`.
+    /// Literal header value (a template without holes, decoded) -> its `HeaderValue` static, for
+    /// values `HeaderValue::from_static` accepts (visible ASCII). Other literals are built at run
+    /// time through the checked constructor (`__private::header_literal`).
     values: std::collections::BTreeMap<String, Ident>,
 }
 
-/// One `static` per distinct header name of the declaration, and one per distinct literal header
-/// value. Statics are always evaluated at compile time, so the native validators
-/// (`HeaderName::from_static`, `HeaderValue::from_static`) reject an invalid literal (e.g. a name
-/// longer than `http` allows) as a compile error even when no endpoint using it is called;
-/// requests clone the validated statics instead of checking them again (a literal value's bytes
-/// are static: cloning it allocates nothing). One per distinct text keeps compile-time evaluation
-/// linear in the distinct literals, not in endpoints x inherited headers. Only literal text is
-/// lowered: values and initializers are never evaluated here.
+/// One `static` per distinct literal header name of the declaration, and one per distinct
+/// visible-ASCII literal header value. Statics are evaluated at compile time, so the native
+/// constructors check them again in the downstream `http` (the macro checked them with its own
+/// copy of `http` first); requests clone the validated statics. Native `HeaderName` constants
+/// written as keys are used as they are. One static per distinct text keeps compile-time
+/// evaluation linear in the distinct literals, not in endpoints x inherited headers.
 fn header_statics(k: &TokenStream, model: &Model) -> (TokenStream, Headers) {
     let client = plain(&model.owners[0].type_name);
     let mut headers = Headers {
@@ -63,31 +63,26 @@ fn header_statics(k: &TokenStream, model: &Model) -> (TokenStream, Headers) {
     let mut items = TokenStream::new();
     for owner in &model.owners {
         for c in &owner.headers {
-            if !headers.names.contains_key(&c.key) {
-                let ident = format_ident!("__CONCORD_{}_HEADER_{}", client, headers.names.len());
-                let key = lit(&c.key);
-                items.extend(quote_spanned! {c.span=>
-                    #[doc(hidden)]
-                    #[allow(non_upper_case_globals, dead_code)]
-                    static #ident: #k::reqwest::header::HeaderName =
-                        #k::reqwest::header::HeaderName::from_static(#key);
-                });
-                headers.names.insert(c.key.clone(), ident);
+            if let KeyName::Lit(name) = &c.key {
+                if !headers.names.contains_key(name) {
+                    let ident =
+                        format_ident!("__CONCORD_{}_HEADER_{}", client, headers.names.len());
+                    let key = lit(name);
+                    items.extend(quote_spanned! {c.span=>
+                        #[doc(hidden)]
+                        #[allow(non_upper_case_globals, dead_code)]
+                        static #ident: #k::reqwest::header::HeaderName =
+                            #k::reqwest::header::HeaderName::from_static(#key);
+                    });
+                    headers.names.insert(name.clone(), ident);
+                }
             }
-            let Some(Source::Template { pieces }) = &c.source else {
+            let Some(literal) = literal_value(c) else {
                 continue;
             };
-            if pieces.iter().any(|p| matches!(p, Piece::Hole(_))) {
-                continue;
-            }
-            let literal: String = pieces
-                .iter()
-                .map(|p| match p {
-                    Piece::Lit(s) => s.as_str(),
-                    Piece::Hole(_) => "",
-                })
-                .collect();
-            if headers.values.contains_key(&literal) {
+            let ascii =
+                http::HeaderValue::from_bytes(literal.as_bytes()).is_ok_and(|v| v.to_str().is_ok());
+            if !ascii || headers.values.contains_key(&literal) {
                 continue;
             }
             let ident = format_ident!("__CONCORD_{}_HEADER_VALUE_{}", client, headers.values.len());
@@ -101,7 +96,129 @@ fn header_statics(k: &TokenStream, model: &Model) -> (TokenStream, Headers) {
             headers.values.insert(literal, ident);
         }
     }
+    // One accessor per native key path, under the union of its declaring owners' `cfg`s: the
+    // path is resolved (and type-checked, with Concord's message) once, where it is written.
+    for (i, key) in model.key_paths.iter().enumerate() {
+        let users: Vec<usize> = (0..model.owners.len())
+            .filter(|&o| {
+                model.owners[o]
+                    .headers
+                    .iter()
+                    .any(|c| c.key == KeyName::Path(i))
+            })
+            .collect();
+        let cfg = owners_cfg(model, &users);
+        let ident = key_fn(model, i);
+        let path = &key.path;
+        let check = quote_spanned!(path.span()=> #k::__private::NativeKey::native_key(&#path));
+        items.extend(quote! {
+            #cfg
+            #[doc(hidden)]
+            #[allow(non_snake_case, dead_code)]
+            #[inline]
+            fn #ident() -> #k::reqwest::header::HeaderName {
+                ::core::clone::Clone::clone(#check)
+            }
+        });
+    }
     (items, headers)
+}
+
+/// The accessor generated for native key path `i`.
+fn key_fn(model: &Model, i: usize) -> Ident {
+    format_ident!("__concord_{}_key_{}", plain(&model.owners[0].type_name), i)
+}
+
+/// The decoded text of a header template without holes.
+fn literal_value(c: &crate::model::Contrib) -> Option<String> {
+    let Some(Source::Template { pieces }) = &c.source else {
+        return None;
+    };
+    if pieces.iter().any(|p| matches!(p, Piece::Hole(_))) {
+        return None;
+    }
+    Some(
+        pieces
+            .iter()
+            .map(|p| match p {
+                Piece::Lit(s) => s.as_str(),
+                Piece::Hole(_) => "",
+            })
+            .collect(),
+    )
+}
+
+/// A key's native name as an expression of type `&HeaderName`: the literal's static, or the
+/// author's path (resolved by rustc where it is written; a path that is not a `HeaderName` is a
+/// type error there).
+fn key_ref(model: &Model, headers: &Headers, key: &KeyName) -> TokenStream {
+    match key {
+        KeyName::Lit(name) => {
+            let ident = &headers.names[name];
+            quote!(&#ident)
+        }
+        KeyName::Path(i) => {
+            let f = key_fn(model, *i);
+            quote!(&#f())
+        }
+    }
+}
+
+/// A run-time withholding condition as a `bool` expression.
+fn cond_expr(k: &TokenStream, model: &Model, headers: &Headers, cond: &Cond) -> TokenStream {
+    match cond {
+        Cond::Name(i) => {
+            let name = key_ref(model, headers, &KeyName::Path(*i));
+            quote!(#k::__private::sensitive_name(#name))
+        }
+        Cond::Same(a, b) => {
+            let a = key_ref(model, headers, a);
+            let b = key_ref(model, headers, b);
+            quote!((#a == #b))
+        }
+    }
+}
+
+/// `static_flag || any run-time condition of a value read by `ids``.
+fn flag_expr(
+    k: &TokenStream,
+    model: &Model,
+    headers: &Headers,
+    static_flag: bool,
+    ids: &[ContribId],
+) -> TokenStream {
+    if static_flag {
+        return quote!(true);
+    }
+    let mut conds: Vec<&Cond> = Vec::new();
+    for &id in ids {
+        for r in contrib_reads(model, id) {
+            for c in &model.value(r).debug_when {
+                if !conds.contains(&c) {
+                    conds.push(c);
+                }
+            }
+        }
+    }
+    if conds.is_empty() {
+        return quote!(false);
+    }
+    let conds = conds.into_iter().map(|c| cond_expr(k, model, headers, c));
+    quote!((false #(|| #conds)*))
+}
+
+fn contrib_reads(model: &Model, id: ContribId) -> Vec<ValueRef> {
+    match &model.contrib(id).source {
+        Some(Source::Ref { value, .. }) => vec![*value],
+        Some(Source::Template { pieces }) => pieces
+            .iter()
+            .filter_map(|p| match p {
+                Piece::Hole(r) => Some(*r),
+                Piece::Lit(_) => None,
+            })
+            .collect(),
+        None => Vec::new(),
+    }
 }
 
 /// The runtime type of a format written in place: a word is `$crate::{Json, Text, Binary, Form}`
@@ -169,9 +286,15 @@ fn format_aliases(k: &TokenStream, model: &Model) -> TokenStream {
 /// `#[cfg(any(all(..), ..))]` over the consumers' own and inherited `cfg` predicates; nothing when
 /// one consumer is unconditional.
 fn consumers_cfg(model: &Model, d: &OwnerDefault) -> TokenStream {
+    owners_cfg(model, &d.consumers)
+}
+
+/// `#[cfg(any(all(..), ..))]` over `owners`' own and inherited `cfg` predicates; nothing when one
+/// of them is unconditional.
+fn owners_cfg(model: &Model, owners: &[usize]) -> TokenStream {
     let mut alternatives: Vec<TokenStream> = Vec::new();
     let mut seen = HashSet::new();
-    for &e in &d.consumers {
+    for &e in owners {
         let predicates: Vec<TokenStream> = model.owners[e]
             .cfgs
             .iter()
@@ -265,7 +388,7 @@ fn value_notes(model: &Model) -> Vec<Vec<Vec<String>>> {
                     None => (Vec::new(), false),
                 };
                 for r in reads {
-                    let mut label = placement_label(family, &c.key).value();
+                    let mut label = placement_label(family, &model.key_text(&c.key)).value();
                     if each {
                         label.push_str(" (one occurrence per item)");
                     }
@@ -283,7 +406,7 @@ fn value_notes(model: &Model) -> Vec<Vec<Vec<String>>> {
                                 } else {
                                     ""
                                 },
-                                c.key
+                                model.key_text(&c.key)
                             ),
                         );
                     }
@@ -294,7 +417,7 @@ fn value_notes(model: &Model) -> Vec<Vec<Vec<String>>> {
                             format!(
                                 " When `{}` is absent, the inherited `{}` {what} is sent unchanged (`override ... else inherit` in `{}`).",
                                 plain(&model.value(r).name),
-                                c.key,
+                                model.key_text(&c.key),
                                 o.dotted
                             ),
                         );
@@ -319,13 +442,18 @@ fn value_notes(model: &Model) -> Vec<Vec<Vec<String>>> {
                     }
                     if value.header {
                         notes.push(
-                            " As a header value it goes through `concord::ToHeaderValue`: a native `HeaderValue` is sent byte for byte and keeps its sensitivity flag; text must be visible ASCII, space or tab; integers and `bool` are written in decimal / `true`/`false`."
+                            " As a header value it goes through `concord::ToHeaderValue`: a native `HeaderValue` is sent byte for byte and keeps its sensitivity flag; text is checked by `http::HeaderValue::from_str`; integers and `bool` are written in decimal / `true`/`false`."
                                 .to_owned(),
                         );
                     }
                     if value.debug_sensitive {
                         notes.push(
                             " Sensitive: sent normally, withheld from Concord's `Debug` output and errors."
+                                .to_owned(),
+                        );
+                    } else if !value.debug_when.is_empty() {
+                        notes.push(
+                            " Withheld from Concord's `Debug` output when a native header name it is sent under is on Concord's list of sensitive names, or names the same header as a sensitive value."
                                 .to_owned(),
                         );
                     }
@@ -689,24 +817,30 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
             .filter(|s| !s.items.is_empty())
             .map(|s| {
                 if s.sensitive {
-                    format!("`{}` (sensitive)", s.key)
+                    format!("`{}` (sensitive)", model.key_text(&s.key))
                 } else {
-                    format!("`{}`", s.key)
+                    format!("`{}`", model.key_text(&s.key))
                 }
             })
             .collect();
         shown.join(", ")
     };
+    let content_type = KeyName::Lit("content-type".to_owned());
     let mut lines = vec![lit(""), lit(&format!(" Request: `{method} {url}`."))];
     if let Kind::Endpoint { output, body, .. } = &model.owners[endpoint].kind {
         if let Some(b) = body {
             let presence = if b.optional { "optional " } else { "" };
             // 8b: a `content-type` header contribution surviving composition replaces the
             // format's media type, and is sent with or without the body.
-            let header = composed
-                .headers
-                .iter()
-                .any(|s| s.key == "content-type" && !s.items.is_empty());
+            let header = match &composed.headers {
+                HeaderComposition::Static(slots) => slots
+                    .iter()
+                    .any(|s| s.key == content_type && !s.items.is_empty()),
+                HeaderComposition::Dynamic(seq) => seq.iter().any(|&id| {
+                    let c = model.contrib(id);
+                    c.key == content_type && c.op != crate::syntax::Op::Remove
+                }),
+            };
             let media = match (&b.media, &b.format) {
                 (Some((m, origin)), _) => format!(
                     " `Content-Type: {}` ({}) is sent with the body.",
@@ -778,9 +912,32 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
     if !query.is_empty() {
         lines.push(lit(&format!(" Query (when present): {query}.")));
     }
-    let headers = keys(&composed.headers);
-    if !headers.is_empty() {
-        lines.push(lit(&format!(" Headers (when present): {headers}.")));
+    match &composed.headers {
+        HeaderComposition::Static(slots) => {
+            let headers = keys(slots);
+            if !headers.is_empty() {
+                lines.push(lit(&format!(" Headers (when present): {headers}.")));
+            }
+        }
+        HeaderComposition::Dynamic(seq) => {
+            let mut shown: Vec<String> = Vec::new();
+            for &id in seq {
+                let c = model.contrib(id);
+                if c.op == crate::syntax::Op::Remove {
+                    continue;
+                }
+                let text = format!("`{}`", model.key_text(&c.key));
+                if !shown.contains(&text) {
+                    shown.push(text);
+                }
+            }
+            if !shown.is_empty() {
+                lines.push(lit(&format!(
+                    " Headers (when present; native names are composed by identity when the request is built): {}.",
+                    shown.join(", ")
+                )));
+            }
+        }
     }
     quote!(#(#[doc = #lines])*)
 }
@@ -894,6 +1051,8 @@ fn doc_text(docs: &[syn::Attribute]) -> String {
 
 fn debug_fields<'a>(
     k: &TokenStream,
+    model: &Model,
+    headers: &Headers,
     values: impl IntoIterator<Item = &'a Value>,
     base: &TokenStream,
 ) -> TokenStream {
@@ -928,6 +1087,16 @@ fn debug_fields<'a>(
             (false, true, _) => {
                 quote_spanned!(span=> &#place.as_ref().map(#k::__private::#scalar))
             }
+        };
+        // A classification that depends on native header names is decided when rendering.
+        let shown = if value.debug_sensitive || value.debug_when.is_empty() {
+            shown
+        } else {
+            let conds = value
+                .debug_when
+                .iter()
+                .map(|c| cond_expr(k, model, headers, c));
+            quote_spanned!(span=> &#k::__private::Withheld(false #(|| #conds)*, #shown))
         };
         // One statement per field (not a method chain): thousands of values must not nest.
         out.extend(located(quote!(__d.field(#label, #shown);), span));
@@ -970,7 +1139,7 @@ fn emit_owner(
                 "the client",
                 notes,
             );
-            let debug = debug_fields(k, &owner.values, &quote!(__s));
+            let debug = debug_fields(k, model, headers, &owner.values, &quote!(__s));
             let required: Vec<&Value> = owner.values.iter().filter(|v| v.is_positional()).collect();
             let (config_item, config_param, config_bind) = if required.is_empty() {
                 (quote!(), quote!(), quote!())
@@ -1002,7 +1171,8 @@ fn emit_owner(
                      `maybe_*` methods."
                 ));
                 let config_label = lit(&config.to_string());
-                let config_debug = debug_fields(k, required.iter().copied(), &quote!(self));
+                let config_debug =
+                    debug_fields(k, model, headers, required.iter().copied(), &quote!(self));
                 (
                     quote! {
                         #[doc = #config_doc]
@@ -1095,7 +1265,7 @@ fn emit_owner(
                 "this scope",
                 notes,
             );
-            let debug = debug_fields(k, &owner.values, &quote!(__s));
+            let debug = debug_fields(k, model, headers, &owner.values, &quote!(__s));
             quote! {
                 #docs
                 #[derive(Clone)]
@@ -1140,7 +1310,7 @@ fn emit_owner(
                 "this request",
                 notes,
             );
-            let mut debug = debug_fields(k, &owner.values, &quote!(self));
+            let mut debug = debug_fields(k, model, headers, &owner.values, &quote!(self));
             let body_field = body.as_ref().map(|b| {
                 let name = &b.name;
                 let vty = body_value_type(b);
@@ -1398,21 +1568,25 @@ impl Bound {
     }
 }
 
+/// The call sending one contribution. For a header, `name` is an expression of type
+/// `HeaderName` and `sensitive` one of type `bool` (Concord's classification, OR-ed with a native
+/// value's own flag).
 fn source_code(
     k: &TokenStream,
     headers: &Headers,
     model: &Model,
     places: &Places,
     id: ContribId,
-    key: &str,
-    sensitive: bool,
+    name: &TokenStream,
+    sensitive: &TokenStream,
 ) -> (Bound, TokenStream) {
     let contrib = model.contrib(id);
     let mut bound = Bound {
         patterns: Vec::new(),
         scrutinees: Vec::new(),
     };
-    let key = lit(key);
+    let key_text = model.key_text(&contrib.key);
+    let what = placement_label(id.family, &key_text);
     let source = contrib.source.as_ref().expect("emitting sources only");
     let (arg, each, at) = match source {
         Source::Ref { value, each } => {
@@ -1459,16 +1633,25 @@ fn source_code(
                 }
             }
             if args.is_empty() && id.family == Family::Header {
-                // No holes: the validated static `HeaderValue` of the decoded literal.
-                let value = &headers.values[&literal];
-                (quote!(&#value), false, None)
+                // No holes: the validated static `HeaderValue` of a visible-ASCII literal, or the
+                // checked native constructor for any other literal `http` accepts.
+                match headers.values.get(&literal) {
+                    Some(value) => (quote!(&#value), false, None),
+                    None => {
+                        let bytes = syn::LitByteStr::new(literal.as_bytes(), contrib.span);
+                        (
+                            quote!(&#k::__private::header_literal(#bytes, &__META, #what)?),
+                            false,
+                            None,
+                        )
+                    }
+                }
             } else if args.is_empty() {
                 // No holes: the decoded literal itself (`{{` already became `{`).
                 let literal = lit(&literal);
                 (quote!(#literal), false, None)
             } else {
                 let fmt = lit(&fmt);
-                let what = placement_label(id.family, key.value().as_str());
                 (
                     quote!(&#k::__private::format_template(::core::format_args!(#fmt, #(#args),*), &__META, #what)?),
                     false,
@@ -1477,38 +1660,17 @@ fn source_code(
             }
         }
     };
-    // Header names were validated by the native constructor at compile time (`header_statics`);
-    // the request clones the validated name.
-    let name = match id.family {
-        Family::Header => {
-            let header = &headers.names[&key.value()];
-            quote!(::core::clone::Clone::clone(&#header))
+    let call = match (id.family, each) {
+        (Family::Query, false) => {
+            let key = lit(&key_text);
+            quote!(__p.query(#key, #arg, #what)?;)
         }
-        Family::Query => quote!(),
-    };
-    let what = placement_label(id.family, key.value().as_str());
-    // A value that is also written as text, and not statically sensitive, must be text itself
-    // (`TextHeader`): a native sensitivity flag on its header value could not reach its text.
-    let text_header = match source {
-        Source::Ref { value, .. } => {
-            let v = model.value(*value);
-            v.text && !v.debug_sensitive
+        (Family::Query, true) => {
+            let key = lit(&key_text);
+            quote!(__p.query_each(#key, #arg, #what)?;)
         }
-        Source::Template { .. } => false,
-    };
-    let call = match (id.family, each, text_header) {
-        (Family::Query, false, _) => quote!(__p.query(#key, #arg, #what)?;),
-        (Family::Query, true, _) => quote!(__p.query_each(#key, #arg, #what)?;),
-        (Family::Header, false, false) => quote!(__p.header(#name, #what, #arg, #sensitive)?;),
-        (Family::Header, true, false) => {
-            quote!(__p.header_each(#name, #what, #arg, #sensitive)?;)
-        }
-        (Family::Header, false, true) => {
-            quote!(__p.header_text(#name, #what, #arg, #sensitive)?;)
-        }
-        (Family::Header, true, true) => {
-            quote!(__p.header_text_each(#name, #what, #arg, #sensitive)?;)
-        }
+        (Family::Header, false) => quote!(__p.header(#name, #what, #arg, #sensitive)?;),
+        (Family::Header, true) => quote!(__p.header_each(#name, #what, #arg, #sensitive)?;),
     };
     // A value placed directly: trait errors (no `Display`, not iterable) point at its type.
     let call = match at {
@@ -1518,6 +1680,7 @@ fn source_code(
     (bound, call)
 }
 
+/// A statically composed slot's items. Header names are the literal's validated static.
 fn items_code(
     k: &TokenStream,
     headers: &Headers,
@@ -1525,24 +1688,144 @@ fn items_code(
     places: &Places,
     items: &[Item],
     slot: &Slot,
+    family: Family,
 ) -> TokenStream {
+    let (name, sensitive) = match (family, &slot.key) {
+        (Family::Header, key) => {
+            let name = key_ref(model, headers, key);
+            let mut ids = Vec::new();
+            collect_items(items, &mut ids);
+            (
+                quote!(::core::clone::Clone::clone(#name)),
+                flag_expr(k, model, headers, slot.sensitive, &ids),
+            )
+        }
+        (Family::Query, _) => (quote!(), quote!()),
+    };
     let mut out = TokenStream::new();
     for item in items {
         match item {
             Item::Emit(id) => {
-                let (bound, call) =
-                    source_code(k, headers, model, places, *id, &slot.key, slot.sensitive);
+                let (bound, call) = source_code(k, headers, model, places, *id, &name, &sensitive);
                 out.extend(bound.wrap(call, None));
             }
             Item::Override { src, fallback } => {
-                let (bound, call) =
-                    source_code(k, headers, model, places, *src, &slot.key, slot.sensitive);
-                let otherwise = items_code(k, headers, model, places, fallback, slot);
+                let (bound, call) = source_code(k, headers, model, places, *src, &name, &sensitive);
+                let otherwise = items_code(k, headers, model, places, fallback, slot, family);
                 out.extend(bound.wrap(call, Some(otherwise)));
             }
         }
     }
     out
+}
+
+fn collect_items(items: &[Item], out: &mut Vec<ContribId>) {
+    for item in items {
+        match item {
+            Item::Emit(id) => out.push(*id),
+            Item::Override { src, fallback } => {
+                out.push(*src);
+                collect_items(fallback, out);
+            }
+        }
+    }
+}
+
+/// A chain with a native `HeaderName` constant: every key is bound first (so a key's type error
+/// is never hidden by an absent value), `HeaderPlan` composes the contributions on names alone,
+/// and only then are the surviving values converted, in chain order.
+fn native_headers_code(
+    k: &TokenStream,
+    headers: &Headers,
+    model: &Model,
+    places: &Places,
+    seq: &[ContribId],
+    explicit_media: bool,
+) -> TokenStream {
+    let n = seq.len();
+    let mut bindings = TokenStream::new();
+    let mut names = Vec::new();
+    let mut entries = Vec::new();
+    let mut sends = TokenStream::new();
+    for (i, &id) in seq.iter().enumerate() {
+        let c = model.contrib(id);
+        let name = key_ref(model, headers, &c.key);
+        let var = format_ident!("__n{}", i);
+        match &c.key {
+            // The literal's validated static.
+            KeyName::Lit(_) => {
+                bindings.extend(quote!(let #var: &#k::reqwest::header::HeaderName = #name;))
+            }
+            // The key's accessor (checked once, where the path is written).
+            KeyName::Path(p) => {
+                let f = key_fn(model, *p);
+                let owned = format_ident!("__o_n{}", i);
+                bindings.extend(quote! {
+                    let #owned: #k::reqwest::header::HeaderName = #f();
+                    let #var: &#k::reqwest::header::HeaderName = &#owned;
+                });
+            }
+        }
+        names.push(quote!(#var));
+        let op = match (c.op, c.else_inherit) {
+            (crate::syntax::Op::Introduce, _) => quote!(Set),
+            (crate::syntax::Op::Append, _) => quote!(Append),
+            (crate::syntax::Op::Override, false) => quote!(Override),
+            (crate::syntax::Op::Override, true) => quote!(OverrideElseInherit),
+            (crate::syntax::Op::Remove, _) => quote!(Remove),
+        };
+        // Presence matters only for `override ... else inherit`; it is read without converting.
+        let present = if c.else_inherit {
+            let checks: Vec<TokenStream> = contrib_reads(model, id)
+                .into_iter()
+                .filter(|r| model.value(*r).optional)
+                .map(|r| {
+                    let place = places.value(model, r);
+                    quote!(#place.is_some())
+                })
+                .collect();
+            quote!((true #(&& #checks)*))
+        } else {
+            quote!(true)
+        };
+        let marked = flag_expr(k, model, headers, c.sensitive, &[id]);
+        let label = lit(&format!(
+            "`{}{}` on `{}`",
+            match c.op {
+                crate::syntax::Op::Introduce => "",
+                crate::syntax::Op::Append => "append ",
+                crate::syntax::Op::Override => "override ",
+                crate::syntax::Op::Remove => "remove ",
+            },
+            model.key_text(&c.key),
+            model.owners[id.owner].dotted
+        ));
+        entries.push(quote!(#k::__private::HeaderEntry {
+            op: #k::__private::HeaderOp::#op,
+            present: #present,
+            marked: #marked,
+            label: #label,
+        }));
+        if c.source.is_some() {
+            let name = quote!(::core::clone::Clone::clone(__names[#i]));
+            let sensitive = quote!(__plan.sensitive[#i]);
+            let (bound, call) = source_code(k, headers, model, places, id, &name, &sensitive);
+            let call = bound.wrap(call, None);
+            sends.extend(quote!(if __plan.live[#i] { #call }));
+        }
+    }
+    quote! {
+        #bindings
+        let __names: [&#k::reqwest::header::HeaderName; #n] = [#(#names),*];
+        let __plan = #k::__private::HeaderPlan::<#n>::compose(
+            __names,
+            [#(#entries),*],
+            #explicit_media,
+            &__META,
+        )?;
+        __p.content_type_sensitive(__plan.content_type_sensitive);
+        #sends
+    }
 }
 
 fn component_code(
@@ -1663,12 +1946,43 @@ fn prepare_body(
     let mut sensitive_query = Vec::new();
     for slot in &composed.query {
         if slot.sensitive {
-            sensitive_query.push(lit(&slot.key));
+            sensitive_query.push(lit(&model.key_text(&slot.key)));
         }
-        code.extend(items_code(k, headers, model, &places, &slot.items, slot));
+        code.extend(items_code(
+            k,
+            headers,
+            model,
+            &places,
+            &slot.items,
+            slot,
+            Family::Query,
+        ));
     }
-    for slot in &composed.headers {
-        code.extend(items_code(k, headers, model, &places, &slot.items, slot));
+    match &composed.headers {
+        HeaderComposition::Static(slots) => {
+            for slot in slots {
+                code.extend(items_code(
+                    k,
+                    headers,
+                    model,
+                    &places,
+                    &slot.items,
+                    slot,
+                    Family::Header,
+                ));
+            }
+        }
+        HeaderComposition::Dynamic(seq) => {
+            let explicit_media = body.is_some_and(|b| b.media.is_some());
+            code.extend(native_headers_code(
+                k,
+                headers,
+                model,
+                &places,
+                seq,
+                explicit_media,
+            ));
+        }
     }
 
     // The body's format and media type live in a `static`, evaluated when the crate is compiled:
@@ -1713,10 +2027,13 @@ fn prepare_body(
     };
     // 8f: the inserted `Content-Type` carries the key's static classification on this endpoint
     // (marker or sticky composition, also after a `remove`).
-    let sensitive_content_type = composed
-        .headers
-        .iter()
-        .any(|slot| slot.key == "content-type" && slot.sensitive);
+    // With a native constant on the chain, `HeaderPlan` decides it at run time instead.
+    let sensitive_content_type = match &composed.headers {
+        HeaderComposition::Static(slots) => slots
+            .iter()
+            .any(|slot| slot.key.lit() == Some("content-type") && slot.sensitive),
+        HeaderComposition::Dynamic(_) => false,
+    };
 
     let name = lit(&owner.dotted);
     let method_str = lit(&method.to_string());

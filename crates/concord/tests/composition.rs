@@ -796,8 +796,8 @@ concord::api! {
     }
 }
 
-/// SEMANTICS §5: header values are visible ASCII, space or tab; anything else is a build error
-/// naming the header but not the value.
+/// Header text follows `http::HeaderValue::from_str`: what it accepts is sent (UTF-8 beyond ASCII
+/// included), anything else (a line break) is a build error naming the header but not the value.
 #[test]
 fn header_value_policy() {
     let p = Hv::new(
@@ -810,10 +810,23 @@ fn header_value_policy() {
     .prepare()
     .unwrap();
     assert_eq!(p.request().headers()["x-note"].as_bytes(), b"a\tb c");
-    let error = Hv::new(
+    let p = Hv::new(
         http(),
         HvConfig {
             note: "café".into(),
+        },
+    )
+    .e()
+    .prepare()
+    .unwrap();
+    assert_eq!(
+        p.request().headers()["x-note"].as_bytes(),
+        "café".as_bytes()
+    );
+    let error = Hv::new(
+        http(),
+        HvConfig {
+            note: "caf\r\nx-injected: 1".into(),
         },
     )
     .e()

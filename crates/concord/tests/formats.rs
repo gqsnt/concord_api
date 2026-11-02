@@ -550,7 +550,11 @@ async fn row8b_empty_value_empty_each_and_conversion_failure() {
     assert_eq!(content_types(&r[0]), vec![Vec::<u8>::new()]);
     assert_eq!(content_types(&r[1]), ct("text/plain; charset=utf-8"));
 
-    let error = each.typed("caf\u{e9}").up("x").prepare().unwrap_err();
+    let error = each
+        .typed("text/plain\r\nx: 1")
+        .up("x")
+        .prepare()
+        .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Build);
     assert!(error.to_string().contains("content-type"), "{error}");
 }

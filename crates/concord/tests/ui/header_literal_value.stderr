@@ -1,11 +1,23 @@
-error: 'é' is not allowed in a header value; header values are visible ASCII, space or tab
- --> tests/ui/header_literal_value.rs:4:40
+error: this header value contains a byte that `http::HeaderValue::from_bytes` rejects (at byte 1)
+ --> tests/ui/header_literal_value.rs:8:41
   |
-4 |         GET e() { headers { "x-name" = "café"; } }
-  |                                        ^^^^^^
+8 |         GET ctl() { headers { "x-ctl" = "a\nb"; } }
+  |                                         ^^^^^^
 
-error: '\n' is not allowed in a header value; header values are visible ASCII, space or tab
- --> tests/ui/header_literal_value.rs:5:39
+error: this header value contains a byte that `http::HeaderValue::from_bytes` rejects (at byte 1)
+ --> tests/ui/header_literal_value.rs:9:41
   |
-5 |         GET f() { headers { "x-ctl" = "a\nb"; } }
-  |                                       ^^^^^^
+9 |         GET nul() { headers { "x-nul" = "a\0b"; } }
+  |                                         ^^^^^^
+
+error: this header value contains a byte that `http::HeaderValue::from_bytes` rejects (at byte 1)
+  --> tests/ui/header_literal_value.rs:10:41
+   |
+10 |         GET del() { headers { "x-del" = "a\u{7f}"; } }
+   |                                         ^^^^^^^^^
+
+error: this header value contains a byte that `http::HeaderValue::from_bytes` rejects (at byte 6 of literal fragment 0; no value can repair it)
+  --> tests/ui/header_literal_value.rs:11:46
+   |
+11 |         GET fragment() { headers { "x-tpl" = "Bearer\r{client.v}"; } }
+   |                                              ^^^^^^^^^^^^^^^^^^^^

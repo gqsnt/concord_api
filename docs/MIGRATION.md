@@ -437,12 +437,11 @@ with `concord::ToHeaderValue` instead of being formatted with `Display`. A nativ
 with the same spelling. Path segments, labels, query values and templates are unchanged.
 
 A header value of another `Display` type (a domain enum, `Uuid`, `IpAddr`, a float) is now a
-compile error at its type: "`T` cannot be sent as a header value". Two explicit fixes:
+compile error at its type: "`T` cannot be sent as a header value". `ToHeaderValue` is closed
+(`HeaderValue`, text, integers, `bool` and pointers to them). Two explicit fixes:
 
-- send its `Display` text with a template (same spelling and visible-ASCII check as before);
-- implement `ToHeaderValue` for your own type (no formatting; `from_static` per variant). If the
-  same value is also used as text (path, query value, template), that is only accepted for
-  `#[sensitive]` values: use the template instead.
+- send its `Display` text with a template (the same spelling as before);
+- build a `HeaderValue` yourself and place that.
 
 Before (does not compile any more):
 
@@ -456,7 +455,6 @@ After:
 use std::fmt;
 
 use concord::reqwest::{self, header::HeaderValue};
-use concord::ToHeaderValue;
 
 #[derive(Clone, Copy)]
 pub enum Sort {
@@ -473,30 +471,20 @@ impl fmt::Display for Sort {
     }
 }
 
-/// Or skip `Display`: the header spelling, without formatting.
-impl ToHeaderValue for Sort {
-    fn to_header_value(&self) -> Option<HeaderValue> {
-        Some(HeaderValue::from_static(match self {
-            Sort::Newest => "newest",
-            Sort::PriceAsc => "price_asc",
-        }))
-    }
-}
-
 concord::api! {
     pub client Shop {
         base "https://shop.example.com";
         // A template formats with `Display`, as before:
         GET search(sort: Sort) { path "search"; headers { "x-sort" = "{sort}"; } }
-        // `ToHeaderValue` places it directly:
-        GET browse(header("x-sort") sort: Sort) { path "browse"; }
+        // Or a native value built by the caller:
+        GET browse(header("x-sort") sort: HeaderValue) { path "browse"; }
     }
 }
 
 fn main() -> Result<(), concord::Error> {
     let shop = Shop::new(reqwest::Client::new());
     let a = shop.search(Sort::PriceAsc).prepare()?;
-    let b = shop.browse(Sort::PriceAsc).prepare()?;
+    let b = shop.browse(HeaderValue::from_static("price_asc")).prepare()?;
     assert_eq!(a.request().headers()["x-sort"], "price_asc");
     assert_eq!(b.request().headers()["x-sort"], "price_asc");
     Ok(())

@@ -479,9 +479,36 @@ pub enum Family {
     Header,
 }
 
+/// A query or header key: a string literal, or (headers only) a Rust path to a native
+/// `HeaderName` constant or static, resolved by rustc.
+#[derive(Clone)]
+pub enum Key {
+    Lit(LitStr),
+    Path(syn::Path),
+}
+
+impl Key {
+    pub fn span(&self) -> Span {
+        match self {
+            Key::Lit(lit) => lit.span(),
+            Key::Path(path) => path.span(),
+        }
+    }
+}
+
+fn parse_key(input: ParseStream<'_>, expected: &str) -> syn::Result<Key> {
+    if input.peek(LitStr) {
+        return Ok(Key::Lit(input.parse()?));
+    }
+    if input.peek(Token![::]) || input.peek(Ident::peek_any) {
+        return input.call(syn::Path::parse_mod_style).map(Key::Path);
+    }
+    Err(input.error(expected))
+}
+
 pub struct Placement {
     pub family: Family,
-    pub key: Option<LitStr>,
+    pub key: Option<Key>,
     pub each: bool,
     pub span: Span,
 }
@@ -511,7 +538,7 @@ pub enum Op {
 pub struct Entry {
     pub op: Op,
     pub op_span: Span,
-    pub key: LitStr,
+    pub key: Key,
     pub value: Option<Rhs>,
     /// `override "k" = v else inherit;` (required when `v` can be absent).
     pub else_inherit: bool,
@@ -724,21 +751,22 @@ fn parse_entries(input: ParseStream<'_>) -> syn::Result<Vec<Entry>> {
     braced!(content in input);
     let mut entries = Vec::new();
     while !content.is_empty() {
-        let (op, op_span) = if content.peek(kw::append) {
+        // `append`/`remove` directly followed by `=` are a key named so; any other key path that
+        // starts with them is written `self::append::...` (`append ::x` is append + absolute path).
+        let keyword = |c: &syn::parse::ParseBuffer<'_>| !c.peek2(Token![=]);
+        let (op, op_span) = if content.peek(kw::append) && keyword(&content) {
             (Op::Append, content.parse::<kw::append>()?.span)
         } else if content.peek(Token![override]) {
             (Op::Override, content.parse::<Token![override]>()?.span)
-        } else if content.peek(kw::remove) {
+        } else if content.peek(kw::remove) && keyword(&content) {
             (Op::Remove, content.parse::<kw::remove>()?.span)
         } else {
             (Op::Introduce, content.span())
         };
-        let key: LitStr = content.parse().map_err(|e| {
-            syn::Error::new(
-                e.span(),
-                "expected a quoted key, e.g. `\"per_page\" = per_page;`",
-            )
-        })?;
+        let key = parse_key(
+            &content,
+            "expected a key: a quoted name (`\"per_page\" = per_page;`) or, for a header, a native `HeaderName` constant (`ACCEPT = \"application/json\";`)",
+        )?;
         let value = if op == Op::Remove {
             None
         } else {
@@ -1111,9 +1139,12 @@ fn parse_placement(input: ParseStream<'_>) -> syn::Result<Option<Placement>> {
     let key = if input.peek(syn::token::Paren) {
         let content;
         parenthesized!(content in input);
-        let key: LitStr = content.parse()?;
+        let key = parse_key(
+            &content,
+            "expected a quoted name (`header(\"x-request-id\")`) or a native `HeaderName` constant (`header(AUTHORIZATION)`)",
+        )?;
         if !content.is_empty() {
-            return Err(content.error("expected a single quoted key"));
+            return Err(content.error("expected a single key"));
         }
         Some(key)
     } else {
@@ -1122,7 +1153,7 @@ fn parse_placement(input: ParseStream<'_>) -> syn::Result<Option<Placement>> {
     if family.0 == Family::Header && key.is_none() {
         return Err(syn::Error::new(
             family.1,
-            "a header placement names its field: `header(\"x-api-key\") key: String`",
+            "a header placement names its field: `header(\"x-api-key\") key: String` or `header(AUTHORIZATION) token: String`",
         ));
     }
     let each = if input.peek(kw::each) && !input.peek2(Token![:]) && !input.peek2(Token![?]) {

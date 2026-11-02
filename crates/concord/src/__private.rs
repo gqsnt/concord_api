@@ -50,40 +50,6 @@ pub trait Text: Display {}
 
 impl<T: Display + ?Sized> Text for T {}
 
-/// A value placed both as a whole header value and as text (path segment, subdomain label, query
-/// value, template hole), and not statically sensitive: it must be text itself, so its header
-/// value is its own text and never carries a native sensitivity flag that its text placements
-/// could not see. Implemented for `str`, `String`, the integers and `bool` (Concord's own
-/// `ToHeaderValue` impls never set the flag), and pointers to them.
-#[diagnostic::on_unimplemented(
-    message = "`{Self}` is placed both as a header value and as text",
-    label = "used as a whole header value and in a path, subdomain, query value or template",
-    note = "a header value that is also written as text must be text itself (`String`, `&str`, an integer or `bool`): a type's own `ToHeaderValue` can mark its header value sensitive, which a path, query value or template cannot see",
-    note = "send this header as text through a template (`headers {{ \"name\" = \"{{value}}\"; }}`), use a separate value for the header, or mark the value `#[sensitive]`"
-)]
-pub trait TextHeader: ToHeaderValue + Text {}
-
-impl TextHeader for str {}
-impl TextHeader for String {}
-impl TextHeader for bool {}
-
-macro_rules! text_headers {
-    ($($t:ty),*) => {$( impl TextHeader for $t {} )*};
-}
-
-text_headers!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize);
-
-impl<T: TextHeader + ?Sized> TextHeader for &T {}
-impl<T: TextHeader + ?Sized> TextHeader for Box<T> {}
-impl<T: TextHeader + ?Sized> TextHeader for std::rc::Rc<T> {}
-impl<T: TextHeader + ?Sized> TextHeader for std::sync::Arc<T> {}
-impl<T> TextHeader for std::borrow::Cow<'_, T>
-where
-    T: TextHeader + ToOwned + ?Sized,
-    T::Owned: Display,
-{
-}
-
 /// A template hole: checks [`Text`] (for its diagnostic) and returns the value unchanged.
 #[inline]
 pub fn text<T: Text + ?Sized>(value: &T) -> &T {
@@ -255,6 +221,8 @@ pub struct Parts<'a> {
     trailing_slash: bool,
     query: Vec<(&'static str, String)>,
     headers: HeaderMap,
+    /// Set by [`HeaderPlan`] when a native key classified `content-type` as sensitive.
+    content_type_sensitive: bool,
 }
 
 impl<'a> Parts<'a> {
@@ -269,7 +237,14 @@ impl<'a> Parts<'a> {
             trailing_slash: false,
             query: Vec::new(),
             headers: HeaderMap::new(),
+            content_type_sensitive: false,
         }
+    }
+
+    /// Applies what a [`HeaderPlan`] found about `content-type`: the media type Concord inserts
+    /// for the body is then flagged like a declared `content-type` value would be.
+    pub fn content_type_sensitive(&mut self, sensitive: bool) {
+        self.content_type_sensitive |= sensitive;
     }
 
     /// Adds the next host label (leftmost first). `what` names the template for errors.
@@ -342,8 +317,9 @@ impl<'a> Parts<'a> {
         Ok(())
     }
 
-    /// Adds one header line. The expansion passes a `HeaderName` from a generated `static`, so the
-    /// native validator accepted it at compile time; `what` names the header for errors.
+    /// Adds one header line. The name is native: a `HeaderName` constant written in the
+    /// declaration, or a literal name the macro checked with `http` and lowered to a validated
+    /// static; `what` names the placement for errors.
     ///
     /// The outgoing sensitivity flag is the value's own flag OR the declaration's classification
     /// (`sensitive`): a flag already set on a native value is never cleared.
@@ -358,7 +334,7 @@ impl<'a> Parts<'a> {
             Error::build(
                 Some(self.meta),
                 what,
-                "value is not a valid header value (text must be visible ASCII, space or tab)",
+                "value is not a valid header value (rejected by `http::HeaderValue`)",
             )
         })?;
         if sensitive {
@@ -386,33 +362,6 @@ impl<'a> Parts<'a> {
             self.header(name.clone(), what, &value, sensitive)?;
         }
         Ok(())
-    }
-
-    /// [`header`](Self::header) for a value that is also placed as text ([`TextHeader`]).
-    pub fn header_text<T: TextHeader + ?Sized>(
-        &mut self,
-        name: HeaderName,
-        what: &'static str,
-        value: &T,
-        sensitive: bool,
-    ) -> Result<(), Error> {
-        self.header(name, what, value, sensitive)
-    }
-
-    /// [`header_each`](Self::header_each) for items that are also placed as text
-    /// ([`TextHeader`]).
-    pub fn header_text_each<I>(
-        &mut self,
-        name: HeaderName,
-        what: &'static str,
-        values: I,
-        sensitive: bool,
-    ) -> Result<(), Error>
-    where
-        I: IntoIterator,
-        I::Item: TextHeader,
-    {
-        self.header_each(name, what, values, sensitive)
     }
 
     /// Prepends the labels to the base host and validates the result. Called once, right after
@@ -478,7 +427,7 @@ impl<'a> Parts<'a> {
         if let Some((body, content_type)) = body {
             if let Some(mut content_type) = content_type {
                 if !headers.contains_key(CONTENT_TYPE) {
-                    if self.meta.sensitive_content_type {
+                    if self.meta.sensitive_content_type || self.content_type_sensitive {
                         content_type.set_sensitive(true);
                     }
                     headers
@@ -658,6 +607,218 @@ impl fmt::Debug for ShownHeader {
 
 /// `Debug` placeholder for sensitive values.
 pub struct Redacted;
+
+/// `Debug` of a value whose classification depends on native header names (known only at run
+/// time): `<redacted>` when `self.0` holds, the value otherwise.
+pub struct Withheld<T>(pub bool, pub T);
+
+impl<T: fmt::Debug> fmt::Debug for Withheld<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.0 {
+            f.write_str("<redacted>")
+        } else {
+            fmt::Debug::fmt(&self.1, f)
+        }
+    }
+}
+
+/// Header and query names whose values Concord withholds from its output even when they are not
+/// marked `#[sensitive]`, compared after mapping `_` to `-` (the macro classifies literal names
+/// with the same list; a test keeps the two equal).
+pub const SENSITIVE_NAMES: &[&str] = &[
+    "authorization",
+    "proxy-authorization",
+    "cookie",
+    "set-cookie",
+    "x-api-key",
+    "api-key",
+    "apikey",
+    "x-auth-token",
+    "auth-token",
+    "access-token",
+    "refresh-token",
+    "id-token",
+    "token",
+    "client-secret",
+    "secret",
+    "password",
+    "signature",
+    "session",
+];
+
+/// The type a header key path must have: a native `HeaderName` (constant or static). Only the
+/// diagnostic is Concord's; the name itself is used as it is.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a native header name",
+    label = "a header key path names a `HeaderName` constant or static",
+    note = "write a literal name, `header(\"x-name\")`, or define `const X_NAME: HeaderName = HeaderName::from_static(\"x-name\");`"
+)]
+pub trait NativeKey {
+    fn native_key(&self) -> &HeaderName;
+}
+
+impl NativeKey for HeaderName {
+    #[inline]
+    fn native_key(&self) -> &HeaderName {
+        self
+    }
+}
+
+/// Whether a native header name is on [`SENSITIVE_NAMES`]. Native names are lowercase.
+pub fn sensitive_name(name: &HeaderName) -> bool {
+    let name = name.as_str();
+    SENSITIVE_NAMES.iter().any(|listed| {
+        listed.len() == name.len()
+            && listed
+                .bytes()
+                .zip(name.bytes())
+                .all(|(l, n)| l == if n == b'_' { b'-' } else { n })
+    })
+}
+
+/// Header fields owned by HTTP framing (reqwest/hyper set them); declaring one is an error (a
+/// compile error for a literal name, a build error for a native constant).
+pub const RESERVED_NAMES: &[&str] = &[
+    "host",
+    "content-length",
+    "transfer-encoding",
+    "connection",
+    "te",
+    "trailer",
+    "upgrade",
+    "keep-alive",
+];
+
+/// Whether a native header name is on [`RESERVED_NAMES`].
+pub fn reserved_name(name: &HeaderName) -> bool {
+    RESERVED_NAMES.contains(&name.as_str())
+}
+
+/// A literal header value that is not visible ASCII (so not lowered to a `from_static` static):
+/// built through the checked native constructor. The macro already checked it with `http`; the
+/// downstream `http` stays authoritative.
+pub fn header_literal(
+    bytes: &'static [u8],
+    meta: &'static EndpointMeta,
+    what: &'static str,
+) -> Result<HeaderValue, Error> {
+    HeaderValue::from_bytes(bytes).map_err(|_| {
+        Error::build(
+            Some(meta),
+            what,
+            "literal is not a valid header value (rejected by `http::HeaderValue::from_bytes`)",
+        )
+    })
+}
+
+/// One header contribution of an endpoint's chain, for [`HeaderPlan::compose`].
+#[derive(Clone, Copy)]
+pub struct HeaderEntry {
+    pub op: HeaderOp,
+    /// For [`HeaderOp::OverrideElseInherit`]: whether its source is present (it then replaces
+    /// the inherited values; absent, they stay). Ignored otherwise.
+    pub present: bool,
+    /// The contribution's own classification (`#[sensitive]`, or a withheld value it reads).
+    pub marked: bool,
+    /// The declaration, for errors (`` `override AUTHORIZATION = token` on `Api.admin` ``).
+    pub label: &'static str,
+}
+
+/// What a header contribution does to the header it names.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum HeaderOp {
+    /// Introduces the header; an error if an enclosing owner already sets it.
+    Set,
+    /// Adds a value after the inherited ones.
+    Append,
+    /// Replaces the inherited values; an error if nothing sets the header.
+    Override,
+    /// `override ... else inherit`: replaces them only when its source is present.
+    OverrideElseInherit,
+    /// Drops the inherited values; an error if nothing sets the header.
+    Remove,
+}
+
+/// Header composition of one endpoint whose chain writes a native `HeaderName` constant, decided
+/// on names alone: no value is converted, formatted or evaluated to find which header a
+/// contribution names. Chains with literal names only are composed by the macro instead.
+pub struct HeaderPlan<const N: usize> {
+    /// Whether each contribution's value is sent (when present).
+    pub live: [bool; N],
+    /// Each contribution's outgoing classification: its header's name is on
+    /// [`SENSITIVE_NAMES`], or some contribution to the same header is marked.
+    pub sensitive: [bool; N],
+    /// Whether some contribution to `content-type` is marked.
+    pub content_type_sensitive: bool,
+}
+
+impl<const N: usize> HeaderPlan<N> {
+    /// Composes `entries` (in chain order: root first, each owner's `remove`s before its other
+    /// contributions) by native name equality. `explicit_media`: the body declares a media type,
+    /// which conflicts with a `content-type` header that survives.
+    pub fn compose(
+        names: [&HeaderName; N],
+        entries: [HeaderEntry; N],
+        explicit_media: bool,
+        meta: &'static EndpointMeta,
+    ) -> Result<Self, Error> {
+        let mut live = [false; N];
+        let mut sensitive = [false; N];
+        let mut content_type_sensitive = false;
+        for i in 0..N {
+            let entry = entries[i];
+            let fail = |reason| Err(Error::build(Some(meta), entry.label, reason));
+            if entry.op != HeaderOp::Remove && reserved_name(names[i]) {
+                return fail(
+                    "names a header field that reqwest/hyper manage; it cannot be declared",
+                );
+            }
+            // Whether the header is set when this contribution applies: the latest earlier
+            // contribution to the same header was not a `remove`.
+            let set_before = (0..i)
+                .rev()
+                .find(|&j| names[j] == names[i])
+                .is_some_and(|j| entries[j].op != HeaderOp::Remove);
+            match entry.op {
+                HeaderOp::Set if set_before => {
+                    return fail(
+                        "sets a header that an enclosing owner already sets (possibly with another spelling of the same name); use `override` or `append`, or `remove` it first",
+                    );
+                }
+                HeaderOp::Override | HeaderOp::OverrideElseInherit | HeaderOp::Remove
+                    if !set_before =>
+                {
+                    return fail("changes a header that no enclosing owner sets");
+                }
+                _ => {}
+            }
+            // A value survives unless a later contribution to the same header replaces or
+            // removes it.
+            let closes = |j: usize| match entries[j].op {
+                HeaderOp::Set | HeaderOp::Override | HeaderOp::Remove => true,
+                HeaderOp::OverrideElseInherit => entries[j].present,
+                HeaderOp::Append => false,
+            };
+            live[i] = entry.op != HeaderOp::Remove
+                && !(i + 1..N).any(|j| names[j] == names[i] && closes(j));
+            sensitive[i] = sensitive_name(names[i])
+                || (0..N).any(|j| names[j] == names[i] && entries[j].marked);
+            if names[i] == CONTENT_TYPE {
+                content_type_sensitive |= entry.marked;
+                if explicit_media && live[i] {
+                    return fail(
+                        "sets `content-type` while the body declares a media type: both would set `Content-Type`; keep one",
+                    );
+                }
+            }
+        }
+        Ok(Self {
+            live,
+            sensitive,
+            content_type_sensitive,
+        })
+    }
+}
 
 impl fmt::Debug for Redacted {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

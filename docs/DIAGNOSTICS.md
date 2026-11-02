@@ -159,7 +159,7 @@ passed at runtime with `with_base_url`. A client without `base` is also an error
 Excerpt of [`invalid_header_name.stderr`](../crates/concord/tests/ui/invalid_header_name.stderr):
 
 ```text
-error: "x tag" is not a valid header field name
+error: "x tag" is not a valid header name (rejected by `http::HeaderName::from_bytes`)
  --> tests/ui/invalid_header_name.rs:4:19
   |
 4 |         headers { "x tag" = "a"; }
@@ -169,17 +169,21 @@ error: "x tag" is not a valid header field name
 Excerpt of [`header_literal_value.stderr`](../crates/concord/tests/ui/header_literal_value.stderr):
 
 ```text
-error: 'é' is not allowed in a header value; header values are visible ASCII, space or tab
- --> tests/ui/header_literal_value.rs:4:40
+error: this header value contains a byte that `http::HeaderValue::from_bytes` rejects (at byte 1)
+ --> tests/ui/header_literal_value.rs:8:41
   |
-4 |         GET e() { headers { "x-name" = "café"; } }
-  |                                        ^^^^^^
+8 |         GET ctl() { headers { "x-ctl" = "a\nb"; } }
+  |                                         ^^^^^^
 ```
 
-**Fix:** header names are tokens (letters, digits and ``!#$%&'*+-.^_`|~``); values are visible
-ASCII, space or tab. Transport-owned names such as `host` or `content-length` are rejected too
+**Fix:** literal names and values are checked by `http` itself when the macro expands
+(`HeaderName::from_bytes`, `HeaderValue::from_bytes`, after Rust escapes and `{{ }}` are decoded):
+UTF-8 beyond ASCII is a valid value, control bytes are not, and a hole cannot repair an invalid
+literal fragment. Transport-owned names such as `host` or `content-length` are rejected too
 ([`reserved_headers_all.stderr`](../crates/concord/tests/ui/reserved_headers_all.stderr)). A value
-formatted at runtime that breaks the rule is a build error from `prepare()`, naming the header.
+formatted at runtime that `http` rejects is a build error from `prepare()`, naming the header. A
+native key (`header(AUTHORIZATION)`) must be a `HeaderName` constant or static
+([`native_key_type.stderr`](../crates/concord/tests/ui/native_key_type.stderr)).
 
 ### A type without `Display`
 

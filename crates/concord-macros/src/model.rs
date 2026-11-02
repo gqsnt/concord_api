@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use proc_macro2::Span;
-use quote::format_ident;
+use quote::{ToTokens, format_ident};
 use syn::spanned::Spanned;
 use syn::{Attribute, Expr, Ident, LitStr, Type, Visibility};
 
@@ -16,6 +16,67 @@ use crate::template::{self, RawPiece};
 
 pub struct Model {
     pub owners: Vec<Owner>,
+    /// Native `HeaderName` paths written as header keys, one per distinct token sequence.
+    pub key_paths: Vec<KeyPath>,
+}
+
+/// A query or header key after resolution.
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+pub enum KeyName {
+    /// A query key as written, or a header name as normalised by `http::HeaderName::from_bytes`.
+    Lit(String),
+    /// A native `HeaderName` constant or static (index into [`Model::key_paths`]). The macro
+    /// cannot evaluate it: it equals another key only when written with the same tokens.
+    Path(usize),
+}
+
+impl KeyName {
+    pub fn lit(&self) -> Option<&str> {
+        match self {
+            KeyName::Lit(s) => Some(s),
+            KeyName::Path(_) => None,
+        }
+    }
+}
+
+/// A header key written as a Rust path.
+pub struct KeyPath {
+    pub path: syn::Path,
+    /// The path's tokens, as written (for documentation and error labels).
+    pub text: String,
+}
+
+/// Whether two keys name the same header, as far as the macro can tell.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Rel {
+    Same,
+    Different,
+    /// At least one is a native constant: decided by `HeaderName == HeaderName` at run time.
+    Unknown,
+}
+
+pub fn relation(a: &KeyName, b: &KeyName) -> Rel {
+    match (a, b) {
+        (KeyName::Lit(x), KeyName::Lit(y)) => {
+            if x == y {
+                Rel::Same
+            } else {
+                Rel::Different
+            }
+        }
+        (KeyName::Path(x), KeyName::Path(y)) if x == y => Rel::Same,
+        _ => Rel::Unknown,
+    }
+}
+
+/// A run-time condition under which a value is withheld from Concord's output (it can only arise
+/// from native header names).
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum Cond {
+    /// The native constant `key_paths[_]` is on the safety list.
+    Name(usize),
+    /// The two keys name the same header.
+    Same(KeyName, KeyName),
 }
 
 // Few owners per declaration; boxing the larger variant buys nothing.
@@ -131,18 +192,20 @@ pub struct Value {
     pub sensitive: bool,
     pub usage: Option<Usage>,
     /// Direct placement: family, explicit key, span, `each`.
-    pub placement: Option<(Family, Option<String>, Span, bool)>,
+    pub placement: Option<(Family, Option<syntax::Key>, Span, bool)>,
     /// Effective sensitivity: marked `#[sensitive]`, or feeding a query/header key that is
     /// sensitive on some chain (marked contribution or safety-list name). Withheld from every
     /// Concord-produced output, and makes every placement that reads it sensitive.
     pub debug_sensitive: bool,
+    /// Run-time conditions under which the value is also withheld (native header names); any of
+    /// them suffices. Only values read solely as header values have some: a value read as text
+    /// with a condition is withheld statically (`debug_sensitive`).
+    pub debug_when: Vec<Cond>,
     /// Read as text somewhere (path, subdomain, query, or a template hole), so it must be
     /// `Display`. A value read only as whole header values needs `ToHeaderValue` instead, and its
     /// generated `Debug` shows its header value.
     pub text: bool,
-    /// Placed directly as a whole header value somewhere (`ToHeaderValue`). When it is also read
-    /// as text and not statically sensitive, its type must be text itself (`TextHeader`), so no
-    /// native sensitivity flag can bypass its text placements.
+    /// Placed directly as a whole header value somewhere (`ToHeaderValue`).
     pub header: bool,
 }
 
@@ -184,7 +247,7 @@ pub enum Source {
 
 pub struct Contrib {
     pub op: Op,
-    pub key: String,
+    pub key: KeyName,
     pub span: Span,
     pub source: Option<Source>,
     pub sensitive: bool,
@@ -211,7 +274,7 @@ pub enum Item {
 }
 
 pub struct Slot {
-    pub key: String,
+    pub key: KeyName,
     pub sensitive: bool,
     pub items: Vec<Item>,
 }
@@ -223,7 +286,16 @@ pub struct Composed {
     pub segments: Vec<(usize, usize)>,
     pub trailing_slash: bool,
     pub query: Vec<Slot>,
-    pub headers: Vec<Slot>,
+    pub headers: HeaderComposition,
+}
+
+pub enum HeaderComposition {
+    /// Every header key on the chain is a literal name: composed by the macro, as slots.
+    Static(Vec<Slot>),
+    /// A native `HeaderName` constant is on the chain: its header contributions in composition
+    /// order (root first, each owner's `remove`s first), composed at run time by
+    /// `__private::HeaderPlan` on names alone.
+    Dynamic(Vec<ContribId>),
 }
 
 /// Header fields owned by HTTP framing; reqwest/hyper manage them.
@@ -264,6 +336,37 @@ const SENSITIVE_NAMES: &[&str] = &[
 fn sensitive_name(key: &str) -> bool {
     let normalized = key.to_ascii_lowercase().replace('_', "-");
     SENSITIVE_NAMES.contains(&normalized.as_str())
+}
+
+/// The byte offset at which `http::HeaderValue::from_bytes` rejects `text`, if it does. Validity
+/// is per byte, so the offset is found by asking about single bytes.
+fn rejected_value(text: &str) -> Option<usize> {
+    if http::HeaderValue::from_bytes(text.as_bytes()).is_ok() {
+        return None;
+    }
+    Some(
+        text.bytes()
+            .position(|b| http::HeaderValue::from_bytes(&[b]).is_err())
+            .unwrap_or(0),
+    )
+}
+
+/// A possibly huge user string, quoted and shortened for a message.
+fn elided(text: &str) -> String {
+    if text.chars().count() <= 64 {
+        format!("{text:?}")
+    } else {
+        let head: String = text.chars().take(48).collect();
+        format!("{head:?}… ({} bytes)", text.len())
+    }
+}
+
+/// A structural fact the macro may or may not be able to decide.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Known {
+    Yes(usize),
+    No,
+    Maybe,
 }
 
 #[derive(Default)]
@@ -310,7 +413,10 @@ impl Model {
         let mut stmts = Vec::new();
         flatten(api.client, None, &mut owners, &mut stmts, &mut errors);
         errors.check()?;
-        let mut model = Model { owners };
+        let mut model = Model {
+            owners,
+            key_paths: Vec::new(),
+        };
 
         // Value-level checks.
         for owner in &model.owners {
@@ -365,6 +471,10 @@ impl Model {
         // slot memberships and value reads).
         model.propagate_sensitivity();
         model.refresh_sensitivity();
+        while model.native_conditions() {
+            model.propagate_sensitivity();
+            model.refresh_sensitivity();
+        }
 
         // Composition along every chain; errors are reported for each owner's own statements.
         for index in 0..model.owners.len() {
@@ -673,22 +783,19 @@ impl Model {
         }
 
         // Direct placements, in declaration order, come before block statements.
-        let direct: Vec<(usize, Family, String, Span, bool)> = self.owners[at]
+        let direct: Vec<(usize, Family, syntax::Key, Span, bool)> = self.owners[at]
             .values
             .iter()
             .enumerate()
             .filter_map(|(index, value)| {
                 let (family, key, span, each) = value.placement.clone()?;
-                Some((
-                    index,
-                    family,
-                    key.unwrap_or_else(|| plain(&value.name)),
-                    span,
-                    each,
-                ))
+                let key = key.unwrap_or_else(|| {
+                    syntax::Key::Lit(LitStr::new(&plain(&value.name), value.name.span()))
+                });
+                Some((index, family, key, span, each))
             })
             .collect();
-        for (index, family, key_lit, key_span, each) in direct {
+        for (index, family, key_written, key_span, each) in direct {
             let value = ValueRef { owner: at, index };
             self.mark(
                 value,
@@ -700,7 +807,7 @@ impl Model {
                 Family::Query => self.owners[at].values[index].text = true,
                 Family::Header => self.owners[at].values[index].header = true,
             }
-            if let Some(key) = self.key(family, &key_lit, key_span, errors) {
+            if let Some(key) = self.key(family, &key_written, errors) {
                 let v = self.value(value);
                 let contrib = Contrib {
                     op: Op::Introduce,
@@ -720,8 +827,7 @@ impl Model {
             (Family::Header, stmts.headers),
         ] {
             for entry in entries.into_iter().flatten() {
-                let Some(key) = self.key(family, &entry.key.value(), entry.key.span(), errors)
-                else {
+                let Some(key) = self.key(family, &entry.key, errors) else {
                     continue;
                 };
                 let span = entry.key.span();
@@ -757,16 +863,25 @@ impl Model {
                             }
                         };
                         if family == Family::Header {
-                            let bad = raw.iter().find_map(|piece| match piece {
-                                RawPiece::Lit(s) => {
-                                    s.chars().find(|c| !(*c == '\t' || (' '..='~').contains(c)))
-                                }
-                                RawPiece::Hole(_) => None,
-                            });
-                            if let Some(bad) = bad {
+                            // Each decoded literal fragment alone: header-value validity is per
+                            // byte, so a hole can never repair an invalid fragment.
+                            let rejected =
+                                raw.iter().enumerate().find_map(|(i, piece)| match piece {
+                                    RawPiece::Lit(s) => rejected_value(s).map(|offset| (i, offset)),
+                                    RawPiece::Hole(_) => None,
+                                });
+                            if let Some((fragment, offset)) = rejected {
+                                let whole = raw.len() == 1;
+                                let place = if whole {
+                                    format!("at byte {offset}")
+                                } else {
+                                    format!(
+                                        "at byte {offset} of literal fragment {fragment}; no value can repair it"
+                                    )
+                                };
                                 errors.push(syn::Error::new(
                                     lit.span(),
-                                    format!("{bad:?} is not allowed in a header value; header values are visible ASCII, space or tab"),
+                                    format!("this header value contains a byte that `http::HeaderValue::from_bytes` rejects ({place})"),
                                 ));
                                 continue;
                             }
@@ -819,37 +934,81 @@ impl Model {
         }
     }
 
-    fn key(&self, family: Family, key: &str, span: Span, errors: &mut Errors) -> Option<String> {
-        match family {
-            Family::Query => {
+    fn key(&mut self, family: Family, key: &syntax::Key, errors: &mut Errors) -> Option<KeyName> {
+        let span = key.span();
+        match (family, key) {
+            (Family::Query, syntax::Key::Lit(lit)) => {
+                let key = lit.value();
                 if key.is_empty() {
                     errors.push(syn::Error::new(span, "query keys cannot be empty"));
                     return None;
                 }
-                Some(key.to_owned())
+                Some(KeyName::Lit(key))
             }
-            Family::Header => {
-                let lower = key.to_ascii_lowercase();
-                let token = !lower.is_empty()
-                    && lower
-                        .bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b));
-                if !token {
+            (Family::Query, syntax::Key::Path(_)) => {
+                errors.push(syn::Error::new(
+                    span,
+                    "query keys are quoted strings (`\"per_page\" = per_page;`); a path names a native `HeaderName` constant, for headers",
+                ));
+                None
+            }
+            (Family::Header, syntax::Key::Lit(lit)) => {
+                let raw = lit.value();
+                let Ok(name) = http::HeaderName::from_bytes(raw.as_bytes()) else {
                     errors.push(syn::Error::new(
                         span,
-                        format!("{key:?} is not a valid header field name"),
+                        format!(
+                            "{} is not a valid header name (rejected by `http::HeaderName::from_bytes`)",
+                            elided(&raw)
+                        ),
+                    ));
+                    return None;
+                };
+                let name = name.as_str().to_owned();
+                if RESERVED_HEADERS.contains(&name.as_str()) {
+                    errors.push(syn::Error::new(
+                        span,
+                        format!("`{name}` is managed by the HTTP transport (reqwest/hyper) and cannot be declared"),
                     ));
                     return None;
                 }
-                if RESERVED_HEADERS.contains(&lower.as_str()) {
-                    errors.push(syn::Error::new(
-                        span,
-                        format!("`{lower}` is managed by the HTTP transport (reqwest/hyper) and cannot be declared"),
-                    ));
-                    return None;
-                }
-                Some(lower)
+                Some(KeyName::Lit(name))
             }
+            (Family::Header, syntax::Key::Path(path)) => {
+                let text = path
+                    .to_token_stream()
+                    .to_string()
+                    .replace(" :: ", "::")
+                    .replace(":: ", "::");
+                let index = match self.key_paths.iter().position(|k| k.text == text) {
+                    Some(index) => index,
+                    None => {
+                        self.key_paths.push(KeyPath {
+                            path: path.clone(),
+                            text,
+                        });
+                        self.key_paths.len() - 1
+                    }
+                };
+                Some(KeyName::Path(index))
+            }
+        }
+    }
+
+    /// A key as it is written in a declaration (a quoted literal, or a path), for suggestions.
+    pub fn key_written(&self, key: &KeyName) -> String {
+        match key {
+            KeyName::Lit(s) => format!("{s:?}"),
+            KeyName::Path(i) => self.key_paths[*i].text.clone(),
+        }
+    }
+
+    /// A key as written, for messages and documentation: a header's normalised name or a native
+    /// constant's path.
+    pub fn key_text(&self, key: &KeyName) -> String {
+        match key {
+            KeyName::Lit(s) => s.clone(),
+            KeyName::Path(i) => self.key_paths[*i].text.clone(),
         }
     }
 
@@ -999,7 +1158,22 @@ impl Model {
             }
         }
         let query = self.compose_family(&chain, Family::Query, errors, slots_out);
-        let headers = self.compose_family(&chain, Family::Header, errors, slots_out);
+        let native = chain.iter().any(|&o| {
+            self.owners[o]
+                .headers
+                .iter()
+                .any(|c| matches!(c.key, KeyName::Path(_)))
+        });
+        let headers = if native {
+            HeaderComposition::Dynamic(self.compose_native(&chain, errors, slots_out))
+        } else {
+            HeaderComposition::Static(self.compose_family(
+                &chain,
+                Family::Header,
+                errors,
+                slots_out,
+            ))
+        };
         Composed {
             labels,
             segments,
@@ -1027,7 +1201,7 @@ impl Model {
         }
         let last = *chain.last().unwrap();
         let mut states: Vec<State> = Vec::new();
-        let mut position: HashMap<String, usize> = HashMap::new();
+        let mut position: HashMap<KeyName, usize> = HashMap::new();
         let noun = match family {
             Family::Query => "query key",
             Family::Header => "header",
@@ -1060,7 +1234,7 @@ impl Model {
                                 c.span,
                                 format!(
                                     "{noun} `{}` is already set by `{}`; use `override` or `append` to change an inherited {noun}, or add `remove \"{}\";` to this owner's block to replace it exactly",
-                                    c.key, states[p].last_writer, c.key
+                                    self.key_text(&c.key), states[p].last_writer, self.key_text(&c.key)
                                 ),
                             ));
                         }
@@ -1082,7 +1256,7 @@ impl Model {
                         states.push(State {
                             slot: Slot {
                                 key: c.key.clone(),
-                                sensitive: c.sensitive || sensitive_name(&c.key),
+                                sensitive: c.sensitive || c.key.lit().is_some_and(sensitive_name),
                                 items: vec![Item::Emit(id)],
                             },
                             live: true,
@@ -1105,7 +1279,7 @@ impl Model {
                         } else {
                             // An `override` whose source can be absent says what absence means.
                             if report && !c.else_inherit {
-                                let k = &c.key;
+                                let k = &self.key_text(&c.key);
                                 errors.push(syn::Error::new(
                                     c.span,
                                     format!(
@@ -1128,11 +1302,12 @@ impl Model {
                             let msg = match removed {
                                 Some(by) => format!(
                                     "cannot {verb} {noun} `{}`: `{by}` removes it; introduce it again with `\"{}\" = ...`",
-                                    c.key, c.key
+                                    self.key_text(&c.key),
+                                    self.key_text(&c.key)
                                 ),
                                 None => format!(
                                     "cannot {verb} {noun} `{}`: no enclosing owner sets it",
-                                    c.key
+                                    self.key_text(&c.key)
                                 ),
                             };
                             errors.push(syn::Error::new(c.span, msg));
@@ -1142,9 +1317,224 @@ impl Model {
             }
         }
         for state in &states {
-            slots_out.push((sensitive_name(&state.slot.key), state.history.clone()));
+            slots_out.push((
+                state.slot.key.lit().is_some_and(sensitive_name),
+                state.history.clone(),
+            ));
         }
         states.into_iter().map(|s| s.slot).collect()
+    }
+
+    /// Header composition of a chain that writes a native `HeaderName` constant. Returns its
+    /// contributions in composition order (the run-time plan composes them on names). Errors the
+    /// macro can prove (with literal names or the same constant on both sides) are compile errors;
+    /// the others are checked by the plan at `prepare()`. `slots_out` receives one slot per
+    /// identity the macro knows (a lower bound for sensitivity propagation).
+    fn compose_native(
+        &self,
+        chain: &[usize],
+        errors: &mut Errors,
+        slots_out: &mut Vec<(bool, Vec<ContribId>)>,
+    ) -> Vec<ContribId> {
+        let last = *chain.last().unwrap();
+        let seq = self.header_seq(chain);
+        for (i, &id) in seq.iter().enumerate() {
+            if id.owner != last {
+                continue;
+            }
+            let c = self.contrib(id);
+            let key = self.key_text(&c.key);
+            let written = self.key_written(&c.key);
+            if c.op == Op::Override && !c.total && !c.else_inherit {
+                errors.push(syn::Error::new(
+                    c.span,
+                    format!(
+                        "this `override` reads an optional value, so it can be absent; say what absence means: `override {written} = ... else inherit;` keeps the inherited value, `remove {written}; {written} = ...;` sends nothing"
+                    ),
+                ));
+            }
+            match (c.op, self.set_before(&seq, i)) {
+                (Op::Introduce, Known::Yes(j)) => errors.push(syn::Error::new(
+                    c.span,
+                    format!(
+                        "header `{key}` is already set by `{}`; use `override` or `append` to change an inherited header, or add `remove {written};` to this owner's block to replace it exactly",
+                        self.owners[seq[j].owner].dotted
+                    ),
+                )),
+                (Op::Override | Op::Remove, Known::No) => {
+                    let verb = if c.op == Op::Remove { "remove" } else { "override" };
+                    errors.push(syn::Error::new(
+                        c.span,
+                        format!("cannot {verb} header `{key}`: no enclosing owner sets it"),
+                    ));
+                }
+                _ => {}
+            }
+        }
+        let mut classes: Vec<(KeyName, Vec<ContribId>)> = Vec::new();
+        for &id in &seq {
+            let key = &self.contrib(id).key;
+            match classes.iter_mut().find(|(k, _)| k == key) {
+                Some((_, history)) => history.push(id),
+                None => classes.push((key.clone(), vec![id])),
+            }
+        }
+        for (key, history) in classes {
+            slots_out.push((key.lit().is_some_and(sensitive_name), history));
+        }
+        seq
+    }
+
+    /// A chain's header contributions in composition order: root first, each owner's `remove`s
+    /// before its other contributions.
+    fn header_seq(&self, chain: &[usize]) -> Vec<ContribId> {
+        let mut seq = Vec::new();
+        for &owner in chain {
+            let contribs = &self.owners[owner].headers;
+            let order = (0..contribs.len())
+                .filter(|&i| contribs[i].op == Op::Remove)
+                .chain((0..contribs.len()).filter(|&i| contribs[i].op != Op::Remove));
+            for index in order {
+                seq.push(ContribId {
+                    owner,
+                    family: Family::Header,
+                    index,
+                });
+            }
+        }
+        seq
+    }
+
+    /// Classification that depends on native header names. The static propagation treats a native
+    /// constant as a header of its own, not on the safety list (a lower bound). A value it does
+    /// not withhold is also withheld at run time when a native constant it is sent under is on the
+    /// safety list, or when its key turns out to name the same header as a sensitive
+    /// contribution. Such a value that is also written as text is withheld statically instead
+    /// (path, host and query redaction is static). Returns whether a value was withheld
+    /// statically (propagation must then run again).
+    fn native_conditions(&mut self) -> bool {
+        let mut conds: HashMap<ValueRef, std::collections::BTreeSet<Cond>> = HashMap::new();
+        let mut chains = Vec::new();
+        for index in 0..self.owners.len() {
+            let chain = self.chain(index);
+            let native = chain.iter().any(|&o| {
+                self.owners[o]
+                    .headers
+                    .iter()
+                    .any(|c| matches!(c.key, KeyName::Path(_)))
+            });
+            if native && self.owners[index].is_endpoint() {
+                chains.push(self.header_seq(&chain));
+            }
+        }
+        let open = |model: &Model, id: ContribId| -> Vec<ValueRef> {
+            model
+                .contrib_values(id)
+                .into_iter()
+                .filter(|r| !model.value(*r).debug_sensitive)
+                .collect()
+        };
+        for seq in &chains {
+            for &a in seq {
+                let ka = &self.contrib(a).key;
+                if let KeyName::Path(p) = ka {
+                    for v in open(self, a) {
+                        conds.entry(v).or_default().insert(Cond::Name(*p));
+                    }
+                }
+            }
+        }
+        loop {
+            let mut changed = false;
+            for seq in &chains {
+                for &a in seq {
+                    let ka = self.contrib(a).key.clone();
+                    let targets = open(self, a);
+                    if targets.is_empty() {
+                        continue;
+                    }
+                    for &b in seq {
+                        if a == b {
+                            continue;
+                        }
+                        let kb = &self.contrib(b).key;
+                        let theirs: std::collections::BTreeSet<Cond> = self
+                            .contrib_values(b)
+                            .iter()
+                            .flat_map(|r| conds.get(r).into_iter().flatten().cloned())
+                            .collect();
+                        let add: Vec<Cond> = match relation(&ka, kb) {
+                            Rel::Different => continue,
+                            // Same header: whatever makes the other contribution sensitive.
+                            Rel::Same => theirs.into_iter().collect(),
+                            // Possibly the same header: if the other is (or may be) sensitive.
+                            Rel::Unknown => {
+                                if self.contrib(b).sensitive || !theirs.is_empty() {
+                                    let (x, y) = if ka <= *kb {
+                                        (ka.clone(), kb.clone())
+                                    } else {
+                                        (kb.clone(), ka.clone())
+                                    };
+                                    vec![Cond::Same(x, y)]
+                                } else {
+                                    continue;
+                                }
+                            }
+                        };
+                        for v in &targets {
+                            let set = conds.entry(*v).or_default();
+                            for c in &add {
+                                changed |= set.insert(c.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        let mut promoted = false;
+        for (r, set) in conds {
+            let value = &mut self.owners[r.owner].values[r.index];
+            if set.is_empty() || value.debug_sensitive {
+                continue;
+            }
+            if value.text {
+                value.debug_sensitive = true;
+                value.debug_when.clear();
+                promoted = true;
+            } else {
+                value.debug_when = set.into_iter().collect();
+            }
+        }
+        promoted
+    }
+
+    /// Whether the header named by `seq[i]` is set when `seq[i]` applies (the latest earlier
+    /// contribution to the same header is not a `remove`), as far as the macro can tell.
+    fn set_before(&self, seq: &[ContribId], i: usize) -> Known {
+        let key = &self.contrib(seq[i]).key;
+        let mut known = Known::No;
+        for (j, &id) in seq[..i].iter().enumerate() {
+            let c = self.contrib(id);
+            let set = if c.op == Op::Remove {
+                Known::No
+            } else {
+                Known::Yes(j)
+            };
+            known = match relation(key, &c.key) {
+                Rel::Same => set,
+                Rel::Different => known,
+                // The same header or not: the verdict stands only if both agree.
+                Rel::Unknown => match (known, set) {
+                    (Known::No, Known::No) => Known::No,
+                    (Known::Yes(_), Known::Yes(j)) => Known::Yes(j),
+                    _ => Known::Maybe,
+                },
+            };
+        }
+        known
     }
 
     /// The nearest owner from `owner` (inclusive) up to the client that declares a `request`
@@ -1172,15 +1562,39 @@ impl Model {
         let Some((media, origin)) = &body.media else {
             return;
         };
-        let Some(slot) = composed
-            .headers
-            .iter()
-            .find(|s| s.key == "content-type" && !s.items.is_empty())
-        else {
-            return;
-        };
-        let writer = match &slot.items[0] {
-            Item::Emit(id) | Item::Override { src: id, .. } => &self.owners[id.owner].dotted,
+        let content_type = KeyName::Lit("content-type".to_owned());
+        let writer = match &composed.headers {
+            HeaderComposition::Static(slots) => {
+                let Some(slot) = slots
+                    .iter()
+                    .find(|s| s.key == content_type && !s.items.is_empty())
+                else {
+                    return;
+                };
+                match &slot.items[0] {
+                    Item::Emit(id) | Item::Override { src: id, .. } => {
+                        &self.owners[id.owner].dotted
+                    }
+                }
+            }
+            // With a native constant on the chain, a literal `content-type` contribution conflicts
+            // for certain only if no later contribution could be the same header and replace or
+            // remove it; otherwise the run-time plan decides.
+            HeaderComposition::Dynamic(seq) => {
+                let surviving = seq.iter().enumerate().find(|&(i, &id)| {
+                    let c = self.contrib(id);
+                    c.op != Op::Remove
+                        && c.key == content_type
+                        && seq[i + 1..].iter().all(|&later| {
+                            let l = self.contrib(later);
+                            relation(&c.key, &l.key) == Rel::Different || l.op == Op::Append
+                        })
+                });
+                match surviving {
+                    Some((_, id)) => &self.owners[id.owner].dotted,
+                    None => return,
+                }
+            }
         };
         let name = plain(&body.name);
         let (span, from, fix) = match origin {
@@ -1546,14 +1960,7 @@ fn flatten(
     }
     let mut values = Vec::new();
     for p in owner.params {
-        let placement = p.placement.map(|pl| {
-            (
-                pl.family,
-                pl.key.as_ref().map(LitStr::value),
-                pl.span,
-                pl.each,
-            )
-        });
+        let placement = p.placement.map(|pl| (pl.family, pl.key, pl.span, pl.each));
         values.push(Value {
             placement,
             docs: p.docs,
@@ -1563,6 +1970,7 @@ fn flatten(
             default: p.default,
             sensitive: p.sensitive,
             debug_sensitive: p.sensitive,
+            debug_when: Vec::new(),
             usage: None,
             text: false,
             header: false,
@@ -1770,8 +2178,15 @@ fn endpoint_output(
 /// structured random inputs.
 #[cfg(test)]
 mod base_consistency {
-    use super::validate_base;
+    use super::{RESERVED_HEADERS, SENSITIVE_NAMES, validate_base};
     use concord::__private::Base;
+
+    /// The macro classifies literal names, the runtime native constants: one list each, kept equal.
+    #[test]
+    fn name_lists_match_the_runtime() {
+        assert_eq!(SENSITIVE_NAMES, concord::__private::SENSITIVE_NAMES);
+        assert_eq!(RESERVED_HEADERS, concord::__private::RESERVED_NAMES);
+    }
     use proc_macro2::Span;
     use syn::LitStr;
 

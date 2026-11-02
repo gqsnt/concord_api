@@ -18,19 +18,21 @@ fn fresh_key() -> C {
 
 concord::api! {
     /// Every kind of endpoint data, all `Clone`.
-    pub client Shared(header("x-tenant") tenant: C) {
+    pub client Shared(tenant: C) {
         base "http://shared.invalid/v1";
+        headers { "x-tenant" = "{tenant}"; }
 
         /// Required path value, optional query value, initialized header value, `each`
         /// collection and a body.
         POST put(
             id: C,
             query note?: C,
-            header("x-key") key: C = fresh_key(),
+            key: C = fresh_key(),
             query("tag") each tags: Vec<C>,
             Raw payload: C,
         ) {
             path "items/{id}";
+            headers { "x-key" = "{key}"; }
         }
 
         /// No values at all: always `Clone`.
@@ -40,17 +42,19 @@ concord::api! {
 
 concord::api! {
     /// The same shape with move-only data: the declaration must keep compiling and preparing.
-    pub client Owned(header("x-tenant") tenant: C) {
+    pub client Owned(tenant: C) {
         base "http://owned.invalid/v1";
+        headers { "x-tenant" = "{tenant}"; }
 
         POST put(
             id: M,
             query note?: M,
-            header("x-key") key: M = M::new("k"),
+            key: M = M::new("k"),
             query("tag") each tags: Vec<M>,
             Raw payload: M,
         ) {
             path "items/{id}";
+            headers { "x-key" = "{key}"; }
         }
     }
 }

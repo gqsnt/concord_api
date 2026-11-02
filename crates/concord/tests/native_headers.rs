@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use concord::reqwest::header::HeaderValue;
 use concord::reqwest::header::HeaderValue as NativeValue;
-use concord::{ErrorKind, ToHeaderValue, reqwest};
+use concord::{ErrorKind, reqwest};
 use support::{Reply, Server};
 
 /// H8: an alias.
@@ -54,12 +54,12 @@ pub enum Detail {
     Full,
 }
 
-impl ToHeaderValue for Detail {
-    fn to_header_value(&self) -> Option<HeaderValue> {
-        Some(HeaderValue::from_static(match self {
+impl fmt::Display for Detail {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
             Detail::Short => "short",
             Detail::Full => "full",
-        }))
+        })
     }
 }
 
@@ -106,17 +106,16 @@ concord::api! {
         GET each_call(header("x-each") each v: Vec<HeaderValue>, header("x-one") each one: Option<HeaderValue>);
         /// Empty versus absent.
         GET empty(header("x-empty") v: HeaderValue, header("x-absent") absent?: HeaderValue);
-        /// H9: integers, `bool`, text, a domain type, a `Display` type through a template.
+        /// H9: integers, `bool`, text; domain types (`Display`) through templates.
         GET scalars(
             header("x-u8") a: u8,
             header("x-i64") b: i64,
             header("x-bool") c: bool,
             header("x-text") d: String,
-            header("x-detail") e: Detail,
-            header("x-details") each f: Vec<Detail>,
+            e: Detail,
             region: Region,
         ) {
-            headers { "x-region" = "{region}"; }
+            headers { "x-detail" = "{e}"; "x-region" = "{region}"; }
         }
 
         /// Borrowed and shared forms forward to the value they hold.
@@ -539,19 +538,11 @@ fn generated_debug_of_every_owner() {
         format!("{request:?}"),
         r#"NativeEmpty { v: "", absent: None }"#
     );
-    let request = api.scalars(
-        3,
-        -4,
-        true,
-        "café",
-        Detail::Full,
-        vec![Detail::Short],
-        Region("eu"),
-    );
+    let request = api.scalars(3, -4, true, "line\nbreak", Detail::Full, Region("eu"));
     // A text value that is not a valid header value is shown as such (the request will fail).
     assert_eq!(
         format!("{request:?}"),
-        r#"NativeScalars { a: "3", b: "-4", c: "true", d: <invalid header value>, e: "full", f: ["short"], region: "eu" }"#
+        r#"NativeScalars { a: "3", b: "-4", c: "true", d: <invalid header value>, e: "full", region: "eu" }"#
     );
 }
 
@@ -601,8 +592,8 @@ async fn empty_versus_absent() {
     assert_eq!(r[1].header_bytes_all("x-absent"), [b""]);
 }
 
-/// H9: integers and `bool` use native conversions; text keeps the visible-ASCII rule; a domain type
-/// spells itself; a `Display` type is formatted through a template.
+/// H9: integers and `bool` use native conversions; text goes through `HeaderValue::from_str`
+/// (native acceptance, UTF-8 included); `Display` types are formatted through templates.
 #[tokio::test]
 async fn h9_scalars() {
     let (server, api) = served(HeaderValue::from_static("o")).await;
@@ -612,7 +603,6 @@ async fn h9_scalars() {
         false,
         "a\tb c",
         Detail::Short,
-        vec![Detail::Full, Detail::Short],
         Region("eu-west"),
     )
     .send()
@@ -624,28 +614,34 @@ async fn h9_scalars() {
     assert_eq!(r.header_bytes_all("x-bool"), [b"false"]);
     assert_eq!(r.header_bytes_all("x-text"), [b"a\tb c"]);
     assert_eq!(r.header_bytes_all("x-detail"), [b"short"]);
-    assert_eq!(
-        r.header_bytes_all("x-details"),
-        [&b"full"[..], &b"short"[..]]
-    );
     assert_eq!(r.header_bytes_all("x-region"), [b"eu-west"]);
 
-    for bad in ["café", "a\r\nx-injected: 1", "\u{7f}"] {
+    // What `HeaderValue::from_str` accepts is sent as is, beyond ASCII too (H09).
+    let p = api
+        .scalars(1, 1, true, "café", Detail::Full, Region("é"))
+        .prepare()
+        .unwrap();
+    assert_eq!(
+        p.request().headers()["x-text"].as_bytes(),
+        "café".as_bytes()
+    );
+    assert_eq!(p.request().headers()["x-region"].as_bytes(), "é".as_bytes());
+    for bad in ["a\r\nx-injected: 1", "\u{7f}", "nul\0"] {
         let error = api
-            .scalars(1, 1, true, bad, Detail::Full, vec![], Region("eu"))
+            .scalars(1, 1, true, bad, Detail::Full, Region("eu"))
             .prepare()
             .unwrap_err();
         assert_eq!(error.kind(), ErrorKind::Build);
         let text = error.to_string();
         assert!(text.contains("header `x-text`"), "{text}");
-        assert!(text.contains("visible ASCII"), "{text}");
+        assert!(text.contains("rejected by `http::HeaderValue`"), "{text}");
         assert!(
-            !text.contains("caf") && !text.contains("injected"),
+            !text.contains("injected") && !text.contains("nul"),
             "{text}"
         );
     }
     let error = api
-        .scalars(1, 1, true, "ok", Detail::Full, vec![], Region("é"))
+        .scalars(1, 1, true, "ok", Detail::Full, Region("line\nbreak"))
         .prepare()
         .unwrap_err();
     assert!(error.to_string().contains("header `x-region`"), "{error}");
@@ -720,31 +716,14 @@ fn full_header_map_with_native_values() {
     }
 }
 
-/// A domain type sent both as a header (its own `ToHeaderValue`, natively flagged) and as text
-/// (`Display`): accepted only when the value is statically sensitive, so every placement — header,
-/// query, path — is withheld from Concord's output (Codex review of `66a4478`, P1). Unmarked, the
-/// combination is a compile error (`ui/header_text_dual_use.rs`).
-#[derive(Clone)]
-pub struct SecretHeader(&'static str);
-
-impl ToHeaderValue for SecretHeader {
-    fn to_header_value(&self) -> Option<HeaderValue> {
-        let mut value = HeaderValue::from_static(self.0);
-        value.set_sensitive(true);
-        Some(value)
-    }
-}
-
-impl fmt::Display for SecretHeader {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.0)
-    }
-}
-
+// A sensitive value sent both as a header and as text: every placement — header, query, path —
+// is withheld from Concord's output. (`ToHeaderValue` is closed, so the only value that can carry
+// a native flag is a `HeaderValue`, which is never text: the 66a4478 P1 combination cannot be
+// written; `ui/to_header_value_sealed.rs`.)
 concord::api! {
     pub client Both(
-        #[sensitive] token: SecretHeader,
-        #[sensitive] header("x-tags") each tags: Vec<SecretHeader> = Vec::new(),
+        #[sensitive] token: String,
+        #[sensitive] header("x-tags") each tags: Vec<String> = Vec::new(),
         version: String = "7",
     ) {
         base "http://both.test";
@@ -762,10 +741,10 @@ fn dual_use_values_are_withheld_everywhere_or_are_text() {
     let both = Both::new(
         http(),
         BothConfig {
-            token: SecretHeader("S3CR3T-both"),
+            token: "S3CR3T-both".into(),
         },
     )
-    .set_tags(vec![SecretHeader("S3CR3T-tag")]);
+    .set_tags(vec!["S3CR3T-tag".to_owned()]);
     let shown = format!("{both:?}");
     assert!(!shown.contains("S3CR3T"), "{shown}");
     assert!(shown.contains("token: <redacted>"), "{shown}");

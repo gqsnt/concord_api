@@ -56,14 +56,14 @@
 //! ```compile_fail,E0599
 //! use concord_clone_compat::{MoveOnly as V};
 //! concord::api! { pub client Api { base "http://x.invalid";
-//!     GET get(header("x-key") key: V = V::new("k")) { path "items"; } } }
+//!     GET get(key: V = V::new("k")) { path "items"; headers { "x-key" = "{key}"; } } } }
 //! let request = Api::new(concord::reqwest::Client::new()).get();
 //! let _ = request.clone();
 //! ```
 //! ```
 //! use concord_clone_compat::{Cloneable as V};
 //! concord::api! { pub client Api { base "http://x.invalid";
-//!     GET get(header("x-key") key: V = V::new("k")) { path "items"; } } }
+//!     GET get(key: V = V::new("k")) { path "items"; headers { "x-key" = "{key}"; } } } }
 //! let request = Api::new(concord::reqwest::Client::new()).get();
 //! let _ = request.clone();
 //! ```
@@ -107,8 +107,8 @@
 //! ```compile_fail,E0599
 //! use concord_clone_compat::{Cloneable as C, MoveOnly as V, Raw};
 //! concord::api! { pub client Api { base "http://x.invalid";
-//!     POST put(id: C, query note?: C, header("x-nonce") nonce: V, Raw payload: C) {
-//!         path "items/{id}";
+//!     POST put(id: C, query note?: C, nonce: V, Raw payload: C) {
+//!         path "items/{id}"; headers { "x-nonce" = "{nonce}"; }
 //!     } } }
 //! let request = Api::new(concord::reqwest::Client::new()).put(C::new("1"), V::new("n"), C::new("p"));
 //! let _ = request.clone();
@@ -116,8 +116,8 @@
 //! ```
 //! use concord_clone_compat::{Cloneable as C, Cloneable as V, Raw};
 //! concord::api! { pub client Api { base "http://x.invalid";
-//!     POST put(id: C, query note?: C, header("x-nonce") nonce: V, Raw payload: C) {
-//!         path "items/{id}";
+//!     POST put(id: C, query note?: C, nonce: V, Raw payload: C) {
+//!         path "items/{id}"; headers { "x-nonce" = "{nonce}"; }
 //!     } } }
 //! let request = Api::new(concord::reqwest::Client::new()).put(C::new("1"), V::new("n"), C::new("p"));
 //! let _ = request.clone();
@@ -125,8 +125,7 @@
 
 use std::fmt;
 
-use concord::reqwest::header::HeaderValue;
-use concord::{BodyError, Encode, ToHeaderValue};
+use concord::{BodyError, Encode};
 
 /// A value that is never `Clone` (otherwise identical to [`Cloneable`]).
 #[derive(Debug, PartialEq, Eq)]
@@ -152,13 +151,6 @@ macro_rules! value {
         impl fmt::Display for $t {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str(&self.0)
-            }
-        }
-
-        /// Header values use the text rule (`ToHeaderValue`), path and query values `Display`.
-        impl ToHeaderValue for $t {
-            fn to_header_value(&self) -> Option<HeaderValue> {
-                self.0.to_header_value()
             }
         }
 

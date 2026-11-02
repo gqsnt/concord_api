@@ -1,5 +1,5 @@
-// A literal header name longer than the native `http::HeaderName` limit. The macro's own
-// character check accepts it; the native validator, evaluated at compile time, rejects it.
+// A literal header name longer than the native `http::HeaderName` limit: the macro asks
+// `http::HeaderName::from_bytes`, which rejects it (no Concord copy of the limit).
 concord::api! {
     pub client Api {
         base "http://x.test";
