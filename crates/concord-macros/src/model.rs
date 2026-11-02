@@ -340,15 +340,15 @@ fn sensitive_name(key: &str) -> bool {
 
 /// The byte offset at which `http::HeaderValue::from_bytes` rejects `text`, if it does. Validity
 /// is per byte, so the offset is found by asking about single bytes.
-fn rejected_value(text: &str) -> Option<usize> {
+fn rejected_value(text: &str) -> Option<(usize, u8)> {
     if http::HeaderValue::from_bytes(text.as_bytes()).is_ok() {
         return None;
     }
-    Some(
-        text.bytes()
-            .position(|b| http::HeaderValue::from_bytes(&[b]).is_err())
-            .unwrap_or(0),
-    )
+    let offset = text
+        .bytes()
+        .position(|b| http::HeaderValue::from_bytes(&[b]).is_err())
+        .unwrap_or(0);
+    Some((offset, text.as_bytes().get(offset).copied().unwrap_or(0)))
 }
 
 /// A possibly huge user string, quoted and shortened for a message.
@@ -867,16 +867,16 @@ impl Model {
                             // byte, so a hole can never repair an invalid fragment.
                             let rejected =
                                 raw.iter().enumerate().find_map(|(i, piece)| match piece {
-                                    RawPiece::Lit(s) => rejected_value(s).map(|offset| (i, offset)),
+                                    RawPiece::Lit(s) => rejected_value(s).map(|at| (i, at)),
                                     RawPiece::Hole(_) => None,
                                 });
-                            if let Some((fragment, offset)) = rejected {
+                            if let Some((fragment, (offset, byte))) = rejected {
                                 let whole = raw.len() == 1;
                                 let place = if whole {
-                                    format!("at byte {offset}")
+                                    format!("0x{byte:02X} at byte {offset}")
                                 } else {
                                     format!(
-                                        "at byte {offset} of literal fragment {fragment}; no value can repair it"
+                                        "0x{byte:02X} at byte {offset} of literal fragment {fragment}; no value can repair it"
                                     )
                                 };
                                 errors.push(syn::Error::new(

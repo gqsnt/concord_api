@@ -715,4 +715,5 @@ concord4::api! {
 ```
 
 The format words need no import under a renamed dependency; a format type is a path
-(`concord4::Binary`).
+(`concord4::Binary`). Compiler notes still spell the crate `concord` (`concord::Encode<T>`): read
+it as your dependency's name.

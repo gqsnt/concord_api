@@ -107,7 +107,8 @@ Read it top-down:
   its format's (`application/json`, ...) unless its `request` statement names another
   (`request json "application/merge-patch+json";`). Nothing checks that the server agrees — the
   generated docs of each endpoint state the format and `Content-Type` it uses and where they come
-  from.
+  from. The format, not the Rust type, decides the wire: a `String` or `Vec<u8>` body left under
+  `format json;` is sent as a JSON string or array, without any error.
 - `scope project(project: String)` — a navigation level, `api.project("demo")`, that adds the path
   `projects/demo`. The value is formatted with `Display` and percent-encoded as one segment.
 - `GET tasks(query done?: bool, query limit: u32 = 20) -> Vec<Task>` — an endpoint with an
@@ -122,7 +123,7 @@ Read it top-down:
   `headers { ACCEPT = "application/json"; }`, or your own
   `const X_API_KEY: HeaderName = HeaderName::from_static("x-api-key")`. A value can be a native
   `HeaderValue`, sent as is with its sensitivity flag. Concord adds no `Accept` header: declare one
-  if the API needs it.
+  if the API needs it (a reqwest client without one sends its default, `accept: */*`).
 
 The macro generates ordinary types: `Tasks`, `TasksConfig`, `TasksProject` (the scope) and one
 request type per endpoint, `TasksProjectTasks` and `TasksProjectCreate`. Their main signatures, as

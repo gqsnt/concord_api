@@ -457,7 +457,9 @@ header("x-request-id") id: String              headers { header::ACCEPT_LANGUAGE
 - A path is resolved by rustc where it is written (imports, aliases, re-exports, qualified and
   absolute paths) and must name a `HeaderName`; a string constant is not converted ("`&str` is
   not a native header name"). Concord never reads a constant's identifier: a local constant
-  named `AUTHORIZATION` that holds `x-other` is the header `x-other`.
+  named `AUTHORIZATION` that holds `x-other` is the header `x-other`. Messages and the generated
+  docs name a native key as you wrote it (`X_RIOT_TOKEN`). `HeaderName::from_static` itself
+  accepts only lowercase names; `from_static("X-Api-Key")` is rustc's `E0080` from `http`.
 - A literal name is checked by `http::HeaderName::from_bytes` when the macro expands (invalid
   names are compile errors) and normalized to lowercase. `host`, `content-length`,
   `transfer-encoding`, `connection`, `te`, `trailer`, `upgrade` and `keep-alive` are rejected (the
@@ -470,7 +472,9 @@ header("x-request-id") id: String              headers { header::ACCEPT_LANGUAGE
   see which header the constant holds: it still reports the mistakes it can prove (the same
   constant on both sides, literals on both sides), and the others — such as setting
   `"authorization"` below `header(AUTHORIZATION)` without `override` — are a `Build` error from
-  `prepare()` naming the declaration (and, for a header set twice, the earlier one). Which header each contribution names is decided on the names
+  `prepare()` naming the declaration (and, for a header set twice, the earlier one). Names are
+  compared before values, so such an endpoint fails even when its value is absent: a test that
+  prepares every endpoint finds these mistakes. Which header each contribution names is decided on the names
   alone, before any value is converted: a removed or replaced value is never formatted.
 
 **Values.** A value placed directly (`header(K) x: T`, `K = x`, `K = each xs`) goes through

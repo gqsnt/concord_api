@@ -169,7 +169,7 @@ error: "x tag" is not a valid header name (rejected by `http::HeaderName::from_b
 Excerpt of [`header_literal_value.stderr`](../crates/concord/tests/ui/header_literal_value.stderr):
 
 ```text
-error: this header value contains a byte that `http::HeaderValue::from_bytes` rejects (at byte 1)
+error: this header value contains a byte that `http::HeaderValue::from_bytes` rejects (0x0A at byte 1)
  --> tests/ui/header_literal_value.rs:8:41
   |
 8 |         GET ctl() { headers { "x-ctl" = "a\nb"; } }
@@ -608,6 +608,18 @@ set it. Overriding or removing a key that nothing above sets is an error too
 ([`override_without_target.stderr`](../crates/concord/tests/ui/override_without_target.stderr),
 [`remove_without_target.stderr`](../crates/concord/tests/ui/remove_without_target.stderr)).
 
+When a header key in the chain is a native constant, the macro cannot see which header it holds;
+a header set twice under two spellings it cannot prove equal is then a build error from
+`prepare()`, on every call of that endpoint (names are compared before values, so also when the
+second value is absent). From
+[`native_keys.rs`](../crates/concord/tests/native_keys.rs):
+
+```text
+GET Keys.duplicate: request not built: `authorization` on `Keys.duplicate` sets a header that `AUTHORIZATION` on `Keys` already sets (the same header name, written differently); use `override` or `append`, or `remove` it first
+```
+
+**Fix:** the same as above. A test that prepares every endpoint finds these before a caller does.
+
 ## Generated names
 
 ### Two methods with one name
@@ -721,9 +733,10 @@ error: use of deprecated method `Api::list`: use `items`
 
 Known rough edges (compiler-origin): an over-long literal header name is rejected by the native
 validator as `E0080` ("evaluation panicked: HeaderName::from_static with invalid bytes") spanning
-the whole invocation; an invalid `Encode::CONTENT_TYPE` is the same `E0080` for `HeaderValue`,
+the whole invocation, and so is a native constant whose `HeaderName::from_static` name is not
+lowercase (at the constant); an invalid `Encode::CONTENT_TYPE` is the same `E0080` for `HeaderValue`,
 pointing at the format. A format word whose feature is off is rustc's "cannot find type `Json` in
-crate `$crate`" at the word (one error per word written in place, one per default that endpoints
-use) with its note "the item is gated behind the `json` feature"
+crate `$crate`" at the word (one error per endpoint statement that names it, one per client or
+scope statement that endpoints use) with its note "the item is gated behind the `json` feature"
 (`ui_features/feature_disabled_formats.stderr`). Old-style `-> Json<Item>`, `Text`, `Binary` and
 `-> ()` get a precise replacement (`representation_alpha_spelling`).

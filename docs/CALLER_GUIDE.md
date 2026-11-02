@@ -307,7 +307,9 @@ async fn find_product(shop: &CatalogShop, id: u64) -> Result<Option<Product>, co
 ```
 
 A status error keeps the **unread** response. `into_response()` returns it, and returns any other
-error unchanged as `Err`, so `?` propagates those. Decode the API's error document with any
+error unchanged as `Err`, so `?` propagates those. It consumes the error: read `status()` and
+`endpoint()` first if you need them. Reading the body is reqwest's (`response.bytes()` fails with a
+`reqwest::Error`, which does not convert into `concord::Error`). Decode the API's error document with any
 format's `Decode` impl. Excerpt of
 [`examples/quickstart/tests/caller_guide.rs`](../examples/quickstart/tests/caller_guide.rs):
 
@@ -369,7 +371,9 @@ assert_eq!(server.requests()[0].header("x-request-id"), Some("req-1"));
 ```
 
 - `Decoder::decode(response)` applies the same handling to a response you already have.
-- `reqwest::RequestBuilder::from_parts(client, request)` turns the pair back into a builder.
+- `reqwest::RequestBuilder::from_parts(client, request)` turns the pair back into a builder. Its
+  `.header(..)` **appends** to the declared headers; `request.headers_mut().insert(..)` replaces
+  one.
 - `into_parts` is a one-way door for redaction: the native request's `Debug` prints the full URL,
   sensitive query values and path segments included; only header values flagged sensitive are
   masked (reqwest prints them as `Sensitive`). Mark extra secret headers with

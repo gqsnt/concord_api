@@ -723,14 +723,14 @@ fn controls(
             out.extend(quote! {
                 #(#docs)*
                 #[doc = ""]
-                #[doc = " Sets the request body. Initially absent: no body is sent."]
+                #[doc = " Sets the request body: `value` encoded by the request format, sent even if it encodes as `null` or as nothing. Initially absent: no body is sent."]
                 #[inline] pub fn #set(mut self, value: impl #k::IntoValue<#ty>) -> Self {
                     #target.#name = ::core::option::Option::Some(#k::IntoValue::into_value(value));
                     self
                 }
                 #(#docs)*
                 #[doc = ""]
-                #[doc = " Sets the request body to exactly `value`: `None` sends no body."]
+                #[doc = " Sets the request body to exactly `value`: `None` sends no body, `Some(v)` sends `v` encoded by the request format."]
                 #[inline] pub fn #maybe(mut self, value: ::core::option::Option<#ty>) -> Self {
                     #target.#name = value;
                     self
