@@ -60,8 +60,8 @@ reference  := name | owner "." name       (owner = `client` or an enclosing scop
 | `x: T = E` | `T` | `E` | `set_x(v)` |
 | `x?: T` | `Option<T>` | absent | `set_x(v)` (present), `maybe_x(o)` (exactly `o`) |
 | `x?: T = E` | `Option<T>` | present `E` | `set_x(v)`, `maybe_x(o)` |
-| `body b: R` | `R::Value` | — | positional argument; then `set_b(v)` |
-| `body b?: R` | `Option<R::Value>` | absent | `set_b(v)`, `maybe_b(o)` |
+| `body b: T via R` | `T` | — | positional argument; then `set_b(v)` |
+| `body b?: T via R` | `Option<T>` | absent | `set_b(v)`, `maybe_b(o)` |
 
 - Entry calls: `Client::new(http: reqwest::Client, config: {Client}Config)` when the client has
   required values (`Client::new(http)` otherwise); `parent.scope(...)`, `parent.endpoint(...)`.

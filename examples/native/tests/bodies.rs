@@ -161,3 +161,51 @@ async fn multipart_boundary_never_occurs_in_the_content() {
     let body = String::from_utf8(request.body).unwrap();
     assert_eq!(body.matches(&*boundary).count(), 2);
 }
+
+/// Reads the quoted `name="..."` parameter of a `Content-Disposition` line the way a MIME
+/// recipient does (RFC 9110 quoted-string: `\x` is `x`), independently of the recipe's writer.
+fn quoted_param(line: &str, name: &str) -> String {
+    let start = line.find(&format!("{name}=\"")).expect("parameter present") + name.len() + 2;
+    let mut out = String::new();
+    let mut chars = line[start..].chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => out.push(chars.next().expect("quoted-pair")),
+            '"' => return out,
+            c => out.push(c),
+        }
+    }
+    panic!("unterminated quoted string")
+}
+
+/// Milestone review F-01: backslashes in a field name or filename must survive a MIME recipient's
+/// quoted-string parsing (they used to be read as escapes: `file\name` arrived as `filename`).
+#[tokio::test]
+async fn multipart_parameters_survive_quoted_string_parsing() {
+    for (field, file_name) in [
+        (r"file\name", r"report\q.csv"),
+        (r"trail\", r"ends\"),
+        ("plain", "no-escapes.csv"),
+    ] {
+        let server = Server::reply(Reply::json(201, r#"{"id":1,"name":"x"}"#)).await;
+        let api = inventory_at(server.addr, "Bearer t");
+        upload_file(
+            &api,
+            FilePart {
+                field,
+                file_name,
+                content_type: "text/plain",
+                content: b"hello",
+            },
+        )
+        .await
+        .unwrap();
+        let body = String::from_utf8(server.single().body).unwrap();
+        let line = body
+            .lines()
+            .find(|l| l.starts_with("Content-Disposition:"))
+            .expect("disposition line");
+        assert_eq!(quoted_param(line, "name"), field, "{line}");
+        assert_eq!(quoted_param(line, "filename"), file_name, "{line}");
+    }
+}

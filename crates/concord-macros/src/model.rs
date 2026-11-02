@@ -1094,7 +1094,7 @@ impl Model {
         // Generated type names.
         let mut types: BTreeMap<String, &Ident> = BTreeMap::new();
         for owner in &self.owners {
-            if let Some(first) = types.insert(owner.type_name.to_string(), &owner.name) {
+            if let Some(first) = types.insert(plain(&owner.type_name), &owner.name) {
                 let mut e = syn::Error::new(
                     owner.name.span(),
                     format!("generated type name `{}` is used twice", owner.type_name),
@@ -1360,6 +1360,12 @@ fn flatten(
         ),
     };
     let span = owner.name.span();
+    // The root keeps the declared identifier (a raw `r#type` stays raw); concatenated names below
+    // the root are built from the plain spelling and are never keywords.
+    let type_ident = match parent {
+        None => owner.name.clone(),
+        Some(_) => Ident::new(&type_name, span),
+    };
     let kind = match owner.kind {
         OwnerKind::Client { vis, base } => match base {
             Some(base) => {
@@ -1433,7 +1439,7 @@ fn flatten(
         cfgs,
         own_cfgs: owner.cfgs,
         deprecated: owner.deprecated,
-        type_name: Ident::new(&type_name, span),
+        type_name: type_ident,
         state_name: format_ident!("__Concord{}State", type_name, span = span),
         name: owner.name,
         dotted: dotted.clone(),

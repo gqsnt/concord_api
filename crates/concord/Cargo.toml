@@ -10,7 +10,7 @@ publish.workspace = true
 
 [features]
 default = ["json", "reqwest-defaults"]
-## JSON request bodies and responses (`Json<T>`), via serde/serde_json.
+## The `Json` representation (`-> T via Json`, `body b: T via Json`), via serde/serde_json.
 json = ["dep:serde", "dep:serde_json"]
 ## Enables reqwest's own default features (TLS, HTTP/2, charset, system proxy).
 ## Disable it to choose reqwest features yourself in your own Cargo.toml.

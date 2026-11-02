@@ -67,8 +67,11 @@ pub async fn upload_file(api: &Inventory, part: FilePart<'_>) -> Result<Item, co
 
 /// Builds a single-part multipart body with a boundary that occurs nowhere in the part.
 fn multipart_body(part: &FilePart<'_>) -> (String, Vec<u8>) {
+    /// Text for a quoted `Content-Disposition` parameter, as reqwest's own multipart writer does:
+    /// a backslash is escaped (`\\`), quotes and line breaks are percent-encoded.
     fn header_safe(text: &str) -> String {
-        text.replace('"', "%22")
+        text.replace('\\', "\\\\")
+            .replace('"', "%22")
             .replace('\r', "%0D")
             .replace('\n', "%0A")
     }

@@ -59,3 +59,28 @@ fn many_required_values() {
         Some("a=1&b=2&c=3&d=4&e=5&f=6&g=7&h=8&i=9&j=10&k=11&l=12&m=13&n=14&o=15&p=16")
     );
 }
+
+/// A raw-keyword client name keeps its raw spelling (milestone review F-02): `r#type` generated
+/// `type`, which is not an identifier.
+#[allow(non_camel_case_types)]
+mod raw_root {
+    concord::api! {
+        /// A client named with a keyword.
+        pub client r#type {
+            base "http://raw.example.test";
+            /// The only endpoint.
+            GET ping() { path "ping"; }
+        }
+    }
+
+    #[test]
+    fn raw_keyword_client_name() {
+        let api = r#type::new(concord::reqwest::Client::new());
+        assert_eq!(
+            format!("{api:?}"),
+            r#"type { base: "http://raw.example.test/" }"#
+        );
+        let p = api.ping().prepare().unwrap();
+        assert_eq!(p.request().url().path(), "/ping");
+    }
+}

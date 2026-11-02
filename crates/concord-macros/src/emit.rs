@@ -466,7 +466,7 @@ fn emit_owner(k: &TokenStream, model: &Model, index: usize, vis: &syn::Visibilit
         })
         .collect();
     let nav = navigation(k, model, index);
-    let type_label = lit(&ty.to_string());
+    let type_label = lit(&plain(ty));
 
     match &owner.kind {
         Kind::Client { base, .. } => {
