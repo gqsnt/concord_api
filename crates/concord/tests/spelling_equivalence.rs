@@ -1,8 +1,10 @@
-//! Classification does not depend on whether a key is spelled as a native constant or a literal:
-//! each case declares the same API twice, with `AUTHORIZATION` and with `"authorization"`, and
-//! requires the same redaction and outgoing flags. From the final semantic review (R1, P2): a value
-//! classified at run time on one chain must be withheld on chains with literal keys only, and
-//! stickiness covers overridden contributions.
+//! Native spelling must not redact less than literal spelling. Each case declares the same API
+//! twice, with `AUTHORIZATION` and with `"authorization"`, and requires the same redaction and
+//! outgoing flags. From the final semantic review (R1, P2): a value classified at run time on one
+//! chain must be withheld on chains with literal keys only, and stickiness covers overridden
+//! contributions. Two recorded cases redact *more* under one spelling and are not equal: a public
+//! native alias whose partner has its own condition (FINDINGS O-P1) and a literal key in a
+//! compiled-out owner (O-P7).
 
 use concord::reqwest;
 

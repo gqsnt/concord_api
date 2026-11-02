@@ -163,8 +163,9 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
   macro composes the headers and every rule violation is a compile error. If a native constant is
   on the chain, the macro cannot evaluate it: two literals are known to be the same header or
   not, any pair involving a native path is unknown — also two paths written with the same tokens,
-  which can resolve to different constants (`$crate::KEY` from two crates' macros). Violations that hold whatever the unknown
-  pairs turn out to be are compile errors; the others are checked when the request is built, by
+  which can resolve to different constants (`$crate::KEY` from two crates' macros). Violations the
+  macro's per-pair analysis proves are compile errors (a violation that holds only through a
+  correlation between unknown pairs is not proved, and is found at run time instead); the others are checked when the request is built, by
   `__private::HeaderPlan`, which applies the same rules to the native names (equality only, no
   value converted or formatted) and reports a `Build` error naming the declaration. The result —
   which contributions are sent, their order, their classification — is the same in both modes
@@ -349,11 +350,11 @@ sent on the wire.
   are kept equal by a unit test). Sensitivity is sticky: a later public override, removal or
   reintroduction does not clear it.
 - A path segment or host label is sensitive if any of its holes reads a marked value.
-- **Native keys.** A key's name is its resolved `HeaderName`: a native constant on the list above
+- **Native keys.** A key's name is its resolved `HeaderName`: a native constant on the list
   (`AUTHORIZATION`, an alias of it) classifies its values exactly as the literal does, and a
   constant whose identifier looks sensitive but whose name is not on the list does not. Because
-  the macro cannot evaluate a constant, the compile-time fixpoint treats each native constant as a
-  header of its own, not on the list (a lower bound); a value it leaves unclassified that is sent
+  the macro cannot evaluate a constant, the compile-time fixpoint treats each native key
+  occurrence as a header of its own, not on the list (a lower bound); a value it leaves unclassified that is sent
   under a native constant is also withheld at run time — in the generated `Debug` (decided when
   rendering) and in the outgoing flag (decided by the request's header plan) — when the resolved
   name is on the list or names the same header as a sensitive contribution. Such a value that is

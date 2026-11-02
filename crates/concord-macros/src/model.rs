@@ -1529,60 +1529,66 @@ impl Model {
                 }
             }
         }
+        // The pairs (a, b) of contributions sharing a chain, each once: endpoints of one scope
+        // share most of their chain, and the fixpoint below depends only on the pairs. For each
+        // `a`, statically sensitive contributions come first: their conditions are the ones the
+        // others' conditions most often reduce to (see `implied`).
+        let mut pairs: Vec<(ContribId, ContribId)> = Vec::new();
+        let mut seen: std::collections::HashSet<(ContribId, ContribId)> = Default::default();
+        for seq in &chains {
+            for &a in seq {
+                let order = seq
+                    .iter()
+                    .filter(|&&b| self.contrib(b).sensitive)
+                    .chain(seq.iter().filter(|&&b| !self.contrib(b).sensitive));
+                for &b in order {
+                    if a != b && seen.insert((a, b)) {
+                        pairs.push((a, b));
+                    }
+                }
+            }
+        }
         loop {
             let mut changed = false;
-            for seq in &chains {
-                for &a in seq {
-                    let ka = self.contrib(a).key.clone();
-                    let targets = open(self, a);
-                    if targets.is_empty() {
-                        continue;
-                    }
-                    // Statically sensitive contributions first: their conditions are the ones
-                    // the others' conditions most often reduce to (see `implied`).
-                    let order = seq
-                        .iter()
-                        .filter(|&&b| self.contrib(b).sensitive)
-                        .chain(seq.iter().filter(|&&b| !self.contrib(b).sensitive));
-                    for &b in order {
-                        if a == b {
-                            continue;
-                        }
-                        let kb = &self.contrib(b).key;
-                        let theirs: std::collections::BTreeSet<Cond> = self
-                            .contrib_values(b)
-                            .iter()
-                            .flat_map(|r| conds.get(r).into_iter().flatten().cloned())
-                            .collect();
-                        match relation(&ka, kb) {
-                            Rel::Different => {}
-                            // Same header: whatever makes the other contribution sensitive.
-                            Rel::Same => {
-                                for v in &targets {
-                                    let set = conds.entry(*v).or_default();
-                                    for c in &theirs {
-                                        changed |= set.insert(c.clone());
-                                    }
-                                }
+            for &(a, b) in &pairs {
+                let ka = self.contrib(a).key.clone();
+                let targets = open(self, a);
+                if targets.is_empty() {
+                    continue;
+                }
+                let kb = &self.contrib(b).key;
+                let theirs: std::collections::BTreeSet<Cond> = self
+                    .contrib_values(b)
+                    .iter()
+                    .flat_map(|r| conds.get(r).into_iter().flatten().cloned())
+                    .collect();
+                match relation(&ka, kb) {
+                    Rel::Different => {}
+                    // Same header: whatever makes the other contribution sensitive.
+                    Rel::Same => {
+                        for v in &targets {
+                            let set = conds.entry(*v).or_default();
+                            for c in &theirs {
+                                changed |= set.insert(c.clone());
                             }
-                            // Possibly the same header: `ka == kb` and the other is sensitive.
-                            // A condition `t` of the other's is redundant for a value that
-                            // already has `t` with `kb` replaced by `ka` (equal under `ka == kb`),
-                            // so `Same(ka, kb)` is added only for a reason not already covered.
-                            // This keeps the conditions linear in the keys of a chain.
-                            Rel::Unknown => {
-                                let same = if ka <= *kb {
-                                    Cond::Same(ka.clone(), kb.clone())
-                                } else {
-                                    Cond::Same(kb.clone(), ka.clone())
-                                };
-                                let fixed = self.contrib(b).sensitive;
-                                for v in &targets {
-                                    let set = conds.entry(*v).or_default();
-                                    if fixed || theirs.iter().any(|t| !implied(t, &ka, kb, set)) {
-                                        changed |= set.insert(same.clone());
-                                    }
-                                }
+                        }
+                    }
+                    // Possibly the same header: `ka == kb` and the other is sensitive.
+                    // A condition `t` of the other's is redundant for a value that
+                    // already has `t` with `kb` replaced by `ka` (equal under `ka == kb`),
+                    // so `Same(ka, kb)` is added only for a reason not already covered.
+                    // This keeps the conditions linear in the keys of a chain.
+                    Rel::Unknown => {
+                        let same = if ka <= *kb {
+                            Cond::Same(ka.clone(), kb.clone())
+                        } else {
+                            Cond::Same(kb.clone(), ka.clone())
+                        };
+                        let fixed = self.contrib(b).sensitive;
+                        for v in &targets {
+                            let set = conds.entry(*v).or_default();
+                            if fixed || theirs.iter().any(|t| !implied(t, &ka, kb, set)) {
+                                changed |= set.insert(same.clone());
                             }
                         }
                     }
@@ -1627,7 +1633,8 @@ impl Model {
                 // The same header or not: the verdict stands only if both agree.
                 Rel::Unknown => match (known, set) {
                     (Known::No, Known::No) => Known::No,
-                    (Known::Yes(_), Known::Yes(j)) => Known::Yes(j),
+                    // Set either way: keep the setter already proved.
+                    (Known::Yes(i), Known::Yes(_)) => Known::Yes(i),
                     _ => Known::Maybe,
                 },
             };

@@ -135,7 +135,7 @@ literal fragment, as a build error for formatted text.
 ## From `via` to statements
 
 The body and response syntax of the refined V4 up to commit `c112845` (`body b: T via R`,
-`-> T via R`) is replaced by representation statements (decision F01,
+`-> T via R`) is replaced by format statements (decision F01,
 `v4/finalization/DECISIONS.md`; the intermediate in-place formats are the previous section). Every
 body and typed output still has an explicit format, given by the nearest `request`/`response`
 statement of the endpoint, a scope or the client. Generated signatures, the `Encode<T>`/`Decode<T>`

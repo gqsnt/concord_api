@@ -1034,9 +1034,8 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
                     model.key_text(&c.key),
                     if c.sensitive { " (sensitive)" } else { "" }
                 );
-                if !shown.contains(&text) {
-                    shown.push(text);
-                }
+                // Every operation, repeats included: `KEY`, `remove KEY`, `KEY` sends the second.
+                shown.push(text);
             }
             if !shown.is_empty() {
                 lines.push(lit(&format!(
@@ -2230,6 +2229,15 @@ mod tests {
         let me = "`X_KEY`, `ACCEPT`, `remove X_KEY`, `AUTHORIZATION` (sensitive)";
         assert_eq!(docs.matches(&line(me)).count(), 2);
         assert_eq!(docs.matches(&line("`X_KEY`, `ACCEPT`")).count(), 2);
+        // A repeated operation after a removal is listed again (final executable re-review).
+        let repeated = self::docs(quote! {
+            pub client Api(header(X_KEY) key: String) {
+                base "http://x.test";
+                GET ops() { headers { remove X_KEY; X_KEY = "TWO"; append X_KEY = "THREE"; } }
+            }
+        });
+        let ops = "`X_KEY`, `remove X_KEY`, `X_KEY`, `append X_KEY`";
+        assert_eq!(repeated.matches(&line(ops)).count(), 2);
     }
 
     /// Placement notes are deduplicated (a label seen twice is listed once) and keep first-seen

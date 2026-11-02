@@ -207,7 +207,7 @@ impl fmt::Display for Error {
             Repr::Build { what, reason } => write!(f, "request not built: {what} {reason}"),
             Repr::HeaderConflict { what, earlier } => write!(
                 f,
-                "request not built: {what} sets a header that {earlier} already sets (the same header name, written differently); use `override` or `append`, or `remove` it first"
+                "request not built: {what} sets a header that {earlier} already sets (both name the same header); use `override` or `append`, or `remove` it first"
             ),
             Repr::Encode(e) => write!(f, "request not built: body: {}", e.description()),
             Repr::Transport(e) => {

@@ -633,13 +633,14 @@ set it. Overriding or removing a key that nothing above sets is an error too
 [`remove_without_target.stderr`](../crates/concord/tests/ui/remove_without_target.stderr)).
 
 When a header key in the chain is a native constant, the macro cannot see which header it holds;
-a header set twice under two spellings it cannot prove equal is then a build error from
+a header set twice — under two spellings, or the same constant written twice — is then a build
+error from
 `prepare()`, on every call of that endpoint (names are compared before values, so also when the
 second value is absent). From
 [`native_keys.rs`](../crates/concord/tests/native_keys.rs):
 
 ```text
-GET Keys.duplicate: request not built: `authorization` on `Keys.duplicate` sets a header that `AUTHORIZATION` on `Keys` already sets (the same header name, written differently); use `override` or `append`, or `remove` it first
+GET Keys.duplicate: request not built: `authorization` on `Keys.duplicate` sets a header that `AUTHORIZATION` on `Keys` already sets (both name the same header); use `override` or `append`, or `remove` it first
 ```
 
 **Fix:** the same as above. A test that prepares every endpoint finds these before a caller does.

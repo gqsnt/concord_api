@@ -192,7 +192,11 @@ concord::api! {
 pub struct JsonOrEmpty;
 impl<T: serde::de::DeserializeOwned> Decode<Option<T>> for JsonOrEmpty {
     fn decode(body: concord::bytes::Bytes) -> Result<Option<T>, BodyError> {
-        if body.iter().all(u8::is_ascii_whitespace) {
+        // JSON whitespace (RFC 8259): space, tab, line feed, carriage return.
+        if body
+            .iter()
+            .all(|b| matches!(b, b' ' | b'\t' | b'\n' | b'\r'))
+        {
             return Ok(None);
         }
         <concord::Json as Decode<T>>::decode(body).map(Some)
