@@ -125,9 +125,10 @@ fn main() -> Result<(), concord::Error> {
 `Binary` also accepts `Vec<u8>` in both directions. Generated signatures now name the payload
 directly (`send(self) -> Result<Item, Error>`) instead of `<Json<Item> as Decode>::Output`.
 
-The compiler's message for the old form says "the response representation is explicit" and
-suggests `Json < Item > via Json` for `-> Json<Item>` and `() via Json` for `-> ()`; the right
-edits are `Item via Json` and deleting `-> ()`.
+The compiler recognizes the old forms and names the edit: `-> Json<Item>` gets "the response
+representation is written after the payload type: `Item via Json`" (likewise `String via Text`
+and `Bytes via Binary`), and `-> ()` gets "an endpoint without typed output has no `->`: remove
+`-> ()`" (`crates/concord/tests/ui/representation_alpha_spelling.stderr`).
 
 ### Custom `Encode` / `Decode`
 

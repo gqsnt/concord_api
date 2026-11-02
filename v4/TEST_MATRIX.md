@@ -1,8 +1,12 @@
 # V4 acceptance matrix
 
 Classification: **required** (executable test exists), **unsupported** (deliberately not offered;
-how to do it instead), **deferred**. Status is from the runs recorded in `evidence/GATES.md`
-(Linux x86_64 only). Test paths are relative to `crates/concord/tests/`.
+how to do it instead), **deferred**. Test paths are relative to `crates/concord/tests/` unless they
+start with another directory. **Status** is bound to the refinement's final verification receipt
+(`refinement/evidence/verify_<sha>.txt`, `scripts/verify.sh --msrv`, Linux x86_64, rustc 1.97.1 and
+1.85.1; the SHA is the one named in `refinement/FINAL.md`). Earlier alpha receipts in
+`evidence/GATES.md` are historical. Rows added or changed by the refinement are in the last section
+or marked *(refined)*.
 
 ## Minimal surface
 
@@ -19,7 +23,7 @@ how to do it instead), **deferred**. Status is from the runs recorded in `eviden
 
 | ID | Class | Expected | Test | Status |
 |---|---|---|---|---|
-| V01 | required | required root value is positional (compile error if missing); `""` valid | `values.rs::v01_required_root_value_empty_string_is_valid`, `ui/missing_required_argument.rs` | PASS |
+| V01 | required *(refined)* | required client values are fields of the generated `{Client}Config` (one compile error naming every missing field); scope/endpoint required values are positional; `""` valid | `values.rs::v01_required_root_value_empty_string_is_valid`, `ui/config_missing_field.rs`, `ui/missing_required_argument.rs`, `hygiene.rs::many_required_values` | PASS |
 | V02 | required (reset: unsupported) | initializer used when unset; `set_` replaces it. No `reset_` (D3) — keep the original handle | `values.rs::v02_initialized_value_and_override` | PASS |
 | V03 | required | initializer runs once per `new`/scope entry/endpoint call, in declaration order, even if immediately overridden; never on clone, setter, prepare or send | `values.rs::v03_initializer_evaluation_points`, `values.rs::v03_v09_initializer_order_and_clone_retention` | PASS |
 | V04 | required | absent optional: no occurrence; present `""`: `key=` | `values.rs::v04_optional_absent_vs_present_empty` | PASS |
@@ -31,7 +35,7 @@ how to do it instead), **deferred**. Status is from the runs recorded in `eviden
 | V10 | required | request built before a parent change keeps its values | `values.rs::v10_snapshots_are_not_changed_by_later_parent_changes` | PASS |
 | V11 | required | generated-name collisions are compile errors naming both origins; reserved names rejected | `ui/method_collisions.rs`, `ui/builtin_collisions.rs`, `ui/reserved_value_names.rs`, `ui/duplicate_names.rs`, `ui/duplicate_value.rs` | PASS |
 | V12 | required | newtype not converted from a primitive; no numeric widening; literals infer; `&str`/`&String` → `String` | `ui/newtype_is_not_converted.rs`, `ui/conversions_are_closed.rs`, `values.rs::v12_newtype_value`, `values.rs::v12_borrowed_string_and_literals` | PASS |
-| — | required | required values have no setters; defaulted non-optional have no `maybe_` | `ui/required_has_no_setter.rs` | PASS |
+| — | required *(refined)* | every value (and body) has `set_x`, required ones included; only optional values and an optional body have `maybe_x` | `values.rs::required_values_have_setters`, `ui/only_optional_values_have_maybe.rs` | PASS |
 | — | required | initializers cannot read other values or arguments | `ui/default_cannot_capture_arguments.rs` | PASS |
 
 ## Hierarchy and composition
@@ -76,7 +80,7 @@ how to do it instead), **deferred**. Status is from the runs recorded in `eviden
 | R01 | required | POST JSON with `application/json`; typed output | `bodies.rs::r01_post_json` | PASS |
 | R02 | required | no body / zero-length / JSON `null` distinct (hyper omits `Content-Length: 0`) | `bodies.rs::r02_no_body_vs_empty_vs_null`, `optional_body_controls` | PASS |
 | R03 | required | malformed JSON → `Decode` without body echo; `Content-Type` not consulted | `bodies.rs::r03_*` | PASS |
-| R04 | required | `()` accepts 204 and any 2xx body, drained to the end without buffering (DISCARD; truncated body → transport error); JSON on 204 → decode error | `bodies.rs::r04_empty_responses`, `representations.rs::r04_unit_accepts_any_2xx_body`, `unit_and_discard_representations_drain`, `unit_drain_detects_truncated_body`, `checks/heap/tests/drain.rs` (peak heap: `()` 0.75 MB vs `Binary` 137 MB for a 64 MiB body) | PASS |
+| R04 | required *(refined)* | an endpoint without `->` accepts 204 and any 2xx body, drained to the end without buffering (truncated body → transport error); JSON on 204 → decode error | `bodies.rs::r04_empty_responses`, `representations.rs::r04_unit_accepts_any_2xx_body`, `custom_decoder_gets_the_body_and_no_output_drains`, `unit_drain_detects_truncated_body`, `checks/heap/tests/drain.rs` (peak heap: `()` 0.75 MB vs `Binary` 137 MB for a 64 MiB body) | PASS |
 | R05 | required | non-2xx → `Status`; no body in Display/Debug; unread response available; same through `Decoder::decode` | `bodies.rs::r05_status_error_keeps_the_response`, `representations.rs::decoder_applies_status_handling` | PASS |
 | R06 | required | `Option<T>` output: 404 is an error; `null` is `None` | `bodies.rs::r06_option_output_has_no_status_magic` | PASS |
 | R07 | required | text/binary bodies and responses preserved; invalid UTF-8 → decode error (runs without the `json` feature) | `representations.rs::r07_*` | PASS |
@@ -88,13 +92,36 @@ how to do it instead), **deferred**. Status is from the runs recorded in `eviden
 
 | ID | Class | Expected | Evidence | Status |
 |---|---|---|---|---|
-| L01 | required | actionable diagnostics: unknown method/value/owner, duplicates, malformed templates, missing base | `tests/ui/*.rs` (41 cases, `.stderr` reviewed). Two cases (`option_has_no_wire_spelling`, `vec_needs_each`) assert rustc's own trait-error wording and are toolchain-sensitive (one audit run saw different `help:` text; not reproduced on a fresh 1.97.1 build) | PASS on 1.97.1 |
+| L01 | required | actionable diagnostics: unknown method/value/owner, duplicates, malformed templates, missing base, representations, `else inherit`, attributes | `tests/ui/*.rs` (53 cases) and `tests/oracle_ui/*.rs` (6 generated rejections), `.stderr` reviewed; gallery `docs/DIAGNOSTICS.md`. Cases asserting rustc's own trait-error wording are pinned to 1.97.1 | PASS on 1.97.1 |
 | L02 | required | header names validated at compile time (all 8 transport-owned names rejected); literal values at compile time; formatted values at build time | `ui/invalid_header_name.rs`, `ui/reserved_header.rs`, `ui/reserved_headers_all.rs`, `ui/header_literal_value.rs`, `composition.rs::l02_invalid_header_value_is_a_build_error`, `header_value_policy` | PASS |
 | L03 | required | minimal and nested examples compile and run as downstream crates (incl. a renamed dependency) | `examples/shapes/tests/wire.rs` (S1–S3 on the wire), `examples/renamed` | PASS |
-| L04 | required | fmt, clippy (`-D warnings`, all targets), tests, rustdoc on the recorded SHA | `scripts/verify.sh`; `evidence/GATES.md` (final run recorded there) | PASS |
-| L05 | required | feature combinations, package-isolated; JSON and TLS suites declare `required-features` and are reported as skipped, not passed | `evidence/GATES.md` feature rows | PASS |
-| L06 | required | no auth/rate/retry/pagination concepts in source | `evidence/GATES.md` scope scan; independent confirmation in all three Codex reviews and the adversarial review | PASS |
-| L07 | required | declared MSRV 1.85 builds and passes all runtime suites | `evidence/GATES.md` (92 + 5 tests on 1.85.1) | PASS (6 of 41 UI cases differ only in rustc wording, see GATES) |
+| L04 | required | fmt, clippy (`-D warnings`, all targets), tests, strict rustdoc (default, no-default, json-only) on the recorded SHA | `scripts/verify.sh`; `refinement/evidence/verify_<sha>.txt` | PASS |
+| L05 | required | feature combinations, package-isolated; JSON and TLS suites declare `required-features` and are reported as skipped, not passed | `scripts/verify.sh` feature steps; independent separate-manifest consumers in the Codex reviews (`refinement/reviews/codex/`) | PASS |
+| L06 | required | no auth/rate/retry/pagination concepts in source | source scan; independent confirmation in the refinement's Codex milestone and final reviews; application-owned policies only in `examples/native` | PASS |
+| L07 | required | declared MSRV 1.85 builds and passes all runtime suites and every example crate | `scripts/verify.sh --msrv` steps `msrv-concord`, `msrv-examples` (UI suites pinned to 1.97.1 are not run on 1.85) | PASS on 1.85.1 |
 | L08 | required | verification is reproducible: `--locked`, tracked files unchanged | `scripts/verify.sh` | PASS |
 
-Windows and macOS: **NOT_RUN** (no such environment was available).
+## Refinement additions
+
+| ID | Class | Expected | Test | Status |
+|---|---|---|---|---|
+| N1 | required | a literal header name is validated by the native `HeaderName` constructor at compile time (65,536 bytes: compile error; 65,535: works) | `native_limits.rs::longest_native_header_name_is_accepted`, `ui/header_name_exceeds_native_limit.rs` | PASS |
+| N2 | required | a full `HeaderMap` (header lines or the body's content type) is a build error, not a panic | `native_limits.rs::a_full_header_map_is_a_build_error_not_a_panic`, `a_body_content_type_that_does_not_fit_is_a_build_error` | PASS |
+| N3 | required | a value whose `Display` fails is a value-free build error in every placement; generated `Debug` shows `<Display failed>` | `display_errors.rs::every_placement_reports_a_build_error`, `generated_debug_shows_a_placeholder` | PASS |
+| D04 | required | `override ... else inherit` required for an optional source and rejected for a total one; `remove` acts first in an owner; inherit/omit/replace per call; reintroduced key keeps its slot | `composition.rs::d04_override_truth_table`, `ui/override_needs_else_inherit.rs`, `ui/else_inherit_needs_optional_source.rs`, `ui/remove_acts_on_inherited.rs` | PASS |
+| D06 | required | `-> T via R` / `body b: T via R`; missing `via` and unsupported payloads diagnosed at the declaration; custom `Encode<T>`/`Decode<T>` | `ui/representation_missing_via.rs`, `ui/representation_unsupported_payload.rs`, `ui/representation_alpha_spelling.rs`, `representations.rs::custom_decoder_gets_the_body_and_no_output_drains`, `examples/native` NDJSON/form | PASS |
+| D08 | required | an endpoint request is `Clone` exactly when its data is | `values.rs::v10_request_clone_follows_the_data`, `ui/endpoint_clone_needs_clone_values.rs` | PASS |
+| D13 | required | `into_response()` returns the unread response or the error unchanged; `Decoder::finish` converts native transport errors | `representations.rs::into_response_keeps_other_errors`, `examples/native/tests/native_edit.rs`, `examples/native/tests/errors.rs` | PASS |
+| D14 | required | `#[cfg]` removes a whole subtree; `#[deprecated]` warns at the caller; other attributes rejected | `attributes.rs::cfg_and_deprecated`, `ui/deprecated_endpoint.rs`, `ui/endpoint_attribute_unsupported.rs` | PASS |
+| D11 | required | every base the static checker accepts is accepted by the runtime parser | `crates/concord-macros` `model::base_consistency::{corpus, random_structured_bases}` | PASS |
+| T02 | required | a raw-keyword client name works | `hygiene.rs::raw_keyword_client_name` | PASS |
+| O1 | required | independent composition oracle (1,728 chains, 1,233 checks) and 6 generated rejections | `oracle_composition.rs`, `oracle_ui.rs` (generator `tests-gen/oracle_composition.py --check`) | PASS |
+| O2 | required | independent sensitivity oracle (252 cases, wire-side positive controls, stickiness) | `oracle_sensitivity.rs` (generator `tests-gen/oracle_sensitivity.py --check`) | PASS |
+| S07–S09 | required | runtime base visible but not echoed; custom encoder text trusted; JSON encode errors content-free; classification without printing; TLS name-mismatch leak with a positive control | `d15_surfaces.rs` (all) | PASS |
+| R09/U28–U32 | required | application-owned recipes: error document, native edit + finish, streaming early drop, form/multipart, cursor loop, bounded retry, admission, key rotation, interleaved query | `examples/native/tests/*.rs` (29 tests) | PASS |
+| G1 | required | generated docs name the actual default of a per-call override (final review R1) | `crates/concord-macros` `emit::tests::per_call_note_names_the_actual_default` | PASS |
+| G2 | required | every Rust block in the maintained docs is compiled or a verbatim, checked excerpt | `examples/quickstart/tests/doc_excerpts.rs`, quickstart doctests | PASS |
+| M1 | evidence | targeted mutations are killed by these tests | `refinement/evidence/m4_mutations.md` (9/9), Codex final review (5/5) | recorded |
+
+Windows and macOS: **NOT_RUN** for the refined code (no such environment was available; the
+CI workflow has a Windows job but was not executed for these commits).

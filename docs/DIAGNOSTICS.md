@@ -406,9 +406,10 @@ error: unsupported attribute; values accept documentation comments and `#[sensit
 ```
 
 **Fix:** values accept `///` and `#[sensitive]`; scopes and endpoints accept `///`, `#[cfg(..)]`
-and `#[deprecated(..)]`; the client accepts `///`. On a scope or endpoint, the message currently
-reads "unsupported attribute here; only documentation comments are allowed" although `#[cfg]` and
-`#[deprecated]` are accepted there; that message is not covered by a snapshot yet.
+and `#[deprecated(..)]`; the client accepts `///`. On a scope or endpoint the message is
+"unsupported attribute on a scope or endpoint; documentation comments, `#[cfg(..)]` and
+`#[deprecated]` are accepted"
+([`endpoint_attribute_unsupported.stderr`](../crates/concord/tests/ui/endpoint_attribute_unsupported.stderr)).
 
 ### A deprecated endpoint
 
@@ -429,15 +430,15 @@ error: use of deprecated method `Api::list`: use `items`
 
 | Area | UI tests (`crates/concord/tests/ui/`) |
 |---|---|
-| Structure | `missing_base`, `unknown_method`, `duplicate_statement`, `statement_after_child`, `body_errors`, `sensitive_body`, `unknown_attribute` |
+| Structure | `missing_base`, `unknown_method`, `duplicate_statement`, `statement_after_child`, `body_errors`, `sensitive_body`, `unknown_attribute`, `endpoint_attribute_unsupported` |
 | Names | `unknown_value`, `ancestor_needs_qualification`, `qualified_non_ancestor`, `self_qualified`, `template_raw_keyword`, `duplicate_value`, `unused_value`, `reserved_value_names`, `duplicate_names`, `method_collisions`, `builtin_collisions`, `config_name_collision` |
 | Values and calls | `config_missing_field`, `missing_required_argument`, `newtype_is_not_converted`, `conversions_are_closed`, `only_optional_values_have_maybe`, `default_cannot_capture_arguments`, `endpoint_clone_needs_clone_values`, `deprecated_endpoint` |
 | URL | `base_errors`, `base_invalid_port`, `path_errors`, `optional_in_path`, `scope_trailing_slash`, `subdomain_errors` |
 | Query and headers | `invalid_header_name`, `header_literal_value`, `header_name_exceeds_native_limit`, `reserved_header`, `reserved_headers_all`, `duplicate_header_case`, `duplicate_inherited_key`, `override_without_target`, `override_needs_else_inherit`, `else_inherit_needs_optional_source`, `override_after_remove`, `remove_without_target`, `remove_acts_on_inherited`, `each_and_scalar` |
 | Wire formatting | `option_has_no_wire_spelling`, `vec_needs_each` |
-| Representations | `representation_missing_via`, `representation_unsupported_payload` |
+| Representations | `representation_missing_via`, `representation_unsupported_payload`, `representation_alpha_spelling` |
 
-Known rough edges (compiler-origin or not yet improved): an over-long literal header name is
-rejected by the native validator as `E0080` ("evaluation panicked: HeaderName::from_static with
-invalid bytes") spanning the whole invocation; a missing `via` on an old-style `-> Json<Item>`
-suggests `Json < Item > via Json` rather than `Item via Json`.
+Known rough edge (compiler-origin): an over-long literal header name is rejected by the native
+validator as `E0080` ("evaluation panicked: HeaderName::from_static with invalid bytes") spanning
+the whole invocation. Old-style `-> Json<Item>`, `Text`, `Binary` and `-> ()` get a precise
+replacement (`representation_alpha_spelling`).

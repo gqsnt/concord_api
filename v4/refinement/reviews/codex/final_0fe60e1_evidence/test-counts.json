@@ -1,0 +1,32 @@
+{
+  "verify-msrv-concord.log": {
+    "passed": 368,
+    "failed": 0,
+    "ignored": 0
+  },
+  "verify-msrv-examples.log": {
+    "passed": 68,
+    "failed": 0,
+    "ignored": 8
+  },
+  "verify-test-json-only.log": {
+    "passed": 365,
+    "failed": 0,
+    "ignored": 0
+  },
+  "verify-test-no-default.log": {
+    "passed": 349,
+    "failed": 0,
+    "ignored": 0
+  },
+  "verify-test-reqwest-defaults-only.log": {
+    "passed": 351,
+    "failed": 0,
+    "ignored": 0
+  },
+  "verify-test.log": {
+    "passed": 442,
+    "failed": 0,
+    "ignored": 8
+  }
+}

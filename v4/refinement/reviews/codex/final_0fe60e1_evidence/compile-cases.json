@@ -1,0 +1,62 @@
+{
+  "1.97.1/no_json": {
+    "exit": 101,
+    "expected_diagnostic_present": true,
+    "errors": 1
+  },
+  "1.97.1/missing_config": {
+    "exit": 101,
+    "expected_diagnostic_present": true,
+    "errors": 1
+  },
+  "1.97.1/numeric_widening": {
+    "exit": 101,
+    "expected_diagnostic_present": true,
+    "errors": 1
+  },
+  "1.97.1/move_clone": {
+    "exit": 101,
+    "expected_diagnostic_present": true,
+    "errors": 1
+  },
+  "1.97.1/optional_option": {
+    "exit": 101,
+    "expected_diagnostic_present": true,
+    "errors": 1
+  },
+  "1.97.1/header_too_long": {
+    "exit": 101,
+    "expected_diagnostic_present": true,
+    "errors": 1
+  },
+  "1.85/no_json": {
+    "exit": 101,
+    "expected_diagnostic_present": true,
+    "errors": 1
+  },
+  "1.85/missing_config": {
+    "exit": 101,
+    "expected_diagnostic_present": true,
+    "errors": 1
+  },
+  "1.85/numeric_widening": {
+    "exit": 101,
+    "expected_diagnostic_present": true,
+    "errors": 1
+  },
+  "1.85/move_clone": {
+    "exit": 101,
+    "expected_diagnostic_present": true,
+    "errors": 1
+  },
+  "1.85/optional_option": {
+    "exit": 101,
+    "expected_diagnostic_present": true,
+    "errors": 1
+  },
+  "1.85/header_too_long": {
+    "exit": 101,
+    "expected_diagnostic_present": true,
+    "errors": 1
+  }
+}

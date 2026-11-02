@@ -137,7 +137,13 @@ fn value_notes(model: &Model) -> Vec<Vec<Vec<String>>> {
                             &mut fallbacks,
                             r,
                             format!(
-                                " Per call: `maybe_{x}(None)` (the default) keeps the inherited `{}`; `set_{x}(v)` replaces it with one occurrence per item of `v`, and with nothing at all when `v` has no items (for example `None` or an empty collection).",
+                                " Per call: `maybe_{x}(None)`{} keeps the inherited `{}`; `set_{x}(v)` replaces it with one occurrence per item of `v`, and with nothing at all when `v` has no items (for example `None` or an empty collection).",
+                                // An initialized value starts present: absence is then not the default.
+                                if model.value(r).default.is_none() {
+                                    " (the default)"
+                                } else {
+                                    ""
+                                },
                                 c.key
                             ),
                         );
@@ -1332,5 +1338,57 @@ fn prepare_body(
         let mut __p = #k::__private::Parts::new(&__META, &#root.__base);
         #code
         __p.finish(#k::reqwest::Method::#method, &#root.__http, __body, #decoder)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use quote::quote;
+
+    use super::emit;
+    use crate::model::Model;
+    use crate::syntax::Api;
+
+    /// The generated rustdoc text of a declaration.
+    fn docs(declaration: proc_macro2::TokenStream) -> String {
+        let api: Api = syn::parse2(declaration).expect("declaration parses");
+        let model = Model::build(api).unwrap_or_else(|e| panic!("model: {e}"));
+        emit(&model, quote!(::concord)).to_string()
+    }
+
+    /// Final review R1: the per-call note may call absence "the default" only when the value has
+    /// no initializer; an initialized optional value starts present.
+    #[test]
+    fn per_call_note_names_the_actual_default() {
+        let plain = docs(quote! {
+            pub client Api(query locale: String = "en") {
+                base "http://x.test";
+                GET page(locale?: Option<String>) {
+                    query { override "locale" = each locale else inherit; }
+                }
+            }
+        });
+        assert!(
+            plain.contains("`maybe_locale(None)` (the default) keeps"),
+            "{plain}"
+        );
+
+        let initialized = docs(quote! {
+            pub client Api(query locale: String = "en") {
+                base "http://x.test";
+                GET page(locale?: Option<String> = Some("fr".to_owned())) {
+                    query { override "locale" = each locale else inherit; }
+                }
+            }
+        });
+        assert!(
+            initialized.contains("`maybe_locale(None)` keeps"),
+            "{initialized}"
+        );
+        assert!(!initialized.contains("(the default)"), "{initialized}");
+        assert!(
+            initialized.contains("Initially `Some (\\\"fr\\\" . to_owned ())`"),
+            "{initialized}"
+        );
     }
 }
