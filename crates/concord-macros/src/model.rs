@@ -141,7 +141,8 @@ pub struct Value {
     /// generated `Debug` shows its header value.
     pub text: bool,
     /// Placed directly as a whole header value somewhere (`ToHeaderValue`). When it is also read
-    /// as text, its generated `Debug` still withholds it if its header value is flagged sensitive.
+    /// as text and not statically sensitive, its type must be text itself (`TextHeader`), so no
+    /// native sensitivity flag can bypass its text placements.
     pub header: bool,
 }
 

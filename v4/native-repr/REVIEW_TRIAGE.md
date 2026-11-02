@@ -41,7 +41,7 @@ by Codex.
 
 | ID | Severity | Finding | Disposition | Fix / test |
 |---|---|---|---|---|
-| P2-1 | High | generated `Debug` of a value used both as an open-trait header and as text bypassed the native flag | FIXED | `76154bc`: `Value::header`, `DebugTextHeader(Each)`; `native_headers.rs::debug_withholds_a_flagged_header_value_also_used_as_text` (mutation-checked: route back to `DebugDisplay` → fails) |
+| P2-1 | High | generated `Debug` of a value used both as an open-trait header and as text bypassed the native flag | FIXED, then superseded | `76154bc` fixed the owner `Debug` (`DebugTextHeader`, mutation-checked); the executable review found the same value leaking through `Prepared`'s URL and a template header (F1 below), and the dual-use combination is now rejected unless statically sensitive, which removes `DebugTextHeader` |
 | P2-2 | Medium | inserted `Content-Type` must carry the key's static classification | FIXED | contract 8f; `formats.rs::row8f_inserted_content_type_is_classified` (mutant M3 killed) |
 | P2-3 | Medium | `content-type` precedence must be defined over composed, surviving contributions; four runtime cases; validation of unused constants; media-type syntax; cardinality | FIXED | contract 8a–8c, 8g; `row8b_four_runtime_cases`, `row8b_empty_value_empty_each_and_conversion_failure`, `ui/format_header_media_conflict.rs`, `row8c_remove_resolves_the_conflict`, `ui/format_media_type_invalid.rs` (mutant M4 killed) |
 | P2-4 | Medium | rejecting inherited `-> ()` while accepting `-> Unit` makes acceptance spelling-dependent | FIXED (contract changed) | contract 3b; `row3b_3c_typed_unit_is_decoded`, `row5_aliases_follow_the_written_format` |

@@ -721,8 +721,9 @@ fn full_header_map_with_native_values() {
 }
 
 /// A domain type sent both as a header (its own `ToHeaderValue`, natively flagged) and as text
-/// (`Display`, in a query): the generated `Debug` honours the header value's flag before using
-/// `Display` (design review pass 2, finding 1).
+/// (`Display`): accepted only when the value is statically sensitive, so every placement — header,
+/// query, path — is withheld from Concord's output (Codex review of `66a4478`, P1). Unmarked, the
+/// combination is a compile error (`ui/header_text_dual_use.rs`).
 #[derive(Clone)]
 pub struct SecretHeader(&'static str);
 
@@ -741,16 +742,23 @@ impl fmt::Display for SecretHeader {
 }
 
 concord::api! {
-    pub client Both(token: SecretHeader, header("x-tags") each tags: Vec<SecretHeader> = Vec::new()) {
+    pub client Both(
+        #[sensitive] token: SecretHeader,
+        #[sensitive] header("x-tags") each tags: Vec<SecretHeader> = Vec::new(),
+        version: String = "7",
+    ) {
         base "http://both.test";
-        headers { "x-private" = token; }
+        headers { "x-private" = token; "x-copy" = "{token}"; "x-version" = version; }
         GET safe() { path "safe"; }
-        GET search() { path "search"; query { "q" = client.token; "t" = each client.tags; } }
+        GET search() {
+            path "search/{client.token}/v{client.version}";
+            query { "q" = client.token; "t" = each client.tags; "v" = client.version; }
+        }
     }
 }
 
 #[test]
-fn debug_withholds_a_flagged_header_value_also_used_as_text() {
+fn dual_use_values_are_withheld_everywhere_or_are_text() {
     let both = Both::new(
         http(),
         BothConfig {
@@ -761,14 +769,21 @@ fn debug_withholds_a_flagged_header_value_also_used_as_text() {
     let shown = format!("{both:?}");
     assert!(!shown.contains("S3CR3T"), "{shown}");
     assert!(shown.contains("token: <redacted>"), "{shown}");
-    assert!(shown.contains("tags: [<redacted>]"), "{shown}");
-    // Positive control: the value is really sent, flagged, as the header and as query text.
     let prepared = both.search().prepare().unwrap();
-    let header = &prepared.request().headers()["x-private"];
-    assert_eq!(header.as_bytes(), b"S3CR3T-both");
-    assert!(header.is_sensitive());
+    let shown = format!("{prepared:?}");
+    assert!(!shown.contains("S3CR3T"), "{shown}");
+    // A plain text value (`String`) may be both a header and text, and stays visible.
+    assert!(
+        shown.contains("x-version: 7") && shown.contains("v=7"),
+        "{shown}"
+    );
+    // Positive control: the secret is really sent, flagged, as headers, path and query text.
+    let headers = prepared.request().headers();
+    assert_eq!(headers["x-private"].as_bytes(), b"S3CR3T-both");
+    assert!(headers["x-private"].is_sensitive());
+    assert!(headers["x-copy"].is_sensitive());
     assert_eq!(
-        prepared.request().url().query(),
-        Some("q=S3CR3T-both&t=S3CR3T-tag")
+        prepared.request().url().as_str(),
+        "http://both.test/search/S3CR3T-both/v7?q=S3CR3T-both&t=S3CR3T-tag&v=7"
     );
 }

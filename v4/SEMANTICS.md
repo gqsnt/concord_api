@@ -201,6 +201,12 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
   `Encode::CONTENT_TYPE` follows the text rule.
 - A native `HeaderValue` is never text: in a path, subdomain, query value or template hole it is a
   compile error at the value's type (Concord's note names the explicit conversion).
+- A value placed directly as a header value and also read as text, and not statically sensitive,
+  must implement Concord's (hidden) `TextHeader`: `str`, `String`, the integers, `bool` and
+  pointers to them, whose `ToHeaderValue` never sets the native flag. Any other type is a compile
+  error at the value's type: a runtime flag set by its own `ToHeaderValue` would protect the
+  header but not the path, query value or template formed from the same value. A statically
+  sensitive value (marker, sensitive key) is withheld in every placement and accepted.
 - `remove` and the absence of a key concern Concord's contributions only: headers configured on the
   `reqwest::Client` (default headers, user agent) are added by reqwest when the request lacks them.
 

@@ -64,6 +64,17 @@ inherited value with its own flag. No runtime taint propagation: key-level prote
 `Prepared`'s `Debug` redact a flagged value. A value the application converts itself (e.g.
 `to_str()` into a `String`) is new data protected by the declaration only.
 
+**Dual use (amended after the executable review of `66a4478`, P1).** A value placed directly as a
+header value and also read as text (path, subdomain, query value, template), and not statically
+sensitive, must be text itself: `str`, `String`, the integers, `bool` and pointers to them (a hidden
+`TextHeader` bound), whose `ToHeaderValue` never sets the native flag. A type's own
+`ToHeaderValue` may flag its header value, and that runtime flag cannot reach the text placements
+of the same value — `Prepared`'s `Debug` printed it in the URL and in a template header (Codex
+reproduction). Rejected alternatives: propagating the runtime flag to text placements (a runtime
+taint mechanism with dynamic redaction lists), and statically classifying every dual-use value
+sensitive (over-redacts ordinary `String` values used in a path and a header). The earlier
+`DebugTextHeader` route (design pass 2, finding 1) is subsumed and removed.
+
 ## N03 — visible ASCII, split by source
 
 Text a Rust string produces (literals, templates, `str`/`String`) must be visible ASCII, space or

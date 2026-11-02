@@ -906,10 +906,10 @@ fn debug_fields<'a>(
         // A value read as text is shown through `Display`; one read only as whole header values
         // through its header value (no `Display` needed). Either way a value whose header value
         // carries the native sensitivity flag is withheld.
-        let (scalar, each) = match (value.text, value.header) {
-            (true, true) => (quote!(DebugTextHeader), quote!(DebugTextHeaderEach)),
-            (true, false) => (quote!(DebugDisplay), quote!(DebugEach)),
-            (false, _) => (quote!(DebugHeader), quote!(DebugHeaderEach)),
+        let (scalar, each) = if value.text {
+            (quote!(DebugDisplay), quote!(DebugEach))
+        } else {
+            (quote!(DebugHeader), quote!(DebugHeaderEach))
         };
         let shown = match (value.debug_sensitive, value.optional, value.usage) {
             (true, false, _) => quote_spanned!(span=> &#k::__private::Redacted),
@@ -1487,11 +1487,28 @@ fn source_code(
         Family::Query => quote!(),
     };
     let what = placement_label(id.family, key.value().as_str());
-    let call = match (id.family, each) {
-        (Family::Query, false) => quote!(__p.query(#key, #arg, #what)?;),
-        (Family::Query, true) => quote!(__p.query_each(#key, #arg, #what)?;),
-        (Family::Header, false) => quote!(__p.header(#name, #what, #arg, #sensitive)?;),
-        (Family::Header, true) => quote!(__p.header_each(#name, #what, #arg, #sensitive)?;),
+    // A value that is also written as text, and not statically sensitive, must be text itself
+    // (`TextHeader`): a native sensitivity flag on its header value could not reach its text.
+    let text_header = match source {
+        Source::Ref { value, .. } => {
+            let v = model.value(*value);
+            v.text && !v.debug_sensitive
+        }
+        Source::Template { .. } => false,
+    };
+    let call = match (id.family, each, text_header) {
+        (Family::Query, false, _) => quote!(__p.query(#key, #arg, #what)?;),
+        (Family::Query, true, _) => quote!(__p.query_each(#key, #arg, #what)?;),
+        (Family::Header, false, false) => quote!(__p.header(#name, #what, #arg, #sensitive)?;),
+        (Family::Header, true, false) => {
+            quote!(__p.header_each(#name, #what, #arg, #sensitive)?;)
+        }
+        (Family::Header, false, true) => {
+            quote!(__p.header_text(#name, #what, #arg, #sensitive)?;)
+        }
+        (Family::Header, true, true) => {
+            quote!(__p.header_text_each(#name, #what, #arg, #sensitive)?;)
+        }
     };
     // A value placed directly: trait errors (no `Display`, not iterable) point at its type.
     let call = match at {

@@ -454,6 +454,12 @@ fn main() -> Result<(), concord::Error> {
   when the request is built (a build error names the header, never the value). Bytes outside that
   set are sent only from a native value you built yourself (`HeaderValue::from_bytes`).
 - A native value is not text: it cannot fill a path, a query value or a template hole.
+- A value placed directly as a header **and** used as text (a path, subdomain, query value or
+  template) must be text itself — `String`, `&str`, an integer or `bool` — unless it is
+  `#[sensitive]`. A type's own `ToHeaderValue` may flag its header value sensitive, and that flag
+  cannot reach the value's text placements, so the combination is a compile error at the type;
+  send that header through a template (`"x-k" = "{x}"`, text everywhere), use a separate value,
+  or mark the value `#[sensitive]`.
 - `remove` and an absent key concern Concord's own contributions: headers configured on the
   `reqwest::Client` (default headers, user agent) are still added by reqwest.
 

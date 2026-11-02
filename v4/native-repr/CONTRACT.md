@@ -91,5 +91,6 @@ Lexical precedence (each pinned by a test):
 | H8 | aliases, qualified paths, renamed dependencies | trait resolution, no spelling |
 | H9 | integers, `bool`, text, own types | integer/`bool`/text impls; own types implement `ToHeaderValue`; `Display` via a template |
 | H10 | `HeaderValue` in a path, query or template | compile error at the value's type |
+| H10b | a value placed as a header and as text (path, query, template), not statically sensitive | its type must be text itself (`str`, `String`, integers, `bool`, pointers to them): otherwise a compile error at the type (review of `66a4478`, P1) |
 | H11 | optional native header vs body presence | independent |
 | H12 | a format default vs header presence and inheritance | independent |

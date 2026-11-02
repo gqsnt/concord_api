@@ -50,6 +50,40 @@ pub trait Text: Display {}
 
 impl<T: Display + ?Sized> Text for T {}
 
+/// A value placed both as a whole header value and as text (path segment, subdomain label, query
+/// value, template hole), and not statically sensitive: it must be text itself, so its header
+/// value is its own text and never carries a native sensitivity flag that its text placements
+/// could not see. Implemented for `str`, `String`, the integers and `bool` (Concord's own
+/// `ToHeaderValue` impls never set the flag), and pointers to them.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is placed both as a header value and as text",
+    label = "used as a whole header value and in a path, subdomain, query value or template",
+    note = "a header value that is also written as text must be text itself (`String`, `&str`, an integer or `bool`): a type's own `ToHeaderValue` can mark its header value sensitive, which a path, query value or template cannot see",
+    note = "send this header as text through a template (`headers {{ \"name\" = \"{{value}}\"; }}`), use a separate value for the header, or mark the value `#[sensitive]`"
+)]
+pub trait TextHeader: ToHeaderValue + Text {}
+
+impl TextHeader for str {}
+impl TextHeader for String {}
+impl TextHeader for bool {}
+
+macro_rules! text_headers {
+    ($($t:ty),*) => {$( impl TextHeader for $t {} )*};
+}
+
+text_headers!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize);
+
+impl<T: TextHeader + ?Sized> TextHeader for &T {}
+impl<T: TextHeader + ?Sized> TextHeader for Box<T> {}
+impl<T: TextHeader + ?Sized> TextHeader for std::rc::Rc<T> {}
+impl<T: TextHeader + ?Sized> TextHeader for std::sync::Arc<T> {}
+impl<T> TextHeader for std::borrow::Cow<'_, T>
+where
+    T: TextHeader + ToOwned + ?Sized,
+    T::Owned: Display,
+{
+}
+
 /// A template hole: checks [`Text`] (for its diagnostic) and returns the value unchanged.
 #[inline]
 pub fn text<T: Text + ?Sized>(value: &T) -> &T {
@@ -354,6 +388,33 @@ impl<'a> Parts<'a> {
         Ok(())
     }
 
+    /// [`header`](Self::header) for a value that is also placed as text ([`TextHeader`]).
+    pub fn header_text<T: TextHeader + ?Sized>(
+        &mut self,
+        name: HeaderName,
+        what: &'static str,
+        value: &T,
+        sensitive: bool,
+    ) -> Result<(), Error> {
+        self.header(name, what, value, sensitive)
+    }
+
+    /// [`header_each`](Self::header_each) for items that are also placed as text
+    /// ([`TextHeader`]).
+    pub fn header_text_each<I>(
+        &mut self,
+        name: HeaderName,
+        what: &'static str,
+        values: I,
+        sensitive: bool,
+    ) -> Result<(), Error>
+    where
+        I: IntoIterator,
+        I::Item: TextHeader,
+    {
+        self.header_each(name, what, values, sensitive)
+    }
+
     /// Prepends the labels to the base host and validates the result. Called once, right after
     /// the last label, so host errors precede path errors.
     pub fn host(&mut self) -> Result<(), Error> {
@@ -569,47 +630,6 @@ where
             .entries(self.0.into_iter().map(|item| ShownHeader::of(&item)))
             .finish()
     }
-}
-
-/// `Debug` of a value placed both as a header and as text: `<redacted>` when its header value
-/// carries the native sensitivity flag, its `Display` text otherwise.
-pub struct DebugTextHeader<'a, T: ?Sized>(pub &'a T);
-
-impl<T: Text + ToHeaderValue + ?Sized> fmt::Debug for DebugTextHeader<'_, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if flagged(self.0) {
-            f.write_str("<redacted>")
-        } else {
-            fmt::Debug::fmt(&Shown::of(self.0), f)
-        }
-    }
-}
-
-/// `Debug` of an `each` value placed both as headers and as text, item by item as
-/// [`DebugTextHeader`].
-pub struct DebugTextHeaderEach<'a, T: ?Sized>(pub &'a T);
-
-impl<'a, T: ?Sized> fmt::Debug for DebugTextHeaderEach<'a, T>
-where
-    &'a T: IntoIterator,
-    <&'a T as IntoIterator>::Item: Text + ToHeaderValue,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut list = f.debug_list();
-        for item in self.0 {
-            if flagged(&item) {
-                list.entry(&Redacted);
-            } else {
-                list.entry(&Shown::of(&item));
-            }
-        }
-        list.finish()
-    }
-}
-
-/// Whether a value's header value carries the native sensitivity flag.
-fn flagged<T: ToHeaderValue + ?Sized>(value: &T) -> bool {
-    value.to_header_value().is_some_and(|v| v.is_sensitive())
 }
 
 /// A value's header value for `Debug`: `<redacted>` when flagged sensitive, the text when it is

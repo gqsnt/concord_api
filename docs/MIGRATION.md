@@ -435,7 +435,9 @@ A header value of another `Display` type (a domain enum, `Uuid`, `IpAddr`, a flo
 compile error at its type: "`T` cannot be sent as a header value". Two explicit fixes:
 
 - send its `Display` text with a template (same spelling and visible-ASCII check as before);
-- implement `ToHeaderValue` for your own type (no formatting; `from_static` per variant).
+- implement `ToHeaderValue` for your own type (no formatting; `from_static` per variant). If the
+  same value is also used as text (path, query value, template), that is only accepted for
+  `#[sensitive]` values: use the template instead.
 
 Before (does not compile any more):
 
