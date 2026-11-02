@@ -136,6 +136,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-example-native"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "concord-example-renamed"
 version = "0.0.0"
 dependencies = [
