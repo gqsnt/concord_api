@@ -13,21 +13,57 @@ use crate::syntax::Family;
 
 pub fn emit(model: &Model, krate: TokenStream) -> TokenStream {
     let k = &krate;
+    let notes = value_notes(model);
+    let (header_items, headers) = header_statics(k, model);
     let vis = match &model.owners[0].kind {
         Kind::Client { vis, .. } => vis.clone(),
         _ => unreachable!("the first owner is the client"),
     };
-    let mut out = TokenStream::new();
-    for index in 0..model.owners.len() {
-        let cfgs = &model.owners[index].cfgs;
+    let mut out = header_items;
+    for (index, (owner, notes)) in model.owners.iter().zip(&notes).enumerate() {
+        let cfgs = &owner.cfgs;
         if cfgs.is_empty() {
-            out.extend(emit_owner(k, model, index, &vis));
+            out.extend(emit_owner(k, model, index, &vis, notes, &headers));
         } else {
             // Every item of a `#[cfg]` owner carries its own and its ancestors' `cfg`s.
-            out.extend(with_attrs(emit_owner(k, model, index, &vis), cfgs));
+            out.extend(with_attrs(
+                emit_owner(k, model, index, &vis, notes, &headers),
+                cfgs,
+            ));
         }
     }
     out
+}
+
+/// Header name -> the generated `static` holding its native `HeaderName`.
+type Headers = std::collections::BTreeMap<String, Ident>;
+
+/// One `static` per distinct header name of the declaration. Statics are always evaluated at
+/// compile time, so the native `HeaderName` validator rejects an invalid literal (e.g. longer than
+/// `http` allows) as a compile error even when no endpoint using it is called; requests clone the
+/// validated name instead of checking it again. One per name keeps compile-time evaluation linear in
+/// the distinct names, not in endpoints x inherited headers.
+fn header_statics(k: &TokenStream, model: &Model) -> (TokenStream, Headers) {
+    let client = plain(&model.owners[0].type_name);
+    let mut headers = Headers::new();
+    let mut items = TokenStream::new();
+    for owner in &model.owners {
+        for c in &owner.headers {
+            if headers.contains_key(&c.key) {
+                continue;
+            }
+            let ident = format_ident!("__CONCORD_{}_HEADER_{}", client, headers.len());
+            let key = lit(&c.key);
+            items.extend(quote_spanned! {c.span=>
+                #[doc(hidden)]
+                #[allow(non_upper_case_globals, dead_code)]
+                static #ident: #k::reqwest::header::HeaderName =
+                    #k::reqwest::header::HeaderName::from_static(#key);
+            });
+            headers.insert(c.key.clone(), ident);
+        }
+    }
+    (items, headers)
 }
 
 /// Puts `attrs` in front of every top-level item in `items`.
@@ -40,43 +76,99 @@ fn with_attrs(items: TokenStream, attrs: &[syn::Attribute]) -> TokenStream {
     out
 }
 
-/// For each value of `owner`: notes for its controls when it feeds a conditional `override`
-/// (its absence keeps what the chain inherits).
-fn override_notes(model: &Model, owner: usize) -> Vec<Vec<String>> {
+/// Generated notes for every owner's values (`notes[owner][value]`), computed in one pass over
+/// the model: where the value is sent (every placement, template and block on any chain), whether
+/// it is withheld from Concord's output, and what its absence means under a conditional
+/// `override`. One pass, so the cost is linear in the declaration, not owners × contributions.
+fn value_notes(model: &Model) -> Vec<Vec<Vec<String>>> {
     use crate::syntax::Op;
-    let mut notes = vec![Vec::new(); model.owners[owner].values.len()];
+    let mut places: Vec<Vec<Vec<String>>> = model
+        .owners
+        .iter()
+        .map(|o| vec![Vec::new(); o.values.len()])
+        .collect();
+    let mut fallbacks = places.clone();
+    let holes = |pieces: &[Piece]| -> Vec<ValueRef> {
+        pieces
+            .iter()
+            .filter_map(|p| match p {
+                Piece::Hole(r) => Some(*r),
+                Piece::Lit(_) => None,
+            })
+            .collect()
+    };
+    let add = |places: &mut Vec<Vec<Vec<String>>>, r: ValueRef, what: String| {
+        let list = &mut places[r.owner][r.index];
+        if !list.contains(&what) {
+            list.push(what);
+        }
+    };
     for o in &model.owners {
+        for c in &o.labels {
+            for r in holes(&c.pieces) {
+                add(&mut places, r, format!("subdomain label `{}`", c.text));
+            }
+        }
+        for c in &o.segments {
+            for r in holes(&c.pieces) {
+                add(&mut places, r, format!("path segment `{}`", c.text));
+            }
+        }
         for (family, list) in [(Family::Query, &o.query), (Family::Header, &o.headers)] {
-            for c in list.iter().filter(|c| c.op == Op::Override) {
-                let reads: Vec<ValueRef> = match &c.source {
+            let what = match family {
+                Family::Query => "query parameter",
+                Family::Header => "header",
+            };
+            for c in list.iter().filter(|c| c.op != Op::Remove) {
+                let reads = match &c.source {
                     Some(Source::Ref { value, .. }) => vec![*value],
-                    Some(Source::Template { pieces }) => pieces
-                        .iter()
-                        .filter_map(|p| match p {
-                            Piece::Hole(r) => Some(*r),
-                            Piece::Lit(_) => None,
-                        })
-                        .collect(),
+                    Some(Source::Template { pieces }) => holes(pieces),
                     None => Vec::new(),
                 };
-                let what = match family {
-                    Family::Query => "query parameter",
-                    Family::Header => "header",
-                };
-                for r in reads.into_iter().filter(|r| r.owner == owner) {
-                    if model.value(r).optional {
-                        notes[r.index].push(format!(
-                            " When `{}` is absent, the inherited `{}` {what} is sent unchanged (`override ... else inherit` in `{}`).",
-                            plain(&model.value(r).name),
-                            c.key,
-                            o.dotted
-                        ));
+                for r in reads {
+                    add(&mut places, r, placement_label(family, &c.key).value());
+                    if c.op == Op::Override && model.value(r).optional {
+                        add(
+                            &mut fallbacks,
+                            r,
+                            format!(
+                                " When `{}` is absent, the inherited `{}` {what} is sent unchanged (`override ... else inherit` in `{}`).",
+                                plain(&model.value(r).name),
+                                c.key,
+                                o.dotted
+                            ),
+                        );
                     }
                 }
             }
         }
     }
-    notes
+    model
+        .owners
+        .iter()
+        .zip(places.into_iter().zip(fallbacks))
+        .map(|(owner, (places, fallbacks))| {
+            owner
+                .values
+                .iter()
+                .zip(places.into_iter().zip(fallbacks))
+                .map(|(value, (places, fallbacks))| {
+                    let mut notes = Vec::new();
+                    if !places.is_empty() {
+                        notes.push(format!(" Sent as: {}.", places.join("; ")));
+                    }
+                    if value.debug_sensitive {
+                        notes.push(
+                            " Sensitive: sent normally, withheld from Concord's `Debug` output and errors."
+                                .to_owned(),
+                        );
+                    }
+                    notes.extend(fallbacks);
+                    notes
+                })
+                .collect()
+        })
+        .collect()
 }
 
 fn lit(s: &str) -> LitStr {
@@ -354,6 +446,26 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
         shown.join(", ")
     };
     let mut lines = vec![lit(""), lit(&format!(" Request: `{method} {url}`."))];
+    if let Kind::Endpoint { output, body, .. } = &model.owners[endpoint].kind {
+        if let Some(b) = body {
+            let (ty, repr) = (&b.ty, &b.repr);
+            let presence = if b.optional { "optional " } else { "" };
+            lines.push(lit(&format!(
+                " Body ({presence}`{}`): `{}` via `{}`.",
+                plain(&b.name),
+                quote!(#ty),
+                quote!(#repr)
+            )));
+        }
+        lines.push(lit(&match output {
+            Some(p) => {
+                let (ty, repr) = (&p.ty, &p.repr);
+                format!(" Output: `{}` via `{}`.", quote!(#ty), quote!(#repr))
+            }
+            None => " Output: none (`()`): any 2xx succeeds and the response body is drained."
+                .to_owned(),
+        }));
+    }
     let query = keys(&composed.query);
     if !query.is_empty() {
         lines.push(lit(&format!(" Query (when present): {query}.")));
@@ -451,7 +563,14 @@ fn debug_fields<'a>(
     out
 }
 
-fn emit_owner(k: &TokenStream, model: &Model, index: usize, vis: &syn::Visibility) -> TokenStream {
+fn emit_owner(
+    k: &TokenStream,
+    model: &Model,
+    index: usize,
+    vis: &syn::Visibility,
+    notes: &[Vec<String>],
+    headers: &Headers,
+) -> TokenStream {
     let owner = &model.owners[index];
     let ty = &owner.type_name;
     let state = &owner.state_name;
@@ -477,7 +596,7 @@ fn emit_owner(k: &TokenStream, model: &Model, index: usize, vis: &syn::Visibilit
                 None,
                 &quote!(::std::sync::Arc::make_mut(&mut self.__s)),
                 "the client",
-                &override_notes(model, index),
+                notes,
             );
             let debug = debug_fields(k, &owner.values, &quote!(__s));
             let required: Vec<&Value> = owner.values.iter().filter(|v| v.is_positional()).collect();
@@ -486,18 +605,25 @@ fn emit_owner(k: &TokenStream, model: &Model, index: usize, vis: &syn::Visibilit
             } else {
                 let config = owner.config_name();
                 let names: Vec<&Ident> = required.iter().map(|v| &v.name).collect();
-                let config_fields = required.iter().map(|v| {
-                    let name = &v.name;
-                    let fty = &v.ty;
-                    let docs = if v.docs.is_empty() {
-                        let line = lit(&format!(" The client's required value `{}`.", plain(name)));
-                        quote!(#[doc = #line])
-                    } else {
-                        let docs = &v.docs;
-                        quote!(#(#docs)*)
-                    };
-                    quote!(#docs pub #name: #fty,)
-                });
+                let config_fields = owner
+                    .values
+                    .iter()
+                    .zip(notes)
+                    .filter(|(v, _)| v.is_positional())
+                    .map(|(v, notes)| {
+                        let name = &v.name;
+                        let fty = &v.ty;
+                        let docs = if v.docs.is_empty() {
+                            let line =
+                                lit(&format!(" The client's required value `{}`.", plain(name)));
+                            quote!(#[doc = #line])
+                        } else {
+                            let docs = &v.docs;
+                            quote!(#(#docs)*)
+                        };
+                        let notes: Vec<LitStr> = notes.iter().map(|n| lit(n)).collect();
+                        quote!(#docs #[doc = ""] #(#[doc = #notes])* pub #name: #fty,)
+                    });
                 let config_doc = lit(&format!(
                     " The required values of [`{ty}`], passed to [`{ty}::new`]. Optional and \
                      initialized values are set afterwards with the client's `set_*` and \
@@ -564,7 +690,8 @@ fn emit_owner(k: &TokenStream, model: &Model, index: usize, vis: &syn::Visibilit
                     /// and no user information, query or fragment; anything else is an error.
                     /// Declared paths are appended to its path. With `subdomain` labels the host
                     /// must be a domain name: to reach a local server, keep a domain and map it
-                    /// with `reqwest::ClientBuilder::resolve`.
+                    /// with `reqwest::ClientBuilder::resolve`. Returns a new handle: scopes and
+                    /// requests created from the old one keep the old base.
                     #[inline] pub fn with_base_url(mut self, url: impl ::core::convert::AsRef<str>) -> ::core::result::Result<Self, #k::Error> {
                         let base = #k::__private::Base::parse(url.as_ref())?;
                         ::std::sync::Arc::make_mut(&mut self.__s).__base = base;
@@ -594,7 +721,7 @@ fn emit_owner(k: &TokenStream, model: &Model, index: usize, vis: &syn::Visibilit
                 None,
                 &quote!(::std::sync::Arc::make_mut(&mut self.__s)),
                 "this scope",
-                &override_notes(model, index),
+                notes,
             );
             let debug = debug_fields(k, &owner.values, &quote!(__s));
             quote! {
@@ -639,7 +766,7 @@ fn emit_owner(k: &TokenStream, model: &Model, index: usize, vis: &syn::Visibilit
                 body.as_ref(),
                 &quote!(self),
                 "this request",
-                &override_notes(model, index),
+                notes,
             );
             let mut debug = debug_fields(k, &owner.values, &quote!(self));
             let body_field = body.as_ref().map(|b| {
@@ -662,7 +789,15 @@ fn emit_owner(k: &TokenStream, model: &Model, index: usize, vis: &syn::Visibilit
                 }
                 None => quote!(()),
             };
-            let prepare = prepare_body(k, model, index, method, output.as_ref(), body.as_ref());
+            let prepare = prepare_body(
+                k,
+                headers,
+                model,
+                index,
+                method,
+                output.as_ref(),
+                body.as_ref(),
+            );
             quote! {
                 #docs
                 #[must_use = "an endpoint request does nothing until `send` or `prepare` is called"]
@@ -888,6 +1023,7 @@ impl Bound {
 
 fn source_code(
     k: &TokenStream,
+    headers: &Headers,
     model: &Model,
     places: &Places,
     id: ContribId,
@@ -958,18 +1094,21 @@ fn source_code(
             }
         }
     };
-    // Header names go through the native validator at compile time: the unnamed `const` item is
-    // always evaluated (even when `prepare` is never instantiated), so an invalid literal — e.g.
-    // longer than `http` allows — is a compile error; the `const` block builds the name without
-    // a runtime check or panic path.
-    let name = quote!(const { #k::reqwest::header::HeaderName::from_static(#key) });
-    let guard = quote_spanned!(contrib.span=> const _: () = ::core::mem::forget(#k::reqwest::header::HeaderName::from_static(#key)););
+    // Header names were validated by the native constructor at compile time (`header_statics`);
+    // the request clones the validated name.
+    let name = match id.family {
+        Family::Header => {
+            let header = &headers[&key.value()];
+            quote!(::core::clone::Clone::clone(&#header))
+        }
+        Family::Query => quote!(),
+    };
     let what = placement_label(id.family, key.value().as_str());
     let call = match (id.family, each) {
         (Family::Query, false) => quote!(__p.query(#key, #arg, #what)?;),
         (Family::Query, true) => quote!(__p.query_each(#key, #arg, #what)?;),
-        (Family::Header, false) => quote!(#guard __p.header(#name, #what, #arg, #sensitive)?;),
-        (Family::Header, true) => quote!(#guard __p.header_each(#name, #what, #arg, #sensitive)?;),
+        (Family::Header, false) => quote!(__p.header(#name, #what, #arg, #sensitive)?;),
+        (Family::Header, true) => quote!(__p.header_each(#name, #what, #arg, #sensitive)?;),
     };
     // A value placed directly: trait errors (no `Display`, not iterable) point at its type.
     let call = match at {
@@ -981,6 +1120,7 @@ fn source_code(
 
 fn items_code(
     k: &TokenStream,
+    headers: &Headers,
     model: &Model,
     places: &Places,
     items: &[Item],
@@ -990,12 +1130,14 @@ fn items_code(
     for item in items {
         match item {
             Item::Emit(id) => {
-                let (bound, call) = source_code(k, model, places, *id, &slot.key, slot.sensitive);
+                let (bound, call) =
+                    source_code(k, headers, model, places, *id, &slot.key, slot.sensitive);
                 out.extend(bound.wrap(call, None));
             }
             Item::Override { src, fallback } => {
-                let (bound, call) = source_code(k, model, places, *src, &slot.key, slot.sensitive);
-                let otherwise = items_code(k, model, places, fallback, slot);
+                let (bound, call) =
+                    source_code(k, headers, model, places, *src, &slot.key, slot.sensitive);
+                let otherwise = items_code(k, headers, model, places, fallback, slot);
                 out.extend(bound.wrap(call, Some(otherwise)));
             }
         }
@@ -1054,6 +1196,7 @@ fn component_code(
 
 fn prepare_body(
     k: &TokenStream,
+    headers: &Headers,
     model: &Model,
     index: usize,
     method: &Ident,
@@ -1122,10 +1265,10 @@ fn prepare_body(
         if slot.sensitive {
             sensitive_query.push(lit(&slot.key));
         }
-        code.extend(items_code(k, model, &places, &slot.items, slot));
+        code.extend(items_code(k, headers, model, &places, &slot.items, slot));
     }
     for slot in &composed.headers {
-        code.extend(items_code(k, model, &places, &slot.items, slot));
+        code.extend(items_code(k, headers, model, &places, &slot.items, slot));
     }
 
     let body_code = match body {

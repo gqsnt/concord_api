@@ -272,8 +272,8 @@ impl<'a> Parts<'a> {
         Ok(())
     }
 
-    /// Adds one header line. The expansion builds `name` in a `const` block, so the native
-    /// `HeaderName` validator has accepted it at compile time; `what` names it for errors.
+    /// Adds one header line. The expansion passes a `HeaderName` from a generated `static`, so the
+    /// native validator accepted it at compile time; `what` names the header for errors.
     pub fn header<T: Display + ?Sized>(
         &mut self,
         name: HeaderName,

@@ -7,7 +7,7 @@ error[E0080]: evaluation panicked: HeaderName::from_static with invalid bytes
 6 | |         headers { "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...
 ... |
 9 | | }
-  | |_^ evaluation of `ApiList::prepare::_` failed inside this call
+  | |_^ evaluation of `__CONCORD_Api_HEADER_0` failed inside this call
   |
 note: inside `HeaderName::from_static`
  --> $RUST/core/src/panic.rs
