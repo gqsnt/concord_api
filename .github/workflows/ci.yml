@@ -20,6 +20,9 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - run: cargo test --workspace --locked
+      # Benchmarks are compiled, never run, in ordinary CI (see .github/workflows/bench.yml).
+      - if: matrix.os == 'ubuntu-latest'
+        run: cargo bench --locked -p concord-bench --no-run
       - run: cargo test --locked -p concord --no-default-features
       - run: cargo test --locked -p concord --no-default-features --features json
       - run: cargo test --locked -p concord --no-default-features --features reqwest-defaults
