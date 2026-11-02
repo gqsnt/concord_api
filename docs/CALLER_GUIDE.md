@@ -366,8 +366,10 @@ assert_eq!(server.requests()[0].header("x-request-id"), Some("req-1"));
 
 - `Decoder::decode(response)` applies the same handling to a response you already have.
 - `reqwest::RequestBuilder::from_parts(client, request)` turns the pair back into a builder.
-- `into_parts` is a one-way door for redaction: the native request's `Debug` prints the full URL
-  and every header. Mark extra secret headers with `HeaderValue::set_sensitive(true)` yourself.
+- `into_parts` is a one-way door for redaction: the native request's `Debug` prints the full URL,
+  sensitive query values and path segments included; only header values flagged sensitive are
+  masked (reqwest prints them as `Sensitive`). Mark extra secret headers with
+  `HeaderValue::set_sensitive(true)` yourself.
 
 More: the [recipes](RECIPES.md) (streaming, multipart, interleaved query parameters).
 

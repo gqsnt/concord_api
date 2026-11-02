@@ -6,7 +6,8 @@
 //! `decoder.finish(client.execute(request).await)` applies the declared status check and
 //! representation and converts a native transport error into a Concord
 //! [`concord::ErrorKind::Transport`] error. Concord's redacted `Debug` does not follow the native
-//! request: the native `Debug` prints the full URL and every header.
+//! request: the native `Debug` prints the full URL (sensitive query values and path segments
+//! included) and every header value not flagged sensitive.
 
 use std::time::Duration;
 

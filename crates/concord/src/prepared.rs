@@ -16,7 +16,8 @@ use crate::repr::BodyError;
 ///
 /// To change the request natively (extra headers, a per-request timeout, a streaming body), take
 /// it apart with [`into_parts`](Self::into_parts). That is a one-way door: Concord's redaction
-/// metadata does not follow the native request, whose own `Debug` prints everything.
+/// metadata does not follow the native request, whose own `Debug` prints the full URL (sensitive
+/// query values and path segments included) and masks only header values flagged sensitive.
 #[must_use = "a prepared request does nothing until it is sent"]
 pub struct Prepared<T> {
     client: reqwest::Client,

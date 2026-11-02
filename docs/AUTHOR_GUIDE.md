@@ -134,7 +134,11 @@ What to know about values:
   `.into()`; a missing field is reported by name (`E0063`). A client without required values is
   created with `Client::new(http)`.
 - **Scope and endpoint arguments** are positional, in declaration order (a required body takes its
-  place among them). Keep them few; give extra inputs a default or make them optional.
+  place among them). A value that the API requires stays required, however long the argument
+  list gets: never make it optional or give it a default just to shorten calls. To keep calls
+  readable, move inputs shared by several endpoints to a meaningful scope, group related inputs
+  in a domain type (a body type, a newtype), or add a convenience method of your own that takes a
+  named input record and calls the endpoint.
 - **Initializers** (`= expr`) are any Rust expression, evaluated once each time the owner is
   created — `new` for the client, each scope entry, each endpoint call — even if a setter replaces
   the value right after (so keep side effects out of initializers whose value callers often
