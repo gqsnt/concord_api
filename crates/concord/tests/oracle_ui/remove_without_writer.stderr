@@ -1,0 +1,11 @@
+error: cannot remove query key `k`: no enclosing owner sets it
+  --> tests/oracle_ui/remove_without_writer.rs:10:31
+   |
+10 |             GET e() { query { remove "k"; } headers { remove "x-k"; } }
+   |                               ^^^^^^
+
+error: cannot remove header `x-k`: no enclosing owner sets it
+  --> tests/oracle_ui/remove_without_writer.rs:10:55
+   |
+10 |             GET e() { query { remove "k"; } headers { remove "x-k"; } }
+   |                                                       ^^^^^^

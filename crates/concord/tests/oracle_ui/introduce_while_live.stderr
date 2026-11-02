@@ -1,0 +1,11 @@
+error: query key `k` is already set by `C`; use `override` or `append` to change an inherited query key, or add `remove "k";` to this owner's block to replace it exactly
+ --> tests/oracle_ui/introduce_while_live.rs:9:21
+  |
+9 |             query { "k" = "si"; "z" = "1"; } headers { "x-k" = "si"; }
+  |                     ^^^
+
+error: header `x-k` is already set by `C`; use `override` or `append` to change an inherited header, or add `remove "x-k";` to this owner's block to replace it exactly
+ --> tests/oracle_ui/introduce_while_live.rs:9:56
+  |
+9 |             query { "k" = "si"; "z" = "1"; } headers { "x-k" = "si"; }
+  |                                                        ^^^^^
