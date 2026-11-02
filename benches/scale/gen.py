@@ -7,12 +7,17 @@ exception is Cargo.lock, which cargo settles offline from a seeded copy; its has
 
 COMMANDS
 
-  gen.py suite OUT [--concord PATH]
+  gen.py suite OUT [--concord PATH] [--syntax S] [--keys literal|native]
       The measurement workspace (see SUITE). One command; then build members with
       `cargo build --offline --manifest-path OUT/Cargo.toml -p <member>`.
 
-  gen.py api OUT SHAPE [shape options] [--concord PATH] [--name NAME]
+  gen.py api OUT SHAPE [shape options] [--concord PATH] [--name NAME] [--syntax S] [--keys K]
       One standalone API crate (its own `[workspace]`) for code-size studies.
+
+  --keys native writes every header key (`header("x-..")` placements and `headers { }` entries,
+  all named `x-..`) as a native `HeaderName` constant declared above the `api!` invocation
+  instead of a literal, so every chain is composed when the request is built; the default
+  `literal` output is unchanged.
 
   gen.py OUT N CONCORD_PATH
       Legacy form, byte-identical to the original generator: `api OUT rest --endpoints N`.
@@ -78,6 +83,7 @@ SUITE (OUT/, one cargo workspace; member names are the package names)
 import argparse
 import hashlib
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -85,7 +91,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONCORD = os.path.normpath(os.path.join(HERE, "..", "..", "crates", "concord"))
-GENERATOR_VERSION = 6
+GENERATOR_VERSION = 7
 
 # Declaration/caller syntax, so that the same workload can be generated for an A/B comparison of
 # Concord versions:
@@ -101,6 +107,24 @@ GENERATOR_VERSION = 6
 DEFAULT_SYNTAX = "statements"
 SYNTAX = DEFAULT_SYNTAX
 SYNTAXES = ["statements", "formats", "via", "alpha", "refined"]
+KEYS = "literal"
+
+
+def keyed(text):
+    """`text` with its header keys as native constants when `--keys native` (see the docstring)."""
+    if KEYS == "literal":
+        return text
+    names = sorted(set(re.findall(r'"(x-[a-z0-9-]+)"', text)))
+    for name in names:
+        const = name.upper().replace("-", "_")
+        text = re.sub(rf'header\("{name}"\)', f"header({const})", text)
+        text = re.sub(rf'"{name}" =', f"{const} =", text)
+        text = re.sub(rf'(override|append|remove) "{name}"', rf"\1 {const}", text)
+    assert not re.search(r'header\("|"x-[a-z0-9-]+" =|(override|append|remove) "', text), text[:200]
+    consts = [f'pub const {n.upper().replace("-", "_")}: concord::reqwest::header::HeaderName = '
+              f'concord::reqwest::header::HeaderName::from_static("{n}");' for n in names]
+    head, rest = text.split("\n", 1)
+    return "\n".join([head, *consts, rest])
 
 
 def new_scale(path):
@@ -396,7 +420,7 @@ publish = false
     else:
         write(os.path.join(args.out, "Cargo.toml"),
               manifest(args.name or f"scale_{args.shape}", [concord_dep(concord)], True))
-    write(os.path.join(args.out, "src", "lib.rs"), declaration(args))
+    write(os.path.join(args.out, "src", "lib.rs"), keyed(declaration(args)))
 
 
 def cmd_suite(args):
@@ -408,7 +432,7 @@ def cmd_suite(args):
         members[name] = {"kind": "api", **params}
         write(os.path.join(out, name, "Cargo.toml"),
               manifest(name, ["concord = { workspace = true }"], False))
-        write(os.path.join(out, name, "src", "lib.rs"), text)
+        write(os.path.join(out, name, "src", "lib.rs"), keyed(text))
 
     for n in (50, 200, 1000):
         api(f"scale{n}", shape_rest(n), {"shape": "rest", "endpoints": n})
@@ -463,6 +487,7 @@ def cmd_suite(args):
         "generator": "benches/scale/gen.py",
         "generator_version": GENERATOR_VERSION,
         "syntax": SYNTAX,
+        "keys": KEYS,
         "concord": concord,
         "lock_seed": seed,
         "cargo_lock_sha256": sha256(lock) if os.path.exists(lock) else None,
@@ -486,6 +511,7 @@ def main(argv):
     s.add_argument("out")
     s.add_argument("--concord", default=DEFAULT_CONCORD)
     s.add_argument("--syntax", choices=SYNTAXES, default=DEFAULT_SYNTAX)
+    s.add_argument("--keys", choices=["literal", "native"], default="literal")
     s.add_argument("--no-lock", action="store_true", help="do not seed and settle Cargo.lock")
     a = sub.add_parser("api", help="one standalone API crate")
     a.add_argument("out")
@@ -493,6 +519,7 @@ def main(argv):
                                           "fanout", "typed"])
     a.add_argument("--concord", default=DEFAULT_CONCORD)
     a.add_argument("--syntax", choices=SYNTAXES, default=DEFAULT_SYNTAX)
+    a.add_argument("--keys", choices=["literal", "native"], default="literal")
     a.add_argument("--name")
     a.add_argument("--endpoints", type=int, default=10)
     a.add_argument("--depth", type=int, default=8)
@@ -503,8 +530,9 @@ def main(argv):
     a.add_argument("--values", type=int, default=16)
     a.add_argument("--placements", type=int, default=1000)
     args = p.parse_args(argv)
-    global SYNTAX
+    global SYNTAX, KEYS
     SYNTAX = args.syntax if not legacy else DEFAULT_SYNTAX
+    KEYS = getattr(args, "keys", "literal")
     if args.cmd == "suite":
         cmd_suite(args)
     else:
