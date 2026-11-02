@@ -19,10 +19,11 @@ cargo package --offline --locked --no-verify -p concord-macros --allow-dirty >"$
 cargo package --offline --locked --no-verify -p concord --allow-dirty \
   --config 'patch.crates-io.concord-macros.path="crates/concord-macros"' >>"$out/package.log" 2>&1 \
   || { cat "$out/package.log"; exit 1; }
-version=$(cargo metadata --format-version 1 --no-deps --locked \
-  | python3 -I -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"]=="concord"))')
+# Cargo's effective target directory (it honours CARGO_TARGET_DIR and configuration).
+read -r version target_dir < <(cargo metadata --format-version 1 --no-deps --locked \
+  | python3 -I -c 'import json,sys; m=json.load(sys.stdin); print(next(p["version"] for p in m["packages"] if p["name"]=="concord"), m["target_directory"])')
 for crate in concord-macros concord; do
-  tar -xzf "target/package/$crate-$version.crate" -C "$out"
+  tar -xzf "$target_dir/package/$crate-$version.crate" -C "$out"
 done
 echo "packaged files:"
 for crate in concord-macros concord; do
