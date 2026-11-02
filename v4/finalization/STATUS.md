@@ -19,8 +19,9 @@ campaign. Work directory (snapshots, proposals, reviews, raw measurements):
 | Representation statements (F01–F05) | implemented, tested | `33b1f0f`, migration merge `70f24a8` |
 | Riot example (F11) | implemented, tested (16 offline tests) | `1c8aadb` |
 | Docs, migration guide, script withdrawal (F10) | done | `c11c476` and later |
-| Full verification of the frozen candidate | pending | — |
-| Performance (Criterion, compile, allocations) | pending | `PERF.md` |
+| Full verification of the frozen candidate | `verify.sh --msrv --nightly --package` on `d884461` (clean): 21/22 PASS; `records` fails only on `FINAL.md` (written last) | work dir `evidence/verify_d884461.txt` |
+| Performance (Criterion, compile, allocations) | done: baseline, candidate ×2, compile A/B/C; re-measured after the F09 amendments (`d3e26e4`, `d884461`) | `PERF.md` |
 | Fresh-use trials (docs first, ten tasks, author + caller) | Terra XHigh and Sonnet, both completed on `389392f`; every actual problem fixed or documented in `23c21d6`, `4e01aa4`, `663dbe9`, `3b5c5ed` | `trials/terra-xhigh.md`, `trials/sonnet.md`, `MODEL_RUNS.md` |
-| Independent final reviews | pending | — |
+| Review-pack reconciliation | every D-* item dispositioned; bounded changes `0e56a65`, `e9ce41f`, `d884461` | `RECONCILIATION.md`, `FINDINGS.md` |
+| Independent final reviews | in progress on `d884461` (code) | `MODEL_RUNS.md` |
 | Windows | NOT_RUN for this campaign (no push authorized) | — |

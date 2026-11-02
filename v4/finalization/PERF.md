@@ -136,6 +136,44 @@ representation statements and literal header names. **native** is `3b5c5ed` with
   run-time header plan, key accessor functions and per-value conditions are generated per
   endpoint. Literal names, the default in every guide, cost nothing.
 
+## 4. The frozen candidate (`d884461`)
+
+The F09 amendments change only generated code for chains with a native key; they were measured
+twice, in the same way as §1–§3 (`/home/canarit/projects/concord_v4_finish_work/tools/perf_final.sh`,
+idle machine, same rows, RUNS=3, same CRITERION_HOME so the earlier baselines compare):
+`d3e26e4` (pruned conditions, 20:03–20:35Z, raw data final-20261102T200329Z) and `d884461` (also
+one cached function per value, `cfg`-gated; 20:41–21:14Z, raw data final-20261102T204126Z, both
+under `/home/canarit/projects/concord_v4_finish_work/evidence/perf/`). The code since `d884461`
+is unchanged (records only).
+
+**Allocations.** Identical to `625ac49` on all 84 shared IDs and to `389392f` on all 92 (both runs).
+
+**Runtime** (`keys/` and `headers/` only, the paths the amendments touch; `d884461` against
+`3b5c5ed` run 2): every `prepare` within −3 % to +2 %, for example `keys/six_inherited/concord_native`
+541.9 → 551.8 ns, `keys/one_replaced/concord_native` 576.1 → 582.6 ns,
+`keys/riot_match_ids/concord` 1,062 → 1,072 ns, `headers/16/concord_native` 733.4 → 710.8 ns. The
+native-name premium of §2 (about 150–190 ns over literal names on these chains) is unchanged.
+
+**Compile time**, native/base (stmt/base stays 0.99–1.06 on every row):
+
+| row | `3b5c5ed` (§3) | `d3e26e4` | `d884461` |
+|---|---|---|---|
+| check-scale_deep | 3.24 | 1.51 | 1.47 |
+| rel-scale_deep | 11.07 | 1.53 | 1.50 |
+| check-scale_shared | 4.03 | 4.11 | 3.76 |
+| rel-scale_shared | 3.41 | 2.64 | 1.96 |
+| check-scale1000 | 1.14 | 1.17 | 1.17 |
+| rel-scale1000 | 1.22 | 1.21 | 1.21 |
+| rel-editapi-use100 | 1.21 | 1.21 | 1.20 |
+| rel-editconsumer-use100 | 1.23 | 1.22 | 1.15 |
+
+`libscale_deep.rlib` (native): 100.4 MB → 11.1 MB → 8.4 MB; `libscale_shared.rlib`: 116.4 →
+78.3 → 35.2 MB (literal names: 7.3 and 30.4 MB). What remains is linear: an endpoint whose chain
+has a native key gets its own header plan, one binding, one entry and one guarded send per
+contribution on the chain (`scale_shared`: 34 native contributions on each of 200 endpoints;
+type-checking it takes 3.8× the literal-name time). Literal names, the default in every guide,
+cost the same as the baseline.
+
 ## Not measured
 
 HTTP/2 and TLS; Windows/macOS; rust-analyzer; allocation counts in round trips; profiles (`perf`
