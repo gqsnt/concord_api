@@ -1,0 +1,24 @@
+{
+  "results": [
+    {
+      "command": "cargo +1.97.1 build --release -p scale_shared --manifest-path /home/canarit/projects/concord_v4_refine_work/perf/suite-e4-noquerytry/Cargo.toml --offline --locked -q",
+      "mean": 2.8142975569999997,
+      "stddev": 0.036891243099753446,
+      "median": 2.825304884,
+      "user": 2.6324199999999998,
+      "system": 0.18094533333333332,
+      "min": 2.773155531,
+      "max": 2.844432256,
+      "times": [
+        2.825304884,
+        2.773155531,
+        2.844432256
+      ],
+      "exit_codes": [
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

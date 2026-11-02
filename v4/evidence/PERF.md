@@ -1,5 +1,10 @@
 # Performance and size measurements
 
+> **Historical (V4 alpha, `8f7adc2` and earlier).** Current, reproducible measurements of the
+> refined V4 — including the `#[inline]` placement comparison with 5/100/1,000-endpoint consumers
+> and a two-crate fanout — are in [`../refinement/PERF.md`](../refinement/PERF.md). Corrections
+> made during the refinement are marked *Correction (refinement)* below.
+
 Machine: Intel i5-13600K (20 threads), 30 GiB RAM, Linux 7.0.0-42 (Ubuntu), rustc 1.97.1, no
 `sccache`/`RUSTC_WRAPPER`. Background load ≈ 1.7–2.1 (1-minute load average) during runs. Source:
 branch `concord-v4` at `bfb4870` plus the punycode-label fix (no runtime change). Single machine,
@@ -93,8 +98,10 @@ same session, `target/measure/` (`use1000` is a binary calling 5 of the 1,000 en
 | Build S2 product request (runtime, median of 9) | 765 ns | 760 ns |
 
 The cost moves to the crates that call endpoints, in proportion to the endpoints they use
-(+79 ms for 5 endpoints here). The remaining 5.9 s for the API crate is type checking and MIR
-generation for 1,000 endpoints.
+(+79 ms for 5 endpoints here). *Correction (refinement):* an earlier sentence attributed the
+remaining 5.9 s to type checking and MIR generation; a wall-time measurement cannot separate
+compiler phases, so that attribution is withdrawn. Phase timings for the refined code are in
+`../refinement/PERF.md` §2.
 
 ### Sensitivity propagation (Codex C4-R-011)
 
@@ -155,5 +162,7 @@ static buffer.
 
 ## Not measured
 
-Allocation counts, HTTP/2, TLS handshake cost, Windows/macOS, rust-analyzer responsiveness, the
-effect of `#[inline]` on generated methods.
+Allocation counts, HTTP/2, TLS handshake cost, Windows/macOS, rust-analyzer responsiveness.
+*Correction (refinement):* this list also named "the effect of `#[inline]` on generated
+methods", which the section above had measured; broader inline measurements are in
+`../refinement/PERF.md` §1.

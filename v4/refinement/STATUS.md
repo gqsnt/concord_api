@@ -27,13 +27,14 @@ historical.
 | Gate | Status | Evidence |
 |---|---|---|
 | M0 Baseline | PASS | `scripts/verify.sh --msrv` at 8f7adc2, clean tree, all 9 steps PASS (warm cache): `evidence/m0_baseline_verify_8f7adc2.txt` |
-| M1 Boundary fixes | PASS (pending independent review) | L1 `650a174`, L2+L5 `4f3ff85`, header-map capacity `ab0278c` |
-| M2 Design decisions | PASS (pending independent review) | `DECISIONS.md`; four tracks + fresh-use control + Codex design passes 1–2 |
-| M3 Implementation | IN PROGRESS | D08 `c2871f9`, D01 `2720d67`, D06/D13 `f29e9ba`, D04/D14 `0864d38`, Display errors `b4ce491`, into_response `433abf9`, C16 Debug, D16 `8628622`, D11 test `f0e203b` |
-| M4 Boundaries/adversarial | IN PROGRESS | two delegated branches: `refine-m4-tests` (oracle, surfaces, mutations), `refine-m4-native` (native recipes) |
-| M5 Performance | NOT_RUN | needs an exclusive slot after M4 builds |
-| M6 Docs/fresh use | NOT_RUN | |
-| M7 Independent acceptance | NOT_RUN | |
+| M1 Boundary fixes | PASS | L1 `650a174`, L2+L5 `4f3ff85`, header-map capacity `ab0278c`, failing `Display` `b4ce491` |
+| M2 Design decisions | PASS | `DECISIONS.md`; four tracks, fresh-use control, Codex design passes 1–2 |
+| M3 Implementation | PASS | D08 `c2871f9`, D01 `2720d67`, D06/D13 `f29e9ba`, D04/D14 `0864d38`, `433abf9`, D16 `8628622`, D11 `f0e203b`, docs/diagnostics `d1844be` |
+| M4 Boundaries/adversarial | PASS | `refine-m4-tests` merged `f2968e8` (oracles, surfaces, 9/9 mutations killed), `refine-m4-native` merged `5ee0d96` (29 recipe tests) |
+| M5 Performance | IN PROGRESS | paired runs `concord_v4_refine_work/perf/ab-*`, `attr-*`, `final-*`; regression attributed and reduced `79a0faf`; final candidate run pending |
+| M6 Docs/fresh use | IN PROGRESS | `refine-m6-docs` merged `e43c9ed`; fresh-use trial of the refined surface pending |
+| Milestone review | DONE, triaged | Codex `6604a53`: F-01..F-04 fixed (`e05d2f1`, docs) — `REVIEW_TRIAGE.md` |
+| M7 Independent acceptance | NOT_RUN | final frozen candidate review pending |
 | Platforms | Linux only; Windows BLOCKED for new commits (no Windows host/VM/wine; CI needs a push, not authorized) | |
 
 ## Leads (handoff `guides/02_BASELINE.md`)
@@ -50,11 +51,8 @@ historical.
 
 ## Active work
 
-- Done and archived: Codex design passes 1–2 (`reviews/codex/`), four specialist tracks and the
-  fresh-use control trial (`evidence/tracks/`). Work dirs under
-  `/home/canarit/projects/concord_v4_refine_work/` (snapshots, exp/, reports/).
-- Running: worktrees `concord_v4_refine_work/wt/m4-tests` (branch `refine-m4-tests`) and
-  `wt/m4-native` (branch `refine-m4-native`), both from `433abf9`; to be reviewed and merged.
+- M5 final paired compile-time run (alpha vs `d1844be`), then the runtime benchmark.
+- Fresh-use candidate trial prepared at `concord_v4_refine_work/fresh/candidate` (lib = `d1844be`).
 
 ## Process events
 
@@ -66,10 +64,9 @@ historical.
 
 ## Next action
 
-Merge the M4 branches after review; M5 timing slot (exclusive) with the compiler track's
-generator adapted to the new syntax; M6 docs and a fresh-use trial of the refined surface; frozen
-snapshot for the Codex milestone/final review (execution mode, loopback); fix, re-review, final
-verification.
+Finish M5 (record results); fresh-use trial of the refined surface and fixes; frozen candidate for
+the Codex final acceptance review (execution mode, loopback, `CARGO_HOME` outside the snapshot);
+triage, fix, re-review; final `verify.sh --msrv`; FINAL.md.
 
 ## Resume instructions
 

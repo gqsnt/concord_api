@@ -1,5 +1,8 @@
 # V4 status
 
+> **Historical: the V4 alpha (`8f7adc2`).** The refinement campaign's live status, decisions,
+> reviews and acceptance record are in [`refinement/`](refinement/) (`STATUS.md`, `FINAL.md`).
+
 Branch `concord-v4` (worktree `/home/canarit/projects/concord_api_v4`), based on V3 `a492d36`.
 V3 preserved at tag `concord-v3-preserved`, `origin/main`, `origin/concord-v3` and local
 `concord-v3`. Nothing pushed or published.

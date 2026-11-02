@@ -1,0 +1,7 @@
+ 02:32:08 up  3:24,  1 user,  load average: 2.48, 2.55, 2.74
+%CPU COMMAND
+38.8 python3
+18.4 gnome-shell
+10.6 firefox
+ 9.3 localsearch-3
+ 8.4 RDD Process
