@@ -19,6 +19,8 @@ concord::api! {
         header("accept-language") lang?: String = "en",
     ) {
         base "https://catalog.example.com/v1";
+        request json;
+        response json;
 
         /// One shop.
         scope shop(shop: String) {
@@ -29,16 +31,16 @@ concord::api! {
                 query category?: String,
                 query limit: u32 = 20,
                 language?: Option<String>,
-            ) -> Vec<Product> via Json {
+            ) -> Vec<Product> {
                 path "products";
                 headers { override "accept-language" = each language else inherit; }
             }
 
             /// One product.
-            GET product(id: u64) -> Product via Json { path "products/{id}"; }
+            GET product(id: u64) -> Product { path "products/{id}"; }
 
             /// Renames a product.
-            PUT rename(id: u64, body change: Rename via Json) -> Product via Json {
+            PUT rename(id: u64, body change: Rename) -> Product {
                 path "products/{id}";
             }
 
@@ -239,7 +241,9 @@ local stand-in server.)
   the native request, whose own `Debug` prints the full URL (sensitive query values and path
   segments included; flagged header values show as `Sensitive`).
 - `send()` is `prepare()?.send()`: one `reqwest::Client::execute`, a 2xx check, then decoding with
-  the declared representation. No retry, no extra request.
+  the endpoint's format (the navigation method's documentation names it, with the body's
+  `Content-Type`). An endpoint without typed output accepts any 2xx and drains the body. No
+  retry, no extra request.
 - `send_raw()` on a prepared request returns the native response, status unchecked, body unread.
 
 Excerpt of [`examples/quickstart/tests/caller_guide.rs`](../examples/quickstart/tests/caller_guide.rs):
@@ -281,7 +285,7 @@ Every call returns `Result<_, concord::Error>`.
 | `ErrorKind::Build` | the request could not be built from the values; nothing was sent | — |
 | `ErrorKind::Transport` | reqwest failed to send or to read the response (connect, timeout, ...) | `transport()` |
 | `ErrorKind::Status` | the server answered with a non-2xx status | `status()`, `into_response()` |
-| `ErrorKind::Decode` | a 2xx body could not be decoded with the declared representation | `body_source()` |
+| `ErrorKind::Decode` | a 2xx body could not be decoded with the endpoint's format | `body_source()` |
 
 `ErrorKind` is `#[non_exhaustive]`: keep a `_` arm when matching it. `error.endpoint()` names the
 endpoint (`Catalog.shop.product`). `Display` is `METHOD Client.scope.endpoint: <message>` and only
@@ -304,7 +308,7 @@ async fn find_product(shop: &CatalogShop, id: u64) -> Result<Option<Product>, co
 
 A status error keeps the **unread** response. `into_response()` returns it, and returns any other
 error unchanged as `Err`, so `?` propagates those. Decode the API's error document with any
-representation's `Decode` impl. Excerpt of
+format's `Decode` impl. Excerpt of
 [`examples/quickstart/tests/caller_guide.rs`](../examples/quickstart/tests/caller_guide.rs):
 
 ```rust

@@ -18,7 +18,7 @@ A declaration is one **client**, any number of nested **scopes**, and **endpoint
   output.
 
 ```rust
-use concord::{Json, reqwest};
+use concord::reqwest;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -32,15 +32,16 @@ concord::api! {
     pub client Forge(#[sensitive] header("authorization") token: String) {
         base "https://api.forge.example";
         headers { "accept" = "application/json"; }
+        response json;
 
         /// One repository.
         scope repo(owner: String, name: String) {
             path "repos/{owner}/{name}";
 
             /// Lists issues.
-            GET issues(query state?: String) -> Vec<Issue> via Json { path "issues"; }
+            GET issues(query state?: String) -> Vec<Issue> { path "issues"; }
             /// One issue.
-            GET issue(number: u64) -> Issue via Json { path "issues/{number}"; }
+            GET issue(number: u64) -> Issue { path "issues/{number}"; }
         }
     }
 }
@@ -64,7 +65,9 @@ Rules of the structure:
 
 - One `api!` declares exactly one client, with exactly one `base`.
 - Each owner (client, scope, endpoint) has at most one `path`, `subdomain`, `query { }` and
-  `headers { }` statement, and they come before its child declarations.
+  `headers { }` statement, and they come before its child declarations. Clients and scopes may
+  also declare the formats of the bodies and outputs below them, `request json;` and
+  `response json;` ([section 5](#5-bodies-and-responses-formats)).
 - Scopes may omit their parameter list (`scope admin { .. }`); endpoints always have one, possibly
   empty (`GET ping();` or `GET ping() { path "ping"; }`).
 - Methods: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`.
@@ -80,8 +83,8 @@ never by its Rust type:
 | `x: T = expr` | `expr` | `set_x(v)` |
 | `x?: T` | absent | `set_x(v)` (present), `maybe_x(o: Option<T>)` (exactly `o`) |
 | `x?: T = expr` | present, `expr` | `set_x(v)`, `maybe_x(o)` |
-| `body b: T via R` | required | positional argument; then `set_b(v)` |
-| `body b?: T via R` | absent (no body) | `set_b(v)`, `maybe_b(o)` |
+| `body b: T`, `json b: T` (any format) | required | positional argument; then `set_b(v)` |
+| `body b?: T`, `json b?: T` | absent (no body) | `set_b(v)`, `maybe_b(o)` |
 
 ```rust
 use concord::reqwest;
@@ -483,28 +486,284 @@ fn main() -> Result<(), concord::Error> {
 }
 ```
 
-## 5. Bodies and responses: representations
+## 5. Bodies and responses: formats
 
-A body and a typed response name the payload type and its **representation**, separately:
-`body item: NewItem via Json`, `-> Item via Json`. There is no default representation and no
-inference from the type.
+Every body and every typed output has a **format**: how the payload becomes the request body, or
+how a 2xx response body becomes the output. Write it where the body or the output is declared, or
+once on the client or a scope as a **default**. A mostly-JSON API states JSON once and writes its
+exceptions on the endpoints they concern:
 
-| Representation | Body (`Encode<T>`) | Response (`Decode<T>`) |
+```rust
+use concord::bytes::Bytes;
+use concord::reqwest;
+use serde::{Deserialize, Serialize};
+
+#[derive(Deserialize)]
+pub struct Product {
+    pub id: u64,
+}
+
+#[derive(Serialize)]
+pub struct NewProduct {
+    pub name: String,
+}
+
+#[derive(Serialize)]
+pub struct ProductPatch {
+    pub name: Option<String>,
+}
+
+concord::api! {
+    pub client Shop {
+        base "https://shop.example.com/v1";
+        request json;  // a body declared `body x: T` is JSON
+        response json; // so is a typed output `-> T`
+
+        GET product(id: u64) -> Product { path "products/{id}"; }
+        POST create(body product: NewProduct) -> Product { path "products"; }
+        PATCH patch(id: u64, json("application/merge-patch+json") patch: ProductPatch) -> Product {
+            path "products/{id}";
+        }
+        GET description(id: u64) -> text String { path "products/{id}/description"; }
+        PUT image(id: u64, bytes("image/png") png: Bytes) { path "products/{id}/image"; }
+        DELETE delete(id: u64) { path "products/{id}"; }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let shop = Shop::new(reqwest::Client::new());
+
+    let create = shop.create(NewProduct { name: "pen".into() }).prepare()?;
+    assert_eq!(create.request().headers()["content-type"], "application/json");
+    let body = create.request().body().and_then(|b| b.as_bytes());
+    assert_eq!(body, Some(&br#"{"name":"pen"}"#[..]));
+
+    let patch = shop.patch(7, ProductPatch { name: None }).prepare()?;
+    assert_eq!(patch.request().headers()["content-type"], "application/merge-patch+json");
+
+    let image = shop.image(7, Bytes::from_static(b"\x89PNG")).prepare()?;
+    assert_eq!(image.request().headers()["content-type"], "image/png");
+
+    let _raw_text: concord::Prepared<String> = shop.description(7).prepare()?;
+    let delete = shop.delete(7).prepare()?; // no body: no `Content-Type`
+    assert!(delete.request().headers().get("content-type").is_none());
+    Ok(())
+}
+```
+
+The generated signatures name the payloads only (`create(product: NewProduct)`,
+`send() -> Result<Product, Error>`); the format is in each endpoint's rustdoc, with the media type
+and where an inherited format comes from.
+
+### 5.1 The formats
+
+| Format | Body (`Encode<T>`) | Output (`Decode<T>`) |
 |---|---|---|
-| `Json` (feature `json`) | any `T: Serialize`; `Content-Type: application/json` | any `T: DeserializeOwned`; the response `Content-Type` is ignored |
-| `Text` | `String`; `text/plain; charset=utf-8` | `String`; invalid UTF-8 is a decode error |
-| `Binary` | `Bytes` or `Vec<u8>`; `application/octet-stream` | `Bytes` or `Vec<u8>`, unchanged |
-| no `->` | — | output `()`: any 2xx succeeds; the body is drained without buffering |
+| `json` (feature `json`, on by default) | any `T: Serialize`; `application/json` | any `T: DeserializeOwned`; the response `Content-Type` is ignored |
+| `text` | `String`; `text/plain; charset=utf-8` | `String`; invalid UTF-8 is a decode error |
+| `bytes` | `Bytes` or `Vec<u8>`; `application/octet-stream` | `Bytes` or `Vec<u8>`, unchanged |
+| `form` (feature `form`) | any `T: Serialize` with flat fields (a struct, a map, pairs); `application/x-www-form-urlencoded` | any `T: DeserializeOwned` |
+| a type path: `Csv`, `codecs::Csv` | your `Encode<T>` ([5.7](#57-custom-formats)) | your `Decode<T>` |
 
-- A body's `Content-Type` is added only if the declared headers do not set one. Concord never adds
-  `Accept`.
+The four words need no import and work under a renamed dependency; they name the types
+`concord::Json`, `Text`, `Binary` and `Form`. In format position a bare lowercase identifier must
+be one of them, so a lowercase format type is written as a path (`self::csv`). Everywhere else they
+are ordinary names: `json: String` is a value named `json`, `json query: Q` a JSON body named
+`query`.
+
+### 5.2 Defaults and exceptions
+
+- `request FORMAT;` and `response FORMAT;` are statements of the client or a scope (at most once
+  each, before its children). They give a format to every `body x: T` and every bare `-> T` below
+  them. The two directions are independent, and the nearest owner on an endpoint's chain wins: a
+  scope can declare `response text;` under a client's `response json;`.
+- An endpoint has no `request`/`response` statement: it writes its exception in place, on the body
+  (`text note: String`, `form login: Login`, `Csv rows: Vec<Row>`) or after `->`
+  (`-> text String`, `-> bytes Bytes`). A format written in place replaces the default's format
+  **and** its media type for that body or output.
+- `body x: T` or a bare `-> T` with no default on the chain is a compile error at the payload that
+  names both remedies.
+- A default cannot be cleared: under a client default, a scope cannot demand explicit formats. For
+  an API whose parts differ, put the defaults on the uniform scopes rather than the client, or
+  write every format in place (without defaults the language is purely local).
+
+Under a JSON default, `-> String` decodes a JSON string (`"2.4.1"`, not raw `2.4.1`) and
+`body note: String` sends a JSON string. Raw text is the exception `-> text String`,
+`text note: String`. Forgetting such an exception for a payload both formats accept is not a
+compile error but a decode error at runtime (or a rejection by the server): the rustdoc of every
+endpoint names its format and where it comes from.
+
+### 5.3 Media types and `Content-Type`
+
+A body's `Content-Type` is its media type, sent exactly when the body is sent:
+
+- the format's own (`Encode::CONTENT_TYPE`: `application/json`, ...), or
+- a declared one: `json("application/merge-patch+json") patch: Patch` (in place),
+  `body("application/problem+json") p: Problem` (the inherited format, this media type), or
+  `request json("application/vnd.api+json");` (a default's, reached through `body`).
+
+Declared media types are checked by the macro (`type/subtype`, optional `; name=value`
+parameters, visible ASCII) and become compile-time constants; a format's `CONTENT_TYPE` is checked
+at compile time too, and not used at all where a declared media type replaces it.
+
+A `content-type` header contribution that reaches the endpoint (placed or set in a `headers`
+block, conditional or not) is for values chosen at runtime. It replaces a format's own media type
+and is sent whether or not there is a body:
+
+| Body sent | Header sent | `Content-Type` |
+|---|---|---|
+| no | no | none |
+| no | yes | the header |
+| yes | no | the format's media type |
+| yes | yes | the header (once) |
+
+An empty header value counts as sent; an `each` over an empty collection sends nothing. A
+declared media type and a `content-type` header reaching the same endpoint are a compile error
+("keep one"); `remove "content-type";` in the endpoint or an enclosing scope resolves it. The
+`Content-Type` Concord inserts carries the `content-type` key's sensitivity (`#[sensitive]`, sticky
+composition). Concord never sends `Accept` and never checks the response `Content-Type`, so an
+output takes no media type; declare an `accept` header if the API needs one.
+
+```rust
+use concord::reqwest;
+use concord::reqwest::header::HeaderValue;
+
+concord::api! {
+    pub client Files(header("content-type") content_type?: HeaderValue) {
+        base "https://files.example.com";
+
+        PUT upload(name: String, bytes data: Vec<u8>) { path "files/{name}"; }
+        scope notes {
+            headers { remove "content-type"; }
+            PUT note(name: String, text("text/markdown") note: String) { path "notes/{name}"; }
+        }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let files = Files::new(reqwest::Client::new());
+    let default = files.upload("a.bin", vec![0, 1]).prepare()?;
+    assert_eq!(default.request().headers()["content-type"], "application/octet-stream");
+
+    let typed = files.clone().set_content_type(HeaderValue::from_static("image/webp"));
+    let chosen = typed.upload("a.webp", vec![0, 1]).prepare()?;
+    assert_eq!(chosen.request().headers()["content-type"], "image/webp");
+
+    let note = typed.notes().note("a", "# A").prepare()?; // the header is removed here
+    assert_eq!(note.request().headers()["content-type"], "text/markdown");
+    Ok(())
+}
+```
+
+### 5.4 Absent body, `null`, empty body
+
+```rust
+use concord::reqwest;
+use serde::Serialize;
+
+#[derive(Serialize)]
+pub struct Discount {
+    pub percent: u8,
+}
+
+concord::api! {
+    pub client Store {
+        base "https://store.example.com";
+        request json;
+
+        PUT discount(body discount: Option<Discount>) { path "discount"; }
+        POST search(body filter?: Discount) { path "search"; }
+        PUT note(text note: String) { path "note"; }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let store = Store::new(reqwest::Client::new());
+    let body = |p: &concord::Prepared<()>| p.request().body().and_then(|b| b.as_bytes()).map(<[u8]>::to_vec);
+
+    // A required `Option` body: `None` is JSON `null`, with its `Content-Type`.
+    let null = store.discount(None).prepare()?;
+    assert_eq!(body(&null), Some(b"null".to_vec()));
+    assert_eq!(null.request().headers()["content-type"], "application/json");
+
+    // An optional body that is absent: no body and no `Content-Type`.
+    let absent = store.search().maybe_filter(None).prepare()?;
+    assert!(absent.request().body().is_none());
+    assert!(absent.request().headers().get("content-type").is_none());
+
+    // An empty text body is a body: it has its `Content-Type`.
+    let empty = store.note("").prepare()?;
+    assert_eq!(body(&empty), Some(Vec::new()));
+    assert_eq!(empty.request().headers()["content-type"], "text/plain; charset=utf-8");
+    Ok(())
+}
+```
+
+A body cannot have an initializer (`body b: T = ..` is a compile error): its presence is decided by
+`?` only.
+
+### 5.5 No output versus `-> ()`
+
+- **No `->`**: the endpoint has no typed output. Any 2xx succeeds, the response body is drained
+  without being buffered, and the output is `()`. A `response` default does not apply.
+- **`-> ()`** is a typed output like any other, decoded with its format: under `response json;` the
+  body must be JSON `null`, so an empty 204 is a decode error. `-> Unit` for `type Unit = ()`
+  behaves the same. An endpoint that returns nothing omits `->`.
 - Any 2xx status is success; anything else is an error of kind `Status` with the unread response
-  (see the [caller guide](CALLER_GUIDE.md#6-errors)). `-> Option<T> via Json` gives no meaning to
-  404: `null` decodes to `None`, a 404 is still an error.
+  (see the [caller guide](CALLER_GUIDE.md#6-errors)). `-> Option<T>` gives no meaning to 404:
+  `null` decodes to `None`, a 404 is still an error.
 
-For another format, implement `Encode<T>` and/or `Decode<T>` on your own marker type. Descriptions
-in `BodyError::new` must not contain body content: they are shown by Concord's `Display`. Attach
-the underlying error with `with_source`; it is reachable only through `Error::body_source`.
+```rust
+use concord::reqwest;
+
+concord::api! {
+    pub client Jobs {
+        base "https://jobs.example.com";
+        response json;
+
+        DELETE cancel(id: u64) { path "jobs/{id}"; }     // any 2xx; the body is drained
+        POST ping() -> () { path "ping"; }               // the body must be `null`
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let jobs = Jobs::new(reqwest::Client::new());
+    let _: concord::Prepared<()> = jobs.cancel(1).prepare()?;
+    let _: concord::Prepared<()> = jobs.ping().prepare()?;
+    Ok(())
+}
+```
+
+### 5.6 Forms
+
+`form` is built in behind the `form` feature (`concord = { .., features = ["form"] }`), like
+reqwest's own `form` feature: `form login: Login` encodes any `Serialize` value with flat fields,
+`Vec<(String, String)>` keeps pair order and repeated names, and `-> form T` decodes a form
+response. An OAuth token endpoint takes a form and returns JSON. Excerpt of
+[`crates/concord/tests/forms.rs`](../crates/concord/tests/forms.rs):
+
+```rust,ignore
+    concord::api! {
+        /// A token endpoint.
+        pub client OAuth {
+            base "http://oauth.invalid";
+            request form;
+            response json;
+            POST token(body credentials: Login) -> Token { path "token"; }
+        }
+    }
+```
+
+A value the form encoding cannot express (a nested structure, a sequence field) is a `Build`
+error before anything is sent.
+
+### 5.7 Custom formats
+
+Any other format is a type of your own implementing `Encode<T>` and/or `Decode<T>`, named by its
+path in place (`Lines words: Vec<String>`, `-> Lines Vec<String>`) or in a default
+(`request Lines;`). There is no registry. Descriptions in `BodyError::new` must not contain body
+content: they are shown by Concord's `Display`. Attach the underlying error with `with_source`; it
+is reachable only through `Error::body_source`.
 
 ```rust
 use concord::bytes::Bytes;
@@ -532,7 +791,7 @@ impl Decode<Vec<String>> for Lines {
 concord::api! {
     pub client Words {
         base "https://words.example.com";
-        POST normalize(body words: Vec<String> via Lines) -> Vec<String> via Lines {
+        POST normalize(Lines words: Vec<String>) -> Lines Vec<String> {
             path "normalize";
         }
     }
@@ -551,8 +810,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-`examples/native` has NDJSON and form-encoded representations and a hand-built multipart body
-([recipes](RECIPES.md)).
+A format whose media type varies per body (a multipart boundary), a streamed body or a streamed
+response is not a format: use the native exits (`into_parts`, `send_raw`, reqwest's multipart).
+`examples/native` has NDJSON and pair-encoded form formats, and `examples/multipart` a multipart
+upload ([recipes](RECIPES.md)).
 
 ## 6. Wire formatting: `Display` and newtypes
 

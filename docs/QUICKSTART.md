@@ -24,8 +24,8 @@ serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
-- `concord`'s default features are `json` (the `Json` representation) and `reqwest-defaults`
-  (reqwest's TLS, HTTP/2 and proxy support). Concord re-exports reqwest as `concord::reqwest`;
+- `concord`'s default features are `json` (the `json` format) and `reqwest-defaults`
+  (reqwest's TLS, HTTP/2 and proxy support); `form` (URL-encoded form bodies) is opt-in. Concord re-exports reqwest as `concord::reqwest`;
   you only need your own `reqwest` dependency to choose its features.
 - `serde` derives your payload types.
 - `tokio` runs the async calls (reqwest needs a Tokio runtime).
@@ -71,14 +71,16 @@ concord::api! {
     pub client Tasks(#[sensitive] token: String) {
         base "https://tasks.example.com/api";
         headers { "authorization" = "Bearer {token}"; }
+        request json;
+        response json;
 
         scope project(project: String) {
             path "projects/{project}";
 
-            GET tasks(query done?: bool, query limit: u32 = 20) -> Vec<Task> via Json {
+            GET tasks(query done?: bool, query limit: u32 = 20) -> Vec<Task> {
                 path "tasks";
             }
-            POST create(body task: NewTask via Json) -> Task via Json {
+            POST create(body task: NewTask) -> Task {
                 path "tasks";
             }
         }
@@ -94,13 +96,18 @@ Read it top-down:
 - `base` — the URL every path is appended to; `with_base_url` replaces it at runtime.
 - `headers { "authorization" = "Bearer {token}"; }` — sent with every request of this client.
   `{token}` is a template hole that reads the client's value.
+- `request json; response json;` — the **formats** of the endpoints below: a body declared
+  `body x: T` is sent as JSON, a typed output `-> T` is decoded from JSON. An endpoint writes an
+  exception where it applies (`-> text String`, `bytes data: Vec<u8>`); one without `->` decodes
+  nothing and accepts any 2xx.
 - `scope project(project: String)` — a navigation level, `api.project("demo")`, that adds the path
   `projects/demo`. The value is formatted with `Display` and percent-encoded as one segment.
-- `GET tasks(query done?: bool, query limit: u32 = 20) -> Vec<Task> via Json` — an endpoint with an
+- `GET tasks(query done?: bool, query limit: u32 = 20) -> Vec<Task>` — an endpoint with an
   **optional** query parameter (`?`: absent unless set) and an **initialized** one (`= 20`: present
-  unless changed). The response is decoded from JSON as `Vec<Task>`.
-- `POST create(body task: NewTask via Json) -> Task via Json` — a JSON request body supplied as an
-  argument, and a JSON response.
+  unless changed). The response is decoded from JSON (the client's `response json;`) as
+  `Vec<Task>`.
+- `POST create(body task: NewTask) -> Task` — a JSON request body supplied as an argument (the
+  client's `request json;`, sent with `Content-Type: application/json`), and a JSON response.
 
 The macro generates ordinary types: `Tasks`, `TasksConfig`, `TasksProject` (the scope) and one
 request type per endpoint, `TasksProjectTasks` and `TasksProjectCreate`. Their main signatures, as
@@ -168,7 +175,7 @@ pub async fn run(base_url: &str, token: String) -> Result<(), Box<dyn std::error
 - **Errors.** Every call returns `Result<_, concord::Error>`. `error.kind()` tells the stage
   (`Build`, `Transport`, `Status`, `Decode`). A non-2xx status keeps the **unread** response:
   `into_response()` returns it (and returns any other error unchanged, so `?` propagates it), and
-  `Decode` reads the API's error document with any representation. The
+  `Decode` reads the API's error document with any format. The
   [caller guide](CALLER_GUIDE.md#6-errors) covers the rest.
 
 ## 5. Run it locally
@@ -239,7 +246,7 @@ Excerpt of [`examples/shapes/tests/wire.rs`](../examples/shapes/tests/wire.rs):
 ## Next steps
 
 - [Author guide](AUTHOR_GUIDE.md): scopes, the three kinds of values, paths and subdomains, query
-  and header composition, representations, sensitivity.
+  and header composition, body and response formats, sensitivity.
 - [Caller guide](CALLER_GUIDE.md): handles and snapshots, optional values, errors, native requests.
 - [Recipes](RECIPES.md): per-request timeouts, streaming, custom body formats, retries,
   pagination, rate admission — written as application code.

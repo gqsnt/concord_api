@@ -6,15 +6,18 @@ executable evidence is listed in `TEST_MATRIX.md`.
 ## 1. Declaration
 
 ```text
-api!       := doc* vis "client" Name params? "{" "base" STRING ";" stmt* child* "}"
-child      := cattr* "scope" name params? "{" stmt* child* "}"
-            | cattr* METHOD name params ("->" payload)? (";" | "{" stmt* "}")
+api!       := doc* vis "client" Name params? "{" "base" STRING ";" (stmt | default)* child* "}"
+child      := cattr* "scope" name params? "{" (stmt | default)* child* "}"
+            | cattr* METHOD name params ("->" output)? (";" | "{" stmt* "}")
 cattr      := doc | "#[cfg(..)]" | "#[deprecated..]"
 METHOD     := GET | POST | PUT | PATCH | DELETE | HEAD | OPTIONS
 params     := "(" (param ("," param)* ","?)? ")"
 param      := attr* placement? name "?"? ":" Type ("=" Expr)?
-            | doc* "body" name "?"? ":" payload                  (endpoints only, at most one)
-payload    := Type "via" Type                (payload type, representation)
+            | doc* ("body" media? | format media?) name "?"? ":" Type  (endpoints only, at most one)
+output     := format? Type                   (no format: the nearest `response` default)
+default    := "request" format media? ";" | "response" format ";"   (clients and scopes, once each)
+format     := "json" | "text" | "bytes" | "form" | TypePath
+media      := "(" STRING ")"                 (a body media type: "type/subtype; params")
 placement  := "query" ("(" STRING ")")? "each"? | "header" "(" STRING ")" "each"?
 attr       := doc | "#[sensitive]"
 stmt       := "path" STRING ";" | "subdomain" STRING ";"
@@ -36,6 +39,7 @@ reference  := name | owner "." name       (owner = `client` or an enclosing scop
 - Templates (`path`, `subdomain`, quoted query/header values) contain literal text and holes
   `{name}` / `{owner.name}`; `{{` and `}}` are literal braces (with or without holes).
 - No meaning is derived from Rust type spellings. `Option<T>` and `Vec<T>` are ordinary types.
+  Formats and their defaults are described in §7.
 
 ## 2. Names
 
@@ -60,8 +64,8 @@ reference  := name | owner "." name       (owner = `client` or an enclosing scop
 | `x: T = E` | `T` | `E` | `set_x(v)` |
 | `x?: T` | `Option<T>` | absent | `set_x(v)` (present), `maybe_x(o)` (exactly `o`) |
 | `x?: T = E` | `Option<T>` | present `E` | `set_x(v)`, `maybe_x(o)` |
-| `body b: T via R` | `T` | — | positional argument; then `set_b(v)` |
-| `body b?: T via R` | `Option<T>` | absent | `set_b(v)`, `maybe_b(o)` |
+| `body b: T`, `FORMAT b: T` | `T` | — | positional argument; then `set_b(v)` |
+| `body b?: T`, `FORMAT b?: T` | `Option<T>` | absent | `set_b(v)`, `maybe_b(o)` |
 
 - Entry calls: `Client::new(http: reqwest::Client, config: {Client}Config)` when the client has
   required values (`Client::new(http)` otherwise); `parent.scope(...)`, `parent.endpoint(...)`.
@@ -215,7 +219,7 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
 - Concord performs no retries, no authentication, no rate limiting, no pagination and has no
   transport settings. One `send` is one `Client::execute` call; redirects, proxies, timeouts,
   compression and default headers are whatever the reqwest client does.
-- Order of build checks: body encoding (including the representation's content type), then
+- Order of build checks: body encoding (the media type is a compile-time constant), then
   subdomain labels and the assembled host (IP base, 253-byte limit), path segments, query and
   headers; the first failure is returned and later values are not formatted.
 - A value whose `Display` returns `fmt::Error` (a broken `Display`) is a build error naming the
@@ -224,28 +228,81 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
 
 ## 7. Bodies and responses
 
-A body is declared `body b: T via R` and a typed response `-> T via R`: `T` is the payload type
-the caller supplies or receives, `R` a representation marker implementing `Encode<T>` (bodies) or
-`Decode<T>` (responses). Generated signatures use `T` directly. There is no default
-representation and no inference from `T`.
+Every body and every typed output has a **format**: written in place, or inherited from the
+nearest owner that declares a default. `T` is the payload type the caller supplies or receives
+(generated signatures use it directly); the format's runtime is a marker type implementing
+`Encode<T>` (bodies) or `Decode<T>` (outputs). No format is chosen from the spelling of `T`.
 
-| Representation | As body (`Encode<T>`) | As response (`Decode<T>`) |
-|---|---|---|
-| `Json` (feature `json`) | any `T: Serialize`, `serde_json` bytes, `Content-Type: application/json` | any `T: DeserializeOwned`, `serde_json` from the body; `Content-Type` ignored |
-| `Text` | `String`, `text/plain; charset=utf-8` | `String`; invalid UTF-8 is a decode error |
-| `Binary` | `bytes::Bytes` or `Vec<u8>`, `application/octet-stream` | `bytes::Bytes` or `Vec<u8>`, unchanged |
-| *(no `->`)* | — | output `()`: any body is drained chunk by chunk without buffering |
+| Format | Runtime | As body (`Encode<T>`) | As output (`Decode<T>`) |
+|---|---|---|---|
+| `json` (feature `json`) | `concord::Json` | any `T: Serialize`, `serde_json` bytes, `application/json` | any `T: DeserializeOwned`; `Content-Type` ignored |
+| `text` | `concord::Text` | `String`, `text/plain; charset=utf-8` | `String`; invalid UTF-8 is a decode error |
+| `bytes` | `concord::Binary` | `bytes::Bytes` or `Vec<u8>`, `application/octet-stream` | `bytes::Bytes` or `Vec<u8>`, unchanged |
+| `form` (feature `form`) | `concord::Form` | any `T: Serialize` (`serde_urlencoded`), `application/x-www-form-urlencoded` | any `T: DeserializeOwned` |
+| a type path | that type | its `Encode<T>` | its `Decode<T>` |
+| *(no `->`)* | — | — | output `()`: any 2xx; the body is drained chunk by chunk without buffering |
 
-- An endpoint without `->` has output `()`. A body's `Content-Type` is added only if the composed
-  headers have none. Concord never adds `Accept`.
+**Resolution.**
+
+- The words resolve to `$crate::{Json, Text, Binary, Form}` (no import; renamed dependencies
+  work); a word whose feature is off is a compile error at the word (in place) or at the default
+  (once). A type path resolves at the declaration like any type.
+- `body b: T` / `body("m") b: T` and a bare `-> T` take the format of the nearest owner on the
+  endpoint's chain (the endpoint's scopes, then the client) that declares `request FORMAT;` or
+  `response FORMAT;` respectively; the directions are independent. Without one, it is a compile
+  error at the payload naming the in-place word and the owner statement. Endpoints have no
+  `request`/`response` statement; a default cannot be cleared.
+- `FORMAT b: T` and `-> FORMAT T` replace the default for that body or output — for a body, its
+  format **and** its media type.
+- A default is referenced through one hidden type alias, emitted only if some endpoint consumes it
+  and gated by the union of its consumers' effective `cfg`s: a default used by cfg-disabled
+  endpoints only, or by none, is never resolved.
+
+**Lexical precedence.** A parameter `name: T` / `name?: T` is a value whatever its name
+(`json: T`); `header("x") json: T` is a header value; `json query: T` a JSON body named `query`;
+`json::Codec`, `self::csv` are paths. After `->`, a path followed by more type tokens is a format
+(`-> codecs::Csv ()`), a path that ends the output is the payload (`-> Vec<Item> {`); in format
+position a bare lowercase identifier must be a word (`-> json {` is an error, `-> r#json` a
+payload named `json`). A parenthesized string after a format is a media type; any other
+parenthesized group is a tuple payload.
+
+**Content type.**
+
+- A body's media type is a declared one — `FORMAT("m")`, `body("m")`, or `request FORMAT("m");`
+  reached through `body` — or the format's `Encode::CONTENT_TYPE`. Declared media types are checked
+  by the macro (`type/subtype` tokens, optional `; name=value` parameters with token or quoted
+  values, visible ASCII, no surrounding whitespace); both kinds become compile-time
+  `HeaderValue::from_static` values (an invalid `CONTENT_TYPE` is a compile error where it may be
+  sent and is not evaluated where a declared media type replaces it).
+- The media type is sent exactly when the body is. A `content-type` header contribution that
+  survives composition on the endpoint (conditional ones included) is sent whether or not a body
+  is, and replaces a format's `CONTENT_TYPE`: no body and no header → none; no body + header →
+  the header; body + no header → the media type; body + header → the header. An empty native value
+  counts as present; an `each` over no items contributes nothing; a conversion failure is a build
+  error.
+- A declared body media type and a `content-type` contribution surviving on the same endpoint are
+  a compile error; a `remove "content-type"` that drops every inherited contribution resolves it.
+- The inserted `Content-Type` is flagged sensitive when the `content-type` key is statically
+  sensitive on the endpoint (marker or sticky composition, also after a `remove`).
+- Concord never adds `Accept` and never checks the response `Content-Type`; an output takes no media
+  type. Concord does not enforce the field's cardinality (repeated declared `content-type` values
+  are the author's choice).
+
+**Presence and decoding.**
+
+- `body b?: T` absent sends no body and no format media type; a required `Option` body under `json`
+  is `null`; an empty `text`/`bytes` body is present (with its media type). A body cannot be
+  initialized.
+- Without `->` the output is `()`, any 2xx succeeds and the body is drained; a `response` default
+  does not apply. `-> ()` (or an alias of it) is a typed output decoded with its format: under
+  `json` the body must be `null` and an empty 204 is a decode error.
 - Response handling: a non-2xx status is `ErrorKind::Status` carrying the **unread**
   `reqwest::Response` (`Error::into_response`); otherwise the body is read and decoded.
   `Option<T>` outputs have no status meaning: a 404 is a status error, JSON `null` is `None`.
-- `Encode<T>` and `Decode<T>` are public traits; a representation is chosen only by naming it
-  after `via`. `<R as Decode<T>>::decode(bytes)` can also be called directly (for example on the
-  body of an error response).
+- `Encode<T>` and `Decode<T>` are public traits; `<R as Decode<T>>::decode(bytes)` can also be
+  called directly (for example on the body of an error response).
 - Observed transport detail: hyper sends a zero-length body without `Content-Length`, so "no body"
-  and "empty `Text` body" differ on the wire only by `Content-Type`.
+  and "empty `text` body" differ on the wire only by `Content-Type`.
 
 ## 8. Errors
 

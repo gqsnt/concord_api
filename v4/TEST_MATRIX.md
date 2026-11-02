@@ -57,7 +57,7 @@ or marked *(refined)*.
 | C11 | required | omitted optional vs required optional payload differ on the wire | `values.rs::v05_*`, `values.rs::v04_*` | PASS |
 | C12 | required | no shared state between clients built on one reqwest client | `values.rs::c12_no_shared_state_between_clients` | PASS |
 | C13 | required | base with port/path/trailing slash (unchanged without generated segments); invalid runtime bases (incl. port 0, bad punycode) rejected without echo; invalid static bases are compile errors | `composition.rs::c13_*`, `c4_r_004_strict_base_subset_constructs`, `base_path_without_generated_segments_is_unchanged`, `runtime_base_with_invalid_punycode_is_an_error`, `ui/base_errors.rs`, `ui/base_invalid_port.rs` | PASS |
-| — | required | build checks in documented order (body incl. content type, host, path, query, headers) | `composition.rs::c4_r_013_build_error_precedence`, `representations.rs::content_type_error_precedes_path_error` | PASS |
+| — | required | build checks in documented order (body, host, path, query, headers); a format's media type is checked at compile time since formats (F8g) | `composition.rs::c4_r_013_build_error_precedence`, `ui/format_invalid_content_type.rs` | PASS |
 | — | required | query keys case-sensitive; form encoding; no `?` when empty | `composition.rs::query_keys_are_case_sensitive`, `query_values_are_form_encoded`, `no_query_string_when_nothing_survives` | PASS |
 | — | required | escaped braces identical with and without holes | `composition.rs::c4_r_002_escaped_braces` | PASS |
 | — | required | declaration order is wire order | `values.rs::query_order_follows_declaration_order` | PASS |
@@ -111,7 +111,7 @@ or marked *(refined)*.
 | N2 | required | a full `HeaderMap` (header lines or the body's content type) is a build error, not a panic | `native_limits.rs::a_full_header_map_is_a_build_error_not_a_panic`, `a_body_content_type_that_does_not_fit_is_a_build_error` | PASS |
 | N3 | required | a value whose `Display` fails is a value-free build error in every placement; generated `Debug` shows `<Display failed>` | `display_errors.rs::every_placement_reports_a_build_error`, `generated_debug_shows_a_placeholder` | PASS |
 | D04 | required | `override ... else inherit` required for an optional source and rejected for a total one; `remove` acts first in an owner; inherit/omit/replace per call; reintroduced key keeps its slot | `composition.rs::d04_override_truth_table`, `ui/override_needs_else_inherit.rs`, `ui/else_inherit_needs_optional_source.rs`, `ui/remove_acts_on_inherited.rs` | PASS |
-| D06 | required | `-> T via R` / `body b: T via R`; missing `via` and unsupported payloads diagnosed at the declaration; custom `Encode<T>`/`Decode<T>` | `ui/representation_missing_via.rs`, `ui/representation_unsupported_payload.rs`, `ui/representation_alpha_spelling.rs`, `representations.rs::custom_decoder_gets_the_body_and_no_output_drains`, `examples/native` NDJSON/form | PASS |
+| D06 | superseded | `-> T via R` / `body b: T via R` was replaced by formats (N06): rows F1–F12e below | — | — |
 | D08 | required | an endpoint request is `Clone` exactly when its data is | `values.rs::v10_request_clone_follows_the_data`, `ui/endpoint_clone_needs_clone_values.rs` | PASS |
 | D13 | required | `into_response()` returns the unread response or the error unchanged; `Decoder::finish` converts native transport errors | `representations.rs::into_response_keeps_other_errors`, `examples/native/tests/native_edit.rs`, `examples/native/tests/errors.rs` | PASS |
 | D14 | required | `#[cfg]` removes a whole subtree; `#[deprecated]` warns at the caller; other attributes rejected | `attributes.rs::cfg_and_deprecated`, `ui/deprecated_endpoint.rs`, `ui/endpoint_attribute_unsupported.rs` | PASS |
@@ -149,3 +149,39 @@ tree (rustc 1.97.1 and 1.85); receipt `exp/verify-msrv.txt`, not bound to a comm
 | H12 | required | native `Content-Type` wins over a representation's; an optional native header does not affect body presence; full header map is a build error | `native_headers.rs::native_headers_and_bodies`, `full_header_map_with_native_values` | prototype |
 | H13 | evidence | payload allocations per route (static/shared native 0, text 1, integer 2, formatted 2 per value) | `checks/heap/tests/headers.rs`, `exp/alloc/` | recorded |
 | H14 | evidence | mutants (flag cleared, Debug ignores flag, obs-text text, literal not lowered, `Prepared` prints secrets) killed | `exp/mutants/run.py`, `exp/mutants/result.txt` (5/5) | recorded |
+
+## Body and response formats (track I)
+
+Status: **track** — the implementation of `native-repr/CONTRACT.md` on branch
+`native-repr-formats`, passing `scripts/verify.sh --msrv` there (rustc 1.97.1 and 1.85; report
+`reports/track_i_formats.md` of the campaign), not yet bound to a reviewed receipt. Runtime tests are
+in `formats.rs` unless stated; `ui/`, `ui_json/`, `ui_features/` are trybuild cases.
+
+| ID | Class | Expected | Test | Status |
+|---|---|---|---|---|
+| F1 | required | no body under a `request` default: no body, no `Content-Type` from the format | `row1_no_body_under_a_request_default` | track |
+| F2a–c | required | required `Option` body = JSON `null`; absent optional body = no body, no `Content-Type`; empty `text`/`bytes` bodies are present with their media type | `row2a_*`, `row2b_*`, `row2c_*`, `bodies.rs::r02_no_body_vs_empty_vs_null` | track |
+| F2d | required | a body cannot have an initializer; one body per endpoint; endpoints only | `ui/body_errors.rs` | track |
+| F3a–c | required | no `->` drains any 2xx under a `response` default; `-> ()` / `-> json ()` decode a typed unit (empty 204 → decode error) | `row3a_*`, `row3b_3c_typed_unit_is_decoded` | track |
+| F4 | required | `-> String` under `response json;` is a JSON string; `-> text String` raw text | `row4_json_string_versus_raw_text` | track |
+| F5 | required | aliases of payloads and formats follow the written format and the defaults only | `row5_aliases_follow_the_written_format` | track |
+| F6a/6d | required | request and response defaults independent, nearest owner wins, no clearing | `row6a_nearest_owner_per_direction` | track |
+| F6b | required | an in-place format (and media type) replaces the default for that body/output | `row6b_in_place_exception_with_media_type`, `row8a_body_media_types` | track |
+| F6c | required | `request`/`response` on an endpoint is a compile error | `ui/format_endpoint_statement.rs` | track |
+| F7 | required | no format and no default: compile error at the payload naming both remedies (alpha spellings hinted) | `ui/representation_missing_via.rs`, `ui/representation_alpha_spelling.rs` | track |
+| F8a | required | body media type: declared (`FORMAT("…")`, `body("…")`, default's) or the format's; sent exactly with the body | `row8a_body_media_types`, `forms.rs::pairs_and_form_default` | track |
+| F8b | required | four runtime cases with a `content-type` contribution; empty native value present; empty `each` absent; conversion failure is a build error | `row8b_four_runtime_cases`, `row8b_empty_value_empty_each_and_conversion_failure`, `native_headers.rs::native_headers_and_bodies` | track |
+| F8c | required | declared body media type + surviving `content-type` contribution (conditional included) rejected; `remove` resolves it | `ui/format_header_media_conflict.rs`, `row8c_remove_resolves_the_conflict` | track |
+| F8d/8e | required | no `Accept`, response `Content-Type` unchecked; an output takes no media type | `row8d_no_accept_and_no_response_type_check`, `ui/format_output_media_type.rs` | track |
+| F8f | required | inserted `Content-Type` carries the key's static sensitivity (flag, `Prepared` Debug, still sent) | `row8f_inserted_content_type_is_classified` | track |
+| F8g | required | declared media types checked by the macro; a format's `CONTENT_TYPE` checked at compile time where it may be sent, not read where replaced | `ui/format_media_type_invalid.rs`, `ui/format_invalid_content_type.rs`, `representations.rs::declared_media_type_replaces_an_invalid_constant`, `row8a_body_media_types` (`CONTENT_TYPE = None`) | track |
+| F9 | required | custom codec by path in place and as a default; unsupported payload reported at the word or the payload | `row9_custom_codec_in_place_and_as_default`, `ui/representation_unsupported_payload.rs`, `ui/format_inherited_unsupported.rs`, `ui_json/format_serde_bound.rs` | track |
+| F10/F11 | required | native exits and status handling unchanged | `row11_status_and_native_decoder_unchanged`, `bodies.rs::r05_*`, `r08_*`, `examples/multipart`, `examples/native` | track |
+| F12a | required | `json`/`form` off: one error per in-place word, one per used default | `ui_features/feature_disabled_formats.rs` (no-default lanes) | track |
+| F12b | required | defaults reached only through aliases gated by consumers' `cfg`s; unused defaults never referenced | `row12b_unused_and_cfg_disabled_defaults_are_never_referenced`, `attributes.rs::cfg_and_deprecated`, `ui_features/feature_disabled_formats.rs` | track |
+| F12c | required | words need no import under a renamed dependency; paths resolve normally | `examples/renamed/src/lib.rs::formats_through_the_renamed_crate` | track |
+| F12d | required | leftover `via` → exact replacement; `scripts/migrate_via.py` | `ui/format_via_removed.rs` | track |
+| F12e | required | rustdoc states format, media type and origin per endpoint, defaults per owner | `concord-macros` `emit::tests::format_docs_*` | track |
+| FL | required | lexical precedence table (values named like words, word-prefixed paths, `-> r#json`, reserved words, swapped order) | `lexical_precedence`, `lexical_raw_identifier_is_a_payload`, `ui/format_reserved_words.rs`, `ui/format_swapped_order.rs` | track |
+| FX | required | CHARTER §7 cross-feature: optional native headers vs body presence (H11), defaults vs header presence/inheritance (H12), natively sensitive header under defaults | `h11_*`, `h12_*`, `native_sensitive_header_stays_protected_under_defaults` | track |
+| FF | required | built-in `form` (feature `form`): encoding, pairs, defaults, responses, encode errors, form in / JSON out | `forms.rs` | track |

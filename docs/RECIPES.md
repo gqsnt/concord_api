@@ -35,7 +35,8 @@ feed that must not be buffered.
 - **Assumes:** the per-chunk deadline (`tokio::time::timeout`) and the chunk limit are the
   application's. Dropping a response before its end closes that connection instead of returning it
   to the pool.
-- **Note:** any declared `-> T via R` buffers the whole body, as every `Decode` does.
+- **Note:** any declared typed output (`-> bytes Bytes`, `-> T`) buffers the whole body, as every
+  `Decode` does; an endpoint without `->` drains it without buffering but discards it.
 
 ## Requests
 
@@ -59,7 +60,8 @@ Declare the endpoint with its fixed parameters and append the sequence to the na
 `query_pairs_mut` applies the same `application/x-www-form-urlencoded` encoding as Concord.
 
 Excerpt of [`examples/native/src/native_edit.rs`](../examples/native/src/native_edit.rs) (the
-endpoint is `GET search() -> Vec<Item> via Json { path "search"; query { "limit" = "10"; } }`):
+endpoint is `GET search() -> Vec<Item> { path "search"; query { "limit" = "10"; } }` under the
+client's `response json;`):
 
 ```rust
 pub async fn search_filters(
@@ -88,24 +90,30 @@ pub async fn search_filters(
 
 ## Body formats
 
-### A custom representation: NDJSON
+### A custom format: NDJSON
 
 [`repr::Ndjson`](../examples/native/src/repr.rs), used by
 [`bodies::import_stock`](../examples/native/src/bodies.rs) — line-delimited JSON in both
 directions.
 
 - **How:** a marker type implementing `Encode<Vec<T>>` and `Decode<Vec<T>>`; the declaration names
-  it (`body rows: Vec<StockRow> via Ndjson`).
+  it by path where `json` would be written (`Ndjson rows: Vec<StockRow>`,
+  `-> Ndjson Vec<StockRow>`), or in a `request`/`response` default for a whole scope.
 - **Assumes:** error descriptions name the line and column, never its content; the underlying
   serde error (which may quote the body) is attached with `with_source`.
 
 ### Form-encoded bodies
 
-[`repr::Form`](../examples/native/src/repr.rs), used by
+With the `form` feature, the built-in `form` format encodes any `Serialize` value with flat fields
+(`form login: Login`, or `request form;` on a scope) through `serde_urlencoded`, and decodes form
+responses (`-> form Token`); see the [author guide](AUTHOR_GUIDE.md#56-forms).
+
+Without the feature, or without serde: [`repr::Form`](../examples/native/src/repr.rs), used by
 [`bodies::send_feedback`](../examples/native/src/bodies.rs) —
 `application/x-www-form-urlencoded` from ordered `(name, value)` pairs.
 
-- **How:** a custom `Encode<Vec<(String, String)>>` with `url::form_urlencoded`.
+- **How:** a custom `Encode<Vec<(String, String)>>` with `url::form_urlencoded`, named by path
+  (`repr::Form fields: Vec<(String, String)>`) so it is not mistaken for the word `form`.
 - **When:** the body is fully determined by the value and its content type is constant.
 
 ### Multipart uploads

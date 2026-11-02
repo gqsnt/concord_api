@@ -33,7 +33,7 @@ concord::api! { .. }                                  crates/concord/src/lib.rs
   └─ generated code calls $crate::__private::*         crates/concord/src/__private.rs (runtime support)
        prepared.rs  Prepared<T>, Decoder<T>            send, send_raw, into_parts, decode, finish
        error.rs     Error, ErrorKind                   static Display, explicit raw accessors
-       repr.rs      Encode<T>, Decode<T>, Json/Text/Binary, BodyError
+       repr.rs      Encode<T>, Decode<T>, Json/Text/Binary/Form, BodyError
        value.rs     IntoValue<T>                       the sealed set of accepted conversions
        header.rs    ToHeaderValue                      how a value placed as a header becomes one
 ```
@@ -45,7 +45,10 @@ contributions reach an endpoint's request is fixed by `model.rs`.
 
 | Rule (SEMANTICS section) | Compile time | Runtime |
 |---|---|---|
-| Grammar, keywords, `via` required, statement order (§1) | `syntax.rs`: `Parse for Api`, `parse_child`, `parse_params`, `parse_payload`, `parse_entries` | — |
+| Grammar, keywords, statement order (§1) | `syntax.rs`: `Parse for Api`, `parse_child`, `parse_params`, `parse_entries` | — |
+| Formats: words, paths, lexical precedence, media types, `via`/alpha hints (§7) | `syntax.rs`: `parse_format`, `parse_output`, `parse_default`, `check_media_type`, `reject_via`; `model.rs`: `alpha` | — |
+| Format defaults: nearest owner, consumers, 8c conflict (§7) | `model.rs`: `nearest`, `endpoint_body`, `endpoint_output`, `check_media_conflict` | — |
+| Format codegen: hidden aliases gated by consumers' `cfg`s, body format statics (§7) | `emit.rs`: `format_aliases`, `consumers_cfg`, `format_for`, `prepare_body` | `__private.rs`: `BodyFormat`, `encode_body`, `Parts::finish` (`Content-Type` rule and flag) |
 | Accepted attributes (§1) | `syntax.rs`: `docs_only`, `child_attrs`, `parse_params` | — |
 | Templates and holes (§1) | `template.rs`: `parse` | `__private.rs`: `format_template` |
 | Name resolution, qualification (§2) | `model.rs`: `resolve_ref`, `qualifier` | — |
@@ -61,7 +64,7 @@ contributions reach an endpoint's request is fixed by `model.rs`.
 | Execution, decoding (§6, §7) | `emit.rs`: endpoint `send`/`prepare` | `prepared.rs`, `__private.rs`: `decoder`, `drain`, `encode_body`; `repr.rs` |
 | Errors (§8) | — | `error.rs` |
 | Sensitivity (§9) | `model.rs`: `SENSITIVE_NAMES`, `sensitive_name`, `refresh_sensitivity`, `propagate_sensitivity` | `__private.rs`: `redacted_url`, `DebugDisplay`, `DebugHeader`, `Redacted`, `Parts::header` (flag OR); `prepared.rs`: `Debug` |
-| Generated documentation | `emit.rs`: `owner_docs`, `controls`, `argument_docs`, `override_notes`, `initially` | — |
+| Generated documentation | `emit.rs`: `owner_docs`, `defaults_line`, `request_summary`, `controls`, `argument_docs`, `override_notes`, `initially` | — |
 
 ## Changing a semantic rule
 
@@ -99,11 +102,16 @@ Documentation checks run inside `cargo test --workspace`:
 ## UI snapshots
 
 `crates/concord/tests/ui/*.rs` are compile-fail cases run by `trybuild`; the expected compiler
-output is the neighbouring `.stderr` file.
+output is the neighbouring `.stderr` file. trybuild builds them with the features of the test
+run, so `ui/` holds only feature-independent cases (it runs in every feature lane); cases whose
+output depends on a feature live in `ui_json/` (run where `json` is on) and `ui_features/` (run
+where neither `json` nor `form` is on). Bless each directory in a lane that runs it, and only that
+directory:
 
 ```sh
-TRYBUILD=overwrite cargo test -p concord --test ui --locked
-git diff crates/concord/tests/ui/
+TRYBUILD=overwrite cargo test -p concord --test ui --locked                          # ui/, ui_json/
+TRYBUILD=overwrite cargo test -p concord --test ui --locked --no-default-features    # ui/, ui_features/
+git diff crates/concord/tests/
 ```
 
 Review every changed snapshot before committing: a new message is a user-visible change
@@ -129,7 +137,9 @@ benches/scale/timing_plan.sh /tmp/concord-scale run      # runs them; JSON in /t
 ```
 
 `gen.py` is deterministic; `gen.py --help` and its module documentation describe the shapes
-(`rest`, `deep`, `shared`, `override`, `optionals`, `refs`) and consumers. Timing needs an
+(`rest`, `deep`, `shared`, `override`, `optionals`, `refs`, `fanout`, `typed`) and consumers.
+`--syntax via` or `--syntax alpha` generates the same workloads for an older Concord, for A/B
+suites. Timing needs an
 otherwise idle machine; record the toolchain and commit with the results. Earlier measurements are
 in `v4/evidence/PERF.md` (alpha) and `v4/refinement/evidence/tracks/compiler.md`.
 

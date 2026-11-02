@@ -10,7 +10,9 @@ Compared with a small handwritten reqwest client, the declaration replaces:
 - the plumbing of shared query parameters and headers (an API version, an authorization header)
   into every endpoint, with explicit rules for overriding or removing them further down;
 - bookkeeping of which optional parameters are present;
-- body encoding, the status check and response decoding;
+- body encoding (stated once for a mostly-JSON API: `request json; response json;`, with
+  exceptions such as `-> text String` written where they apply), the status check and response
+  decoding;
 - keeping secrets out of the client's `Debug` output and out of error messages.
 
 Mistakes in the declaration — an unknown value, an invalid header name or base URL, a type without
@@ -53,14 +55,16 @@ concord::api! {
     pub client Tasks(#[sensitive] token: String) {
         base "https://tasks.example.com/api";
         headers { "authorization" = "Bearer {token}"; }
+        request json;
+        response json;
 
         scope project(project: String) {
             path "projects/{project}";
 
-            GET tasks(query done?: bool, query limit: u32 = 20) -> Vec<Task> via Json {
+            GET tasks(query done?: bool, query limit: u32 = 20) -> Vec<Task> {
                 path "tasks";
             }
-            POST create(body task: NewTask via Json) -> Task via Json {
+            POST create(body task: NewTask) -> Task {
                 path "tasks";
             }
         }
@@ -135,7 +139,8 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 | Feature | Default | Effect |
 |---|---|---|
-| `json` | yes | the `Json` representation (`-> T via Json`, `body b: T via Json`), using serde and serde_json |
+| `json` | yes | the `json` format (`json b: T`, `-> json T`, `request json;`, `response json;`), using serde and serde_json |
+| `form` | no | the `form` format (`form b: T`, `application/x-www-form-urlencoded`), using serde and serde_urlencoded |
 | `reqwest-defaults` | yes | reqwest's own default features (TLS, HTTP/2, system proxy) |
 
 With `default-features = false`, choose reqwest's features yourself: depend on `reqwest` (the
@@ -146,11 +151,11 @@ same major version that Concord re-exports as `concord::reqwest`) with the featu
 | Task | Guide |
 |---|---|
 | Set up a crate and make a first call | [Quick start](docs/QUICKSTART.md) |
-| Write a declaration: scopes, values, paths, query and headers, bodies | [Author guide](docs/AUTHOR_GUIDE.md) |
+| Write a declaration: scopes, values, paths, query and headers, body and response formats | [Author guide](docs/AUTHOR_GUIDE.md) |
 | Use a generated client: construction, options, errors, native requests | [Caller guide](docs/CALLER_GUIDE.md) |
 | Error documents, timeouts, streaming, custom formats, retries, pagination | [Recipes](docs/RECIPES.md) |
 | Read a compile error | [Diagnostics](docs/DIAGNOSTICS.md) |
-| Upgrade from the V4 alpha or from V3 | [Migration](docs/MIGRATION.md) |
+| Upgrade from `via`, from the V4 alpha or from V3 | [Migration](docs/MIGRATION.md) |
 | The precise rules (truth tables, ordering, sensitivity) | [Semantics](v4/SEMANTICS.md) |
 | Work on Concord itself | [Maintainers](docs/MAINTAINERS.md) |
 
