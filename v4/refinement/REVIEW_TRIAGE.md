@@ -108,3 +108,14 @@ These corrections touch only `v4/refinement/FINAL.md` and this file.
 | C1 | P2 | inline summary "1.4–3.6× slower / 25–33% faster" was partly computed against the alpha column | FIXED `cd3ea1b`: refined vs noinline recomputed — 1.43–2.29× (`use1000` 0.98×) and 12–25%; correction noted in `PERF.md` |
 | C2 | P3 | fresh-use summary said the control's frictions "did not recur" | FIXED `cd3ea1b`: improvements stated with the difficulties still reported (doubled-`Option`, IP base + subdomain) |
 | — | note | "three samples per row" applies to hyperfine only | FIXED `cd3ea1b` |
+
+## Codex re-check of C1–C2 (`6fed3aa`, static)
+
+- Reviewer: `gpt-6.1-sol`, `xhigh` (session `turn_context`), read-only. Report:
+  `confirm2_6fed3aa_report.md`. Verdict: **CONFIRMED** — C1 and C2 resolved, no further material
+  finding; all 223 files outside `v4/` blob-identical to `b0fe26e`; every PERF §1 figure and all 114
+  hyperfine means recomputed. Noted as approximate, not a finding: "+105 ns" (paired differences
+  103 and 111 ns).
+
+No independent review is pending. Open items are owner actions (Windows CI needs a push) and the
+documented limitations in `FINAL.md`.

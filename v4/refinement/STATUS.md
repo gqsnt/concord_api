@@ -33,7 +33,7 @@ historical.
 | M4 Boundaries/adversarial | PASS | oracles, surfaces, mutations (`evidence/m4_mutations.md`), native recipes |
 | M5 Performance | PASS (trade-offs accepted and named) | `PERF.md`, `evidence/perf/` |
 | M6 Docs/fresh use | PASS | docs merged `e43c9ed`; fresh-use trials `evidence/tracks/fresh_{control,candidate}.md`; fixes `0fe60e1` |
-| M7 Independent acceptance | Linux: final review + focused re-review done; R1/R3 resolved, R2 corrected in the record commit (focused check in `REVIEW_TRIAGE.md`) | `REVIEW_TRIAGE.md`, `reviews/codex/` |
+| M7 Independent acceptance | PASS on Linux: final review (`0fe60e1`) R1–R3 fixed; focused re-review (`b0fe26e`) R1/R3 resolved; R2 check (`bbbeca1`) resolved; no-change confirmation CONFIRMED (`6fed3aa`); no review pending | `REVIEW_TRIAGE.md`, `reviews/codex/` |
 | Verification | PASS on Linux x86_64 (1.97.1, MSRV 1.85.1) at code revision `b0fe26e` | `evidence/verify_b0fe26e.txt` |
 | Platforms | Windows BLOCKED (no host/VM/wine; CI needs a push, not authorized); macOS NOT_RUN | |
 
@@ -51,7 +51,7 @@ historical.
 
 ## Active work
 
-None besides the focused check of the R2 record correction. Work directories under
+None. Work directories under
 `/home/canarit/projects/concord_v4_refine_work/` (snapshots, experiments, perf suites) are
 disposable inputs to the archived evidence and are kept for reproduction.
 
