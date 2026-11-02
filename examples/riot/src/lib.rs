@@ -20,6 +20,7 @@ pub use routing::{AccountRoute, MatchRoute, Platform};
 pub use types::*;
 
 use concord::reqwest::StatusCode;
+use concord::reqwest::header::RETRY_AFTER;
 
 /// At most this many match details are fetched by [`player_summary`].
 pub const MAX_MATCHES: u32 = 5;
@@ -71,19 +72,16 @@ pub enum Stop {
 
 impl From<concord::Error> for Stop {
     fn from(error: concord::Error) -> Self {
-        // A 429 is inspected through the protected error route: its response is unread.
+        // A 429's response is unread; its headers are borrowed from the error.
         if error.status() != Some(StatusCode::TOO_MANY_REQUESTS) {
             return Stop::Failed(error);
         }
-        match error.into_response() {
-            Ok(response) => Stop::RateLimited {
-                retry_after: response
-                    .headers()
-                    .get("retry-after")
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(|v| v.parse().ok()),
-            },
-            Err(error) => Stop::Failed(error),
+        Stop::RateLimited {
+            retry_after: error
+                .response()
+                .and_then(|r| r.headers().get(RETRY_AFTER))
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse().ok()),
         }
     }
 }

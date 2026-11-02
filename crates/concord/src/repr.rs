@@ -60,7 +60,8 @@ pub trait Decode<T> {
 ///
 /// `description` must not contain body content or request values: it is shown by
 /// [`Error`](crate::Error)'s `Display`, and it is this type's own `Display`. The optional underlying
-/// error is reachable only through [`Error::body_source`](crate::Error::body_source), never through
+/// error is reachable only through [`body_source`](Self::body_source) and
+/// [`Error::body_source`](crate::Error::body_source), never through
 /// [`std::error::Error::source`], because decoder messages often quote the input (for example
 /// serde's `invalid type: string "..."`).
 pub struct BodyError {
@@ -88,7 +89,10 @@ impl BodyError {
         &self.description
     }
 
-    pub(crate) fn source_ref(&self) -> Option<&(dyn StdError + Send + Sync + 'static)> {
+    /// The attached underlying error, if any. Like [`Error::body_source`](crate::Error::body_source),
+    /// which returns the same for an error from a Concord call, it **may quote body content**
+    /// (serde_json does), so it is not this type's `source()`.
+    pub fn body_source(&self) -> Option<&(dyn StdError + Send + Sync + 'static)> {
         self.source.as_deref()
     }
 }
@@ -130,9 +134,31 @@ impl<T: serde::Serialize> Encode<T> for Json {
 
 #[cfg(feature = "json")]
 impl<T: serde::de::DeserializeOwned> Decode<T> for Json {
+    /// An empty or whitespace-only body is not JSON (RFC 8259 §2) and is an error, also for `()`
+    /// and `Option<T>`. Two static hints are added to the description, which never quotes the
+    /// body: one for an empty body, and one for a syntax error at the first byte (the body may
+    /// not be JSON at all).
     fn decode(body: Bytes) -> Result<T, BodyError> {
-        serde_json::from_slice(&body)
-            .map_err(|e| BodyError::new(json_description("decode", &e)).with_source(e))
+        use serde_json::error::Category;
+        serde_json::from_slice(&body).map_err(|e| {
+            let blank = body
+                .iter()
+                .all(|b| matches!(b, b' ' | b'\t' | b'\n' | b'\r'));
+            let description = if blank {
+                "JSON decode error: the response body is empty or only whitespace, which is not \
+                 JSON; an endpoint whose response has no body omits `->`"
+                    .into()
+            } else if e.classify() == Category::Syntax && e.line() == 1 && e.column() == 1 {
+                format!(
+                    "{}; if the response is not JSON, the endpoint may need `response text;` or \
+                     `response bytes;`",
+                    json_description("decode", &e)
+                )
+            } else {
+                json_description("decode", &e)
+            };
+            BodyError::new(description).with_source(e)
+        })
     }
 }
 

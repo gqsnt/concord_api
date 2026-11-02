@@ -117,6 +117,31 @@ impl Error {
         }
     }
 
+    /// The unread non-2xx response of an [`ErrorKind::Status`] error, borrowed: its status and
+    /// headers (`Retry-After`, a request id) can be read while the error is kept, for example by
+    /// a predicate written as `Fn(&Error) -> bool`. To read the body, take the response with
+    /// [`into_response`](Self::into_response).
+    ///
+    /// The headers are the server's, not Concord's output: Concord does not redact them.
+    ///
+    /// ```
+    /// fn retry_after(e: &concord::Error) -> Option<u64> {
+    ///     e.response()?
+    ///         .headers()
+    ///         .get(reqwest::header::RETRY_AFTER)?
+    ///         .to_str()
+    ///         .ok()?
+    ///         .parse()
+    ///         .ok()
+    /// }
+    /// ```
+    pub fn response(&self) -> Option<&reqwest::Response> {
+        match &self.inner.repr {
+            Repr::Status(response) => Some(response),
+            _ => None,
+        }
+    }
+
     /// The unread non-2xx response of an [`ErrorKind::Status`] error; any other error is returned
     /// unchanged as `Err`. Concord never reads or prints the body: use it to decode an API error
     /// document, for example with `<Json as Decode<Problem>>::decode(response.bytes().await?)`.
@@ -163,7 +188,7 @@ impl Error {
     /// is not exposed through [`std::error::Error::source`].
     pub fn body_source(&self) -> Option<&(dyn StdError + Send + Sync + 'static)> {
         match &self.inner.repr {
-            Repr::Encode(e) | Repr::Decode(e) => e.source_ref(),
+            Repr::Encode(e) | Repr::Decode(e) => e.body_source(),
             _ => None,
         }
     }
@@ -175,6 +200,10 @@ impl fmt::Display for Error {
             write!(f, "{} {}: ", meta.method, meta.name)?;
         }
         match &self.inner.repr {
+            // Without an endpoint no request was involved: a base URL given to `with_base_url`.
+            Repr::Build { what, reason } if self.inner.endpoint.is_none() => {
+                write!(f, "invalid {what}: it {reason}")
+            }
             Repr::Build { what, reason } => write!(f, "request not built: {what} {reason}"),
             Repr::HeaderConflict { what, earlier } => write!(
                 f,

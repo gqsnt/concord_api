@@ -105,6 +105,53 @@ concord::api! {
     }
 }
 
+/// Vendor names for the transitive cases; each `*2` is the same header under another path.
+const X_A: HeaderName = HeaderName::from_static("x-a");
+const X_A2: HeaderName = HeaderName::from_static("x-a");
+const X_B: HeaderName = HeaderName::from_static("x-b");
+const X_B2: HeaderName = HeaderName::from_static("x-b");
+const X_C: HeaderName = HeaderName::from_static("x-c");
+const X_C2: HeaderName = HeaderName::from_static("x-c");
+
+/// The standard `authorization` header under a name that says nothing.
+mod alias {
+    pub use concord::reqwest::header::AUTHORIZATION as GATE;
+}
+
+concord::api! {
+    /// Classification through native names, step by step (each resolved at run time).
+    pub client Transitive(
+        // Sent under `x-a` and, through an alias, under `authorization`: withheld by name, so
+        // the `x-a` contribution is sensitive.
+        header(X_A) shared: String,
+        header(X_B) public: String,
+        #[sensitive] header(X_C) marked: String,
+    ) {
+        base "http://transitive.invalid";
+        headers { alias::GATE = "{shared}"; }
+        /// `x-a` again: the inherited contribution is sensitive, so this value is withheld.
+        GET via_value(v: String) { headers { override X_A2 = v; } }
+        /// `x-b` again: the inherited contribution is not sensitive, so this value is shown.
+        GET via_public(v: String) { headers { override X_B2 = v; } }
+        /// `x-c` again: the inherited contribution is marked, so this value is withheld.
+        GET via_marked(v: String) { headers { override X_C2 = v; } }
+    }
+}
+
+concord::api! {
+    /// A deep chain of native keys with one sensitive root key; one level's key is an alias of it.
+    pub client Deep(#[sensitive] header(X_C) key: String) {
+        base "http://deep.invalid";
+        scope l1(header(X_A) h1: String) {
+            scope l2(header(X_C2) h2: String) {
+                scope l3(header(X_B) h3: String) {
+                    GET get();
+                }
+            }
+        }
+    }
+}
+
 concord::api! {
     /// Reserved names and `content-type` through native constants.
     pub client Policy {
@@ -287,4 +334,61 @@ fn reserved_and_content_type_through_native_constants() {
     let error = api.conflict("a/b", "body").prepare().unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Build);
     assert!(error.to_string().contains("media type"), "{error}");
+}
+
+#[test]
+fn transitive_classification_follows_resolved_names() {
+    let api = Transitive::new(
+        http(),
+        TransitiveConfig {
+            shared: "SHARED".into(),
+            public: "pub".into(),
+            marked: "MARKED".into(),
+        },
+    );
+    let shown = format!("{api:?}");
+    assert!(
+        !shown.contains("SHARED") && !shown.contains("MARKED"),
+        "{shown}"
+    );
+    assert!(shown.contains("public: \"pub\""), "{shown}");
+    macro_rules! withheld {
+        ($request:expr, $name:literal) => {{
+            let request = $request;
+            let shown = format!("{request:?}");
+            assert!(!shown.contains("VVV"), "{shown}");
+            let p = request.prepare().unwrap();
+            let value = &p.request().headers()[$name];
+            assert_eq!(value.as_bytes(), b"VVV");
+            assert!(value.is_sensitive(), $name);
+            assert!(!format!("{p:?}").contains("VVV"), "{p:?}");
+        }};
+    }
+    withheld!(api.via_value("VVV"), "x-a");
+    withheld!(api.via_marked("VVV"), "x-c");
+    // Same header as a public contribution: nothing makes it sensitive.
+    let request = api.via_public("VVV");
+    assert!(format!("{request:?}").contains("\"VVV\""), "{request:?}");
+    let p = request.prepare().unwrap();
+    assert!(!p.request().headers()["x-b"].is_sensitive());
+    assert!(format!("{p:?}").contains("VVV"), "{p:?}");
+}
+
+#[test]
+fn deep_native_chain_withholds_only_the_aliased_level() {
+    let api = Deep::new(http(), DeepConfig { key: "KEY".into() });
+    assert!(!format!("{api:?}").contains("KEY"), "{api:?}");
+    // Each handle shows its own values.
+    let l1 = api.l1("one");
+    assert!(format!("{l1:?}").contains("\"one\""), "{l1:?}");
+    let l2 = l1.l2("TWO");
+    assert!(!format!("{l2:?}").contains("TWO"), "{l2:?}");
+    let scope = l2.l3("three");
+    assert!(format!("{scope:?}").contains("\"three\""), "{scope:?}");
+    // `x-c` is set twice under two spellings: a build error naming both, without values.
+    let error = scope.get().prepare().unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Build);
+    let text = format!("{error} {error:?}");
+    assert!(text.contains("`X_C2` on `Deep.l1.l2`"), "{text}");
+    assert!(!text.contains("TWO") && !text.contains("KEY"), "{text}");
 }

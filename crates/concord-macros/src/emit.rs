@@ -684,6 +684,7 @@ fn controls(
             #[doc = #set_doc]
             #[doc = #initially]
             #(#[doc = #notes])*
+            #[must_use = "a setter returns the updated handle; discarding it discards the change"]
             #[inline] pub fn #set(mut self, value: impl #k::IntoValue<#ty>) -> Self {
                 #target.#name = #assign;
                 self
@@ -706,6 +707,7 @@ fn controls(
                 #[doc = #maybe_doc]
                 #[doc = #initially]
                 #(#[doc = #notes])*
+                #[must_use = "a setter returns the updated handle; discarding it discards the change"]
                 #[inline] pub fn #maybe(mut self, value: ::core::option::Option<#ty>) -> Self {
                     #target.#name = value;
                     self
@@ -1176,7 +1178,7 @@ fn emit_owner(
                 (
                     quote! {
                         #[doc = #config_doc]
-                        #[derive(Clone)]
+                        #[derive(::core::clone::Clone)]
                         #vis struct #config {
                             #(#config_fields)*
                         }
@@ -1197,13 +1199,13 @@ fn emit_owner(
                 #config_item
 
                 #docs
-                #[derive(Clone)]
+                #[derive(::core::clone::Clone)]
                 #vis struct #ty {
                     __s: ::std::sync::Arc<#state>,
                 }
 
                 #[doc(hidden)]
-                #[derive(Clone)]
+                #[derive(::core::clone::Clone)]
                 #[allow(non_camel_case_types)]
                 struct #state {
                     __http: #k::reqwest::Client,
@@ -1268,13 +1270,13 @@ fn emit_owner(
             let debug = debug_fields(k, model, headers, &owner.values, &quote!(__s));
             quote! {
                 #docs
-                #[derive(Clone)]
+                #[derive(::core::clone::Clone)]
                 #vis struct #ty {
                     __s: ::std::sync::Arc<#state>,
                 }
 
                 #[doc(hidden)]
-                #[derive(Clone)]
+                #[derive(::core::clone::Clone)]
                 #[allow(non_camel_case_types)]
                 struct #state {
                     __parent: #parent_ty,
@@ -1355,6 +1357,12 @@ fn emit_owner(
                     #controls
 
                     /// Builds the native request without sending it.
+                    ///
+                    /// # Errors
+                    ///
+                    /// `ErrorKind::Build` when a value cannot be written (a path segment, host
+                    /// label, header value or body) or two native header names collide; nothing
+                    /// is sent.
                     #[inline] pub fn prepare(self) -> ::core::result::Result<#k::Prepared<#out>, #k::Error> {
                         #prepare
                     }
@@ -1362,6 +1370,11 @@ fn emit_owner(
                     /// Sends the request once (`prepare` then one `reqwest::Client::execute`) and
                     /// decodes a 2xx response. A non-2xx status is `ErrorKind::Status` holding the
                     /// unread response (`Error::into_response`); Concord never retries.
+                    ///
+                    /// # Errors
+                    ///
+                    /// `Build` as for `prepare`, then `Transport`, `Status` or `Decode` (see
+                    /// `ErrorKind`).
                     #[inline] pub async fn send(self) -> ::core::result::Result<#out, #k::Error> {
                         self.prepare()?.send().await
                     }
@@ -1476,6 +1489,7 @@ fn navigation(k: &TokenStream, model: &Model, index: usize) -> TokenStream {
                 #scope_defaults
                 #args
                 #(#nav_attrs)*
+                #[must_use = "entering a scope only returns its handle"]
                 #[inline] #[allow(clippy::too_many_arguments)] pub fn #name(&self, #params) -> #cty {
                     #default_fns
                     #cty {

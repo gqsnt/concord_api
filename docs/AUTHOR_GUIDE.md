@@ -979,10 +979,13 @@ output Concord produces: the generated `Debug` of clients, scopes and requests, 
 `Debug`, and `Error`'s `Display` and `Debug`. Sensitive header values are also flagged with
 `HeaderValue::set_sensitive`.
 
-- Keys named `authorization`, `proxy-authorization`, `cookie`, `set-cookie`, `x-api-key`,
-  `api-key`, `apikey`, `x-auth-token`, `auth-token`, `access-token`, `refresh-token`, `id-token`,
-  `token`, `client-secret`, `secret`, `password`, `signature` or `session` (compared lowercase,
-  `_` as `-`) are treated as sensitive without the marker.
+- A list of well-known names is a safety net, not a guarantee: keys named `authorization`,
+  `proxy-authorization`, `cookie`, `set-cookie`, `x-api-key`, `api-key`, `apikey`,
+  `x-auth-token`, `auth-token`, `access-token`, `refresh-token`, `id-token`, `token`,
+  `client-secret`, `secret`, `password`, `signature`, `session`, `api-token`, `x-api-token`,
+  `x-access-token`, `private-token`, `x-goog-api-key`, `ocp-apim-subscription-key` or
+  `x-amz-security-token` (compared lowercase, `_` as `-`) are treated as sensitive without the
+  marker. A vendor's own name (`X-Riot-Token`) is not on it.
 - Prefer `#[sensitive]` on every secret even when its key is on this list: the name rule follows
   the key, so renaming the header to a name not on the list would silently stop the redaction,
   while the marker follows the value.

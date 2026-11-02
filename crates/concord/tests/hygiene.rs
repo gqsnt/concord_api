@@ -84,3 +84,33 @@ mod raw_root {
         assert_eq!(p.request().url().path(), "/ping");
     }
 }
+
+/// Generated code names its prelude items by path: it expands in a `no_implicit_prelude` module
+/// (the declaration's own types are written as paths there too).
+#[no_implicit_prelude]
+mod no_prelude {
+    ::concord::api! {
+        /// Declared without the prelude.
+        pub(crate) client Bare(query lang?: ::std::string::String = "en") {
+            base "http://bare.invalid";
+            GET item(id: u32, header("x-n") n?: u32) -> ::std::string::String {
+                path "items/{id}";
+                response text;
+            }
+        }
+    }
+}
+
+#[test]
+fn expands_without_the_prelude() {
+    let p = no_prelude::Bare::new(reqwest::Client::new())
+        .item(7)
+        .set_n(2u32)
+        .prepare()
+        .unwrap();
+    assert_eq!(
+        p.request().url().as_str(),
+        "http://bare.invalid/items/7?lang=en"
+    );
+    assert_eq!(p.request().headers()["x-n"], "2");
+}

@@ -69,6 +69,32 @@ pub fn relation(a: &KeyName, b: &KeyName) -> Rel {
     }
 }
 
+/// Whether a value sent under `ka`, with the run-time conditions `set`, is already withheld
+/// whenever `ka == kb` and a condition `t` of a contribution under `kb` holds: `t` with `kb`
+/// replaced by `ka` (equivalent when `ka == kb`) is in `set`, or cannot hold.
+fn implied(t: &Cond, ka: &KeyName, kb: &KeyName, set: &std::collections::BTreeSet<Cond>) -> bool {
+    let swap = |k: &KeyName| if k == kb { ka.clone() } else { k.clone() };
+    match t {
+        Cond::Name(p) => match swap(&KeyName::Path(*p)) {
+            KeyName::Path(q) => set.contains(&Cond::Name(q)),
+            // `ka` is a literal: on the list, its values are withheld statically and never get
+            // here; off the list, the condition cannot hold.
+            KeyName::Lit(_) => true,
+        },
+        Cond::Same(x, y) => {
+            let (x, y) = (swap(x), swap(y));
+            match relation(&x, &y) {
+                Rel::Same => false,
+                Rel::Different => true,
+                Rel::Unknown => {
+                    let (x, y) = if x <= y { (x, y) } else { (y, x) };
+                    set.contains(&Cond::Same(x, y))
+                }
+            }
+        }
+    }
+}
+
 /// A run-time condition under which a value is withheld from Concord's output (it can only arise
 /// from native header names).
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -331,6 +357,13 @@ const SENSITIVE_NAMES: &[&str] = &[
     "password",
     "signature",
     "session",
+    "api-token",
+    "x-api-token",
+    "x-access-token",
+    "private-token",
+    "x-goog-api-key",
+    "ocp-apim-subscription-key",
+    "x-amz-security-token",
 ];
 
 fn sensitive_name(key: &str) -> bool {
@@ -1453,7 +1486,13 @@ impl Model {
                     if targets.is_empty() {
                         continue;
                     }
-                    for &b in seq {
+                    // Statically sensitive contributions first: their conditions are the ones
+                    // the others' conditions most often reduce to (see `implied`).
+                    let order = seq
+                        .iter()
+                        .filter(|&&b| self.contrib(b).sensitive)
+                        .chain(seq.iter().filter(|&&b| !self.contrib(b).sensitive));
+                    for &b in order {
                         if a == b {
                             continue;
                         }
@@ -1463,28 +1502,35 @@ impl Model {
                             .iter()
                             .flat_map(|r| conds.get(r).into_iter().flatten().cloned())
                             .collect();
-                        let add: Vec<Cond> = match relation(&ka, kb) {
-                            Rel::Different => continue,
+                        match relation(&ka, kb) {
+                            Rel::Different => {}
                             // Same header: whatever makes the other contribution sensitive.
-                            Rel::Same => theirs.into_iter().collect(),
-                            // Possibly the same header: if the other is (or may be) sensitive.
-                            Rel::Unknown => {
-                                if self.contrib(b).sensitive || !theirs.is_empty() {
-                                    let (x, y) = if ka <= *kb {
-                                        (ka.clone(), kb.clone())
-                                    } else {
-                                        (kb.clone(), ka.clone())
-                                    };
-                                    vec![Cond::Same(x, y)]
-                                } else {
-                                    continue;
+                            Rel::Same => {
+                                for v in &targets {
+                                    let set = conds.entry(*v).or_default();
+                                    for c in &theirs {
+                                        changed |= set.insert(c.clone());
+                                    }
                                 }
                             }
-                        };
-                        for v in &targets {
-                            let set = conds.entry(*v).or_default();
-                            for c in &add {
-                                changed |= set.insert(c.clone());
+                            // Possibly the same header: `ka == kb` and the other is sensitive.
+                            // A condition `t` of the other's is redundant for a value that
+                            // already has `t` with `kb` replaced by `ka` (equal under `ka == kb`),
+                            // so `Same(ka, kb)` is added only for a reason not already covered.
+                            // This keeps the conditions linear in the keys of a chain.
+                            Rel::Unknown => {
+                                let same = if ka <= *kb {
+                                    Cond::Same(ka.clone(), kb.clone())
+                                } else {
+                                    Cond::Same(kb.clone(), ka.clone())
+                                };
+                                let fixed = self.contrib(b).sensitive;
+                                for v in &targets {
+                                    let set = conds.entry(*v).or_default();
+                                    if fixed || theirs.iter().any(|t| !implied(t, &ka, kb, set)) {
+                                        changed |= set.insert(same.clone());
+                                    }
+                                }
                             }
                         }
                     }

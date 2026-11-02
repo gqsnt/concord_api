@@ -274,7 +274,9 @@ async fn row3b_3c_typed_unit_is_decoded() {
     ] {
         assert_eq!(error.kind(), ErrorKind::Decode);
         assert!(
-            error.to_string().contains("unexpected end of input"),
+            error
+                .to_string()
+                .contains("the response body is empty or only whitespace"),
             "{error}"
         );
     }

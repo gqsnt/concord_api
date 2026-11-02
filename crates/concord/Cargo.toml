@@ -12,6 +12,10 @@ readme = "../../README.md"
 # (key material) stay in the repository, where `tests-gen/` regenerates the oracles.
 include = ["/src/**/*.rs", "/Cargo.toml", "/LICENSE-APACHE", "/LICENSE-MIT"]
 
+# docs.rs documents every format, `Form` (feature `form`) included.
+[package.metadata.docs.rs]
+all-features = true
+
 [features]
 default = ["json", "reqwest-defaults"]
 ## The `json` format (`format json;`, `request json;`, `response json;`), via serde/serde_json.
@@ -50,6 +54,10 @@ required-features = ["json"]
 
 [[test]]
 name = "bodies"
+required-features = ["json"]
+
+[[test]]
+name = "error_inspection"
 required-features = ["json"]
 
 [[test]]

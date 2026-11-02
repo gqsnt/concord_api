@@ -48,6 +48,12 @@ impl<T> Prepared<T> {
     /// Executes the request once with the application's `reqwest::Client`, requires a 2xx status
     /// and decodes the body with the declared format (an endpoint without `->` drains it
     /// and returns `()`). Never retries.
+    ///
+    /// # Errors
+    ///
+    /// [`ErrorKind::Transport`](crate::ErrorKind::Transport) if reqwest fails to send the request
+    /// or read the response, [`Status`](crate::ErrorKind::Status) for a non-2xx response (kept
+    /// unread), [`Decode`](crate::ErrorKind::Decode) if the body does not decode.
     pub async fn send(self) -> Result<T, Error> {
         let (client, request, decoder) = self.into_parts();
         decoder.finish(client.execute(request).await).await
@@ -55,6 +61,11 @@ impl<T> Prepared<T> {
 
     /// Executes the request once and returns the native response without checking its status or
     /// reading its body.
+    ///
+    /// # Errors
+    ///
+    /// [`ErrorKind::Transport`](crate::ErrorKind::Transport) only: any status is returned as a
+    /// response.
     pub async fn send_raw(self) -> Result<reqwest::Response, Error> {
         let meta = self.decoder.meta;
         self.client
@@ -130,6 +141,12 @@ impl<T> Decoder<T> {
 
     /// Decodes `response` as the endpoint would have. A non-2xx status is
     /// [`ErrorKind::Status`](crate::ErrorKind::Status) and keeps the response unread.
+    ///
+    /// # Errors
+    ///
+    /// [`Status`](crate::ErrorKind::Status) for a non-2xx response,
+    /// [`Transport`](crate::ErrorKind::Transport) if reading the body fails,
+    /// [`Decode`](crate::ErrorKind::Decode) if it does not decode.
     pub async fn decode(self, response: reqwest::Response) -> Result<T, Error> {
         if !response.status().is_success() {
             return Err(Error::from_status(self.meta, response));
@@ -155,6 +172,12 @@ impl<T> Decoder<T> {
     /// Completes a request you executed yourself: a transport failure becomes a Concord
     /// [`ErrorKind::Transport`](crate::ErrorKind::Transport) error (with the same redaction as
     /// [`Prepared::send`]), and a response is handled as by [`decode`](Self::decode).
+    ///
+    /// # Errors
+    ///
+    /// [`Transport`](crate::ErrorKind::Transport) for `Err` or a failed body read,
+    /// [`Status`](crate::ErrorKind::Status) for a non-2xx response,
+    /// [`Decode`](crate::ErrorKind::Decode) if the body does not decode.
     ///
     /// ```no_run
     /// # async fn run(prepared: concord::Prepared<String>) -> Result<(), concord::Error> {

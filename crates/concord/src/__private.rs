@@ -644,6 +644,13 @@ pub const SENSITIVE_NAMES: &[&str] = &[
     "password",
     "signature",
     "session",
+    "api-token",
+    "x-api-token",
+    "x-access-token",
+    "private-token",
+    "x-goog-api-key",
+    "ocp-apim-subscription-key",
+    "x-amz-security-token",
 ];
 
 /// The type a header key path must have: a native `HeaderName` (constant or static). Only the

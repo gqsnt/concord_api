@@ -171,7 +171,8 @@ async fn r03_content_type_is_not_checked() {
     assert_eq!(api.item(2).send().await.unwrap().id, 2);
 }
 
-/// R04: `()` accepts 204 and any 2xx body; JSON on 204 fails as end of input.
+/// R04: no output accepts 204 and any 2xx body; JSON on 204 fails (an empty body is not JSON),
+/// with a static hint and the serde error as the body source.
 #[tokio::test]
 async fn r04_empty_responses() {
     let (_server, api) = shop(Reply::new(204)).await;
@@ -179,8 +180,17 @@ async fn r04_empty_responses() {
     let error = api.item(1).send().await.unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Decode);
     assert!(
-        error.to_string().contains("unexpected end of input"),
+        error
+            .to_string()
+            .ends_with("the response body is empty or only whitespace, which is not JSON; an endpoint whose response has no body omits `->`"),
         "{error}"
+    );
+    assert!(
+        error
+            .body_source()
+            .unwrap()
+            .to_string()
+            .contains("EOF while parsing")
     );
 
     let (_server, api) = shop(Reply::json(200, r#"{"deleted":true}"#)).await;
