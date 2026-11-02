@@ -4,11 +4,12 @@
 `b0fe26e4ec3d0c2ac7e1ebb4216d05a38a4aff4e`** (branch `concord-v4-refine`, worktree
 `/home/canarit/projects/concord_api_v4`). Fresh locked verification (`scripts/verify.sh --msrv`:
 fmt, clippy `-D warnings`, four test configurations, three strict rustdoc configurations, MSRV
-1.85.1 runtime and example suites) passed for the coordinator and, independently, for the Codex
-final and re-review runs. The independent reviews found no open blocker or high-severity defect.
-Their last open point, the claim-to-test matrix's receipt binding (R2), was corrected in the
-record-only commit that adds this file. A focused check of that correction is recorded in
-`REVIEW_TRIAGE.md`. **Windows and macOS were not run** for any refined commit: there is no Windows
+1.85.1 runtime and example suites) passed on `b0fe26e` for the coordinator and, independently, for
+the Codex focused re-review; the Codex final review ran the same gates, also passing, on its
+predecessor `0fe60e1`. The independent reviews found no blocker or high-severity defect. Their last
+open point, the claim-to-test matrix (R2), was corrected in record-only commits and confirmed
+RESOLVED by a focused read-only Codex check of `bbbeca1`; the record wording that check flagged is
+corrected in the commit that follows it (all recorded in `REVIEW_TRIAGE.md`). **Windows and macOS were not run** for any refined commit: there is no Windows
 host, VM or wine here, and CI needs a push, which was not authorized. Nothing was pushed or
 published.
 
@@ -116,13 +117,19 @@ See `TEST_MATRIX.md` (status bound to the receipt) and `evidence/m4_mutations.md
 
 ## Performance (details: [`PERF.md`](PERF.md); raw runs in `evidence/perf/`)
 
-- **`#[inline]` kept.** Removing it from `prepare` made API-edit release rebuilds 1.4–3.6× slower
-  and consumer-only rebuilds 25–33% faster.
+Measured revisions: alpha `8f7adc2`; refined `de6471f` (and its no-inline variant) for the
+inline experiment; `d1844be` for the final comparison and the runtime benchmark. The delivered
+`b0fe26e` was **not re-timed**: it differs from `d1844be` in generated documentation notes and doc
+comments (no runtime logic), which can affect compile cost a little.
+
+- **`#[inline]` kept** (measured on `de6471f`). Removing it from `prepare` made API-edit release
+  rebuilds 1.4–3.6× slower and consumer-only rebuilds 25–33% faster.
 - **A regression versus the alpha was found, attributed and reduced, not hidden.** Per-contribution
   `const` header validation and quadratic doc-note generation were fixed.
-- **Remaining accepted cost:** in the declaring crate, `check` is +27% (1,000 endpoints) and +42%
-  (shared-contribution shape); release is +18–29%.
-- **Unchanged:** consumers and loopback execution.
+- **Remaining accepted cost** (`d1844be` vs alpha): in the declaring crate, `check` is +27% (1,000
+  endpoints) and +42% (shared-contribution shape); release is +18–29%.
+- **Broadly similar for the measured workloads:** consumer rebuilds (0.94–1.06×, except +10–15% for
+  API-edit rebuilds through small consumers) and loopback execution.
 - **Request construction:** +105 ns for nine query values, attributed to fallible formatting.
 - **Conditions:** one machine with the desktop in use, three samples per row; differences under ~5%
   are noise.
@@ -132,9 +139,10 @@ See `TEST_MATRIX.md` (status bound to the receipt) and `evidence/m4_mutations.md
 | Review (Codex `gpt-6.1-sol`, `xhigh`, observed in session logs) | Result |
 |---|---|
 | Design challenge pass 1 (blind) and pass 2 (source, execute) | answered row by row in `DECISIONS.md`; capacity panic fixed |
-| Milestone `6604a53` (execute) | F-01 multipart escaping, F-02 raw-keyword root, F-03 strict no-default rustdoc, F-04 stale contract/migration → all fixed; independently confirmed in the final review |
+| Milestone `6604a53` (execute) | F-01 multipart escaping, F-02 raw-keyword root, F-03 strict no-default rustdoc → fixed and independently confirmed in the final review; F-04 stale contract/migration → not fully closed there (carried into R2/R3), closed by `b0fe26e` and the record commits, confirmed by the re-review (R3) and the R2 check |
 | Final acceptance `0fe60e1` (execute) | REVISE: R1 generated default wording, R2 matrix, R3 prose; no new high-severity defect |
-| Focused re-review `b0fe26e` (execute) | R1, R3 RESOLVED; R2 narrowed to receipt binding and the G2 exemption → corrected in the record commit; focused check recorded in `REVIEW_TRIAGE.md` |
+| Focused re-review `b0fe26e` (execute) | R1, R3 RESOLVED; R2 narrowed to receipt binding and the G2 exemption → corrected in `bbbeca1` |
+| Focused R2 check `bbbeca1` (static, read-only) | R2 RESOLVED; files outside `v4/` blob-identical to `b0fe26e`; four wording issues in this report (review attribution, performance revisions, verification identities, F-04 closure) → corrected in the next record commit |
 
 Also used:
 - **Claude Opus 5.5 specialist tracks at `xhigh`:** authoring, calling, core and compiler.
@@ -173,7 +181,7 @@ The compiler names most of these edits. No second legacy parser was kept.
 | Deep scope chains (> ~48) and ~1,000 nested overrides hit rustc limits; a declaration with ~24,575 distinct header names reaches a hyper-util panic at send | resource boundary, documented |
 | Windows, macOS, HTTP/2, TLS variants, allocation counts, rust-analyzer, LTO, rendered docs QA | unmeasured / not run |
 
-No known defect is open.
+No known defect is open. Remaining findings were record wording, corrected as listed in `REVIEW_TRIAGE.md`.
 
 ## Reproduce and continue
 

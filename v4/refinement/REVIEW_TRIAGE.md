@@ -66,7 +66,7 @@ carried into the acceptance record.
 | ID | Severity / impact | Evidence | Disposition | Fix / test | Re-review |
 |---|---|---|---|---|---|
 | R1 | P2 — generated docs called `maybe_x(None)` "the default" for an initialized optional `each … else inherit` value (it starts present) | reviewer's `generated-default-excerpt.txt` | FIXED | `b0fe26e`; `crates/concord-macros` `emit::tests::per_call_note_names_the_actual_default` | RESOLVED (focused re-review of `b0fe26e`; the reviewer reverted the wording and the test failed) |
-| R2 | P2 — `v4/TEST_MATRIX.md` asserted alpha behaviour, cited a deleted UI test, stale counts, alpha receipts | reviewer's matrix audit | FIXED in two steps | `b0fe26e` (rows corrected, refinement rows, all references checked); then receipt binding and the G2 exemption (re-review point 1–2) in the follow-up record commit | `b0fe26e`: NOT RESOLVED (binding to a not-yet-existing FINAL/receipt; G2 overclaimed the 7 exempt old-syntax blocks) → second focused re-review |
+| R2 | P2 — `v4/TEST_MATRIX.md` asserted alpha behaviour, cited a deleted UI test, stale counts, alpha receipts | reviewer's matrix audit | FIXED in two steps | `b0fe26e` (rows corrected, refinement rows, all references checked); `bbbeca1` (binding to `evidence/verify_b0fe26e.txt`, G2 exemption) | `b0fe26e`: NOT RESOLVED (two points) → `bbbeca1`: **RESOLVED** (focused check below) |
 | R3 | P3 — MIGRATION/DIAGNOSTICS described two diagnostics as they were before `d1844be` | reviewer's diagnostic probes | FIXED | `b0fe26e` | RESOLVED |
 
 ## Codex focused re-review of `b0fe26e`
@@ -77,3 +77,21 @@ carried into the acceptance record.
   wording mutation (killed); audit of all 76 PASS rows of the matrix.
 - Report: `rereview_b0fe26e_report.md`. Verdict: REVISE only for R2's two remaining points
   (above); R1 and R3 RESOLVED; no regression in the delta; Linux only.
+
+## Codex focused check of the R2 correction (`bbbeca1`, static)
+
+- Reviewer: `gpt-6.1-sol`, effort `xhigh` (session `turn_context`), read-only sandbox, snapshot
+  `fb319a6` of `bbbeca1`, 2026-11-02 02:40–02:43 UTC. Report: `r2check_bbbeca1_report.md`.
+- Personally executed (static): manifest hash/mode/tree comparison with the `b0fe26e` snapshot (all
+  223 files outside `v4/` identical), receipt-versus-matrix comparison, enumeration of the seven
+  exempt blocks, excerpt comparison, settings and cleanliness checks.
+- R2: **RESOLVED** for both points.
+
+| ID | Severity | Finding | Disposition |
+|---|---|---|---|
+| Q1 | P2 | `FINAL.md` claimed the focused check was recorded here before it was | FIXED (this section; `FINAL.md` wording) |
+| Q2 | P2 | `FINAL.md` performance summary did not name the measured revisions; "unchanged" overstated | FIXED: revisions named (`de6471f`, `d1844be`), `b0fe26e` stated as not re-timed, "broadly similar for the measured workloads" |
+| Q3 | P3 | `FINAL.md` attributed `b0fe26e` verification to the final review (which ran `0fe60e1`) | FIXED: identities separated |
+| Q4 | P3 | `FINAL.md` said F-04 was confirmed in the final review (it was carried into R2/R3) | FIXED: attribution corrected |
+
+These corrections touch only `v4/refinement/FINAL.md` and this file.
