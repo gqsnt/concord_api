@@ -226,7 +226,9 @@ let silent = api.clone().maybe_lang(None);
 assert_eq!(language_of(silent.shop("acme").products())?, None);
 ```
 
-(`query_of` returns the query string of the prepared request, like `language_of` above.)
+(`query_of` returns the query string of the prepared request, like `language_of` above. In the
+next sections, `local(&server)` creates the same client with `with_base_url` pointing at the
+local stand-in server.)
 
 ## 5. Preparing and sending
 
