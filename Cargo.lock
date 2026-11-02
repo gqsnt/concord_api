@@ -136,6 +136,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-clone-compat"
+version = "0.0.0"
+dependencies = [
+ "concord",
+]
+
+[[package]]
 name = "concord-example-multipart"
 version = "0.0.0"
 dependencies = [
