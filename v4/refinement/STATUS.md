@@ -27,14 +27,14 @@ historical.
 | Gate | Status | Evidence |
 |---|---|---|
 | M0 Baseline | PASS | `scripts/verify.sh --msrv` at 8f7adc2, clean tree, all 9 steps PASS (warm cache): `evidence/m0_baseline_verify_8f7adc2.txt` |
-| M1 Boundary fixes | PASS (pending independent review) | L1 `650a174`, L2+L5 `4f3ff85`; see below |
-| M2 Design decisions | IN PROGRESS | Codex blind pass 1 running; four specialist tracks running |
-| M3 Implementation | NOT_RUN | |
-| M4 Boundaries/adversarial | NOT_RUN | |
-| M5 Performance | NOT_RUN | |
+| M1 Boundary fixes | PASS (pending independent review) | L1 `650a174`, L2+L5 `4f3ff85`, header-map capacity `ab0278c` |
+| M2 Design decisions | PASS (pending independent review) | `DECISIONS.md`; four tracks + fresh-use control + Codex design passes 1–2 |
+| M3 Implementation | IN PROGRESS | D08 `c2871f9`, D01 `2720d67`, D06/D13 `f29e9ba`, D04/D14 `0864d38`, Display errors `b4ce491`, into_response `433abf9`, C16 Debug, D16 `8628622`, D11 test `f0e203b` |
+| M4 Boundaries/adversarial | IN PROGRESS | two delegated branches: `refine-m4-tests` (oracle, surfaces, mutations), `refine-m4-native` (native recipes) |
+| M5 Performance | NOT_RUN | needs an exclusive slot after M4 builds |
 | M6 Docs/fresh use | NOT_RUN | |
 | M7 Independent acceptance | NOT_RUN | |
-| Platforms | Linux only so far; Windows NOT_RUN for any new commit | |
+| Platforms | Linux only; Windows BLOCKED for new commits (no Windows host/VM/wine; CI needs a push, not authorized) | |
 
 ## Leads (handoff `guides/02_BASELINE.md`)
 
@@ -42,24 +42,34 @@ historical.
 |---|---|---|
 | L1 native header-name precondition | defect | **Reproduced** at 8f7adc2: a 65,536-byte literal name compiles and `prepare()` panics in `http-1.5.0` (`evidence/m1_l1_panic_at_8f7adc2.txt`). **Fixed** `650a174`: the native constructor runs in `const` (always-evaluated guard + `const` block), so the name is rejected at compile time and the runtime path has no panic. Regression `ui/header_name_exceeds_native_limit` (compiled before the fix), boundary `tests/native_limits.rs` (65,535 bytes works). Limitation: the error spans the whole `api!` invocation. |
 | L2 cross-name header order | contract over-claim | **Confirmed**: `c09` asserted `x-tag` before `x-other` on the wire and SEMANTICS §5 said header slots keep first-appearance order. **Corrected** `4f3ff85`: contract = exact query order + value order within one header name; no order across names. |
-| L3 static/runtime base asymmetry | design question | Core track (D11) |
+| L3 static/runtime base asymmetry | design question | D11 KEEP strict subset; invariant tested `f0e203b` |
 | L4 performance evidence | evidence gap | Compiler track builds the generator/consumers; timing slot after implementation |
 | L5 DNS in initializer test | test reliability | **Fixed** `4f3ff85`: loopback send with a positive assertion |
 | L6 process failures | process | checked edits (`rep.py` asserts counts), `--locked`, disposable snapshots |
-| HeaderMap capacity (C07) | to reproduce | Core track (D12) |
+| HeaderMap capacity (C07) | defect | **Reproduced** (Codex pass 2, core track; 24,576 distinct names); **fixed** `ab0278c` (`try_append`/`try_insert`, build error) |
 
 ## Active work
 
-- Codex blind design pass 1: `/home/canarit/projects/concord_v4_refine_work/codex_design/pass1/`
-  (read-only sandbox, isolated directory; charter + task corpus + contract cases only).
-- Specialist snapshots (all exported from 8f7adc2 by the handoff's `review_snapshot.py`):
-  `/home/canarit/projects/concord_v4_refine_work/snapshots/{authoring,calling,core,compiler}-8f7adc2`;
-  reports to `/home/canarit/projects/concord_v4_refine_work/reports/`.
+- Done and archived: Codex design passes 1–2 (`reviews/codex/`), four specialist tracks and the
+  fresh-use control trial (`evidence/tracks/`). Work dirs under
+  `/home/canarit/projects/concord_v4_refine_work/` (snapshots, exp/, reports/).
+- Running: worktrees `concord_v4_refine_work/wt/m4-tests` (branch `refine-m4-tests`) and
+  `wt/m4-native` (branch `refine-m4-native`), both from `433abf9`; to be reviewed and merged.
+
+## Process events
+
+- 2026-11-02 ~00:43: the host's Claude Code process restarted, killing the four specialist
+  tracks and Codex pass 2 mid-run (pass 2 had run 44 commands, no report yet). Specialists were
+  resumed from their saved transcripts; Codex pass 2 was resumed with `codex exec resume` on the
+  same session id (snapshot tracked source verified unchanged first). Fresh-use control trial had
+  finished before the restart (`concord_v4_refine_work/reports/fresh_control.md`).
 
 ## Next action
 
-Collect the blind pass and specialist reports; run Codex pass 2 (source comparison) on
-`snapshots/codex-design-8f7adc2`; decide D01–D18; implement in vertical slices.
+Merge the M4 branches after review; M5 timing slot (exclusive) with the compiler track's
+generator adapted to the new syntax; M6 docs and a fresh-use trial of the refined surface; frozen
+snapshot for the Codex milestone/final review (execution mode, loopback); fix, re-review, final
+verification.
 
 ## Resume instructions
 
