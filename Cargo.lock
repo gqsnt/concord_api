@@ -164,6 +164,7 @@ dependencies = [
 name = "concord-macros"
 version = "4.0.0-alpha.1"
 dependencies = [
+ "concord",
  "proc-macro2",
  "quote",
  "syn 3.0.9",

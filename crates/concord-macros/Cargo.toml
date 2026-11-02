@@ -16,5 +16,10 @@ proc-macro2.workspace = true
 quote.workspace = true
 syn = { workspace = true, features = ["full", "parsing", "printing", "proc-macro", "clone-impls"] }
 
+[dev-dependencies]
+# Only for the D11 consistency test: the runtime parser that the declared-base checker must not
+# contradict.
+concord = { path = "../concord", default-features = false }
+
 [lints]
 workspace = true

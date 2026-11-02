@@ -1485,3 +1485,211 @@ fn flatten(
     }
     index
 }
+
+/// D11: the declared-base checker accepts a strict subset of what the runtime accepts, so the
+/// generated `Base::from_static` can never panic. Checked against the real runtime parser on a
+/// hand-written corpus (refinement core track, `exp/core/d11/cases.py`) and on deterministic
+/// structured random inputs.
+#[cfg(test)]
+mod base_consistency {
+    use super::validate_base;
+    use concord::__private::Base;
+    use proc_macro2::Span;
+    use syn::LitStr;
+
+    fn static_ok(input: &str) -> bool {
+        validate_base(&LitStr::new(input, Span::call_site())).is_ok()
+    }
+
+    fn check(input: &str) {
+        if static_ok(input) {
+            assert!(
+                Base::parse(input).is_ok(),
+                "accepted at compile time but rejected at runtime: {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn corpus() {
+        let corpus = [
+            "http://example.test",
+            "http://example.test/",
+            "https://example.test/v1",
+            "https://example.test/v1/",
+            "http://example.test//",
+            "http://localhost:3000",
+            "http://EXAMPLE.Test/V1",
+            "HTTP://example.test",
+            "Http://example.test",
+            "http://example.test.",
+            "http://example.test./v1",
+            "http://example.test..",
+            "http://.example.test",
+            "http://127.0.0.1.",
+            "http://example.test:80",
+            "https://example.test:443/v1",
+            "http://example.test:443",
+            "http://[::1]:80",
+            "http://example.test:",
+            "http://example.test:0080",
+            "http://example.test:08080",
+            "http://example.test:65535",
+            "http://example.test:65536",
+            "http://example.test:0",
+            "http://example.test:+80",
+            "http://127.0.0.1:8080",
+            "http://127.1",
+            "http://2130706433",
+            "http://0x7f.0.0.1",
+            "http://01.02.03.04",
+            "http://256.0.0.1",
+            "http://1.2.3",
+            "http://api.0x10",
+            "http://api.123",
+            "http://123.api",
+            "http://[::1]",
+            "http://[::1]:8080/v1",
+            "http://[0:0:0:0:0:0:0:1]",
+            "http://[::FFFF:127.0.0.1]",
+            "http://[fe80::1%25eth0]",
+            "http://[v1.x]",
+            "http://[::1",
+            "http://[::1]x",
+            "http://[1:2:3:4:5:6:7:8:9]",
+            "http://::1",
+            "http://b\u{fc}cher.example",
+            "http://xn--bcher-kva.example",
+            "http://XN--BCHER-KVA.example",
+            "http://xn--a.example",
+            "http://a.b.c.xn--pokxncvks",
+            "http://fa\u{df}.example",
+            "http://\u{ff45}\u{ff58}\u{ff41}\u{ff4d}\u{ff50}\u{ff4c}\u{ff45}.test",
+            "http://a\u{3002}b.test",
+            "http://\u{4f8b}\u{3048}.\u{30c6}\u{30b9}\u{30c8}",
+            "http://ab--cd.example",
+            "http://x_y.example",
+            "http://-lead.example",
+            "http://trail-.example",
+            "http://ex%41mple.test",
+            "http://exa\nmple.test",
+            "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example",
+            "http://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.tst",
+            "http://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.tst",
+            "http://example.test/a%20b",
+            "http://example.test/a%2Fb",
+            "http://example.test/caf%C3%A9",
+            "http://example.test/caf\u{e9}",
+            "http://example.test/a b",
+            "http://example.test/a%zz",
+            "http://example.test/a%",
+            "http://example.test/x/%2e%2e/admin",
+            "http://example.test/x/%2E/y",
+            "http://example.test/a/./b",
+            "http://example.test/a/../b",
+            "http://example.test/..",
+            "http://example.test/...",
+            "http://example.test/a\\b",
+            "http://example.test/a|b",
+            "http://example.test/[x]",
+            "http://example.test/{x}",
+            "http://example.test/a^b",
+            "http://example.test/a\"b",
+            "http://example.test/a\tb",
+            "http://example.test/a`b",
+            "http://example.test/v1:beta@x!$&'()*+,;=",
+            " http://example.test",
+            "http://example.test ",
+            "http:\\\\example.test",
+            "http:example.test",
+            "http:///example.test",
+            "http://@example.test",
+            "http://:@example.test",
+            "http://user@example.test",
+            "http://example.test/?",
+            "http://example.test/#",
+            "http://example.test?x",
+            "ftp://example.test",
+            "http://",
+        ];
+        let accepted = corpus.iter().filter(|i| static_ok(i)).count();
+        assert!(
+            accepted > 20,
+            "the corpus must exercise accepted bases ({accepted})"
+        );
+        corpus.iter().for_each(|i| check(i));
+    }
+
+    /// xorshift64*: deterministic, no dependency.
+    struct Rng(u64);
+
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 >> 12;
+            self.0 ^= self.0 << 25;
+            self.0 ^= self.0 >> 27;
+            self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        }
+        fn pick<'a>(&mut self, items: &[&'a str]) -> &'a str {
+            items[(self.next() % items.len() as u64) as usize]
+        }
+    }
+
+    #[test]
+    fn random_structured_bases() {
+        let schemes = [
+            "http://", "https://", "HTTP://", "ftp://", "http:", "http:///",
+        ];
+        let label_chars = [
+            "a", "z", "0", "9", "-", ".", "_", "A", "x", "n", "%", "\u{fc}", "[", ":",
+        ];
+        let hosts = [
+            "127.0.0.1",
+            "[::1]",
+            "[::ffff:1.2.3.4]",
+            "1.2.3",
+            "0x7f.1",
+            "localhost",
+            "",
+        ];
+        let ports = ["", ":", ":0", ":1", ":80", ":65535", ":65536", ":080", ":x"];
+        let path_chars = [
+            "a", "/", "-", ".", "..", "%", "%2F", "%41", "~", "!", "$", "&", "'", "(", ")", "*",
+            "+", ",", ";", "=", ":", "@", "?", "#", " ", "\\", "\u{e9}", "[", "]", "|",
+        ];
+        let mut rng = Rng(0x0C0F_FEE0_D11B_A5E5);
+        let mut accepted = 0;
+        for _ in 0..50_000 {
+            let mut url = String::from(rng.pick(&schemes));
+            // Half of the inputs are near-valid (mostly accepted), half adversarial.
+            let near_valid = rng.next() % 2 == 0;
+            if near_valid {
+                url = String::from(rng.pick(&["http://", "https://"]));
+                for i in 0..1 + rng.next() % 4 {
+                    if i > 0 {
+                        url.push('.');
+                    }
+                    url.push_str(rng.pick(&["api", "x-y", "a1", "b", "9z", "eu", "test"]));
+                }
+            } else if rng.next() % 4 == 0 {
+                url.push_str(rng.pick(&hosts));
+            } else {
+                for _ in 0..1 + rng.next() % 12 {
+                    url.push_str(rng.pick(&label_chars));
+                }
+            }
+            url.push_str(rng.pick(&ports));
+            for _ in 0..rng.next() % 10 {
+                url.push_str(rng.pick(&path_chars));
+            }
+            if static_ok(&url) {
+                accepted += 1;
+            }
+            check(&url);
+        }
+        assert!(
+            accepted > 1_000,
+            "the generator must reach accepted bases ({accepted})"
+        );
+    }
+}
