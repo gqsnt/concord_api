@@ -69,6 +69,18 @@ concord::api! {
 }
 
 concord::api! {
+    /// `each` over a list: an empty list places no value, like an absent optional one.
+    pub client Listed {
+        base "http://accept.invalid";
+        response Json;
+        GET listed(accepts: Vec<String> = Vec::new()) -> Item {
+            path "a";
+            headers { "accept" = each accepts; }
+        }
+    }
+}
+
+concord::api! {
     /// An authored `Accept` on the client, and a sensitive one.
     pub client Authored(#[sensitive] header("accept") secret?: String) {
         base "http://accept.invalid";
@@ -155,6 +167,20 @@ fn prepared_requests_follow_the_truth_table() {
         [&b"application/vnd.api+json"[..]]
     );
     assert!(accept_of(&authored.removed().prepare().unwrap()).is_empty());
+
+    // `each` over an empty list places nothing: the suggestion; over values: exactly those.
+    let listed = Listed::new(reqwest::Client::new());
+    assert_eq!(accept_of(&listed.listed().prepare().unwrap()), [json]);
+    assert_eq!(
+        accept_of(
+            &listed
+                .listed()
+                .set_accepts(vec!["text/csv".to_owned(), "text/plain".to_owned()])
+                .prepare()
+                .unwrap()
+        ),
+        [&b"text/csv"[..], b"text/plain"]
+    );
 }
 
 /// M11: the suggestion inserted under a name the endpoint classifies sensitive is flagged too

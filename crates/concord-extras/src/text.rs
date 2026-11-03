@@ -11,8 +11,9 @@ use crate::media;
 /// - **Responses:** `String`. `Text` names the decoder, not a media type: any `Content-Type` is
 ///   accepted (`text/plain`, `text/csv`, `application/xml`), and so is a missing or malformed
 ///   one. The one refusal, made before the body is read, is a single well-formed `Content-Type`
-///   whose `charset` parameter names something other than UTF-8 (`us-ascii` is accepted): the
-///   bytes are not transcoded. Invalid UTF-8 is a decode error with the byte offset.
+///   whose `charset` parameter names something other than UTF-8 (`us-ascii` is accepted) or
+///   appears more than once: the bytes are not transcoded. Invalid UTF-8 is a decode error with
+///   the byte offset.
 /// - **`Accept`:** no suggestion.
 pub struct Text(());
 
@@ -30,9 +31,9 @@ impl Decode<String> for Text {
     fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
         // A missing, repeated or malformed `Content-Type` is accepted: `Text` names a decoder,
         // not a media type. A declared charset that is not UTF-8, or a repeated one, is refused.
-        match media::single(head).map(|m| m.and_then(|(_, text)| media::charsets(text))) {
-            Ok(Some(charsets)) => media::charset_verdict(
-                &charsets,
+        match media::single(head) {
+            Ok(Some(media)) => media::check_charset(
+                &media.charsets,
                 "the text response declares a charset other than utf-8",
             ),
             _ => Ok(()),

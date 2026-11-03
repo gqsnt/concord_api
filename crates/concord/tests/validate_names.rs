@@ -1,6 +1,6 @@
 //! `Client::validate_header_names()` (H01–H07): an associated function that checks every active
 //! endpoint's header names without a client, a configuration, endpoint values, a network or an
-//! async runtime, with exactly the rules and verdicts of `prepare()`.
+//! async runtime, with the structural rules and verdicts of `prepare()`'s header composition.
 
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -201,4 +201,53 @@ fn debug_lists_the_problems_readably() {
         "{shown}"
     );
     assert!(shown.matches("Broken.").count() >= 5, "{shown}");
+}
+
+/// A format whose encoder always refuses.
+pub struct Refusing;
+
+impl Encode<String> for Refusing {
+    const CONTENT_TYPE: Option<&'static str> = Some("text/x-refusing");
+    fn encode(_: String) -> Result<reqwest::Body, CodecError> {
+        Err(CodecError::new("refused by the test encoder"))
+    }
+}
+
+concord::api! {
+    /// One header problem behind a body whose encoder fails, and the same problem without a body.
+    pub client Ordered(header(AUTHORIZATION) token: String) {
+        base "http://validate.invalid";
+        request Refusing;
+        POST with_body(body b: String) { headers { AUTH = "again"; } }
+        GET without_body() { headers { AUTH = "again"; } }
+    }
+}
+
+/// The validator's problem is the one header composition reports; `prepare()` encodes the body
+/// before composing headers, so an encoder that fails is reported first (SEMANTICS §6). No request
+/// of either endpoint can be built.
+#[test]
+fn earlier_build_steps_fail_first() {
+    let errors = Ordered::validate_header_names().unwrap_err();
+    let endpoints: Vec<&str> = errors.problems().iter().map(|p| p.endpoint()).collect();
+    assert_eq!(endpoints, ["Ordered.with_body", "Ordered.without_body"]);
+    let api = Ordered::new(
+        reqwest::Client::new(),
+        OrderedConfig {
+            token: "Bearer t".to_owned(),
+        },
+    );
+    let error = api.with_body("payload".to_owned()).prepare().unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Build);
+    assert!(
+        error.to_string().contains("refused by the test encoder"),
+        "{error}"
+    );
+    let error = api.without_body().prepare().unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains(errors.problems()[1].declaration()),
+        "{error}"
+    );
 }

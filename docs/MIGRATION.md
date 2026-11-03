@@ -103,11 +103,19 @@ proxy's HTML page, a service that labels JSON `text/plain`.
 **Typed endpoints send an `Accept`.** An endpoint with `-> T` under `Json` now sends `Accept:
 application/json` (under `Form`, `application/x-www-form-urlencoded`) unless the header chain
 declares an `accept`, which is sent as written. Before, Concord sent none and reqwest added its
-`*/*`. Endpoints without `->` and the `Text` and `Binary` formats suggest nothing, as before.
+`*/*` (or your client's default `Accept`). Endpoints without `->` and the `Text` and `Binary` formats suggest nothing, as before.
 A `headers { ACCEPT = "application/json"; }` that you already had is unchanged.
 
 - *Inspect.* `prepared.request().headers()["accept"]`. A test server that matches the exact header
   set sees a new header.
+- *A client-wide default `Accept` is replaced.* reqwest fills in only the header names a request
+  lacks. If your `reqwest::Client` was built with `default_headers` containing an `Accept` (an
+  API that selects its version that way, `application/vnd.acme.v2+json`), every typed `Json` or
+  `Form` endpoint now sends `application/json` instead. Declare that `Accept` in the client's
+  `headers` block, or use a format that suggests none.
+- *Native edits.* After `prepare()?.into_parts()`, the request already carries the suggestion.
+  `RequestBuilder::from_parts(..).header(ACCEPT, v)` appends a second `Accept` line; use
+  `request.headers_mut().insert(ACCEPT, v)` to replace it.
 - *React.* Declare the `Accept` you want; it wins. To drop only the suggestion, use a format that
   suggests none (a small wrapper, [Writing a format](CUSTOM_FORMATS.md#8-the-accept-suggestion)).
   `remove ACCEPT` is for a header you declared. When Concord sends no `Accept`, reqwest sends its
@@ -222,7 +230,8 @@ check headers needs no `check_content_type`, and the default accepts every `Cont
   not a proof: a `String::leak` still compiles.
 - Put checks of the `Content-Type` field in `check_content_type` and nothing else there: the
   adapter skips exactly that step. Everything else that needs the head goes in `context`, which
-  hands an owned value to `decode_body`. `decode_body` never sees the head.
+  hands an owned value to `decode_body`. `decode_body` never sees the head; a refusal there is a
+  `Decode` error after the body was read, so refuse on head data in `context`.
 - `decode_body` called directly performs no head check, by name. Replace
   `<Json as Decode<T>>::decode(bytes)` with `<Json as Decode<T>>::decode_body((), bytes)` where you
   decode an error document yourself.

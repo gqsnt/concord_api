@@ -1,5 +1,6 @@
 //! The `api!` compiler for Concord. Use it through `concord::api!`, which passes the path of the
-//! `concord` crate (`$crate`) as the first token, followed by `;`.
+//! runtime crate as the facade reaches it (`$crate::__macro::concord_core`) as the first tokens,
+//! followed by `;`.
 
 use proc_macro::TokenStream;
 use proc_macro2::{TokenStream as TokenStream2, TokenTree};

@@ -184,7 +184,11 @@ proc macro): items that are public only so that expansions in other crates can r
 
 ## Records and evidence
 
-- `v4/refinement/` — the current refinement campaign: `DECISIONS.md` (D01–D18, what changed and
+- `v4/modular-codecs/` — the current increment (four crates, formats as type paths,
+  metadata-aware codecs, `validate_header_names()`): `STATUS.md`, `DECISIONS.md` (MC*),
+  `TEST_MATRIX.md`, `REVIEW_TRIAGE.md`, `MODEL_RUNS.md`, `PERF.md`, `FINAL.md`, frozen
+  `reports/`.
+- `v4/refinement/` — an earlier refinement campaign: `DECISIONS.md` (D01–D18, what changed and
   why), `STATUS.md` (gates, platforms, process events), `evidence/` (baseline receipts and
   specialist tracks), `reviews/` (independent design reviews).
 - `v4/SEMANTICS.md` and `v4/TEST_MATRIX.md` — the current contract and its executable cases.

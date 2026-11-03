@@ -2,12 +2,23 @@
 
 use concord_core::{CodecError, ContentTypeField, ResponseHead};
 
-/// The response's single `Content-Type`, parsed by `mime` (case-insensitive type, subtype and
-/// parameter names), with its text. `Ok(None)`: no field. A repeated field (equal or not), a value
-/// that is not visible ASCII, and one `mime` rejects (a comma-joined list among them) are errors.
-pub(crate) fn single<'a>(
-    head: &ResponseHead<'a>,
-) -> Result<Option<(mime::Mime, &'a str)>, CodecError> {
+/// A response `Content-Type`: its media type and the values of its `charset` parameters.
+pub(crate) struct Media {
+    /// Type and subtype (and a structured-syntax suffix), parsed by `mime`, without parameters.
+    pub(crate) essence: mime::Mime,
+    /// Every `charset` parameter's value, unquoted, in order.
+    pub(crate) charsets: Vec<String>,
+}
+
+/// The response's single `Content-Type`. `Ok(None)`: no field. A repeated field (equal or not), a
+/// value that is not visible ASCII and one that is not a media type (a comma-joined list among
+/// them) are errors.
+///
+/// `mime` parses only the type and subtype (case-insensitive); the parameters are read with the
+/// RFC 9110 grammar by [`charsets`], because `mime` 0.3.17 misreads a quoted value followed by
+/// another parameter (`charset="utf-8"; x=y` reads as `"utf-`) and refuses forms the grammar
+/// allows (whitespace before `;`, an empty parameter).
+pub(crate) fn single(head: &ResponseHead<'_>) -> Result<Option<Media>, CodecError> {
     let value = match head.content_type() {
         ContentTypeField::Missing => return Ok(None),
         ContentTypeField::Repeated => {
@@ -20,36 +31,20 @@ pub(crate) fn single<'a>(
     let text = value
         .to_str()
         .map_err(|_| CodecError::new("the response Content-Type is not visible ASCII"))?;
-    match text.parse::<mime::Mime>() {
-        Ok(media) => Ok(Some((media, text))),
-        Err(e) => {
-            Err(CodecError::new("the response Content-Type is not a media type").with_source(e))
-        }
-    }
+    let not_media = || CodecError::new("the response Content-Type is not a media type");
+    let end = text.find(';').unwrap_or(text.len());
+    let essence = text[..end]
+        .trim_end_matches([' ', '\t'])
+        .parse::<mime::Mime>()
+        .map_err(|e| not_media().with_source(e))?;
+    let charsets = charsets(text).ok_or_else(not_media)?;
+    Ok(Some(Media { essence, charsets }))
 }
 
-/// Whether a `Content-Type` value's `charset` parameter, if any, names UTF-8 (`us-ascii` is a
-/// subset, so it is accepted too); charset names are case-insensitive. A repeated `charset` is
-/// refused as ambiguous, whatever its values.
-///
-/// The parameters are read here rather than through `mime`, whose 0.3.17 release misreads a
-/// quoted value followed by another parameter (`charset="utf-8"; x=y` reads as `"utf-`): only the
-/// `charset` values are extracted, with the RFC 9110 parameter grammar (tokens and quoted strings
-/// with quoted pairs). `mime` has already accepted the value.
-pub(crate) fn check_charset(text: &str, foreign: &'static str) -> Result<(), CodecError> {
-    let Some(charsets) = charsets(text) else {
-        return Err(CodecError::new(
-            "the response Content-Type is not a media type",
-        ));
-    };
-    charset_verdict(&charsets, foreign)
-}
-
-/// [`check_charset`] on already extracted values.
-pub(crate) fn charset_verdict(
-    charsets: &[String],
-    foreign: &'static str,
-) -> Result<(), CodecError> {
+/// Whether a media type's `charset` parameters, if any, name UTF-8 (`us-ascii` is a subset, so it
+/// is accepted too); charset names are case-insensitive. A repeated `charset` is refused as
+/// ambiguous, whatever its values.
+pub(crate) fn check_charset(charsets: &[String], foreign: &'static str) -> Result<(), CodecError> {
     match charsets {
         [] => Ok(()),
         [one] if one.eq_ignore_ascii_case("utf-8") || one.eq_ignore_ascii_case("us-ascii") => {
@@ -64,7 +59,7 @@ pub(crate) fn charset_verdict(
 
 /// The values of every `charset` parameter of a media type, unquoted; `None` if the parameter
 /// section does not follow `*( OWS ";" OWS [ token "=" ( token / quoted-string ) ] )`.
-pub(crate) fn charsets(text: &str) -> Option<Vec<String>> {
+fn charsets(text: &str) -> Option<Vec<String>> {
     let tchar = |b: u8| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b);
     let bytes = text.as_bytes();
     let mut i = bytes.iter().position(|&b| b == b';').unwrap_or(bytes.len());

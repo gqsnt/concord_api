@@ -9,13 +9,15 @@ use std::fmt;
 /// `validate_header_names()` checks, without building a client, a request or any value, the
 /// rules that depend only on which header each contribution names: on every endpoint compiled
 /// under the current `cfg` whose header chain writes a native `HeaderName` constant (chains with
-/// literal names only were already checked when the declaration compiled). Those rules are
-/// exactly the ones `prepare()` applies before converting any value — a header introduced twice,
-/// an `override`/`else inherit`/`remove` with nothing to act on, a header field reqwest manages,
-/// a `content-type` header next to a declared body media type — and their verdict is the same
-/// whatever optional values are present. A problem here is the error that endpoint's `prepare()`
-/// returns for every request; `Ok(())` means no `prepare()` fails on header **names**. Values,
-/// their conversion, credentials and what servers do are not checked.
+/// literal names only were already checked when the declaration compiled). Those are the
+/// structural rules `prepare()` applies when it composes the headers, through the same function —
+/// a header introduced twice, an `override`/`else inherit`/`remove` with nothing to act on, a
+/// header field reqwest manages, a `content-type` header next to a declared body media type — and
+/// their verdict is the same whatever optional values are present. So no request of a reported
+/// endpoint can be built: its `prepare()` always fails, with this problem unless a step that runs
+/// before header composition fails first (encoding the body, formatting the host, path or query).
+/// `Ok(())` means no `prepare()` fails on header **names**. Values, their conversion, credentials
+/// and what servers do are not checked.
 ///
 /// `Display` lists the problems, one per line; it shows declarations and endpoint names, never
 /// values. `Debug` (what `unwrap()` prints) shows the same lines as a list.

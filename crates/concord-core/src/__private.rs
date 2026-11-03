@@ -861,8 +861,8 @@ impl Violation {
 /// The structural rules of a chain (in composition order: root first, each owner's `remove`s
 /// before its other contributions), on resolved names and written operations only. No value is
 /// converted, formatted or read, and no presence is assumed: every rule holds or fails whatever
-/// optional values turn out to be present, so the verdict is the same for every request the
-/// endpoint can build. Returns the first violation in chain order (the media-type rule, which
+/// optional values turn out to be present, so the verdict is the same for every request of the
+/// endpoint. Returns the first violation in chain order (the media-type rule, which
 /// concerns the chain's last `content-type` contribution, last).
 fn structure<const N: usize>(
     names: &[&HeaderName; N],

@@ -68,8 +68,11 @@ pub trait Encode<T> {
 /// keeps the native response **unread** ([`Error::into_response`](crate::Error::into_response));
 /// a failure in step 4 is [`ErrorKind::Decode`](crate::ErrorKind::Decode). A non-2xx response is
 /// a [`Status`](crate::ErrorKind::Status) error before any of this: the format is not consulted.
-/// Because `decode_body` never receives the head, a decision that depends on the head cannot be
-/// made after the body was consumed.
+/// `decode_body` never receives the head, only the `Context` that `context` built from it. A
+/// refusal placed in step 1 or 2 therefore keeps the response unread; a format that carries head
+/// data in its `Context` and refuses on it in `decode_body` makes that refusal a `Decode` error
+/// after the body was consumed, so put every refusal that depends only on the head in the first
+/// two steps.
 ///
 /// The response `Content-Type` is the format's to check; Concord never compares it with the
 /// request's `Accept`. A format may suggest an `Accept` ([`ACCEPT`](Self::ACCEPT)); the suggestion
@@ -149,6 +152,10 @@ pub trait Decode<T> {
     }
 
     /// Every other check of the response head, and the state the body decoder needs.
+    ///
+    /// It may read `Content-Type` to build its state (a charset to decode with), but should not
+    /// refuse on it: the `IgnoreContentType` adapter does not skip this step, so a refusal here
+    /// would survive it. When the field is missing or unreadable, fall back to a default.
     ///
     /// # Errors
     ///

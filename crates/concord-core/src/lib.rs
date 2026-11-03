@@ -7,8 +7,8 @@
 //! or the standard formats: a statement names your format by its path exactly as it names
 //! `concord::Json`, and the generated code calls the same traits.
 //!
-//! This crate knows no format. It depends on reqwest and `bytes`; nothing here parses JSON or
-//! forms.
+//! This crate knows no format. It depends on reqwest, `bytes`, `url` and `percent-encoding`;
+//! nothing here parses JSON or forms.
 //!
 //! `__private` is support code for `api!` expansions, not a public API: its names and signatures
 //! may change in any release.

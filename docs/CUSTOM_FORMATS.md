@@ -136,9 +136,11 @@ impl Decode<Envelope> for Checked {
   `Context` that `decode_body` needs.
 - `Context` lives across the body read, so it is `Send + 'static`: it cannot borrow the response.
   It is `()` for a stateless format; it can be a parsed version, a charset, a flag.
-- `decode_body` never receives the head. A decision taken from the head after the body was read
-  could not give the unread response back; this way a refusal always can
-  (`Error::response()` borrows it, `Error::into_response()` takes it).
+- `decode_body` never receives the head, only the `Context`. A refusal made in step 1 or 2 keeps
+  the response unread (`Error::response()` borrows it, `Error::into_response()` takes it). Nothing
+  stops a format from carrying head data in its `Context` and refusing on it in `decode_body`, but
+  that refusal comes after the body was read: it is a `Decode` error and the response is gone. So
+  put every refusal that depends only on the head in `check_content_type` or `context`.
 - `decode_body` is also the body-only route. Calling `<F as Decode<T>>::decode_body(context,
   bytes)` yourself decodes bytes with no head check, by name. That is how to decode an API's error
   document (`<Json as Decode<Problem>>::decode_body((), bytes)`).
@@ -396,12 +398,12 @@ body.
 
 | `Content-Type` of the 2xx response | `Json` |
 |---|---|
-| exactly one field: `application/json`, or `application/*+json` such as `application/problem+json` and `application/vnd.github+json`; type, subtype and parameter names in any case; no `charset`, or `utf-8` or `us-ascii` | accepted |
+| exactly one field: `application/json`, or `application/*+json` such as `application/problem+json` and `application/vnd.github+json`; type, subtype and parameter names in any case; parameters as RFC 9110 writes them (quoted values, whitespace before `;`, empty parameters); no `charset`, or one `utf-8` or `us-ascii` | accepted |
 | missing | refused |
-| repeated (even with equal values), comma-joined (`application/json, text/html`), malformed, not visible ASCII | refused |
+| repeated (even with equal values), comma-joined (`application/json, text/html`), not an RFC 9110 media type (`charset = utf-8`, an unterminated quote), not visible ASCII | refused |
 | a media range (`application/*`, `*/*`) | refused |
 | another type: `text/html`, `text/json`, `application/json-seq`, `application/x-ndjson`, `application/json+xml` | refused |
-| another `charset` (`iso-8859-1`) | refused |
+| another `charset` (`iso-8859-1`), or `charset` twice (even equal) | refused |
 
 A refusal is `ErrorKind::Metadata` and keeps the response unread. A JSON media type does not make
 the body valid JSON or a `T`: that is checked when the body is decoded (`ErrorKind::Decode`). An
@@ -412,7 +414,7 @@ The other standard formats, for comparison:
 | Format | Response head check | `Accept` suggestion |
 |---|---|---|
 | `Json` | the table above | `application/json` |
-| `Text` | refuses only a single well-formed `Content-Type` whose `charset` is not UTF-8 (`us-ascii` is fine); any media type, a missing or a malformed field is accepted | none |
+| `Text` | refuses only a single well-formed `Content-Type` whose `charset` is not UTF-8 (`us-ascii` is fine) or appears twice; any media type, a missing or a malformed field is accepted | none |
 | `Binary` | none (`image/png` is fine) | none |
 | `Form` | exactly one `application/x-www-form-urlencoded`, `charset` UTF-8 or absent | `application/x-www-form-urlencoded` |
 | `IgnoreContentType<F>` | `F`'s, without its `check_content_type` | `F`'s |

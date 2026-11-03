@@ -8,9 +8,12 @@ use crate::codec::CodecError;
 
 /// Why a Concord call failed.
 ///
-/// `Display` and `Debug` contain only static information — the endpoint, the HTTP method, the
-/// failing placement or the status code — never request values, URLs, header values or body
-/// content. See the crate documentation for the exact scope of this guarantee.
+/// `Display` and `Debug` contain the endpoint, the HTTP method, the failing placement or the
+/// status code, and for a format's failure its [`CodecError`]'s static label and numeric
+/// positions — never request values, URLs, header values or body content as text. The positions
+/// are whatever numbers the format recorded (a line, a record, a version it read from a header):
+/// a format decides what it exposes there. The `concord` facade's crate documentation states the
+/// exact scope of this guarantee.
 pub struct Error {
     inner: Box<Inner>,
 }

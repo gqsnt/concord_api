@@ -17,16 +17,17 @@ They use only the public surface: `Prepared::{send, send_raw, into_parts}`, `Dec
 [`errors::rename_item`](../examples/native/src/errors.rs) — the API documents an error body
 (RFC 9457 problem details, a JSON error object).
 
-- **How:** `send()`; on error, `into_response()?` returns the unread response of a status error
-  (any other error propagates unchanged); decode its bytes with
+- **How:** `send()`; on error, return any error whose `status()` is `None` unchanged (not an
+  error document), then `into_response()?` returns the unread response of the status error;
+  decode its bytes with
   `<Json as Decode<Problem>>::decode_body((), bytes)`. That is a body-only decode: it checks no
   response head, so the error document's `Content-Type` is not judged. The status always stays
   with the document or with the reason it could not be read.
 - **Assumes:** the error body fits in memory. Against an untrusted server, read it with
   `response.chunk()` up to your own limit. A native read error is stored with `without_url()`.
-  `into_response()` also returns the response of a `Metadata` error (a 2xx whose head the format
-  refused); as written, the recipe would report it as a `Problem` or `ProblemUndecodable` with a
-  2xx status. Check `error.status()` first if a 2xx must not be taken for an error document.
+  `into_response()` alone also returns the response of a `Metadata` error (a 2xx whose head the
+  format refused); the recipe's `status()` guard keeps such a 2xx from being read as an error
+  document.
 - **When not:** "404 means `None`" needs no document: `match` on `error.status()`
   ([caller guide](CALLER_GUIDE.md#6-errors)).
 

@@ -293,9 +293,11 @@ Every call returns `Result<_, concord::Error>`.
 | `ErrorKind::Decode` | a 2xx body could not be decoded with the endpoint's format | `codec_error()` |
 
 `ErrorKind` is `#[non_exhaustive]`: keep a `_` arm when matching it. `error.endpoint()` names the
-endpoint (`Catalog.shop.product`). `Display` is `METHOD Client.scope.endpoint: <message>` and only
-contains static text — the endpoint, the failing placement's template, a header name, the status
-code — never a request value, URL, header value or body.
+endpoint (`Catalog.shop.product`). `Display` is `METHOD Client.scope.endpoint: <message>`: the
+endpoint, the failing placement's template, a header name, the status code, and for a format's
+failure its static label with the numbers it recorded (a line, a record) — never a request value,
+URL, header value or body as text. Those numbers are the format's choice; a format of your own
+decides what it puts there.
 
 A status that means "not found" for your application is an ordinary `match`. Excerpt of
 [`examples/quickstart/tests/caller_guide.rs`](../examples/quickstart/tests/caller_guide.rs):

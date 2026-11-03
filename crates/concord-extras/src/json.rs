@@ -9,11 +9,12 @@ use crate::media;
 ///
 /// - **Requests:** any `T: Serialize`, sent as `application/json`.
 /// - **Responses:** any `T: DeserializeOwned`, after a strict check of the response head, made
-///   before the body is read. The response needs exactly one `Content-Type` field, parsed as a
-///   media type (type, subtype and parameter names are case-insensitive), that is
+///   before the body is read. The response needs exactly one `Content-Type` field, parsed as an
+///   RFC 9110 media type (type, subtype and parameter names are case-insensitive), that is
 ///   `application/json` or an `application/*+json` structured-syntax type (RFC 6839:
 ///   `application/problem+json`, `application/vnd.github+json`). A `charset` parameter, if any,
-///   must be `utf-8` (or `us-ascii`): serde_json reads UTF-8 and nothing is transcoded. A missing,
+///   must be `utf-8` (or `us-ascii`), and appear once: serde_json reads UTF-8 and nothing is
+///   transcoded. A missing,
 ///   repeated (even with equal values), comma-joined or malformed field, a media range
 ///   (`application/*`) and any other type (`text/html`, `text/json`, `application/json-seq`)
 ///   are an [`ErrorKind::Metadata`](concord_core::ErrorKind::Metadata) error that keeps the
@@ -45,19 +46,19 @@ impl<T: serde::de::DeserializeOwned> Decode<T> for Json {
     const ACCEPT: Option<&'static str> = Some("application/json");
 
     fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
-        let Some((media, text)) = media::single(head)? else {
+        let Some(found) = media::single(head)? else {
             return Err(CodecError::new("the response has no Content-Type"));
         };
-        if media.type_() == mime::STAR || media.subtype() == mime::STAR {
+        if found.essence.type_() == mime::STAR || found.essence.subtype() == mime::STAR {
             return Err(CodecError::new(
                 "the response Content-Type is a media range, not a media type",
             ));
         }
         // `mime` splits a structured suffix off the subtype: `json+xml` is subtype `json` with
         // suffix `xml`, which is XML, not JSON.
-        let json = media.type_() == mime::APPLICATION
-            && match media.suffix() {
-                None => media.subtype() == mime::JSON,
+        let json = found.essence.type_() == mime::APPLICATION
+            && match found.essence.suffix() {
+                None => found.essence.subtype() == mime::JSON,
                 Some(suffix) => suffix == mime::JSON,
             };
         if !json {
@@ -66,7 +67,7 @@ impl<T: serde::de::DeserializeOwned> Decode<T> for Json {
             ));
         }
         media::check_charset(
-            text,
+            &found.charsets,
             "the JSON response declares a charset other than utf-8",
         )
     }

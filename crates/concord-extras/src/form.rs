@@ -33,16 +33,16 @@ impl<T: serde::de::DeserializeOwned> Decode<T> for Form {
     const ACCEPT: Option<&'static str> = Some("application/x-www-form-urlencoded");
 
     fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
-        let Some((media, text)) = media::single(head)? else {
+        let Some(found) = media::single(head)? else {
             return Err(CodecError::new("the response has no Content-Type"));
         };
-        if media.essence_str() != mime::APPLICATION_WWW_FORM_URLENCODED.essence_str() {
+        if found.essence.essence_str() != mime::APPLICATION_WWW_FORM_URLENCODED.essence_str() {
             return Err(CodecError::new(
                 "the response Content-Type is not application/x-www-form-urlencoded",
             ));
         }
         media::check_charset(
-            text,
+            &found.charsets,
             "the form response declares a charset other than utf-8",
         )
     }

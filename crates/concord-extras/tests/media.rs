@@ -420,4 +420,53 @@ mod charset {
             Err("the JSON response declares a charset other than utf-8")
         );
     }
+
+    /// RFC 9110 `parameters = *( OWS ";" OWS [ parameter ] )`: whitespace before `;` and empty
+    /// parameters are allowed (`mime` alone refuses them); what the grammar excludes stays refused.
+    #[test]
+    fn the_parameter_grammar_is_rfc_9110() {
+        for ct in [
+            &b"application/json ; charset=utf-8"[..],
+            b"application/json\t;charset=utf-8",
+            b"application/json;;charset=utf-8",
+            b"application/json;",
+            b"application/json; ; charset=utf-8 ;",
+            b"application/problem+json ; profile=x",
+        ] {
+            assert_eq!(
+                verdict::<Json, u8>(&[ct]),
+                Ok(()),
+                "{}",
+                String::from_utf8_lossy(ct)
+            );
+        }
+        assert_eq!(
+            verdict::<Json, u8>(&[b"application/json ; charset=iso-8859-1"]),
+            Err("the JSON response declares a charset other than utf-8")
+        );
+        let not_media = Err("the response Content-Type is not a media type");
+        for ct in [
+            &b"application/json; charset"[..],
+            b"application/json; charset=",
+            b"application/json; charset = utf-8",
+            b"application/json; charset=\"utf-8",
+            b"application/json; charset=utf-8, text/html",
+            b"application/json, text/html",
+            b"application /json",
+            b"application/json x",
+        ] {
+            assert_eq!(
+                verdict::<Json, u8>(&[ct]),
+                not_media,
+                "{}",
+                String::from_utf8_lossy(ct)
+            );
+        }
+        // `Text` accepts what it cannot read, but not a foreign charset it can.
+        assert_eq!(verdict::<Text, String>(&[b"text/plain; charset"]), Ok(()));
+        assert_eq!(
+            verdict::<Text, String>(&[b"text/plain ;; charset=latin1"]),
+            Err("the text response declares a charset other than utf-8")
+        );
+    }
 }

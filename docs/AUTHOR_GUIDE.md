@@ -555,12 +555,14 @@ fn main() -> Result<(), concord::Error> {
 
 Every generated client has an associated function `validate_header_names()`. It checks, without
 a client, a configuration, endpoint values, a network or an async runtime — it reads only the
-native `HeaderName` constants — the header-name rules `prepare()` applies before converting any
-value, on every endpoint compiled under the current `cfg`: a header introduced twice, an
+native `HeaderName` constants — the header-name rules `prepare()` applies when it composes the
+headers, on every endpoint compiled under the current `cfg`: a header introduced twice, an
 `override`, `else inherit` or `remove` with nothing to act on, a header field reqwest manages,
 and a `content-type` header next to a body's declared media type. Their verdict does not depend
-on which optional values are present, so a problem it reports is the build error that endpoint's
-`prepare()` returns for every request, and `Ok(())` means no `prepare()` fails on header names.
+on which optional values are present, so no request of a reported endpoint can be built. Its
+`prepare()` returns this problem unless a step that runs before header composition fails first
+(encoding the body, formatting the host, path or query: the build order is in
+[SEMANTICS §6](../v4/SEMANTICS.md)). `Ok(())` means no `prepare()` fails on header names.
 Values, their conversion, credentials and servers are not checked. Chains with literal names
 only were already checked when the declaration compiled.
 
@@ -924,8 +926,10 @@ NDJSON with positions and testing; the essentials:
 - On a 2xx response a decoder runs in this order: `check_content_type` (its checks of the response
   `Content-Type`; accepts by default), `context` (every other check of the head, producing an
   owned `Context`), then Concord reads the body and calls `decode_body(context, bytes)`.
-  `decode_body` never sees the head. A refusal in the first two steps is `ErrorKind::Metadata`
-  and keeps the response unread; a failure in `decode_body` is `ErrorKind::Decode`.
+  `decode_body` never sees the head, only the `Context`. A refusal in the first two steps is
+  `ErrorKind::Metadata` and keeps the response unread; a failure in `decode_body` is
+  `ErrorKind::Decode`, after the body was read, so refusals that depend only on the head belong in
+  the first two steps.
 - A failure is a `CodecError`. `CodecError::new` takes a `&'static str` (a `String` does not
   compile), `.at("line", n)` adds a numeric position, and `.with_source(e)` attaches the
   underlying error, which may quote the body. `Display` and `Debug` never show it; it is
@@ -1003,6 +1007,7 @@ checks them on prepared requests and on the wire:
 | typed output, the format suggests none (`Text`, `Binary`, a format of yours without `ACCEPT`) | none |
 | no `->`, whatever the inherited format | none |
 | an `accept` value survives the chain: a literal, a native `HeaderValue`, an empty value, repeated values, q-values | exactly what you declared, in order, as written; never merged with the suggestion |
+| an optional `accept` value that is absent, or `each` over an empty list (nothing is placed) | the suggestion |
 | the chain ends with `remove accept` (below an authored value too) | none |
 | `remove accept`, then set again from an optional value | the value when present; the suggestion when absent (the chain no longer ends with a removal) |
 | the suggestion, when `accept` is sensitive on this endpoint (a `#[sensitive]` value is placed under it, even one that is absent) | the suggestion, flagged sensitive: `accept: <redacted>` in Concord's `Debug` |
@@ -1012,12 +1017,16 @@ never by comparing its `Content-Type` with `Accept`, and the suggestion never se
 format.
 
 **The reqwest boundary.** Concord's `Accept`, authored or suggested, replaces a default `Accept`
-of your `reqwest::Client` when the request is executed. When Concord sends none, reqwest sends its
+of your `reqwest::Client` when the request is executed (reqwest fills in only the names a request
+lacks). An API that selects its version through a client-wide default `Accept` therefore needs it
+declared in `headers` once a typed endpoint's format suggests one. When Concord sends none, reqwest sends its
 own: `*/*`, or the default you configured on the client. So suppressing Concord's suggestion does
 not mean that no `Accept` reaches the wire. To drop only the suggestion for an endpoint, give it a
 format that suggests none (a small wrapper of yours, see the
 [format guide](CUSTOM_FORMATS.md#8-the-accept-suggestion)); `remove ACCEPT` on a header nobody set
-is an error, as for any key (4.3).
+is an error, as for any key (4.3). After `prepare()?.into_parts()`, the native request already
+carries the suggestion: `RequestBuilder::header(ACCEPT, v)` appends a second line, while
+`request.headers_mut().insert(ACCEPT, v)` replaces it.
 
 **The request `Content-Type`** (5.3), when a body is sent or a `content-type` header is declared:
 

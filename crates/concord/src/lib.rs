@@ -199,7 +199,8 @@
 //! # Features
 //!
 //! - `json` (default): the `Json` format, via serde and serde_json. Implies `extras`.
-//! - `extras`: the standard formats without serializer dependencies, `Text` and `Binary`.
+//! - `extras`: the standard formats without serializer dependencies, `Text` and `Binary`, and
+//!   the `IgnoreContentType` adapter.
 //!   Without `extras` (`default-features = false`), the facade has no standard format: formats
 //!   of your own work the same way.
 //! - `form`: the `Form` format, `application/x-www-form-urlencoded` via serde and
@@ -208,8 +209,9 @@
 //!   Disable it to choose reqwest's features in your own `Cargo.toml`.
 
 pub use concord_core::{
-    CodecError, ContentTypeField, Decode, Decoder, Encode, Error, ErrorKind, HeaderNameError,
-    HeaderNameErrors, IntoValue, Prepared, ResponseHead, ToHeaderValue, bytes, reqwest,
+    CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Decoder, Encode, Error, ErrorKind,
+    HeaderNameError, HeaderNameErrors, IntoValue, Prepared, ResponseHead, ToHeaderValue, bytes,
+    reqwest,
 };
 #[cfg(feature = "form")]
 pub use concord_extras::Form;

@@ -1,8 +1,9 @@
 // `NativeKey` is sealed (H08): a downstream type cannot become a header key, here one whose name
-// changes on every call, which would defeat the per-value decisions cached from the name.
+// changes on every call, which would defeat the per-value decisions cached from the name. The
+// trait is reached through the facade's hidden `__macro` path, the only one that names it.
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use concord::__private::NativeKey;
+use concord::__macro::concord_core::__private::NativeKey;
 use concord::reqwest::header::HeaderName;
 
 static CALLS: AtomicUsize = AtomicUsize::new(0);
