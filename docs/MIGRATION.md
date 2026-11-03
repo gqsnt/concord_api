@@ -111,7 +111,8 @@ A `headers { ACCEPT = "application/json"; }` that you already had is unchanged.
 - *A client-wide default `Accept` is replaced.* reqwest fills in only the header names a request
   lacks. If your `reqwest::Client` was built with `default_headers` containing an `Accept` (an
   API that selects its version that way, `application/vnd.acme.v2+json`), every typed `Json` or
-  `Form` endpoint now sends `application/json` instead. Declare that `Accept` in the client's
+  `Form` endpoint now sends its format's suggestion instead (`application/json`,
+  `application/x-www-form-urlencoded`). Declare that `Accept` in the client's
   `headers` block, or use a format that suggests none.
 - *Native edits.* After `prepare()?.into_parts()`, the request already carries the suggestion.
   `RequestBuilder::from_parts(..).header(ACCEPT, v)` appends a second `Accept` line; use

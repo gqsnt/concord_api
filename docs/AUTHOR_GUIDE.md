@@ -692,10 +692,10 @@ output's format, and which statement they come from.
 
 | Format | Body (`Encode<T>`) | Output (`Decode<T>`) and its check of the response head | `Accept` it suggests |
 |---|---|---|---|
-| `Json` (feature `json`, on by default) | any `T: Serialize`; `application/json` | any `T: DeserializeOwned`; exactly one `Content-Type`, `application/json` or `application/*+json`, `charset` absent or once and UTF-8; anything else is refused before the body is read | `application/json` |
+| `Json` (feature `json`, on by default) | any `T: Serialize`; `application/json` | any `T: DeserializeOwned`; exactly one `Content-Type`, `application/json` or `application/*+json`, `charset` absent or once and UTF-8 or US-ASCII; anything else is refused before the body is read | `application/json` |
 | `Text` (feature `extras`) | `String`; `text/plain; charset=utf-8` | `String`; any media type; only a declared non-UTF-8 `charset` (repeated or not) is refused; invalid UTF-8 is a decode error | none |
 | `Binary` (feature `extras`) | `Bytes` or `Vec<u8>`; `application/octet-stream` | `Bytes` or `Vec<u8>`, unchanged; nothing is checked (`image/png` is fine) | none |
-| `Form` (feature `form`) | any `T: Serialize` with flat fields (a struct, a map, pairs); `application/x-www-form-urlencoded` | any `T: DeserializeOwned`; exactly one `application/x-www-form-urlencoded`, `charset` absent or once and UTF-8 | `application/x-www-form-urlencoded` |
+| `Form` (feature `form`) | any `T: Serialize` with flat fields (a struct, a map, pairs); `application/x-www-form-urlencoded` | any `T: DeserializeOwned`; exactly one `application/x-www-form-urlencoded`, `charset` absent or once and UTF-8 or US-ASCII | `application/x-www-form-urlencoded` |
 | `IgnoreContentType<F>` (feature `extras`) | `F`'s | `F`'s, without its `Content-Type` check | `F`'s |
 | a type path: `Csv`, `codecs::Csv` | your `Encode<T>` ([5.7](#57-custom-formats)) | your `Decode<T>` | your `ACCEPT`, if any |
 

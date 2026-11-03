@@ -12,7 +12,8 @@ use crate::media;
 ///   `application/x-www-form-urlencoded`.
 /// - **Responses:** any `DeserializeOwned`, after a check of the response head made before the
 ///   body is read: exactly one well-formed `Content-Type` field,
-///   `application/x-www-form-urlencoded`, with no `charset` other than UTF-8. Anything else is
+///   `application/x-www-form-urlencoded`, with no `charset` or one naming UTF-8 (`us-ascii` is
+///   accepted too). Anything else is
 ///   an [`ErrorKind::Metadata`](concord_core::ErrorKind::Metadata) error; select
 ///   [`IgnoreContentType<Form>`](crate::IgnoreContentType) to skip that check deliberately.
 /// - **`Accept`:** suggests `application/x-www-form-urlencoded`.

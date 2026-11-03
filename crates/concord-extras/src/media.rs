@@ -33,12 +33,29 @@ pub(crate) fn single(head: &ResponseHead<'_>) -> Result<Option<Media>, CodecErro
         .map_err(|_| CodecError::new("the response Content-Type is not visible ASCII"))?;
     let not_media = || CodecError::new("the response Content-Type is not a media type");
     let end = text.find(';').unwrap_or(text.len());
-    let essence = text[..end]
-        .trim_end_matches([' ', '\t'])
+    let essence = text[..end].trim_end_matches([' ', '\t']);
+    // `type "/" subtype`, both non-empty tokens: `mime` alone accepts an empty subtype (`text/`).
+    let tokens = essence
+        .split_once('/')
+        .is_some_and(|(kind, sub)| is_token(kind) && is_token(sub));
+    if !tokens {
+        return Err(not_media());
+    }
+    let essence = essence
         .parse::<mime::Mime>()
         .map_err(|e| not_media().with_source(e))?;
     let charsets = charsets(text).ok_or_else(not_media)?;
     Ok(Some(Media { essence, charsets }))
+}
+
+/// An RFC 9110 `token`: one or more `tchar`.
+fn is_token(text: &str) -> bool {
+    !text.is_empty() && text.bytes().all(tchar)
+}
+
+/// An RFC 9110 `tchar`.
+fn tchar(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b)
 }
 
 /// Whether a `charset` value names UTF-8 (`us-ascii` is a subset); case-insensitive.
@@ -63,7 +80,6 @@ pub(crate) fn check_charset(charsets: &[String], foreign: &'static str) -> Resul
 /// The values of every `charset` parameter of a media type, unquoted; `None` if the parameter
 /// section does not follow `*( OWS ";" OWS [ token "=" ( token / quoted-string ) ] )`.
 fn charsets(text: &str) -> Option<Vec<String>> {
-    let tchar = |b: u8| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b);
     let bytes = text.as_bytes();
     let mut i = bytes.iter().position(|&b| b == b';').unwrap_or(bytes.len());
     let mut found = Vec::new();

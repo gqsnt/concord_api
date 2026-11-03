@@ -628,8 +628,9 @@ set it. Overriding or removing a key that nothing above sets is an error too
 When a header key in the chain is a native constant, the macro cannot see which header it holds;
 a header set twice — under two spellings, or the same constant written twice — is then a build
 error from
-`prepare()`, on every call of that endpoint (names are compared before values, so also when the
-second value is absent). From
+`prepare()` on every call of that endpoint, unless a step that runs before header composition
+(encoding the body, formatting the host, path or query) fails first (names are compared before
+values, so also when the second value is absent). From
 [`native_keys.rs`](../crates/concord/tests/native_keys.rs):
 
 ```text

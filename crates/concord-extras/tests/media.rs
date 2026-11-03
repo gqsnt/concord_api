@@ -482,6 +482,33 @@ mod charset {
                 String::from_utf8_lossy(ct)
             );
         }
+        // An empty or non-token type or subtype is not a media type (`mime` alone accepts
+        // `text/`): refused by `Json`, unread and accepted by `Text`.
+        for ct in [
+            &b"application/; charset=utf-8"[..],
+            b"application/ \t; charset=utf-8",
+            b"/json",
+            b"application/js(on",
+        ] {
+            assert_eq!(
+                verdict::<Json, u8>(&[ct]),
+                not_media,
+                "{}",
+                String::from_utf8_lossy(ct)
+            );
+        }
+        for ct in [
+            &b"text/; charset=latin1"[..],
+            b"x/; charset=latin1",
+            b"application/ \t; charset=latin1",
+        ] {
+            assert_eq!(
+                verdict::<Text, String>(&[ct]),
+                Ok(()),
+                "{}",
+                String::from_utf8_lossy(ct)
+            );
+        }
         // `Text` accepts what it cannot read, but not a foreign charset it can.
         assert_eq!(verdict::<Text, String>(&[b"text/plain; charset"]), Ok(()));
         assert_eq!(
