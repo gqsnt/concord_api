@@ -49,7 +49,7 @@ fi
 # directory, while separate cargo invocations still isolate each feature selection.
 export CARGO_TARGET_DIR="$scratch/target"
 status=0
-for consumer in core-only facade-no-extras extras-core facade-full facade-json-only; do
+for consumer in core-only facade-no-extras extras-core facade-full facade-json-only facade-gzip; do
   destination="$scratch/$consumer"
   cp -R "$root/checks/consumers/$consumer" "$destination"
   # Rewrite only Concord dependency paths; retain the fixture's authored feature selection.
@@ -66,12 +66,19 @@ text += '\n[patch.crates-io]\n'
 text += ''.join(name + ' = { path = ' + json.dumps(path) + ' }\n' for name, path in paths.items())
 p.write_text(text)
 PY
-  cp "$root/Cargo.lock" "$destination/Cargo.lock"
+  # A fixture with dependencies outside the workspace graph (facade-gzip: reqwest's gzip support)
+  # keeps its own lockfile and fetches them; the others reuse the workspace lockfile offline.
+  failed=0
+  if [[ -f $destination/Cargo.lock ]]; then
+    if ! (cd "$destination" && cargo fetch --locked) >"$destination/fetch.log" 2>&1; then failed=1; fi
+  else
+    cp "$root/Cargo.lock" "$destination/Cargo.lock"
+  fi
   # Unit/integration and doc counts are checked separately: a doctest cannot mask a missing test.
   expected=3
   docs=0
   if [[ $consumer == facade-json-only ]]; then expected=2; docs=1; fi
-  failed=0
+  if [[ $consumer == facade-gzip ]]; then expected=4; fi
   if ! (cd "$destination" && cargo test --offline --lib --tests) >"$destination/test.log" 2>&1; then failed=1; fi
   if ! (cd "$destination" && cargo test --offline --doc) >"$destination/doc.log" 2>&1; then failed=1; fi
   passed=$(awk '/^test result: ok\./ {s += $4} END {print s+0}' "$destination/test.log")
@@ -86,10 +93,13 @@ PY
     facade-json-only) forbidden='serde_urlencoded' ;;
   esac
   if [[ -n $forbidden ]] && grep -Eq "^($forbidden) v" "$destination/tree.log"; then failed=1; fi
+  # The application, not Concord, enables decompression: the pattern must still match here.
+  if [[ $consumer == facade-gzip ]] && ! (cd "$destination" && cargo tree --offline -e features -i reqwest) \
+    | grep -q 'reqwest feature "gzip"'; then failed=1; fi
   if [[ $failed == 0 ]]; then
     echo "ok    $consumer ($passed tests, $doc_passed doctests; normal graph exclusions passed)"
   else
-    cat "$destination/test.log" "$destination/doc.log" "$destination/tree.log"
+    cat "$destination"/fetch.log "$destination/test.log" "$destination/doc.log" "$destination/tree.log" 2>/dev/null
     echo "FAIL  $consumer ($passed/$expected tests, $doc_passed/$docs doctests; see $destination)"
     status=1
   fi

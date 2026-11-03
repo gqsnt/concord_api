@@ -38,18 +38,19 @@ step() {
   fi
 }
 
-# Fails if `concord` (any feature set) or another example gets reqwest's `multipart` feature, or
-# if the pattern stops matching the crate that does enable it.
+# Fails if `concord` (any feature set) or another example gets reqwest's `multipart` feature or a
+# response decompression feature (an application enables those: checks/consumers/facade-gzip), or
+# if the pattern stops matching the crate that does enable multipart.
 no_reqwest_multipart() {
   local args tree
-  for args in "-p concord" "-p concord --no-default-features" "-p concord-core" \
-    "-p concord-extras --all-features" "-p concord-example-native"; do
+  for args in "-p concord" "-p concord --no-default-features" "-p concord --all-features" \
+    "-p concord-core" "-p concord-extras --all-features" "-p concord-example-native"; do
     # shellcheck disable=SC2086
     tree=$(cargo tree --locked -e features -i reqwest $args) || return 1
-    if grep -q 'reqwest feature "multipart"' <<<"$tree"; then
-      echo "reqwest multipart reaches: $args"; return 1
+    if grep -Eq 'reqwest feature "(multipart|gzip|brotli|zstd|deflate)"' <<<"$tree"; then
+      echo "reqwest multipart or decompression reaches: $args"; return 1
     fi
-    echo "no reqwest multipart: $args"
+    echo "no reqwest multipart or decompression: $args"
   done
   tree=$(cargo tree --locked -e features -i reqwest -p concord-example-multipart) || return 1
   grep 'reqwest feature "multipart"' <<<"$tree"
@@ -116,8 +117,9 @@ clippy_features() {
 }
 step clippy-features clippy_features
 # The architecture consumers (checks/consumers): core alone, the facade without extras (renamed),
-# extras + core without the macro, the full facade, the facade with `json` only; each its own
-# workspace, so feature unification cannot help them.
+# extras + core without the macro, the full facade, the facade with `json` only, an application
+# with reqwest's gzip support (fetches its own dependencies); each its own workspace, so feature
+# unification cannot help them.
 step consumers scripts/consumers.sh
 # Separate consumers: reqwest's `multipart` feature belongs to examples/multipart only, so a
 # workspace-wide build (which unifies features) cannot hide a core dependency on it.
