@@ -6,7 +6,9 @@ use concord_core::bytes::Bytes;
 use concord_core::reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use concord_core::reqwest::{StatusCode, Version};
 use concord_core::{Decode, ResponseHead};
-use concord_extras::{Binary, IgnoreContentType, Text};
+#[cfg(any(feature = "json", feature = "form"))]
+use concord_extras::IgnoreContentType;
+use concord_extras::{Binary, Text};
 
 fn headers(content_types: &[&[u8]]) -> HeaderMap {
     let mut map = HeaderMap::new();

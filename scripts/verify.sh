@@ -90,6 +90,16 @@ step test-core cargo test --locked -p concord-core
 step test-extras-none cargo test --locked -p concord-extras --no-default-features
 step test-extras-json cargo test --locked -p concord-extras --no-default-features --features json
 step test-extras-form cargo test --locked -p concord-extras --no-default-features --features form
+# Lints of the feature subsets the workspace build unifies away (code used only by some formats).
+clippy_features() {
+  local features
+  for features in "" json form; do
+    cargo clippy --locked -p concord-extras --no-default-features ${features:+--features "$features"} \
+      --all-targets -- -D warnings || return 1
+  done
+  cargo clippy --locked -p concord --no-default-features --features extras -- -D warnings
+}
+step clippy-features clippy_features
 # The architecture consumers (checks/consumers): core alone, the facade without extras (renamed),
 # extras + core without the macro, the full facade, the facade with `json` only; each its own
 # workspace, so feature unification cannot help them.

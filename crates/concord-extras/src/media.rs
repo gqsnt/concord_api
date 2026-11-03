@@ -5,6 +5,8 @@ use concord_core::{CodecError, ContentTypeField, ResponseHead};
 /// A response `Content-Type`: its media type and the values of its `charset` parameters.
 pub(crate) struct Media {
     /// Type and subtype (and a structured-syntax suffix), parsed by `mime`, without parameters.
+    /// Read by `Json` and `Form`; `Text` needs only the charsets.
+    #[cfg_attr(not(any(feature = "json", feature = "form")), allow(dead_code))]
     pub(crate) essence: mime::Mime,
     /// Every `charset` parameter's value, unquoted, in order.
     pub(crate) charsets: Vec<String>,
@@ -65,7 +67,9 @@ pub(crate) fn is_utf8(charset: &str) -> bool {
 
 /// Whether a media type's `charset` parameters, if any, name UTF-8 (`us-ascii` is a subset, so it
 /// is accepted too); charset names are case-insensitive. A repeated `charset` is refused as
-/// ambiguous, whatever its values.
+/// ambiguous, whatever its values. Used by `Json` and `Form`; `Text` applies its own rule with
+/// [`is_utf8`].
+#[cfg(any(feature = "json", feature = "form"))]
 pub(crate) fn check_charset(charsets: &[String], foreign: &'static str) -> Result<(), CodecError> {
     match charsets {
         [] => Ok(()),

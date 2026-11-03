@@ -92,7 +92,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONCORD = os.path.normpath(os.path.join(HERE, "..", "..", "crates", "concord"))
-GENERATOR_VERSION = 7
+GENERATOR_VERSION = 8
 
 # Declaration/caller syntax, so that the same workload can be generated for an A/B comparison of
 # Concord versions:
@@ -177,7 +177,10 @@ def write(path, text):
 
 
 def concord_dep(concord):
-    return f'concord = {{ path = "{concord}", default-features = false }}'
+    # With type paths (the four crates), `Text` and `Binary` come from `concord-extras` behind the
+    # facade's `extras` feature (no serializer); earlier syntaxes had them in the one crate.
+    extras = ', features = ["extras"]' if SYNTAX == "types" else ""
+    return f'concord = {{ path = "{concord}", default-features = false{extras} }}'
 
 
 def manifest(name, deps, standalone, bin_crate=False):
