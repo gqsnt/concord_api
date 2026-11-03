@@ -75,3 +75,16 @@ helper was used. No review was running when the candidate was accepted.
 - Decompression other than gzip (brotli, zstd, deflate) at run time; Concord enables none and the
   feature-isolation gate refuses them in Concord's own graph.
 - Publication on crates.io: not done (`publish = false`; not authorized).
+
+## Release
+
+| Item | Value |
+|---|---|
+| Merge into `main` | `afcec40` (`--no-ff` merge of `concord-v4-modular` at `54371e4`; `main` was `a492d36`, an ancestor; no conflicts; the merged tree equals `54371e4`'s) |
+| Local gate on `afcec40` | `scripts/verify.sh --package --bench --nightly`: 36/36 PASS, 651 tests |
+| CI on `main` at `afcec40` | [run 41709804342](https://github.com/gqsnt/concord_api/actions/runs/41709804342): Linux job 126174584782 35/35, Windows job 126174585235 35/35, nightly job 126174585184 PASS |
+| CI on `concord-v4-modular` at `54371e4` | [run 41709795989](https://github.com/gqsnt/concord_api/actions/runs/41709795989): success on Linux, Windows and nightly |
+| Tag | `v4.1.0`, annotated (tag object `1fc0c56`), pointing to `afcec40`, created after the `main` run passed |
+| Not done | publication on crates.io; no branch deleted or rewritten (every push was a fast-forward) |
+
+This section was added after the tag, in a records-only commit on `main`.
