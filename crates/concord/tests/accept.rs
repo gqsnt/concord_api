@@ -4,10 +4,15 @@
 
 mod support;
 
+use std::marker::PhantomData;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
+
+use concord::bytes::Bytes;
 use concord::reqwest::header::{ACCEPT, HeaderValue};
-use concord::{Binary, Json, Prepared, Text, reqwest};
+use concord::{Binary, CodecError, Decode, ErrorKind, Json, Prepared, ResponseHead, Text, reqwest};
 use serde::Deserialize;
-use support::{Reply, Server};
+use support::{Reply, Server, withholding};
 
 /// An item.
 #[derive(Debug, Deserialize)]
@@ -16,17 +21,25 @@ pub struct Item {
     pub id: u64,
 }
 
-/// A format that suggests nothing: how an author disables only the suggestion (a wrapper of
-/// theirs, not a `remove` of a header nobody set).
-pub struct NoSuggestion;
+/// `F` without its `Accept` suggestion: how an author disables only the suggestion (a wrapper of
+/// theirs, not a `remove` of a header nobody set). All three decoding steps are `F`'s, so
+/// `NoSuggestion<Json>` checks the `Content-Type` exactly as `Json` does; only `ACCEPT` is left at
+/// its default, `None`.
+pub struct NoSuggestion<F>(PhantomData<fn() -> F>);
 
-impl concord::Decode<Item> for NoSuggestion {
-    type Context = ();
-    fn context(_: &concord::ResponseHead<'_>) -> Result<(), concord::CodecError> {
-        Ok(())
+impl<T, F: Decode<T>> Decode<T> for NoSuggestion<F> {
+    type Context = F::Context;
+
+    fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
+        F::check_content_type(head)
     }
-    fn decode_body((): (), body: concord::bytes::Bytes) -> Result<Item, concord::CodecError> {
-        <Json as concord::Decode<Item>>::decode_body((), body)
+
+    fn context(head: &ResponseHead<'_>) -> Result<F::Context, CodecError> {
+        F::context(head)
+    }
+
+    fn decode_body(context: F::Context, body: Bytes) -> Result<T, CodecError> {
+        F::decode_body(context, body)
     }
 }
 
@@ -45,7 +58,7 @@ concord::api! {
         /// Binary suggests nothing.
         GET bytes() -> Vec<u8> { path "a"; response Binary; }
         /// A format of the application's own without a suggestion.
-        GET quiet() -> Item { path "a"; response NoSuggestion; }
+        GET quiet() -> Item { path "a"; response NoSuggestion<Json>; }
         /// An authored literal (any case) wins and is not merged.
         GET literal() -> Item { path "a"; headers { override "Accept" = "application/vnd.acme.v2+json"; } }
         /// Removed: no suggestion comes back.
@@ -181,6 +194,66 @@ fn prepared_requests_follow_the_truth_table() {
         ),
         [&b"text/csv"[..], b"text/plain"]
     );
+}
+
+/// `NoSuggestion<Json>` changes only the suggestion: no codec `Accept` is prepared, while the
+/// response is still checked and decoded exactly as by `Json`. An incompatible `Content-Type` is a
+/// `Metadata` error decided from the head while the server still withholds the body (a decoder
+/// that read the body first would time out), and the response stays readable.
+#[tokio::test]
+async fn no_suggestion_keeps_the_metadata_checks() {
+    let api = |url: String| {
+        Plain::new(reqwest::Client::new())
+            .with_base_url(url)
+            .unwrap()
+    };
+    assert!(
+        accept_of(
+            &api("http://accept.invalid".into())
+                .quiet()
+                .prepare()
+                .unwrap()
+        )
+        .is_empty()
+    );
+
+    let (url, release, written) =
+        withholding("HTTP/1.1 200 OK\r\ncontent-type: text/html", br#"{"id":7}"#).await;
+    let error = tokio::time::timeout(Duration::from_secs(5), api(url).quiet().send())
+        .await
+        .expect("refused without waiting for the body")
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Metadata);
+    assert_eq!(
+        written.load(Ordering::SeqCst),
+        0,
+        "the body was not sent yet"
+    );
+    let response = error.into_response().unwrap();
+    assert_eq!(response.headers()["content-type"], "text/html");
+    release.send(()).unwrap();
+    assert_eq!(response.bytes().await.unwrap().as_ref(), br#"{"id":7}"#);
+
+    // Positive control on the same withholding server: a compatible head waits for the body.
+    let (url, release, _) = withholding(
+        "HTTP/1.1 200 OK\r\ncontent-type: application/json",
+        br#"{"id":7}"#,
+    )
+    .await;
+    let pending = tokio::spawn(async move { api(url).quiet().send().await });
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        !pending.is_finished(),
+        "a compatible response is decoded from its body"
+    );
+    release.send(()).unwrap();
+    assert_eq!(pending.await.unwrap().unwrap().id, 7);
+
+    let server = Server::reply(Reply::json(200, "{\"id\":")).await;
+    let error = api(server.url()).quiet().send().await.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Decode);
+    // The wire carries no codec `Accept`: reqwest's own default goes out instead.
+    assert_eq!(server.single().header_all("accept"), ["*/*"]);
 }
 
 /// M11: the suggestion inserted under a name the endpoint classifies sensitive is flagged too

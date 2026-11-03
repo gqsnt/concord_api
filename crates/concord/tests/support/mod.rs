@@ -5,7 +5,9 @@
 //! server library, so the assertions observe what reqwest put on the wire.
 #![allow(dead_code, missing_docs)]
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -245,4 +247,35 @@ async fn serve_connection(
 
 fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+/// A server that sends a response head announcing a body of `body.len()` bytes, then withholds the
+/// body until `release` fires. Returns its URL and a counter of body bytes written.
+pub async fn withholding(
+    head: &'static str,
+    body: &'static [u8],
+) -> (String, tokio::sync::oneshot::Sender<()>, Arc<AtomicUsize>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let (release, released) = tokio::sync::oneshot::channel::<()>();
+    let written = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&written);
+    tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = Vec::new();
+        let mut buf = [0u8; 1024];
+        while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+            let n = stream.read(&mut buf).await.unwrap();
+            request.extend_from_slice(&buf[..n]);
+        }
+        let head = format!("{head}\r\ncontent-length: {}\r\n\r\n", body.len());
+        stream.write_all(head.as_bytes()).await.unwrap();
+        stream.flush().await.unwrap();
+        let _ = released.await;
+        stream.write_all(body).await.unwrap();
+        counter.fetch_add(body.len(), Ordering::SeqCst);
+        stream.flush().await.unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    });
+    (url, release, written)
 }

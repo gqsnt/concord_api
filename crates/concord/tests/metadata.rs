@@ -3,7 +3,6 @@
 
 mod support;
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
@@ -13,10 +12,7 @@ use concord::{
     CodecError, Decode, Decoder, ErrorKind, IgnoreContentType, Json, ResponseHead, reqwest,
 };
 use serde::Deserialize;
-use support::{Reply, Server};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
-use tokio::sync::oneshot;
+use support::{Reply, Server, withholding};
 
 /// An item.
 #[derive(Debug, Deserialize, PartialEq)]
@@ -86,37 +82,6 @@ fn meta(url: String) -> Meta {
     Meta::new(reqwest::Client::new())
         .with_base_url(url)
         .unwrap()
-}
-
-/// A server that sends a response head announcing a body of `body.len()` bytes, then withholds the
-/// body until `release` fires. Returns its URL and a counter of body bytes written.
-async fn withholding(
-    head: &'static str,
-    body: &'static [u8],
-) -> (String, oneshot::Sender<()>, Arc<AtomicUsize>) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    let (release, released) = oneshot::channel::<()>();
-    let written = Arc::new(AtomicUsize::new(0));
-    let counter = Arc::clone(&written);
-    tokio::spawn(async move {
-        let (mut stream, _) = listener.accept().await.unwrap();
-        let mut request = Vec::new();
-        let mut buf = [0u8; 1024];
-        while !request.windows(4).any(|w| w == b"\r\n\r\n") {
-            let n = stream.read(&mut buf).await.unwrap();
-            request.extend_from_slice(&buf[..n]);
-        }
-        let head = format!("{head}\r\ncontent-length: {}\r\n\r\n", body.len());
-        stream.write_all(head.as_bytes()).await.unwrap();
-        stream.flush().await.unwrap();
-        let _ = released.await;
-        stream.write_all(body).await.unwrap();
-        counter.fetch_add(body.len(), Ordering::SeqCst);
-        stream.flush().await.unwrap();
-        tokio::time::sleep(Duration::from_millis(200)).await;
-    });
-    (url, release, written)
 }
 
 /// C20/C03: JSON bytes labelled `text/html` are refused while the server still withholds the

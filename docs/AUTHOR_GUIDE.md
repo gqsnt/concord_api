@@ -1022,8 +1022,8 @@ lacks). An API that selects its version through a client-wide default `Accept` t
 declared in `headers` once a typed endpoint's format suggests one. When Concord sends none, reqwest sends its
 own: `*/*`, or the default you configured on the client. So suppressing Concord's suggestion does
 not mean that no `Accept` reaches the wire. To drop only the suggestion for an endpoint, give it a
-format that suggests none (a small wrapper of yours, see the
-[format guide](CUSTOM_FORMATS.md#8-the-accept-suggestion)); `remove ACCEPT` on a header nobody set
+format that suggests none (a small wrapper of yours that forwards the wrapped format's checks and
+decoding, see the [format guide](CUSTOM_FORMATS.md#8-the-accept-suggestion)); `remove ACCEPT` on a header nobody set
 is an error, as for any key (4.3). After `prepare()?.into_parts()`, the native request already
 carries the suggestion: `RequestBuilder::header(ACCEPT, v)` appends a second line, while
 `request.headers_mut().insert(ACCEPT, v)` replaces it.

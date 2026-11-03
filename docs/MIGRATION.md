@@ -118,7 +118,8 @@ A `headers { ACCEPT = "application/json"; }` that you already had is unchanged.
   `RequestBuilder::from_parts(..).header(ACCEPT, v)` appends a second `Accept` line; use
   `request.headers_mut().insert(ACCEPT, v)` to replace it.
 - *React.* Declare the `Accept` you want; it wins. To drop only the suggestion, use a format that
-  suggests none (a small wrapper, [Writing a format](CUSTOM_FORMATS.md#8-the-accept-suggestion)).
+  suggests none (a small wrapper that forwards the wrapped format's checks and decoding,
+  [Writing a format](CUSTOM_FORMATS.md#8-the-accept-suggestion)).
   `remove ACCEPT` is for a header you declared. When Concord sends no `Accept`, reqwest sends its
   own, so no declaration makes the header disappear from the wire. The full table is in the
   [author guide](AUTHOR_GUIDE.md#58-what-goes-on-the-wire-accept-and-content-type).

@@ -511,28 +511,39 @@ declaration is compiled, like `CONTENT_TYPE`. It is never compared with the resp
 [author guide](AUTHOR_GUIDE.md#58-what-goes-on-the-wire-accept-and-content-type).
 
 To stop only the suggestion for an endpoint, give it a format without one. A small wrapper does
-it, and `remove ACCEPT` does not: a `remove` of a header nobody set is an error. Excerpt of
-[`crates/concord/tests/accept.rs`](../crates/concord/tests/accept.rs), where the wrapper
-decodes with `Json`'s body decoder:
+it, and `remove ACCEPT` does not: a `remove` of a header nobody set is an error. The wrapper
+forwards all three decoding steps of the format it wraps and leaves `ACCEPT` at its default,
+`None`, so `response NoSuggestion<Json>;` still refuses a response that is not JSON, before the
+body is read, and decodes exactly as `Json` does. Excerpt of
+[`crates/concord/tests/accept.rs`](../crates/concord/tests/accept.rs), whose
+`no_suggestion_keeps_the_metadata_checks` test checks exactly that:
 
 ```rust
-/// A format that suggests nothing: how an author disables only the suggestion (a wrapper of
-/// theirs, not a `remove` of a header nobody set).
-pub struct NoSuggestion;
+/// `F` without its `Accept` suggestion: how an author disables only the suggestion (a wrapper of
+/// theirs, not a `remove` of a header nobody set). All three decoding steps are `F`'s, so
+/// `NoSuggestion<Json>` checks the `Content-Type` exactly as `Json` does; only `ACCEPT` is left at
+/// its default, `None`.
+pub struct NoSuggestion<F>(PhantomData<fn() -> F>);
 
-impl concord::Decode<Item> for NoSuggestion {
-    type Context = ();
-    fn context(_: &concord::ResponseHead<'_>) -> Result<(), concord::CodecError> {
-        Ok(())
+impl<T, F: Decode<T>> Decode<T> for NoSuggestion<F> {
+    type Context = F::Context;
+
+    fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
+        F::check_content_type(head)
     }
-    fn decode_body((): (), body: concord::bytes::Bytes) -> Result<Item, concord::CodecError> {
-        <Json as concord::Decode<Item>>::decode_body((), body)
+
+    fn context(head: &ResponseHead<'_>) -> Result<F::Context, CodecError> {
+        F::context(head)
+    }
+
+    fn decode_body(context: F::Context, body: Bytes) -> Result<T, CodecError> {
+        F::decode_body(context, body)
     }
 }
 ```
 
-This wrapper does not forward `check_content_type` either, so it accepts any `Content-Type`; a
-wrapper that should stay as strict as `Json` forwards it, as `Versioned` does in section 5.
+A wrapper that leaves out `check_content_type` would also drop `Json`'s `Content-Type` check;
+skipping that check is a separate, deliberate choice ([section 7](#7-strict-json-and-the-explicit-adapter)).
 
 Suppressing Concord's suggestion does not mean that no `Accept` reaches the wire: when Concord
 sends none, reqwest sends its own (`*/*`, or the default of your `reqwest::Client`).
