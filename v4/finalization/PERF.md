@@ -143,8 +143,8 @@ twice, in the same way as §1–§3 (`/home/canarit/projects/concord_v4_finish_w
 idle machine, same rows, RUNS=3, same CRITERION_HOME so the earlier baselines compare):
 `d3e26e4` (pruned conditions, 20:03–20:35Z, raw data final-20261102T200329Z) and `d884461` (also
 one cached function per value, `cfg`-gated; 20:41–21:14Z, raw data final-20261102T204126Z, both
-under `/home/canarit/projects/concord_v4_finish_work/evidence/perf/`). The code since `d884461`
-is unchanged (records only).
+under `/home/canarit/projects/concord_v4_finish_work/evidence/perf/`). The code changed again
+after the final reviews; the final candidate is measured in §5.
 
 **Allocations.** Identical to `625ac49` on all 84 shared IDs and to `389392f` on all 92 (both runs).
 
@@ -173,6 +173,47 @@ has a native key gets its own header plan, one binding, one entry and one guarde
 contribution on the chain (`scale_shared`: 34 native contributions on each of 200 endpoints;
 type-checking it takes 3.8× the literal-name time). Literal names, the default in every guide,
 cost the same as the baseline.
+
+## 5. The final candidate (`81836ec`)
+
+The reviews changed generated code for chains with native keys:
+- one key per path occurrence (X-R1);
+- conditions computed on every chain (O-R1);
+- slot flags over the whole history (O-P2);
+- complete header-operation lists (N1);
+- a fixpoint that visits each pair of contributions once (N3).
+
+An intermediate commit, `0f559d8`, was not timed: the semantic re-review measured its
+`macro_expand_crate` on the shared native suite at 4.8 s, against 2.3 s for `d884461`. That is the
+regression N3 fixed. The final candidate was measured in the same way as §4, on an idle machine,
+01:28–02:01Z on 2026-11-03 (raw data final-20261103T012851Z, same directory; baseline `final3` in
+the shared CRITERION_HOME).
+
+**Allocations.** Identical to `625ac49` on all 84 shared IDs and to `389392f` on all 92.
+
+**Runtime** (`keys/` and `headers/`, against `3b5c5ed` run 2): every `prepare` within −4 % to
++2 %; `keys/six_inherited/concord_native` 541.9 → 550.9 ns, `keys/one_replaced/concord_native`
+576.1 → 583.6 ns, `keys/riot_match_ids/concord` 1,062 → 1,073 ns.
+
+**Compile time**, native/base (stmt/base on the same rows: 0.93–1.05, except
+`dev-scale1000` at 1.14, whose stmt and native runs both have σ ≈ 0.2 s):
+
+| row | `3b5c5ed` (§3) | `d884461` (§4) | `81836ec` |
+|---|---|---|---|
+| check-scale_deep | 3.24 | 1.47 | 1.30 |
+| rel-scale_deep | 11.07 | 1.50 | 1.47 |
+| check-scale_shared | 4.03 | 3.76 | 2.29 |
+| rel-scale_shared | 3.41 | 1.96 | 1.86 |
+| check-scale1000 | 1.14 | 1.17 | 1.18 |
+| rel-scale1000 | 1.22 | 1.21 | 1.21 |
+| rel-editapi-use100 | 1.21 | 1.20 | 1.21 |
+| rel-editconsumer-use100 | 1.23 | 1.15 | 1.17 |
+
+Native-key rlibs: `libscale_deep` 8.4 MB (literal names 7.3 MB), `libscale_shared` 35.4 MB
+(30.4 MB), `libscale1000` 40.9 MB (36.7 MB). The remaining premium is linear in the native
+contributions on each endpoint's chain: one header plan, binding, entry and guarded send each.
+`scale_shared` puts 34 native contributions on each of 200 endpoints and type-checks in 2.3× the
+literal-name time. On a flat API every header key being native costs 17–21 % of compile time.
 
 ## Not measured
 
