@@ -234,6 +234,7 @@ dependencies = [
  "bytes",
  "concord",
  "concord-baselines",
+ "concord-core",
  "concord-example-shapes",
  "criterion",
  "http",

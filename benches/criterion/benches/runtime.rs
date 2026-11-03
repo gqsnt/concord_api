@@ -179,5 +179,91 @@ fn roundtrip(c: &mut Criterion) {
     g.finish();
 }
 
-criterion_group!(benches, in_memory, roundtrip);
+/// `plan_scaling` (H14): the run-time name plan of a native chain (`HeaderPlan::compose`, run by
+/// `prepare()`) and the validator's check of the same chain (`NameCheck`), alone, at 8, 32, 128
+/// and 512 contributions: distinct names, appends to one name, overrides of one name, and a
+/// set/remove alternation. No request, value or classification is involved.
+fn plan_scaling(c: &mut Criterion) {
+    use concord_core::__private::{EndpointMeta, HeaderOp, HeaderPlan, HeaderShape, NameCheck};
+    use concord_core::reqwest::header::HeaderName;
+
+    static META: EndpointMeta = EndpointMeta {
+        name: "Bench.plan",
+        method: "GET",
+        labels: 0,
+        sensitive_labels: &[],
+        segments: 0,
+        sensitive_segments: &[],
+        sensitive_query: &[],
+        sensitive_content_type: false,
+        sensitive_accept: false,
+        accept_removed: false,
+    };
+
+    fn run<const N: usize>(g: &mut BenchmarkGroup<'_, WallTime>, names: &[HeaderName]) {
+        let shapes = |op_at: &dyn Fn(usize) -> HeaderOp| -> [HeaderShape; N] {
+            std::array::from_fn(|i| HeaderShape {
+                op: op_at(i),
+                label: "c",
+            })
+        };
+        let first_set = |rest: HeaderOp| move |i: usize| if i == 0 { HeaderOp::Set } else { rest };
+        let cases: [(&str, [&HeaderName; N], [HeaderShape; N]); 4] = [
+            (
+                "distinct",
+                std::array::from_fn(|i| &names[i]),
+                shapes(&|_| HeaderOp::Set),
+            ),
+            (
+                "appends",
+                std::array::from_fn(|_| &names[0]),
+                shapes(&first_set(HeaderOp::Append)),
+            ),
+            (
+                "overrides",
+                std::array::from_fn(|_| &names[0]),
+                shapes(&first_set(HeaderOp::Override)),
+            ),
+            (
+                "removals",
+                std::array::from_fn(|_| &names[0]),
+                shapes(&|i| if i % 2 == 0 { HeaderOp::Set } else { HeaderOp::Remove }),
+            ),
+        ];
+        for (shape, refs, shapes) in cases {
+            g.bench_function(format!("{N}/{shape}/compose"), |b| {
+                b.iter(|| {
+                    HeaderPlan::<N>::compose(
+                        black_box(refs),
+                        black_box(&shapes),
+                        [true; N],
+                        [false; N],
+                        false,
+                        &META,
+                    )
+                    .map(|p| p.live[N - 1])
+                })
+            });
+            g.bench_function(format!("{N}/{shape}/validate"), |b| {
+                b.iter(|| {
+                    let mut check = NameCheck::new();
+                    check.endpoint("Bench.plan", black_box(refs), black_box(&shapes), false);
+                    check.finish().is_ok()
+                })
+            });
+        }
+    }
+
+    let names: Vec<HeaderName> = (0..512)
+        .map(|i| HeaderName::from_bytes(format!("x-h{i}").as_bytes()).expect("valid name"))
+        .collect();
+    let mut g = c.benchmark_group("plan_scaling");
+    run::<8>(&mut g, &names);
+    run::<32>(&mut g, &names);
+    run::<128>(&mut g, &names);
+    run::<512>(&mut g, &names);
+    g.finish();
+}
+
+criterion_group!(benches, in_memory, roundtrip, plan_scaling);
 criterion_main!(benches);

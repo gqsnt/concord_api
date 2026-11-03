@@ -10,6 +10,8 @@ publish = false
 [dependencies]
 bytes.workspace = true
 concord = { path = "../../crates/concord" }
+# H14: the native name plan is benchmarked directly (hidden API).
+concord-core = { path = "../../crates/concord-core" }
 concord-example-shapes = { path = "../../examples/shapes" }
 concord-baselines = { path = "../baselines" }
 http = "1"
