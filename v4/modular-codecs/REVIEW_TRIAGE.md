@@ -6,7 +6,7 @@
 |---|---|---|---|---|
 | R1 | Riot's live client must not follow redirects | Done | `93f9b0e`: `http_policy` (`redirect::Policy::none()`, timeout) and `live_http_client` (HTTPS only), used by `main` | `examples/riot/tests/redirects.rs`: `send()` → `Status` 302 with the unread response; `send_raw()` → 302; the second origin receives nothing. Control: reqwest's default policy forwards `X-Riot-Token` to the second origin |
 | R2 | Validate all native header names without calling endpoints | Done | `25a52f7`: `Client::validate_header_names()`; `HeaderPlan` split into a presence-free structural pass shared with `prepare()` | `crates/concord-core/tests/header_plan.rs::the_validator_and_prepare_share_one_verdict`; `crates/concord/tests/validate_names.rs` (counters: no default, `Display` or encoder runs; uninhabited body type; each problem equals `prepare()`'s error); Riot; a 480-endpoint generated SDK |
-| R3 | Seal `NativeKey` | Done | `3a836e7`: private supertrait, `HeaderName` only | `ui/native_key_sealed.rs` (the same downstream impl compiles against `dfdeed8`), `ui/native_key_deref.rs` |
+| R3 | Seal `NativeKey` | Done | `3a836e7`: private supertrait, `HeaderName` only | `ui/native_key_sealed.rs` (the same downstream impl compiles against `dfdeed8`; its snapshot degenerated to an import error at the crate split `7ec1f4b` and was repaired after the final semantic review, S1), `ui/native_key_deref.rs` |
 | R4 | Static codec-error labels, numeric context, explicit source | Done | `ca545f0`: `CodecError::new(&'static str)`, `.at(name, u64)` (3 positions), `.with_source`, `source_unredacted()`; every creation site migrated (a dynamic label no longer compiles) | `concord-core` `compile_fail,E0308` doctest; `crates/concord-extras/tests/media.rs::decode_errors_show_positions_not_content`; `examples/native/tests/bodies.rs` (NDJSON record/line/column); `d15_surfaces.rs` S09 shows a deliberate `leak` is still possible (trust boundary) |
 | R5 | Index native-key occurrence provenance | Done | `a4b465a`: each `KeyPath` records its owner when its contribution is recorded | `emit::tests::key_occurrence_owner_matches_a_scan_of_every_owner`; expansion timings in PERF |
 | R6 | Typed hierarchical path segments | **Deferred** (optional gate) | `1f26e91`: maintained native recipe `write_resource_segments` | Terra 6.1 XHigh test-only prototype: a static-index mutant mis-redacts; frozen report and model in the work directory |
@@ -39,3 +39,26 @@ unprovoked compiler error. Reports: [`fresh-terra-REPORT.md`](reports/fresh-terr
 | Sonnet | `with_base_url` replaces the base path too | Documented (QUICKSTART) |
 | Sonnet | exposing head state to the caller | Documented: a wrapper output type (`docs/CUSTOM_FORMATS.md` §5) |
 | Both | naming (`ErrorKind::Metadata`, `Decode::context`, `validate_header_names`, `CodecError`) | Kept: chosen with both architecture challengers and both journey probes; Terra found them reasonable once read, Sonnet would prefer other names. Recorded as feedback, not changed in this increment |
+
+## Final semantic review (side Opus, candidate `9f8939f`)
+
+Observed model `claude-opus-5-5` (164 transcript turns); report
+[`final-sem-opus-REPORT.md`](reports/final-sem-opus-REPORT.md). The reviewer proposed (did not
+implement) the contract before implementation and did not read the executable audit. No blocking
+finding.
+
+| ID | Severity | Finding | Disposition | Evidence |
+|---|---|---|---|---|
+| S1 | should fix | `ui/native_key_sealed.rs` imported `concord::__private`, gone since the crate split: its snapshot became an import error and no longer tested the seal | Fixed: imports through `concord::__macro::concord_core::__private`; snapshot shows E0277 on `sealed::Sealed`; a mutant without the supertrait fails the test | `crates/concord/tests/ui/native_key_sealed.rs`; work directory evidence/mutants/S1_unsealed.txt |
+| S2 | should fix | `validate_header_names()` docs claimed its problem is the error `prepare()` returns for every request; `prepare()` encodes the body and formats the URL first | Fixed (wording, MC19): the claim is narrowed in rustdoc (core and generated), AUTHOR_GUIDE §4.9, DECISIONS MC14 | `validate_names.rs::earlier_build_steps_fail_first` |
+| S3 | should fix | docs said a head-based decision cannot be made after the body is read; a `Context` can carry head data into `decode_body` | Fixed (wording): refusals belong in the first two steps; a refusal in `decode_body` is `Decode`, after the read | `Decode` rustdoc, CUSTOM_FORMATS §3, AUTHOR_GUIDE §5.7, MIGRATION |
+| S4 | should fix | MIGRATION did not say a reqwest client's default `Accept` is now replaced on typed `Json`/`Form` endpoints | Fixed: MIGRATION and AUTHOR_GUIDE §5.8 state it with the remedies | `accept.rs::the_wire_and_the_client_defaults` |
+| M1 | minor | error docs said output is purely static; numeric positions are format-chosen numbers | Fixed: `Error` rustdoc, CALLER_GUIDE §6 | — |
+| M2 | minor | `IgnoreContentType` is only as narrow as documented if `context` does not refuse on `Content-Type` | Fixed: `Decode::context` docs say it may read it for state, not refuse on it | — |
+| M3 | minor | RECIPES error-document text was stale (the example already guards with `status()`) | Fixed | `examples/native/src/errors.rs` |
+| M4 | minor | strict `Json` refused RFC 9110 forms (`application/json ; charset=utf-8`, `;;`) because `mime` does | Fixed (MC17): `mime` parses type and subtype only; the scanner reads parameters | `crates/concord-extras/tests/media.rs` (`charset::the_parameter_grammar_is_rfc_9110`) |
+| M5 | minor | after `into_parts`, `.header(ACCEPT, v)` appends to the suggestion | Documented (MIGRATION, AUTHOR_GUIDE §5.8): `headers_mut().insert` replaces | — |
+| M6 | minor | stale small docs (macro first token, MAINTAINERS current campaign, core dependencies, `extras` feature list); `CODEC_ERROR_CONTEXT` not re-exported | Fixed; the facade re-exports `CODEC_ERROR_CONTEXT` | — |
+| M7 | minor | a stray empty file `A` tracked at the root since `df37383` | Removed | — |
+| M8 | minor | `concord-macros` had no README | Added, with the `readme` field | `scripts/package-check.sh` lists packaged files |
+| notes | note | `each` over an empty `accept` list sends the suggestion; strict `Json`'s charset policy is stricter than RFC 8259 requires; `ContentTypeField` `Debug` prints its value; the path deferral had no decision row | Row added to AUTHOR_GUIDE §5.8 and `accept.rs`; the charset policy is deliberate (owner: strict by default, `IgnoreContentType` as the explicit escape); `Content-Type` is not a secret; MC16 | — |

@@ -31,7 +31,7 @@ command), **partial** (what is missing is said), **NOT_RUN** (environment), **de
 | C01 | met | `metadata.rs`, `bodies.rs::r01_post_json` |
 | C02 | met | `crates/concord-extras/tests/media.rs::accepted_media_types`; `metadata.rs::a_downstream_format_uses_response_metadata` |
 | C03 | met | `bodies.rs::r03_content_type_is_checked_unless_deliberately_ignored`, `metadata.rs::the_head_is_refused_before_the_body_exists` |
-| C04 | met | `crates/concord-extras/tests/media.rs::refused_media_types_with_their_labels` (missing, repeated equal/conflicting, comma-joined, malformed, obs-text) |
+| C04 | met | `crates/concord-extras/tests/media.rs::refused_media_types_with_their_labels` (missing, repeated equal/conflicting, comma-joined, malformed, obs-text); `charset::the_parameter_grammar_is_rfc_9110` (RFC 9110 forms `mime` refused alone are accepted; what the grammar excludes stays refused) |
 | C05 | met | `crates/concord-extras/tests/media.rs` (case, parameters, `charset`: quoted before another parameter, repeated refused); `metadata.rs::charset_parameters_are_read_exactly`; no transcoding (Json, Text docs). Closes final-audit X-F1/X-F2 |
 | C06 | met | `metadata.rs::metadata_errors_print_no_response_content` |
 | C07 | met | `metadata.rs::status_comes_before_the_format` |
@@ -57,7 +57,7 @@ command), **partial** (what is missing is said), **NOT_RUN** (environment), **de
 | M02 | met | same (literal any case, native value) |
 | M03 | met | same (absent optional; removal) |
 | M04 | met | same (reintroduced present/absent; repeated) |
-| M05 | met | same (empty value; q-values) |
+| M05 | met | same (empty value; q-values; `each` over an empty list places nothing → the suggestion) |
 | M06 | met | `accept.rs::the_wire_and_the_client_defaults` (default `*/*` and a configured default) |
 | M07 | met | `bodies.rs` (no body, no Content-Type), `formats.rs` rows 6–8 |
 | M08 | met | `bodies.rs::r02_*`, `error_inspection.rs` |
@@ -73,11 +73,11 @@ command), **partial** (what is missing is said), **NOT_RUN** (environment), **de
 | H01 | met | `validate_names.rs::validation_runs_nothing_and_matches_prepare` (associated function; no client) |
 | H02 | met | same (counters on defaults, `Display`, encoder stay 0; uninhabited body type) |
 | H03 | met | same (stable order, labels); `ui/builtin_collisions.rs` (method name) |
-| H04 | met | same (each problem = `prepare()`'s error); `crates/concord-core/tests/header_plan.rs` |
+| H04 | met | same (each problem = `prepare()`'s header-composition error); `validate_names.rs::earlier_build_steps_fail_first` (a failing encoder runs first, SEMANTICS §6); `crates/concord-core/tests/header_plan.rs` |
 | H05 | met | `header_plan.rs::the_validator_and_prepare_share_one_verdict` (every presence assignment) |
 | H06 | met | `validate_names.rs` (cfg-disabled endpoint with a nonexistent key); `Literal`/`Coherent` clients |
 | H07 | met | `validate_names.rs` (aliases, equal names under two constants); `checks/hygiene/tests/cross_crate.rs` |
-| H08 | met | `ui/native_key_sealed.rs`, `ui/native_key_deref.rs`; `native_keys.rs` (constants, statics, aliases) |
+| H08 | met | `ui/native_key_sealed.rs` (E0277 on `sealed::Sealed`, through `concord::__macro::concord_core`; removing the supertrait fails it: work directory evidence/mutants/S1_unsealed.txt), `ui/native_key_deref.rs`; `native_keys.rs` (constants, statics, aliases) |
 | H09 | met | `emit::tests::key_occurrence_owner_matches_a_scan_of_every_owner` |
 | H10 | met | `spelling_equivalence.rs`, `oracle_sensitivity.rs`, `native_keys.rs` (unchanged, passing) |
 | H11 | met | `sensitivity.rs`, `native_keys.rs` (removed/overridden sticky classification) |
