@@ -20,7 +20,7 @@ json = ["dep:serde", "dep:serde_json"]
 form = ["dep:serde", "dep:serde_urlencoded"]
 
 [dependencies]
-concord-core = { path = "../concord-core", version = "=4.0.0-alpha.1" }
+concord-core = { path = "../concord-core", version = "=4.1.0" }
 # Response media types are parsed by `mime` (the formats' own policy; core parses none).
 mime.workspace = true
 serde = { workspace = true, optional = true }

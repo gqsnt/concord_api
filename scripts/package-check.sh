@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Builds and tests a downstream consumer against the *packaged* sources of concord and
-# concord-macros (the extracted `.crate` files), not the repository: what a release would ship.
+# Builds and tests a downstream consumer against the *packaged* sources of the four crates (the
+# extracted `.crate` files), not the repository: what a release would ship. Each package must hold
+# only sources, manifests, the README and the licences, with nothing that looks like a credential.
 # Usage: scripts/package-check.sh [OUT_DIR]   (default: target/package-check; never published)
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -36,6 +37,17 @@ done
 for crate in $crates; do
   if find "$out/$crate-$version" -path '*/tests/*' | grep -q .; then
     echo "FAIL: test-only material in the $crate package"; exit 1
+  fi
+  # No build output, logs, fixtures or evidence: only these kinds of files are shipped.
+  unexpected=$(cd "$out/$crate-$version" && find . -type f | sed 's#^\./##' | grep -vE \
+    '^(src/[a-z_]+\.rs|Cargo\.toml|Cargo\.toml\.orig|Cargo\.lock|README\.md|LICENSE-(MIT|APACHE)|\.cargo_vcs_info\.json)$' || true)
+  if [[ -n $unexpected ]]; then
+    echo "FAIL: unexpected files in the $crate package:"; echo "$unexpected"; exit 1
+  fi
+  # Nothing credential-like: private keys, Riot API keys, GitHub or AWS tokens.
+  if grep -rEn 'BEGIN [A-Z ]*PRIVATE KEY|RGAPI-[0-9A-Fa-f-]{8,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}' \
+    "$out/$crate-$version"; then
+    echo "FAIL: credential-like material in the $crate package"; exit 1
   fi
 done
 
