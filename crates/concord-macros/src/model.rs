@@ -2511,7 +2511,7 @@ mod base_consistency {
         for _ in 0..50_000 {
             let mut url = String::from(rng.pick(&schemes));
             // Half of the inputs are near-valid (mostly accepted), half adversarial.
-            let near_valid = rng.next() % 2 == 0;
+            let near_valid = rng.next().is_multiple_of(2);
             if near_valid {
                 url = String::from(rng.pick(&["http://", "https://"]));
                 for i in 0..1 + rng.next() % 4 {
@@ -2520,7 +2520,7 @@ mod base_consistency {
                     }
                     url.push_str(rng.pick(&["api", "x-y", "a1", "b", "9z", "eu", "test"]));
                 }
-            } else if rng.next() % 4 == 0 {
+            } else if rng.next().is_multiple_of(4) {
                 url.push_str(rng.pick(&hosts));
             } else {
                 for _ in 0..1 + rng.next() % 12 {

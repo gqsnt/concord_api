@@ -21,11 +21,13 @@ error[E0277]: `Vec<String>` doesn't implement `std::fmt::Display`
 4 |         GET list(query tags: Vec<String>);
   |                              ^^^ the trait `std::fmt::Display` is not implemented for `Vec<String>`
   |
-help: the trait `Debug` is implemented for `concord::__private::DebugDisplay<'_, T>`
+help: the trait `Debug` is conditionally implemented for `concord::__private::DebugDisplay<'_, T>`
  --> src/__private.rs
   |
   | impl<T: Text + ?Sized> fmt::Debug for DebugDisplay<'_, T> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  | ^^^^^^^^----^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |         |
+  |         unsatisfied requirement introduced here: `Vec<String>: concord::__private::Text`
   = note: required for `Vec<String>` to implement `concord::__private::Text`
   = note: required for `concord::__private::DebugDisplay<'_, Vec<String>>` to implement `Debug`
   = note: required for the cast from `&concord::__private::DebugDisplay<'_, Vec<String>>` to `&dyn Debug`

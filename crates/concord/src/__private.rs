@@ -425,21 +425,21 @@ impl<'a> Parts<'a> {
         // contribution was sent (it wins, body or not; an empty value counts as sent). The
         // inserted value carries the key's static classification, like a declared value would.
         if let Some((body, content_type)) = body {
-            if let Some(mut content_type) = content_type {
-                if !headers.contains_key(CONTENT_TYPE) {
-                    if self.meta.sensitive_content_type || self.content_type_sensitive {
-                        content_type.set_sensitive(true);
-                    }
-                    headers
-                        .try_insert(CONTENT_TYPE, content_type)
-                        .map_err(|_| {
-                            Error::build(
-                                Some(self.meta),
-                                "content-type",
-                                "does not fit in the header map",
-                            )
-                        })?;
+            if let Some(mut content_type) = content_type
+                && !headers.contains_key(CONTENT_TYPE)
+            {
+                if self.meta.sensitive_content_type || self.content_type_sensitive {
+                    content_type.set_sensitive(true);
                 }
+                headers
+                    .try_insert(CONTENT_TYPE, content_type)
+                    .map_err(|_| {
+                        Error::build(
+                            Some(self.meta),
+                            "content-type",
+                            "does not fit in the header map",
+                        )
+                    })?;
             }
             *request.body_mut() = Some(body);
         }

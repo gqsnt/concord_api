@@ -64,19 +64,18 @@ fn header_statics(k: &TokenStream, model: &Model) -> (TokenStream, Headers) {
     let mut items = TokenStream::new();
     for owner in &model.owners {
         for c in &owner.headers {
-            if let KeyName::Lit(name) = &c.key {
-                if !headers.names.contains_key(name) {
-                    let ident =
-                        format_ident!("__CONCORD_{}_HEADER_{}", client, headers.names.len());
-                    let key = lit(name);
-                    items.extend(quote_spanned! {c.span=>
-                        #[doc(hidden)]
-                        #[allow(non_upper_case_globals, dead_code)]
-                        static #ident: #k::reqwest::header::HeaderName =
-                            #k::reqwest::header::HeaderName::from_static(#key);
-                    });
-                    headers.names.insert(name.clone(), ident);
-                }
+            if let KeyName::Lit(name) = &c.key
+                && !headers.names.contains_key(name)
+            {
+                let ident = format_ident!("__CONCORD_{}_HEADER_{}", client, headers.names.len());
+                let key = lit(name);
+                items.extend(quote_spanned! {c.span=>
+                    #[doc(hidden)]
+                    #[allow(non_upper_case_globals, dead_code)]
+                    static #ident: #k::reqwest::header::HeaderName =
+                        #k::reqwest::header::HeaderName::from_static(#key);
+                });
+                headers.names.insert(name.clone(), ident);
             }
             let Some(literal) = literal_value(c) else {
                 continue;
@@ -1138,17 +1137,16 @@ fn argument_docs(values: &[Value], body: Option<&Body>) -> TokenStream {
 fn doc_text(docs: &[syn::Attribute]) -> String {
     let mut out = Vec::new();
     for attr in docs {
-        if let syn::Meta::NameValue(nv) = &attr.meta {
-            if let syn::Expr::Lit(syn::ExprLit {
+        if let syn::Meta::NameValue(nv) = &attr.meta
+            && let syn::Expr::Lit(syn::ExprLit {
                 lit: syn::Lit::Str(s),
                 ..
             }) = &nv.value
-            {
-                let line = s.value();
-                let line = line.trim();
-                if !line.is_empty() {
-                    out.push(line.to_owned());
-                }
+        {
+            let line = s.value();
+            let line = line.trim();
+            if !line.is_empty() {
+                out.push(line.to_owned());
             }
         }
     }

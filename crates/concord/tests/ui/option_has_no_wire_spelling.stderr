@@ -21,11 +21,13 @@ error[E0277]: `Option<String>` doesn't implement `std::fmt::Display`
 4 |         GET list(query filter: Option<String>);
   |                                ^^^^^^ the trait `std::fmt::Display` is not implemented for `Option<String>`
   |
-help: the trait `Debug` is implemented for `concord::__private::DebugDisplay<'_, T>`
+help: the trait `Debug` is conditionally implemented for `concord::__private::DebugDisplay<'_, T>`
  --> src/__private.rs
   |
   | impl<T: Text + ?Sized> fmt::Debug for DebugDisplay<'_, T> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  | ^^^^^^^^----^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |         |
+  |         unsatisfied requirement introduced here: `Option<String>: concord::__private::Text`
   = note: required for `Option<String>` to implement `concord::__private::Text`
   = note: required for `concord::__private::DebugDisplay<'_, Option<String>>` to implement `Debug`
   = note: required for the cast from `&concord::__private::DebugDisplay<'_, Option<String>>` to `&dyn Debug`

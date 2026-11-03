@@ -21,11 +21,13 @@ error[E0277]: `HeaderValue` doesn't implement `std::fmt::Display`
 8 |         GET query(query("accept") a: HeaderValue);
   |                                      ^^^^^^^^^^^ the trait `std::fmt::Display` is not implemented for `HeaderValue`
   |
-help: the trait `Debug` is implemented for `concord::__private::DebugDisplay<'_, T>`
+help: the trait `Debug` is conditionally implemented for `concord::__private::DebugDisplay<'_, T>`
  --> src/__private.rs
   |
   | impl<T: Text + ?Sized> fmt::Debug for DebugDisplay<'_, T> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  | ^^^^^^^^----^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |         |
+  |         unsatisfied requirement introduced here: `HeaderValue: concord::__private::Text`
   = note: required for `HeaderValue` to implement `concord::__private::Text`
   = note: required for `concord::__private::DebugDisplay<'_, HeaderValue>` to implement `Debug`
   = note: required for the cast from `&concord::__private::DebugDisplay<'_, HeaderValue>` to `&dyn Debug`
@@ -61,11 +63,13 @@ error[E0277]: `HeaderValue` doesn't implement `std::fmt::Display`
 9 |         GET path(a: HeaderValue) { path "items/{a}"; }
   |                     ^^^^^^^^^^^ the trait `std::fmt::Display` is not implemented for `HeaderValue`
   |
-help: the trait `Debug` is implemented for `concord::__private::DebugDisplay<'_, T>`
+help: the trait `Debug` is conditionally implemented for `concord::__private::DebugDisplay<'_, T>`
  --> src/__private.rs
   |
   | impl<T: Text + ?Sized> fmt::Debug for DebugDisplay<'_, T> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  | ^^^^^^^^----^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |         |
+  |         unsatisfied requirement introduced here: `HeaderValue: concord::__private::Text`
   = note: required for `HeaderValue` to implement `concord::__private::Text`
   = note: required for `concord::__private::DebugDisplay<'_, HeaderValue>` to implement `Debug`
   = note: required for the cast from `&concord::__private::DebugDisplay<'_, HeaderValue>` to `&dyn Debug`
@@ -103,7 +107,7 @@ error[E0277]: `HeaderValue` doesn't implement `std::fmt::Display`
    |                         ^^^^^^^^^^^ `HeaderValue` cannot be formatted with the default formatter
    |
    = help: the trait `std::fmt::Display` is not implemented for `HeaderValue`
-   = note: in format strings you may be able to use `{:?}` (or {:#?} for pretty-print) instead
+   = note: in format strings you may be able to use `{:?}` (or `{:#?}` for pretty-print) instead
    = note: required for `&HeaderValue` to implement `std::fmt::Display`
    = note: this error originates in the macro `::core::format_args` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -113,11 +117,13 @@ error[E0277]: `HeaderValue` doesn't implement `std::fmt::Display`
 10 |         GET template(a: HeaderValue) { headers { "x-a" = "v={a}"; } }
    |                         ^^^^^^^^^^^ the trait `std::fmt::Display` is not implemented for `HeaderValue`
    |
-help: the trait `Debug` is implemented for `concord::__private::DebugDisplay<'_, T>`
+help: the trait `Debug` is conditionally implemented for `concord::__private::DebugDisplay<'_, T>`
   --> src/__private.rs
    |
    | impl<T: Text + ?Sized> fmt::Debug for DebugDisplay<'_, T> {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   | ^^^^^^^^----^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |         |
+   |         unsatisfied requirement introduced here: `HeaderValue: concord::__private::Text`
    = note: required for `HeaderValue` to implement `concord::__private::Text`
    = note: required for `concord::__private::DebugDisplay<'_, HeaderValue>` to implement `Debug`
    = note: required for the cast from `&concord::__private::DebugDisplay<'_, HeaderValue>` to `&dyn Debug`

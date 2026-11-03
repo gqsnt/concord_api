@@ -167,15 +167,17 @@ pub fn type_text(t: &dyn quote::ToTokens) -> String {
 /// decided by name resolution, so no path is turned into a word here (`codec::Text` and a local
 /// module named `concord` keep their meaning). Only used to word a diagnostic reported anyway.
 fn replacement(repr: &Type) -> String {
-    if let Type::Path(p) = repr {
-        if p.qself.is_none() && p.path.leading_colon.is_none() && p.path.segments.len() == 1 {
-            let segment = &p.path.segments[0];
-            let name = segment.ident.to_string();
-            let bare = name.trim_start_matches("r#");
-            if segment.arguments.is_none() && bare.starts_with(|c: char| c.is_ascii_lowercase()) {
-                // As written: a raw identifier keeps its `r#` (`self::r#type`).
-                return format!("self::{name}");
-            }
+    if let Type::Path(p) = repr
+        && p.qself.is_none()
+        && p.path.leading_colon.is_none()
+        && p.path.segments.len() == 1
+    {
+        let segment = &p.path.segments[0];
+        let name = segment.ident.to_string();
+        let bare = name.trim_start_matches("r#");
+        if segment.arguments.is_none() && bare.starts_with(|c: char| c.is_ascii_lowercase()) {
+            // As written: a raw identifier keeps its `r#` (`self::r#type`).
+            return format!("self::{name}");
         }
     }
     type_text(repr)
@@ -339,17 +341,17 @@ fn parse_output(input: ParseStream<'_>) -> syn::Result<Output> {
         let fork = input.fork();
         match fork.parse::<syn::Path>() {
             Ok(path) if !at_end(&fork) && !fork.peek(kw::via) => {
-                if let Ok(ident) = fork.fork().parse::<Ident>() {
-                    if let Some(word) = Word::of(&ident).filter(|_| !fork.peek2(Token![::])) {
-                        return Err(syn::Error::new(
-                            ident.span(),
-                            format!(
-                                "removed output format: write `-> {1}` and `response {0};` on this endpoint",
-                                word.as_str(),
-                                type_text(&path)
-                            ),
-                        ));
-                    }
+                if let Ok(ident) = fork.fork().parse::<Ident>()
+                    && let Some(word) = Word::of(&ident).filter(|_| !fork.peek2(Token![::]))
+                {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        format!(
+                            "removed output format: write `-> {1}` and `response {0};` on this endpoint",
+                            word.as_str(),
+                            type_text(&path)
+                        ),
+                    ));
                 }
                 Some(parse_format(input, false)?)
             }
@@ -362,17 +364,17 @@ fn parse_output(input: ParseStream<'_>) -> syn::Result<Output> {
     let ty: Type = input.parse()?;
     reject_via(input, &ty, ViaSite::Output)?;
     // `-> () json`: a word after a payload that is not a path (paths are checked above).
-    if let Ok(ident) = input.fork().parse::<Ident>() {
-        if let Some(word) = Word::of(&ident).filter(|_| explicit.is_none()) {
-            return Err(syn::Error::new(
-                ident.span(),
-                format!(
-                    "removed output format: write `-> {1}` and `response {0};` on this endpoint",
-                    word.as_str(),
-                    type_text(&ty)
-                ),
-            ));
-        }
+    if let Ok(ident) = input.fork().parse::<Ident>()
+        && let Some(word) = Word::of(&ident).filter(|_| explicit.is_none())
+    {
+        return Err(syn::Error::new(
+            ident.span(),
+            format!(
+                "removed output format: write `-> {1}` and `response {0};` on this endpoint",
+                word.as_str(),
+                type_text(&ty)
+            ),
+        ));
     }
     Ok(Output {
         ty,
@@ -1051,19 +1053,19 @@ fn parse_params(
                         optional: if optional { "?" } else { "" },
                     },
                 )?;
-                if let Ok(ident) = content.fork().parse::<Ident>() {
-                    if let Some(word) = Word::of(&ident) {
-                        return Err(syn::Error::new(
-                            ident.span(),
-                            format!(
-                                "removed body format: write `body {1}{2}: {3}` and `request {0};` on this endpoint",
-                                word.as_str(),
-                                plain(&name),
-                                if optional { "?" } else { "" },
-                                type_text(&ty)
-                            ),
-                        ));
-                    }
+                if let Ok(ident) = content.fork().parse::<Ident>()
+                    && let Some(word) = Word::of(&ident)
+                {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        format!(
+                            "removed body format: write `body {1}{2}: {3}` and `request {0};` on this endpoint",
+                            word.as_str(),
+                            plain(&name),
+                            if optional { "?" } else { "" },
+                            type_text(&ty)
+                        ),
+                    ));
                 }
             }
             let default = if content.peek(Token![=]) {
