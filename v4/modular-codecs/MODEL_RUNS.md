@@ -15,7 +15,9 @@ NOT_OBSERVABLE. Reports are frozen (SHA-256 below) before any synthesis; copies 
 | journey-sonnet | author-journey probe (docs only) | Claude Sonnet | `claude-sonnet-5-5` | subagent | `dfdeed8` | [`journey-sonnet-REPORT.md`](reports/journey-sonnet-REPORT.md) `ada899cd` |
 | docs-sonnet | documentation rewrite (write owner: docs only) | Claude Sonnet | `claude-sonnet-5-5` | subagent, worktree | `d3c6e55` | commit `97c8011` (cherry-picked as `d5c93f0`) |
 | consumers | isolated consumer crates and script (bounded implementation) | `gpt-6.1-sol`, medium | `gpt-6.1-sol`, `medium` | execute, loopback | `25a52f7` | imported as `fbf0ac2` |
-| fresh-terra | fresh-use trial: a vendor format and header-name validation from the docs (R07) | `gpt-6.1-terra`, xhigh | `gpt-6.1-terra`, `xhigh` | execute, loopback | `9f7eb83` | [`fresh-terra-REPORT.md`](reports/fresh-terra-REPORT.md) |
+| fresh-terra | fresh-use trial: a vendor format and header-name validation from the docs (R07) | `gpt-6.1-terra`, xhigh | `gpt-6.1-terra`, `xhigh` | execute, loopback | `9f7eb83` | [`fresh-terra-REPORT.md`](reports/fresh-terra-REPORT.md) `9586e878` |
+| fresh-sonnet | fresh-use trial, same tasks (R07) | Claude Sonnet | `claude-sonnet-5-5` | subagent, private copy | `9f8939f` | [`fresh-sonnet-REPORT.md`](reports/fresh-sonnet-REPORT.md) `03f711b6` |
+| final-exec-sol | final executable audit of the frozen candidate (different provider) | `gpt-6.1-sol`, xhigh | `gpt-6.1-sol`, `xhigh` | execute, loopback | `9f8939f` | [`final-exec-sol-REPORT.md`](reports/final-exec-sol-REPORT.md) `714729c7` |
 | path-terra | bounded hierarchical-path prototype (optional gate) | `gpt-6.1-terra`, xhigh | `gpt-6.1-terra`, `xhigh` | execute, loopback | `25a52f7` | [`path-terra-report.md`](reports/path-terra-report.md) `ba7a1b02`; recipe imported as `1f26e91` |
 
 The two architecture challengers worked from the same brief and source, without the other's

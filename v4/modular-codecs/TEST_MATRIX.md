@@ -32,7 +32,7 @@ command), **partial** (what is missing is said), **NOT_RUN** (environment), **de
 | C02 | met | `crates/concord-extras/tests/media.rs::accepted_media_types`; `metadata.rs::a_downstream_format_uses_response_metadata` |
 | C03 | met | `bodies.rs::r03_content_type_is_checked_unless_deliberately_ignored`, `metadata.rs::the_head_is_refused_before_the_body_exists` |
 | C04 | met | `crates/concord-extras/tests/media.rs::refused_media_types_with_their_labels` (missing, repeated equal/conflicting, comma-joined, malformed, obs-text) |
-| C05 | met | `crates/concord-extras/tests/media.rs` (case, parameters, `charset`); no transcoding (Json, Text docs) |
+| C05 | met | `crates/concord-extras/tests/media.rs` (case, parameters, `charset`: quoted before another parameter, repeated refused); `metadata.rs::charset_parameters_are_read_exactly`; no transcoding (Json, Text docs). Closes final-audit X-F1/X-F2 |
 | C06 | met | `metadata.rs::metadata_errors_print_no_response_content` |
 | C07 | met | `metadata.rs::status_comes_before_the_format` |
 | C08 | met | `error_inspection.rs::empty_responses_are_not_null`, `crates/concord-extras/tests/media.rs::empty_bodies_are_not_null` |
@@ -105,8 +105,8 @@ command), **partial** (what is missing is said), **NOT_RUN** (environment), **de
 | R03 | met | `examples/riot/tests/{workflows,wire,errors}.rs` |
 | R04 | met | `examples/riot/tests/errors.rs::non_json_success_responses_are_refused_or_fail_to_decode` (fixtures carry real Content-Types; no bypass) |
 | R05 | met | `examples/riot/SOURCES.md` (unchanged facts and open questions) |
-| R06 | see docs | README, QUICKSTART, CHEATSHEET, guides, `docs/CUSTOM_FORMATS.md` (rewritten by Sonnet; doctests and excerpts checked) |
-| R07 | see trials | fresh-use reports (Sonnet, Terra) |
+| R06 | met | README, QUICKSTART, CHEATSHEET, guides, `docs/CUSTOM_FORMATS.md` (rewritten by Sonnet; doctests and excerpt checks in the gate); no built-in format word remains (A05); fresh-use notes applied (REVIEW_TRIAGE) |
+| R07 | met | `v4/modular-codecs/reports/fresh-terra-REPORT.md`, `v4/modular-codecs/reports/fresh-sonnet-REPORT.md`: both completed a metadata-aware vendor format and all-endpoint name validation from the docs alone, without reading the implementation first |
 | R08 | met | `emit::tests::format_docs_*` (links to the format type, `Encode::CONTENT_TYPE`) |
 | R09 | met | `docs/MIGRATION.md` (compiler-guided; no rewriter) |
 
